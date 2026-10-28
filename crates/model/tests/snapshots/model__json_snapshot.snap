@@ -1,0 +1,43 @@
+---
+source: crates/model/tests/model.rs
+expression: "store::to_json(sample().project()).unwrap()"
+---
+{
+  "format_version": 1,
+  "project": {
+    "meta": {
+      "name": "Jingle"
+    },
+    "tempo_bpm": 128.0,
+    "tracks": [
+      {
+        "id": 1,
+        "name": "Voice",
+        "kind": "audio",
+        "gain_db": 0.0,
+        "pan": -0.25,
+        "mute": false,
+        "solo": false,
+        "clips": [
+          {
+            "id": 3,
+            "name": "Intro",
+            "start_beats": 4.0,
+            "length_beats": 8.0
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "name": "Music",
+        "kind": "midi",
+        "gain_db": -6.5,
+        "pan": 0.0,
+        "mute": false,
+        "solo": false,
+        "clips": []
+      }
+    ],
+    "next_id": 4
+  }
+}
