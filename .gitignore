@@ -1,5 +1,10 @@
 target/
 
+# Lokale Projekte, Mitschnitte und Logs, nie ins Repo
+*.woa/
+/logs/
+*.log
+
 # >>> nixblick-geheimnisse >>>
 # ─── Geheimnisse ─── zentral gepflegt, nicht von Hand ändern ───
 # Quelle: nix.stack/shared/snippets/gitignore-secrets.txt
