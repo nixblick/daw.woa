@@ -4,6 +4,12 @@ target/
 *.woa/
 /logs/
 *.log
+# Halbfertige atomare Schreibvorgänge (store::write_atomic)
+*.tmp
+
+# Lokale Claude-Code-Dateien (Worktrees, persönliche Einstellungen)
+/.claude/worktrees/
+/.claude/settings.local.json
 
 # >>> nixblick-geheimnisse >>>
 # ─── Geheimnisse ─── zentral gepflegt, nicht von Hand ändern ───
