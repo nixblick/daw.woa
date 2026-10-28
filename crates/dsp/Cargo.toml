@@ -1,0 +1,9 @@
+[package]
+name = "woa-dsp"
+description = "WOA: Instrumente, Effekte, Analyse"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

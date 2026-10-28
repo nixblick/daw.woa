@@ -1,0 +1,9 @@
+[package]
+name = "woa-headless"
+description = "WOA: Engine + MCP, für Agent und Tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

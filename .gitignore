@@ -1,0 +1,62 @@
+target/
+
+# >>> nixblick-geheimnisse >>>
+# ─── Geheimnisse ─── zentral gepflegt, nicht von Hand ändern ───
+# Quelle: nix.stack/shared/snippets/gitignore-secrets.txt
+# Einspielen/aktualisieren: nix.stack/shared/scripts/gitignore-secrets.sh <repo>
+# Grundsatz: Credentials liegen in ~/.secrets/ und werden per Symlink eingebunden.
+# Siehe nix.stack/docs/secrets.md
+
+# Umgebungsdateien
+.env
+.env.*
+*.env
+!.env.example
+!.env.sample
+!.env.template
+!*.env.example
+!*.env.sample
+
+# Schlüssel und Zertifikate (öffentliche Teile bleiben erlaubt)
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+!*.pub.pem
+!*.pub.key
+
+# SSH-Schlüssel
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+*.ppk
+!*.pub
+
+# Ansible-Vault-Passwörter
+.vault_pass
+.vault_pass.txt
+vault_pass*.txt
+*vault-pass*.txt
+
+# Benannte Geheimnis-Dateien (verschlüsselte Fassungen bleiben erlaubt)
+secrets.env
+secrets.json
+secrets.yml
+secrets.yaml
+secrets.txt
+credentials.json
+credentials.yml
+credentials.yaml
+!*.enc
+!*.gpg
+!*.age
+
+# Sonstiges
+.netrc
+.pgpass
+.htpasswd
+*.kdbx
+# <<< nixblick-geheimnisse <<<

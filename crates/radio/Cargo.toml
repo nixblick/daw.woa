@@ -1,0 +1,9 @@
+[package]
+name = "woa-radio"
+description = "WOA: Playlist, Cart-Wall, Sendeplan, Ducking"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
