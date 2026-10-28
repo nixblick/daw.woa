@@ -15,6 +15,12 @@ allow = [
 ]
 confidence-threshold = 0.9
 
+# Mozillas CA-Liste fuer TLS (ureq/rustls, woa-telemetry). CDLA-Permissive-2.0 ist eine
+# freizuegige Datenlizenz ohne Copyleft; nur fuer diese eine Crate freigegeben.
+[[licenses.exceptions]]
+crate = "webpki-roots"
+allow = ["CDLA-Permissive-2.0"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
