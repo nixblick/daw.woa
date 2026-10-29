@@ -303,6 +303,36 @@ pub struct RunOrderParams {
     pub radio_json: Option<String>,
 }
 
+/// Parameters of `stream_status`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct StreamStatusParams {
+    /// WOA data folder. Default: the standard data folder.
+    #[serde(default)]
+    pub data_dir: Option<String>,
+}
+
+/// Status of woa-streamd from `streamd-status.json`, plus `running`.
+pub fn stream_status_json(data_dir: &Path) -> serde_json::Value {
+    let path = woa_stream::status::status_path(data_dir);
+    match woa_stream::status::read(&path) {
+        Some(st) => {
+            let running = st.is_running(woa_stream::unix_now());
+            let summary = st.summary();
+            let mut v = serde_json::to_value(&st).unwrap_or(serde_json::Value::Null);
+            if let Some(o) = v.as_object_mut() {
+                o.insert("running".into(), running.into());
+                o.insert("summary".into(), summary.into());
+            }
+            v
+        }
+        None => serde_json::json!({
+            "running": false,
+            "summary": "nicht auf Sendung",
+            "status_file": path.display().to_string(),
+        }),
+    }
+}
+
 /// The MCP server around one project session.
 #[derive(Clone)]
 pub struct WoaAgent {
@@ -1112,6 +1142,20 @@ impl WoaAgent {
     }
 
     #[tool(
+        description = "Broadcast: status of the stream process woa-streamd (running, connection, source live/emergency, listeners, bitrate, on-air seconds, last error). Read-only."
+    )]
+    async fn stream_status(
+        &self,
+        Parameters(p): Parameters<StreamStatusParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = p
+            .data_dir
+            .map(PathBuf::from)
+            .unwrap_or_else(woa_radio::data_dir);
+        Ok(ok_json(stream_status_json(&dir)))
+    }
+
+    #[tool(
         description = "Radio mode: read the playlist from radio.json and return the run order with each title's length, loudness (LUFS) and auto-gain, plus the total length with crossfades. Changes nothing."
     )]
     async fn run_order(
@@ -1171,4 +1215,26 @@ pub fn run_stdio(dir: impl AsRef<Path>) -> Result<(), AgentError> {
         .build()
         .map_err(|e| AgentError::Transport(e.to_string()))?;
     rt.block_on(serve(agent, rmcp::transport::stdio()))
+}
+
+#[cfg(test)]
+mod stream_tests {
+    use super::*;
+
+    #[test]
+    fn stream_status_reads_file_or_reports_off() {
+        let tmp = tempfile::tempdir().unwrap();
+        let v = stream_status_json(tmp.path());
+        assert_eq!(v["running"], false);
+        let st = woa_stream::StreamStatus {
+            updated_unix: woa_stream::unix_now(),
+            connection: "verbunden".into(),
+            listeners: Some(4),
+            ..Default::default()
+        };
+        woa_stream::status::write(&woa_stream::status::status_path(tmp.path()), &st).unwrap();
+        let v = stream_status_json(tmp.path());
+        assert_eq!(v["running"], true);
+        assert_eq!(v["listeners"], 4);
+    }
 }

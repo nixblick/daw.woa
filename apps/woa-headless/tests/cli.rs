@@ -201,3 +201,83 @@ fn play_help_names_underruns() {
         .stdout(contains("Underruns"))
         .stdout(contains("--buffer"));
 }
+
+/// Mini-Shoutcast-1-Quelle: erwartet `want` als Anmeldezeile, zählt MP3-Bytes.
+fn shoutcast_fake(want: &'static str) -> (u16, mpsc::Receiver<usize>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let Ok((stream, _)) = listener.accept() else {
+            return;
+        };
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut w = stream;
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        if line.trim_end() != want {
+            let _ = w.write_all(b"invalid password\r\n");
+            return;
+        }
+        w.write_all(b"OK2\r\nicy-caps:11\r\n\r\n").unwrap();
+        loop {
+            let mut h = String::new();
+            if reader.read_line(&mut h).unwrap_or(0) == 0 || h == "\r\n" {
+                break;
+            }
+        }
+        let mut rest = Vec::new();
+        let _ = reader.read_to_end(&mut rest);
+        let _ = tx.send(rest.len());
+    });
+    (port, rx)
+}
+
+#[test]
+fn stream_test_sends_mp3_and_rejects_wrong_password() {
+    let tmp = tempfile::tempdir().unwrap();
+    let kw_file = tmp.path().join("source.kw");
+    std::fs::write(&kw_file, "probe-kw\n").unwrap();
+
+    let (port, rx) = shoutcast_fake("probe-kw");
+    bin()
+        .args([
+            "stream-test",
+            "--host",
+            "127.0.0.1",
+            "--seconds",
+            "1",
+            "--port",
+        ])
+        .arg(port.to_string())
+        .arg("--pass-file")
+        .arg(&kw_file)
+        .assert()
+        .success()
+        .stdout(contains("Titel ausgelassen"))
+        .stdout(contains("1 s gesendet"));
+    let bytes = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+    assert!(bytes > 10_000, "{bytes}");
+
+    let (port, _rx) = shoutcast_fake("anderes");
+    let out = bin()
+        .args([
+            "stream-test",
+            "--host",
+            "127.0.0.1",
+            "--seconds",
+            "1",
+            "--port",
+        ])
+        .arg(port.to_string())
+        .arg("--pass-file")
+        .arg(&kw_file)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("Kennwort") && !err.contains("probe-kw"),
+        "{err}"
+    );
+}

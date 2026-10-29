@@ -1,0 +1,219 @@
+//! Eigener Thread zum Shoutcast-Server: MP3 senden, Titel setzen, Hörer zählen,
+//! bei Abriss mit Backoff neu verbinden. Während des Neuaufbaus werden höchstens
+//! [`BUFFER_SECONDS`] Sekunden gepuffert; Älteres fällt weg (die Sendung ist live).
+
+use std::collections::VecDeque;
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+use crate::config::StreamConfig;
+use crate::kennwort::Kennwort;
+use crate::shoutcast::{Source, StreamError, listeners, titles_possible, update_title};
+
+/// Höchstens so viele Sekunden MP3 warten während des Neuaufbaus.
+pub const BUFFER_SECONDS: usize = 5;
+const BACKOFF_MIN: Duration = Duration::from_secs(1);
+const BACKOFF_MAX: Duration = Duration::from_secs(30);
+/// Bei abgelehnter Anmeldung nicht hämmern.
+const BACKOFF_REJECTED: Duration = Duration::from_secs(60);
+const LISTENER_POLL: Duration = Duration::from_secs(15);
+
+/// Verbindungszustand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Phase {
+    #[default]
+    Connecting,
+    Connected,
+    Reconnecting,
+}
+
+/// Lesbarer Zustand des Uplinks.
+#[derive(Debug, Clone, Default)]
+pub struct UplinkState {
+    pub phase: Phase,
+    pub last_error: Option<String>,
+    /// Anmeldung abgelehnt (Kennwort oder Stream-ID).
+    pub auth_failed: bool,
+    pub listeners: Option<u32>,
+    pub connected_since: Option<Instant>,
+    pub bytes_sent: u64,
+    pub bytes_dropped: u64,
+    pub reconnects: u32,
+}
+
+enum Msg {
+    Data(Vec<u8>),
+    Title(String),
+    Quit,
+}
+
+pub struct Uplink {
+    tx: Sender<Msg>,
+    state: Arc<Mutex<UplinkState>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Uplink {
+    pub fn spawn(cfg: StreamConfig, kw: Kennwort) -> Result<Self, String> {
+        let (tx, rx) = channel();
+        let state = Arc::new(Mutex::new(UplinkState::default()));
+        let st = Arc::clone(&state);
+        let thread = std::thread::Builder::new()
+            .name("woa-stream-uplink".into())
+            .spawn(move || run(cfg, kw, rx, st))
+            .map_err(|e| e.to_string())?;
+        Ok(Self {
+            tx,
+            state,
+            thread: Some(thread),
+        })
+    }
+
+    pub fn send(&self, bytes: &[u8]) {
+        if !bytes.is_empty() {
+            let _ = self.tx.send(Msg::Data(bytes.to_vec()));
+        }
+    }
+
+    pub fn set_title(&self, title: &str) {
+        let _ = self.tx.send(Msg::Title(title.to_string()));
+    }
+
+    pub fn state(&self) -> UplinkState {
+        self.state.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+}
+
+impl Drop for Uplink {
+    fn drop(&mut self) {
+        let _ = self.tx.send(Msg::Quit);
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
+fn set(state: &Mutex<UplinkState>, f: impl FnOnce(&mut UplinkState)) {
+    if let Ok(mut s) = state.lock() {
+        f(&mut s);
+    }
+}
+
+fn run(cfg: StreamConfig, kw: Kennwort, rx: Receiver<Msg>, state: Arc<Mutex<UplinkState>>) {
+    let cap = cfg.bitrate_kbps as usize * 125 * BUFFER_SECONDS;
+    let mut buffer: VecDeque<u8> = VecDeque::with_capacity(cap);
+    let mut source: Option<Source> = None;
+    let mut backoff = BACKOFF_MIN;
+    let mut next_try = Instant::now();
+    let mut title: Option<String> = None;
+    let mut title_pending = false;
+    let mut next_poll = Instant::now();
+    loop {
+        // Eingang sammeln.
+        let mut msgs = Vec::new();
+        match rx.recv_timeout(Duration::from_millis(50)) {
+            Ok(m) => msgs.push(m),
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return,
+        }
+        while let Ok(m) = rx.try_recv() {
+            msgs.push(m);
+        }
+        for m in msgs {
+            match m {
+                Msg::Data(d) => buffer.extend(d),
+                Msg::Title(t) => {
+                    if title.as_deref() != Some(t.as_str()) {
+                        title = Some(t);
+                        title_pending = true;
+                    }
+                }
+                Msg::Quit => return,
+            }
+        }
+        if buffer.len() > cap {
+            let drop = buffer.len() - cap;
+            buffer.drain(..drop);
+            set(&state, |s| s.bytes_dropped += drop as u64);
+        }
+
+        // Verbinden.
+        if source.is_none() && Instant::now() >= next_try {
+            match Source::connect(&cfg, &kw) {
+                Ok(s) => {
+                    tracing::info!(server = %cfg.label(), "stream connected");
+                    source = Some(s);
+                    backoff = BACKOFF_MIN;
+                    title_pending = title.is_some();
+                    next_poll = Instant::now();
+                    set(&state, |s| {
+                        s.phase = Phase::Connected;
+                        s.last_error = None;
+                        s.auth_failed = false;
+                        s.connected_since = Some(Instant::now());
+                    });
+                }
+                Err(e) => {
+                    let rejected = matches!(e, StreamError::AuthFailed);
+                    tracing::warn!(error = %e, "stream connect failed");
+                    let wait = if rejected { BACKOFF_REJECTED } else { backoff };
+                    next_try = Instant::now() + wait;
+                    backoff = (backoff * 2).min(BACKOFF_MAX);
+                    set(&state, |s| {
+                        s.last_error = Some(e.to_string());
+                        s.auth_failed = rejected;
+                        if s.phase == Phase::Connected {
+                            s.phase = Phase::Reconnecting;
+                        }
+                    });
+                }
+            }
+        }
+
+        // Senden.
+        if let Some(src) = source.as_mut()
+            && !buffer.is_empty()
+        {
+            let (a, b) = buffer.as_slices();
+            let sent = a.len() + b.len();
+            match src.send(a).and_then(|()| src.send(b)) {
+                Ok(()) => {
+                    buffer.clear();
+                    set(&state, |s| s.bytes_sent += sent as u64);
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "stream lost, reconnecting");
+                    source = None;
+                    next_try = Instant::now() + backoff;
+                    set(&state, |s| {
+                        s.phase = Phase::Reconnecting;
+                        s.last_error = Some(e.to_string());
+                        s.connected_since = None;
+                        s.reconnects += 1;
+                    });
+                }
+            }
+        }
+
+        // Titel und Hörer (nur verbunden).
+        if source.is_some() {
+            if !titles_possible(&cfg) {
+                title_pending = false;
+            }
+            if title_pending && let Some(t) = title.as_deref() {
+                title_pending = false;
+                if let Err(e) = update_title(&cfg, &kw, t) {
+                    tracing::warn!(error = %e, "title update failed");
+                    set(&state, |s| s.last_error = Some(e.to_string()));
+                }
+            }
+            if cfg.admin_port.is_some() && Instant::now() >= next_poll {
+                next_poll = Instant::now() + LISTENER_POLL;
+                let n = listeners(&cfg);
+                set(&state, |s| s.listeners = n);
+            }
+        }
+    }
+}
