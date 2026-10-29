@@ -419,25 +419,84 @@ impl WoaAgent {
             .ok_or(ModelError::ClipNotFound(ClipId(clip)))
     }
 
-    /// Zielpfad im Projektordner. Absolute Pfade und `..` sind verboten;
-    /// ein vorhandener Elternordner muss kanonisch im Projekt liegen (Symlinks).
+    /// Zielpfad im Projektordner. Absolute Pfade und `..` sind verboten.
+    /// Der tiefste vorhandene Vorfahr muss kanonisch im Projekt liegen, fehlende
+    /// Ordner werden einzeln angelegt und sofort erneut geprüft, und das Ziel
+    /// darf kein Symlink sein. Gibt den Zielpfad im geprüften Ordner zurück.
     fn resolve_out(&self, path: &str) -> Result<PathBuf, String> {
         if !woa_model::is_safe_audio_path(path) {
             return Err(format!(
                 "{path}: nur relative Pfade innerhalb des Projektordners erlaubt"
             ));
         }
-        let out = self.dir.join(path);
-        if let Some(parent) = out.parent()
-            && parent.exists()
-        {
-            let root = self.dir.canonicalize().map_err(|e| e.to_string())?;
-            let real = parent.canonicalize().map_err(|e| e.to_string())?;
-            if !real.starts_with(&root) {
-                return Err(format!("{path}: Pfad verlässt den Projektordner"));
+        let leaves = || format!("{path}: Pfad verlässt den Projektordner");
+        let root = self.dir.canonicalize().map_err(|e| e.to_string())?;
+        let rel = Path::new(path);
+        let name = rel.file_name().ok_or_else(leaves)?;
+        let mut dir = root.clone();
+        if let Some(parent) = rel.parent() {
+            for comp in parent.components() {
+                let std::path::Component::Normal(c) = comp else {
+                    return Err(leaves());
+                };
+                let next = dir.join(c);
+                match std::fs::symlink_metadata(&next) {
+                    Ok(_) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        if let Err(e) = std::fs::create_dir(&next)
+                            && e.kind() != std::io::ErrorKind::AlreadyExists
+                        {
+                            return Err(format!("{}: {e}", next.display()));
+                        }
+                    }
+                    Err(e) => return Err(format!("{}: {e}", next.display())),
+                }
+                let real = next.canonicalize().map_err(|e| e.to_string())?;
+                if !real.starts_with(&root) || !real.is_dir() {
+                    return Err(leaves());
+                }
+                dir = real;
             }
         }
+        let out = dir.join(name);
+        if let Ok(m) = std::fs::symlink_metadata(&out)
+            && (m.file_type().is_symlink() || !m.is_file())
+        {
+            return Err(format!("{path}: Ziel ist ein Symlink oder keine Datei"));
+        }
         Ok(out)
+    }
+
+    /// Schreibt den Mix über eine neu angelegte Temp-Datei im geprüften Ordner
+    /// und setzt sie per `rename` an den Zielnamen. `rename` ersetzt einen
+    /// inzwischen untergeschobenen Symlink, statt ihm zu folgen.
+    fn write_mix(out: &Path, mix: &audio::Mix) -> Result<(), String> {
+        let dir = out.parent().ok_or("kein Zielordner")?;
+        let ext = out.extension().and_then(|e| e.to_str()).unwrap_or("wav");
+        let mut tmp = None;
+        for n in 0..100u32 {
+            let p = dir.join(format!(".woa-export-{}-{n}.{ext}", std::process::id()));
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&p)
+            {
+                Ok(_) => {
+                    tmp = Some(p);
+                    break;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(format!("{}: {e}", p.display())),
+            }
+        }
+        let tmp = tmp.ok_or("keine Temp-Datei frei")?;
+        let r = woa_engine::export::export_stereo(&tmp, &mix.left, &mix.right, audio::RATE)
+            .map_err(|e| e.to_string())
+            .and_then(|()| std::fs::rename(&tmp, out).map_err(|e| e.to_string()));
+        if r.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        r
     }
 }
 
@@ -837,7 +896,7 @@ impl WoaAgent {
             Ok(o) => o,
             Err(e) => return Ok(fail(e)),
         };
-        if woa_engine::export::ExportFormat::from_path(&out).is_none() {
+        if woa_engine::export::ExportFormat::from_path(Path::new(&p.path)).is_none() {
             return Ok(fail("Endung muss .wav, .flac oder .mp3 sein"));
         }
         let mut mix = match audio::render(&project, &self.dir) {
@@ -849,13 +908,7 @@ impl WoaAgent {
             Some(Ok(v)) => v,
             None => serde_json::Value::Null,
         };
-        if let Some(parent) = out.parent()
-            && let Err(e) = std::fs::create_dir_all(parent)
-        {
-            return Ok(fail(format!("{}: {e}", parent.display())));
-        }
-        if let Err(e) = woa_engine::export::export_stereo(&out, &mix.left, &mix.right, audio::RATE)
-        {
+        if let Err(e) = Self::write_mix(&out, &mix) {
             return Ok(fail(e));
         }
         let mut result = audio::measure(&mix);
