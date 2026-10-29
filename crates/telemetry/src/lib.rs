@@ -22,7 +22,9 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
 pub use feedback::{FeedbackError, FeedbackMeta, FeedbackType, submit_feedback};
-pub use upload::{Event, Level, UploadConfig, UploadLayer, Uploader};
+pub use upload::{
+    DEFAULT_INGEST_URL, Event, Level, UploadConfig, UploadLayer, Uploader, new_install_id,
+};
 
 /// Tage, die Logdateien liegen bleiben (eine Datei je Tag).
 pub const LOG_RETENTION_DAYS: usize = 30;

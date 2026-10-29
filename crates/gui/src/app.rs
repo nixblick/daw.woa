@@ -27,6 +27,8 @@ use crate::state::{AppState, Status};
 pub struct WoaApp {
     state: AppState,
     config: GuiConfig,
+    /// Where `config.json` is saved when the user changes a setting (`None` = not saved).
+    config_path: Option<PathBuf>,
     feedback: FeedbackDialog,
     /// Track being renamed and its edit buffer.
     rename: Option<(TrackId, String)>,
@@ -123,6 +125,7 @@ impl WoaApp {
             level: 0.0,
             state,
             config,
+            config_path: None,
             feedback: FeedbackDialog::default(),
             rename: None,
             gain_drag: None,
@@ -649,6 +652,16 @@ impl WoaApp {
                 }
                 if ui.button(redo).clicked() {
                     self.state.redo();
+                }
+            });
+            ui.menu_button("Einstellungen", |ui| {
+                let mut on = self.config.telemetry_enabled == Some(true);
+                if ui
+                    .checkbox(&mut on, "Fehlercodes anonym senden (ab nächstem Start)")
+                    .on_hover_text(TELEMETRY_HINT)
+                    .changed()
+                {
+                    self.set_telemetry(on);
                 }
             });
             if ui.button("Feedback …").clicked() {
@@ -1447,6 +1460,45 @@ impl WoaApp {
         }
     }
 
+    /// Sets where setting changes are saved (`config.json`).
+    pub fn set_config_path(&mut self, path: PathBuf) {
+        self.config_path = Some(path);
+    }
+
+    fn set_telemetry(&mut self, on: bool) {
+        self.config.telemetry_enabled = Some(on);
+        if let Some(p) = &self.config_path
+            && let Err(e) = self.config.save(p)
+        {
+            tracing::warn!(error = %e, "config not saved");
+        }
+    }
+
+    /// First start: ask once whether anonymous error codes may be sent (opt-in).
+    fn telemetry_window(&mut self, ctx: &egui::Context) {
+        if self.config.telemetry_enabled.is_some() || self.photo.is_some() {
+            return;
+        }
+        let mut choice = None;
+        egui::Window::new("Fehlercodes senden?")
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(TELEMETRY_HINT);
+                ui.horizontal(|ui| {
+                    if ui.button("Ja, anonym senden").clicked() {
+                        choice = Some(true);
+                    }
+                    if ui.button("Nein").clicked() {
+                        choice = Some(false);
+                    }
+                });
+            });
+        if let Some(on) = choice {
+            self.set_telemetry(on);
+        }
+    }
+
     fn feedback_window(&mut self, ctx: &egui::Context) {
         if matches!(self.feedback.phase, Phase::Closed | Phase::Capturing) {
             return;
@@ -1574,8 +1626,15 @@ impl eframe::App for WoaApp {
             )
             .show(ui, |ui| self.tracks(ui));
         self.feedback_window(&ctx);
+        self.telemetry_window(&ctx);
     }
 }
+
+/// Text of the opt-in question and the settings hint.
+const TELEMETRY_HINT: &str = "Fehlercodes anonym an den WOA-Server senden? Gesendet werden nur \
+     Code, Stufe und Zahl (z. B. „Aussetzer: 1“), mit einer zufälligen Installations-ID. \
+     Keine Texte, keine Dateinamen, keine Aufnahmen. Gilt ab dem nächsten Start, \
+     jederzeit unter „Einstellungen“ abschaltbar.";
 
 /// Fade-Hüllkurve eines Clips an Stelle `local` (Beats ab Clip-Anfang), 0..1.
 fn fade_gain(c: &woa_model::Clip, local: f64) -> f64 {
