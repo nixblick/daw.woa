@@ -41,6 +41,7 @@ fn main() -> ExitCode {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("WOA")
             .with_inner_size([900.0, 600.0]),
+        event_loop_builder: event_loop_hook(),
         ..Default::default()
     };
     let recovery = data_dir.join("recovery.woa");
@@ -65,4 +66,28 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Unter Wayland läuft die Ereignisschleife von eframe 0.35 heiß. Ein fälliger Repaint setzt
+/// `ControlFlow::Poll`, und `RedrawRequested` kommt erst mit dem nächsten Frame-Callback des
+/// Compositors. Ein verdecktes Fenster bekommt keinen, dann frisst die Oberfläche einen
+/// ganzen Kern (egui#8326, behoben in eframe 0.37, das rustc 1.95 braucht). Gemessen am
+/// 29.10.2026 mit `woa` 0.3.4 in Ruhe: Wayland 24–91 %, X11 1 %. Deshalb nimmt WOA unter
+/// Linux X11 (XWayland), solange `DISPLAY` gesetzt ist. `WOA_WAYLAND=1` erzwingt Wayland.
+#[cfg(target_os = "linux")]
+fn event_loop_hook() -> Option<eframe::EventLoopBuilderHook> {
+    let wayland_wanted = std::env::var_os("WOA_WAYLAND").is_some_and(|v| v == "1");
+    if wayland_wanted || std::env::var_os("DISPLAY").is_none() {
+        return None;
+    }
+    tracing::info!("event loop: x11 (WOA_WAYLAND=1 for wayland)");
+    Some(Box::new(|b| {
+        use winit::platform::x11::EventLoopBuilderExtX11 as _;
+        b.with_x11();
+    }))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn event_loop_hook() -> Option<eframe::EventLoopBuilderHook> {
+    None
 }

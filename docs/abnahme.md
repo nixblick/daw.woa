@@ -20,7 +20,7 @@ Erst nach dem Ausrollen des Server-PRs in bretteins.infra (#150).
 
 Nachtrag 0.3.4 (#56, nach deiner ersten Abnahme am 29.10.):
 
-8. Radio-Modus ohne Wiedergabe, mit einem Titel ohne Cover in der Playlist: `top -p $(pgrep -x woa)` zeigt unter 5 % CPU (vorher 100 %).
+8. Radio-Modus ohne Wiedergabe, Fenster einmal hinter den Browser legen: `top -p $(pgrep -x woa)` zeigt um 1 % CPU (vorher bis 100 %). Im Log steht `event loop: x11`. Sieht die Schrift zu weich aus, geht es mit `WOA_WAYLAND=1` zurück zu Wayland (dann wieder hohe Last, bis eframe 0.37 mit rustc 1.95 kommt).
 9. Ist Port 8001 noch zu, steht nach „Auf Sendung“ unter dem Knopf „Server nicht erreichbar (Port 8001 zu?), neuer Versuch in … s“. Das Notebook bleibt bedienbar. Danach „Sendung beenden“.
 10. <https://stream.wironair.de/stream> spielt ohne Quelle die Notfall-Schleife des Servers (kein 401 mehr). Ist der Port offen, zeigt die Zeile „verbunden · Sendemix“. In `~/.local/share/woa/streamd-status.json` steht dann `"ui_connected": true`, und es bleibt so.
 
