@@ -74,6 +74,47 @@ pub struct Clip {
     /// `None`: placeholder clip without sound.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<String>,
+    /// Where in the audio file the clip begins, in beats (after a split).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub offset_beats: f64,
+    /// Fade-in length in beats.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub fade_in_beats: f64,
+    /// Fade-out length in beats.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub fade_out_beats: f64,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
+}
+
+impl Clip {
+    /// A clip without audio offset and fades.
+    pub fn new(
+        id: ClipId,
+        name: impl Into<String>,
+        start_beats: f64,
+        length_beats: f64,
+        audio: Option<String>,
+    ) -> Self {
+        Self {
+            id,
+            name: name.into(),
+            start_beats,
+            length_beats,
+            audio,
+            offset_beats: 0.0,
+            fade_in_beats: 0.0,
+            fade_out_beats: 0.0,
+        }
+    }
+
+    /// End on the timeline in beats.
+    pub fn end_beats(&self) -> f64 {
+        self.start_beats + self.length_beats
+    }
 }
 
 /// Whether a clip audio path is a plain relative path inside the project folder:

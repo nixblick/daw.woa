@@ -157,42 +157,41 @@ pub fn cmd_record(out: &std::path::Path, seconds: u64, device: Option<String>) -
     Ok(())
 }
 
+/// Lädt Clip-Dateien eines Projektordners, nur sichere relative Pfade, mit Fehlerliste.
+fn loader(
+    dir: &std::path::Path,
+    rate: u32,
+    errors: &mut Vec<String>,
+) -> impl FnMut(&str) -> Option<std::sync::Arc<[f32]>> {
+    move |rel: &str| {
+        if !woa_model::is_safe_audio_path(rel) {
+            errors.push(format!("{rel}: Pfad verlässt den Projektordner"));
+            return None;
+        }
+        woa_engine::clip::load_wav_mono(&dir.join(rel), rate)
+            .map_err(|e| errors.push(format!("{rel}: {e}")))
+            .ok()
+    }
+}
+
 /// Graph eines gespeicherten Projekts mit seinen Audio-Clips (Pfade relativ zum Ordner).
+#[cfg(feature = "device")]
 fn project_graph(
     dir: &std::path::Path,
     rate: u32,
     engine: &woa_engine::Engine,
 ) -> Result<woa_engine::GraphBuilder, String> {
-    use woa_engine::clip::{ClipPlayer, PlacedClip, load_wav_mono};
-    use woa_engine::transport::beats_to_samples;
-
     let project = woa_model::store::load(dir).map_err(|e| e.to_string())?;
-    let transport = engine.transport();
-    let mut err = None;
-    let mut source = |t: &woa_model::Track| -> Option<Box<dyn woa_dsp::Node>> {
-        if t.kind != woa_model::TrackKind::Audio {
-            return None;
-        }
-        let mut clips = Vec::new();
-        for c in &t.clips {
-            let Some(rel) = &c.audio else { continue };
-            if !woa_model::is_safe_audio_path(rel) {
-                err = Some(format!("{rel}: Pfad verlässt den Projektordner"));
-                continue;
-            }
-            match load_wav_mono(&dir.join(rel), rate) {
-                Ok(samples) => clips.push(PlacedClip {
-                    start: beats_to_samples(c.start_beats, project.tempo_bpm, rate as f32),
-                    samples,
-                }),
-                Err(e) => err = Some(format!("{rel}: {e}")),
-            }
-        }
-        Some(Box::new(ClipPlayer::new(clips, transport.clone())))
-    };
-    let graph = woa_engine::project::build_project_graph(&project, &mut source);
-    if let Some(e) = err {
-        return Err(e);
+    let mut errors = Vec::new();
+    let graph = woa_engine::clip::clip_graph(
+        &project,
+        &engine.transport(),
+        rate as f32,
+        &mut loader(dir, rate, &mut errors),
+        None,
+    );
+    if let Some(e) = errors.first() {
+        return Err(e.clone());
     }
     let clips: usize = project.tracks.iter().map(|t| t.clips.len()).sum();
     println!(
@@ -202,41 +201,34 @@ fn project_graph(
     Ok(graph.builder)
 }
 
-/// Rendert ein Projekt offline (ohne Gerät) und meldet den Spitzenpegel.
+/// Rendert ein Projekt offline (ohne Gerät). `seconds` 0 = bis zum Ende des letzten Clips.
 pub fn cmd_render(
     dir: &std::path::Path,
     out: &std::path::Path,
     seconds: u64,
     rate: u32,
 ) -> Outcome {
-    let (mut engine, mut processor) = woa_engine::Engine::new(16);
-    let graph = project_graph(dir, rate, &engine)?;
-    engine
-        .set_graph(graph, rate as f32, 512)
+    use woa_engine::clip::{project_end_seconds, render_clips, write_wav_stereo};
+    let project = woa_model::store::load(dir).map_err(|e| e.to_string())?;
+    let length = if seconds == 0 {
+        project_end_seconds(&project)
+    } else {
+        seconds as f64
+    };
+    let mut errors = Vec::new();
+    let (left, right) = render_clips(&project, rate, length, &mut loader(dir, rate, &mut errors))
         .map_err(|e| e.to_string())?;
-    engine.play().map_err(|e| e.to_string())?;
-    let frames = rate as usize * seconds as usize;
-    let mut left = vec![0.0f32; frames];
-    let mut right = vec![0.0f32; frames];
-    for (l, r) in left.chunks_mut(512).zip(right.chunks_mut(512)) {
-        processor.process_stereo(l, r);
+    if let Some(e) = errors.first() {
+        return Err(e.clone());
     }
+    write_wav_stereo(out, &left, &right, rate).map_err(|e| e.to_string())?;
     let peak = left
         .iter()
         .chain(&right)
         .fold(0.0f32, |m, s| m.max(s.abs()));
-    let spec = hound::WavSpec {
-        channels: 2,
-        sample_rate: rate,
-        bits_per_sample: 32,
-        sample_format: hound::SampleFormat::Float,
-    };
-    let mut w = hound::WavWriter::create(out, spec).map_err(|e| e.to_string())?;
-    for (l, r) in left.iter().zip(&right) {
-        w.write_sample(*l).map_err(|e| e.to_string())?;
-        w.write_sample(*r).map_err(|e| e.to_string())?;
-    }
-    w.finalize().map_err(|e| e.to_string())?;
-    println!("gerendert: {} ({seconds} s), peak={peak:.3}", out.display());
+    println!(
+        "gerendert: {} ({length:.1} s), peak={peak:.3}",
+        out.display()
+    );
     Ok(())
 }
