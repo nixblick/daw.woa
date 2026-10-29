@@ -109,7 +109,20 @@ fn encode_flac(left: &[f32], right: &[f32], rate: u32) -> Result<Vec<u8>, Engine
     stream
         .write(&mut sink)
         .map_err(|e| fail(format!("{e:?}")))?;
-    Ok(sink.as_slice().to_vec())
+    let mut bytes = sink.as_slice().to_vec();
+    fix_streaminfo_min_block(&mut bytes);
+    Ok(bytes)
+}
+
+/// flacenc schreibt bei fester Blockgröße die Länge des (kürzeren) letzten Blocks als
+/// Mindest-Blockgröße in STREAMINFO. Laut FLAC-Spezifikation zählt der letzte Block nicht mit;
+/// strenge Leser (symphonia) halten den Strom sonst für variabel und finden keinen Frame.
+/// STREAMINFO steht immer direkt hinter `fLaC` und dem 4-Byte-Blockkopf: min bei 8..10, max bei 10..12.
+fn fix_streaminfo_min_block(bytes: &mut [u8]) {
+    if bytes.len() >= 12 && &bytes[..4] == b"fLaC" && bytes[4] & 0x7f == 0 {
+        let (min, max) = bytes[8..12].split_at_mut(2);
+        min.copy_from_slice(max);
+    }
 }
 
 fn encode_mp3(left: &[f32], right: &[f32], rate: u32) -> Result<Vec<u8>, EngineError> {

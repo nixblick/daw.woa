@@ -152,7 +152,7 @@ pub fn drums_buffer(
     Ok((render_drums(&hits, RATE as f32, total), length_beats))
 }
 
-/// Freier Dateiname `aufnahmen/<stem>.wav` (mit Zähler, nie überschreiben).
+/// Freier Dateiname `aufnahmen/<stem>.<ext>` (mit Zähler, nie überschreiben).
 pub fn free_take_path(dir: &Path, stem: &str, ext: &str) -> (String, PathBuf) {
     let clean: String = stem
         .chars()

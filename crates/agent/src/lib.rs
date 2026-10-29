@@ -215,7 +215,7 @@ pub struct GenerateDrumsParams {
 pub struct ImportAudioParams {
     /// Audio track that gets the new clip.
     pub track: u64,
-    /// Absolute path of a WAV file; it is copied into the project folder.
+    /// Absolute path of an audio file (WAV, FLAC or MP3); it is copied into the project folder.
     pub path: String,
     /// Clip start in beats.
     #[serde(default)]
@@ -284,7 +284,7 @@ pub struct ExportParams {
 /// Parameters of `build_playlist`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct BuildPlaylistParams {
-    /// Audio files (WAV) in play order. Relative paths are resolved against the project folder.
+    /// Audio files (WAV, FLAC or MP3) in play order. Relative paths are resolved against the project folder.
     pub files: Vec<String>,
     /// Append to the existing playlist instead of replacing it.
     #[serde(default)]
@@ -800,7 +800,7 @@ impl WoaAgent {
     }
 
     #[tool(
-        description = "Copy a WAV file into the project folder (aufnahmen/) and add it as a clip on an audio track. Returns the clip id and its length in beats."
+        description = "Copy an audio file (WAV, FLAC or MP3) into the project folder (aufnahmen/) and add it as a clip on an audio track. Returns the clip id and its length in beats."
     )]
     async fn import_audio(
         &self,
@@ -819,7 +819,11 @@ impl WoaAgent {
             .file_stem()
             .map(|x| x.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let (rel, abs) = audio::free_take_path(&self.dir, &stem, "wav");
+        let ext = src
+            .extension()
+            .and_then(|e| e.to_str())
+            .map_or_else(|| "wav".to_owned(), str::to_ascii_lowercase);
+        let (rel, abs) = audio::free_take_path(&self.dir, &stem, &ext);
         if let Some(parent) = abs.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
         {

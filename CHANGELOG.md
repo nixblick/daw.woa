@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — 2026-10-29
+
+- **MP3 und FLAC lesen.** Neues Modul `woa_engine::decode`: WAV weiter über `hound`, FLAC und MP3 über `symphonia` 0.6.1 (MPL-2.0, nur Features `mp3` und `flac`). Gilt überall, wo Audio gelesen wird: Clips im Projekt und Wellenform (`load_wav_mono`), Agent-Import (`import_audio` behält jetzt die Endung der Quelle), Playlist, Cart-Wall, LUFS-Messung und `radio-render` (`woa_radio::audio::load_stereo`). Dekodiert wird nur im Control- oder Hintergrund-Thread; andere Raten rechnet WOA wie bisher bei WAV linear auf die Projektrate um. Dateidialoge und Drag-and-drop im Radio-Modus nehmen `.mp3` und `.flac` an.
+- **Speicherschutz beim Lesen.** Rate (8–384 kHz) und Kanalzahl (1–8) werden vor dem Dekodieren geprüft und für jeden dekodierten Puffer wiederholt; wechseln sie mitten in der Datei, wird sie abgelehnt. Feste Obergrenze aller Samples (`MAX_SAMPLES`, 6 h Stereo bei 48 kHz), unabhängig von Angaben aus der Datei, geprüft vor jedem Anhängen; WAV prüft die angegebene Länge vor dem Lesen. Tests mit Rate 0 im FLAC-Kopf, 9 Kanälen und einem WAV-Kopf, der fast 4 GB behauptet.
+- **FLAC-Export repariert.** `flacenc` schrieb die Länge des kürzeren letzten Blocks als Mindest-Blockgröße in STREAMINFO. Strenge Leser (symphonia) fanden dann keinen einzigen Frame. Der Export setzt sie jetzt auf die feste Blockgröße, wie es die FLAC-Spezifikation verlangt.
+- **Radio-Layout:** Crossfade und Ducking stehen je in einer eigenen Zeile, die Einheit steht am Wert (s, dB). Bei 900 px Fensterbreite wird die Beschriftung nicht mehr abgeschnitten.
+- Tests: FLAC- und MP3-Datei per `flacenc`/LAME erzeugen, lesen und mit dem Original vergleichen (Länge, Pegel je Kanal, Mono-Mix in 48 kHz); unbekannte Endung und kaputte MP3 ergeben Fehler.
+
 ## 0.2.0 — 2026-10-29
 
 - **Radio-Modus (Paket 7: Sendeablauf).** Umschalter Produzent/Radio oben rechts, gespeichert in `config.json`. Das Radio-Layout zeigt:

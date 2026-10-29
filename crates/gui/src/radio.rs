@@ -159,7 +159,7 @@ impl RadioDesk {
 
     fn add_dialog(&self) {
         if let Some(files) = rfd::FileDialog::new()
-            .add_filter("Audio (WAV)", &["wav", "WAV"])
+            .add_filter("Audio (WAV, FLAC, MP3)", &woa_engine::decode::EXTENSIONS)
             .pick_files()
             && let Some(s) = &self.station
         {
@@ -361,24 +361,32 @@ impl RadioDesk {
                 self.toggle_recording();
             }
         });
-        ui.horizontal_wrapped(|ui| {
-            let mut xf = v.crossfade_seconds;
-            if ui
-                .add(egui::Slider::new(&mut xf, 0.0..=10.0).text("Crossfade s"))
-                .changed()
-            {
-                self.view.crossfade_seconds = xf;
-                self.with(move |c| c.set_crossfade(xf));
-            }
-            let mut duck = v.duck_db;
-            if ui
-                .add(egui::Slider::new(&mut duck, -30.0..=0.0).text("Ducking dB"))
-                .changed()
-            {
-                self.view.duck_db = duck;
-                self.with(move |c| c.set_duck(duck));
-            }
-        });
+        // Je Regler eine Zeile: Ein Slider ist ein Widget, `horizontal_wrapped` bricht nicht
+        // in ihm um, und bei 900 px Fensterbreite wurde die zweite Beschriftung abgeschnitten.
+        let mut xf = v.crossfade_seconds;
+        if ui
+            .add(
+                egui::Slider::new(&mut xf, 0.0..=10.0)
+                    .suffix(" s")
+                    .text("Crossfade"),
+            )
+            .changed()
+        {
+            self.view.crossfade_seconds = xf;
+            self.with(move |c| c.set_crossfade(xf));
+        }
+        let mut duck = v.duck_db;
+        if ui
+            .add(
+                egui::Slider::new(&mut duck, -30.0..=0.0)
+                    .suffix(" dB")
+                    .text("Ducking"),
+            )
+            .changed()
+        {
+            self.view.duck_db = duck;
+            self.with(move |c| c.set_duck(duck));
+        }
     }
 
     fn playlist(&mut self, ui: &mut egui::Ui, v: &View) {
@@ -394,8 +402,10 @@ impl RadioDesk {
         });
         if v.playlist.is_empty() {
             ui.label(
-                egui::RichText::new("WAV-Dateien hierher ziehen oder „+ Titel …“.")
-                    .color(theme::DIM),
+                egui::RichText::new(
+                    "WAV-, FLAC- oder MP3-Dateien hierher ziehen oder „+ Titel …“.",
+                )
+                .color(theme::DIM),
             );
         }
         egui::ScrollArea::vertical().show(ui, |ui| {
@@ -520,7 +530,7 @@ impl RadioDesk {
 
     fn assign_cart(&self, slot: usize) {
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Audio (WAV)", &["wav", "WAV"])
+            .add_filter("Audio (WAV, FLAC, MP3)", &woa_engine::decode::EXTENSIONS)
             .pick_file()
         {
             self.with(move |c| {
