@@ -7,15 +7,18 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 
-use woa_engine::clip::{ClipPlayer, PlacedClip, load_wav_mono, take_peak};
+use woa_engine::clip::{
+    PEAK_BLOCK, clip_graph, load_wav_mono, peaks, project_end_seconds, render_clips, take_peak,
+    write_wav_stereo,
+};
 use woa_engine::device::{OutputConfig, output_sample_rate, start_output_with};
-use woa_engine::project::{ProjectGraph, TrackNodes, build_project_graph};
+use woa_engine::project::{ProjectGraph, TrackNodes};
 use woa_engine::transport::{TransportHandle, beats_to_samples, samples_to_beats};
 use woa_engine::{AudioProcessor, Engine};
-use woa_model::{Project, TrackId, TrackKind};
+use woa_model::{Project, TrackId};
 
 /// Was einen neuen Graphen verlangt.
-type Structure = (u64, Vec<(TrackId, Vec<(u64, u64, Option<String>)>)>);
+type Structure = (u64, Vec<(TrackId, Vec<([u64; 5], Option<String>)>)>);
 /// Was nur Parameter ändert.
 type Mixer = Vec<(TrackId, u64, u64, bool, bool)>;
 
@@ -29,6 +32,28 @@ pub struct Player {
     structure: Option<Structure>,
     mixer: Option<Mixer>,
     meters: HashMap<TrackId, Arc<AtomicU32>>,
+    peaks: HashMap<PathBuf, Arc<[f32]>>,
+}
+
+/// Dekodiert einmal je Datei und merkt sich das Ergebnis; Fehler werden geloggt.
+fn load_cached(
+    cache: &mut HashMap<PathBuf, Arc<[f32]>>,
+    file: PathBuf,
+    rate: u32,
+) -> Option<Arc<[f32]>> {
+    if let Some(s) = cache.get(&file) {
+        return Some(Arc::clone(s));
+    }
+    match load_wav_mono(&file, rate) {
+        Ok(s) => {
+            cache.insert(file, Arc::clone(&s));
+            Some(s)
+        }
+        Err(e) => {
+            tracing::warn!(file = %file.display(), error = %e, "clip load failed");
+            None
+        }
+    }
 }
 
 mod cpal_stream {
@@ -57,6 +82,7 @@ impl Player {
             structure: None,
             mixer: None,
             meters: HashMap::new(),
+            peaks: HashMap::new(),
         })
     }
 
@@ -76,8 +102,14 @@ impl Player {
                         .iter()
                         .map(|c| {
                             (
-                                c.start_beats.to_bits(),
-                                c.length_beats.to_bits(),
+                                [
+                                    c.start_beats,
+                                    c.length_beats,
+                                    c.offset_beats,
+                                    c.fade_in_beats,
+                                    c.fade_out_beats,
+                                ]
+                                .map(f64::to_bits),
                                 c.audio.clone(),
                             )
                         })
@@ -88,47 +120,10 @@ impl Player {
         );
         if self.structure.as_ref() != Some(&structure) {
             let transport = self.transport.clone();
-            let cache = &mut self.cache;
-            let meters = &mut self.meters;
             let sr = self.rate;
-            let mut source = |t: &woa_model::Track| -> Option<Box<dyn woa_dsp::Node>> {
-                if t.kind != TrackKind::Audio {
-                    return None;
-                }
-                let clips = t
-                    .clips
-                    .iter()
-                    .filter_map(|c| {
-                        let file = resolve(c.audio.as_deref()?)?;
-                        let samples = match cache.get(&file) {
-                            Some(s) => Arc::clone(s),
-                            None => match load_wav_mono(&file, sr) {
-                                Ok(s) => {
-                                    cache.insert(file.clone(), Arc::clone(&s));
-                                    s
-                                }
-                                Err(e) => {
-                                    tracing::warn!(file = %file.display(), error = %e, "clip load failed");
-                                    return None;
-                                }
-                            },
-                        };
-                        let start = beats_to_samples(c.start_beats, project.tempo_bpm, rate);
-                        let max = beats_to_samples(c.length_beats, project.tempo_bpm, rate) as usize;
-                        let samples: Arc<[f32]> = if samples.len() > max && max > 0 {
-                            samples[..max].into()
-                        } else {
-                            samples
-                        };
-                        Some(PlacedClip { start, samples })
-                    })
-                    .collect();
-                let meter = Arc::clone(meters.entry(t.id).or_default());
-                Some(Box::new(
-                    ClipPlayer::new(clips, transport.clone()).with_meter(meter),
-                ))
-            };
-            let graph = build_project_graph(project, &mut source);
+            let cache = &mut self.cache;
+            let mut load = |rel: &str| load_cached(cache, resolve(rel)?, sr);
+            let graph = clip_graph(project, &transport, rate, &mut load, Some(&mut self.meters));
             match self.engine.set_graph(graph.builder, rate, 4096) {
                 Ok(()) => {
                     self.nodes = graph.tracks;
@@ -204,5 +199,43 @@ impl Player {
     /// Vergisst eine dekodierte Datei (nach neuer Aufnahme unter gleichem Namen).
     pub fn forget(&mut self, file: &Path) {
         self.cache.remove(file);
+        self.peaks.remove(file);
+    }
+
+    /// Wellenform einer Datei: Spitzenwerte je [`PEAK_BLOCK`] Samples in Engine-Rate.
+    pub fn peaks(&mut self, file: &Path) -> Option<Arc<[f32]>> {
+        if let Some(p) = self.peaks.get(file) {
+            return Some(Arc::clone(p));
+        }
+        let samples = load_cached(&mut self.cache, file.to_path_buf(), self.rate)?;
+        let p: Arc<[f32]> = peaks(&samples).into();
+        self.peaks.insert(file.to_path_buf(), Arc::clone(&p));
+        Some(p)
+    }
+
+    /// Wellenform-Punkte je Beat.
+    pub fn peaks_per_beat(&self, tempo_bpm: f64) -> f64 {
+        f64::from(self.rate) * 60.0 / tempo_bpm / PEAK_BLOCK as f64
+    }
+
+    /// Rendert das ganze Projekt (bis zum Ende des letzten Clips) als Stereo-WAV.
+    pub fn export(
+        &mut self,
+        project: &Project,
+        resolve: &dyn Fn(&str) -> Option<PathBuf>,
+        out: &Path,
+    ) -> Result<f64, String> {
+        let seconds = project_end_seconds(project);
+        if seconds <= 0.0 {
+            return Err("keine Clips zum Exportieren".into());
+        }
+        let rate = self.rate;
+        let cache = &mut self.cache;
+        let (l, r) = render_clips(project, rate, seconds, &mut |rel: &str| {
+            load_cached(cache, resolve(rel)?, rate)
+        })
+        .map_err(|e| e.to_string())?;
+        write_wav_stereo(out, &l, &r, rate).map_err(|e| e.to_string())?;
+        Ok(seconds)
     }
 }

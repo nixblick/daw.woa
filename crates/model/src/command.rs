@@ -86,6 +86,19 @@ pub enum Command {
         /// Clip to remove.
         clip: ClipId,
     },
+    /// Changes length, audio offset and fades of a clip (trim, split, fades).
+    EditClip {
+        /// Clip to change.
+        clip: ClipId,
+        /// New length in beats (> 0).
+        length_beats: f64,
+        /// New offset into the audio in beats (>= 0).
+        offset_beats: f64,
+        /// New fade-in in beats (>= 0).
+        fade_in_beats: f64,
+        /// New fade-out in beats (>= 0); fade-in + fade-out <= length.
+        fade_out_beats: f64,
+    },
     /// Moves a clip to another start position and/or another track.
     MoveClip {
         /// Clip to move.
@@ -124,6 +137,7 @@ impl Command {
             Command::AddClip { .. } => "Add clip",
             Command::RemoveClip { .. } => "Remove clip",
             Command::MoveClip { .. } => "Move clip",
+            Command::EditClip { .. } => "Edit clip",
         }
     }
 
@@ -243,6 +257,29 @@ impl Command {
                     index: Some(ci),
                 })
             }
+            Command::EditClip {
+                clip,
+                length_beats,
+                offset_beats,
+                fade_in_beats,
+                fade_out_beats,
+            } => {
+                let (ti, ci) = locate_clip(project, clip)?;
+                let mut next = project.tracks[ti].clips[ci].clone();
+                next.length_beats = length_beats;
+                next.offset_beats = offset_beats;
+                next.fade_in_beats = fade_in_beats;
+                next.fade_out_beats = fade_out_beats;
+                check_clip(&next)?;
+                let old = std::mem::replace(&mut project.tracks[ti].clips[ci], next);
+                Ok(Command::EditClip {
+                    clip,
+                    length_beats: old.length_beats,
+                    offset_beats: old.offset_beats,
+                    fade_in_beats: old.fade_in_beats,
+                    fade_out_beats: old.fade_out_beats,
+                })
+            }
             Command::MoveClip {
                 clip,
                 to_track,
@@ -324,14 +361,29 @@ fn check_start(v: f64) -> Result<()> {
 
 fn check_clip(c: &Clip) -> Result<()> {
     check_start(c.start_beats)?;
-    if c.length_beats.is_finite() && c.length_beats > 0.0 {
-        Ok(())
-    } else {
-        Err(ModelError::InvalidValue {
+    if !(c.length_beats.is_finite() && c.length_beats > 0.0) {
+        return Err(ModelError::InvalidValue {
             field: "length_beats",
             value: c.length_beats,
-        })
+        });
     }
+    for (field, value) in [
+        ("offset_beats", c.offset_beats),
+        ("fade_in_beats", c.fade_in_beats),
+        ("fade_out_beats", c.fade_out_beats),
+    ] {
+        if !(value.is_finite() && value >= 0.0) {
+            return Err(ModelError::InvalidValue { field, value });
+        }
+    }
+    let fades = c.fade_in_beats + c.fade_out_beats;
+    if fades > c.length_beats + 1e-9 {
+        return Err(ModelError::InvalidValue {
+            field: "fades",
+            value: fades,
+        });
+    }
+    Ok(())
 }
 
 fn check_track_values(t: &Track) -> Result<()> {

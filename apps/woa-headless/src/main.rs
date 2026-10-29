@@ -116,8 +116,8 @@ enum Cmd {
         project: PathBuf,
         /// Zieldatei (.wav).
         out: PathBuf,
-        /// Länge in Sekunden.
-        #[arg(long, default_value_t = 10)]
+        /// Länge in Sekunden; 0 = bis zum Ende des letzten Clips.
+        #[arg(long, default_value_t = 0)]
         seconds: u64,
         /// Abtastrate.
         #[arg(long, default_value_t = 48_000)]

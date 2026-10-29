@@ -19,6 +19,9 @@ fn sample() -> Session {
             start_beats: 4.0,
             length_beats: 8.0,
             audio: None,
+            offset_beats: 0.0,
+            fade_in_beats: 0.0,
+            fade_out_beats: 0.0,
         },
         index: None,
     })
@@ -200,6 +203,9 @@ fn build(s: &mut Session, (kind, a, b, x, flag): (u8, usize, usize, f64, bool)) 
                     start_beats: x.abs(),
                     length_beats: 1.0,
                     audio: None,
+                    offset_beats: 0.0,
+                    fade_in_beats: 0.0,
+                    fade_out_beats: 0.0,
                 },
                 index: Some(b),
             }
@@ -261,4 +267,40 @@ proptest! {
         }
         prop_assert_eq!(content(s.project()), start);
     }
+}
+
+#[test]
+fn edit_clip_validates_and_undoes() {
+    let mut s = Session::new("e");
+    let t = s.new_track_id();
+    s.apply(Command::add_track(t, "a", TrackKind::Audio))
+        .unwrap();
+    let c = s.new_clip_id();
+    s.apply(Command::AddClip {
+        track: t,
+        clip: Clip::new(c, "x", 0.0, 8.0, Some("aufnahmen/x.wav".into())),
+        index: None,
+    })
+    .unwrap();
+    let edit = |len, fi, fo| Command::EditClip {
+        clip: c,
+        length_beats: len,
+        offset_beats: 1.0,
+        fade_in_beats: fi,
+        fade_out_beats: fo,
+    };
+    assert!(
+        s.apply(edit(4.0, 3.0, 2.0)).is_err(),
+        "fades longer than clip"
+    );
+    assert!(s.apply(edit(0.0, 0.0, 0.0)).is_err());
+    s.apply(edit(4.0, 1.0, 1.0)).unwrap();
+    let (_, clip) = s.project().clip(c).unwrap();
+    assert_eq!((clip.length_beats, clip.offset_beats), (4.0, 1.0));
+    s.undo().unwrap();
+    let (_, clip) = s.project().clip(c).unwrap();
+    assert_eq!(
+        (clip.length_beats, clip.offset_beats, clip.fade_in_beats),
+        (8.0, 0.0, 0.0)
+    );
 }

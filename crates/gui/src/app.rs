@@ -34,6 +34,10 @@ pub struct WoaApp {
     player: Option<Player>,
     selected_track: Option<TrackId>,
     selected_clip: Option<ClipId>,
+    /// Clip being dragged and its offset in beats.
+    clip_drag: Option<(ClipId, f64)>,
+    /// Fades being edited (committed as one undo step when editing ends).
+    fade_edit: Option<(ClipId, f64, f64)>,
     /// Angezeigter Pegel je Spur (mit Abfall), 0..1.
     track_levels: std::collections::HashMap<TrackId, f32>,
     /// Smoothed input level for the meter, 0..1.
@@ -58,6 +62,8 @@ impl WoaApp {
             player,
             selected_track: None,
             selected_clip: None,
+            clip_drag: None,
+            fade_edit: None,
             track_levels: std::collections::HashMap::new(),
             level: 0.0,
             state,
@@ -255,14 +261,22 @@ impl WoaApp {
             self.toggle_record();
         }
         if !ctx.egui_wants_keyboard_input() {
-            let (space, home, del) = ctx.input_mut(|i| {
+            let (space, home, del, split, export) = ctx.input_mut(|i| {
                 let n = egui::Modifiers::NONE;
                 (
                     i.consume_key(n, egui::Key::Space),
                     i.consume_key(n, egui::Key::Home),
                     i.consume_key(n, egui::Key::Delete),
+                    i.consume_key(n, egui::Key::S),
+                    i.consume_key(egui::Modifiers::COMMAND, egui::Key::E),
                 )
             });
+            if split {
+                self.split_at_playhead();
+            }
+            if export {
+                self.export();
+            }
             if space {
                 self.toggle_play();
             }
@@ -327,6 +341,10 @@ impl WoaApp {
                 if ui.button("Speichern unter …").clicked() {
                     self.save_as();
                 }
+                ui.separator();
+                if ui.button("Exportieren als WAV … (Strg+E)").clicked() {
+                    self.export();
+                }
             });
             ui.menu_button("Bearbeiten", |ui| {
                 let h = self.state.session().history();
@@ -349,9 +367,13 @@ impl WoaApp {
     fn tracks(&mut self, ui: &mut egui::Ui) {
         self.record_bar(ui);
         ui.separator();
-        if ui.button("+ Spur").clicked() {
-            self.state.add_track();
-        }
+        ui.horizontal(|ui| {
+            if ui.button("+ Spur").clicked() {
+                self.state.add_track();
+            }
+            ui.separator();
+            self.clip_bar(ui);
+        });
         ui.separator();
         let tracks: Vec<_> = self
             .state
@@ -440,20 +462,17 @@ impl WoaApp {
         }
     }
 
-    /// One track's strip: clips as boxes, the playhead, click to seek or select a clip.
+    /// One track's strip: clips with waveform and fades, the playhead. Click: seek,
+    /// click a clip: select, drag a clip: move it (snaps to 1/4 beat).
     fn timeline(&mut self, ui: &mut egui::Ui, track: TrackId) {
-        let project = self.state.project();
-        let tempo = project.tempo_bpm;
-        let Some(t) = project.track(track) else {
+        let tempo = self.state.project().tempo_bpm;
+        let Some(t) = self.state.project().track(track) else {
             return;
         };
-        let end = t
-            .clips
-            .iter()
-            .map(|c| c.start_beats + c.length_beats)
-            .fold(64.0f64, f64::max);
+        let clips = t.clips.clone();
+        let end = clips.iter().map(|c| c.end_beats()).fold(64.0f64, f64::max);
         let width = (end as f32 + 16.0) * PX_PER_BEAT;
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 22.0), egui::Sense::click());
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 40.0), egui::Sense::click());
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 2.0, ui.visuals().extreme_bg_color);
         for bar in (0..=(end as usize + 16)).step_by(4) {
@@ -464,20 +483,75 @@ impl WoaApp {
                 ui.visuals().widgets.noninteractive.bg_stroke,
             );
         }
-        let mut clicked_clip = None;
-        let pointer = resp.interact_pointer_pos();
-        for c in &t.clips {
-            let x0 = rect.left() + c.start_beats as f32 * PX_PER_BEAT;
+        let ppb = self.player.as_ref().map(|p| p.peaks_per_beat(tempo));
+        for c in &clips {
+            let drag = match self.clip_drag {
+                Some((id, d)) if id == c.id => d,
+                _ => 0.0,
+            };
+            let start = (c.start_beats + drag).max(0.0);
+            let x0 = rect.left() + start as f32 * PX_PER_BEAT;
             let x1 = x0 + (c.length_beats as f32 * PX_PER_BEAT).max(2.0);
             let r = egui::Rect::from_x_y_ranges(x0..=x1, rect.top() + 2.0..=rect.bottom() - 2.0);
-            let selected = self.selected_clip == Some(c.id);
+            let cresp = ui.interact(
+                r,
+                ui.id().with(("clip", c.id.0)),
+                egui::Sense::click_and_drag(),
+            );
             let fill = if c.audio.is_some() {
-                egui::Color32::from_rgb(70, 130, 200)
+                egui::Color32::from_rgb(50, 100, 160)
             } else {
                 egui::Color32::GRAY
             };
             painter.rect_filled(r, 3.0, fill);
-            if selected {
+            // Waveform from the cached peaks.
+            let file = c
+                .audio
+                .as_deref()
+                .and_then(|rel| self.state.resolve_audio(rel));
+            if let (Some(file), Some(ppb), Some(p)) = (file, ppb, self.player.as_mut())
+                && let Some(peaks) = p.peaks(&file)
+            {
+                let mid = r.center().y;
+                let half = r.height() / 2.0 - 2.0;
+                let stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(170, 210, 250));
+                let mut x = r.left();
+                while x < r.right() {
+                    let b0 = c.offset_beats + f64::from((x - r.left()) / PX_PER_BEAT);
+                    let b1 = b0 + f64::from(1.0 / PX_PER_BEAT);
+                    let (i0, i1) = (
+                        (b0 * ppb) as usize,
+                        ((b1 * ppb) as usize).max((b0 * ppb) as usize + 1),
+                    );
+                    let v = peaks
+                        .get(i0.min(peaks.len())..i1.min(peaks.len()))
+                        .map_or(0.0, |w| w.iter().fold(0.0f32, |m, s| m.max(*s)));
+                    let local = f64::from((x - r.left()) / PX_PER_BEAT);
+                    let env = fade_gain(c, local) as f32;
+                    let h = (v * env).min(1.0) * half;
+                    painter.vline(x, (mid - h)..=(mid + h), stroke);
+                    x += 1.0;
+                }
+            }
+            // Fades as dark triangles.
+            let shade = egui::Color32::from_black_alpha(110);
+            if c.fade_in_beats > 0.0 {
+                let fx = r.left() + c.fade_in_beats as f32 * PX_PER_BEAT;
+                painter.add(egui::Shape::convex_polygon(
+                    vec![r.left_top(), egui::pos2(fx, r.top()), r.left_bottom()],
+                    shade,
+                    egui::Stroke::NONE,
+                ));
+            }
+            if c.fade_out_beats > 0.0 {
+                let fx = r.right() - c.fade_out_beats as f32 * PX_PER_BEAT;
+                painter.add(egui::Shape::convex_polygon(
+                    vec![egui::pos2(fx, r.top()), r.right_top(), r.right_bottom()],
+                    shade,
+                    egui::Stroke::NONE,
+                ));
+            }
+            if self.selected_clip == Some(c.id) {
                 painter.rect_stroke(
                     r,
                     3.0,
@@ -486,15 +560,28 @@ impl WoaApp {
                 );
             }
             painter.text(
-                r.left_center() + egui::vec2(4.0, 0.0),
-                egui::Align2::LEFT_CENTER,
+                r.left_top() + egui::vec2(4.0, 2.0),
+                egui::Align2::LEFT_TOP,
                 &c.name,
-                egui::FontId::proportional(11.0),
+                egui::FontId::proportional(10.0),
                 egui::Color32::WHITE,
             );
-            if resp.clicked() && pointer.is_some_and(|p| r.contains(p)) {
-                clicked_clip = Some(c.id);
+            if cresp.clicked() || cresp.drag_started() {
+                self.selected_clip = Some(c.id);
+                self.selected_track = Some(track);
             }
+            if cresp.dragged() {
+                let d = self.clip_drag.map_or(0.0, |(_, d)| d)
+                    + f64::from(cresp.drag_delta().x / PX_PER_BEAT);
+                self.clip_drag = Some((c.id, d));
+            }
+            if cresp.drag_stopped()
+                && let Some((id, d)) = self.clip_drag.take()
+            {
+                let snapped = ((c.start_beats + d) * 4.0).round() / 4.0;
+                self.state.move_clip(id, snapped);
+            }
+            cresp.on_hover_text("Ziehen: verschieben · S: am Kopf schneiden · Entf: löschen");
         }
         if let Some(p) = &self.player {
             let x = rect.left() + p.position_beats(tempo) as f32 * PX_PER_BEAT;
@@ -506,14 +593,102 @@ impl WoaApp {
         }
         if resp.clicked() {
             self.selected_track = Some(track);
-            self.selected_clip = clicked_clip;
-            if clicked_clip.is_none()
-                && let (Some(pos), Some(p)) = (pointer, self.player.as_mut())
-            {
+            self.selected_clip = None;
+            if let (Some(pos), Some(p)) = (resp.interact_pointer_pos(), self.player.as_mut()) {
                 p.seek_beats(f64::from((pos.x - rect.left()) / PX_PER_BEAT), tempo);
             }
         }
-        resp.on_hover_text("Klick: Abspielkopf setzen · Clip anklicken, Entf löscht");
+    }
+
+    /// Bearbeitungszeile für den gewählten Clip: Fades, Schneiden, Löschen.
+    fn clip_bar(&mut self, ui: &mut egui::Ui) {
+        let Some(id) = self.selected_clip else {
+            ui.label("Clip anklicken zum Bearbeiten · Datei → Exportieren als WAV");
+            return;
+        };
+        let Some((_, c)) = self.state.project().clip(id) else {
+            self.selected_clip = None;
+            return;
+        };
+        let c = c.clone();
+        ui.horizontal(|ui| {
+            ui.strong(&c.name);
+            let (mut fi, mut fo) = match self.fade_edit {
+                Some((cid, a, b)) if cid == id => (a, b),
+                _ => (c.fade_in_beats, c.fade_out_beats),
+            };
+            let r1 = ui.add(
+                egui::DragValue::new(&mut fi)
+                    .range(0.0..=c.length_beats)
+                    .speed(0.05)
+                    .prefix("Fade-in ")
+                    .suffix(" Beats"),
+            );
+            let r2 = ui.add(
+                egui::DragValue::new(&mut fo)
+                    .range(0.0..=c.length_beats)
+                    .speed(0.05)
+                    .prefix("Fade-out ")
+                    .suffix(" Beats"),
+            );
+            if r1.changed() || r2.changed() {
+                self.fade_edit = Some((id, fi, fo));
+            }
+            let dragging = r1.dragged() || r2.dragged() || r1.has_focus() || r2.has_focus();
+            if !dragging && let Some((cid, a, b)) = self.fade_edit.take() {
+                self.state.set_fades(cid, a, b);
+            }
+            if ui.button("✂ Schneiden (S)").clicked() {
+                self.split_at_playhead();
+            }
+            if ui.button("🗑 Löschen (Entf)").clicked() {
+                self.state.remove_clip(id);
+                self.selected_clip = None;
+            }
+        });
+    }
+
+    fn split_at_playhead(&mut self) {
+        let Some(id) = self.selected_clip else { return };
+        let tempo = self.state.project().tempo_bpm;
+        let at = self
+            .player
+            .as_ref()
+            .map_or(0.0, |p| p.position_beats(tempo));
+        match self.state.split_clip(id, at) {
+            Some(right) => self.selected_clip = Some(right),
+            None => {
+                self.state.status =
+                    Status::Info("Zum Schneiden den roten Kopf in den Clip setzen".into());
+            }
+        }
+    }
+
+    fn export(&mut self) {
+        let Some(out) = rfd::FileDialog::new()
+            .set_title("Exportieren als WAV")
+            .set_file_name(format!("{}.wav", self.state.project().meta.name))
+            .add_filter("WAV", &["wav"])
+            .save_file()
+        else {
+            return;
+        };
+        let project = self.state.project().clone();
+        let state = &self.state;
+        let result = match self.player.as_mut() {
+            Some(p) => p.export(&project, &|rel| state.resolve_audio(rel), &out),
+            None => Err("keine Audio-Engine".into()),
+        };
+        self.state.status = match result {
+            Ok(secs) => {
+                tracing::info!(seconds = secs, "export done");
+                Status::Info(format!("Exportiert: {} ({secs:.1} s)", out.display()))
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "export failed");
+                Status::Error(format!("Export fehlgeschlagen: {e}"))
+            }
+        };
     }
 
     fn track_name(&mut self, ui: &mut egui::Ui, id: TrackId, name: &str) {
@@ -625,4 +800,16 @@ impl eframe::App for WoaApp {
         egui::CentralPanel::default().show(ui, |ui| self.tracks(ui));
         self.feedback_window(&ctx);
     }
+}
+
+/// Fade-Hüllkurve eines Clips an Stelle `local` (Beats ab Clip-Anfang), 0..1.
+fn fade_gain(c: &woa_model::Clip, local: f64) -> f64 {
+    let mut g = 1.0f64;
+    if c.fade_in_beats > 0.0 {
+        g = g.min(local / c.fade_in_beats);
+    }
+    if c.fade_out_beats > 0.0 {
+        g = g.min((c.length_beats - local) / c.fade_out_beats);
+    }
+    g.clamp(0.0, 1.0)
 }

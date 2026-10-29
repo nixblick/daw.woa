@@ -172,12 +172,96 @@ impl AppState {
                     start_beats: start_beats.max(0.0),
                     length_beats,
                     audio: Some(audio),
+                    offset_beats: 0.0,
+                    fade_in_beats: 0.0,
+                    fade_out_beats: 0.0,
                 },
                 index: None,
             })
         });
         let closed = self.session.end_group();
         self.report("Aufnahme", closed);
+        ok.then_some(id)
+    }
+
+    /// Moves a clip on its track to `start_beats` (clamped to >= 0).
+    pub fn move_clip(&mut self, clip: ClipId, start_beats: f64) -> bool {
+        let Some((track, c)) = self.project().clip(clip) else {
+            return false;
+        };
+        let (track, old) = (track.id, c.start_beats);
+        let start_beats = start_beats.max(0.0);
+        if (start_beats - old).abs() < 1e-9 {
+            return false;
+        }
+        self.apply(Command::MoveClip {
+            clip,
+            to_track: track,
+            start_beats,
+            index: None,
+        })
+    }
+
+    /// Sets the fades of a clip; too long fades are shortened to fit the clip.
+    pub fn set_fades(&mut self, clip: ClipId, fade_in: f64, fade_out: f64) -> bool {
+        let Some((_, c)) = self.project().clip(clip) else {
+            return false;
+        };
+        let len = c.length_beats;
+        let fade_in = fade_in.clamp(0.0, len);
+        let fade_out = fade_out.clamp(0.0, len - fade_in);
+        if fade_in == c.fade_in_beats && fade_out == c.fade_out_beats {
+            return false;
+        }
+        let (length_beats, offset_beats) = (c.length_beats, c.offset_beats);
+        self.apply(Command::EditClip {
+            clip,
+            length_beats,
+            offset_beats,
+            fade_in_beats: fade_in,
+            fade_out_beats: fade_out,
+        })
+    }
+
+    /// Splits a clip at `at_beats` (timeline) into two clips, one undo step.
+    /// Returns the id of the right part; `None` if `at_beats` is not inside the clip.
+    pub fn split_clip(&mut self, clip: ClipId, at_beats: f64) -> Option<ClipId> {
+        let (track, c) = self.project().clip(clip)?;
+        let (track, c) = (track.id, c.clone());
+        let left = at_beats - c.start_beats;
+        let right = c.end_beats() - at_beats;
+        if left < 1e-3 || right < 1e-3 {
+            return None;
+        }
+        let index = self
+            .project()
+            .track(track)?
+            .clips
+            .iter()
+            .position(|x| x.id == clip)
+            .map(|i| i + 1);
+        let id = self.session.new_clip_id();
+        let mut part = c.clone();
+        part.id = id;
+        part.start_beats = at_beats;
+        part.length_beats = right;
+        part.offset_beats = c.offset_beats + left;
+        part.fade_in_beats = 0.0;
+        part.fade_out_beats = c.fade_out_beats.min(right);
+        self.session.begin_group("Schneiden");
+        let ok = self.apply(Command::EditClip {
+            clip,
+            length_beats: left,
+            offset_beats: c.offset_beats,
+            fade_in_beats: c.fade_in_beats.min(left),
+            fade_out_beats: 0.0,
+        }) && self.apply(Command::AddClip {
+            track,
+            clip: part,
+            index,
+        });
+        let closed = self.session.end_group();
+        self.report("Schneiden", closed);
         ok.then_some(id)
     }
 
@@ -438,6 +522,34 @@ mod tests {
             s.project().tracks.is_empty(),
             "take + new track = one undo step"
         );
+    }
+
+    #[test]
+    fn move_split_fade_with_undo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        let dir = s.takes_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("aufnahme-001.wav");
+        std::fs::write(&file, b"RIFF").unwrap();
+        let a = s.add_take(None, &file, 0.0, 4.0).unwrap(); // 8 beats
+        assert!(s.move_clip(a, 2.0));
+        let b = s.split_clip(a, 6.0).unwrap();
+        let (_, ca) = s.project().clip(a).unwrap();
+        let (_, cb) = s.project().clip(b).unwrap();
+        assert_eq!((ca.start_beats, ca.length_beats), (2.0, 4.0));
+        assert_eq!(
+            (cb.start_beats, cb.length_beats, cb.offset_beats),
+            (6.0, 4.0, 4.0)
+        );
+        assert!(s.split_clip(a, 1.0).is_none(), "outside the clip");
+        assert!(s.set_fades(b, 1.0, 9.0));
+        let (_, cb) = s.project().clip(b).unwrap();
+        assert_eq!((cb.fade_in_beats, cb.fade_out_beats), (1.0, 3.0), "clamped");
+        s.undo();
+        s.undo();
+        assert!(s.project().clip(b).is_none(), "split is one undo step");
+        assert_eq!(s.project().clip(a).unwrap().1.length_beats, 8.0);
     }
 
     #[test]

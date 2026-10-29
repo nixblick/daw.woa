@@ -324,6 +324,9 @@ impl WoaAgent {
                     start_beats: p.start_beats,
                     length_beats: p.length_beats,
                     audio: None,
+                    offset_beats: 0.0,
+                    fade_in_beats: 0.0,
+                    fade_out_beats: 0.0,
                 },
                 index: None,
             })?;
