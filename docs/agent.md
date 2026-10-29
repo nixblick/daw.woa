@@ -26,9 +26,25 @@ Claude Desktop: derselbe Befehl als `command`/`args` in `claude_desktop_config.j
 | `set_pan` | `track`, `pan` (-1..1) | Panorama |
 | `set_mute` | `track`, `mute` | stumm schalten |
 | `set_tempo` | `bpm` | Projekttempo |
-| `add_clip` | `track`, `name`, `start_beats`, `length_beats` | Clip, liefert `clip`-ID |
+| `set_solo` | `track`, `solo` | Solo; ist eine Spur auf Solo, klingen nur Solo-Spuren |
+| `remove_track` | `track` | Spur samt Clips entfernen |
+| `add_clip` | `track`, `name`, `start_beats`, `length_beats` | Platzhalter-Clip ohne Klang, liefert `clip`-ID |
+| `generate_notes` | `track`, `length_beats`, `notes` (`beat`, `pitch` MIDI, `length_beats`, `velocity`), `waveform` (`sine`/`saw`/`square`), `start_beats`, `name` | rendert die Noten mit dem eingebauten Synth als WAV nach `aufnahmen/agent-<id>.wav` und legt einen Audio-Clip an |
+| `generate_drums` | `track`, `kick`, `snare`, `hihat` (je Zeichen ein 16tel: `x` Schlag, `o` leise, `.` Pause), `start_beats`, `name` | synthetische Drums (Kick: Sinus-Sweep, Snare: Ton + Rauschen, Hi-Hat: gefiltertes Rauschen) als Audio-Clip; Länge = längstes Muster |
+| `import_audio` | `track`, `path` (WAV), `start_beats`, `name` | kopiert die Datei nach `aufnahmen/` und legt einen Clip in voller Länge an |
+| `move_clip` | `clip`, `start_beats`, `track` (optional) | Clip verschieben, auch auf eine andere Spur |
+| `trim_clip` | `clip`, `length_beats`, `offset_beats` (beide optional) | Länge und Versatz ins Audio |
+| `set_fades` | `clip`, `fade_in_beats`, `fade_out_beats` | Ein- und Ausblenden |
+| `repeat_clip` | `clip`, `times` (1..256) | `times` Kopien direkt hintereinander (Loops), liefert die neuen IDs |
+| `remove_clip` | `clip` | Clip entfernen (die Datei bleibt im Ordner) |
+| `analyze` | – | rendert offline (48 kHz bis zum Ende des letzten Clips): integrierte LUFS, Sample-Peak in dBFS, Clipping, Länge, Peak je Audio-Spur allein; ändert nichts |
+| `export` | `path` (`.wav`/`.flac`/`.mp3`, nur relativ im Projektordner; absolut oder `..` wird abgelehnt), `target_lufs` (optional) | Mixdown wie in der GUI; mit `target_lufs` angeglichen, Spitzen bleiben unter −1 dBFS; liefert LUFS und Peak der geschriebenen Daten |
 | `undo` / `redo` | – | letzten Schritt zurück / wieder her |
 | `save` | – | atomar in den Projektordner schreiben |
+
+Klang entsteht offline im Control-Bereich (`woa_dsp::generate`, nie im Audio-Thread) und liegt als
+Datei im Projekt; die GUI spielt ihn wie jede Aufnahme. Gemessen wird nach ITU-R BS.1770
+(`woa_engine::loudness`); True Peak (Überabtastung) misst `analyze` nicht, nur den Sample-Peak.
 
 ## Regeln
 
@@ -42,5 +58,7 @@ Claude Desktop: derselbe Befehl als `command`/`args` in `claude_desktop_config.j
 
 ## Tests
 
-`crates/agent/tests/mcp.rs` (rmcp-Client über In-Memory-Pipe) und
+`crates/agent/tests/mcp.rs` (rmcp-Client über In-Memory-Pipe),
+`crates/agent/tests/loop.rs` (M2-Abnahme: 8-Takt-Loop nur über Tools, Export auf −14 LUFS, Datei
+nachgemessen; Fehlerfälle aller neuen Tools) und
 `apps/woa-headless/tests/mcp_stdio.rs` (rohes JSON-RPC über die Pipes des Prozesses).
