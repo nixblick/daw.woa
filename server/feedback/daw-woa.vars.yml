@@ -1,0 +1,46 @@
+# Vorlage: Variablen fuer die ZWEITE Instanz der bretteins-Rolle `feedback`
+# (bretteins.infra/ansible/roles/feedback) fuer daw.woa.
+# Kein Geheimnis in dieser Datei. Der GitHub-Token entsteht auf dem Server
+# (/etc/daw.woa/geheimnisse/feedback/GITHUB_TOKEN, siehe docs/andre-handgriffe.md).
+#
+# Einbindung (in bretteins.infra, erst NACH dem Patch aus server/README.md):
+#   - name: Feedback daw.woa
+#     ansible.builtin.include_role:
+#       name: feedback
+#     vars: "{{ lookup('ansible.builtin.file', 'daw-woa.vars.yml') | from_yaml }}"
+#     tags: [feedback-daw]
+
+feedback_instanz: daw-woa                      # Patch: Praefix fuer Cron-Namen, Log, State
+feedback_image: "daw-woa/feedback"
+feedback_container_name: daw-woa-feedback
+feedback_network: bretteins_net                # derselbe Edge-nginx erreicht den Container
+feedback_base_dir: /opt/daw-woa/feedback
+feedback_deploy_user: bretteins
+feedback_listen_port: 8081                     # eigener Port (im Netz, nicht nach aussen)
+
+feedback_geheim_dir: /etc/daw.woa/geheimnisse/feedback
+feedback_geheim_gid: 999                       # GID des Container-Users (Dockerfile), wie bretteins
+feedback_github_token_auf_server: true         # Patch: Token liegt schon als Datei auf dem Server
+
+feedback_github_repo: nixblick/daw.woa
+feedback_github_token: ""                      # bleibt leer: Wert nie in Ansible/Vault-Repo
+
+feedback_media_volume: daw_woa_feedback_media
+feedback_public_base: "https://feedback.wironair.de"
+feedback_lagezentrum_site_dir: ""              # Patch: leer = kein Lagezentrum-Mount
+
+# M0: nur GitHub-Weg. Statistik-DB, Analytics-Push, Log-Wache, Mail: aus.
+feedback_pg_password: ""
+analytics_push_enabled: false
+log_wache_enabled: false
+feedback_dash_password: ""
+feedback_smtp_host: ""
+feedback_smtp_user: ""
+feedback_smtp_pass: ""
+feedback_brief_token: ""
+feedback_mail_from: "noreply@wironair.de"
+feedback_kontakt_to: "noreply@wironair.de"
+feedback_brief_from: "noreply@wironair.de"
+feedback_edge_auth_enabled: false
+feedback_tagesdeckel_ungeprueft: 40
+feedback_dedup_fenster_s: 300
