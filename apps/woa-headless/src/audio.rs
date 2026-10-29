@@ -300,3 +300,98 @@ pub fn cmd_capture(source: &str, out: &std::path::Path, seconds: u64, monitor: b
     );
     Ok(())
 }
+
+#[cfg(not(feature = "device"))]
+pub fn cmd_radio_play(
+    _: &std::path::Path,
+    _: u64,
+    _: &std::path::Path,
+    _: Option<f64>,
+    _: Option<f64>,
+) -> Outcome {
+    Err(NOT_BUILT.to_string())
+}
+
+/// Spielt radio.json über das Standardgerät (Sendemixer im Audio-Thread, Steuerung im
+/// eigenen Thread, wie in der App) und schneidet mit. Exit 1 bei Aussetzern.
+#[cfg(feature = "device")]
+pub fn cmd_radio_play(
+    radio: &std::path::Path,
+    seconds: u64,
+    data_dir: &std::path::Path,
+    cart_at: Option<f64>,
+    mic_at: Option<f64>,
+) -> Outcome {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{Duration, Instant};
+
+    let show = woa_radio::RadioShow::load(radio)?;
+    let config = woa_engine::device::OutputConfig::default();
+    let rate = woa_engine::device::output_sample_rate(&config).map_err(|e| e.to_string())?;
+    let (mut controller, mut mixer) = woa_radio::Controller::new(show, rate);
+    controller.measure_missing();
+    let errors = Arc::new(AtomicU64::new(0));
+    let e2 = Arc::clone(&errors);
+    let stream = woa_engine::device::start_stereo_output(
+        &config,
+        move |l, r| mixer.process(l, r),
+        move |_| {
+            e2.fetch_add(1, Ordering::Relaxed);
+        },
+    )
+    .map_err(|e| e.to_string())?;
+    let station = woa_radio::station::Station::spawn(controller)?;
+    let dir = data_dir.to_path_buf();
+    station.with(move |c| {
+        c.start_recording(&dir);
+        c.start();
+    });
+    let t0 = Instant::now();
+    let (mut cart_done, mut mic_done) = (false, false);
+    let mut last = 0u64;
+    while t0.elapsed() < Duration::from_secs(seconds) {
+        std::thread::sleep(Duration::from_millis(50));
+        let t = t0.elapsed().as_secs_f64();
+        if !cart_done && cart_at.is_some_and(|a| t >= a) {
+            cart_done = true;
+            station.with(|c| c.trigger_cart(0));
+        }
+        if !mic_done && mic_at.is_some_and(|a| t >= a) {
+            mic_done = true;
+            station.with(|c| c.set_mic_open(true));
+        }
+        let s = t as u64;
+        if s != last {
+            last = s;
+            let v = station.view();
+            let title = v
+                .current
+                .and_then(|i| v.playlist.get(i))
+                .map(|e| e.title.clone())
+                .unwrap_or_else(|| "-".into());
+            println!(
+                "{s:>3}s  {title}  rest {:.1}s  gesamt {:.1}s  mikro {}",
+                v.remaining_title, v.remaining_total, v.mic_open
+            );
+        }
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    station.with(move |c| {
+        let _ = tx.send(c.stop_recording());
+    });
+    let files = rx
+        .recv_timeout(Duration::from_secs(5))
+        .map_err(|e| e.to_string())?;
+    drop(station);
+    drop(stream);
+    for f in &files {
+        println!("mitschnitt={}", f.display());
+    }
+    let n = errors.load(Ordering::Relaxed);
+    println!("rate={rate} fehler={n}");
+    if n > 0 {
+        return Err(format!("{n} Gerätefehler/Aussetzer"));
+    }
+    Ok(())
+}

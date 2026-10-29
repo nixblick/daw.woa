@@ -4,6 +4,45 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 7: Sendeablauf (0.2.0, offen)
+
+Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. Oben rechts „Radio“ anklicken: Links stehen Uhr, Start/Stopp und Playlist, rechts die Cart-Wall. Beim nächsten Start ist WOA wieder im Radio-Modus.
+2. Zwei oder drei WAV-Dateien in die Playlist ziehen (oder „+ Titel …“). Nach ein paar Sekunden stehen Länge und „bis Playlist-Ende“; beim Überfahren eines Titels mit der Maus siehst du LUFS und Auto-Gain.
+3. „▶ Start“ (oder Leertaste): Die große Uhr zählt die Restzeit des Titels. Am Ende blendet er in den nächsten über, beide gleich laut. „▶ Weiter“ blendet sofort über, „■ Stopp“ blendet aus.
+4. Mit „^ v x“ die Reihenfolge ändern oder einen Titel entfernen, auch während der Sendung.
+5. Rechtsklick auf ein Cart-Feld, „Belegen …“, Jingle wählen. Mit Klick oder Taste 1 spielt er über die Musik.
+6. Kopfhörer auf, „Mikro (M)“ oder Taste M: Die Musik geht weich um 12 dB herunter, dein Mikro ist im Mitschnitt. Noch einmal M, und die Musik kommt zurück.
+7. „Mitschnitt“ an, etwas senden, wieder aus. Unter `~/.local/share/woa/mitschnitte/` liegt `sendung-<Datum>.wav` (Zeit in UTC).
+8. Agent: `woa-headless mcp <projekt>` mit `build_playlist` füllt `~/.local/share/woa/radio.json`; die offene App übernimmt die neue Playlist nach höchstens zwei Sekunden.
+
+Selbst geprüft von Claude:
+
+- **Tests (workspace grün).** Jeder Process-Aufruf des Sendemixers lief unter `assert_no_alloc` (`crates/radio/tests/rt.rs`), nämlich:
+  - Crossfade mit konstanter Leistung, in der Mitte genau √2 des Einzelpegels
+  - Ducking mit −12 dB ± 0,2, ohne Sprung
+  - Cart über Musik
+  - Stopp
+  - Mitschnitt als 16-Bit-WAV
+- **Offline-Render.** `woa-headless radio-render` mit drei Titeln von sehr unterschiedlichem Pegel: Länge = Summe − 2 × 3 s, Lautheit −16 ± 1 LUFS (`apps/woa-headless/tests/radio.rs`).
+- **Agent-Werkzeuge.** `build_playlist`/`run_order` (`crates/agent/tests/radio.rs`) schreiben nur in die Vorgabe oder relativ im Projektordner. `../`, absolute Pfade und Symlink-Ziele lehnen sie ab.
+- **Probe am Gerät (PipeWire, 48 kHz).** `woa-headless radio-play` mit 22 s, Cart nach 4 s und Mikro nach 14 s:
+  - 0 Gerätefehler
+  - Überblendungen nach 9 s und 16 s wie berechnet
+  - Mitschnitt 22,06 s, −15,6 LUFS (ffmpeg ebur128)
+  - Musik mit offenem Mikro 11,4 dB leiser (RMS, zwei verschiedene Titel)
+- **Bildschirmfoto.** Mit `WOA_SCREENSHOT` des Radio-Layouts aufgenommen, mit Temp-Konfiguration.
+- **Nicht von Hand geklickt.** Drag-and-drop, Dateidialoge und Mikro über echten Eingang. Der Mikro-Weg ist nur in Tests mit Ring-Eingang geprüft. Hat der Eingang eine andere Abtastrate als die Ausgabe, meldet WOA das und öffnet das Mikro nicht.
+
+Noch nicht drin:
+
+- FLAC/MP3 (die Engine liest bisher nur WAV)
+- Mikro im Kopfhörer (Monitor ist aus, gegen Rückkopplung)
+- Stream ins Netz
+- Notfall-Playlist
+- 8-Stunden-Dauertest
+
 ## Paket 6: Agent (0.1.16, offen)
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo build --release -p woa-headless -p woa`

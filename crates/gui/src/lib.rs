@@ -6,10 +6,11 @@
 pub mod app;
 pub mod feedback;
 pub mod player;
+pub mod radio;
 mod sources;
 pub mod state;
 mod theme;
 
 pub use app::WoaApp;
-pub use feedback::GuiConfig;
+pub use feedback::{GuiConfig, Mode};
 pub use state::AppState;

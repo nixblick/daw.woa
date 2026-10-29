@@ -28,6 +28,17 @@ pub struct GuiConfig {
     /// Log endpoint; default is our own server.
     #[serde(skip_serializing_if = "is_default_telemetry_url")]
     pub telemetry_url: String,
+    /// Layout: Produzent (Zeitleiste) oder Radio (Sendeablauf).
+    pub mode: Mode,
+}
+
+/// Arbeitsmodus der Oberfläche.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    #[default]
+    Produzent,
+    Radio,
 }
 
 fn is_default_feedback_url(s: &str) -> bool {
@@ -45,6 +56,7 @@ impl Default for GuiConfig {
             install_id: String::new(),
             telemetry_enabled: None,
             telemetry_url: DEFAULT_INGEST_URL.to_string(),
+            mode: Mode::Produzent,
         }
     }
 }

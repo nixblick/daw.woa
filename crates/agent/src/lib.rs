@@ -281,6 +281,28 @@ pub struct ExportParams {
     pub target_lufs: Option<f64>,
 }
 
+/// Parameters of `build_playlist`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BuildPlaylistParams {
+    /// Audio files (WAV) in play order. Relative paths are resolved against the project folder.
+    pub files: Vec<String>,
+    /// Append to the existing playlist instead of replacing it.
+    #[serde(default)]
+    pub append: bool,
+    /// Where to write radio.json: a relative path inside the project folder (same rules as
+    /// export: no `..`, no absolute path, no symlink). Default: radio.json in the WOA data folder.
+    #[serde(default)]
+    pub radio_json: Option<String>,
+}
+
+/// Parameters of `run_order`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RunOrderParams {
+    /// Path of radio.json. Default: radio.json in the WOA data folder.
+    #[serde(default)]
+    pub radio_json: Option<String>,
+}
+
 /// The MCP server around one project session.
 #[derive(Clone)]
 pub struct WoaAgent {
@@ -289,6 +311,35 @@ pub struct WoaAgent {
     // Read by the code generated from `#[tool_handler]`.
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
+}
+
+/// Rate for radio measurements; LUFS does not depend on it.
+const RADIO_RATE: u32 = 48_000;
+
+fn run_order_json(show: &woa_radio::RadioShow, radio: &Path) -> serde_json::Value {
+    let titles: Vec<_> = show
+        .playlist
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            serde_json::json!({
+                "position": i + 1,
+                "title": e.title(),
+                "path": e.path.display().to_string(),
+                "seconds": e.seconds,
+                "lufs": e.lufs,
+                "gain_db": e.gain_db(show.target_lufs),
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "radio_json": radio.display().to_string(),
+        "titles": titles,
+        "count": show.playlist.len(),
+        "total_seconds": show.total_seconds_from(0),
+        "crossfade_seconds": show.crossfade_seconds,
+        "target_lufs": show.target_lufs,
+    })
 }
 
 fn lock_err() -> McpError {
@@ -333,6 +384,51 @@ impl WoaAgent {
     /// Shared handle to the session, e.g. for a GUI that shows the agent's work live.
     pub fn session(&self) -> Arc<Mutex<Session>> {
         Arc::clone(&self.session)
+    }
+
+    fn build_playlist_at(
+        &self,
+        radio: &Path,
+        files: &[String],
+        append: bool,
+    ) -> Result<woa_radio::RadioShow, String> {
+        let mut show = woa_radio::RadioShow::load(radio)?;
+        let mut entries = Vec::new();
+        for f in files {
+            let path = self.resolve_media(f);
+            if !woa_radio::audio::is_supported(&path) {
+                return Err(woa_radio::audio::unsupported(&path));
+            }
+            let measured = woa_radio::audio::measure_file(&path, RADIO_RATE)
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+            let mut entry = woa_radio::PlaylistEntry::new(path);
+            entry.set_measured(measured);
+            entries.push(entry);
+        }
+        if !append {
+            show.playlist.clear();
+        }
+        show.playlist.extend(entries);
+        show.save(radio)?;
+        Ok(show)
+    }
+
+    /// Read path of radio.json (writing goes through `resolve_out`).
+    fn radio_path(&self, given: Option<&str>) -> PathBuf {
+        match given {
+            Some(g) => self.resolve_media(g),
+            None => woa_radio::default_radio_path(),
+        }
+    }
+
+    /// Relative paths count from the project folder.
+    fn resolve_media(&self, given: &str) -> PathBuf {
+        let p = Path::new(given);
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            self.dir.join(p)
+        }
     }
 
     fn lock(&self) -> Result<MutexGuard<'_, Session>, McpError> {
@@ -422,8 +518,19 @@ impl WoaAgent {
     /// Zielpfad im Projektordner. Absolute Pfade und `..` sind verboten.
     /// Der tiefste vorhandene Vorfahr muss kanonisch im Projekt liegen, fehlende
     /// Ordner werden einzeln angelegt und sofort erneut geprüft, und das Ziel
-    /// darf kein Symlink sein. Gibt den Zielpfad im geprüften Ordner zurück.
-    fn resolve_out(&self, path: &str) -> Result<PathBuf, String> {
+    /// darf kein Symlink sein. Gibt den Zielpfad im geprüften Ordner zurück und die
+    /// Ordner, die dabei neu angelegt wurden (äußerster zuerst), damit ein späterer
+    /// Fehler sie wieder entfernen kann.
+    fn resolve_out(&self, path: &str) -> Result<(PathBuf, Vec<PathBuf>), String> {
+        let mut created = Vec::new();
+        let r = self.resolve_out_inner(path, &mut created);
+        if r.is_err() {
+            remove_created(&created);
+        }
+        r.map(|out| (out, created))
+    }
+
+    fn resolve_out_inner(&self, path: &str, created: &mut Vec<PathBuf>) -> Result<PathBuf, String> {
         if !woa_model::is_safe_audio_path(path) {
             return Err(format!(
                 "{path}: nur relative Pfade innerhalb des Projektordners erlaubt"
@@ -443,10 +550,10 @@ impl WoaAgent {
                 match std::fs::symlink_metadata(&next) {
                     Ok(_) => {}
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                        if let Err(e) = std::fs::create_dir(&next)
-                            && e.kind() != std::io::ErrorKind::AlreadyExists
-                        {
-                            return Err(format!("{}: {e}", next.display()));
+                        match std::fs::create_dir(&next) {
+                            Ok(()) => created.push(next.clone()),
+                            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                            Err(e) => return Err(format!("{}: {e}", next.display())),
                         }
                     }
                     Err(e) => return Err(format!("{}: {e}", next.display())),
@@ -467,13 +574,16 @@ impl WoaAgent {
         Ok(out)
     }
 
-    /// Schreibt den Mix über eine neu angelegte Temp-Datei im geprüften Ordner
-    /// und setzt sie per `rename` an den Zielnamen. `rename` ersetzt einen
+    /// Schreibt den Mix in eine neu angelegte Temp-Datei im geprüften Ordner, und zwar
+    /// in genau das Handle, das `create_new` geöffnet hat (kein zweites Öffnen über den
+    /// Pfad), und setzt sie danach per `rename` an den Zielnamen. `rename` ersetzt einen
     /// inzwischen untergeschobenen Symlink, statt ihm zu folgen.
     fn write_mix(out: &Path, mix: &audio::Mix) -> Result<(), String> {
         let dir = out.parent().ok_or("kein Zielordner")?;
+        let format = woa_engine::export::ExportFormat::from_path(out)
+            .ok_or("Endung muss .wav, .flac oder .mp3 sein")?;
         let ext = out.extension().and_then(|e| e.to_str()).unwrap_or("wav");
-        let mut tmp = None;
+        let mut opened = None;
         for n in 0..100u32 {
             let p = dir.join(format!(".woa-export-{}-{n}.{ext}", std::process::id()));
             match std::fs::OpenOptions::new()
@@ -481,22 +591,49 @@ impl WoaAgent {
                 .create_new(true)
                 .open(&p)
             {
-                Ok(_) => {
-                    tmp = Some(p);
+                Ok(f) => {
+                    opened = Some((p, f));
                     break;
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(format!("{}: {e}", p.display())),
             }
         }
-        let tmp = tmp.ok_or("keine Temp-Datei frei")?;
-        let r = woa_engine::export::export_stereo(&tmp, &mix.left, &mix.right, audio::RATE)
-            .map_err(|e| e.to_string())
-            .and_then(|()| std::fs::rename(&tmp, out).map_err(|e| e.to_string()));
+        let (tmp, file) = opened.ok_or("keine Temp-Datei frei")?;
+        let r =
+            woa_engine::export::export_stereo_to(&file, format, &mix.left, &mix.right, audio::RATE)
+                .map_err(|e| e.to_string())
+                .and_then(|()| file.sync_all().map_err(|e| e.to_string()))
+                .and_then(|()| std::fs::rename(&tmp, out).map_err(|e| e.to_string()));
+        drop(file);
         if r.is_err() {
             let _ = std::fs::remove_file(&tmp);
         }
         r
+    }
+
+    /// Rendert, gleicht an und schreibt; alles nach `resolve_out`.
+    fn export_to(
+        &self,
+        project: &woa_model::Project,
+        out: &Path,
+        target_lufs: Option<f64>,
+    ) -> Result<(audio::Mix, serde_json::Value), String> {
+        let mut mix = audio::render(project, &self.dir)?;
+        let normalized = match target_lufs {
+            Some(t) => audio::normalize_mix(&mut mix, t)?,
+            None => serde_json::Value::Null,
+        };
+        Self::write_mix(out, &mix)?;
+        Ok((mix, normalized))
+    }
+}
+
+/// Entfernt neu angelegte Ordner wieder, innerster zuerst. `remove_dir` löscht nur leere
+/// Ordner; was inzwischen jemand anderes hineingelegt hat, bleibt.
+fn remove_created(created: &[PathBuf]) {
+    for d in created.iter().rev() {
+        let _ = std::fs::remove_dir(d);
     }
 }
 
@@ -892,25 +1029,20 @@ impl WoaAgent {
         Parameters(p): Parameters<ExportParams>,
     ) -> Result<CallToolResult, McpError> {
         let project = self.lock()?.project().clone();
-        let out = match self.resolve_out(&p.path) {
-            Ok(o) => o,
-            Err(e) => return Ok(fail(e)),
-        };
         if woa_engine::export::ExportFormat::from_path(Path::new(&p.path)).is_none() {
             return Ok(fail("Endung muss .wav, .flac oder .mp3 sein"));
         }
-        let mut mix = match audio::render(&project, &self.dir) {
-            Ok(m) => m,
+        let (out, created) = match self.resolve_out(&p.path) {
+            Ok(o) => o,
             Err(e) => return Ok(fail(e)),
         };
-        let normalized = match p.target_lufs.map(|t| audio::normalize_mix(&mut mix, t)) {
-            Some(Err(e)) => return Ok(fail(e)),
-            Some(Ok(v)) => v,
-            None => serde_json::Value::Null,
+        let (mix, normalized) = match self.export_to(&project, &out, p.target_lufs) {
+            Ok(v) => v,
+            Err(e) => {
+                remove_created(&created);
+                return Ok(fail(e));
+            }
         };
-        if let Err(e) = Self::write_mix(&out, &mix) {
-            return Ok(fail(e));
-        }
         let mut result = audio::measure(&mix);
         result["path"] = serde_json::Value::String(out.display().to_string());
         if let Some(t) = p.target_lufs {
@@ -948,6 +1080,45 @@ impl WoaAgent {
             Ok(()) => ok_json(serde_json::json!({ "saved": self.dir.display().to_string() })),
             Err(e) => fail(e),
         })
+    }
+
+    #[tool(
+        description = "Radio mode: build the broadcast playlist in radio.json from audio files (WAV). Replaces the playlist, or appends with append=true. Every title is measured (LUFS, peak, length) so auto-gain can bring it to the target loudness. Returns the run order."
+    )]
+    async fn build_playlist(
+        &self,
+        Parameters(p): Parameters<BuildPlaylistParams>,
+    ) -> Result<CallToolResult, McpError> {
+        // Write target: the default file, or a relative path under the same rules as export.
+        let (radio, created) = match p.radio_json.as_deref() {
+            None => (woa_radio::default_radio_path(), Vec::new()),
+            Some(g) => match self.resolve_out(g) {
+                Ok(x) => x,
+                Err(e) => return Ok(fail(e)),
+            },
+        };
+        let r = self.build_playlist_at(&radio, &p.files, p.append);
+        if r.is_err() {
+            remove_created(&created);
+        }
+        match r {
+            Ok(show) => Ok(ok_json(run_order_json(&show, &radio))),
+            Err(e) => Ok(fail(e)),
+        }
+    }
+
+    #[tool(
+        description = "Radio mode: read the playlist from radio.json and return the run order with each title's length, loudness (LUFS) and auto-gain, plus the total length with crossfades. Changes nothing."
+    )]
+    async fn run_order(
+        &self,
+        Parameters(p): Parameters<RunOrderParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let radio = self.radio_path(p.radio_json.as_deref());
+        match woa_radio::RadioShow::load(&radio) {
+            Ok(show) => Ok(ok_json(run_order_json(&show, &radio))),
+            Err(e) => Ok(fail(e)),
+        }
     }
 }
 

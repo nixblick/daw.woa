@@ -303,6 +303,45 @@ pub fn start_recording(
     })
 }
 
+/// Eingang live in einen Ring statt in eine Datei (Mikrofon im Radio-Modus): schreibt
+/// Stereo verschachtelt (Mono wird verdoppelt, ab drei Kanälen zählen die ersten zwei).
+/// Ist der Ring voll, fallen Samples weg (gezählt in `dropped`). Liefert den Stream und
+/// die Abtastrate des Eingangs; der Aufrufer prüft, ob sie zur Ausgabe passt.
+pub fn start_live_input(
+    config: &InputConfig,
+    mut producer: rtrb::Producer<f32>,
+    dropped: Arc<AtomicU64>,
+    on_error: impl FnMut(cpal::Error) + Send + 'static,
+) -> Result<(cpal::Stream, u32), RecordError> {
+    let device = pick_input(config)?;
+    let supported = device.default_input_config()?;
+    if supported.sample_format() != cpal::SampleFormat::F32 {
+        return Err(DeviceError::UnsupportedFormat.into());
+    }
+    let stream_config = supported.config();
+    let sample_rate = stream_config.sample_rate;
+    let channels = usize::from(stream_config.channels).max(1);
+    let stream = device.build_input_stream(
+        stream_config,
+        move |data: &[f32], _: &cpal::InputCallbackInfo| {
+            for frame in data.chunks(channels) {
+                let l = frame[0];
+                let r = if channels > 1 { frame[1] } else { l };
+                if producer.slots() < 2 {
+                    dropped.fetch_add(1, Ordering::Relaxed);
+                    continue;
+                }
+                let _ = producer.push(l);
+                let _ = producer.push(r);
+            }
+        },
+        on_error,
+        None,
+    )?;
+    stream.play()?;
+    Ok((stream, sample_rate))
+}
+
 /// Nächster freier Name `aufnahme-NNN.wav` in `dir` (legt `dir` an).
 pub fn next_take_path(dir: &Path) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
