@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.12 — 2026-10-29
+
+- Windows-Build wieder grün (Clippy `unused_mut` in der Quellenliste).
+
 ## 0.1.11 — 2026-10-29
 
 - **Paket 5 Quellen.** Jede Spur hat eine Quellenwahl: Standard-Mikrofon, alle Eingänge, „Systemklang“ (alles, was abgespielt wird) oder ein einzelnes Programm. Unter Linux wird direkt mit PipeWire/Pulse gesprochen (`engine/src/capture.rs`, Crate `pulseaudio`, reines Rust, MIT). Mehrere Spuren lassen sich scharf schalten (roter Punkt) und nehmen gleichzeitig ab demselben Punkt auf. Mit „hören“ ist die Quelle beim Aufnehmen hörbar.

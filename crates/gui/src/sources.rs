@@ -21,6 +21,7 @@ pub struct SourceEntry {
 /// Alle Quellen, Standard-Eingang zuerst. Fehler beim Abfragen von PipeWire landen im Log,
 /// die Liste hat dann nur den Standard-Eingang.
 pub fn list() -> Vec<SourceEntry> {
+    #[cfg_attr(not(target_os = "linux"), allow(unused_mut))]
     let mut out = vec![SourceEntry {
         key: DEFAULT_KEY.to_string(),
         label: "Standard-Eingang (Mikrofon)".to_string(),
