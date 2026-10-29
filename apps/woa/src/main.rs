@@ -3,31 +3,13 @@
 //! Ordner: Konfiguration `<config>/woa/config.json` (Feld `feedback_url`), Logs und
 //! Wiederherstellung unter `<data>/woa/`. Unter Linux XDG, unter Windows `%APPDATA%`.
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use woa_gui::{GuiConfig, WoaApp};
 
-fn home() -> PathBuf {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-}
-
-fn base_dir(xdg: &str, fallback: &str) -> PathBuf {
-    if let Some(p) = std::env::var_os("APPDATA") {
-        return PathBuf::from(p).join("woa");
-    }
-    std::env::var_os(xdg)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home().join(fallback))
-        .join("woa")
-}
-
 fn main() -> ExitCode {
-    let config_dir = base_dir("XDG_CONFIG_HOME", ".config");
-    let data_dir = base_dir("XDG_DATA_HOME", ".local/share");
+    let config_dir = woa_radio::config_dir();
+    let data_dir = woa_radio::data_dir();
 
     // Config first: the upload (opt-in) depends on it. Warnings while loading go to stderr
     // only, the log is not set up yet.
@@ -68,6 +50,7 @@ fn main() -> ExitCode {
         Box::new(move |_cc| {
             let mut app = WoaApp::new(config, recovery);
             app.set_config_path(config_path);
+            app.set_data_dir(data_dir);
             // `woa <projektordner>` öffnet das Projekt gleich beim Start.
             if let Some(dir) = std::env::args_os().nth(1) {
                 app.open_project(std::path::Path::new(&dir));

@@ -150,6 +150,23 @@ enum Cmd {
         #[arg(long, default_value_t = 48_000)]
         rate: u32,
     },
+    /// Spielt radio.json auf dem Standardgerät ab und schneidet in <data>/mitschnitte/ mit.
+    /// Exit 1 bei Gerätefehlern. Nur mit Feature `device`.
+    RadioPlay {
+        radio: PathBuf,
+        /// Dauer in Sekunden.
+        #[arg(long, default_value_t = 20)]
+        seconds: u64,
+        /// Datenordner für den Mitschnitt.
+        #[arg(long)]
+        data: PathBuf,
+        /// Cart 1 nach so vielen Sekunden auslösen.
+        #[arg(long)]
+        cart_at: Option<f64>,
+        /// Mikro (Ducking) nach so vielen Sekunden öffnen.
+        #[arg(long)]
+        mic_at: Option<f64>,
+    },
     /// Schickt ein Test-Ereignis an den Telemetrie-Endpunkt (/api/logs/ingest).
     LogTest {
         #[arg(long, env = "WOA_TELEMETRY_URL", default_value = woa_telemetry::DEFAULT_INGEST_URL)]
@@ -233,6 +250,13 @@ fn main() -> ExitCode {
             rate,
             lufs,
         } => audio::cmd_render(&project, &out, seconds, rate, lufs),
+        Cmd::RadioPlay {
+            radio,
+            seconds,
+            data,
+            cart_at,
+            mic_at,
+        } => audio::cmd_radio_play(&radio, seconds, &data, cart_at, mic_at),
         Cmd::RadioRender { radio, out, rate } => cmd_radio_render(&radio, &out, rate),
         Cmd::LogTest { url, timeout } => cmd_log_test(&url, timeout),
         Cmd::FeedbackTest { url, text, timeout } => cmd_feedback_test(&url, &text, timeout),

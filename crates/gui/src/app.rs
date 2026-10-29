@@ -20,7 +20,8 @@ const HEADER_W: f32 = 250.0;
 const ROW_H: f32 = 88.0;
 const ZOOM_RANGE: std::ops::RangeInclusive<f32> = 2.0..=160.0;
 
-use crate::feedback::{FeedbackDialog, GuiConfig, Phase, encode_png};
+use crate::feedback::{FeedbackDialog, GuiConfig, Mode, Phase, encode_png};
+use crate::radio::RadioDesk;
 use crate::state::{AppState, Status};
 
 /// The desktop window.
@@ -83,6 +84,10 @@ pub struct WoaApp {
     themed: bool,
     /// Fotomodus (`WOA_SCREENSHOT=datei.png`): Zielpfad und gezählte Bilder.
     photo: Option<(PathBuf, u32)>,
+    /// Datenordner (radio.json, Mitschnitte).
+    data_dir: PathBuf,
+    /// Sendeablauf; läuft weiter, auch wenn das Produzent-Layout zu sehen ist.
+    radio: Option<RadioDesk>,
 }
 
 impl WoaApp {
@@ -130,7 +135,57 @@ impl WoaApp {
             rename: None,
             gain_drag: None,
             last_title: String::new(),
+            data_dir: woa_radio::data_dir(),
+            radio: None,
         }
+    }
+
+    /// Sets the data folder (radio.json, recordings). Default: the WOA data folder.
+    pub fn set_data_dir(&mut self, dir: PathBuf) {
+        self.data_dir = dir;
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        if self.config.mode == mode {
+            return;
+        }
+        self.config.mode = mode;
+        if mode == Mode::Radio {
+            if let Some(p) = self.player.as_mut()
+                && p.is_playing()
+            {
+                self.toggle_play();
+            }
+            self.ensure_radio();
+        }
+        if let Some(p) = &self.config_path
+            && let Err(e) = self.config.save(p)
+        {
+            tracing::warn!(error = %e, "config not saved");
+        }
+    }
+
+    fn ensure_radio(&mut self) {
+        if self.radio.is_none() {
+            let path = self.data_dir.join(woa_radio::RADIO_FILE);
+            self.radio = Some(RadioDesk::open(path, self.data_dir.clone()));
+        }
+    }
+
+    fn mode_switch(&mut self, ui: &mut egui::Ui) {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let mut mode = self.config.mode;
+            let on_air = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
+            ui.selectable_value(
+                &mut mode,
+                Mode::Radio,
+                if on_air { "● Radio" } else { "Radio" },
+            )
+            .on_hover_text("Sendeablauf: Playlist, Uhr, Carts, Mikro");
+            ui.selectable_value(&mut mode, Mode::Produzent, "Produzent")
+                .on_hover_text("Zeitleiste mit Spuren und Clips");
+            self.set_mode(mode);
+        });
     }
 
     /// Startet oder beendet die Aufnahme. Jede scharf geschaltete Spur (sonst die
@@ -622,6 +677,13 @@ impl WoaApp {
 
     fn menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         egui::MenuBar::new().ui(ui, |ui| {
+            self.menu_items(ui, ctx);
+            self.mode_switch(ui);
+        });
+    }
+
+    fn menu_items(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        {
             ui.menu_button("Datei", |ui| {
                 if ui.button("Neu (Strg+N)").clicked() {
                     self.state.new_project();
@@ -668,7 +730,7 @@ impl WoaApp {
                 self.feedback.open();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
             }
-        });
+        }
     }
 
     fn tracks(&mut self, ui: &mut egui::Ui) {
@@ -1546,7 +1608,19 @@ impl WoaApp {
 
 impl eframe::App for WoaApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.shortcuts(ctx);
+        if self.config.mode == Mode::Radio {
+            self.ensure_radio();
+        }
+        if let Some(r) = self.radio.as_mut() {
+            r.tick();
+        }
+        if self.config.mode == Mode::Radio {
+            if let Some(r) = self.radio.as_mut() {
+                r.shortcuts(ctx);
+            }
+        } else {
+            self.shortcuts(ctx);
+        }
         self.take_screenshot(ctx);
         self.feedback.poll();
         self.state.tick_autosave(Instant::now());
@@ -1564,7 +1638,13 @@ impl eframe::App for WoaApp {
         }
         self.stop_at_audio_end();
         let busy = !self.takes.is_empty() || self.player.as_ref().is_some_and(Player::is_playing);
-        let beat = if busy { 40 } else { 500 };
+        let beat = if busy {
+            40
+        } else if self.config.mode == Mode::Radio {
+            100
+        } else {
+            500
+        };
         ctx.request_repaint_after(std::time::Duration::from_millis(beat));
     }
 
@@ -1576,6 +1656,20 @@ impl eframe::App for WoaApp {
             self.themed = true;
         }
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui, &ctx));
+        if self.config.mode == Mode::Radio
+            && let Some(radio) = self.radio.as_mut()
+        {
+            egui::CentralPanel::default()
+                .frame(
+                    egui::Frame::new()
+                        .fill(theme::mix(theme::PANEL, theme::BG, 0.5))
+                        .inner_margin(egui::Margin::symmetric(16, 12)),
+                )
+                .show(ui, |ui| radio.ui(ui));
+            self.feedback_window(&ctx);
+            self.telemetry_window(&ctx);
+            return;
+        }
         egui::Panel::top("transport")
             .frame(
                 egui::Frame::new()

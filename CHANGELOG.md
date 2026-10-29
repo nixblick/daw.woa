@@ -1,7 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-10-29
 
+- **Radio-Modus (Paket 7: Sendeablauf).** Umschalter Produzent/Radio oben rechts, gespeichert in `config.json`. Das Radio-Layout zeigt:
+  - eine große Uhr mit der Restzeit des Titels und bis zum Playlist-Ende
+  - Start/Weiter (Leertaste) und Stopp
+  - die Playlist, gefüllt per Dialog oder Drag-and-drop, sortierbar und mit Entfernen
+  - Regler für Crossfade und Ducking
+  - die Cart-Wall 4×4 (Tasten 1–9, 0)
+  - Mikro (Taste M) und Mitschnitt
+
+  Die Sendung läuft in einem eigenen Steuer-Thread weiter, auch bei minimiertem Fenster. Änderungen an `radio.json` von außen (Agent) übernimmt die App. Neu: `woa-headless radio-play` als Probe am Gerät, `woa_engine::device::start_stereo_output` und `woa_engine::record::start_live_input`.
 - **Agent-Werkzeuge für den Sendeablauf.** `build_playlist` (Dateiliste ersetzen oder anhängen, jeder Titel wird gemessen) und `run_order` (Reihenfolge, Gesamtlänge mit Überblendungen, LUFS und Auto-Gain je Titel). Beide arbeiten auf `radio.json`, Pfad als Parameter oder Vorgabe im Datenordner. Geschrieben wird nur in die Vorgabe oder relativ im Projektordner (Regeln wie beim Export: kein `..`, kein absoluter Pfad, kein Symlink als Ziel).
 - **Sendeablauf-Kern (`crates/radio`).** Playlist mit Crossfade konstanter Leistung (Vorgabe 3 s), Auto-Gain auf −16 LUFS (gemessen und in `radio.json` gecacht), Cart-Wall mit 16 Tasten, Mikrofon mit geglättetem Ducking (−12 dB), Mitschnitt als WAV in `<datenordner>/mitschnitte/`. Der Mixer allokiert nicht (Tests unter `assert_no_alloc`), Dekodieren läuft im Control-Thread. Neu: `woa-headless radio-render <radio.json> <out.wav>`.
 - **Export schreibt in das geöffnete Handle.** `woa_engine::export::export_stereo_to` schreibt in ein schon offenes `Write + Seek`; der Agent-Export öffnet die Temp-Datei mit `create_new` und schreibt genau in dieses Handle, danach `rename`. Geht der Export schief, entfernt er die Unterordner, die er selbst angelegt hat, wieder (nur leere). Die Endung wird geprüft, bevor ein Ordner entsteht. Neuer Test: nach einem Fehler bleibt kein leerer Ordner zurück.

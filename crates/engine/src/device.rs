@@ -189,6 +189,24 @@ pub fn start_output_with(
     config: &OutputConfig,
     mut on_error: impl FnMut(cpal::Error) + Send + 'static,
 ) -> Result<cpal::Stream, DeviceError> {
+    start_stereo_output(
+        config,
+        move |l, r| processor.process_stereo(l, r),
+        move |err| {
+            count_if_xrun(&err, &transport);
+            on_error(err);
+        },
+    )
+}
+
+/// Startet die Ausgabe mit einem eigenen Stereo-Callback `render(links, rechts)`, der im
+/// Audio-Thread läuft (keine Allokation, kein Lock, kein I/O). Die Rate liefert
+/// [`output_sample_rate`] mit derselben `config`.
+pub fn start_stereo_output(
+    config: &OutputConfig,
+    mut render: impl FnMut(&mut [f32], &mut [f32]) + Send + 'static,
+    on_error: impl FnMut(cpal::Error) + Send + 'static,
+) -> Result<cpal::Stream, DeviceError> {
     let device = pick_device(config)?;
     let supported = device.default_output_config()?;
     if supported.sample_format() != cpal::SampleFormat::F32 {
@@ -213,7 +231,7 @@ pub fn start_output_with(
                 let frames = frame_chunk.len() / channels;
                 let l = &mut left[..frames];
                 let r = &mut right[..frames];
-                processor.process_stereo(l, r);
+                render(l, r);
                 for ((frame, &a), &b) in
                     frame_chunk.chunks_mut(channels).zip(l.iter()).zip(r.iter())
                 {
@@ -227,10 +245,7 @@ pub fn start_output_with(
                 }
             }
         },
-        move |err| {
-            count_if_xrun(&err, &transport);
-            on_error(err);
-        },
+        on_error,
         None,
     )?;
     stream.play()?;

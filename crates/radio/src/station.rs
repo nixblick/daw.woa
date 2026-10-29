@@ -99,12 +99,27 @@ impl Station {
 
     /// Fügt Dateien hinzu und misst sie im Hintergrund (Ergebnis wird gecacht).
     pub fn add_files(&self, paths: Vec<PathBuf>) {
-        let rate = self.rate;
         let todo = paths.clone();
         self.with(move |c| {
             c.add(&paths, None);
         });
-        for p in todo {
+        self.measure(todo);
+    }
+
+    /// Misst im Hintergrund alle Titel, die noch keine (gültige) Messung haben.
+    pub fn measure_missing(&self, show: &RadioShow) {
+        let todo: Vec<PathBuf> = show
+            .playlist
+            .iter()
+            .filter(|e| !e.is_measured())
+            .map(|e| e.path.clone())
+            .collect();
+        self.measure(todo);
+    }
+
+    fn measure(&self, paths: Vec<PathBuf>) {
+        let rate = self.rate;
+        for p in paths {
             let tx = self.tx.clone();
             self.measuring.fetch_add(1, Ordering::Relaxed);
             let spawned = std::thread::Builder::new()
