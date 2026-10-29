@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.13 — 2026-10-29
+
+- `docs/andre-handgriffe.md`: Andrés erledigte Schritte (DNS, Token, Ablauf) entfernt; Ausrollen macht Claude.
+
 ## 0.1.12 — 2026-10-29
 
 - Windows-Build wieder grün (Clippy `unused_mut` in der Quellenliste).
