@@ -9,7 +9,6 @@ use std::sync::atomic::AtomicU32;
 
 use woa_engine::clip::{
     PEAK_BLOCK, clip_graph, load_wav_mono, peaks, project_end_seconds, render_clips, take_peak,
-    write_wav_stereo,
 };
 use woa_engine::device::{OutputConfig, output_sample_rate, start_output_with};
 use woa_engine::project::{ProjectGraph, TrackNodes};
@@ -235,7 +234,7 @@ impl Player {
             load_cached(cache, resolve(rel)?, rate)
         })
         .map_err(|e| e.to_string())?;
-        write_wav_stereo(out, &l, &r, rate).map_err(|e| e.to_string())?;
+        woa_engine::export::export_stereo(out, &l, &r, rate).map_err(|e| e.to_string())?;
         Ok(seconds)
     }
 }

@@ -208,7 +208,7 @@ pub fn cmd_render(
     seconds: u64,
     rate: u32,
 ) -> Outcome {
-    use woa_engine::clip::{project_end_seconds, render_clips, write_wav_stereo};
+    use woa_engine::clip::{project_end_seconds, render_clips};
     let project = woa_model::store::load(dir).map_err(|e| e.to_string())?;
     let length = if seconds == 0 {
         project_end_seconds(&project)
@@ -221,7 +221,7 @@ pub fn cmd_render(
     if let Some(e) = errors.first() {
         return Err(e.clone());
     }
-    write_wav_stereo(out, &left, &right, rate).map_err(|e| e.to_string())?;
+    woa_engine::export::export_stereo(out, &left, &right, rate).map_err(|e| e.to_string())?;
     let peak = left
         .iter()
         .chain(&right)

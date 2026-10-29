@@ -4,23 +4,25 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Paket 2: Bearbeiten und Export (0.1.7, offen)
+## Paket 3: Arrangieren (0.1.8, offen)
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
 
-1. Etwas aufnehmen (wie Paket 1). Im blauen Clip ist die Wellenform zu sehen.
-2. Clip mit der Maus nach rechts ziehen und loslassen: er bleibt dort, Strg+Z holt ihn zurück.
-3. Roten Kopf in die Mitte des Clips klicken, Clip anklicken, S drücken: zwei Clips. Beide spielen lückenlos weiter.
-4. Einen Clip anklicken, oben Fade-in und Fade-out ziehen: dunkler Schatten im Clip, beim Abspielen blendet es weich ein und aus.
-5. Datei → Exportieren als WAV (Strg+E), Datei mit einem Player öffnen: klingt wie im Fenster, endet am letzten Clip.
+1. Zwei Spuren mit je einer Aufnahme. Einen Clip auf die andere Spur ziehen: er liegt dort, Strg+Z holt ihn zurück.
+2. Rechten Rand eines Clips nach links ziehen: Clip wird kürzer, spielt nur noch bis dort.
+3. Linken Rand nach rechts ziehen: der Anfang fällt weg, die Wellenform bleibt an ihrer Stelle in der Zeit.
+4. Strg+Mausrad oder − und + oben: die Zeitleiste zoomt.
+5. Strg+E dreimal: als .wav, .flac und .mp3 speichern, alle drei im Player anhören.
 
-Selbst geprüft von Claude: Workspace-Tests grün (u. a. Schneiden, Fades, Verschieben mit Undo, Render und Export),
-echte Aufnahme in zwei Clips mit Versatz und Fades offline gerendert und gemessen (Fade-Anfang 0.004,
-voll 0.047, Lücke 0.0, Fade-Ende 0.008), `play --project` am Gerät `underruns=0`.
+Selbst geprüft von Claude: Workspace-Tests grün (u. a. Trimmen, Spurwechsel mit Undo, Export in allen drei
+Formaten), Probe-Projekt als WAV, FLAC und MP3 gerendert und mit `ffprobe` gelesen (48 kHz, stereo, 4,0 s;
+MP3 320 kbit/s).
 
-Noch nicht drin: Clips auf andere Spur ziehen, Clip-Ränder ziehen (trimmen), Latenzausgleich, MP3/FLAC.
+Noch nicht drin: Latenzausgleich, Lautheit (LUFS) beim Export, mehrere Clips auf einmal markieren.
 
 ## Abgenommen
+
+- Paket 2 Bearbeiten und Export (0.1.7): 29.10.2026, André „passt“.
 
 - Paket 1 Aufnehmen und Abspielen (0.1.6): 29.10.2026, André „passt“.
 

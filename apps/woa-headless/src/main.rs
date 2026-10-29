@@ -101,7 +101,7 @@ enum Cmd {
     /// Nimmt vom Eingang (Mikrofon) als WAV auf und meldet Pegel und Überläufe.
     /// Exit 1 bei Überläufen. Nur mit Feature `device`.
     Record {
-        /// Zieldatei (.wav); der Ordner muss existieren.
+        /// Zieldatei (.wav, .flac oder .mp3). der Ordner muss existieren.
         out: PathBuf,
         /// Dauer in Sekunden.
         #[arg(long, default_value_t = 10)]
@@ -114,7 +114,7 @@ enum Cmd {
     Render {
         /// Projektordner (.woa).
         project: PathBuf,
-        /// Zieldatei (.wav).
+        /// Zieldatei (.wav, .flac oder .mp3).
         out: PathBuf,
         /// Länge in Sekunden; 0 = bis zum Ende des letzten Clips.
         #[arg(long, default_value_t = 0)]
