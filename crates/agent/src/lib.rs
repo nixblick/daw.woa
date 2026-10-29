@@ -422,8 +422,19 @@ impl WoaAgent {
     /// Zielpfad im Projektordner. Absolute Pfade und `..` sind verboten.
     /// Der tiefste vorhandene Vorfahr muss kanonisch im Projekt liegen, fehlende
     /// Ordner werden einzeln angelegt und sofort erneut geprüft, und das Ziel
-    /// darf kein Symlink sein. Gibt den Zielpfad im geprüften Ordner zurück.
-    fn resolve_out(&self, path: &str) -> Result<PathBuf, String> {
+    /// darf kein Symlink sein. Gibt den Zielpfad im geprüften Ordner zurück und die
+    /// Ordner, die dabei neu angelegt wurden (äußerster zuerst), damit ein späterer
+    /// Fehler sie wieder entfernen kann.
+    fn resolve_out(&self, path: &str) -> Result<(PathBuf, Vec<PathBuf>), String> {
+        let mut created = Vec::new();
+        let r = self.resolve_out_inner(path, &mut created);
+        if r.is_err() {
+            remove_created(&created);
+        }
+        r.map(|out| (out, created))
+    }
+
+    fn resolve_out_inner(&self, path: &str, created: &mut Vec<PathBuf>) -> Result<PathBuf, String> {
         if !woa_model::is_safe_audio_path(path) {
             return Err(format!(
                 "{path}: nur relative Pfade innerhalb des Projektordners erlaubt"
@@ -443,10 +454,10 @@ impl WoaAgent {
                 match std::fs::symlink_metadata(&next) {
                     Ok(_) => {}
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                        if let Err(e) = std::fs::create_dir(&next)
-                            && e.kind() != std::io::ErrorKind::AlreadyExists
-                        {
-                            return Err(format!("{}: {e}", next.display()));
+                        match std::fs::create_dir(&next) {
+                            Ok(()) => created.push(next.clone()),
+                            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                            Err(e) => return Err(format!("{}: {e}", next.display())),
                         }
                     }
                     Err(e) => return Err(format!("{}: {e}", next.display())),
@@ -467,13 +478,16 @@ impl WoaAgent {
         Ok(out)
     }
 
-    /// Schreibt den Mix über eine neu angelegte Temp-Datei im geprüften Ordner
-    /// und setzt sie per `rename` an den Zielnamen. `rename` ersetzt einen
+    /// Schreibt den Mix in eine neu angelegte Temp-Datei im geprüften Ordner, und zwar
+    /// in genau das Handle, das `create_new` geöffnet hat (kein zweites Öffnen über den
+    /// Pfad), und setzt sie danach per `rename` an den Zielnamen. `rename` ersetzt einen
     /// inzwischen untergeschobenen Symlink, statt ihm zu folgen.
     fn write_mix(out: &Path, mix: &audio::Mix) -> Result<(), String> {
         let dir = out.parent().ok_or("kein Zielordner")?;
+        let format = woa_engine::export::ExportFormat::from_path(out)
+            .ok_or("Endung muss .wav, .flac oder .mp3 sein")?;
         let ext = out.extension().and_then(|e| e.to_str()).unwrap_or("wav");
-        let mut tmp = None;
+        let mut opened = None;
         for n in 0..100u32 {
             let p = dir.join(format!(".woa-export-{}-{n}.{ext}", std::process::id()));
             match std::fs::OpenOptions::new()
@@ -481,22 +495,49 @@ impl WoaAgent {
                 .create_new(true)
                 .open(&p)
             {
-                Ok(_) => {
-                    tmp = Some(p);
+                Ok(f) => {
+                    opened = Some((p, f));
                     break;
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(format!("{}: {e}", p.display())),
             }
         }
-        let tmp = tmp.ok_or("keine Temp-Datei frei")?;
-        let r = woa_engine::export::export_stereo(&tmp, &mix.left, &mix.right, audio::RATE)
-            .map_err(|e| e.to_string())
-            .and_then(|()| std::fs::rename(&tmp, out).map_err(|e| e.to_string()));
+        let (tmp, file) = opened.ok_or("keine Temp-Datei frei")?;
+        let r =
+            woa_engine::export::export_stereo_to(&file, format, &mix.left, &mix.right, audio::RATE)
+                .map_err(|e| e.to_string())
+                .and_then(|()| file.sync_all().map_err(|e| e.to_string()))
+                .and_then(|()| std::fs::rename(&tmp, out).map_err(|e| e.to_string()));
+        drop(file);
         if r.is_err() {
             let _ = std::fs::remove_file(&tmp);
         }
         r
+    }
+
+    /// Rendert, gleicht an und schreibt; alles nach `resolve_out`.
+    fn export_to(
+        &self,
+        project: &woa_model::Project,
+        out: &Path,
+        target_lufs: Option<f64>,
+    ) -> Result<(audio::Mix, serde_json::Value), String> {
+        let mut mix = audio::render(project, &self.dir)?;
+        let normalized = match target_lufs {
+            Some(t) => audio::normalize_mix(&mut mix, t)?,
+            None => serde_json::Value::Null,
+        };
+        Self::write_mix(out, &mix)?;
+        Ok((mix, normalized))
+    }
+}
+
+/// Entfernt neu angelegte Ordner wieder, innerster zuerst. `remove_dir` löscht nur leere
+/// Ordner; was inzwischen jemand anderes hineingelegt hat, bleibt.
+fn remove_created(created: &[PathBuf]) {
+    for d in created.iter().rev() {
+        let _ = std::fs::remove_dir(d);
     }
 }
 
@@ -892,25 +933,20 @@ impl WoaAgent {
         Parameters(p): Parameters<ExportParams>,
     ) -> Result<CallToolResult, McpError> {
         let project = self.lock()?.project().clone();
-        let out = match self.resolve_out(&p.path) {
-            Ok(o) => o,
-            Err(e) => return Ok(fail(e)),
-        };
         if woa_engine::export::ExportFormat::from_path(Path::new(&p.path)).is_none() {
             return Ok(fail("Endung muss .wav, .flac oder .mp3 sein"));
         }
-        let mut mix = match audio::render(&project, &self.dir) {
-            Ok(m) => m,
+        let (out, created) = match self.resolve_out(&p.path) {
+            Ok(o) => o,
             Err(e) => return Ok(fail(e)),
         };
-        let normalized = match p.target_lufs.map(|t| audio::normalize_mix(&mut mix, t)) {
-            Some(Err(e)) => return Ok(fail(e)),
-            Some(Ok(v)) => v,
-            None => serde_json::Value::Null,
+        let (mix, normalized) = match self.export_to(&project, &out, p.target_lufs) {
+            Ok(v) => v,
+            Err(e) => {
+                remove_created(&created);
+                return Ok(fail(e));
+            }
         };
-        if let Err(e) = Self::write_mix(&out, &mix) {
-            return Ok(fail(e));
-        }
         let mut result = audio::measure(&mix);
         result["path"] = serde_json::Value::String(out.display().to_string());
         if let Some(t) = p.target_lufs {

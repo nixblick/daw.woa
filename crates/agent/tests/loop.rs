@@ -410,3 +410,43 @@ async fn export_rejects_symlinks() {
     client.cancel().await.unwrap();
     server.await.unwrap();
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn failed_export_leaves_no_new_folders() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("leer.woa");
+    let (client, server) = export_project(&dir).await;
+
+    // Fails after the folders exist (target_lufs out of range is checked after render).
+    let r = call(
+        &client,
+        "export",
+        json!({"path": "neu/tief/x.wav", "target_lufs": 5.0}),
+    )
+    .await;
+    assert_eq!(r.is_error, Some(true), "{r:?}");
+    assert!(
+        !dir.join("neu").exists(),
+        "created folders are removed again"
+    );
+
+    // An existing folder stays, only the new one below it goes.
+    std::fs::create_dir(dir.join("da")).unwrap();
+    let r = call(
+        &client,
+        "export",
+        json!({"path": "da/tief/x.wav", "target_lufs": 5.0}),
+    )
+    .await;
+    assert_eq!(r.is_error, Some(true), "{r:?}");
+    assert!(dir.join("da").is_dir());
+    assert!(!dir.join("da/tief").exists());
+
+    // Unknown format: nothing is created at all.
+    let r = call(&client, "export", json!({"path": "neu2/x.ogg"})).await;
+    assert_eq!(r.is_error, Some(true), "{r:?}");
+    assert!(!dir.join("neu2").exists());
+
+    client.cancel().await.unwrap();
+    server.await.unwrap();
+}

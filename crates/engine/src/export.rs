@@ -1,9 +1,9 @@
 //! Export eines Stereo-Mixdowns als WAV, FLAC (24 bit, `flacenc`) oder MP3 (LAME, 320 kbit/s).
 
+use std::io::{Seek, Write};
 use std::path::Path;
 
 use crate::EngineError;
-use crate::clip::write_wav_stereo;
 
 /// Zielformat, aus der Dateiendung.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,15 +37,58 @@ pub fn export_stereo(
     right: &[f32],
     rate: u32,
 ) -> Result<(), EngineError> {
-    match ExportFormat::from_path(path) {
-        Some(ExportFormat::Wav) => write_wav_stereo(path, left, right, rate),
-        Some(ExportFormat::Flac) => write_flac(path, left, right, rate),
-        Some(ExportFormat::Mp3) => write_mp3(path, left, right, rate),
-        None => Err(fail("Endung muss .wav, .flac oder .mp3 sein")),
+    let format = ExportFormat::from_path(path)
+        .ok_or_else(|| fail("Endung muss .wav, .flac oder .mp3 sein"))?;
+    let file = std::fs::File::create(path).map_err(fail)?;
+    export_stereo_to(file, format, left, right, rate)
+}
+
+/// Schreibt Stereo in ein schon geöffnetes Ziel (etwa eine mit `create_new` angelegte
+/// Datei). So bleibt zwischen Prüfen und Schreiben kein Pfad, den jemand austauschen kann.
+pub fn export_stereo_to<W: Write + Seek>(
+    mut out: W,
+    format: ExportFormat,
+    left: &[f32],
+    right: &[f32],
+    rate: u32,
+) -> Result<(), EngineError> {
+    match format {
+        ExportFormat::Wav => write_wav(std::io::BufWriter::new(out), left, right, rate),
+        ExportFormat::Flac => {
+            let bytes = encode_flac(left, right, rate)?;
+            out.write_all(&bytes).map_err(fail)?;
+            out.flush().map_err(fail)
+        }
+        ExportFormat::Mp3 => {
+            let bytes = encode_mp3(left, right, rate)?;
+            out.write_all(&bytes).map_err(fail)?;
+            out.flush().map_err(fail)
+        }
     }
 }
 
-fn write_flac(path: &Path, left: &[f32], right: &[f32], rate: u32) -> Result<(), EngineError> {
+/// 32-bit-Float-WAV, Stereo.
+fn write_wav<W: Write + Seek>(
+    out: W,
+    left: &[f32],
+    right: &[f32],
+    rate: u32,
+) -> Result<(), EngineError> {
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: rate,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut w = hound::WavWriter::new(out, spec).map_err(EngineError::Wav)?;
+    for (l, r) in left.iter().zip(right) {
+        w.write_sample(*l).map_err(EngineError::Wav)?;
+        w.write_sample(*r).map_err(EngineError::Wav)?;
+    }
+    w.finalize().map_err(EngineError::Wav)
+}
+
+fn encode_flac(left: &[f32], right: &[f32], rate: u32) -> Result<Vec<u8>, EngineError> {
     use flacenc::component::BitRepr;
     use flacenc::error::Verify;
 
@@ -66,10 +109,10 @@ fn write_flac(path: &Path, left: &[f32], right: &[f32], rate: u32) -> Result<(),
     stream
         .write(&mut sink)
         .map_err(|e| fail(format!("{e:?}")))?;
-    std::fs::write(path, sink.as_slice()).map_err(fail)
+    Ok(sink.as_slice().to_vec())
 }
 
-fn write_mp3(path: &Path, left: &[f32], right: &[f32], rate: u32) -> Result<(), EngineError> {
+fn encode_mp3(left: &[f32], right: &[f32], rate: u32) -> Result<Vec<u8>, EngineError> {
     use mp3lame_encoder::{Bitrate, Builder, DualPcm, FlushNoGap, Quality};
 
     const CHUNK: usize = 8192;
@@ -87,7 +130,7 @@ fn write_mp3(path: &Path, left: &[f32], right: &[f32], rate: u32) -> Result<(), 
     }
     out.reserve(mp3lame_encoder::max_required_buffer_size(0).max(7200));
     enc.flush_to_vec::<FlushNoGap>(&mut out).map_err(fail)?;
-    std::fs::write(path, out).map_err(fail)
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -119,5 +162,13 @@ mod tests {
         let mp3 = std::fs::read(tmp.path().join("a.MP3")).unwrap();
         assert!(mp3.windows(2).any(|w| w[0] == 0xFF && w[1] & 0xE0 == 0xE0));
         assert!(export_stereo(&tmp.path().join("a.ogg"), &s, &s, 48_000).is_err());
+        assert!(
+            !tmp.path().join("a.ogg").exists(),
+            "no file for unknown format"
+        );
+        // Into an already open handle.
+        let mut buf = std::io::Cursor::new(Vec::new());
+        export_stereo_to(&mut buf, ExportFormat::Wav, &s, &s, 48_000).unwrap();
+        assert!(buf.get_ref().starts_with(b"RIFF"));
     }
 }
