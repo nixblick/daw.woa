@@ -162,3 +162,25 @@ fn feedback_test_reports_issue() {
     assert_eq!(path, "/api/feedback");
     assert_eq!(body["kind"], "feedback");
 }
+
+#[cfg(not(feature = "device"))]
+#[test]
+fn play_and_devices_explain_missing_feature() {
+    for args in [&["play", "--seconds", "1"][..], &["devices"][..]] {
+        bin()
+            .args(args)
+            .assert()
+            .code(1)
+            .stderr(contains("ohne Feature `device`"));
+    }
+}
+
+#[test]
+fn play_help_names_underruns() {
+    bin()
+        .args(["play", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("Underruns"))
+        .stdout(contains("--buffer"));
+}
