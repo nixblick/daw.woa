@@ -458,6 +458,15 @@ impl Controller {
         self.send(Cmd::MicMonitor(on));
     }
 
+    // ---- Sendung (woa-streamd) -------------------------------------------------------
+
+    /// Hängt den Sende-Ring ein (Sendeausgang Stereo verschachtelt in Mixer-Rate) oder aus.
+    /// Den Ring liest der Feeder aus `woa-stream` in einem eigenen Thread.
+    pub fn set_stream_output(&mut self, producer: Option<rtrb::Producer<f32>>) {
+        let owned = producer.map(|p| Owned::new(&self.collector.handle(), p));
+        self.send(Cmd::Stream(owned));
+    }
+
     // ---- Mitschnitt ------------------------------------------------------------------
 
     /// Startet den Mitschnitt nach `<data_dir>/mitschnitte/`.

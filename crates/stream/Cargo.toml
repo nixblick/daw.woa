@@ -1,9 +1,19 @@
 [package]
 name = "woa-stream"
-description = "WOA: Encoder, Shoutcast/Icecast-Client"
+description = "WOA: Encoder, Shoutcast-Client, Sendeprozess mit Notfall-Playlist"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
+mp3lame-encoder = "0.2.5"
+rtrb = "0.4.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tracing = "0.1.44"
+woa-radio = { version = "0.3", path = "../radio" }
+
+[dev-dependencies]
+hound = "3.5.1"
+tempfile = "3.27.0"

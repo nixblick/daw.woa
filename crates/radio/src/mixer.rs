@@ -61,6 +61,8 @@ pub enum Cmd {
     CartStop(usize),
     /// Mitschnitt: Sendeausgang Stereo verschachtelt in diesen Ring, `None` = aus.
     Record(Option<Owned<rtrb::Producer<f32>>>),
+    /// Sendung an woa-streamd: Sendeausgang Stereo verschachtelt in diesen Ring, `None` = aus.
+    Stream(Option<Owned<rtrb::Producer<f32>>>),
 }
 
 /// Lock-frei lesbarer Zustand des Mixers.
@@ -82,6 +84,8 @@ pub struct Status {
     pub music_end: AtomicU64,
     /// Verlorene Mitschnitt-Samples (Ring voll).
     pub record_dropped: AtomicU64,
+    /// Verlorene Sende-Samples (Ring voll, woa-streamd hängt).
+    pub stream_dropped: AtomicU64,
     /// Mikro-Ring leer gelaufen (Frames).
     pub mic_underruns: AtomicU64,
     /// Spitzenpegel Sendeausgang seit letztem Abholen (f32-Bits).
@@ -103,6 +107,7 @@ impl Default for Status {
             clock: AtomicU64::new(0),
             music_end: AtomicU64::new(0),
             record_dropped: AtomicU64::new(0),
+            stream_dropped: AtomicU64::new(0),
             mic_underruns: AtomicU64::new(0),
             peak: AtomicU32::new(0),
             mic_peak: AtomicU32::new(0),
@@ -209,6 +214,7 @@ pub struct Mixer {
     duck: Smoother,
     mic_backlog: usize,
     rec: Option<Owned<rtrb::Producer<f32>>>,
+    stream: Option<Owned<rtrb::Producer<f32>>>,
     clock: u64,
 }
 
@@ -237,6 +243,7 @@ impl Mixer {
             duck: Smoother::new(1.0, DUCK_TAU, r),
             mic_backlog: (MIC_BACKLOG * r) as usize * 2,
             rec: None,
+            stream: None,
             clock: 0,
         }
     }
@@ -281,6 +288,7 @@ impl Mixer {
                     }
                 }
                 Cmd::Record(p) => self.rec = p,
+                Cmd::Stream(p) => self.stream = p,
             }
         }
     }
@@ -431,6 +439,14 @@ impl Mixer {
                     let _ = p.push(sr);
                 } else {
                     self.status.record_dropped.fetch_add(2, Ordering::Relaxed);
+                }
+            }
+            if let Some(p) = self.stream.as_mut() {
+                if p.slots() >= 2 {
+                    let _ = p.push(sl);
+                    let _ = p.push(sr);
+                } else {
+                    self.status.stream_dropped.fetch_add(2, Ordering::Relaxed);
                 }
             }
             let (ol, or) = if self.mic_monitor {
