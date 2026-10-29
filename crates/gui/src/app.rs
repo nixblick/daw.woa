@@ -1001,8 +1001,9 @@ impl WoaApp {
         ui.horizontal(|ui| {
             let current = self.track_source.get(&id).cloned().unwrap_or_default();
             let mut chosen = None;
+            let mut opened = false;
             ui.add_enabled_ui(!busy, |ui| {
-                egui::ComboBox::from_id_salt(("source", id))
+                opened = egui::ComboBox::from_id_salt(("source", id))
                     .selected_text(
                         egui::RichText::new(sources::short_label(&current))
                             .small()
@@ -1011,17 +1012,26 @@ impl WoaApp {
                     .width(150.0)
                     .truncate()
                     .show_ui(ui, |ui| {
-                        for s in self.sources().to_vec() {
+                        let list = self.sources().to_vec();
+                        for s in &list {
                             if ui.selectable_label(s.key == current, &s.label).clicked() {
-                                chosen = Some(s.key);
+                                chosen = Some(s.key.clone());
                             }
+                        }
+                        if !sources::has_apps(&list) {
+                            ui.weak(sources::NO_APPS_HINT);
                         }
                     })
                     .response
                     .on_hover_text(
                         "Aufnahmequelle der Spur: Mikrofon, Systemklang oder ein Programm",
-                    );
+                    )
+                    .clicked();
             });
+            if opened {
+                // Beim Öffnen frisch abfragen, nicht erst nach Ablauf der Sekunde.
+                self.source_list.1 = None;
+            }
             if let Some(key) = chosen {
                 if key == sources::DEFAULT_KEY {
                     self.track_source.remove(&id);

@@ -43,6 +43,14 @@ pub fn list() -> Vec<SourceEntry> {
     out
 }
 
+/// Hinweis in der Auswahl, wenn kein Programm Ton abspielt.
+pub const NO_APPS_HINT: &str = "Programm spielt gerade keinen Ton?";
+
+/// Ob die Liste mindestens ein Programm enthält.
+pub fn has_apps(list: &[SourceEntry]) -> bool {
+    list.iter().any(|s| s.key.starts_with("app:"))
+}
+
 /// Kurzer Name eines Schlüssels für die Spur, ohne die Liste abzufragen.
 pub fn short_label(key: &str) -> String {
     match key.split_once(':') {
@@ -162,5 +170,16 @@ mod tests {
         assert_eq!(short_label("sys:alsa_output.pci.monitor"), "Systemklang");
         assert_eq!(short_label("app:PipeWire ALSA [vlc]"), "vlc");
         assert_eq!(short_label("app:Firefox"), "Firefox");
+    }
+
+    #[test]
+    fn hint_only_without_apps() {
+        let entry = |key: &str| SourceEntry {
+            key: key.into(),
+            label: key.into(),
+            can_monitor: true,
+        };
+        assert!(!has_apps(&[entry(""), entry("sys:x.monitor")]));
+        assert!(has_apps(&[entry(""), entry("app:Chromium")]));
     }
 }

@@ -133,8 +133,40 @@ pub fn list_sources() -> Result<Vec<CaptureSource>, CaptureError> {
     let sources: protocol::SourceInfoList = ask(&mut conn, 2, Command::GetSourceInfoList)?;
     let sinks: protocol::SinkInfoList = ask(&mut conn, 3, Command::GetSinkInfoList)?;
     let inputs: protocol::SinkInputInfoList = ask(&mut conn, 4, Command::GetSinkInputInfoList)?;
-    let own_pid = std::process::id().to_string();
+    let own = OwnProcess {
+        pid: std::process::id().to_string(),
+        exe: std::env::current_exe()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_default(),
+    };
+    Ok(build_sources(&sources, &sinks, &inputs, &own))
+}
 
+/// Woran WOA die eigenen Wiedergabe-Streams erkennt.
+#[derive(Debug, Clone, Default)]
+pub struct OwnProcess {
+    /// Prozess-ID als Text.
+    pub pid: String,
+    /// Dateiname des Programms (`woa`); pipewire-alsa nennt den Stream „PipeWire ALSA [woa]“
+    /// und meldet keine Prozess-ID.
+    pub exe: String,
+}
+
+/// Medientitel ohne Aussage, die nur „Wiedergabe“ heißen.
+fn generic_media(m: &str) -> bool {
+    let m = m.to_ascii_lowercase();
+    m.starts_with("alsa ")
+        || ["playback", "audio stream", "audiostream", "output"].contains(&m.as_str())
+}
+
+/// Baut die Quellenliste aus den Antworten des Servers (ohne I/O, testbar).
+pub fn build_sources(
+    sources: &[protocol::SourceInfo],
+    sinks: &[protocol::SinkInfo],
+    inputs: &[protocol::SinkInputInfo],
+    own: &OwnProcess,
+) -> Vec<CaptureSource> {
     let mut out = Vec::new();
     for s in sources.iter().filter(|s| s.monitor_of_sink_index.is_none()) {
         let name = text(&s.name);
@@ -160,26 +192,38 @@ pub fn list_sources() -> Result<Vec<CaptureSource>, CaptureError> {
             app_input: None,
         });
     }
-    for i in inputs.iter() {
-        if prop(&i.props, Prop::ApplicationProcessId).as_deref() == Some(own_pid.as_str()) {
+    // Laufende Streams zuerst, damit bei gleichem Programm der hörbare gewinnt.
+    let mut inputs: Vec<&protocol::SinkInputInfo> = inputs.iter().collect();
+    inputs.sort_by_key(|i| i.corked);
+    for i in inputs {
+        let app = prop(&i.props, Prop::ApplicationName)
+            .or_else(|| prop(&i.props, Prop::ApplicationProcessBinary))
+            .unwrap_or_else(|| text(&i.name));
+        let pid = prop(&i.props, Prop::ApplicationProcessId);
+        let alsa_own = !own.exe.is_empty() && app.ends_with(&format!("[{}]", own.exe));
+        if pid.as_deref() == Some(own.pid.as_str()) || alsa_own {
             continue;
         }
-        let Some(monitor) = sinks
+        // Ohne passenden Ausgang (z. B. noch nicht verbunden) nicht verstecken, sondern den
+        // ersten Ausgang nehmen; mitgeschnitten wird ohnehin direkt am Stream.
+        let monitor = sinks
             .iter()
             .find(|k| k.index == i.sink_index)
-            .and_then(|k| k.monitor_source_name.as_deref().map(text))
-        else {
+            .or_else(|| sinks.first())
+            .and_then(|k| k.monitor_source_name.as_deref().map(text));
+        let Some(monitor) = monitor else {
             continue;
         };
-        let app = prop(&i.props, Prop::ApplicationName).unwrap_or_else(|| text(&i.name));
         let key = format!("app:{app}");
+        if out.iter().any(|s: &CaptureSource| s.key == key) {
+            continue;
+        }
         // Programme über pipewire-alsa heißen „PipeWire ALSA [vlc]“.
         let app = app
             .split_once('[')
             .and_then(|(_, r)| r.strip_suffix(']'))
             .map_or(app.clone(), str::to_string);
-        let media =
-            prop(&i.props, Prop::MediaName).filter(|m| *m != app && !m.starts_with("ALSA "));
+        let media = prop(&i.props, Prop::MediaName).filter(|m| *m != app && !generic_media(m));
         out.push(CaptureSource {
             kind: SourceKind::App,
             label: match media {
@@ -191,7 +235,7 @@ pub fn list_sources() -> Result<Vec<CaptureSource>, CaptureError> {
             app_input: Some(i.index),
         });
     }
-    Ok(out)
+    out
 }
 
 #[derive(Default)]
@@ -444,4 +488,127 @@ pub fn start_capture(
         path: path.to_path_buf(),
         started: Instant::now(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn props(kv: &[(Prop, &str)]) -> protocol::Props {
+        let mut p = protocol::Props::new();
+        for (k, v) in kv {
+            p.set(*k, CString::new(*v).unwrap());
+        }
+        p
+    }
+
+    fn sink() -> protocol::SinkInfo {
+        protocol::SinkInfo {
+            index: 54,
+            name: CString::new("alsa_output.pci-0000_00_1f.3.analog-stereo").unwrap(),
+            monitor_source_name: Some(
+                CString::new("alsa_output.pci-0000_00_1f.3.analog-stereo.monitor").unwrap(),
+            ),
+            ..Default::default()
+        }
+    }
+
+    fn input(idx: u32, sink: u32, corked: bool, kv: &[(Prop, &str)]) -> protocol::SinkInputInfo {
+        protocol::SinkInputInfo {
+            index: idx,
+            name: CString::new("Playback").unwrap(),
+            sink_index: sink,
+            corked,
+            props: props(kv),
+            ..Default::default()
+        }
+    }
+
+    /// Nachgebaut aus `wpctl inspect` und WirePlumber-`restore-stream` vom 29.10.2026:
+    /// WOA selbst über pipewire-alsa (ohne Prozess-ID), Chromium über pipewire-pulse.
+    fn fixture() -> Vec<protocol::SinkInputInfo> {
+        let woa = [
+            (Prop::ApplicationName, "PipeWire ALSA [woa]"),
+            (Prop::MediaName, "ALSA Playback"),
+        ];
+        vec![
+            input(1313, 54, false, &woa),
+            input(1321, 54, true, &woa),
+            input(
+                1400,
+                54,
+                false,
+                &[
+                    (Prop::ApplicationName, "Chromium"),
+                    (Prop::ApplicationProcessBinary, "chromium-browser"),
+                    (Prop::ApplicationProcessId, "3034701"),
+                    (Prop::MediaName, "Playback"),
+                ],
+            ),
+        ]
+    }
+
+    fn own() -> OwnProcess {
+        OwnProcess {
+            pid: "3033057".into(),
+            exe: "woa".into(),
+        }
+    }
+
+    fn apps(list: &[CaptureSource]) -> Vec<(&str, &str, Option<u32>)> {
+        list.iter()
+            .filter(|s| s.kind == SourceKind::App)
+            .map(|s| (s.label.as_str(), s.key.as_str(), s.app_input))
+            .collect()
+    }
+
+    #[test]
+    fn chromium_listed_own_streams_hidden() {
+        let out = build_sources(&[], &[sink()], &fixture(), &own());
+        assert_eq!(apps(&out), vec![("Chromium", "app:Chromium", Some(1400))]);
+    }
+
+    #[test]
+    fn media_title_shown_and_binary_fallback() {
+        let inputs = vec![input(
+            7,
+            54,
+            false,
+            &[
+                (Prop::ApplicationProcessBinary, "firefox"),
+                (Prop::MediaName, "Radio Bob – Live"),
+            ],
+        )];
+        let out = build_sources(&[], &[sink()], &inputs, &own());
+        assert_eq!(
+            apps(&out),
+            vec![("firefox – Radio Bob – Live", "app:firefox", Some(7))]
+        );
+    }
+
+    #[test]
+    fn unknown_sink_does_not_hide_stream() {
+        let inputs = vec![input(
+            9,
+            u32::MAX,
+            false,
+            &[(Prop::ApplicationName, "Chromium")],
+        )];
+        let out = build_sources(&[], &[sink()], &inputs, &own());
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0].source,
+            "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor"
+        );
+    }
+
+    #[test]
+    fn duplicate_app_keeps_running_stream() {
+        let inputs = vec![
+            input(1, 54, true, &[(Prop::ApplicationName, "Chromium")]),
+            input(2, 54, false, &[(Prop::ApplicationName, "Chromium")]),
+        ];
+        let out = build_sources(&[], &[sink()], &inputs, &own());
+        assert_eq!(apps(&out), vec![("Chromium", "app:Chromium", Some(2))]);
+    }
 }
