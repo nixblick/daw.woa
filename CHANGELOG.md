@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.3 — 2026-10-29
+
+- **Cover-Bild im Radio-Layout.** Neben der großen Uhr steht ein Quadrat (168 px) mit dem Cover des laufenden Titels (vor dem Start: des nächsten). Beim Titelwechsel blendet es in 0,4 s weich über. Ohne Bild steht dort eine dezente Note, nie ein leeres Loch. In der Playlist hat jede Zeile ein Vorschaubild (32 px).
+- **Auslesen:** `woa_engine::cover::read_cover` holt das eingebettete Bild über die symphonia-Metadaten (ID3 APIC, MP4 `covr`, FLAC PICTURE, Vorbis `METADATA_BLOCK_PICTURE`), bevorzugt „Cover vorne“. Auslesen und Dekodieren laufen in einem eigenen Hintergrund-Thread (`woa-cover`), nie im Audio-Thread; die Oberfläche holt nur fertige Texturen ab.
+- **Dekodieren:** über den `image`-Crate, der schon im Lockfile war, jetzt mit JPEG (`zune-jpeg`, ebenfalls schon im Lockfile) und PNG, ohne Standard-Features. Herunterskaliert auf 512 px (groß) und 64 px (Vorschau). Vorschaubilder bleiben im Cache, große Texturen nur für den laufenden und den vorigen Titel.
+- **Speicherschutz:** Bilder über 10 MB oder über 8000 px Kante werden nicht angezeigt; symphonia liest größere Bilder gar nicht erst ein.
+- Tests: Cover aus MP3 (selbst gebauter ID3-Tag), FLAC, M4A und OGG (per ffmpeg, ohne ffmpeg übersprungen); Datei ohne Bild, WAV und zu großes Bild ergeben kein Cover; PNG und JPEG werden dekodiert und skaliert, zu große und kaputte Bilder abgelehnt.
+
 ## 0.2.2 — 2026-10-29
 
 - **MP3 mit großem Cover-Tag lesbar (Fixes #50).** Eine MP3 mit 1,2 MB großem ID3v2.3-Tag (APIC-Bild) scheiterte mit „no suitable format reader found“: symphonia lief ohne die Metadaten-Features und konnte den Tag nicht überspringen. Jetzt mit `id3v1`, `id3v2` und `ape`. Test mit selbst erzeugter MP3 und 1,2 MB APIC-Bild; Andrés Datei geht wieder (8 710 592 Frames, 44,1 kHz, Stereo).

@@ -39,6 +39,8 @@ Nachtrag 0.2.1: **MP3 und FLAC gehen jetzt** überall, wo WOA Audio liest: Playl
 
 Nachtrag 0.2.2: **Alle gängigen Formate.** Playlist, Cart-Wall und Agent-Import lesen jetzt auch OGG/Vorbis, M4A (AAC und ALAC), AAC, AIFF, CAF und MP2, Groß- und Kleinschreibung egal. Der Dialog heißt „Audio (MP3, FLAC, WAV, OGG, M4A, AAC, AIFF, CAF, MP2)“. MP3 mit großem Cover-Bild (#50, „150 Jahre Feuerwehr Frankfurt“) geht wieder. Zum Abnehmen: die Feuerwehr-MP3 und je eine OGG- und M4A-Datei in die Playlist ziehen, alle drei bekommen eine Länge und spielen. Selbst geprüft: jedes Format per ffmpeg erzeugt und auf Länge und Pegel geprüft, Andrés MP3 gelesen. Opus geht nicht (kein Decoder in symphonia).
 
+Nachtrag 0.2.3: **Cover-Bild.** Die Feuerwehr-MP3 in die Playlist ziehen und doppelklicken (oder starten): Links neben der großen Uhr erscheint ihr Cover, in der Playlist ein kleines Vorschaubild. Ein Titel ohne Bild zeigt eine Note. Beim Wechsel zum nächsten Titel blendet das Bild weich über. Selbst geprüft: Bildschirmfoto mit Wegwerf-Konfiguration (Feuerwehr-MP3, M4A mit Testbild, OGG ohne Bild), alle drei Fälle richtig; Tests für das Auslesen aus MP3, FLAC, M4A und OGG. Nicht selbst geprüft: die Überblendung beim echten Titelwechsel (nur im Code, kein Video).
+
 Noch nicht drin:
 
 - Mikro im Kopfhörer (Monitor ist aus, gegen Rückkopplung)

@@ -4,6 +4,7 @@
 //! Display); [`app`] ist nur die dünne eframe-Schicht darüber.
 
 pub mod app;
+pub mod covers;
 pub mod feedback;
 pub mod player;
 pub mod radio;

@@ -44,6 +44,7 @@ pub struct RadioDesk {
     known_mtime: Option<SystemTime>,
     checked_at: Instant,
     mic_dropped: Arc<AtomicU64>,
+    covers: Option<crate::covers::Covers>,
 }
 
 fn mtime(p: &Path) -> Option<SystemTime> {
@@ -108,6 +109,7 @@ impl RadioDesk {
             known_mtime,
             checked_at: Instant::now(),
             mic_dropped: Arc::new(AtomicU64::new(0)),
+            covers: None,
         }
     }
 
@@ -283,26 +285,44 @@ impl RadioDesk {
             .and_then(|i| v.playlist.get(i))
             .map(|e| e.title.clone())
             .unwrap_or_else(|| "–".to_string());
-        ui.label(egui::RichText::new(title).size(18.0));
+        // Cover des laufenden Titels (vor dem Start: des Titels, der als Nächstes kommt).
+        let cover_path = v
+            .current
+            .or((!v.running).then_some(v.cue))
+            .and_then(|i| v.playlist.get(i))
+            .map(|e| e.path.clone());
+        let ctx = ui.ctx().clone();
+        let covers = self
+            .covers
+            .get_or_insert_with(|| crate::covers::Covers::new(&ctx));
+        covers.poll(&ctx);
+        let (now, before, t) = covers.big(&ctx, cover_path.as_deref());
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(clock(v.remaining_title))
-                    .size(64.0)
-                    .monospace()
-                    .color(if v.running && v.remaining_title < 10.0 {
-                        theme::ON_AIR
-                    } else {
-                        theme::ACCENT
-                    }),
-            )
-            .on_hover_text("Restzeit des laufenden Titels");
+            crate::covers::paint_square(ui, 168.0, now.as_ref(), before.as_ref(), t)
+                .on_hover_text("Cover des Titels (aus der Datei)");
             ui.vertical(|ui| {
-                ui.label(egui::RichText::new("bis Playlist-Ende").color(theme::DIM));
-                ui.label(
-                    egui::RichText::new(clock(v.remaining_total))
-                        .size(28.0)
-                        .monospace(),
-                );
+                ui.label(egui::RichText::new(title).size(18.0));
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new(clock(v.remaining_title))
+                            .size(64.0)
+                            .monospace()
+                            .color(if v.running && v.remaining_title < 10.0 {
+                                theme::ON_AIR
+                            } else {
+                                theme::ACCENT
+                            }),
+                    )
+                    .on_hover_text("Restzeit des laufenden Titels");
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("bis Playlist-Ende").color(theme::DIM));
+                        ui.label(
+                            egui::RichText::new(clock(v.remaining_total))
+                                .size(28.0)
+                                .monospace(),
+                        );
+                    });
+                });
             });
         });
         ui.horizontal_wrapped(|ui| {
@@ -427,6 +447,8 @@ impl RadioDesk {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.label(format!("{:>2}", i + 1));
+                        let thumb = self.covers.as_mut().and_then(|c| c.thumb(&e.path));
+                        crate::covers::paint_square(ui, 32.0, thumb.as_ref(), None, 1.0);
                         if ui.small_button("^").on_hover_text("Nach oben").clicked() && i > 0 {
                             self.with(move |c| {
                                 c.move_entry(i, i - 1);
