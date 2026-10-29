@@ -5,6 +5,15 @@
 //!
 //! Echtzeitregel: `process` und `set_param` allokieren nie, sperren nie und
 //! machen kein I/O. Alle Puffer gehören dem Graphen und werden vorab angelegt.
+//!
+//! Instrumente (M1): [`synth::PolySynth`], [`sampler::Sampler`],
+//! [`soundfont::SoundFontPlayer`], per [`instrument::InstrumentNode`] im Graphen,
+//! Note-Events über [`instrument::note_queue`] (`rtrb`).
+
+pub mod instrument;
+pub mod sampler;
+pub mod soundfont;
+pub mod synth;
 
 /// Puffer für einen Process-Aufruf. `input` ist die Summe aller Eingänge
 /// (leer bzw. Stille bei Quellen), `output` hat dieselbe Länge.
