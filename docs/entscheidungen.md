@@ -38,3 +38,12 @@ statt `wgpu` bzw. ohne `system_fonts` bauen und erneut messen.
 Bauzeit und Größe sind für eine DAW vertretbar, die Architektur (Logik in `AppState` ohne
 Fenster, UI dünn darüber) lässt sich gut testen. Bestätigt ist egui erst nach Andrés Blick am
 Bildschirm unter Linux und Windows und nach Klärung der Startzeit.
+
+## 29.10.2026: vier Entscheidungen nach dem Nachtbau (André)
+
+- **Lizenz CDLA-Permissive-2.0 für `webpki-roots`:** erlaubt. Es ist nur Mozillas Zertifikatsliste,
+  die Ausnahme in `deny.toml` gilt ausschließlich für dieses Crate.
+- **Pan-Gesetz:** Constant-Power, -3 dB in der Mitte, so wie in `woa-engine` gebaut.
+- **Standard-SoundFont:** GeneralUser GS 2.0.3, Lizenz und Bezug in `docs/sounds/`.
+- **Feedback-Server:** Die Rolle `feedback` in bretteins.infra wird mehrinstanzfähig, Ticket an Dave
+  nixblick/bretteins.infra#145. Danach rollt André die zweite Instanz nach `docs/andre-handgriffe.md` aus.
