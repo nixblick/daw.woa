@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use eframe::egui;
+use woa_engine::clip::PEAK_BLOCK;
 use woa_engine::record::next_take_path;
 use woa_model::{ClipId, MAX_GAIN_DB, MIN_GAIN_DB, TrackId};
 
@@ -43,6 +44,11 @@ pub struct WoaApp {
     takes: Vec<(Option<TrackId>, Take)>,
     /// Startpunkt der laufenden Aufnahme in Beats.
     rec_start: f64,
+    /// Wellenform der laufenden Aufnahme je Spur: Spitzen je `PEAK_BLOCK` Frames und deren
+    /// Abtastrate (#43).
+    live_peaks: std::collections::HashMap<TrackId, (Vec<f32>, u32)>,
+    /// Seit Aufnahmestart ein Sample bei 0 dBFS oder darüber (Übersteuerungslampe).
+    rec_clipped: bool,
     /// Spuren, die bei der nächsten Aufnahme mitlaufen (leer = die ausgewählte Spur).
     armed: std::collections::BTreeSet<TrackId>,
     /// Gewählte Quelle je Spur (fehlt = Standard-Eingang).
@@ -107,6 +113,8 @@ impl WoaApp {
         Self {
             takes: Vec::new(),
             rec_start: 0.0,
+            live_peaks: std::collections::HashMap::new(),
+            rec_clipped: false,
             armed: std::collections::BTreeSet::new(),
             track_source: std::collections::HashMap::new(),
             track_monitor: std::collections::HashSet::new(),
@@ -239,6 +247,8 @@ impl WoaApp {
             return;
         }
         self.rec_start = start;
+        self.live_peaks.clear();
+        self.rec_clipped = false;
         self.state.status = if errors.is_empty() {
             Status::Info(format!("Nimmt auf: {} Spur(en)", self.takes.len()))
         } else {
@@ -253,6 +263,7 @@ impl WoaApp {
     fn stop_record(&mut self) {
         self.level = 0.0;
         self.rec_levels.clear();
+        self.live_peaks.clear();
         if let Some(p) = self.player.as_mut() {
             p.stop();
         }
@@ -477,6 +488,17 @@ impl WoaApp {
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(160.0, 10.0), egui::Sense::hover());
                 level_bar(ui.painter(), rect, self.level);
+                if self.rec_clipped {
+                    ui.label(
+                        egui::RichText::new("ÜBERSTEUERT")
+                            .small()
+                            .strong()
+                            .color(egui::Color32::from_rgb(220, 50, 50)),
+                    )
+                    .on_hover_text(
+                        "Mindestens ein Sample erreichte 0 dBFS. Quelle leiser stellen.",
+                    );
+                }
             }
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
@@ -872,6 +894,35 @@ impl WoaApp {
             .iter()
             .flat_map(|t| t.clips.iter().map(|c| c.end_beats()))
             .fold(64.0f64, f64::max)
+            .max(self.live_end_beats())
+    }
+
+    /// Ende der laufenden Aufnahme in Beats (0 ohne Aufnahme).
+    fn live_end_beats(&self) -> f64 {
+        match self.takes.first() {
+            Some((_, take)) => {
+                self.rec_start
+                    + take.elapsed().as_secs_f64() * self.state.project().tempo_bpm / 60.0
+            }
+            None => 0.0,
+        }
+    }
+
+    /// Holt die neuen Wellenform-Punkte aller laufenden Aufnahmen ab (#43).
+    fn drain_live_peaks(&mut self) {
+        for (track, take) in &mut self.takes {
+            let Some(t) = track else { continue };
+            let rate = take.sample_rate();
+            let (peaks, _) = self
+                .live_peaks
+                .entry(*t)
+                .or_insert_with(|| (Vec::new(), rate));
+            let before = peaks.len();
+            take.drain_peaks(peaks);
+            if peaks[before..].iter().any(|p| *p >= 1.0) {
+                self.rec_clipped = true;
+            }
+        }
     }
 
     /// Spurkopf: Farbstreifen, Aufnahmeziel, Name, Mute, Pegel, Gain.
@@ -1070,6 +1121,63 @@ impl WoaApp {
         let level = *shown;
         let (rect, _) = ui.allocate_exact_size(egui::vec2(60.0, 8.0), egui::Sense::hover());
         level_bar(ui.painter(), rect, level);
+    }
+}
+
+/// Der wachsende Clip einer laufenden Aufnahme (#43): rot getönt, von `start` bis `end`
+/// (Beats), darin die Wellenform, so weit Punkte da sind (`ppb` Punkte je Beat).
+fn draw_live_take(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    px: f32,
+    start: f64,
+    end: f64,
+    peaks: &[f32],
+    ppb: f64,
+) {
+    if end <= start || ppb <= 0.0 {
+        return;
+    }
+    let x0 = rect.left() + start as f32 * px;
+    let x1 = x0 + ((end - start) as f32 * px).max(2.0);
+    let r = egui::Rect::from_x_y_ranges(x0..=x1, rect.top() + 3.0..=rect.bottom() - 3.0);
+    painter.rect_filled(r, 5.0, theme::mix(theme::ON_AIR, theme::BG, 0.62));
+    let head = egui::Rect::from_min_max(r.min, egui::pos2(r.right(), r.top() + 14.0));
+    painter.rect_filled(
+        head,
+        egui::CornerRadius {
+            nw: 5,
+            ne: 5,
+            sw: 0,
+            se: 0,
+        },
+        theme::ON_AIR,
+    );
+    painter.with_clip_rect(head.intersect(rect)).text(
+        head.left_center() + egui::vec2(6.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        "Aufnahme läuft",
+        egui::FontId::proportional(11.0),
+        egui::Color32::WHITE,
+    );
+    let mid = (r.top() + 14.0 + r.bottom()) / 2.0;
+    let half = (r.bottom() - r.top() - 14.0) / 2.0 - 2.0;
+    let stroke = egui::Stroke::new(1.0, theme::mix(theme::ON_AIR, egui::Color32::WHITE, 0.35));
+    // Nur sichtbare Spalten zeichnen.
+    let clip = painter.clip_rect();
+    let mut x = r.left().max(clip.left().floor());
+    let stop = r.right().min(clip.right());
+    while x < stop {
+        let b0 = f64::from((x - r.left()) / px);
+        let i0 = (b0 * ppb) as usize;
+        if i0 >= peaks.len() {
+            break;
+        }
+        let i1 = (((b0 + f64::from(1.0 / px)) * ppb) as usize).clamp(i0 + 1, peaks.len());
+        let v = peaks[i0..i1].iter().fold(0.0f32, |m, s| m.max(*s));
+        let h = v.min(1.0) * half;
+        painter.vline(x, (mid - h)..=(mid + h), stroke);
+        x += 1.0;
     }
 }
 
@@ -1345,6 +1453,17 @@ impl WoaApp {
                     }
                 }
             }
+        }
+        if let Some((peaks, rate)) = self.live_peaks.get(&track) {
+            draw_live_take(
+                &painter,
+                rect,
+                px,
+                self.rec_start,
+                self.live_end_beats(),
+                peaks,
+                f64::from(*rate) * 60.0 / tempo / PEAK_BLOCK as f64,
+            );
         }
         if let Some(p) = &self.player {
             let x = rect.left() + p.position_beats(tempo) as f32 * px;
@@ -1667,6 +1786,7 @@ impl eframe::App for WoaApp {
             p.sync(&project, &|rel| state.resolve_audio(rel));
         }
         self.stop_at_audio_end();
+        self.drain_live_peaks();
         let busy = !self.takes.is_empty() || self.player.as_ref().is_some_and(Player::is_playing);
         // Radio: 5 Bilder/s, solange ein Titel läuft (Uhr, Pegel), sonst 2/s. Vorher 10/s
         // dauerhaft, 34 % CPU in Ruhe (Paket 8).

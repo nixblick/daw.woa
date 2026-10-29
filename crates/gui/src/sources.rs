@@ -114,6 +114,24 @@ impl Take {
         }
     }
 
+    /// Neue Wellenform-Punkte der laufenden Aufnahme an `out` anhängen (#43).
+    pub fn drain_peaks(&mut self, out: &mut Vec<f32>) {
+        match self {
+            Take::Device(r) => r.drain_peaks(out),
+            #[cfg(target_os = "linux")]
+            Take::Pulse(r, _) => r.drain_peaks(out),
+        }
+    }
+
+    /// Abtastrate der Aufnahme, Bezug für die Wellenform-Punkte.
+    pub fn sample_rate(&self) -> u32 {
+        match self {
+            Take::Device(r) => r.sample_rate(),
+            #[cfg(target_os = "linux")]
+            Take::Pulse(..) => woa_engine::capture::RATE,
+        }
+    }
+
     pub fn elapsed(&self) -> Duration {
         match self {
             Take::Device(r) => r.elapsed(),
