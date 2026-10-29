@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.17 — 2026-10-29
+
+- **Export dicht gegen Symlinks.** `export` prüft jetzt den tiefsten vorhandenen Ordner im Pfad kanonisch gegen den Projektordner, legt fehlende Unterordner einzeln an und prüft jeden sofort nach. Ein Symlink weiter oben im Pfad (etwa `link/neu/x.wav` mit `link` → `/tmp`) wird abgelehnt, ebenso ein Ziel, das selbst ein Symlink ist. Geschrieben wird zuerst in eine neu angelegte Temp-Datei im geprüften Ordner, die danach per `rename` an den Zielnamen kommt; ein zwischendurch untergeschobener Symlink wird so ersetzt, nicht beschrieben. Neue Tests: Export in neuen Unterordner, Symlink-Vorfahr und Symlink-Ziel (nur Unix).
+
 ## 0.1.16 — 2026-10-29
 
 - **Paket 6 Agent (M2).** Der MCP-Server kann jetzt allein einen hörbaren Loop bauen: `generate_notes` (Noten mit dem eingebauten Synth) und `generate_drums` (Kick, Snare, Hi-Hat als 16tel-Muster, `woa_dsp::generate`) erzeugen WAV-Dateien in `aufnahmen/` und legen Audio-Clips an. Dazu `import_audio`, `move_clip`, `trim_clip`, `set_fades`, `repeat_clip`, `remove_clip`, `remove_track`, `set_solo`. `analyze` misst LUFS, Spitze, Länge und Spitze je Spur, `export` schreibt WAV/FLAC/MP3 und gleicht auf Wunsch auf eine Ziel-Lautheit an. Jedes Tool ist ein Undo-Schritt „Agent“, Fehler lassen das Projekt unverändert. `export` schreibt nur relativ in den Projektordner (absolute Pfade und `..` werden abgelehnt). Abnahmetest: 8-Takt-Loop nur über Tools, exportiert und nachgemessen −14,0 LUFS, 16 s (ffmpeg bestätigt).

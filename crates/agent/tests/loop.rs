@@ -349,3 +349,64 @@ async fn editing_tools_and_error_cases() {
     client.cancel().await.unwrap();
     server.await.unwrap();
 }
+
+/// A project with one short audio clip, ready to export.
+async fn export_project(dir: &std::path::Path) -> (Client, tokio::task::JoinHandle<()>) {
+    let (client, _agent, server) = start(dir).await;
+    let a = track(&client, "A").await;
+    ok(&call(
+        &client,
+        "generate_notes",
+        json!({"track": a, "length_beats": 2.0, "waveform": "sine",
+               "notes": [{"beat": 0.0, "pitch": 69, "length_beats": 1.0}]}),
+    )
+    .await);
+    (client, server)
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn export_into_new_subfolder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("neu.woa");
+    let (client, server) = export_project(&dir).await;
+    ok(&call(&client, "export", json!({"path": "a/b/mix.wav"})).await);
+    assert!(dir.join("a/b/mix.wav").is_file());
+    // Overwriting a regular file works, and no temp file is left behind.
+    ok(&call(&client, "export", json!({"path": "a/b/mix.wav"})).await);
+    assert_eq!(std::fs::read_dir(dir.join("a/b")).unwrap().count(), 1);
+    client.cancel().await.unwrap();
+    server.await.unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn export_rejects_symlinks() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("sym.woa");
+    let outside = tmp.path().join("draussen");
+    std::fs::create_dir(&outside).unwrap();
+    let (client, server) = export_project(&dir).await;
+
+    // Symlinked ancestor with a missing subfolder below it.
+    std::os::unix::fs::symlink(&outside, dir.join("link")).unwrap();
+    let r = call(&client, "export", json!({"path": "link/neu/x.wav"})).await;
+    assert_eq!(r.is_error, Some(true), "{r:?}");
+    assert!(!outside.join("neu").exists());
+
+    // Target itself is a symlink to a file outside.
+    let victim = outside.join("opfer.wav");
+    std::fs::write(&victim, b"unveraendert").unwrap();
+    std::os::unix::fs::symlink(&victim, dir.join("ziel.wav")).unwrap();
+    let r = call(&client, "export", json!({"path": "ziel.wav"})).await;
+    assert_eq!(r.is_error, Some(true), "{r:?}");
+    assert_eq!(std::fs::read(&victim).unwrap(), b"unveraendert");
+    assert!(
+        std::fs::symlink_metadata(dir.join("ziel.wav"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+
+    client.cancel().await.unwrap();
+    server.await.unwrap();
+}
