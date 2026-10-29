@@ -9,7 +9,7 @@ eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt,
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
 
 1. Oben rechts „Radio“ anklicken: Links stehen Uhr, Start/Stopp und Playlist, rechts die Cart-Wall. Beim nächsten Start ist WOA wieder im Radio-Modus.
-2. Zwei oder drei WAV-Dateien in die Playlist ziehen (oder „+ Titel …“). Nach ein paar Sekunden stehen Länge und „bis Playlist-Ende“; beim Überfahren eines Titels mit der Maus siehst du LUFS und Auto-Gain.
+2. Zwei oder drei Audiodateien (WAV, FLAC oder MP3) in die Playlist ziehen (oder „+ Titel …“). Nach ein paar Sekunden stehen Länge und „bis Playlist-Ende“; beim Überfahren eines Titels mit der Maus siehst du LUFS und Auto-Gain.
 3. „▶ Start“ (oder Leertaste): Die große Uhr zählt die Restzeit des Titels. Am Ende blendet er in den nächsten über, beide gleich laut. „▶ Weiter“ blendet sofort über, „■ Stopp“ blendet aus.
 4. Mit „^ v x“ die Reihenfolge ändern oder einen Titel entfernen, auch während der Sendung.
 5. Rechtsklick auf ein Cart-Feld, „Belegen …“, Jingle wählen. Mit Klick oder Taste 1 spielt er über die Musik.
@@ -35,9 +35,10 @@ Selbst geprüft von Claude:
 - **Bildschirmfoto.** Mit `WOA_SCREENSHOT` des Radio-Layouts aufgenommen, mit Temp-Konfiguration.
 - **Nicht von Hand geklickt.** Drag-and-drop, Dateidialoge und Mikro über echten Eingang. Der Mikro-Weg ist nur in Tests mit Ring-Eingang geprüft. Hat der Eingang eine andere Abtastrate als die Ausgabe, meldet WOA das und öffnet das Mikro nicht.
 
+Nachtrag 0.2.1: **MP3 und FLAC gehen jetzt** überall, wo WOA Audio liest: Playlist, Cart-Wall, LUFS-Messung, `radio-render`, Clips im Projekt, Wellenform und Agent-Import. Dialoge und Drag-and-drop nehmen `.mp3` und `.flac` an. Selbst geprüft: Testdateien per `flacenc` und LAME erzeugt, gelesen, Länge und Pegel mit dem Original verglichen (`crates/engine/src/decode.rs`). Nebenbei repariert: WOAs eigene FLAC-Exporte hatten eine falsche Mindest-Blockgröße und waren für strenge Leser unlesbar. Bildschirmfoto bei 900 px: Die Regler „Crossfade“ und „Ducking“ sind ganz lesbar.
+
 Noch nicht drin:
 
-- FLAC/MP3 (die Engine liest bisher nur WAV)
 - Mikro im Kopfhörer (Monitor ist aus, gegen Rückkopplung)
 - Stream ins Netz
 - Notfall-Playlist
@@ -54,7 +55,7 @@ Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo build --rele
 
 Selbst geprüft von Claude: Abnahmetest `crates/agent/tests/loop.rs` baut den Loop nur über MCP-Tools (Tempo 120, drei Spuren, ein Takt Drums ×8, zwei Takte Bass und Akkorde ×4, zwei Gain-Schritte), exportiert mit `target_lufs: -14` und misst die Datei neu: −14,00 LUFS, 16,00 s, Spitze −2,8 dBFS. ffmpeg `ebur128` bestätigt −14,0 LUFS und True Peak −2,8 dBFS. Jeder Fehlerfall der neuen Tools liefert `isError` und lässt Projekt und Undo-Liste unverändert. GUI per `WOA_SCREENSHOT` am gespeicherten Testprojekt: drei Spuren (Drums −5 dB, Bass 0 dB, Akkorde −6 dB) mit Clips und Wellenform über 8 Takte. Nicht selbst geprüft: Abspielen mit ▶ und der Weg über ein echtes Claude Code mit `claude mcp add` (dafür ist Schritt 1–2 da).
 
-Noch nicht drin: MIDI-Clips mit Noten im Projekt (die Noten werden sofort zu Audio), True-Peak-Messung in `analyze`, Import von FLAC/MP3.
+Noch nicht drin: MIDI-Clips mit Noten im Projekt (die Noten werden sofort zu Audio), True-Peak-Messung in `analyze`. (Import von FLAC/MP3 geht seit 0.2.1.)
 
 ## M0 Fundament (offen)
 

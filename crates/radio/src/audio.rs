@@ -2,12 +2,8 @@
 
 use std::path::Path;
 
+use woa_engine::decode::{MAX_RATE, MIN_RATE, decode_file, is_readable, resample_linear};
 use woa_engine::loudness::integrated_lufs;
-
-/// Längster Titel, der geladen wird (Speicherschutz).
-const MAX_SECONDS: u64 = 6 * 3600;
-const MIN_RATE: u32 = 8_000;
-const MAX_RATE: u32 = 384_000;
 
 /// Fertig dekodiertes Stereo in Mixer-Rate, beide Kanäle gleich lang.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -22,94 +18,39 @@ impl Stereo {
     }
 }
 
-/// Formate, die der Sendeablauf lesen kann. Heute nur WAV (wie die Engine).
+/// Formate, die der Sendeablauf lesen kann: WAV, FLAC, MP3 (wie die Engine).
 pub fn is_supported(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("wav"))
+    is_readable(path)
 }
 
 /// Fehlermeldung für eine Datei, die nicht gelesen werden kann.
 pub fn unsupported(path: &Path) -> String {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    match ext.as_str() {
-        "flac" | "mp3" => format!(
-            "{}: {} kann WOA noch nicht lesen, bitte als WAV",
-            path.display(),
-            ext.to_ascii_uppercase()
-        ),
-        _ => format!("{}: nur WAV-Dateien", path.display()),
-    }
+    format!("{}: nur WAV, FLAC und MP3", path.display())
 }
 
-/// Liest eine WAV-Datei als Stereo in `rate` (mono wird verdoppelt, mehr als zwei Kanäle:
-/// die ersten beiden; Rate linear umgerechnet).
+/// Liest WAV, FLAC oder MP3 als Stereo in `rate` (mono wird verdoppelt, mehr als zwei
+/// Kanäle: die ersten beiden; Rate linear umgerechnet). Nie im Audio-Thread aufrufen.
 pub fn load_stereo(path: &Path, rate: u32) -> Result<Stereo, String> {
     if !is_supported(path) {
         return Err(unsupported(path));
     }
-    let e = |x: hound::Error| format!("{}: {x}", path.display());
-    let mut reader = hound::WavReader::open(path).map_err(e)?;
-    let spec = reader.spec();
-    if !(MIN_RATE..=MAX_RATE).contains(&spec.sample_rate) || !(MIN_RATE..=MAX_RATE).contains(&rate)
-    {
+    if !(MIN_RATE..=MAX_RATE).contains(&rate) {
         return Err(format!("{}: Abtastrate außerhalb", path.display()));
     }
-    if u64::from(reader.duration()) / u64::from(spec.sample_rate) > MAX_SECONDS {
-        return Err(format!("{}: länger als 6 Stunden", path.display()));
-    }
-    let channels = usize::from(spec.channels.max(1));
-    let raw: Vec<f32> = match spec.sample_format {
-        hound::SampleFormat::Float => reader
-            .samples::<f32>()
-            .collect::<Result<_, _>>()
-            .map_err(e)?,
-        hound::SampleFormat::Int => {
-            let scale = 1.0 / (1u64 << (spec.bits_per_sample.clamp(1, 32) - 1)) as f32;
-            reader
-                .samples::<i32>()
-                .map(|s| s.map(|v| v as f32 * scale))
-                .collect::<Result<_, _>>()
-                .map_err(e)?
-        }
-    };
-    let frames = raw.len() / channels;
-    let mut left = Vec::with_capacity(frames);
-    let mut right = Vec::with_capacity(frames);
-    for f in raw.chunks_exact(channels) {
-        left.push(f[0]);
-        right.push(if channels > 1 { f[1] } else { f[0] });
-    }
-    if spec.sample_rate == rate || left.is_empty() {
+    let d = decode_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let (left, right) = d.stereo();
+    if d.rate == rate || left.is_empty() {
         return Ok(Stereo { left, right });
     }
     Ok(Stereo {
-        left: resample(&left, spec.sample_rate, rate),
-        right: resample(&right, spec.sample_rate, rate),
+        left: resample(&left, d.rate, rate),
+        right: resample(&right, d.rate, rate),
     })
 }
 
 /// Linear von `from` auf `to` Hz.
 pub fn resample(x: &[f32], from: u32, to: u32) -> Vec<f32> {
-    if x.is_empty() || from == to {
-        return x.to_vec();
-    }
-    let ratio = f64::from(from) / f64::from(to);
-    let n = (x.len() as f64 / ratio) as usize;
-    let last = x.len() - 1;
-    (0..n)
-        .map(|i| {
-            let p = i as f64 * ratio;
-            let a = (p as usize).min(last);
-            let b = (a + 1).min(last);
-            let t = (p - a as f64) as f32;
-            x[a] * (1.0 - t) + x[b] * t
-        })
-        .collect()
+    resample_linear(x, from, to)
 }
 
 /// Messwerte eines Titels.
@@ -176,7 +117,31 @@ mod tests {
         assert!((s.left[3] - 0.5).abs() < 1e-6 && s.left == s.right);
         assert_eq!(load_stereo(&p, 48_000).unwrap().frames(), 480);
         assert!(file_stamp(&p).is_some());
-        let e = load_stereo(&tmp.path().join("x.mp3"), 48_000).unwrap_err();
+        let e = load_stereo(&tmp.path().join("x.ogg"), 48_000).unwrap_err();
         assert!(e.contains("MP3"), "{e}");
+    }
+
+    #[test]
+    fn reads_mp3_and_flac_as_stereo_in_mixer_rate() {
+        let tmp = tempfile::tempdir().unwrap();
+        let l: Vec<f32> = (0..44_100)
+            .map(|i| 0.5 * (std::f32::consts::TAU * 440.0 * i as f32 / 44_100.0).sin())
+            .collect();
+        let r: Vec<f32> = l.iter().map(|v| v * 0.5).collect();
+        for ext in ["flac", "mp3"] {
+            let p = tmp.path().join(format!("t.{ext}"));
+            woa_engine::export::export_stereo(&p, &l, &r, 44_100).unwrap();
+            assert!(is_supported(&p));
+            let s = load_stereo(&p, 48_000).unwrap();
+            assert!(
+                s.frames().abs_diff(48_000) <= 2_700,
+                "{ext}: {}",
+                s.frames()
+            );
+            let m = measure(&s, 48_000);
+            // Sinus -6 dBFS Spitze; MP3 darf leicht überschwingen.
+            let peak = m.peak_db.unwrap();
+            assert!((peak + 6.0).abs() < 0.5, "{ext}: {peak}");
+        }
     }
 }

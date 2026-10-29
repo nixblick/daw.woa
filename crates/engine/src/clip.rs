@@ -17,11 +17,7 @@ use crate::project::{ProjectGraph, build_project_graph};
 use crate::transport::{TransportHandle, beats_to_samples};
 use crate::{Engine, EngineError};
 
-/// Erlaubte Abtastraten beim Laden.
-const MIN_RATE: u32 = 8_000;
-const MAX_RATE: u32 = 384_000;
-/// Längster Clip, der geladen wird (Speicherschutz gegen kaputte Dateien).
-const MAX_CLIP_SECONDS: u64 = 6 * 3600;
+use crate::decode::{MAX_RATE, MIN_RATE, decode_file, resample_linear};
 
 /// Ein Clip auf der Zeitachse in Samples.
 #[derive(Debug, Clone)]
@@ -261,54 +257,18 @@ impl Node for ClipPlayer {
     }
 }
 
-/// Liest eine WAV-Datei, mischt auf mono und rechnet linear auf `sample_rate` um.
+/// Liest eine Audiodatei (WAV, FLAC, MP3), mischt auf mono und rechnet linear auf
+/// `sample_rate` um. Nur außerhalb des Audio-Threads aufrufen.
 pub fn load_wav_mono(path: &Path, sample_rate: u32) -> Result<Arc<[f32]>, EngineError> {
-    let err = EngineError::Wav;
-    let mut reader = hound::WavReader::open(path).map_err(err)?;
-    let spec = reader.spec();
-    if !(MIN_RATE..=MAX_RATE).contains(&spec.sample_rate)
-        || !(MIN_RATE..=MAX_RATE).contains(&sample_rate)
-    {
+    if !(MIN_RATE..=MAX_RATE).contains(&sample_rate) {
         return Err(EngineError::InvalidConfig("sample rate out of range"));
     }
-    if u64::from(reader.duration()) / u64::from(spec.sample_rate) > MAX_CLIP_SECONDS {
-        return Err(EngineError::InvalidConfig("clip longer than 6 hours"));
-    }
-    let channels = usize::from(spec.channels.max(1));
-    let raw: Vec<f32> = match spec.sample_format {
-        hound::SampleFormat::Float => reader
-            .samples::<f32>()
-            .collect::<Result<_, _>>()
-            .map_err(err)?,
-        hound::SampleFormat::Int => {
-            let scale = 1.0 / (1u64 << (spec.bits_per_sample.max(1) - 1)) as f32;
-            reader
-                .samples::<i32>()
-                .map(|s| s.map(|v| v as f32 * scale))
-                .collect::<Result<_, _>>()
-                .map_err(err)?
-        }
-    };
-    let mono: Vec<f32> = raw
-        .chunks(channels)
-        .map(|f| f.iter().sum::<f32>() / channels as f32)
-        .collect();
-    if spec.sample_rate == sample_rate || mono.is_empty() {
+    let d = decode_file(path).map_err(|e| EngineError::Read(format!("{}: {e}", path.display())))?;
+    let mono = d.mono();
+    if d.rate == sample_rate || mono.is_empty() {
         return Ok(mono.into());
     }
-    let ratio = f64::from(spec.sample_rate) / f64::from(sample_rate);
-    let out_len = (mono.len() as f64 / ratio) as usize;
-    let last = mono.len() - 1;
-    let resampled: Vec<f32> = (0..out_len)
-        .map(|i| {
-            let x = i as f64 * ratio;
-            let a = (x as usize).min(last);
-            let b = (a + 1).min(last);
-            let t = (x - a as f64) as f32;
-            mono[a] * (1.0 - t) + mono[b] * t
-        })
-        .collect();
-    Ok(resampled.into())
+    Ok(resample_linear(&mono, d.rate, sample_rate).into())
 }
 
 #[cfg(test)]
