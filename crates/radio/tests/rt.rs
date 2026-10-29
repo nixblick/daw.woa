@@ -218,3 +218,33 @@ fn render_length_and_loudness() {
     let lufs = integrated_lufs(&out.left, &out.right, SR).unwrap();
     assert!((lufs + 16.0).abs() <= 1.0, "{lufs}");
 }
+
+#[test]
+fn stream_ring_gets_the_broadcast_without_alloc_and_counts_drops() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("a.wav");
+    write_tone(&a, 1.0, 0.0, 0.5);
+    let (mut c, mut m) = Controller::new(show_of(&[a], 0.0), SR);
+    let (producer, mut consumer) = rtrb::RingBuffer::new(BLOCK * 2 * 3);
+    c.set_stream_output(Some(producer));
+    c.start();
+    let mut l = vec![0.0f32; BLOCK];
+    let mut r = vec![0.0f32; BLOCK];
+    for _ in 0..20 {
+        block(&mut c, &mut m, &mut l, &mut r);
+    }
+    // The ring holds 3 blocks; the rest is counted and never blocks the callback.
+    assert_eq!(consumer.slots(), BLOCK * 2 * 3);
+    let dropped = c.status().stream_dropped.load(Ordering::Relaxed);
+    assert_eq!(dropped as usize, BLOCK * 2 * 17);
+    let mut got = Vec::new();
+    while let Ok(v) = consumer.pop() {
+        got.push(v);
+    }
+    assert!(got.iter().any(|v| *v > 0.1), "music in stream");
+    // Detached: no more pushes.
+    c.set_stream_output(None);
+    block(&mut c, &mut m, &mut l, &mut r);
+    block(&mut c, &mut m, &mut l, &mut r);
+    assert_eq!(consumer.slots(), 0);
+}

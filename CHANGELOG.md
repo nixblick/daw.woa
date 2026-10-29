@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0 — 2026-10-29
+
+- **Sendeprozess `woa-streamd` (Paket 8).** Die Sendung geht an einen eigenen Shoutcast DNAS v2. `crates/stream` enthält:
+  - den Quellclient im Shoutcast-1-Protokoll (Legacy): Kennwort-Zeile (ab Stream-ID 2 mit `:#sid`), `OK2`, `icy-*`-Kopfzeilen, dann MP3. Vorgabe ist der eigene Server `feedback.wironair.de:8001`, Stream 1 (bretteins.infra#150)
+  - Titel per `admin.cgi?mode=updinfo` nur bei lokalem Server, weil dort das Kennwort im Klartext in der URL steht; gegen lfs001 vorerst keine Titel (v1 kann sie nicht in der Quellverbindung tragen). Hörerzahl aus `/7.html` nur mit `stream.admin_port`; der ist auf lfs001 von außen gesperrt. Die Quellanmeldung auf 8001 läuft im Klartext (bekanntes Risiko, `docs/stream.md`)
+  - Wiederverbinden mit Backoff (1 s bis 30 s, nach abgelehntem Kennwort 60 s); während des Neuaufbaus werden höchstens 5 s gepuffert
+  - MP3 CBR 128 kbit/s über LAME, 44,1 oder 48 kHz
+  - die Notfall-Playlist: Nach 2 s ohne Ton von der Oberfläche spielt woa-streamd selbst Dateien oder Ordner aus der Konfiguration (WAV, MP3, FLAC über `woa_engine::decode`), endlos. Kommt die Oberfläche zurück, blendet er über 1 s zurück.
+
+  Die Oberfläche schickt den Sendemix über einen eigenen `rtrb`-Ring des Mixers (der Audio-Callback schreibt nur hinein, Test unter `assert_no_alloc`) und einen Feeder-Thread an woa-streamd. Unter Unix läuft das über einen Unix-Socket in `<datenordner>/streamd/` (Modus 0700, also nur der eigene Benutzer), unter Windows über TCP auf 127.0.0.1. Dazu kommt ein zufälliges Token in `streamd.link` (Unix: Modus 0600). Die Verbindung ist abgesichert:
+  - Die Anmeldung hat feste Größe und eine Frist von 200 ms.
+  - Das Token wird in konstanter Zeit verglichen.
+  - Höchstens 4 Verbindungen dürfen gleichzeitig unangemeldet sein; kommt eine weitere, fliegt die älteste wartende, damit stumme Verbindungen die Oberfläche nicht aussperren.
+  - Es gibt nur eine aktive Oberfläche.
+  - Rahmen sind auf 1 MiB begrenzt, und die Größe wird vor jeder Allokation geprüft.
+
+  In der Oberfläche (Radio-Modus) gibt es den Knopf „Auf Sendung“ / „Sendung beenden“ und eine Zeile mit dem Zustand (verbunden, verbinde neu, Notfall), den Hörern, der Bitrate und der Dauer. woa-streamd wird abgelöst gestartet und überlebt einen Absturz der Oberfläche; nach dem Neustart hängt sie sich wieder an.
+
+  Neu für Agent und Probe: das MCP-Tool `stream_status` (Zustand aus `streamd-status.json`) und `woa-headless stream-test` (30 s Testton an den Server, Exit 3 = Kennwort abgelehnt, 4 = nicht erreichbar). Anleitung und Fehlerbilder in `docs/stream.md`, Klickliste in `docs/abnahme.md`.
+
+  Das Kennwort steht nie in der Konfiguration. Es wird aus einer Datei gelesen (Vorgabe `~/.secrets/daw.woa/shoutcast-source.pass`) und erscheint weder im Log noch in `Debug`.
+
 ## 0.2.1 — 2026-10-29
 
 - **MP3 und FLAC lesen.** Neues Modul `woa_engine::decode`: WAV weiter über `hound`, FLAC und MP3 über `symphonia` 0.6.1 (MPL-2.0, nur Features `mp3` und `flac`). Gilt überall, wo Audio gelesen wird: Clips im Projekt und Wellenform (`load_wav_mono`), Agent-Import (`import_audio` behält jetzt die Endung der Quelle), Playlist, Cart-Wall, LUFS-Messung und `radio-render` (`woa_radio::audio::load_stereo`). Dekodiert wird nur im Control- oder Hintergrund-Thread; andere Raten rechnet WOA wie bisher bei WAV linear auf die Projektrate um. Dateidialoge und Drag-and-drop im Radio-Modus nehmen `.mp3` und `.flac` an.

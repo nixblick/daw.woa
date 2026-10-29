@@ -10,6 +10,8 @@ use std::time::{Instant, SystemTime};
 use eframe::egui;
 use woa_radio::station::{Station, View};
 use woa_radio::{CARTS, Controller, RadioShow};
+use woa_stream::StreamStatus;
+use woa_stream::link::{Feeder, is_alive, link_path};
 
 use crate::theme;
 
@@ -44,6 +46,59 @@ pub struct RadioDesk {
     known_mtime: Option<SystemTime>,
     checked_at: Instant,
     mic_dropped: Arc<AtomicU64>,
+    /// Sendung: Feeder zum woa-streamd (nur wenn „Auf Sendung“).
+    feeder: Option<Feeder>,
+    stream_status: Option<StreamStatus>,
+    stream_checked_at: Instant,
+    sent_title: String,
+}
+
+/// Pfad zu `woa-streamd` neben der laufenden App.
+fn streamd_exe() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let name = if cfg!(windows) {
+        "woa-streamd.exe"
+    } else {
+        "woa-streamd"
+    };
+    let p = exe
+        .parent()
+        .map(|d| d.join(name))
+        .ok_or("Programmordner unbekannt")?;
+    if p.is_file() {
+        Ok(p)
+    } else {
+        Err(format!("{} fehlt", p.display()))
+    }
+}
+
+/// Startet woa-streamd als eigenständigen Prozess: eigene Prozessgruppe, keine
+/// Standard-Ein-/Ausgabe. So beendet weder Strg+C im Terminal noch ein Absturz der
+/// Oberfläche die Sendung.
+pub fn spawn_streamd(data_dir: &Path) -> Result<(), String> {
+    use std::process::{Command, Stdio};
+    let exe = streamd_exe()?;
+    let mut cmd = Command::new(exe);
+    cmd.arg("--data-dir")
+        .arg(data_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+    cmd.spawn()
+        .map(|_child| ())
+        .map_err(|e| format!("woa-streamd startet nicht: {e}"))
 }
 
 fn mtime(p: &Path) -> Option<SystemTime> {
@@ -108,6 +163,87 @@ impl RadioDesk {
             known_mtime,
             checked_at: Instant::now(),
             mic_dropped: Arc::new(AtomicU64::new(0)),
+            feeder: None,
+            stream_status: None,
+            stream_checked_at: Instant::now(),
+            sent_title: String::new(),
+        }
+        .reattach()
+    }
+
+    /// Läuft woa-streamd schon (Oberfläche nach Absturz neu gestartet), hängt sich die
+    /// Oberfläche wieder an; woa-streamd blendet von der Notfall-Playlist zurück.
+    fn reattach(mut self) -> Self {
+        if self.station.is_some() && is_alive(&link_path(&self.data_dir)) {
+            tracing::info!("streamd running, reattaching");
+            self.attach_feeder();
+        }
+        self
+    }
+
+    fn attach_feeder(&mut self) {
+        if self.feeder.is_some() || self.station.is_none() {
+            return;
+        }
+        // Eine Sekunde Puffer; der Feeder leert ihn alle 20 ms.
+        let (producer, consumer) = rtrb::RingBuffer::new(self.rate as usize * 2);
+        match Feeder::spawn(consumer, self.rate, link_path(&self.data_dir)) {
+            Ok(f) => {
+                self.with(move |c| c.set_stream_output(Some(producer)));
+                self.sent_title.clear();
+                self.feeder = Some(f);
+            }
+            Err(e) => self.error = Some(format!("Sendung: {e}")),
+        }
+    }
+
+    /// „Auf Sendung“: woa-streamd starten (falls nötig) und den Sendemix hinschicken.
+    pub fn go_on_air(&mut self) {
+        if self.station.is_none() {
+            self.error = Some("Keine Sendesteuerung".into());
+            return;
+        }
+        if !is_alive(&link_path(&self.data_dir))
+            && let Err(e) = spawn_streamd(&self.data_dir)
+        {
+            tracing::error!(error = %e, "streamd spawn failed");
+            self.error = Some(e);
+            return;
+        }
+        self.attach_feeder();
+    }
+
+    /// „Sendung beenden“: woa-streamd meldet sich beim Server ab und endet.
+    pub fn go_off_air(&mut self) {
+        self.with(|c| c.set_stream_output(None));
+        if let Some(f) = self.feeder.take() {
+            f.stop_broadcast();
+        }
+    }
+
+    /// Zustand der Sendung (Status-Datei von woa-streamd), wenn er läuft.
+    pub fn stream_status(&self) -> Option<&StreamStatus> {
+        self.stream_status.as_ref()
+    }
+
+    fn tick_stream(&mut self) {
+        let now = Instant::now();
+        if now.duration_since(self.stream_checked_at).as_millis() >= 500 {
+            self.stream_checked_at = now;
+            let path = woa_stream::status::status_path(&self.data_dir);
+            self.stream_status = woa_stream::status::read(&path);
+        }
+        if let Some(f) = &self.feeder {
+            let title = self
+                .view
+                .current
+                .and_then(|i| self.view.playlist.get(i))
+                .map(|e| e.title.clone())
+                .unwrap_or_default();
+            if title != self.sent_title {
+                f.set_title(&title);
+                self.sent_title = title;
+            }
         }
     }
 
@@ -121,6 +257,8 @@ impl RadioDesk {
     pub fn tick(&mut self) {
         let Some(st) = &self.station else { return };
         self.view = st.view();
+        self.tick_stream();
+        let Some(st) = &self.station else { return };
         let now = Instant::now();
         if self.view.revision != self.saved_revision
             && now.duration_since(self.saved_at).as_millis() >= 700
@@ -361,6 +499,7 @@ impl RadioDesk {
                 self.toggle_recording();
             }
         });
+        self.on_air_row(ui);
         // Je Regler eine Zeile: Ein Slider ist ein Widget, `horizontal_wrapped` bricht nicht
         // in ihm um, und bei 900 px Fensterbreite wurde die zweite Beschriftung abgeschnitten.
         let mut xf = v.crossfade_seconds;
@@ -386,6 +525,68 @@ impl RadioDesk {
         {
             self.view.duck_db = duck;
             self.with(move |c| c.set_duck(duck));
+        }
+    }
+
+    fn on_air_row(&mut self, ui: &mut egui::Ui) {
+        let now = woa_stream::unix_now();
+        let st = self.stream_status.clone();
+        let running = st.as_ref().is_some_and(|s| s.is_running(now));
+        let on = self.feeder.is_some();
+        ui.horizontal_wrapped(|ui| {
+            let (label, fill) = if on {
+                ("Sendung beenden", theme::ON_AIR)
+            } else {
+                ("Auf Sendung", theme::SURFACE)
+            };
+            let text = egui::RichText::new(label).size(17.0).color(if on {
+                theme::BG
+            } else {
+                ui.visuals().text_color()
+            });
+            if ui
+                .add(
+                    egui::Button::new(text)
+                        .fill(fill)
+                        .min_size(egui::vec2(140.0, 40.0)),
+                )
+                .on_hover_text("Sendung an den eigenen Shoutcast (woa-streamd)")
+                .clicked()
+            {
+                if on {
+                    self.go_off_air();
+                } else {
+                    self.go_on_air();
+                }
+            }
+            match &st {
+                Some(s) if running => {
+                    let color = if s.emergency || !s.connected {
+                        theme::ON_AIR
+                    } else {
+                        theme::ACCENT
+                    };
+                    ui.label(egui::RichText::new(s.summary()).color(color))
+                        .on_hover_text(format!("{} · {}", s.server, s.title));
+                }
+                Some(s) if s.last_error.is_some() && on => {
+                    ui.colored_label(
+                        ui.visuals().error_fg_color,
+                        s.last_error.clone().unwrap_or_default(),
+                    );
+                }
+                _ if on => {
+                    ui.label(egui::RichText::new("starte woa-streamd …").color(theme::DIM));
+                }
+                _ => {}
+            }
+        });
+        if let Some(s) = st.as_ref().filter(|s| running && s.last_error.is_some()) {
+            ui.label(
+                egui::RichText::new(s.last_error.clone().unwrap_or_default())
+                    .small()
+                    .color(theme::DIM),
+            );
         }
     }
 
