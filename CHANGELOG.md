@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.14 — 2026-10-29
+
+- **Feedback geht an den eigenen Server.** Ohne `config.json` schickt der Feedback-Knopf an `https://feedback.wironair.de/api/feedback`, und daraus wird ein Issue in daw.woa (Gegenprobe #40). Mit `"feedback_url": ""` in der `config.json` ist er abgeschaltet.
+
 ## 0.1.13 — 2026-10-29
 
 - `docs/andre-handgriffe.md`: Andrés erledigte Schritte (DNS, Token, Ablauf) entfernt; Ausrollen macht Claude.

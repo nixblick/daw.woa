@@ -10,13 +10,25 @@ use woa_telemetry::{FeedbackError, FeedbackMeta, submit_feedback};
 pub const NOT_CONFIGURED: &str = "Server noch nicht eingerichtet";
 
 /// App configuration (`config.json` in the config folder). Missing file = defaults.
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+/// Eigener Feedback-Server (bretteins.infra, Instanz `daw.woa` auf lfs001).
+pub const DEFAULT_FEEDBACK_URL: &str = "https://feedback.wironair.de/api/feedback";
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct GuiConfig {
-    /// Feedback endpoint, e.g. `https://example.org/api/feedback`. Empty = off.
+    /// Feedback endpoint; default is our own server. Empty string in `config.json` = off.
     pub feedback_url: String,
     /// Anonymous install id sent with feedback.
     pub install_id: String,
+}
+
+impl Default for GuiConfig {
+    fn default() -> Self {
+        Self {
+            feedback_url: DEFAULT_FEEDBACK_URL.to_string(),
+            install_id: String::new(),
+        }
+    }
 }
 
 impl GuiConfig {
@@ -185,8 +197,17 @@ mod tests {
         d.set_screenshot(None);
         assert_eq!(d.phase, Phase::Editing);
         d.text = "Knopf klemmt".into();
-        d.send(&GuiConfig::default());
+        let off = GuiConfig {
+            feedback_url: String::new(),
+            ..GuiConfig::default()
+        };
+        d.send(&off);
         assert_eq!(d.phase, Phase::Done(NOT_CONFIGURED.into()));
+    }
+
+    #[test]
+    fn default_points_to_own_server() {
+        assert_eq!(GuiConfig::default().feedback_url, DEFAULT_FEEDBACK_URL);
     }
 
     #[test]
