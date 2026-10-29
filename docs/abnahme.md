@@ -4,7 +4,10 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Paket 8: Sendeprozess (0.3.0, offen)
+## Paket 8: Sendeprozess (0.3.0, abgenommen 29.10.2026)
+
+André, 29.10.2026: „stream geht, abnahme paket 8 fertig!“ (mit 0.3.4, gegen stream.wironair.de).
+
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo build -q --release -p woa -p woa-streamd && cargo run -q --release -p woa`
 
