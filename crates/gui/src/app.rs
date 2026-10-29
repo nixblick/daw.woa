@@ -34,6 +34,8 @@ pub struct WoaApp {
     player: Option<Player>,
     selected_track: Option<TrackId>,
     selected_clip: Option<ClipId>,
+    /// Angezeigter Pegel je Spur (mit Abfall), 0..1.
+    track_levels: std::collections::HashMap<TrackId, f32>,
     /// Smoothed input level for the meter, 0..1.
     level: f32,
 }
@@ -56,6 +58,7 @@ impl WoaApp {
             player,
             selected_track: None,
             selected_clip: None,
+            track_levels: std::collections::HashMap::new(),
             level: 0.0,
             state,
             config,
@@ -360,6 +363,7 @@ impl WoaApp {
         egui::ScrollArea::both().show(ui, |ui| {
             for (id, name, gain, mute) in tracks {
                 ui.horizontal(|ui| {
+                    self.track_meter(ui, id, gain, mute);
                     let sel = self.selected_track == Some(id);
                     if ui
                         .radio(sel, "")
@@ -392,6 +396,48 @@ impl WoaApp {
                 });
             }
         });
+    }
+
+    /// Pegelanzeige am Spuranfang: Spitzenpegel nach Gain und Mute, dB-Skala -60..0,
+    /// grün, ab -12 dB gelb, ab -3 dB rot; fällt langsam ab.
+    fn track_meter(&mut self, ui: &mut egui::Ui, track: TrackId, gain_db: f64, mute: bool) {
+        let raw = self.player.as_ref().map_or(0.0, |p| p.take_level(track));
+        let project = self.state.project();
+        let solo = project.tracks.iter().any(|t| t.solo);
+        let audible = !mute && (!solo || project.track(track).is_some_and(|t| t.solo));
+        let fresh = if audible {
+            raw * 10f32.powf(gain_db as f32 / 20.0)
+        } else {
+            0.0
+        };
+        let shown = self.track_levels.entry(track).or_insert(0.0);
+        *shown = fresh.max(*shown * 0.85);
+        let level = *shown;
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(70.0, 16.0), egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 2.0, ui.visuals().extreme_bg_color);
+        let db = 20.0 * level.max(1e-6).log10();
+        let frac = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
+        let color = if db > -3.0 {
+            egui::Color32::from_rgb(220, 50, 50)
+        } else if db > -12.0 {
+            egui::Color32::from_rgb(230, 190, 40)
+        } else {
+            egui::Color32::from_rgb(60, 180, 75)
+        };
+        if frac > 0.0 {
+            let mut bar = rect.shrink(2.0);
+            bar.set_width(bar.width() * frac);
+            painter.rect_filled(bar, 1.0, color);
+        }
+        for mark in [-12.0f32, -3.0] {
+            let x = rect.left() + rect.width() * (mark + 60.0) / 60.0;
+            painter.vline(
+                x,
+                rect.y_range(),
+                egui::Stroke::new(1.0, egui::Color32::DARK_GRAY),
+            );
+        }
     }
 
     /// One track's strip: clips as boxes, the playhead, click to seek or select a clip.

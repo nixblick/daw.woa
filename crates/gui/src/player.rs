@@ -5,8 +5,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
 
-use woa_engine::clip::{ClipPlayer, PlacedClip, load_wav_mono};
+use woa_engine::clip::{ClipPlayer, PlacedClip, load_wav_mono, take_peak};
 use woa_engine::device::{OutputConfig, output_sample_rate, start_output_with};
 use woa_engine::project::{ProjectGraph, TrackNodes, build_project_graph};
 use woa_engine::transport::{TransportHandle, beats_to_samples, samples_to_beats};
@@ -27,6 +28,7 @@ pub struct Player {
     nodes: HashMap<TrackId, TrackNodes>,
     structure: Option<Structure>,
     mixer: Option<Mixer>,
+    meters: HashMap<TrackId, Arc<AtomicU32>>,
 }
 
 mod cpal_stream {
@@ -54,6 +56,7 @@ impl Player {
             nodes: HashMap::new(),
             structure: None,
             mixer: None,
+            meters: HashMap::new(),
         })
     }
 
@@ -86,6 +89,7 @@ impl Player {
         if self.structure.as_ref() != Some(&structure) {
             let transport = self.transport.clone();
             let cache = &mut self.cache;
+            let meters = &mut self.meters;
             let sr = self.rate;
             let mut source = |t: &woa_model::Track| -> Option<Box<dyn woa_dsp::Node>> {
                 if t.kind != TrackKind::Audio {
@@ -119,7 +123,10 @@ impl Player {
                         Some(PlacedClip { start, samples })
                     })
                     .collect();
-                Some(Box::new(ClipPlayer::new(clips, transport.clone())))
+                let meter = Arc::clone(meters.entry(t.id).or_default());
+                Some(Box::new(
+                    ClipPlayer::new(clips, transport.clone()).with_meter(meter),
+                ))
             };
             let graph = build_project_graph(project, &mut source);
             match self.engine.set_graph(graph.builder, rate, 4096) {
@@ -187,6 +194,11 @@ impl Player {
     /// Position in Sekunden.
     pub fn position_seconds(&self) -> f64 {
         self.transport.position() as f64 / f64::from(self.rate.max(1))
+    }
+
+    /// Spitzenpegel einer Spur seit dem letzten Aufruf (vor Gain/Mute), 0..1+.
+    pub fn take_level(&self, track: TrackId) -> f32 {
+        self.meters.get(&track).map_or(0.0, |m| take_peak(m))
     }
 
     /// Vergisst eine dekodierte Datei (nach neuer Aufnahme unter gleichem Namen).
