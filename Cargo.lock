@@ -5431,6 +5431,7 @@ dependencies = [
 name = "woa-agent"
 version = "0.1.17"
 dependencies = [
+ "hound",
  "rmcp",
  "schemars",
  "serde",
@@ -5440,6 +5441,7 @@ dependencies = [
  "woa-dsp",
  "woa-engine",
  "woa-model",
+ "woa-radio",
 ]
 
 [[package]]

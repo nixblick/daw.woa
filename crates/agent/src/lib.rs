@@ -281,6 +281,27 @@ pub struct ExportParams {
     pub target_lufs: Option<f64>,
 }
 
+/// Parameters of `build_playlist`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BuildPlaylistParams {
+    /// Audio files (WAV) in play order. Relative paths are resolved against the project folder.
+    pub files: Vec<String>,
+    /// Append to the existing playlist instead of replacing it.
+    #[serde(default)]
+    pub append: bool,
+    /// Path of radio.json. Default: radio.json in the WOA data folder.
+    #[serde(default)]
+    pub radio_json: Option<String>,
+}
+
+/// Parameters of `run_order`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RunOrderParams {
+    /// Path of radio.json. Default: radio.json in the WOA data folder.
+    #[serde(default)]
+    pub radio_json: Option<String>,
+}
+
 /// The MCP server around one project session.
 #[derive(Clone)]
 pub struct WoaAgent {
@@ -289,6 +310,35 @@ pub struct WoaAgent {
     // Read by the code generated from `#[tool_handler]`.
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
+}
+
+/// Rate for radio measurements; LUFS does not depend on it.
+const RADIO_RATE: u32 = 48_000;
+
+fn run_order_json(show: &woa_radio::RadioShow, radio: &Path) -> serde_json::Value {
+    let titles: Vec<_> = show
+        .playlist
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            serde_json::json!({
+                "position": i + 1,
+                "title": e.title(),
+                "path": e.path.display().to_string(),
+                "seconds": e.seconds,
+                "lufs": e.lufs,
+                "gain_db": e.gain_db(show.target_lufs),
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "radio_json": radio.display().to_string(),
+        "titles": titles,
+        "count": show.playlist.len(),
+        "total_seconds": show.total_seconds_from(0),
+        "crossfade_seconds": show.crossfade_seconds,
+        "target_lufs": show.target_lufs,
+    })
 }
 
 fn lock_err() -> McpError {
@@ -333,6 +383,23 @@ impl WoaAgent {
     /// Shared handle to the session, e.g. for a GUI that shows the agent's work live.
     pub fn session(&self) -> Arc<Mutex<Session>> {
         Arc::clone(&self.session)
+    }
+
+    fn radio_path(&self, given: Option<&str>) -> PathBuf {
+        match given {
+            Some(g) => self.resolve_media(g),
+            None => woa_radio::default_radio_path(),
+        }
+    }
+
+    /// Relative paths count from the project folder.
+    fn resolve_media(&self, given: &str) -> PathBuf {
+        let p = Path::new(given);
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            self.dir.join(p)
+        }
     }
 
     fn lock(&self) -> Result<MutexGuard<'_, Session>, McpError> {
@@ -984,6 +1051,56 @@ impl WoaAgent {
             Ok(()) => ok_json(serde_json::json!({ "saved": self.dir.display().to_string() })),
             Err(e) => fail(e),
         })
+    }
+
+    #[tool(
+        description = "Radio mode: build the broadcast playlist in radio.json from audio files (WAV). Replaces the playlist, or appends with append=true. Every title is measured (LUFS, peak, length) so auto-gain can bring it to the target loudness. Returns the run order."
+    )]
+    async fn build_playlist(
+        &self,
+        Parameters(p): Parameters<BuildPlaylistParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let radio = self.radio_path(p.radio_json.as_deref());
+        let mut show = match woa_radio::RadioShow::load(&radio) {
+            Ok(s) => s,
+            Err(e) => return Ok(fail(e)),
+        };
+        let mut entries = Vec::new();
+        for f in &p.files {
+            let path = self.resolve_media(f);
+            if !woa_radio::audio::is_supported(&path) {
+                return Ok(fail(woa_radio::audio::unsupported(&path)));
+            }
+            let measured = match woa_radio::audio::measure_file(&path, RADIO_RATE) {
+                Ok(m) => m,
+                Err(e) => return Ok(fail(format!("{}: {e}", path.display()))),
+            };
+            let mut entry = woa_radio::PlaylistEntry::new(path);
+            entry.set_measured(measured);
+            entries.push(entry);
+        }
+        if !p.append {
+            show.playlist.clear();
+        }
+        show.playlist.extend(entries);
+        if let Err(e) = show.save(&radio) {
+            return Ok(fail(e));
+        }
+        Ok(ok_json(run_order_json(&show, &radio)))
+    }
+
+    #[tool(
+        description = "Radio mode: read the playlist from radio.json and return the run order with each title's length, loudness (LUFS) and auto-gain, plus the total length with crossfades. Changes nothing."
+    )]
+    async fn run_order(
+        &self,
+        Parameters(p): Parameters<RunOrderParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let radio = self.radio_path(p.radio_json.as_deref());
+        match woa_radio::RadioShow::load(&radio) {
+            Ok(show) => Ok(ok_json(run_order_json(&show, &radio))),
+            Err(e) => Ok(fail(e)),
+        }
     }
 }
 
