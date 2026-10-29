@@ -46,6 +46,20 @@ pub struct View {
     pub remaining_total: f64,
     pub crossfade_seconds: f64,
     pub duck_db: f64,
+    /// Sendebus-Processing an.
+    pub bus_processing: bool,
+    /// Mikro-Kette an.
+    pub mic_processing: bool,
+    /// Ziel-Lautheit (LUFS).
+    pub target_lufs: f64,
+    /// Lautheitsregelung des Sendebusses (dB).
+    pub bus_agc_db: f32,
+    /// Größte Absenkung Kompressor + Limiter seit dem letzten Bild (dB).
+    pub bus_reduction_db: f32,
+    /// Kurzzeit-Lautheit am Sendeausgang (LUFS).
+    pub bus_lufs: f32,
+    /// Mikro-Gate offen.
+    pub mic_gate_open: bool,
     pub carts: Vec<Option<String>>,
     pub carts_playing: u32,
     pub mic_open: bool,
@@ -219,6 +233,13 @@ fn run(
             remaining_total: c.remaining_total(),
             crossfade_seconds: c.show().crossfade_seconds,
             duck_db: c.show().duck_db,
+            bus_processing: c.show().bus_processing,
+            mic_processing: c.show().mic_processing,
+            target_lufs: c.show().target_lufs,
+            bus_agc_db: st.bus_agc_db(),
+            bus_reduction_db: st.take_bus_reduction(),
+            bus_lufs: st.bus_lufs(),
+            mic_gate_open: st.mic_gate_open.load(Ordering::Relaxed),
             carts: (0..CARTS)
                 .map(|i| {
                     c.show()

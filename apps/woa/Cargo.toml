@@ -9,9 +9,9 @@ repository.workspace = true
 [dependencies]
 eframe = "0.35.0"
 tracing = "0.1.44"
-woa-gui = { version = "0.3", path = "../../crates/gui" }
-woa-radio = { version = "0.3", path = "../../crates/radio" }
-woa-telemetry = { version = "0.3", path = "../../crates/telemetry" }
+woa-gui = { version = "0.4", path = "../../crates/gui" }
+woa-radio = { version = "0.4", path = "../../crates/radio" }
+woa-telemetry = { version = "0.4", path = "../../crates/telemetry" }
 
 # Nur für die X11-Wahl der Ereignisschleife (#56); winit 0.30 kommt ohnehin über eframe.
 [target.'cfg(target_os = "linux")'.dependencies]

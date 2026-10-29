@@ -369,6 +369,8 @@ fn run_order_json(show: &woa_radio::RadioShow, radio: &Path) -> serde_json::Valu
         "total_seconds": show.total_seconds_from(0),
         "crossfade_seconds": show.crossfade_seconds,
         "target_lufs": show.target_lufs,
+        "bus_processing": show.bus_processing,
+        "mic_processing": show.mic_processing,
     })
 }
 

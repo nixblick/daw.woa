@@ -12,6 +12,7 @@ use basedrop::{Owned, Shared};
 
 use crate::CARTS;
 use crate::audio::Stereo;
+use crate::dynamics::{BusProcessor, MicChain};
 use crate::level::{Smoother, crossfade};
 
 /// Kennung „kein Titel“.
@@ -63,6 +64,10 @@ pub enum Cmd {
     Record(Option<Owned<rtrb::Producer<f32>>>),
     /// Sendung an woa-streamd: Sendeausgang Stereo verschachtelt in diesen Ring, `None` = aus.
     Stream(Option<Owned<rtrb::Producer<f32>>>),
+    /// Processing an/aus: Sendebus (Lautheitsregelung, Kompressor, Limiter) und Mikro-Kette.
+    SetProcessing { bus: bool, mic: bool },
+    /// Ziel-Lautheit des Sendebusses (LUFS).
+    SetTarget(f64),
 }
 
 /// Lock-frei lesbarer Zustand des Mixers.
@@ -92,6 +97,14 @@ pub struct Status {
     pub peak: AtomicU32,
     /// Spitzenpegel Mikro seit letztem Abholen (f32-Bits).
     pub mic_peak: AtomicU32,
+    /// Sendebus: Verstärkung der Lautheitsregelung (dB, f32-Bits).
+    pub bus_agc_db: AtomicU32,
+    /// Sendebus: größte Absenkung Kompressor + Limiter seit letztem Abholen (dB, f32-Bits).
+    pub bus_reduction_db: AtomicU32,
+    /// Sendebus: Kurzzeit-Lautheit am Ausgang (LUFS, f32-Bits).
+    pub bus_lufs: AtomicU32,
+    /// Mikro-Gate offen.
+    pub mic_gate_open: AtomicBool,
 }
 
 impl Default for Status {
@@ -111,6 +124,10 @@ impl Default for Status {
             mic_underruns: AtomicU64::new(0),
             peak: AtomicU32::new(0),
             mic_peak: AtomicU32::new(0),
+            bus_agc_db: AtomicU32::new(0),
+            bus_reduction_db: AtomicU32::new(0),
+            bus_lufs: AtomicU32::new((-70.0f32).to_bits()),
+            mic_gate_open: AtomicBool::new(false),
         }
     }
 }
@@ -123,6 +140,21 @@ impl Status {
 
     pub fn take_mic_peak(&self) -> f32 {
         f32::from_bits(self.mic_peak.swap(0, Ordering::Relaxed))
+    }
+
+    /// Größte Absenkung des Sendebusses (dB) seit dem letzten Aufruf.
+    pub fn take_bus_reduction(&self) -> f32 {
+        f32::from_bits(self.bus_reduction_db.swap(0, Ordering::Relaxed))
+    }
+
+    /// Verstärkung der Lautheitsregelung (dB).
+    pub fn bus_agc_db(&self) -> f32 {
+        f32::from_bits(self.bus_agc_db.load(Ordering::Relaxed))
+    }
+
+    /// Kurzzeit-Lautheit am Sendeausgang (LUFS).
+    pub fn bus_lufs(&self) -> f32 {
+        f32::from_bits(self.bus_lufs.load(Ordering::Relaxed))
     }
 }
 
@@ -216,6 +248,10 @@ pub struct Mixer {
     rec: Option<Owned<rtrb::Producer<f32>>>,
     stream: Option<Owned<rtrb::Producer<f32>>>,
     clock: u64,
+    bus: BusProcessor,
+    bus_on: bool,
+    mic_chain: MicChain,
+    mic_chain_on: bool,
 }
 
 impl Mixer {
@@ -245,6 +281,10 @@ impl Mixer {
             rec: None,
             stream: None,
             clock: 0,
+            bus: BusProcessor::new(crate::level::TARGET_LUFS, rate),
+            bus_on: true,
+            mic_chain: MicChain::new(rate),
+            mic_chain_on: true,
         }
     }
 
@@ -289,6 +329,11 @@ impl Mixer {
                 }
                 Cmd::Record(p) => self.rec = p,
                 Cmd::Stream(p) => self.stream = p,
+                Cmd::SetProcessing { bus, mic } => {
+                    self.bus_on = bus;
+                    self.mic_chain_on = mic;
+                }
+                Cmd::SetTarget(t) => self.bus.set_target(t),
             }
         }
     }
@@ -353,6 +398,7 @@ impl Mixer {
         self.trim_mic_backlog();
         let mut peak = 0.0f32;
         let mut mic_peak = 0.0f32;
+        let mut reduction = 0.0f32;
         for i in 0..n {
             self.transitions();
 
@@ -425,14 +471,28 @@ impl Mixer {
                     self.status.mic_underruns.fetch_add(1, Ordering::Relaxed);
                 }
             }
+            if self.mic_chain_on {
+                (il, ir) = self.mic_chain.process(il, ir);
+            }
             let mg = self.mic_gain.tick();
             let duck = self.duck.tick();
             il *= mg;
             ir *= mg;
             mic_peak = mic_peak.max(il.abs()).max(ir.abs());
 
-            let sl = ml * duck + cl + il;
-            let sr = mr * duck + cr + ir;
+            let mut sl = ml * duck + cl + il;
+            let mut sr = mr * duck + cr + ir;
+            // Abhören ohne Mikro: derselbe Weg ohne `il`/`ir`, mit demselben Faktor.
+            let (mut ql, mut qr) = (sl - il, sr - ir);
+            if self.bus_on {
+                let g = self.bus.gain(sl, sr);
+                sl = self.bus.clip(sl * g);
+                sr = self.bus.clip(sr * g);
+                ql = self.bus.clip(ql * g);
+                qr = self.bus.clip(qr * g);
+                let m = self.bus.meter();
+                reduction = reduction.max(m.comp_db + m.limit_db);
+            }
             if let Some(p) = self.rec.as_mut() {
                 if p.slots() >= 2 {
                     let _ = p.push(sl);
@@ -449,17 +509,13 @@ impl Mixer {
                     self.status.stream_dropped.fetch_add(2, Ordering::Relaxed);
                 }
             }
-            let (ol, or) = if self.mic_monitor {
-                (sl, sr)
-            } else {
-                (sl - il, sr - ir)
-            };
+            let (ol, or) = if self.mic_monitor { (sl, sr) } else { (ql, qr) };
             left[i] = ol;
             right[i] = or;
             peak = peak.max(sl.abs()).max(sr.abs());
             self.clock += 1;
         }
-        self.publish(peak, mic_peak);
+        self.publish(peak, mic_peak, reduction);
     }
 
     /// Wirft zu viel Mikro-Vorlauf weg (etwa nach einem Hänger des Eingangs).
@@ -475,7 +531,7 @@ impl Mixer {
         }
     }
 
-    fn publish(&self, peak: f32, mic_peak: f32) {
+    fn publish(&self, peak: f32, mic_peak: f32, reduction: f32) {
         let s = &self.status;
         let (cur, pos, end) = self
             .current
@@ -500,5 +556,14 @@ impl Mixer {
         s.clock.store(self.clock, Ordering::Release);
         store_max(&s.peak, peak);
         store_max(&s.mic_peak, mic_peak);
+        store_max(&s.bus_reduction_db, reduction);
+        let m = self.bus.meter();
+        let agc = if self.bus_on { m.agc_db } else { 0.0 };
+        s.bus_agc_db.store(agc.to_bits(), Ordering::Relaxed);
+        s.bus_lufs.store(m.lufs.to_bits(), Ordering::Relaxed);
+        s.mic_gate_open.store(
+            self.mic_chain_on && self.mic_chain.gate_open(),
+            Ordering::Relaxed,
+        );
     }
 }

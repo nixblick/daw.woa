@@ -40,6 +40,9 @@ fn write_tone(path: &Path, seconds: f64, freq: f32, amp: f32) {
 fn show_of(paths: &[PathBuf], crossfade: f64) -> RadioShow {
     RadioShow {
         crossfade_seconds: crossfade,
+        // Diese Tests prüfen die Mechanik des Mixers; das Processing hat eigene Tests.
+        bus_processing: false,
+        mic_processing: false,
         playlist: paths.iter().map(PlaylistEntry::new).collect(),
         ..RadioShow::default()
     }
@@ -211,12 +214,71 @@ fn render_length_and_loudness() {
         write_tone(&p, secs, freq, amp);
         paths.push(p);
     }
-    let show = show_of(&paths, 3.0);
+    let mut show = show_of(&paths, 3.0);
+    show.bus_processing = true;
     let out = render(&show, SR).unwrap();
     let expect = (8 + 6 + 7 - 3 - 3) * SR as usize;
     assert_eq!(out.left.len(), expect);
     let lufs = integrated_lufs(&out.left, &out.right, SR).unwrap();
     assert!((lufs + 16.0).abs() <= 1.0, "{lufs}");
+    let peak = out.left.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+    assert!(peak <= 0.8913, "ceiling -1 dBFS: {peak}");
+}
+
+#[test]
+fn bus_processing_limits_and_levels_without_alloc() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("laut.wav");
+    let jingle = tmp.path().join("jingle.wav");
+    // Lauter Titel und ein Cart darüber: die rohe Summe liegt über 0 dBFS.
+    write_tone(&a, 12.0, 440.0, 0.9);
+    write_tone(&jingle, 2.0, 660.0, 0.9);
+    let mut show = show_of(&[a], 0.0);
+    show.bus_processing = true;
+    show.mic_processing = true;
+    let (mut c, mut m) = Controller::new(show, SR);
+    c.assign_cart(0, Some(jingle)).unwrap();
+    let (mut mic_tx, mic_rx) = rtrb::RingBuffer::new(SR as usize);
+    c.set_mic_input(Some(mic_rx));
+    let (producer, mut consumer) = rtrb::RingBuffer::new(SR as usize * 2);
+    c.set_stream_output(Some(producer));
+    c.start();
+    c.trigger_cart(0);
+    c.set_mic_open(true);
+    let mut l = vec![0.0f32; BLOCK];
+    let mut r = vec![0.0f32; BLOCK];
+    let mut sent = Vec::new();
+    let mut peak = 0.0f32;
+    for b in 0..(10 * SR as usize / BLOCK) {
+        for i in 0..BLOCK {
+            let t = (b * BLOCK + i) as f32;
+            let v = (t * 1000.0 * std::f32::consts::TAU / SR as f32).sin() * 0.5;
+            let _ = mic_tx.push(v);
+            let _ = mic_tx.push(v);
+        }
+        block(&mut c, &mut m, &mut l, &mut r);
+        while let Ok(v) = consumer.pop() {
+            peak = peak.max(v.abs());
+            sent.push(v);
+        }
+    }
+    assert!(peak <= 0.8913, "stream never above -1 dBFS: {peak}");
+    assert!(
+        c.status().take_bus_reduction() > 0.0,
+        "limiter/compressor worked"
+    );
+    assert!(c.status().mic_gate_open.load(Ordering::Relaxed));
+    // After 10 s close to the target: loudness of the last 3 s.
+    let tail = &sent[sent.len() - 3 * 2 * SR as usize..];
+    let (tl, tr): (Vec<f32>, Vec<f32>) = tail.chunks(2).map(|p| (p[0], p[1])).unzip();
+    let lufs = integrated_lufs(&tl, &tr, SR).unwrap();
+    assert!((lufs + 16.0).abs() < 2.0, "{lufs} LUFS");
+
+    // Switched off: the AGC reports 0 dB.
+    c.set_processing(false, false);
+    block(&mut c, &mut m, &mut l, &mut r);
+    block(&mut c, &mut m, &mut l, &mut r);
+    assert_eq!(c.status().bus_agc_db(), 0.0);
 }
 
 #[test]

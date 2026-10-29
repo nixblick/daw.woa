@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — 2026-10-29
+
+Paket 9 aus M3 (#4): Sendebus-Processing.
+
+- **Sendebus mit Lautheitsregelung, Kompressor und Limiter** (`woa_radio::dynamics::BusProcessor`). Die Regelung misst die Lautheit am Sendeausgang (K-Filter nach BS.1770, gleitend über etwa 3 s) und führt die Verstärkung langsam zum Ziel aus `radio.json` (`target_lufs`, Vorgabe −16 LUFS): höchstens 3 dB je Sekunde, Bereich ±12 dB. In Pausen unter −45 LUFS bleibt sie stehen und zieht kein Rauschen hoch. Danach folgt ein RMS-Kompressor (2,5 : 1, Schwelle 4 dB über dem Ziel, weiches Knie) und ein Limiter bei −1 dBFS mit sofortigem Angriff und harter Sicherung. Der Limiter hat keine Vorausschau und deshalb keine Latenz; Uhr, Mitschnitt und Sendung bleiben sample-genau. Sendung, Mitschnitt und Abhören bekommen denselben Faktor.
+- **Mikrofon-Kette** (`MicChain`): Hochpass 80 Hz, Präsenz +3 dB bei 3 kHz, Gate ab −50 dBFS (schließt um 30 dB, 100 ms Haltezeit), Kompressor 4 : 1 ab −24 dBFS mit +6 dB Aufholverstärkung. Der De-Esser kommt in M5.
+- **Schalter und Anzeige im Radio-Modus** unter den Reglern: „Sendebus“ und „Mikro-Kette“, beide an (gespeichert in `radio.json` als `bus_processing` und `mic_processing`). Daneben stehen die Kurzzeit-Lautheit am Ausgang, die Verstärkung der Regelung und die Absenkung durch Kompressor und Limiter, bei offenem Mikro „Gate offen/zu“. Das Agent-Werkzeug `build_playlist` meldet beide Schalter mit.
+- Alles im Audio-Thread ohne Allokation (Tests unter `assert_no_alloc`). `radio-render` läuft mit Processing; die Spitze bleibt unter −1 dBFS.
+- Tests: Limiter nie über der Decke bei +6 dBFS mit harten Sprüngen; leises und lautes Material landet bei −16 ± 1 LUFS; Regelung steht in Stille; Gate schließt bei Rauschen und öffnet bei Sprache; Hochpass nimmt Rumpeln, Kompressor verkleinert 20 dB Eingangsunterschied auf 3–12 dB; Sendemix mit lautem Titel, Cart und Mikro bleibt unter −1 dBFS und nach 10 s bei −16 ± 2 LUFS.
+
 ## 0.3.6 — 2026-10-29
 
 - **Programme in der Quellenliste (Fixes #44).** Belegt am 29.10.: WOA listete seine eigenen Wiedergabe-Streams als „Programm: woa“, zweimal mit demselben Schlüssel. pipewire-alsa nennt sie „PipeWire ALSA [woa]“ und meldet keine Prozess-ID, deshalb griff der Filter über die eigene PID nicht. Chromium meldet sich laut WirePlumber als `application.name = Chromium` und wurde vom Namen her richtig erkannt. Warum es am 29.10. fehlte, ließ sich ohne laufenden Chromium-Stream nicht nachstellen (Wiedergabe auf dem Notebook ist tabu). Vermutung: Der Stream hatte keinen bekannten Ausgang (`sink_index`) und fiel stumm aus der Liste. Widerlegt sind: Die Liste wird nur beim Start gelesen (sie wurde jede Sekunde neu gelesen). Pausierte Streams werden ausgefiltert (es gab keinen Filter). Die Abfrage scheiterte (keine Warnung im Log).
