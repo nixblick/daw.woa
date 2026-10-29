@@ -129,12 +129,7 @@ impl AppState {
     /// Resolves a clip's audio path (relative to the project): project folder first,
     /// then the recovery folder (takes of a project that was not saved yet).
     pub fn resolve_audio(&self, rel: &str) -> Option<PathBuf> {
-        let rel = Path::new(rel);
-        if rel.is_absolute()
-            || rel
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir))
-        {
+        if !woa_model::is_safe_audio_path(rel) {
             return None;
         }
         self.session
@@ -142,7 +137,7 @@ impl AppState {
             .map(|p| p.join(rel))
             .into_iter()
             .chain(std::iter::once(self.recovery_dir.join(rel)))
-            .find(|p| p.is_file())
+            .find(|p| std::fs::symlink_metadata(p).is_ok_and(|m| m.is_file()))
     }
 
     /// Puts a recorded take on `track` (or on a new audio track) as one undo step.

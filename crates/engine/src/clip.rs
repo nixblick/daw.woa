@@ -12,6 +12,12 @@ use woa_dsp::{Node, ProcessBuffers};
 use crate::EngineError;
 use crate::transport::TransportHandle;
 
+/// Erlaubte Abtastraten beim Laden.
+const MIN_RATE: u32 = 8_000;
+const MAX_RATE: u32 = 384_000;
+/// Längster Clip, der geladen wird (Speicherschutz gegen kaputte Dateien).
+const MAX_CLIP_SECONDS: u64 = 6 * 3600;
+
 /// Ein Clip auf der Zeitachse in Samples.
 #[derive(Debug, Clone)]
 pub struct PlacedClip {
@@ -71,6 +77,14 @@ pub fn load_wav_mono(path: &Path, sample_rate: u32) -> Result<Arc<[f32]>, Engine
     let err = EngineError::Wav;
     let mut reader = hound::WavReader::open(path).map_err(err)?;
     let spec = reader.spec();
+    if !(MIN_RATE..=MAX_RATE).contains(&spec.sample_rate)
+        || !(MIN_RATE..=MAX_RATE).contains(&sample_rate)
+    {
+        return Err(EngineError::InvalidConfig("sample rate out of range"));
+    }
+    if u64::from(reader.duration()) / u64::from(spec.sample_rate) > MAX_CLIP_SECONDS {
+        return Err(EngineError::InvalidConfig("clip longer than 6 hours"));
+    }
     let channels = usize::from(spec.channels.max(1));
     let raw: Vec<f32> = match spec.sample_format {
         hound::SampleFormat::Float => reader

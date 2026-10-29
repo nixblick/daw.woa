@@ -176,6 +176,10 @@ fn project_graph(
         let mut clips = Vec::new();
         for c in &t.clips {
             let Some(rel) = &c.audio else { continue };
+            if !woa_model::is_safe_audio_path(rel) {
+                err = Some(format!("{rel}: Pfad verlässt den Projektordner"));
+                continue;
+            }
             match load_wav_mono(&dir.join(rel), rate) {
                 Ok(samples) => clips.push(PlacedClip {
                     start: beats_to_samples(c.start_beats, project.tempo_bpm, rate as f32),

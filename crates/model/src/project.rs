@@ -76,6 +76,32 @@ pub struct Clip {
     pub audio: Option<String>,
 }
 
+/// Whether a clip audio path is a plain relative path inside the project folder:
+/// only normal components, no `..`, no root, no drive prefix.
+pub fn is_safe_audio_path(rel: &str) -> bool {
+    let p = std::path::Path::new(rel);
+    !rel.is_empty()
+        && p.components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
+#[cfg(test)]
+mod path_tests {
+    #[test]
+    fn audio_paths_stay_inside() {
+        assert!(super::is_safe_audio_path("aufnahmen/a.wav"));
+        for bad in [
+            "",
+            "../a.wav",
+            "aufnahmen/../../a.wav",
+            "/etc/passwd",
+            "./a.wav",
+        ] {
+            assert!(!super::is_safe_audio_path(bad), "{bad}");
+        }
+    }
+}
+
 /// A track with its mixer settings and clips.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Track {
