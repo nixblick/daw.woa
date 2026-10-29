@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use eframe::egui;
+use woa_engine::record::{InputConfig, Recorder, next_take_path, start_recording};
 use woa_model::{MAX_GAIN_DB, MIN_GAIN_DB, TrackId};
 
 use crate::feedback::{FeedbackDialog, GuiConfig, Phase, encode_png};
@@ -20,12 +21,25 @@ pub struct WoaApp {
     gain_drag: Option<(TrackId, f64)>,
     /// Last title sent to the viewport.
     last_title: String,
+    /// Where takes of unsaved projects go (`<data>/aufnahmen`).
+    takes_dir: PathBuf,
+    /// Running recording from the default input, if any.
+    recorder: Option<Recorder>,
+    /// Smoothed input level for the meter, 0..1.
+    level: f32,
 }
 
 impl WoaApp {
     /// Builds the app; `recovery_dir` receives autosaves of unsaved projects.
     pub fn new(config: GuiConfig, recovery_dir: PathBuf) -> Self {
+        let takes_dir = recovery_dir
+            .parent()
+            .map(|p| p.join("aufnahmen"))
+            .unwrap_or_else(|| PathBuf::from("aufnahmen"));
         Self {
+            takes_dir,
+            recorder: None,
+            level: 0.0,
             state: AppState::new(recovery_dir, Instant::now()),
             config,
             feedback: FeedbackDialog::default(),
@@ -33,6 +47,96 @@ impl WoaApp {
             gain_drag: None,
             last_title: String::new(),
         }
+    }
+
+    /// Starts or stops recording the default input into the project's `aufnahmen/`.
+    fn toggle_record(&mut self) {
+        if let Some(rec) = self.recorder.take() {
+            self.level = 0.0;
+            match rec.stop() {
+                Ok(s) => {
+                    tracing::info!(seconds = s.seconds(), overruns = s.overruns, "take saved");
+                    let lost = if s.overruns > 0 {
+                        format!(", {} Samples verloren", s.overruns)
+                    } else {
+                        String::new()
+                    };
+                    self.state.status = Status::Info(format!(
+                        "Aufnahme gespeichert: {} ({:.1} s{lost})",
+                        s.path.display(),
+                        s.seconds()
+                    ));
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "take failed");
+                    self.state.status = Status::Error(format!("Aufnahme fehlgeschlagen: {e}"));
+                }
+            }
+            return;
+        }
+        let dir = match self.state.session().path() {
+            Some(p) => p.join("aufnahmen"),
+            None => self.takes_dir.clone(),
+        };
+        let started = next_take_path(&dir)
+            .map_err(|e| e.to_string())
+            .and_then(|path| {
+                start_recording(&InputConfig::default(), &path, |e| {
+                    tracing::warn!(error = %e, "input stream error");
+                })
+                .map_err(|e| e.to_string())
+            });
+        match started {
+            Ok(rec) => {
+                tracing::info!(path = %rec.path().display(), "take started");
+                self.state.status = Status::Info(format!("Nimmt auf: {}", rec.path().display()));
+                self.recorder = Some(rec);
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "take start failed");
+                self.state.status = Status::Error(format!("Aufnahme nicht gestartet: {e}"));
+            }
+        }
+    }
+
+    fn record_bar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            let (label, fill) = match &self.recorder {
+                Some(rec) => {
+                    let t = rec.elapsed().as_secs();
+                    (
+                        format!("■ Stopp  {}:{:02}", t / 60, t % 60),
+                        egui::Color32::from_rgb(200, 40, 40),
+                    )
+                }
+                None => (
+                    "● Aufnahme".to_string(),
+                    ui.visuals().widgets.inactive.bg_fill,
+                ),
+            };
+            let button = egui::Button::new(egui::RichText::new(label).strong()).fill(fill);
+            if ui
+                .add(button)
+                .on_hover_text("Nimmt den Standard-Eingang (Mikrofon) als WAV auf (Strg+R)")
+                .clicked()
+            {
+                self.toggle_record();
+            }
+            if let Some(rec) = &self.recorder {
+                let fresh = rec.take_level();
+                self.level = fresh.max(self.level * 0.85);
+                let color = if self.level > 0.95 {
+                    egui::Color32::RED
+                } else {
+                    egui::Color32::from_rgb(60, 180, 75)
+                };
+                ui.add(
+                    egui::ProgressBar::new(self.level.clamp(0.0, 1.0))
+                        .desired_width(240.0)
+                        .fill(color),
+                );
+            }
+        });
     }
 
     fn save(&mut self) {
@@ -63,7 +167,7 @@ impl WoaApp {
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
-        let (undo, redo, save, open, new) = ctx.input_mut(|i| {
+        let (undo, redo, save, open, new, record) = ctx.input_mut(|i| {
             let m = egui::Modifiers::COMMAND;
             let sm = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
             (
@@ -72,8 +176,12 @@ impl WoaApp {
                 i.consume_key(m, egui::Key::S),
                 i.consume_key(m, egui::Key::O),
                 i.consume_key(m, egui::Key::N),
+                i.consume_key(m, egui::Key::R),
             )
         });
+        if record {
+            self.toggle_record();
+        }
         if undo {
             self.state.undo();
         }
@@ -148,6 +256,8 @@ impl WoaApp {
     }
 
     fn tracks(&mut self, ui: &mut egui::Ui) {
+        self.record_bar(ui);
+        ui.separator();
         if ui.button("+ Spur").clicked() {
             self.state.add_track();
         }
@@ -267,8 +377,10 @@ impl eframe::App for WoaApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.last_title = title;
         }
-        // Keep the autosave timer and the feedback poll ticking while idle.
-        ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        // Keep the autosave timer and the feedback poll ticking while idle; the level
+        // meter needs a faster beat while recording.
+        let beat = if self.recorder.is_some() { 40 } else { 500 };
+        ctx.request_repaint_after(std::time::Duration::from_millis(beat));
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
