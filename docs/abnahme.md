@@ -85,6 +85,7 @@ Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --rel
 3. In der Liste „Systemklang“ wählen: Damit wird alles aufgenommen, was gerade zu hören ist.
 4. Bei einem Eingang (Liste, „Eingang: …“) den Haken „hören“ setzen, mit Kopfhörer aufnehmen: Du hörst dich selbst.
 5. „Stopp am Ende“ (neben ▶, orange = an): Die Wiedergabe hält am Ende des letzten Clips an. Noch einmal ▶ startet von vorn.
+6. (#44, 0.3.6) Erst die Quellenliste einer Spur öffnen, dann in Chromium Musik starten und die Liste erneut öffnen: Dort steht „Programm: Chromium“ (bei sprechendem Titel mit „– Titel“), WOA selbst steht nicht drin. Musik stoppen, Liste erneut öffnen: Ohne Programm erscheint unten grau „Programm spielt gerade keinen Ton?“.
 
 Selbst geprüft von Claude: Quellenliste gegen PipeWire (Eingang, Systemklang, Programme). Ein Testton mit Lautstärke 0,05 kam über Systemklang und über „Programm“ jeweils mit Spitze 0,050 an (`woa-headless sources` und `capture`). Workspace-Tests grün.
 
