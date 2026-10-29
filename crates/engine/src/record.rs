@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use crate::device::{DeviceError, OutputDeviceInfo};
+use crate::live_peaks::{LivePeaks, live_peaks};
 
 /// Sekunden Puffer zwischen Audio- und Schreib-Thread.
 const QUEUE_SECONDS: usize = 4;
@@ -120,9 +121,21 @@ pub struct Recorder {
     sample_rate: u32,
     channels: u16,
     started: Instant,
+    peaks: LivePeaks,
 }
 
 impl Recorder {
+    /// Hängt die seit dem letzten Aufruf fertigen Wellenform-Punkte an (je
+    /// [`crate::clip::PEAK_BLOCK`] Frames in [`Recorder::sample_rate`]).
+    pub fn drain_peaks(&mut self, out: &mut Vec<f32>) {
+        self.peaks.drain_into(out);
+    }
+
+    /// Abtastrate der Aufnahme.
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
     /// Spitzenpegel seit dem letzten Aufruf (0..1), setzt ihn zurück. Für Pegelanzeigen.
     pub fn take_level(&self) -> f32 {
         f32::from_bits(self.meters.level.swap(0, Ordering::Relaxed))
@@ -264,6 +277,7 @@ pub fn start_recording(
     )?;
 
     let m_writer = Arc::clone(&meters);
+    let (mut collector, peaks) = live_peaks(channels);
     let writer = std::thread::Builder::new()
         .name("woa-record-writer".into())
         .spawn(move || -> Result<(), String> {
@@ -272,6 +286,7 @@ pub fn start_recording(
                 let stopping = m_writer.stop.load(Ordering::Acquire);
                 let mut n = 0u64;
                 while let Ok(s) = consumer.pop() {
+                    collector.push(s);
                     wav.write_sample(s).map_err(|e| e.to_string())?;
                     n += 1;
                 }
@@ -300,6 +315,7 @@ pub fn start_recording(
         sample_rate,
         channels,
         started: Instant::now(),
+        peaks,
     })
 }
 

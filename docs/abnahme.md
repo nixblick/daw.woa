@@ -4,6 +4,16 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Nachtrag #43: Wellenform während der Aufnahme (0.3.5, offen)
+
+Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. Spur wählen, Quelle z. B. „Programm: firefox“ mit laufender Musik, „Aufnahme“ drücken: Ab dem Abspielkopf wächst ein roter Clip „Aufnahme läuft“, darin die Wellenform. Der Pegel oben läuft mit.
+2. Laut aufnehmen, bis es übersteuert: Neben dem Pegel steht rot „ÜBERSTEUERT“.
+3. Stopp: Der rote Clip wird zum normalen Clip mit derselben Wellenform an derselben Stelle.
+
+Selbst geprüft von Claude: Workspace-Tests grün, darunter die Peak-Sammlung und `assert_no_alloc`. Kein Bildschirmfoto: Ohne Mikrofon oder hörbare Quelle lässt sich keine Aufnahme starten (Andrés Regel), eine Testquelle gibt es nicht.
+
 ## Paket 6: Agent (0.1.16, offen)
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo build --release -p woa-headless -p woa`
