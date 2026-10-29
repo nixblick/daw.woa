@@ -6,6 +6,7 @@
 pub mod app;
 pub mod feedback;
 pub mod player;
+mod sources;
 pub mod state;
 mod theme;
 

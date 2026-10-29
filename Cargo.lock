@@ -1397,6 +1397,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 
 [[package]]
+name = "enum-primitive-derive"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba7795da175654fe16979af73f81f26a8ea27638d8d9823d317016888a63dc4c"
+dependencies = [
+ "num-traits",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "enumflags2"
 version = "0.7.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2519,6 +2530,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1788edb87fdc09c7e26304471e2f5be8cdefb1b6930d6e3985fc02ff53bf86ee"
 dependencies = [
  "libc",
+ "log",
  "wasi",
  "windows-sys 0.61.2",
 ]
@@ -3387,6 +3399,22 @@ dependencies = [
  "rusty-fork",
  "tempfile",
  "unarray",
+]
+
+[[package]]
+name = "pulseaudio"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ba79a4c6904c987cc31fa50e9b750539404511c2dbd9ce95e5e58444177a21e"
+dependencies = [
+ "bitflags 2.13.2",
+ "byteorder",
+ "enum-primitive-derive",
+ "futures",
+ "log",
+ "mio",
+ "num-traits",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -5391,7 +5419,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "woa"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "eframe",
  "tracing",
@@ -5401,7 +5429,7 @@ dependencies = [
 
 [[package]]
 name = "woa-agent"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "rmcp",
  "schemars",
@@ -5414,7 +5442,7 @@ dependencies = [
 
 [[package]]
 name = "woa-dsp"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "assert_no_alloc",
  "hound",
@@ -5424,7 +5452,7 @@ dependencies = [
 
 [[package]]
 name = "woa-engine"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "arc-swap",
  "assert_no_alloc",
@@ -5433,6 +5461,7 @@ dependencies = [
  "flacenc",
  "hound",
  "mp3lame-encoder",
+ "pulseaudio",
  "rtrb",
  "tempfile",
  "woa-dsp",
@@ -5441,11 +5470,11 @@ dependencies = [
 
 [[package]]
 name = "woa-guests"
-version = "0.1.10"
+version = "0.1.11"
 
 [[package]]
 name = "woa-gui"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "eframe",
  "png",
@@ -5462,7 +5491,7 @@ dependencies = [
 
 [[package]]
 name = "woa-headless"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -5479,15 +5508,15 @@ dependencies = [
 
 [[package]]
 name = "woa-io"
-version = "0.1.10"
+version = "0.1.11"
 
 [[package]]
 name = "woa-library"
-version = "0.1.10"
+version = "0.1.11"
 
 [[package]]
 name = "woa-model"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "insta",
  "proptest",
@@ -5499,27 +5528,27 @@ dependencies = [
 
 [[package]]
 name = "woa-plugins"
-version = "0.1.10"
+version = "0.1.11"
 
 [[package]]
 name = "woa-radio"
-version = "0.1.10"
+version = "0.1.11"
 
 [[package]]
 name = "woa-remote"
-version = "0.1.10"
+version = "0.1.11"
 
 [[package]]
 name = "woa-stream"
-version = "0.1.10"
+version = "0.1.11"
 
 [[package]]
 name = "woa-streamd"
-version = "0.1.10"
+version = "0.1.11"
 
 [[package]]
 name = "woa-telemetry"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "base64",
  "serde",
@@ -5534,7 +5563,7 @@ dependencies = [
 
 [[package]]
 name = "woa-updater"
-version = "0.1.10"
+version = "0.1.11"
 
 [[package]]
 name = "writeable"

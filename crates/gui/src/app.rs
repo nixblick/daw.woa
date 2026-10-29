@@ -4,10 +4,11 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use eframe::egui;
-use woa_engine::record::{InputConfig, Recorder, next_take_path, start_recording};
+use woa_engine::record::next_take_path;
 use woa_model::{ClipId, MAX_GAIN_DB, MIN_GAIN_DB, TrackId};
 
 use crate::player::Player;
+use crate::sources::{self, SourceEntry, Take};
 use crate::theme;
 
 /// Pixel je Beat in der Zeitleiste.
@@ -16,7 +17,7 @@ const PX_PER_BEAT: f32 = 24.0;
 /// Breite der Spurköpfe.
 const HEADER_W: f32 = 250.0;
 /// Höhe einer Spur.
-const ROW_H: f32 = 64.0;
+const ROW_H: f32 = 88.0;
 const ZOOM_RANGE: std::ops::RangeInclusive<f32> = 2.0..=160.0;
 
 use crate::feedback::{FeedbackDialog, GuiConfig, Phase, encode_png};
@@ -33,10 +34,22 @@ pub struct WoaApp {
     gain_drag: Option<(TrackId, f64)>,
     /// Last title sent to the viewport.
     last_title: String,
-    /// Running recording from the default input, if any.
-    recorder: Option<Recorder>,
-    /// Target track and start beat of the running recording.
-    rec_target: (Option<TrackId>, f64),
+    /// Laufende Aufnahmen, je Zielspur eine (leer = keine Aufnahme).
+    takes: Vec<(Option<TrackId>, Take)>,
+    /// Startpunkt der laufenden Aufnahme in Beats.
+    rec_start: f64,
+    /// Spuren, die bei der nächsten Aufnahme mitlaufen (leer = die ausgewählte Spur).
+    armed: std::collections::BTreeSet<TrackId>,
+    /// Gewählte Quelle je Spur (fehlt = Standard-Eingang).
+    track_source: std::collections::HashMap<TrackId, String>,
+    /// Spuren, deren Quelle beim Aufnehmen hörbar ist.
+    track_monitor: std::collections::HashSet<TrackId>,
+    /// Zuletzt abgefragte Quellen und wann.
+    source_list: (Vec<SourceEntry>, Option<Instant>),
+    /// Aufnahmepegel je Spur während der Aufnahme, 0..1.
+    rec_levels: std::collections::HashMap<TrackId, f32>,
+    /// Wiedergabe am Ende des letzten Clips anhalten.
+    stop_at_end: bool,
     /// Playback engine at the default output (`None` if the device failed).
     player: Option<Player>,
     selected_track: Option<TrackId>,
@@ -83,8 +96,14 @@ impl WoaApp {
             }
         };
         Self {
-            recorder: None,
-            rec_target: (None, 0.0),
+            takes: Vec::new(),
+            rec_start: 0.0,
+            armed: std::collections::BTreeSet::new(),
+            track_source: std::collections::HashMap::new(),
+            track_monitor: std::collections::HashSet::new(),
+            source_list: (Vec::new(), None),
+            rec_levels: std::collections::HashMap::new(),
+            stop_at_end: true,
             player,
             selected_track: None,
             selected_clip: None,
@@ -111,22 +130,79 @@ impl WoaApp {
         }
     }
 
-    /// Starts or stops recording the default input into the project's `aufnahmen/`.
+    /// Startet oder beendet die Aufnahme. Jede scharf geschaltete Spur (sonst die
+    /// ausgewählte) nimmt ihre eigene Quelle in `aufnahmen/` auf, alle ab demselben Punkt.
     fn toggle_record(&mut self) {
-        if let Some(rec) = self.recorder.take() {
-            self.level = 0.0;
-            if let Some(p) = self.player.as_mut() {
-                p.stop();
+        if !self.takes.is_empty() {
+            self.stop_record();
+            return;
+        }
+        let dir = self.state.takes_dir();
+        let tempo = self.state.project().tempo_bpm;
+        let start = self
+            .player
+            .as_ref()
+            .map_or(0.0, |p| p.position_beats(tempo));
+        let targets: Vec<Option<TrackId>> = if self.armed.is_empty() {
+            vec![self.selected_track]
+        } else {
+            self.armed.iter().copied().map(Some).collect()
+        };
+        let mut errors = Vec::new();
+        for track in targets {
+            let key = track
+                .and_then(|t| self.track_source.get(&t).cloned())
+                .unwrap_or_default();
+            let monitor = track.is_some_and(|t| self.track_monitor.contains(&t));
+            let started = next_take_path(&dir)
+                .map_err(|e| e.to_string())
+                .and_then(|path| Take::start(&key, &path, monitor));
+            match started {
+                Ok(take) => {
+                    tracing::info!(path = %take.path().display(), source = %key, "take started");
+                    self.takes.push((track, take));
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, source = %key, "take start failed");
+                    errors.push(format!("{}: {e}", sources::short_label(&key)));
+                }
             }
-            match rec.stop() {
-                Ok(s) => {
+        }
+        if self.takes.is_empty() {
+            self.state.status =
+                Status::Error(format!("Aufnahme nicht gestartet: {}", errors.join("; ")));
+            return;
+        }
+        self.rec_start = start;
+        self.state.status = if errors.is_empty() {
+            Status::Info(format!("Nimmt auf: {} Spur(en)", self.takes.len()))
+        } else {
+            Status::Error(format!("Nimmt auf, aber: {}", errors.join("; ")))
+        };
+        // Overdub: die anderen Spuren spielen ab dem Kopf mit.
+        if let Some(p) = self.player.as_mut() {
+            p.play();
+        }
+    }
+
+    fn stop_record(&mut self) {
+        self.level = 0.0;
+        self.rec_levels.clear();
+        if let Some(p) = self.player.as_mut() {
+            p.stop();
+        }
+        let start = self.rec_start;
+        let mut saved = Vec::new();
+        let mut errors = Vec::new();
+        for (track, take) in std::mem::take(&mut self.takes) {
+            match take.stop() {
+                Ok((s, measured)) => {
                     tracing::info!(seconds = s.seconds(), overruns = s.overruns, "take saved");
-                    let (track, start) = self.rec_target;
                     if let Some(p) = self.player.as_mut() {
                         p.forget(&s.path);
                     }
                     let measured = if self.latency_auto {
-                        (s.input_latency + woa_engine::device::output_latency()).as_secs_f64()
+                        measured.as_secs_f64()
                     } else {
                         0.0
                     };
@@ -144,49 +220,35 @@ impl WoaApp {
                     } else {
                         String::new()
                     };
-                    self.state.status = Status::Info(format!(
-                        "Aufnahme gespeichert: {} ({:.1} s{lost})",
-                        s.path.display(),
-                        s.seconds()
-                    ));
+                    saved.push(format!("{:.1} s{lost}", s.seconds()));
                 }
                 Err(e) => {
                     tracing::error!(error = %e, "take failed");
-                    self.state.status = Status::Error(format!("Aufnahme fehlgeschlagen: {e}"));
+                    errors.push(e);
                 }
             }
-            return;
         }
-        let dir = self.state.takes_dir();
-        let tempo = self.state.project().tempo_bpm;
-        let start = self
-            .player
-            .as_ref()
-            .map_or(0.0, |p| p.position_beats(tempo));
-        let started = next_take_path(&dir)
-            .map_err(|e| e.to_string())
-            .and_then(|path| {
-                start_recording(&InputConfig::default(), &path, |e| {
-                    tracing::warn!(error = %e, "input stream error");
-                })
-                .map_err(|e| e.to_string())
-            });
-        match started {
-            Ok(rec) => {
-                tracing::info!(path = %rec.path().display(), "take started");
-                self.state.status = Status::Info(format!("Nimmt auf: {}", rec.path().display()));
-                self.recorder = Some(rec);
-                self.rec_target = (self.selected_track, start);
-                // Overdub: the other tracks play along from the playhead.
-                if let Some(p) = self.player.as_mut() {
-                    p.play();
-                }
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "take start failed");
-                self.state.status = Status::Error(format!("Aufnahme nicht gestartet: {e}"));
-            }
+        self.state.status = if errors.is_empty() {
+            Status::Info(format!(
+                "Aufnahme gespeichert: {} Spur(en) ({})",
+                saved.len(),
+                saved.join(", ")
+            ))
+        } else {
+            Status::Error(format!("Aufnahme fehlgeschlagen: {}", errors.join("; ")))
+        };
+    }
+
+    /// Quellenliste, höchstens jede Sekunde neu abgefragt.
+    fn sources(&mut self) -> &[SourceEntry] {
+        let stale = self
+            .source_list
+            .1
+            .is_none_or(|t| t.elapsed() > std::time::Duration::from_secs(1));
+        if stale {
+            self.source_list = (sources::list(), Some(Instant::now()));
         }
+        &self.source_list.0
     }
 
     fn rewind(&mut self) {
@@ -197,10 +259,19 @@ impl WoaApp {
     }
 
     fn toggle_play(&mut self) {
-        if self.recorder.is_some() {
+        if !self.takes.is_empty() {
             self.toggle_record();
-        } else if let Some(p) = self.player.as_mut() {
-            p.toggle();
+        } else {
+            let end = self.audio_end();
+            let tempo = self.state.project().tempo_bpm;
+            let at_end = self.stop_at_end;
+            if let Some(p) = self.player.as_mut() {
+                // Am Ende angekommen: Abspielen beginnt wieder vorn.
+                if at_end && !p.is_playing() && end > 0.0 && p.position_beats(tempo) >= end {
+                    p.seek_beats(0.0, tempo);
+                }
+                p.toggle();
+            }
         }
     }
 
@@ -234,6 +305,29 @@ impl WoaApp {
                 .clicked()
             {
                 self.toggle_play();
+            }
+            let end = egui::Button::new(egui::RichText::new("Stopp am Ende").small().color(
+                if self.stop_at_end {
+                    theme::BG
+                } else {
+                    theme::DIM
+                },
+            ))
+            .min_size(egui::vec2(0.0, 34.0))
+            .fill(if self.stop_at_end {
+                theme::ACCENT
+            } else {
+                theme::SURFACE
+            });
+            if ui
+                .add(end)
+                .on_hover_text(
+                    "An: die Wiedergabe hält am Ende des letzten Clips an. \
+                     Aus: sie läuft weiter, z. B. zum Aufnehmen über das Ende hinaus.",
+                )
+                .clicked()
+            {
+                self.stop_at_end = !self.stop_at_end;
             }
             // Zeitanzeige: Minuten:Sekunden groß, Takt.Schlag klein.
             let secs = self.player.as_ref().map_or(0.0, Player::position_seconds);
@@ -271,9 +365,9 @@ impl WoaApp {
                     });
                 });
             ui.add_space(12.0);
-            let recording = self.recorder.is_some();
-            let label = match &self.recorder {
-                Some(rec) => {
+            let recording = !self.takes.is_empty();
+            let label = match self.takes.first() {
+                Some((_, rec)) => {
                     let t = rec.elapsed().as_secs();
                     format!("■  {}:{:02}", t / 60, t % 60)
                 }
@@ -292,9 +386,10 @@ impl WoaApp {
             } else {
                 theme::SURFACE
             });
-            let rec_resp = ui
-                .add(rec_btn)
-                .on_hover_text("Nimmt den Standard-Eingang (Mikrofon) als WAV auf (Strg+R)");
+            let rec_resp = ui.add(rec_btn).on_hover_text(
+                "Nimmt auf jeder scharfen Spur (roter Punkt) ihre Quelle auf, \
+                     sonst auf der ausgewählten Spur (Strg+R)",
+            );
             if !recording {
                 // Die Schrift hat kein ●, also selbst zeichnen.
                 let c = rec_resp.rect.left_center() + egui::vec2(22.0, 0.0);
@@ -303,8 +398,16 @@ impl WoaApp {
             if rec_resp.clicked() {
                 self.toggle_record();
             }
-            if let Some(rec) = &self.recorder {
-                let fresh = rec.take_level();
+            if recording {
+                let mut fresh = 0.0f32;
+                for (track, take) in &self.takes {
+                    let l = take.take_level();
+                    fresh = fresh.max(l);
+                    if let Some(t) = track {
+                        let shown = self.rec_levels.entry(*t).or_insert(0.0);
+                        *shown = l.max(*shown);
+                    }
+                }
                 self.level = fresh.max(self.level * 0.85);
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(160.0, 10.0), egui::Sense::hover());
@@ -653,6 +756,33 @@ impl WoaApp {
     }
 
     /// Längste Spur in Beats, mindestens 64.
+    /// Ende des letzten Clips in Beats (0 ohne Clips).
+    fn audio_end(&self) -> f64 {
+        self.state
+            .project()
+            .tracks
+            .iter()
+            .flat_map(|t| t.clips.iter().map(|c| c.end_beats()))
+            .fold(0.0f64, f64::max)
+    }
+
+    /// Hält die Wiedergabe am Ende des letzten Clips an, wenn „Stopp am Ende“ an ist.
+    /// Beim Aufnehmen nie: da läuft die Zeit absichtlich über das Ende hinaus.
+    fn stop_at_audio_end(&mut self) {
+        if !self.stop_at_end || !self.takes.is_empty() {
+            return;
+        }
+        let end = self.audio_end();
+        let tempo = self.state.project().tempo_bpm;
+        if let Some(p) = self.player.as_mut()
+            && p.is_playing()
+            && p.position_beats(tempo) >= end
+        {
+            p.stop();
+            p.seek_beats(end, tempo);
+        }
+    }
+
     fn timeline_end(&self) -> f64 {
         self.state
             .project()
@@ -673,7 +803,11 @@ impl WoaApp {
         mute: bool,
     ) {
         let color = theme::track_color(index);
-        let armed = self.selected_track == Some(id);
+        let armed = if self.armed.is_empty() {
+            self.selected_track == Some(id)
+        } else {
+            self.armed.contains(&id)
+        };
         let frame = egui::Frame::new()
             .fill(if armed {
                 theme::mix(theme::SURFACE, color, 0.12)
@@ -712,10 +846,14 @@ impl WoaApp {
                     );
                     if arm
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .on_hover_text("Ziel für die Aufnahme")
+                        .on_hover_text(
+                            "Scharf schalten: nimmt bei der nächsten Aufnahme mit auf. \
+                             Mehrere Spuren gleichzeitig möglich.",
+                        )
                         .clicked()
+                        && !self.armed.remove(&id)
                     {
-                        self.selected_track = Some(id);
+                        self.armed.insert(id);
                     }
                     self.track_name(ui, id, name);
                     {
@@ -759,6 +897,7 @@ impl WoaApp {
                         }
                     }
                 });
+                self.track_source_row(ui, id);
             })
         };
         let r = resp.response.rect;
@@ -774,6 +913,63 @@ impl WoaApp {
         );
     }
 
+    /// Quellenwahl und Mithören einer Spur.
+    fn track_source_row(&mut self, ui: &mut egui::Ui, id: TrackId) {
+        let busy = !self.takes.is_empty();
+        ui.horizontal(|ui| {
+            let current = self.track_source.get(&id).cloned().unwrap_or_default();
+            let mut chosen = None;
+            ui.add_enabled_ui(!busy, |ui| {
+                egui::ComboBox::from_id_salt(("source", id))
+                    .selected_text(
+                        egui::RichText::new(sources::short_label(&current))
+                            .small()
+                            .color(theme::DIM),
+                    )
+                    .width(150.0)
+                    .truncate()
+                    .show_ui(ui, |ui| {
+                        for s in self.sources().to_vec() {
+                            if ui.selectable_label(s.key == current, &s.label).clicked() {
+                                chosen = Some(s.key);
+                            }
+                        }
+                    })
+                    .response
+                    .on_hover_text(
+                        "Aufnahmequelle der Spur: Mikrofon, Systemklang oder ein Programm",
+                    );
+            });
+            if let Some(key) = chosen {
+                if key == sources::DEFAULT_KEY {
+                    self.track_source.remove(&id);
+                    self.track_monitor.remove(&id);
+                } else {
+                    self.track_source.insert(id, key);
+                }
+            }
+            let can = self.track_source.contains_key(&id);
+            let mut on = self.track_monitor.contains(&id);
+            let r = ui
+                .add_enabled(
+                    !busy && can,
+                    egui::Checkbox::new(&mut on, egui::RichText::new("hören").small()),
+                )
+                .on_hover_text(
+                    "Quelle beim Aufnehmen über den Ausgang hören. Für Mikrofone und \
+                     Eingänge; Systemklang hört man ohnehin (Rückkopplung!).",
+                )
+                .on_disabled_hover_text("Erst eine Quelle aus der Liste wählen");
+            if r.changed() {
+                if on {
+                    self.track_monitor.insert(id);
+                } else {
+                    self.track_monitor.remove(&id);
+                }
+            }
+        });
+    }
+
     /// Pegelanzeige am Spuranfang: Spitzenpegel nach Gain und Mute, dB-Skala -60..0,
     /// grün, ab -12 dB gelb, ab -3 dB rot; fällt langsam ab.
     fn track_meter(&mut self, ui: &mut egui::Ui, track: TrackId, gain_db: f64, mute: bool) {
@@ -786,6 +982,7 @@ impl WoaApp {
         } else {
             0.0
         };
+        let fresh = fresh.max(self.rec_levels.insert(track, 0.0).unwrap_or(0.0));
         let shown = self.track_levels.entry(track).or_insert(0.0);
         *shown = fresh.max(*shown * 0.85);
         let level = *shown;
@@ -1313,7 +1510,8 @@ impl eframe::App for WoaApp {
         if let Some(p) = self.player.as_mut() {
             p.sync(&project, &|rel| state.resolve_audio(rel));
         }
-        let busy = self.recorder.is_some() || self.player.as_ref().is_some_and(Player::is_playing);
+        self.stop_at_audio_end();
+        let busy = !self.takes.is_empty() || self.player.as_ref().is_some_and(Player::is_playing);
         let beat = if busy { 40 } else { 500 };
         ctx.request_repaint_after(std::time::Duration::from_millis(beat));
     }

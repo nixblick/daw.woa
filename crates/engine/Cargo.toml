@@ -17,8 +17,11 @@ rtrb = "0.4.1"
 woa-dsp = { version = "0.1.0", path = "../dsp" }
 woa-model = { version = "0.1.0", path = "../model" }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+pulseaudio = { version = "0.3.2", optional = true }
+
 [features]
-device = ["dep:cpal"]
+device = ["dep:cpal", "dep:pulseaudio"]
 
 [dev-dependencies]
 assert_no_alloc = "1.1.2"
