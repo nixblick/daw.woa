@@ -9,6 +9,6 @@ repository.workspace = true
 [dependencies]
 eframe = "0.35.0"
 tracing = "0.1.44"
-woa-gui = { version = "0.2", path = "../../crates/gui" }
-woa-radio = { version = "0.2", path = "../../crates/radio" }
-woa-telemetry = { version = "0.2", path = "../../crates/telemetry" }
+woa-gui = { version = "0.3", path = "../../crates/gui" }
+woa-radio = { version = "0.3", path = "../../crates/radio" }
+woa-telemetry = { version = "0.3", path = "../../crates/telemetry" }

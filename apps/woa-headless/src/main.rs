@@ -175,6 +175,25 @@ enum Cmd {
         #[arg(long, default_value_t = 15)]
         timeout: u64,
     },
+    /// Sendet Testton (440 Hz, MP3) und einen Titel an einen Shoutcast-Server.
+    /// Exit 3 = Kennwort abgelehnt, 4 = Server nicht erreichbar.
+    StreamTest {
+        #[arg(long, default_value = woa_stream::config::DEFAULT_HOST)]
+        host: String,
+        /// Quell-Port (Shoutcast 1).
+        #[arg(long, default_value_t = 8001)]
+        port: u16,
+        #[arg(long, default_value_t = 1)]
+        sid: u32,
+        /// Datei mit dem Quell-Kennwort. Vorgabe: ~/.secrets/daw.woa/shoutcast-source.pass
+        #[arg(long)]
+        pass_file: Option<PathBuf>,
+        /// Admin-Port für den Titel; wirkt nur bei lokalem Server (127.0.0.1).
+        #[arg(long)]
+        admin_port: Option<u16>,
+        #[arg(long, default_value_t = 30)]
+        seconds: u32,
+    },
     /// Schickt eine Test-Meldung an den Feedback-Endpunkt (/api/feedback).
     FeedbackTest {
         #[arg(long, env = "WOA_FEEDBACK_URL")]
@@ -212,6 +231,55 @@ fn cmd_radio_render(radio: &std::path::Path, out: &std::path::Path, rate: u32) -
 }
 
 mod audio;
+
+enum StreamFail {
+    Auth(String),
+    Connect(String),
+    Other(String),
+}
+
+/// Testton in Echtzeit an den Server, Titel wenn ein Admin-Port da ist.
+fn cmd_stream_test(cfg: &woa_stream::StreamConfig, seconds: u32) -> Result<(), StreamFail> {
+    use woa_stream::shoutcast::{Source, StreamError, update_title};
+    let other = |e: String| StreamFail::Other(e);
+    cfg.validate().map_err(other)?;
+    let kw = woa_stream::Kennwort::from_file(&cfg.password_file).map_err(other)?;
+    let mut enc =
+        woa_stream::mp3::Mp3Encoder::new(cfg.sample_rate, cfg.bitrate_kbps).map_err(other)?;
+    let map = |e: StreamError| match e {
+        StreamError::AuthFailed => StreamFail::Auth(e.to_string()),
+        StreamError::Connect(_) => StreamFail::Connect(e.to_string()),
+        _ => StreamFail::Other(e.to_string()),
+    };
+    let mut src = Source::connect(cfg, &kw).map_err(map)?;
+    println!("stream-test: angemeldet bei {}", cfg.label());
+    if woa_stream::shoutcast::titles_possible(cfg) {
+        match update_title(cfg, &kw, "WOA stream-test") {
+            Ok(()) => println!("stream-test: Titel gesetzt"),
+            Err(e) => println!("stream-test: Titel nicht gesetzt: {e}"),
+        }
+    } else {
+        println!("stream-test: Titel ausgelassen (nur mit Admin-Port bei lokalem Server)");
+    }
+    let block = (cfg.sample_rate / 10) as usize;
+    let start = std::time::Instant::now();
+    let mut sent = 0usize;
+    for k in 0..(seconds as usize * 10) {
+        let tone = woa_stream::mp3::sine(cfg.sample_rate, 440.0, k * block, block, 0.3);
+        let bytes = enc.encode(&tone, &tone).map_err(other)?;
+        sent += bytes.len();
+        src.send(bytes).map_err(map)?;
+        let due = start + std::time::Duration::from_millis((k as u64 + 1) * 100);
+        if let Some(wait) = due.checked_duration_since(std::time::Instant::now()) {
+            std::thread::sleep(wait);
+        }
+    }
+    let tail = enc.flush().map_err(other)?;
+    sent += tail.len();
+    src.send(tail).map_err(map)?;
+    println!("stream-test: {seconds} s gesendet, {sent} Byte MP3");
+    Ok(())
+}
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -260,6 +328,35 @@ fn main() -> ExitCode {
         Cmd::RadioRender { radio, out, rate } => cmd_radio_render(&radio, &out, rate),
         Cmd::LogTest { url, timeout } => cmd_log_test(&url, timeout),
         Cmd::FeedbackTest { url, text, timeout } => cmd_feedback_test(&url, &text, timeout),
+        Cmd::StreamTest {
+            host,
+            port,
+            sid,
+            pass_file,
+            admin_port,
+            seconds,
+        } => {
+            let cfg = woa_stream::StreamConfig {
+                host,
+                port,
+                stream_id: sid,
+                admin_port,
+                password_file: pass_file.unwrap_or_else(woa_stream::config::default_password_file),
+                ..woa_stream::StreamConfig::default()
+            };
+            match cmd_stream_test(&cfg, seconds) {
+                Err(StreamFail::Auth(e)) => {
+                    eprintln!("woa-headless: {e}");
+                    return ExitCode::from(3);
+                }
+                Err(StreamFail::Connect(e)) => {
+                    eprintln!("woa-headless: {e}");
+                    return ExitCode::from(4);
+                }
+                Err(StreamFail::Other(e)) => Err(e),
+                Ok(()) => Ok(()),
+            }
+        }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

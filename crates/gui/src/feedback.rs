@@ -30,6 +30,8 @@ pub struct GuiConfig {
     pub telemetry_url: String,
     /// Layout: Produzent (Zeitleiste) oder Radio (Sendeablauf).
     pub mode: Mode,
+    /// Sendung an den eigenen Shoutcast (liest auch woa-streamd). Ohne Kennwort.
+    pub stream: woa_stream::StreamConfig,
 }
 
 /// Arbeitsmodus der Oberfläche.
@@ -57,6 +59,7 @@ impl Default for GuiConfig {
             telemetry_enabled: None,
             telemetry_url: DEFAULT_INGEST_URL.to_string(),
             mode: Mode::Produzent,
+            stream: woa_stream::StreamConfig::default(),
         }
     }
 }

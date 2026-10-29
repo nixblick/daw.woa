@@ -4,6 +4,41 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 8: Sendeprozess (0.3.0, offen)
+
+Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo build -q --release -p woa -p woa-streamd && cargo run -q --release -p woa`
+
+Erst nach dem Ausrollen des Server-PRs in bretteins.infra (#150).
+
+1. Kennwort in den Vault: den Wert aus dem Server-PR als eine Zeile nach `~/.secrets/daw.woa/shoutcast-source.pass`, danach `chmod 600`.
+2. Optional eine Notfall-Playlist eintragen: in `~/.config/woa/config.json` unter `"stream": {"emergency": ["/pfad/zu/ordner"]}`.
+3. Radio-Modus, Playlist starten, „Auf Sendung“ drücken. Die Zeile daneben zeigt „verbunden · Sendemix“.
+4. Im Browser <https://feedback.wironair.de/stream> öffnen: Du hörst deine Sendung (wenige Sekunden verzögert).
+5. WOA hart beenden (`pkill -9 -x woa`). Nach etwa 2 s spielt im Browser die Notfall-Playlist, ohne Abriss.
+6. WOA neu starten und Playlist starten: Die Zeile zeigt wieder „verbunden“, nach 1 s Überblendung läuft die Sendung.
+7. „Sendung beenden“: Der Browser-Stream endet.
+
+Gegenprobe ohne Oberfläche: `cargo run -q -p woa-headless -- stream-test --seconds 30` sendet 30 s Testton (Exit 3 = Kennwort abgelehnt).
+
+Selbst geprüft von Claude, nur gegen einen lokalen Fake-Server und nicht gegen lfs001 (das ist deine Gegenprobe):
+
+- Anmeldung, MP3 kommt an, Titel per admin.cgi, Hörerzahl, Wiederverbinden nach Abriss, falsches Kennwort als klarer Fehler ohne Kennwort im Text (`crates/stream/tests/shoutcast.rs`).
+- Oberfläche weg führt nach höchstens 2,5 s zur Notfall-Playlist, und zurück (`crates/stream/tests/failover.rs`).
+- Die lokale Verbindung weist falsche Token, übergroße Rahmen und stumme Gegenüber ab. Auch bei 12 stummen Verbindungen kommt die Oberfläche herein.
+- Der Socket-Ordner hat 0700.
+- Der Mixer schreibt in den Sende-Ring ohne Allokation (`assert_no_alloc`, `crates/radio/tests/rt.rs`).
+- `woa-headless stream-test` gegen einen Fake: Exit 0 und Exit 3 (`apps/woa-headless/tests/cli.rs`).
+- Die Oberfläche ist gebaut. Den Knopf habe ich nicht am Gerät geklickt, und es lief kein echter Ton über lfs001.
+
+Noch nicht drin:
+
+- Titel: Shoutcast 1 trägt sie nicht in der Quellverbindung, und `admin.cgi` hätte das Kennwort im Klartext in der URL. Deshalb gibt es sie nur bei lokalem Server.
+- Hörerzahl: Der Admin-Port 8000 ist von außen gesperrt.
+- Die Quellanmeldung läuft im Klartext (bekanntes Risiko).
+- Icecast.
+- Uhrdrift zwischen Soundkarte und woa-streamd: Der Live-Puffer wird auf 0,5 s gekappt.
+- Unter Windows ist die lokale Verbindung TCP mit Token. Ein lokaler Prozess kann dort das Verbinden stören, aber nicht senden.
+
 ## Paket 7: Sendeablauf (0.2.0, offen)
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
