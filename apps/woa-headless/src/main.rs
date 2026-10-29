@@ -88,8 +88,8 @@ enum Cmd {
         /// Frequenz des Testtons in Hz.
         #[arg(long, default_value_t = 440.0)]
         freq: f32,
-        /// Lautstärke 0..1 (Vorgabe leise, Kopfhörer!).
-        #[arg(long, default_value_t = 0.1)]
+        /// Lautstärke 0..1 (Vorgabe 0.3; bei 0.1 war es mit 25 % Systemlautstärke unhörbar).
+        #[arg(long, default_value_t = 0.3)]
         volume: f32,
     },
     /// Schickt ein Test-Ereignis an den Telemetrie-Endpunkt (/ingest).
