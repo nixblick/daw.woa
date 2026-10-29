@@ -68,8 +68,8 @@ async fn build_playlist_and_run_order() {
     tone(&dir.join("musik/a.wav"), 10, 0.05);
     tone(&dir.join("musik/b.wav"), 8, 0.5);
     tone(&dir.join("musik/c.wav"), 6, 0.2);
-    let radio = tmp.path().join("radio.json");
-    let radio_s = radio.display().to_string();
+    let radio = dir.join("sendung/radio.json");
+    let radio_s = "sendung/radio.json";
     let (client, _agent, _server) = start(&dir).await;
 
     let r = ok(&call(
@@ -127,4 +127,37 @@ async fn build_playlist_and_run_order() {
         woa_radio::RadioShow::load(&radio).unwrap().playlist.len(),
         1
     );
+
+    // Write targets outside the project folder, or a symlink, are refused.
+    std::fs::write(tmp.path().join("x.json"), "unberührt").unwrap();
+    let outside = tmp.path().join("x.json").display().to_string();
+    for bad in ["../x.json", outside.as_str(), "neu/../../x.json"] {
+        let e = call(
+            &client,
+            "build_playlist",
+            json!({"files": ["musik/a.wav"], "radio_json": bad}),
+        )
+        .await;
+        assert_eq!(e.is_error, Some(true), "{bad}");
+    }
+    assert_eq!(
+        std::fs::read_to_string(tmp.path().join("x.json")).unwrap(),
+        "unberührt"
+    );
+    assert!(!dir.join("neu").exists(), "no folder left behind");
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(tmp.path().join("x.json"), dir.join("link.json")).unwrap();
+        let e = call(
+            &client,
+            "build_playlist",
+            json!({"files": ["musik/a.wav"], "radio_json": "link.json"}),
+        )
+        .await;
+        assert_eq!(e.is_error, Some(true), "symlink target");
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join("x.json")).unwrap(),
+            "unberührt"
+        );
+    }
 }

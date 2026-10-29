@@ -289,7 +289,8 @@ pub struct BuildPlaylistParams {
     /// Append to the existing playlist instead of replacing it.
     #[serde(default)]
     pub append: bool,
-    /// Path of radio.json. Default: radio.json in the WOA data folder.
+    /// Where to write radio.json: a relative path inside the project folder (same rules as
+    /// export: no `..`, no absolute path, no symlink). Default: radio.json in the WOA data folder.
     #[serde(default)]
     pub radio_json: Option<String>,
 }
@@ -385,6 +386,34 @@ impl WoaAgent {
         Arc::clone(&self.session)
     }
 
+    fn build_playlist_at(
+        &self,
+        radio: &Path,
+        files: &[String],
+        append: bool,
+    ) -> Result<woa_radio::RadioShow, String> {
+        let mut show = woa_radio::RadioShow::load(radio)?;
+        let mut entries = Vec::new();
+        for f in files {
+            let path = self.resolve_media(f);
+            if !woa_radio::audio::is_supported(&path) {
+                return Err(woa_radio::audio::unsupported(&path));
+            }
+            let measured = woa_radio::audio::measure_file(&path, RADIO_RATE)
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+            let mut entry = woa_radio::PlaylistEntry::new(path);
+            entry.set_measured(measured);
+            entries.push(entry);
+        }
+        if !append {
+            show.playlist.clear();
+        }
+        show.playlist.extend(entries);
+        show.save(radio)?;
+        Ok(show)
+    }
+
+    /// Read path of radio.json (writing goes through `resolve_out`).
     fn radio_path(&self, given: Option<&str>) -> PathBuf {
         match given {
             Some(g) => self.resolve_media(g),
@@ -1060,33 +1089,22 @@ impl WoaAgent {
         &self,
         Parameters(p): Parameters<BuildPlaylistParams>,
     ) -> Result<CallToolResult, McpError> {
-        let radio = self.radio_path(p.radio_json.as_deref());
-        let mut show = match woa_radio::RadioShow::load(&radio) {
-            Ok(s) => s,
-            Err(e) => return Ok(fail(e)),
+        // Write target: the default file, or a relative path under the same rules as export.
+        let (radio, created) = match p.radio_json.as_deref() {
+            None => (woa_radio::default_radio_path(), Vec::new()),
+            Some(g) => match self.resolve_out(g) {
+                Ok(x) => x,
+                Err(e) => return Ok(fail(e)),
+            },
         };
-        let mut entries = Vec::new();
-        for f in &p.files {
-            let path = self.resolve_media(f);
-            if !woa_radio::audio::is_supported(&path) {
-                return Ok(fail(woa_radio::audio::unsupported(&path)));
-            }
-            let measured = match woa_radio::audio::measure_file(&path, RADIO_RATE) {
-                Ok(m) => m,
-                Err(e) => return Ok(fail(format!("{}: {e}", path.display()))),
-            };
-            let mut entry = woa_radio::PlaylistEntry::new(path);
-            entry.set_measured(measured);
-            entries.push(entry);
+        let r = self.build_playlist_at(&radio, &p.files, p.append);
+        if r.is_err() {
+            remove_created(&created);
         }
-        if !p.append {
-            show.playlist.clear();
+        match r {
+            Ok(show) => Ok(ok_json(run_order_json(&show, &radio))),
+            Err(e) => Ok(fail(e)),
         }
-        show.playlist.extend(entries);
-        if let Err(e) = show.save(&radio) {
-            return Ok(fail(e));
-        }
-        Ok(ok_json(run_order_json(&show, &radio)))
     }
 
     #[tool(
