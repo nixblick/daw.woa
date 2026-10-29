@@ -4,6 +4,26 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 9: Sendebus-Processing (0.4.0, offen)
+
+Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. Radio-Modus: Unter „Crossfade“ und „Ducking“ stehen die Haken „Sendebus“ und „Mikro-Kette“, beide an.
+2. Playlist starten. Daneben steht z. B. „−16.2 LUFS · Regelung +1.5 dB · Begrenzer −0.8 dB“. Nach etwa 10 s liegt die Lautheit um −16.
+3. Einen sehr leisen und einen sehr lauten Titel nacheinander spielen: Beide klingen etwa gleich laut, nichts verzerrt hörbar.
+4. Cart über laute Musik: Der Begrenzer-Wert steigt kurz, die Sendung übersteuert nicht.
+5. Mikro auf (M) und sprechen: „Gate offen“; schweigen: nach kurzer Zeit „Gate zu“, das Grundrauschen ist leiser. Die Stimme klingt gleichmäßiger als ohne Kette.
+6. Haken „Sendebus“ aus: Die Anzeige verschwindet, der Ton ist wie in 0.3.4. Wieder an.
+7. Optional „Mitschnitt“ an, eine Minute senden, dann `ffmpeg -i ~/.local/share/woa/mitschnitte/<datei>.wav -af ebur128 -f null - 2>&1 | tail -12`: I um −16 LUFS, Peak unter −1 dBFS.
+
+Selbst geprüft von Claude (nur offline, nichts hörbar abgespielt, kein Mikro, kein Senden):
+
+- Tests in `crates/radio/src/dynamics.rs` und `crates/radio/tests/rt.rs`, jeder Process-Aufruf unter `assert_no_alloc`: Limiter nie über −1 dBFS, Regelung auf −16 ± 1 LUFS bei leisem und lautem Material, steht in Stille, höchstens 3 dB/s; Gate, Hochpass, Mikro-Kompressor; Sendemix mit lautem Titel, Cart und Mikro unter −1 dBFS und nach 10 s bei −16 ± 2 LUFS.
+- `radio-render` (drei Titel, sehr unterschiedliche Pegel): −16 ± 1 LUFS, Spitze unter −1 dBFS, Länge unverändert.
+- Nicht selbst geprüft: Klang am Gerät, echte Stimme durch die Mikro-Kette, die Anzeige im Fenster (nur gebaut).
+
+Noch nicht drin: De-Esser (M5), einstellbare Werte der Kette (feste Vorgaben), Limiter mit Vorausschau / True Peak.
+
 ## Paket 8: Sendeprozess (0.3.0, abgenommen 29.10.2026)
 
 André, 29.10.2026: „stream geht, abnahme paket 8 fertig!“ (mit 0.3.4, gegen stream.wironair.de).

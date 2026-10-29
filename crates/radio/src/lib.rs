@@ -1,6 +1,7 @@
 //! # woa-radio: Sendeablauf
 //!
-//! Playlist mit Crossfade und Auto-Gain, Cart-Wall, Mikrofon mit Ducking, Mitschnitt.
+//! Playlist mit Crossfade und Auto-Gain, Cart-Wall, Mikrofon mit Ducking, Mitschnitt,
+//! Sendebus- und Mikro-Processing ([`dynamics`]).
 //!
 //! Aufteilung nach den Echtzeitregeln (CLAUDE.md):
 //! - [`mixer::Mixer`] lebt im Audio-Thread. Er mischt Musik (zwei Decks für den
@@ -17,6 +18,7 @@ use std::path::PathBuf;
 
 pub mod audio;
 pub mod control;
+pub mod dynamics;
 pub mod level;
 pub mod mixer;
 pub mod show;

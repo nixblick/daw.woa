@@ -196,6 +196,11 @@ impl Controller {
         let frames = (self.show.crossfade_seconds * f64::from(self.rate)) as usize;
         self.send(Cmd::SetCrossfade(frames));
         self.send(Cmd::SetDuck(db_to_gain(self.show.duck_db)));
+        self.send(Cmd::SetTarget(self.show.target_lufs));
+        self.send(Cmd::SetProcessing {
+            bus: self.show.bus_processing,
+            mic: self.show.mic_processing,
+        });
     }
 
     pub fn show(&self) -> &RadioShow {
@@ -311,6 +316,13 @@ impl Controller {
     pub fn set_duck(&mut self, db: f64) {
         self.show.duck_db = db;
         self.show.sanitize();
+        self.apply_settings();
+    }
+
+    /// Sendebus- und Mikro-Processing an/aus.
+    pub fn set_processing(&mut self, bus: bool, mic: bool) {
+        self.show.bus_processing = bus;
+        self.show.mic_processing = mic;
         self.apply_settings();
     }
 

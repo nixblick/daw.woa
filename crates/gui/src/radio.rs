@@ -645,6 +645,62 @@ impl RadioDesk {
             self.view.duck_db = duck;
             self.with(move |c| c.set_duck(duck));
         }
+        self.processing_row(ui);
+    }
+
+    /// Sendebus- und Mikro-Processing: Schalter und Anzeige.
+    fn processing_row(&mut self, ui: &mut egui::Ui) {
+        let v = &self.view;
+        let (mut bus, mut mic) = (v.bus_processing, v.mic_processing);
+        let mut changed = false;
+        ui.horizontal_wrapped(|ui| {
+            changed |= ui
+                .checkbox(&mut bus, "Sendebus")
+                .on_hover_text(format!(
+                    "Lautheitsregelung auf {:.0} LUFS (±12 dB, langsam), Kompressor und \
+                     Limiter bei −1 dBFS. Wirkt auf Sendung, Mitschnitt und Abhören.",
+                    v.target_lufs
+                ))
+                .changed();
+            changed |= ui
+                .checkbox(&mut mic, "Mikro-Kette")
+                .on_hover_text(
+                    "Hochpass 80 Hz, Präsenz +3 dB bei 3 kHz, Gate ab −50 dBFS, \
+                     Kompressor 4:1 ab −24 dBFS mit +6 dB.",
+                )
+                .changed();
+            if v.bus_processing {
+                let lufs = if v.bus_lufs > -60.0 {
+                    format!("{:.1} LUFS", v.bus_lufs)
+                } else {
+                    "– LUFS".into()
+                };
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{lufs} · Regelung {:+.1} dB · Begrenzer −{:.1} dB",
+                        v.bus_agc_db,
+                        v.bus_reduction_db.max(0.0)
+                    ))
+                    .small()
+                    .monospace()
+                    .color(theme::DIM),
+                )
+                .on_hover_text("Kurzzeit-Lautheit am Sendeausgang, Verstärkung der Regelung, Absenkung durch Kompressor und Limiter");
+            }
+            if v.mic_processing && v.mic_open {
+                let (t, c) = if v.mic_gate_open {
+                    ("Gate offen", theme::ACCENT)
+                } else {
+                    ("Gate zu", theme::DIM)
+                };
+                ui.label(egui::RichText::new(t).small().color(c));
+            }
+        });
+        if changed {
+            self.view.bus_processing = bus;
+            self.view.mic_processing = mic;
+            self.with(move |c| c.set_processing(bus, mic));
+        }
     }
 
     fn on_air_row(&mut self, ui: &mut egui::Ui) {

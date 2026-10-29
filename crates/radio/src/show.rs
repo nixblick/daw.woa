@@ -101,6 +101,10 @@ fn default_duck() -> f64 {
     -12.0
 }
 
+fn yes() -> bool {
+    true
+}
+
 fn default_target() -> f64 {
     TARGET_LUFS
 }
@@ -115,6 +119,12 @@ pub struct RadioShow {
     pub duck_db: f64,
     #[serde(default = "default_target")]
     pub target_lufs: f64,
+    /// Sendebus-Processing (Lautheitsregelung auf `target_lufs`, Kompressor, Limiter).
+    #[serde(default = "yes")]
+    pub bus_processing: bool,
+    /// Mikro-Kette (EQ, Gate, Kompressor).
+    #[serde(default = "yes")]
+    pub mic_processing: bool,
     #[serde(default)]
     pub playlist: Vec<PlaylistEntry>,
     /// Genau [`CARTS`] Felder, `null` = frei.
@@ -129,6 +139,8 @@ impl Default for RadioShow {
             crossfade_seconds: default_crossfade(),
             duck_db: default_duck(),
             target_lufs: default_target(),
+            bus_processing: true,
+            mic_processing: true,
             playlist: Vec::new(),
             carts: vec![None; CARTS],
         }

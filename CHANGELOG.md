@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — 2026-10-29
+
+Paket 9 aus M3 (#4): Sendebus-Processing.
+
+- **Sendebus mit Lautheitsregelung, Kompressor und Limiter** (`woa_radio::dynamics::BusProcessor`). Die Regelung misst die Lautheit am Sendeausgang (K-Filter nach BS.1770, gleitend über etwa 3 s) und führt die Verstärkung langsam zum Ziel aus `radio.json` (`target_lufs`, Vorgabe −16 LUFS): höchstens 3 dB je Sekunde, Bereich ±12 dB. In Pausen unter −45 LUFS bleibt sie stehen und zieht kein Rauschen hoch. Danach folgt ein RMS-Kompressor (2,5 : 1, Schwelle 4 dB über dem Ziel, weiches Knie) und ein Limiter bei −1 dBFS mit sofortigem Angriff und harter Sicherung. Der Limiter hat keine Vorausschau und deshalb keine Latenz; Uhr, Mitschnitt und Sendung bleiben sample-genau. Sendung, Mitschnitt und Abhören bekommen denselben Faktor.
+- **Mikrofon-Kette** (`MicChain`): Hochpass 80 Hz, Präsenz +3 dB bei 3 kHz, Gate ab −50 dBFS (schließt um 30 dB, 100 ms Haltezeit), Kompressor 4 : 1 ab −24 dBFS mit +6 dB Aufholverstärkung. Der De-Esser kommt in M5.
+- **Schalter und Anzeige im Radio-Modus** unter den Reglern: „Sendebus“ und „Mikro-Kette“, beide an (gespeichert in `radio.json` als `bus_processing` und `mic_processing`). Daneben stehen die Kurzzeit-Lautheit am Ausgang, die Verstärkung der Regelung und die Absenkung durch Kompressor und Limiter, bei offenem Mikro „Gate offen/zu“. Das Agent-Werkzeug `build_playlist` meldet beide Schalter mit.
+- Alles im Audio-Thread ohne Allokation (Tests unter `assert_no_alloc`). `radio-render` läuft mit Processing; die Spitze bleibt unter −1 dBFS.
+- Tests: Limiter nie über der Decke bei +6 dBFS mit harten Sprüngen; leises und lautes Material landet bei −16 ± 1 LUFS; Regelung steht in Stille; Gate schließt bei Rauschen und öffnet bei Sprache; Hochpass nimmt Rumpeln, Kompressor verkleinert 20 dB Eingangsunterschied auf 3–12 dB; Sendemix mit lautem Titel, Cart und Mikro bleibt unter −1 dBFS und nach 10 s bei −16 ± 2 LUFS.
+
 ## 0.3.4 — 2026-10-29
 
 - **Oberfläche ohne Dauerlast (Fixes #56). Hauptursache ist die Ereignisschleife unter Wayland.** eframe 0.35 setzt bei jedem fälligen Repaint `ControlFlow::Poll`. Unter Wayland kommt das Neuzeichnen aber erst mit dem Frame-Callback des Compositors, und ein verdecktes Fenster (etwa hinter dem Browser) bekommt keinen. Dann dreht der UI-Thread leer in `epoll` und belegt einen ganzen Kern (egui#8326, behoben erst in eframe 0.37, das rustc 1.95 braucht; hier ist 1.92 installiert). Unter Linux nimmt WOA deshalb X11 (XWayland), solange `DISPLAY` gesetzt ist. `WOA_WAYLAND=1` erzwingt Wayland. Bei gebrochener Skalierung kann die Schrift unter XWayland etwas weicher aussehen. Gemessen am 29.10. im Radio-Modus, ohne Wiedergabe und ohne Sendung, je 20 s nach 8 s Anlauf: 0.3.2 86–102 %, 0.3.4 unter Wayland 24–91 % (je nach Fensterlage), 0.3.4 als Vorgabe (X11) 1 %. `WOA_REPAINT_DEBUG=1` schreibt alle 5 s Bilder je Sekunde und Repaint-Auslöser ins Log.
