@@ -273,7 +273,7 @@ pub struct RepeatClipParams {
 /// Parameters of `export`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ExportParams {
-    /// Target file, `.wav`, `.flac` or `.mp3`. Relative paths are inside the project folder.
+    /// Target file, `.wav`, `.flac` or `.mp3`. Relative path inside the project folder; absolute paths and `..` are rejected.
     pub path: String,
     /// Integrated loudness to normalise to, e.g. -14 (streaming) or -16 (podcast).
     /// Peaks stay below -1 dBFS. Default: unchanged.
@@ -419,13 +419,25 @@ impl WoaAgent {
             .ok_or(ModelError::ClipNotFound(ClipId(clip)))
     }
 
-    fn resolve_out(&self, path: &str) -> PathBuf {
-        let p = Path::new(path);
-        if p.is_absolute() {
-            p.to_path_buf()
-        } else {
-            self.dir.join(p)
+    /// Zielpfad im Projektordner. Absolute Pfade und `..` sind verboten;
+    /// ein vorhandener Elternordner muss kanonisch im Projekt liegen (Symlinks).
+    fn resolve_out(&self, path: &str) -> Result<PathBuf, String> {
+        if !woa_model::is_safe_audio_path(path) {
+            return Err(format!(
+                "{path}: nur relative Pfade innerhalb des Projektordners erlaubt"
+            ));
         }
+        let out = self.dir.join(path);
+        if let Some(parent) = out.parent()
+            && parent.exists()
+        {
+            let root = self.dir.canonicalize().map_err(|e| e.to_string())?;
+            let real = parent.canonicalize().map_err(|e| e.to_string())?;
+            if !real.starts_with(&root) {
+                return Err(format!("{path}: Pfad verlässt den Projektordner"));
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -821,7 +833,10 @@ impl WoaAgent {
         Parameters(p): Parameters<ExportParams>,
     ) -> Result<CallToolResult, McpError> {
         let project = self.lock()?.project().clone();
-        let out = self.resolve_out(&p.path);
+        let out = match self.resolve_out(&p.path) {
+            Ok(o) => o,
+            Err(e) => return Ok(fail(e)),
+        };
         if woa_engine::export::ExportFormat::from_path(&out).is_none() {
             return Ok(fail("Endung muss .wav, .flac oder .mp3 sein"));
         }

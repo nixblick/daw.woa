@@ -38,7 +38,7 @@ Claude Desktop: derselbe Befehl als `command`/`args` in `claude_desktop_config.j
 | `repeat_clip` | `clip`, `times` (1..256) | `times` Kopien direkt hintereinander (Loops), liefert die neuen IDs |
 | `remove_clip` | `clip` | Clip entfernen (die Datei bleibt im Ordner) |
 | `analyze` | – | rendert offline (48 kHz bis zum Ende des letzten Clips): integrierte LUFS, Sample-Peak in dBFS, Clipping, Länge, Peak je Audio-Spur allein; ändert nichts |
-| `export` | `path` (`.wav`/`.flac`/`.mp3`, relativ = im Projektordner), `target_lufs` (optional) | Mixdown wie in der GUI; mit `target_lufs` angeglichen, Spitzen bleiben unter −1 dBFS; liefert LUFS und Peak der geschriebenen Daten |
+| `export` | `path` (`.wav`/`.flac`/`.mp3`, nur relativ im Projektordner; absolut oder `..` wird abgelehnt), `target_lufs` (optional) | Mixdown wie in der GUI; mit `target_lufs` angeglichen, Spitzen bleiben unter −1 dBFS; liefert LUFS und Peak der geschriebenen Daten |
 | `undo` / `redo` | – | letzten Schritt zurück / wieder her |
 | `save` | – | atomar in den Projektordner schreiben |
 

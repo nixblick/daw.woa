@@ -266,6 +266,9 @@ async fn editing_tools_and_error_cases() {
         ("remove_clip", json!({"clip": 999})),
         ("remove_track", json!({"track": 999})),
         ("set_solo", json!({"track": 999, "solo": true})),
+        ("export", json!({"path": "../x.wav"})),
+        ("export", json!({"path": "/tmp/x.wav"})),
+        ("export", json!({"path": "sub/../../x.wav"})),
         ("export", json!({"path": "x.ogg"})),
         ("export", json!({"path": "x.wav", "target_lufs": 5.0})),
     ] {
@@ -285,6 +288,7 @@ async fn editing_tools_and_error_cases() {
     }
     assert_eq!(std::fs::read_dir(&src).unwrap().count(), files);
     assert!(!dir.join("x.wav").exists());
+    assert!(!tmp.path().join("x.wav").exists());
 
     // The happy paths, each one undo step.
     ok(&call(&client, "move_clip", json!({"clip": c, "start_beats": 2.0})).await);
