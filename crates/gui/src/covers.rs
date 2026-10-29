@@ -81,6 +81,10 @@ pub struct Covers {
     done: Receiver<(PathBuf, Option<Images>)>,
     shown: Option<(PathBuf, egui::TextureHandle)>,
     previous: Option<egui::TextureHandle>,
+    /// Pfad, auf den zuletzt umgeschaltet wurde (auch ohne Bild). Ohne ihn hätte ein
+    /// Titel ohne Cover die Überblendung jeden Frame neu gestartet: Dauer-Repaint,
+    /// 100 % CPU im UI-Thread (Paket 8, 29.10.2026).
+    target: Option<PathBuf>,
     switched_at: Instant,
 }
 
@@ -109,6 +113,7 @@ impl Covers {
             done,
             shown: None,
             previous: None,
+            target: None,
             switched_at: Instant::now(),
         }
     }
@@ -158,7 +163,7 @@ impl Covers {
         f32,
     ) {
         let now_path = path.map(Path::to_path_buf);
-        if self.shown.as_ref().map(|(p, _)| p) != now_path.as_ref() {
+        if self.target != now_path {
             let tex = path.and_then(|p| {
                 if let Some(Slot::Ready { big, .. }) = self.request(p) {
                     big.clone()
@@ -171,6 +176,7 @@ impl Covers {
             let settled = !matches!(path.and_then(|p| self.slots.get(p)), Some(Slot::Pending));
             if settled {
                 self.previous = self.shown.take().map(|(_, t)| t);
+                self.target.clone_from(&now_path);
                 if let (Some(p), Some(t)) = (now_path, tex) {
                     self.shown = Some((p, t));
                 } else {
@@ -181,7 +187,8 @@ impl Covers {
         }
         let t = (self.switched_at.elapsed().as_secs_f32() / FADE_S).min(1.0);
         if t < 1.0 {
-            ctx.request_repaint();
+            // ~60 Bilder/s nur während der kurzen Überblendung.
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
         } else {
             self.previous = None;
         }
@@ -251,6 +258,25 @@ mod tests {
         wr.write_image_data(&data).unwrap();
         wr.finish().unwrap();
         out
+    }
+
+    /// Titel ohne Cover: die Überblendung startet einmal, nicht jeden Frame neu
+    /// (sonst Dauer-Repaint, 100 % CPU im UI-Thread).
+    #[test]
+    fn missing_cover_does_not_restart_fade() {
+        let ctx = egui::Context::default();
+        let mut c = Covers::new(&ctx);
+        let p = PathBuf::from("/kein/cover.mp3");
+        c.slots.insert(p.clone(), Slot::Missing);
+        let _ = c.big(&ctx, Some(&p));
+        let first = c.switched_at;
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        for _ in 0..3 {
+            let _ = c.big(&ctx, Some(&p));
+        }
+        assert_eq!(c.switched_at, first);
+        let _ = c.big(&ctx, None);
+        assert!(c.switched_at > first, "Wechsel auf None blendet um");
     }
 
     #[test]

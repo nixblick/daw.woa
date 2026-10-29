@@ -14,8 +14,8 @@ Mixer (Audio-Thread) ──rtrb──▶ Feeder-Thread ──lokal──▶ woa-
 
 Der Server ist der eigene Shoutcast DNAS v2 auf lfs001 (bretteins.infra#150).
 
-- Quelle: `feedback.wironair.de:8001`, Stream-ID 1
-- Hören: <https://feedback.wironair.de/stream>
+- Quelle: `stream.wironair.de:8001`, Stream-ID 1
+- Hören: <https://stream.wironair.de/stream>. Ohne Quelle spielt der Server eine eigene Notfall-Schleife; das ist erwartet.
 
 ## Protokoll: Shoutcast 1 (Legacy)
 
@@ -34,7 +34,7 @@ Warum nicht Uvox2 (das v2-Protokoll):
 **Titel:** Das v1-Protokoll kann keine Titel in der Quellverbindung tragen; die `icy-*`-Kopfzeilen
 gelten nur einmal beim Anmelden. Titel gehen nur per HTTP an `admin.cgi?mode=updinfo`, und dabei
 steht das Quell-Kennwort im Klartext in der URL. WOA setzt Titel deshalb **nur bei lokalem Server**
-(Host Loopback) und eingetragenem `admin_port`. Gegen `feedback.wironair.de` werden **vorerst keine
+(Host Loopback) und eingetragenem `admin_port`. Gegen `stream.wironair.de` werden **vorerst keine
 Titel gesendet**; der Admin-Port 8000 ist dort von außen ohnehin gesperrt. Die Hörerzahl (`/7.html`,
 ohne Kennwort) kommt, sobald ein `admin_port` erreichbar ist.
 
@@ -59,7 +59,7 @@ DNAS; das gehört zum Server (bretteins.infra).
 
 ```json
 "stream": {
-  "host": "feedback.wironair.de",
+  "host": "stream.wironair.de",
   "port": 8001,
   "admin_port": null,
   "stream_id": 1,
@@ -90,7 +90,7 @@ Weitere Wege an die Sendung:
 - **Probe ohne Oberfläche:**
 
 ```
-cargo run -q -p woa-headless -- stream-test --host feedback.wironair.de --port 8001 --sid 1 \
+cargo run -q -p woa-headless -- stream-test --host stream.wironair.de --port 8001 --sid 1 \
   --pass-file ~/.secrets/daw.woa/shoutcast-source.pass --seconds 30
 ```
 

@@ -26,6 +26,8 @@ use crate::state::{AppState, Status};
 
 /// The desktop window.
 pub struct WoaApp {
+    /// Frames since `frames_since` (only with `WOA_REPAINT_DEBUG`).
+    frames: (u32, Instant),
     state: AppState,
     config: GuiConfig,
     /// Where `config.json` is saved when the user changes a setting (`None` = not saved).
@@ -137,6 +139,7 @@ impl WoaApp {
             last_title: String::new(),
             data_dir: woa_radio::data_dir(),
             radio: None,
+            frames: (0, Instant::now()),
         }
     }
 
@@ -1610,8 +1613,26 @@ impl WoaApp {
     }
 }
 
+impl WoaApp {
+    /// `WOA_REPAINT_DEBUG=1`: alle 5 s eine Logzeile mit Bildern je Sekunde und den
+    /// Auslösern der Repaints (Fehlersuche bei CPU-Last, #56).
+    fn repaint_debug(&mut self, ctx: &egui::Context) {
+        if std::env::var_os("WOA_REPAINT_DEBUG").is_none() {
+            return;
+        }
+        self.frames.0 += 1;
+        let dt = self.frames.1.elapsed().as_secs_f32();
+        if dt >= 5.0 {
+            let causes: Vec<String> = ctx.repaint_causes().iter().map(|c| c.to_string()).collect();
+            tracing::info!(fps = self.frames.0 as f32 / dt, causes = ?causes, "repaint debug");
+            self.frames = (0, Instant::now());
+        }
+    }
+}
+
 impl eframe::App for WoaApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.repaint_debug(ctx);
         if self.config.mode == Mode::Radio {
             self.ensure_radio();
         }
@@ -1647,10 +1668,13 @@ impl eframe::App for WoaApp {
         }
         self.stop_at_audio_end();
         let busy = !self.takes.is_empty() || self.player.as_ref().is_some_and(Player::is_playing);
+        // Radio: 5 Bilder/s, solange ein Titel läuft (Uhr, Pegel), sonst 2/s. Vorher 10/s
+        // dauerhaft, 34 % CPU in Ruhe (Paket 8).
+        let radio_playing = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
         let beat = if busy {
             40
-        } else if self.config.mode == Mode::Radio {
-            100
+        } else if self.config.mode == Mode::Radio && radio_playing {
+            200
         } else {
             500
         };

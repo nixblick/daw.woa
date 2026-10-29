@@ -40,7 +40,10 @@ pub struct UplinkState {
     pub connected_since: Option<Instant>,
     pub bytes_sent: u64,
     pub bytes_dropped: u64,
+    /// Neue Verbindungsversuche nach einem Fehlschlag oder Abriss.
     pub reconnects: u32,
+    /// Nächster Verbindungsversuch, solange keine Verbindung steht.
+    pub retry_at: Option<Instant>,
 }
 
 enum Msg {
@@ -153,6 +156,7 @@ fn run(cfg: StreamConfig, kw: Kennwort, rx: Receiver<Msg>, state: Arc<Mutex<Upli
                         s.last_error = None;
                         s.auth_failed = false;
                         s.connected_since = Some(Instant::now());
+                        s.retry_at = None;
                     });
                 }
                 Err(e) => {
@@ -164,6 +168,8 @@ fn run(cfg: StreamConfig, kw: Kennwort, rx: Receiver<Msg>, state: Arc<Mutex<Upli
                     set(&state, |s| {
                         s.last_error = Some(e.to_string());
                         s.auth_failed = rejected;
+                        s.retry_at = Some(next_try);
+                        s.reconnects += 1;
                         if s.phase == Phase::Connected {
                             s.phase = Phase::Reconnecting;
                         }
@@ -191,6 +197,7 @@ fn run(cfg: StreamConfig, kw: Kennwort, rx: Receiver<Msg>, state: Arc<Mutex<Upli
                         s.phase = Phase::Reconnecting;
                         s.last_error = Some(e.to_string());
                         s.connected_since = None;
+                        s.retry_at = Some(next_try);
                         s.reconnects += 1;
                     });
                 }

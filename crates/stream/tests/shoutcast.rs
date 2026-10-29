@@ -128,9 +128,9 @@ fn unreachable_server_is_a_connect_error() {
 fn titles_only_on_loopback() {
     use woa_stream::shoutcast::{is_loopback, titles_possible};
     assert!(is_loopback("127.0.0.1") && is_loopback("localhost") && is_loopback("::1"));
-    assert!(!is_loopback("feedback.wironair.de") && !is_loopback("10.0.0.1"));
+    assert!(!is_loopback("stream.wironair.de") && !is_loopback("10.0.0.1"));
     let remote = StreamConfig {
-        host: "feedback.wironair.de".into(),
+        host: "stream.wironair.de".into(),
         admin_port: Some(8000),
         ..StreamConfig::default()
     };

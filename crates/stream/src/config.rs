@@ -16,8 +16,8 @@ pub fn default_password_file() -> PathBuf {
         .join("shoutcast-source.pass")
 }
 
-/// Eigener Shoutcast auf lfs001 (bretteins.infra#150). Hören: `https://feedback.wironair.de/stream`.
-pub const DEFAULT_HOST: &str = "feedback.wironair.de";
+/// Eigener Shoutcast auf lfs001 (bretteins.infra#150). Hören: `https://stream.wironair.de/stream`.
+pub const DEFAULT_HOST: &str = "stream.wironair.de";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -142,7 +142,7 @@ mod tests {
         let d = StreamConfig::default();
         assert_eq!(
             (d.host.as_str(), d.port, d.stream_id),
-            ("feedback.wironair.de", 8001, 1)
+            ("stream.wironair.de", 8001, 1)
         );
         assert_eq!(d.admin_port, None);
         assert!(d.validate().is_ok());
