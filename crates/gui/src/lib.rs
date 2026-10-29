@@ -11,6 +11,7 @@ pub mod radio;
 mod sources;
 pub mod state;
 mod theme;
+mod xrun;
 
 pub use app::WoaApp;
 pub use feedback::{GuiConfig, Mode};

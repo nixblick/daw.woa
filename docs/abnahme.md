@@ -13,7 +13,7 @@ Erst nach dem Ausrollen des Server-PRs in bretteins.infra (#150).
 1. Kennwort in den Vault: den Wert aus dem Server-PR als eine Zeile nach `~/.secrets/daw.woa/shoutcast-source.pass`, danach `chmod 600`.
 2. Optional eine Notfall-Playlist eintragen: in `~/.config/woa/config.json` unter `"stream": {"emergency": ["/pfad/zu/ordner"]}`.
 3. Radio-Modus, Playlist starten, „Auf Sendung“ drücken. Die Zeile daneben zeigt „verbunden · Sendemix“.
-4. Im Browser <https://feedback.wironair.de/stream> öffnen: Du hörst deine Sendung (wenige Sekunden verzögert).
+4. Im Browser <https://stream.wironair.de/stream> öffnen: Du hörst deine Sendung (wenige Sekunden verzögert).
 5. WOA hart beenden (`pkill -9 -x woa`). Nach etwa 2 s spielt im Browser die Notfall-Playlist, ohne Abriss.
 6. WOA neu starten und Playlist starten: Die Zeile zeigt wieder „verbunden“, nach 1 s Überblendung läuft die Sendung.
 7. „Sendung beenden“: Der Browser-Stream endet.
@@ -22,7 +22,7 @@ Nachtrag 0.3.4 (#56, nach deiner ersten Abnahme am 29.10.):
 
 8. Radio-Modus ohne Wiedergabe, mit einem Titel ohne Cover in der Playlist: `top -p $(pgrep -x woa)` zeigt unter 5 % CPU (vorher 100 %).
 9. Ist Port 8001 noch zu, steht nach „Auf Sendung“ unter dem Knopf „Server nicht erreichbar (Port 8001 zu?), neuer Versuch in … s“. Das Notebook bleibt bedienbar. Danach „Sendung beenden“.
-10. Ist der Port offen, zeigt die Zeile „verbunden · Sendemix“. In `~/.local/share/woa/streamd-status.json` steht dann `"ui_connected": true`, und es bleibt so.
+10. <https://stream.wironair.de/stream> spielt ohne Quelle die Notfall-Schleife des Servers (kein 401 mehr). Ist der Port offen, zeigt die Zeile „verbunden · Sendemix“. In `~/.local/share/woa/streamd-status.json` steht dann `"ui_connected": true`, und es bleibt so.
 
 Gegenprobe ohne Oberfläche: `cargo run -q -p woa-headless -- stream-test --seconds 30` sendet 30 s Testton (Exit 3 = Kennwort abgelehnt).
 

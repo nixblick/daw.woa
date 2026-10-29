@@ -18,6 +18,37 @@ const SCRATCH_FRAMES: usize = 4096;
 /// Puffergröße, die WOA standardmäßig anfordert (Abnahmekriterium M1).
 pub const DEFAULT_BUFFER_FRAMES: u32 = 128;
 
+/// Puffergröße für den Sendebetrieb: 0 = Vorgabe des Treibers. Im Radio zählt Stabilität,
+/// nicht Latenz. Kurze Proben am Desktop (PipeWire, #51) mit `radio-play`: 128 Frames
+/// mit vielen Aussetzern, Treiber-Vorgabe in 2 min ohne. Kein Dauertest.
+pub const RADIO_BUFFER_FRAMES: u32 = 0;
+
+/// Ein laufender Ausgabestrom; er spielt, solange er lebt.
+pub type OutputStream = cpal::Stream;
+
+/// Hält einen Strom an (das Gerät bleibt geöffnet, der Callback ruht).
+pub fn pause_output(stream: &OutputStream) -> Result<(), DeviceError> {
+    stream.pause().map_err(DeviceError::from)
+}
+
+/// Lässt einen angehaltenen Strom weiterlaufen.
+pub fn resume_output(stream: &OutputStream) -> Result<(), DeviceError> {
+    stream.play().map_err(DeviceError::from)
+}
+
+/// Anzeigename des Geräts, das `config` wählt (für Logs), `"?"` wenn unbekannt.
+pub fn output_device_name(config: &OutputConfig) -> String {
+    pick_device(config)
+        .ok()
+        .and_then(|d| d.description().ok().map(|x| x.name().to_string()))
+        .unwrap_or_else(|| "?".into())
+}
+
+/// Ist der Fehler ein Unter- oder Überlauf (Xrun)?
+pub fn is_xrun(err: &cpal::Error) -> bool {
+    err.kind() == cpal::ErrorKind::Xrun
+}
+
 /// Fehler bei Geräteauswahl und Start.
 #[derive(Debug)]
 pub enum DeviceError {
@@ -133,7 +164,7 @@ pub fn check_buffer_size(
 
 /// Zählt Xruns im Zähler; gibt `true` zurück, wenn es einer war.
 pub fn count_if_xrun(err: &cpal::Error, transport: &TransportHandle) -> bool {
-    let xrun = err.kind() == cpal::ErrorKind::Xrun;
+    let xrun = is_xrun(err);
     if xrun {
         transport.count_underrun();
     }

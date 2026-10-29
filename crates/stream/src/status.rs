@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn problem_is_readable() {
         let s = StreamStatus {
-            server: "feedback.wironair.de:8001 (Stream 1)".into(),
+            server: "stream.wironair.de:8001 (Stream 1)".into(),
             last_error: Some("Server nicht erreichbar: [::1]:8001: connection timed out".into()),
             retry_in_seconds: Some(30),
             ..StreamStatus::default()
