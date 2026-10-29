@@ -69,6 +69,8 @@ enum Cmd {
     UndoDemo,
     /// Lädt, speichert in einen Temp-Ordner, lädt erneut und vergleicht. Exit 1 bei Abweichung.
     Roundtrip { path: PathBuf },
+    /// Startet den MCP-Server über stdin/stdout für das Projekt <PATH> (legt es beim ersten `save` an).
+    Mcp { path: PathBuf },
     /// Schickt ein Test-Ereignis an den Telemetrie-Endpunkt (/ingest).
     LogTest {
         #[arg(long, env = "WOA_TELEMETRY_URL")]
@@ -99,6 +101,7 @@ fn main() -> ExitCode {
         Cmd::AddTrack { path, name, kind } => cmd_add_track(&path, &name, kind.into()),
         Cmd::UndoDemo => cmd_undo_demo(),
         Cmd::Roundtrip { path } => cmd_roundtrip(&path),
+        Cmd::Mcp { path } => woa_agent::run_stdio(&path).map_err(|e| e.to_string()),
         Cmd::LogTest { url, timeout } => cmd_log_test(&url, timeout),
         Cmd::FeedbackTest { url, text, timeout } => cmd_feedback_test(&url, &text, timeout),
     };
