@@ -6,6 +6,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use woa_dsp::{Node, ProcessBuffers};
 
@@ -31,11 +32,27 @@ pub struct PlacedClip {
 pub struct ClipPlayer {
     clips: Vec<PlacedClip>,
     transport: TransportHandle,
+    meter: Option<Arc<AtomicU32>>,
+}
+
+/// Spitzenpegel seit dem letzten Abholen (f32-Bits), vom Audio-Thread geschrieben.
+pub fn take_peak(meter: &AtomicU32) -> f32 {
+    f32::from_bits(meter.swap(0, Ordering::Relaxed))
 }
 
 impl ClipPlayer {
     pub fn new(clips: Vec<PlacedClip>, transport: TransportHandle) -> Self {
-        Self { clips, transport }
+        Self {
+            clips,
+            transport,
+            meter: None,
+        }
+    }
+
+    /// Meldet den Spitzenpegel jedes Blocks (vor Gain/Mute) in `meter`.
+    pub fn with_meter(mut self, meter: Arc<AtomicU32>) -> Self {
+        self.meter = Some(meter);
+        self
     }
 }
 
@@ -67,6 +84,21 @@ impl Node for ClipPlayer {
                 .zip(&clip.samples[src_off..src_off + n])
             {
                 *o += *s;
+            }
+        }
+        if let Some(m) = &self.meter {
+            let peak = out.iter().fold(0.0f32, |a, s| a.max(s.abs()));
+            let mut cur = m.load(Ordering::Relaxed);
+            while peak > f32::from_bits(cur) {
+                match m.compare_exchange_weak(
+                    cur,
+                    peak.to_bits(),
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(seen) => cur = seen,
+                }
             }
         }
     }
@@ -131,11 +163,12 @@ mod tests {
     fn plays_clip_at_its_position_only_while_playing() {
         let (mut engine, mut proc_) = Engine::new(16);
         let samples: Arc<[f32]> = vec![0.5; 100].into();
+        let meter = Arc::new(AtomicU32::new(0));
         let mut b = GraphBuilder::new();
-        let n = b.add_node(ClipPlayer::new(
-            vec![PlacedClip { start: 50, samples }],
-            engine.transport(),
-        ));
+        let n = b.add_node(
+            ClipPlayer::new(vec![PlacedClip { start: 50, samples }], engine.transport())
+                .with_meter(Arc::clone(&meter)),
+        );
         b.set_output(n);
         engine.set_graph(b, 48_000.0, 64).unwrap();
         let mut out = vec![0.0; 64];
@@ -151,6 +184,8 @@ mod tests {
         assert_eq!(all[50], 0.5);
         assert_eq!(all[149], 0.5);
         assert_eq!(all[150], 0.0);
+        assert_eq!(take_peak(&meter), 0.5);
+        assert_eq!(take_peak(&meter), 0.0, "reset after take");
     }
 
     #[test]
