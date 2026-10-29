@@ -253,3 +253,50 @@ pub fn cmd_render(
     );
     Ok(())
 }
+
+#[cfg(not(all(feature = "device", target_os = "linux")))]
+pub fn cmd_sources() -> Outcome {
+    Err("Quellen gibt es nur unter Linux mit Feature `device`".to_string())
+}
+
+#[cfg(not(all(feature = "device", target_os = "linux")))]
+pub fn cmd_capture(_: &str, _: &std::path::Path, _: u64, _: bool) -> Outcome {
+    Err("Quellen gibt es nur unter Linux mit Feature `device`".to_string())
+}
+
+#[cfg(all(feature = "device", target_os = "linux"))]
+pub fn cmd_sources() -> Outcome {
+    for s in woa_engine::capture::list_sources().map_err(|e| e.to_string())? {
+        println!("{:?}\t{}\t{}", s.kind, s.key, s.label);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "device", target_os = "linux"))]
+pub fn cmd_capture(source: &str, out: &std::path::Path, seconds: u64, monitor: bool) -> Outcome {
+    use woa_engine::capture::{list_sources, start_capture};
+    let needle = source.to_lowercase();
+    let src = list_sources()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|s| {
+            s.key.to_lowercase().contains(&needle) || s.label.to_lowercase().contains(&needle)
+        })
+        .ok_or_else(|| format!("keine Quelle passt zu {source:?}"))?;
+    println!("quelle={} ({})", src.label, src.key);
+    let rec = start_capture(&src, out, monitor).map_err(|e| e.to_string())?;
+    let mut level = 0.0f32;
+    for _ in 0..seconds * 10 {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        level = level.max(rec.take_level());
+    }
+    let s = rec.stop().map_err(|e| e.to_string())?;
+    println!(
+        "datei={} sekunden={:.2} spitze={:.3} pegel_max={:.3}",
+        s.path.display(),
+        s.seconds(),
+        s.peak,
+        level
+    );
+    Ok(())
+}

@@ -110,6 +110,20 @@ enum Cmd {
         #[arg(long)]
         device: Option<String>,
     },
+    /// Listet Quellen aus PipeWire/Pulse: Eingänge, Systemklang, Programme (nur Linux, `device`).
+    Sources,
+    /// Nimmt eine Pulse-Quelle auf (Teil von Name oder Schlüssel aus `sources`).
+    Capture {
+        /// Teil des Namens oder Schlüssels der Quelle.
+        source: String,
+        /// Zieldatei (.wav).
+        out: PathBuf,
+        #[arg(long, default_value_t = 5)]
+        seconds: u64,
+        /// Quelle dabei hörbar machen.
+        #[arg(long)]
+        monitor: bool,
+    },
     /// Rendert ein Projekt mit seinen Audio-Clips offline in eine WAV-Datei (ohne Gerät).
     Render {
         /// Projektordner (.woa).
@@ -165,6 +179,13 @@ fn main() -> ExitCode {
             seconds,
             device,
         } => audio::cmd_record(&out, seconds, device),
+        Cmd::Sources => audio::cmd_sources(),
+        Cmd::Capture {
+            source,
+            out,
+            seconds,
+            monitor,
+        } => audio::cmd_capture(&source, &out, seconds, monitor),
         Cmd::Play {
             project,
             seconds,
