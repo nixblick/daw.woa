@@ -4,6 +4,16 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Nachtrag #43: Wellenform während der Aufnahme (0.3.5, offen)
+
+Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. Spur wählen, Quelle z. B. „Programm: firefox“ mit laufender Musik, „Aufnahme“ drücken: Ab dem Abspielkopf wächst ein roter Clip „Aufnahme läuft“, darin die Wellenform. Der Pegel oben läuft mit.
+2. Laut aufnehmen, bis es übersteuert: Neben dem Pegel steht rot „ÜBERSTEUERT“.
+3. Stopp: Der rote Clip wird zum normalen Clip mit derselben Wellenform an derselben Stelle.
+
+Selbst geprüft von Claude: Workspace-Tests grün, darunter die Peak-Sammlung und `assert_no_alloc`. Kein Bildschirmfoto: Ohne Mikrofon oder hörbare Quelle lässt sich keine Aufnahme starten (Andrés Regel), eine Testquelle gibt es nicht.
+
 ## Paket 6: Agent (0.1.16, offen)
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo build --release -p woa-headless -p woa`
@@ -37,7 +47,7 @@ Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --rel
 3. In der Liste „Systemklang“ wählen: Damit wird alles aufgenommen, was gerade zu hören ist.
 4. Bei einem Eingang (Liste, „Eingang: …“) den Haken „hören“ setzen, mit Kopfhörer aufnehmen: Du hörst dich selbst.
 5. „Stopp am Ende“ (neben ▶, orange = an): Die Wiedergabe hält am Ende des letzten Clips an. Noch einmal ▶ startet von vorn.
-6. (#44, 0.3.5) Erst die Quellenliste einer Spur öffnen, dann in Chromium Musik starten und die Liste erneut öffnen: Dort steht „Programm: Chromium“ (bei sprechendem Titel mit „– Titel“), WOA selbst steht nicht drin. Musik stoppen, Liste erneut öffnen: Ohne Programm erscheint unten grau „Programm spielt gerade keinen Ton?“.
+6. (#44, 0.3.6) Erst die Quellenliste einer Spur öffnen, dann in Chromium Musik starten und die Liste erneut öffnen: Dort steht „Programm: Chromium“ (bei sprechendem Titel mit „– Titel“), WOA selbst steht nicht drin. Musik stoppen, Liste erneut öffnen: Ohne Programm erscheint unten grau „Programm spielt gerade keinen Ton?“.
 
 Selbst geprüft von Claude: Quellenliste gegen PipeWire (Eingang, Systemklang, Programme). Ein Testton mit Lautstärke 0,05 kam über Systemklang und über „Programm“ jeweils mit Spitze 0,050 an (`woa-headless sources` und `capture`). Workspace-Tests grün.
 

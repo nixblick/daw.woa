@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 use pulseaudio::protocol::{self, Command, Prop};
 
+use crate::live_peaks::{LivePeaks, live_peaks};
 use crate::record::RecordStats;
 
 /// Abtastrate aller Aufnahmen über Pulse.
@@ -338,9 +339,16 @@ pub struct CaptureRecorder {
     meters: Arc<Meters>,
     path: PathBuf,
     started: Instant,
+    peaks: LivePeaks,
 }
 
 impl CaptureRecorder {
+    /// Hängt die seit dem letzten Aufruf fertigen Wellenform-Punkte an (je
+    /// [`crate::clip::PEAK_BLOCK`] Frames bei [`RATE`]).
+    pub fn drain_peaks(&mut self, out: &mut Vec<f32>) {
+        self.peaks.drain_into(out);
+    }
+
     /// Spitzenpegel seit dem letzten Aufruf (0..1), setzt ihn zurück.
     pub fn take_level(&self) -> f32 {
         f32::from_bits(self.meters.level.swap(0, Ordering::Relaxed))
@@ -436,6 +444,7 @@ pub fn start_capture(
     let m = Arc::clone(&meters);
     let (mut sock, version) = conn;
     let channel = reply.channel;
+    let (mut collector, peaks) = live_peaks(CHANNELS);
     let reader = std::thread::Builder::new()
         .name("woa-capture".into())
         .spawn(move || -> Result<(), String> {
@@ -462,6 +471,7 @@ pub fn start_capture(
                 for b in samples {
                     let s = f32::from_le_bytes(*b);
                     peak = peak.max(s.abs());
+                    collector.push(s);
                     wav.write_sample(s).map_err(|e| e.to_string())?;
                     n += 1;
                 }
@@ -487,6 +497,7 @@ pub fn start_capture(
         meters,
         path: path.to_path_buf(),
         started: Instant::now(),
+        peaks,
     })
 }
 

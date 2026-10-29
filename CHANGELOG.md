@@ -1,9 +1,17 @@
 # Changelog
 
-## 0.3.5 — 2026-10-29
+## 0.3.6 — 2026-10-29
 
 - **Programme in der Quellenliste (Fixes #44).** Belegt am 29.10.: WOA listete seine eigenen Wiedergabe-Streams als „Programm: woa“, zweimal mit demselben Schlüssel. pipewire-alsa nennt sie „PipeWire ALSA [woa]“ und meldet keine Prozess-ID, deshalb griff der Filter über die eigene PID nicht. Chromium meldet sich laut WirePlumber als `application.name = Chromium` und wurde vom Namen her richtig erkannt. Warum es am 29.10. fehlte, ließ sich ohne laufenden Chromium-Stream nicht nachstellen (Wiedergabe auf dem Notebook ist tabu). Vermutung: Der Stream hatte keinen bekannten Ausgang (`sink_index`) und fiel stumm aus der Liste. Widerlegt sind: Die Liste wird nur beim Start gelesen (sie wurde jede Sekunde neu gelesen). Pausierte Streams werden ausgefiltert (es gab keinen Filter). Die Abfrage scheiterte (keine Warnung im Log).
 - **Neu:** Ein Stream ohne bekannten Ausgang bleibt in der Liste und nimmt den ersten Ausgang. Eigene Streams erkennt WOA zusätzlich am Programmnamen. Jedes Programm steht einmal in der Liste, ein laufender Stream geht einem pausierten vor. Der Name kommt aus `application.name`, sonst aus dem Programmdatei-Namen, sonst aus dem Stream. Nichtssagende Medientitel („Playback“, „ALSA Playback“) werden weggelassen, echte Titel angehängt. Beim Öffnen fragt die Auswahl sofort neu ab. Ohne Programm steht unten „Programm spielt gerade keinen Ton?“. Die Zuordnung steckt jetzt in `capture::build_sources` und ist mit Beispieldaten aus `wpctl inspect` getestet.
+
+## 0.3.5 — 2026-10-29
+
+- **Man sieht, was man aufnimmt (Fixes #43).** Während der Aufnahme wächst auf jeder aufnehmenden Spur ab dem Startpunkt ein roter Clip „Aufnahme läuft“ mit, darin die laufende Wellenform. Nach dem Stopp tritt an seine Stelle der fertige Clip. Die Zeitleiste wird mitverlängert, wenn die Aufnahme über das bisherige Ende hinausläuft.
+- **So kommen die Punkte an:** `woa_engine::live_peaks` sammelt im Schreib-Thread der Aufnahme (cpal) bzw. im Lese-Thread (PipeWire) je 256 Frames den lautesten Betrag über alle Kanäle, dieselbe Einheit wie die Wellenform fertiger Clips. Die Werte gehen über einen lock-freien Ring (`rtrb`) an die Oberfläche; der Audio-Callback bleibt unverändert. Läuft der Ring voll (etwa drei Minuten ohne Abholen), füllt die Oberfläche die fehlenden Stellen als Stille auf, damit die Zeitachse stimmt. Die Wellenform nutzt die Abtastrate der Aufnahme, nicht die der Wiedergabe.
+- **Pegel:** Die Pegelanzeigen in der Aufnahmeleiste und an der Spur gab es schon. Neu ist die Übersteuerungslampe „ÜBERSTEUERT“ neben dem Pegel, sobald ein Sample 0 dBFS erreicht; sie bleibt bis zur nächsten Aufnahme an.
+- **Keine Mehrlast:** Die Oberfläche zeichnet wie bisher nur während einer Aufnahme alle 40 ms neu, in Ruhe bleibt es bei 2 Bildern je Sekunde (#57). Gezeichnet werden nur sichtbare Spalten.
+- Tests: Peak-Sammlung gegen die Wellenform der Mono-Datei (Stereo, zerstückelt angeliefert), schrittweises Abholen, voller Ring; `assert_no_alloc` um das Sammeln (`crates/engine/tests/live_peaks_rt.rs`).
 
 ## 0.3.4 — 2026-10-29
 
