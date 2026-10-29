@@ -59,7 +59,7 @@ pub struct ProjectMeta {
     pub name: String,
 }
 
-/// A clip on a track. Placeholder for M0: position and length in beats.
+/// A clip on a track: position and length in beats, optionally backed by an audio file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Clip {
     /// Stable id.
@@ -70,6 +70,10 @@ pub struct Clip {
     pub start_beats: f64,
     /// Length in beats (> 0).
     pub length_beats: f64,
+    /// Audio file of the clip, relative to the project folder (e.g. `aufnahmen/x.wav`).
+    /// `None`: placeholder clip without sound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio: Option<String>,
 }
 
 /// A track with its mixer settings and clips.

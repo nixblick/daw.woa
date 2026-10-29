@@ -18,6 +18,7 @@ fn sample() -> Session {
             name: "Intro".into(),
             start_beats: 4.0,
             length_beats: 8.0,
+            audio: None,
         },
         index: None,
     })
@@ -198,6 +199,7 @@ fn build(s: &mut Session, (kind, a, b, x, flag): (u8, usize, usize, f64, bool)) 
                     name: "c".into(),
                     start_beats: x.abs(),
                     length_beats: 1.0,
+                    audio: None,
                 },
                 index: Some(b),
             }

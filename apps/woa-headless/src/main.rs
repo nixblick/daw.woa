@@ -79,6 +79,9 @@ enum Cmd {
     /// Spielt einen Testton auf dem Gerät und zählt Underruns (M1-Abnahme, #2).
     /// Exit 1, wenn mindestens ein Underrun auftrat. Nur mit Feature `device`.
     Play {
+        /// Spielt dieses Projekt (Ordner .woa) statt des Testtons.
+        #[arg(long)]
+        project: Option<PathBuf>,
         /// Dauer in Sekunden.
         #[arg(long, default_value_t = 10)]
         seconds: u64,
@@ -106,6 +109,19 @@ enum Cmd {
         /// Eingangs-Id aus `devices --input`; ohne = Standard-Eingang.
         #[arg(long)]
         device: Option<String>,
+    },
+    /// Rendert ein Projekt mit seinen Audio-Clips offline in eine WAV-Datei (ohne Gerät).
+    Render {
+        /// Projektordner (.woa).
+        project: PathBuf,
+        /// Zieldatei (.wav).
+        out: PathBuf,
+        /// Länge in Sekunden.
+        #[arg(long, default_value_t = 10)]
+        seconds: u64,
+        /// Abtastrate.
+        #[arg(long, default_value_t = 48_000)]
+        rate: u32,
     },
     /// Schickt ein Test-Ereignis an den Telemetrie-Endpunkt (/ingest).
     LogTest {
@@ -147,12 +163,19 @@ fn main() -> ExitCode {
             device,
         } => audio::cmd_record(&out, seconds, device),
         Cmd::Play {
+            project,
             seconds,
             buffer,
             device,
             freq,
             volume,
-        } => audio::cmd_play(seconds, buffer, device, freq, volume),
+        } => audio::cmd_play(project.as_deref(), seconds, buffer, device, freq, volume),
+        Cmd::Render {
+            project,
+            out,
+            seconds,
+            rate,
+        } => audio::cmd_render(&project, &out, seconds, rate),
         Cmd::LogTest { url, timeout } => cmd_log_test(&url, timeout),
         Cmd::FeedbackTest { url, text, timeout } => cmd_feedback_test(&url, &text, timeout),
     };

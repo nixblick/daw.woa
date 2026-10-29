@@ -4,7 +4,10 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use woa_model::{Command, ModelError, Project, Session, TrackId, TrackKind};
+use woa_model::{Clip, ClipId, Command, ModelError, Project, Session, TrackId, TrackKind};
+
+/// Subfolder for recorded takes, inside the project or recovery folder.
+pub const TAKES_DIR: &str = "aufnahmen";
 
 /// Autosave interval (rule 7).
 pub const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(10);
@@ -115,6 +118,79 @@ impl AppState {
         self.apply(Command::SetMute { track, mute })
     }
 
+    /// Where new takes are written: the project folder, or the recovery folder while unsaved.
+    pub fn takes_dir(&self) -> PathBuf {
+        self.session
+            .path()
+            .unwrap_or(&self.recovery_dir)
+            .join(TAKES_DIR)
+    }
+
+    /// Resolves a clip's audio path (relative to the project): project folder first,
+    /// then the recovery folder (takes of a project that was not saved yet).
+    pub fn resolve_audio(&self, rel: &str) -> Option<PathBuf> {
+        let rel = Path::new(rel);
+        if rel.is_absolute()
+            || rel
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return None;
+        }
+        self.session
+            .path()
+            .map(|p| p.join(rel))
+            .into_iter()
+            .chain(std::iter::once(self.recovery_dir.join(rel)))
+            .find(|p| p.is_file())
+    }
+
+    /// Puts a recorded take on `track` (or on a new audio track) as one undo step.
+    /// `file` must lie in [`AppState::takes_dir`].
+    pub fn add_take(
+        &mut self,
+        track: Option<TrackId>,
+        file: &Path,
+        start_beats: f64,
+        seconds: f64,
+    ) -> Option<ClipId> {
+        let name = file.file_stem()?.to_string_lossy().into_owned();
+        let audio = format!("{TAKES_DIR}/{}", file.file_name()?.to_string_lossy());
+        let length_beats = (seconds * self.project().tempo_bpm / 60.0).max(1e-3);
+        let target = track.filter(|t| {
+            self.project()
+                .track(*t)
+                .is_some_and(|t| t.kind == TrackKind::Audio)
+        });
+        self.session.begin_group("Aufnahme");
+        let track = match target {
+            Some(t) => Some(t),
+            None => self.add_track(),
+        };
+        let id = self.session.new_clip_id();
+        let ok = track.is_some_and(|track| {
+            self.apply(Command::AddClip {
+                track,
+                clip: Clip {
+                    id,
+                    name,
+                    start_beats: start_beats.max(0.0),
+                    length_beats,
+                    audio: Some(audio),
+                },
+                index: None,
+            })
+        });
+        let closed = self.session.end_group();
+        self.report("Aufnahme", closed);
+        ok.then_some(id)
+    }
+
+    /// Removes a clip (undoable). The audio file stays on disk.
+    pub fn remove_clip(&mut self, clip: ClipId) -> bool {
+        self.apply(Command::RemoveClip { clip })
+    }
+
     /// Undo; "nothing to undo" is not an error for the user.
     pub fn undo(&mut self) {
         match self.session.undo() {
@@ -173,6 +249,11 @@ impl AppState {
     /// Saves into `dir` (appends `.woa` if missing) and adopts it as project folder.
     pub fn save_as(&mut self, dir: &Path) -> bool {
         let dir = with_woa_extension(dir);
+        if let Err(e) = self.copy_takes(&dir) {
+            tracing::error!(error = %e, "copying takes failed");
+            self.status = Status::Error(format!("Aufnahmen kopieren: {e}"));
+            return false;
+        }
         let result = self.session.save_as(&dir);
         if self.report("Speichern", result) {
             self.status = Status::Info(format!("Gespeichert: {}", dir.display()));
@@ -201,6 +282,27 @@ impl AppState {
                 false
             }
         }
+    }
+}
+
+impl AppState {
+    /// Copies every take the project uses into `dir`, so the new folder is complete.
+    fn copy_takes(&self, dir: &Path) -> std::io::Result<()> {
+        for clip in self.project().tracks.iter().flat_map(|t| &t.clips) {
+            let Some(rel) = &clip.audio else { continue };
+            let Some(src) = self.resolve_audio(rel) else {
+                continue;
+            };
+            let dst = dir.join(rel);
+            if dst == src || dst.exists() {
+                continue;
+            }
+            if let Some(parent) = dst.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::copy(&src, &dst)?;
+        }
+        Ok(())
     }
 }
 
@@ -309,6 +411,37 @@ mod tests {
             woa_model::store::load_autosave(&tmp.path().join("p.woa"))
                 .unwrap()
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn take_lands_on_track_and_survives_save_as() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(&tmp.path().join("rec"));
+        let dir = s.takes_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("aufnahme-001.wav");
+        std::fs::write(&file, b"RIFF").unwrap();
+        let clip = s.add_take(None, &file, 4.0, 2.0).unwrap();
+        assert_eq!(s.project().tracks.len(), 1);
+        let (_, c) = s.project().clip(clip).unwrap();
+        assert_eq!(c.audio.as_deref(), Some("aufnahmen/aufnahme-001.wav"));
+        assert!(
+            (c.length_beats - 4.0).abs() < 1e-9,
+            "2 s at 120 bpm = 4 beats"
+        );
+        assert!(s.resolve_audio("aufnahmen/aufnahme-001.wav").is_some());
+        assert!(s.resolve_audio("../x.wav").is_none());
+        assert!(s.save_as(&tmp.path().join("show")));
+        assert!(
+            tmp.path()
+                .join("show.woa/aufnahmen/aufnahme-001.wav")
+                .is_file()
+        );
+        s.undo();
+        assert!(
+            s.project().tracks.is_empty(),
+            "take + new track = one undo step"
         );
     }
 

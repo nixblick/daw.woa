@@ -1,0 +1,196 @@
+//! Wiedergabe im Fenster: eine Engine am Standard-Ausgang, die den Projekt-Graphen mit
+//! [`ClipPlayer`]n je Audio-Spur spielt. Struktur-Änderungen (Spuren, Clips, Tempo) bauen
+//! einen neuen Graphen, Mixer-Änderungen gehen als geglättete Parameter.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use woa_engine::clip::{ClipPlayer, PlacedClip, load_wav_mono};
+use woa_engine::device::{OutputConfig, output_sample_rate, start_output_with};
+use woa_engine::project::{ProjectGraph, TrackNodes, build_project_graph};
+use woa_engine::transport::{TransportHandle, beats_to_samples, samples_to_beats};
+use woa_engine::{AudioProcessor, Engine};
+use woa_model::{Project, TrackId, TrackKind};
+
+/// Was einen neuen Graphen verlangt.
+type Structure = (u64, Vec<(TrackId, Vec<(u64, u64, Option<String>)>)>);
+/// Was nur Parameter ändert.
+type Mixer = Vec<(TrackId, u64, u64, bool, bool)>;
+
+pub struct Player {
+    engine: Engine,
+    transport: TransportHandle,
+    _stream: cpal_stream::Stream,
+    rate: u32,
+    cache: HashMap<PathBuf, Arc<[f32]>>,
+    nodes: HashMap<TrackId, TrackNodes>,
+    structure: Option<Structure>,
+    mixer: Option<Mixer>,
+}
+
+mod cpal_stream {
+    pub type Stream = Box<dyn std::any::Any>;
+}
+
+impl Player {
+    /// Öffnet den Standard-Ausgang.
+    pub fn open() -> Result<Self, String> {
+        let config = OutputConfig::default();
+        let rate = output_sample_rate(&config).map_err(|e| e.to_string())?;
+        let (engine, processor): (Engine, AudioProcessor) = Engine::new(256);
+        let transport = engine.transport();
+        let stream = start_output_with(processor, transport.clone(), &config, |e| {
+            tracing::warn!(error = %e, "output stream error");
+        })
+        .map_err(|e| e.to_string())?;
+        tracing::info!(rate, "playback ready");
+        Ok(Self {
+            engine,
+            transport,
+            _stream: Box::new(stream),
+            rate,
+            cache: HashMap::new(),
+            nodes: HashMap::new(),
+            structure: None,
+            mixer: None,
+        })
+    }
+
+    /// Hält den Graphen beim Projekt. `resolve` macht aus einem Clip-Pfad eine Datei.
+    /// Fehler (fehlende Datei) werden geloggt, der Clip bleibt dann stumm.
+    pub fn sync(&mut self, project: &Project, resolve: &dyn Fn(&str) -> Option<PathBuf>) {
+        self.engine.collect();
+        let rate = self.rate as f32;
+        let structure: Structure = (
+            project.tempo_bpm.to_bits(),
+            project
+                .tracks
+                .iter()
+                .map(|t| {
+                    let clips = t
+                        .clips
+                        .iter()
+                        .map(|c| {
+                            (
+                                c.start_beats.to_bits(),
+                                c.length_beats.to_bits(),
+                                c.audio.clone(),
+                            )
+                        })
+                        .collect();
+                    (t.id, clips)
+                })
+                .collect(),
+        );
+        if self.structure.as_ref() != Some(&structure) {
+            let transport = self.transport.clone();
+            let cache = &mut self.cache;
+            let sr = self.rate;
+            let mut source = |t: &woa_model::Track| -> Option<Box<dyn woa_dsp::Node>> {
+                if t.kind != TrackKind::Audio {
+                    return None;
+                }
+                let clips = t
+                    .clips
+                    .iter()
+                    .filter_map(|c| {
+                        let file = resolve(c.audio.as_deref()?)?;
+                        let samples = match cache.get(&file) {
+                            Some(s) => Arc::clone(s),
+                            None => match load_wav_mono(&file, sr) {
+                                Ok(s) => {
+                                    cache.insert(file.clone(), Arc::clone(&s));
+                                    s
+                                }
+                                Err(e) => {
+                                    tracing::warn!(file = %file.display(), error = %e, "clip load failed");
+                                    return None;
+                                }
+                            },
+                        };
+                        let start = beats_to_samples(c.start_beats, project.tempo_bpm, rate);
+                        let max = beats_to_samples(c.length_beats, project.tempo_bpm, rate) as usize;
+                        let samples: Arc<[f32]> = if samples.len() > max && max > 0 {
+                            samples[..max].into()
+                        } else {
+                            samples
+                        };
+                        Some(PlacedClip { start, samples })
+                    })
+                    .collect();
+                Some(Box::new(ClipPlayer::new(clips, transport.clone())))
+            };
+            let graph = build_project_graph(project, &mut source);
+            match self.engine.set_graph(graph.builder, rate, 4096) {
+                Ok(()) => {
+                    self.nodes = graph.tracks;
+                    self.structure = Some(structure);
+                    self.mixer = None;
+                }
+                Err(e) => tracing::warn!(error = %e, "graph swap failed"),
+            }
+            if let Err(e) = self.engine.set_tempo(project.tempo_bpm) {
+                tracing::warn!(error = %e, "tempo failed");
+            }
+        }
+        let mixer: Mixer = project
+            .tracks
+            .iter()
+            .map(|t| (t.id, t.gain_db.to_bits(), t.pan.to_bits(), t.mute, t.solo))
+            .collect();
+        if self.mixer.as_ref() != Some(&mixer) {
+            match ProjectGraph::update(&self.nodes, &mut self.engine, project) {
+                Ok(()) => self.mixer = Some(mixer),
+                Err(e) => tracing::warn!(error = %e, "mixer update failed"),
+            }
+        }
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.transport.is_playing()
+    }
+
+    pub fn play(&mut self) {
+        if let Err(e) = self.engine.play() {
+            tracing::warn!(error = %e, "play failed");
+        }
+    }
+
+    pub fn stop(&mut self) {
+        if let Err(e) = self.engine.stop() {
+            tracing::warn!(error = %e, "stop failed");
+        }
+    }
+
+    pub fn toggle(&mut self) {
+        if self.is_playing() {
+            self.stop()
+        } else {
+            self.play()
+        }
+    }
+
+    /// Springt an eine Position in Beats.
+    pub fn seek_beats(&mut self, beats: f64, tempo_bpm: f64) {
+        let pos = beats_to_samples(beats.max(0.0), tempo_bpm, self.rate as f32);
+        if let Err(e) = self.engine.seek(pos) {
+            tracing::warn!(error = %e, "seek failed");
+        }
+    }
+
+    /// Position in Beats.
+    pub fn position_beats(&self, tempo_bpm: f64) -> f64 {
+        samples_to_beats(self.transport.position(), tempo_bpm, self.rate as f32)
+    }
+
+    /// Position in Sekunden.
+    pub fn position_seconds(&self) -> f64 {
+        self.transport.position() as f64 / f64::from(self.rate.max(1))
+    }
+
+    /// Vergisst eine dekodierte Datei (nach neuer Aufnahme unter gleichem Namen).
+    pub fn forget(&mut self, file: &Path) {
+        self.cache.remove(file);
+    }
+}

@@ -16,6 +16,7 @@ use arc_swap::ArcSwap;
 use basedrop::{Collector, Owned};
 use woa_dsp::{Node, ProcessBuffers};
 
+pub mod clip;
 #[cfg(feature = "device")]
 pub mod device;
 pub mod project;
