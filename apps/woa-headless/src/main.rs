@@ -122,6 +122,9 @@ enum Cmd {
         /// Abtastrate.
         #[arg(long, default_value_t = 48_000)]
         rate: u32,
+        /// Lautheit angleichen auf diesen Wert (LUFS, z. B. -16), Spitzen höchstens -1 dBFS.
+        #[arg(long, allow_hyphen_values = true)]
+        lufs: Option<f64>,
     },
     /// Schickt ein Test-Ereignis an den Telemetrie-Endpunkt (/ingest).
     LogTest {
@@ -175,7 +178,8 @@ fn main() -> ExitCode {
             out,
             seconds,
             rate,
-        } => audio::cmd_render(&project, &out, seconds, rate),
+            lufs,
+        } => audio::cmd_render(&project, &out, seconds, rate, lufs),
         Cmd::LogTest { url, timeout } => cmd_log_test(&url, timeout),
         Cmd::FeedbackTest { url, text, timeout } => cmd_feedback_test(&url, &text, timeout),
     };

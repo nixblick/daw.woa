@@ -40,6 +40,14 @@ pub struct WoaApp {
     clip_drag: Option<(ClipId, f64)>,
     /// Fades being edited (committed as one undo step when editing ends).
     fade_edit: Option<(ClipId, f64, f64)>,
+    /// Weitere markierte Clips (Strg/Umschalt+Klick), inklusive `selected_clip`.
+    selected_clips: Vec<ClipId>,
+    /// Export-Lautheit in LUFS, `None` = unverändert.
+    export_lufs: Option<f64>,
+    /// Gemessene Treiberlatenz beim Aufnehmen ausgleichen.
+    latency_auto: bool,
+    /// Zusätzlicher Latenzausgleich in Millisekunden (von Hand).
+    latency_extra_ms: f64,
     /// Clip-Rand, der gerade gezogen wird: (Clip, linker Rand?, Versatz in Beats).
     trim: Option<(ClipId, bool, f64)>,
     /// Zoom der Zeitleiste in Pixel je Beat.
@@ -73,6 +81,10 @@ impl WoaApp {
             selected_clip: None,
             clip_drag: None,
             fade_edit: None,
+            selected_clips: Vec::new(),
+            export_lufs: Some(-16.0),
+            latency_auto: true,
+            latency_extra_ms: 0.0,
             trim: None,
             zoom: PX_PER_BEAT,
             track_rects: Vec::new(),
@@ -102,7 +114,17 @@ impl WoaApp {
                     if let Some(p) = self.player.as_mut() {
                         p.forget(&s.path);
                     }
-                    if let Some(clip) = self.state.add_take(track, &s.path, start, s.seconds()) {
+                    let measured = if self.latency_auto {
+                        (s.input_latency + woa_engine::device::output_latency()).as_secs_f64()
+                    } else {
+                        0.0
+                    };
+                    let latency = measured + self.latency_extra_ms / 1000.0;
+                    tracing::info!(latency_ms = latency * 1000.0, "latency compensation");
+                    if let Some(clip) =
+                        self.state
+                            .add_take(track, &s.path, start, s.seconds(), latency)
+                    {
                         self.selected_clip = Some(clip);
                         self.selected_track = self.state.project().clip(clip).map(|(t, _)| t.id);
                     }
@@ -213,6 +235,20 @@ impl WoaApp {
             {
                 self.toggle_record();
             }
+            let out_ms = woa_engine::device::output_latency().as_secs_f64() * 1000.0;
+            ui.checkbox(&mut self.latency_auto, "Latenz ausgleichen")
+                .on_hover_text(format!(
+                    "Verschiebt jede Aufnahme um die vom Treiber gemeldete Latenz nach vorn \
+                     (Ausgang zuletzt {out_ms:.1} ms, Eingang wird bei der Aufnahme gemessen)"
+                ));
+            ui.add(
+                egui::DragValue::new(&mut self.latency_extra_ms)
+                    .range(-500.0..=500.0)
+                    .speed(0.5)
+                    .prefix("+")
+                    .suffix(" ms"),
+            )
+            .on_hover_text("Zusätzlicher Ausgleich von Hand, falls Aufnahmen noch zu spät liegen");
             if let Some(rec) = &self.recorder {
                 let fresh = rec.take_level();
                 self.level = fresh.max(self.level * 0.85);
@@ -296,8 +332,8 @@ impl WoaApp {
             if home {
                 self.rewind();
             }
-            if del && let Some(clip) = self.selected_clip.take() {
-                self.state.remove_clip(clip);
+            if del {
+                self.delete_selected();
             }
         }
         if undo {
@@ -395,6 +431,22 @@ impl WoaApp {
             if ui.button("+").clicked() {
                 self.zoom = (self.zoom * 1.5).clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
             }
+            ui.separator();
+            let name = |v: Option<f64>| match v {
+                None => "Export-Lautheit: unverändert".to_string(),
+                Some(l) => format!("Export-Lautheit: {l:.0} LUFS"),
+            };
+            egui::ComboBox::from_id_salt("export_lufs")
+                .selected_text(name(self.export_lufs))
+                .show_ui(ui, |ui| {
+                    for (v, hint) in [
+                        (Some(-16.0), " (Web, Podcast)"),
+                        (Some(-23.0), " (Rundfunk, EBU R128)"),
+                        (None, ""),
+                    ] {
+                        ui.selectable_value(&mut self.export_lufs, v, format!("{}{hint}", name(v)));
+                    }
+                });
             ui.separator();
             self.clip_bar(ui);
         });
@@ -519,7 +571,13 @@ impl WoaApp {
         let ppb = self.player.as_ref().map(|p| p.peaks_per_beat(tempo));
         for c in &clips {
             let drag = match self.clip_drag {
-                Some((id, d)) if id == c.id => d,
+                Some((id, d))
+                    if id == c.id
+                        || (self.selected_clips.contains(&id)
+                            && self.selected_clips.contains(&c.id)) =>
+                {
+                    d
+                }
                 _ => 0.0,
             };
             // Gezogener Rand: Anzeige mit vorläufigen Werten.
@@ -599,7 +657,7 @@ impl WoaApp {
                     egui::Stroke::NONE,
                 ));
             }
-            if self.selected_clip == Some(c.id) {
+            if self.selected_clip == Some(c.id) || self.selected_clips.contains(&c.id) {
                 painter.rect_stroke(
                     r,
                     3.0,
@@ -615,6 +673,22 @@ impl WoaApp {
                 egui::Color32::WHITE,
             );
             if cresp.clicked() || cresp.drag_started() {
+                let m = ui.input(|i| i.modifiers);
+                if m.command || m.shift {
+                    // Strg/Umschalt+Klick: zur Auswahl hinzufügen oder herausnehmen.
+                    if let Some(p) = self.selected_clip
+                        && !self.selected_clips.contains(&p)
+                    {
+                        self.selected_clips.push(p);
+                    }
+                    if cresp.clicked() && self.selected_clips.contains(&c.id) {
+                        self.selected_clips.retain(|x| *x != c.id);
+                    } else if !self.selected_clips.contains(&c.id) {
+                        self.selected_clips.push(c.id);
+                    }
+                } else if !(cresp.drag_started() && self.selected_clips.contains(&c.id)) {
+                    self.selected_clips = vec![c.id];
+                }
                 self.selected_clip = Some(c.id);
                 self.selected_track = Some(track);
             }
@@ -627,6 +701,11 @@ impl WoaApp {
                 && let Some((id, d)) = self.clip_drag.take()
             {
                 let snapped = ((c.start_beats + d) * 4.0).round() / 4.0;
+                if self.selected_clips.len() > 1 && self.selected_clips.contains(&id) {
+                    let ids = self.selected_clips.clone();
+                    self.state.shift_clips(&ids, snapped - c.start_beats);
+                    continue;
+                }
                 // Losgelassen über einer anderen Spur: dorthin verschieben.
                 let target = ui
                     .ctx()
@@ -695,6 +774,7 @@ impl WoaApp {
         if resp.clicked() {
             self.selected_track = Some(track);
             self.selected_clip = None;
+            self.selected_clips.clear();
             if let (Some(pos), Some(p)) = (resp.interact_pointer_pos(), self.player.as_mut()) {
                 p.seek_beats(f64::from((pos.x - rect.left()) / px), tempo);
             }
@@ -704,11 +784,12 @@ impl WoaApp {
     /// Bearbeitungszeile für den gewählten Clip: Fades, Schneiden, Löschen.
     fn clip_bar(&mut self, ui: &mut egui::Ui) {
         let Some(id) = self.selected_clip else {
-            ui.label("Clip anklicken zum Bearbeiten · Strg+Mausrad: Zoom · Strg+E: Export");
+            ui.label("Clip anklicken zum Bearbeiten · Strg+Klick: mehrere · Strg+Mausrad: Zoom · Strg+E: Export");
             return;
         };
         let Some((_, c)) = self.state.project().clip(id) else {
             self.selected_clip = None;
+            self.selected_clips.clear();
             return;
         };
         let c = c.clone();
@@ -742,11 +823,34 @@ impl WoaApp {
             if ui.button("✂ Schneiden (S)").clicked() {
                 self.split_at_playhead();
             }
-            if ui.button("🗑 Löschen (Entf)").clicked() {
-                self.state.remove_clip(id);
-                self.selected_clip = None;
+            let n = self.selected_clips.len().max(1);
+            let label = if n > 1 {
+                format!("🗑 {n} Clips löschen (Entf)")
+            } else {
+                "🗑 Löschen (Entf)".to_string()
+            };
+            if ui.button(label).clicked() {
+                self.delete_selected();
             }
         });
+    }
+
+    fn delete_selected(&mut self) {
+        let mut ids = std::mem::take(&mut self.selected_clips);
+        if let Some(c) = self.selected_clip.take()
+            && !ids.contains(&c)
+        {
+            ids.push(c);
+        }
+        match ids.as_slice() {
+            [] => {}
+            [one] => {
+                self.state.remove_clip(*one);
+            }
+            many => {
+                self.state.remove_clips(many);
+            }
+        }
     }
 
     fn split_at_playhead(&mut self) {
@@ -784,13 +888,31 @@ impl WoaApp {
         let project = self.state.project().clone();
         let state = &self.state;
         let result = match self.player.as_mut() {
-            Some(p) => p.export(&project, &|rel| state.resolve_audio(rel), &out),
+            Some(p) => p.export(
+                &project,
+                &|rel| state.resolve_audio(rel),
+                &out,
+                self.export_lufs,
+            ),
             None => Err("keine Audio-Engine".into()),
         };
         self.state.status = match result {
-            Ok(secs) => {
-                tracing::info!(seconds = secs, "export done");
-                Status::Info(format!("Exportiert: {} ({secs:.1} s)", out.display()))
+            Ok((secs, norm)) => {
+                tracing::info!(seconds = secs, ?norm, "export done");
+                let loud = match norm {
+                    Some(n) => format!(
+                        ", Lautheit {:.1} → {:.1} LUFS{}",
+                        n.before_lufs,
+                        n.before_lufs + n.gain_db,
+                        if n.peak_limited {
+                            " (Spitzen begrenzen, leiser als Ziel)"
+                        } else {
+                            ""
+                        }
+                    ),
+                    None => String::new(),
+                };
+                Status::Info(format!("Exportiert: {} ({secs:.1} s{loud})", out.display()))
             }
             Err(e) => {
                 tracing::error!(error = %e, "export failed");

@@ -6,6 +6,7 @@
 //! [`TransportHandle`], bevor er den Fehler an `on_error` weitergibt.
 
 use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -84,6 +85,15 @@ impl Default for OutputConfig {
 }
 
 /// Listet alle Ausgabegeräte des Standard-Hosts.
+/// Zuletzt vom Treiber gemeldete Ausgangslatenz (Callback bis Lautsprecher) in Mikrosekunden,
+/// 0 wenn unbekannt. Für den Latenzausgleich bei Aufnahmen.
+pub static OUTPUT_LATENCY_US: AtomicU64 = AtomicU64::new(0);
+
+/// [`OUTPUT_LATENCY_US`] als Dauer.
+pub fn output_latency() -> std::time::Duration {
+    std::time::Duration::from_micros(OUTPUT_LATENCY_US.load(Ordering::Relaxed))
+}
+
 pub fn list_output_devices() -> Result<Vec<OutputDeviceInfo>, DeviceError> {
     let host = cpal::default_host();
     let default_id = host.default_output_device().and_then(|d| d.id().ok());
@@ -195,7 +205,10 @@ pub fn start_output_with(
 
     let stream = device.build_output_stream(
         stream_config,
-        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+        move |data: &mut [f32], info: &cpal::OutputCallbackInfo| {
+            let ts = info.timestamp();
+            let d = ts.playback.duration_since(ts.callback);
+            OUTPUT_LATENCY_US.store(d.as_micros() as u64, Ordering::Relaxed);
             for frame_chunk in data.chunks_mut(SCRATCH_FRAMES * channels) {
                 let frames = frame_chunk.len() / channels;
                 let l = &mut left[..frames];

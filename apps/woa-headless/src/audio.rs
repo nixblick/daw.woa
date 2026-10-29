@@ -144,12 +144,13 @@ pub fn cmd_record(out: &std::path::Path, seconds: u64, device: Option<String>) -
     }
     let stats = rec.stop().map_err(|e| e.to_string())?;
     println!(
-        "fertig: {:.1} s, {} Hz, {} Kanal/Kanäle, peak={:.3}, overruns={}",
+        "fertig: {:.1} s, {} Hz, {} Kanal/Kanäle, peak={:.3}, overruns={}, eingangslatenz={:.1} ms",
         stats.seconds(),
         stats.sample_rate,
         stats.channels,
         stats.peak,
-        stats.overruns
+        stats.overruns,
+        stats.input_latency.as_secs_f64() * 1000.0
     );
     if stats.overruns > 0 {
         return Err(format!("{} Samples verloren", stats.overruns));
@@ -207,8 +208,10 @@ pub fn cmd_render(
     out: &std::path::Path,
     seconds: u64,
     rate: u32,
+    lufs: Option<f64>,
 ) -> Outcome {
     use woa_engine::clip::{project_end_seconds, render_clips};
+    use woa_engine::loudness::{integrated_lufs, normalize};
     let project = woa_model::store::load(dir).map_err(|e| e.to_string())?;
     let length = if seconds == 0 {
         project_end_seconds(&project)
@@ -216,12 +219,30 @@ pub fn cmd_render(
         seconds as f64
     };
     let mut errors = Vec::new();
-    let (left, right) = render_clips(&project, rate, length, &mut loader(dir, rate, &mut errors))
-        .map_err(|e| e.to_string())?;
+    let (mut left, mut right) =
+        render_clips(&project, rate, length, &mut loader(dir, rate, &mut errors))
+            .map_err(|e| e.to_string())?;
     if let Some(e) = errors.first() {
         return Err(e.clone());
     }
+    if let Some(target) = lufs
+        && let Some(n) = normalize(&mut left, &mut right, rate, target, -1.0)
+    {
+        println!(
+            "lautheit: vorher {:.1} LUFS, {:+.1} dB{}",
+            n.before_lufs,
+            n.gain_db,
+            if n.peak_limited {
+                " (durch Spitzen begrenzt)"
+            } else {
+                ""
+            }
+        );
+    }
     woa_engine::export::export_stereo(out, &left, &right, rate).map_err(|e| e.to_string())?;
+    if let Some(l) = integrated_lufs(&left, &right, rate) {
+        println!("lufs={l:.1}");
+    }
     let peak = left
         .iter()
         .chain(&right)

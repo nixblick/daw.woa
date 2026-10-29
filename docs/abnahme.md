@@ -4,23 +4,24 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Paket 3: Arrangieren (0.1.8, offen)
+## Paket 4: Radio-tauglich (0.1.9, offen)
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
 
-1. Zwei Spuren mit je einer Aufnahme. Einen Clip auf die andere Spur ziehen: er liegt dort, Strg+Z holt ihn zurück.
-2. Rechten Rand eines Clips nach links ziehen: Clip wird kürzer, spielt nur noch bis dort.
-3. Linken Rand nach rechts ziehen: der Anfang fällt weg, die Wellenform bleibt an ihrer Stelle in der Zeit.
-4. Strg+Mausrad oder − und + oben: die Zeitleiste zoomt.
-5. Strg+E dreimal: als .wav, .flac und .mp3 speichern, alle drei im Player anhören.
+1. Zu einem vorhandenen Clip mitsprechen oder klatschen und dabei aufnehmen (Haken „Latenz ausgleichen“ an): die neue Aufnahme sitzt zeitlich auf dem Original. Liegt sie noch zu spät, den ms-Wert daneben erhöhen.
+2. Strg+Klick auf zwei Clips: beide gelb. Einen ziehen: beide wandern mit. Entf: beide weg, Strg+Z: beide zurück.
+3. Oben „Export-Lautheit: −16 LUFS“, Strg+E: die Statuszeile zeigt vorher/nachher, die Datei ist deutlich lauter als roh.
+4. Dasselbe mit −23 LUFS: leiser als bei −16.
 
-Selbst geprüft von Claude: Workspace-Tests grün (u. a. Trimmen, Spurwechsel mit Undo, Export in allen drei
-Formaten), Probe-Projekt als WAV, FLAC und MP3 gerendert und mit `ffprobe` gelesen (48 kHz, stereo, 4,0 s;
-MP3 320 kbit/s).
+Selbst geprüft von Claude: Workspace-Tests grün (u. a. Lautheit eines Sinus, Angleichen mit Spitzengrenze, Latenz-Versatz,
+Mehrfach verschieben/löschen mit Undo). Probe-Export gegengemessen mit ffmpeg: roh −42,3, Ziel −23 → −23,0 LUFS.
+Ziel −16 erreicht die Probe nur bis −23 LUFS, weil sie kurze laute Spitzen hat (Grenze −1 dBFS). Eingangslatenz am Notebook 22,3 ms.
 
-Noch nicht drin: Latenzausgleich, Lautheit (LUFS) beim Export, mehrere Clips auf einmal markieren.
+Noch nicht drin: Limiter (damit spitzes Material −16 LUFS erreicht), automatische Latenzmessung per Klick-Test.
 
 ## Abgenommen
+
+- Paket 3 Arrangieren (0.1.8): 29.10.2026, André „passt“.
 
 - Paket 2 Bearbeiten und Export (0.1.7): 29.10.2026, André „passt“.
 
