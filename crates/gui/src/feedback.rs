@@ -3,8 +3,10 @@
 use std::path::Path;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
-use serde::Deserialize;
-use woa_telemetry::{FeedbackError, FeedbackMeta, submit_feedback};
+use serde::{Deserialize, Serialize};
+use woa_telemetry::{
+    DEFAULT_INGEST_URL, FeedbackError, FeedbackMeta, UploadConfig, new_install_id, submit_feedback,
+};
 
 /// Message shown when no endpoint is configured.
 pub const NOT_CONFIGURED: &str = "Server noch nicht eingerichtet";
@@ -13,13 +15,27 @@ pub const NOT_CONFIGURED: &str = "Server noch nicht eingerichtet";
 /// Eigener Feedback-Server (bretteins.infra, Instanz `daw.woa` auf lfs001).
 pub const DEFAULT_FEEDBACK_URL: &str = "https://feedback.wironair.de/api/feedback";
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct GuiConfig {
     /// Feedback endpoint; default is our own server. Empty string in `config.json` = off.
+    #[serde(skip_serializing_if = "is_default_feedback_url")]
     pub feedback_url: String,
-    /// Anonymous install id sent with feedback.
+    /// Anonymous random install id (UUID), sent with feedback and log uploads.
     pub install_id: String,
+    /// Opt-in for anonymous error codes. `None` = not asked yet (dialog on start).
+    pub telemetry_enabled: Option<bool>,
+    /// Log endpoint; default is our own server.
+    #[serde(skip_serializing_if = "is_default_telemetry_url")]
+    pub telemetry_url: String,
+}
+
+fn is_default_feedback_url(s: &str) -> bool {
+    s == DEFAULT_FEEDBACK_URL
+}
+
+fn is_default_telemetry_url(s: &str) -> bool {
+    s == DEFAULT_INGEST_URL
 }
 
 impl Default for GuiConfig {
@@ -27,11 +43,44 @@ impl Default for GuiConfig {
         Self {
             feedback_url: DEFAULT_FEEDBACK_URL.to_string(),
             install_id: String::new(),
+            telemetry_enabled: None,
+            telemetry_url: DEFAULT_INGEST_URL.to_string(),
         }
     }
 }
 
 impl GuiConfig {
+    /// Creates a random install id if none is set. `true` = changed (save it).
+    pub fn ensure_install_id(&mut self) -> bool {
+        if self.install_id.trim().is_empty() {
+            self.install_id = new_install_id();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Upload settings for [`woa_telemetry::init`]. Without opt-in `enabled` is false,
+    /// so no thread and no network.
+    pub fn upload_config(&self) -> UploadConfig {
+        UploadConfig {
+            enabled: self.telemetry_enabled == Some(true),
+            url: self.telemetry_url.clone(),
+            install_id: self.install_id.clone(),
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+            ..UploadConfig::default()
+        }
+    }
+
+    /// Writes `config.json` (creates the folder).
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let text = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
+        std::fs::write(path, text)
+    }
+
     /// Reads `path`; a missing or broken file yields defaults (logged).
     pub fn load(path: &Path) -> Self {
         let text = match std::fs::read_to_string(path) {
@@ -255,6 +304,25 @@ mod tests {
         assert_eq!(GuiConfig::load(&p).feedback_url, "https://x/api/feedback");
         std::fs::write(&p, "kaputt").unwrap();
         assert_eq!(GuiConfig::load(&p), GuiConfig::default());
+    }
+
+    #[test]
+    fn telemetry_is_opt_in_and_persisted() {
+        let mut c = GuiConfig::default();
+        assert_eq!(c.telemetry_enabled, None);
+        assert!(!c.upload_config().enabled);
+        assert_eq!(c.upload_config().url, DEFAULT_INGEST_URL);
+        assert!(c.ensure_install_id());
+        assert!(!c.ensure_install_id());
+        c.telemetry_enabled = Some(true);
+        assert!(c.upload_config().enabled);
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("sub/config.json");
+        c.save(&p).unwrap();
+        let text = std::fs::read_to_string(&p).unwrap();
+        // Defaults are not pinned in the file.
+        assert!(!text.contains("feedback_url"), "{text}");
+        assert_eq!(GuiConfig::load(&p), c);
     }
 
     #[test]

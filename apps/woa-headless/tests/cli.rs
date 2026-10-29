@@ -144,8 +144,21 @@ fn log_test_reads_env_and_reports_rejection() {
 }
 
 #[test]
-fn log_test_without_url_is_usage_error() {
-    bin().arg("log-test").assert().code(2);
+fn log_test_defaults_to_own_server() {
+    bin()
+        .args(["log-test", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("https://feedback.wironair.de/api/logs/ingest"));
+}
+
+#[test]
+fn log_test_with_empty_url_fails() {
+    bin()
+        .args(["log-test", "--url", ""])
+        .assert()
+        .code(1)
+        .stderr(contains("keine URL"));
 }
 
 #[test]

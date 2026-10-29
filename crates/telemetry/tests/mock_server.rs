@@ -234,3 +234,26 @@ fn daily_log_file_is_written() {
     let content = std::fs::read_to_string(dir.path().join(&files[0])).unwrap();
     assert!(content.contains("\"art\":\"start.ms\""));
 }
+
+#[test]
+fn install_id_is_random_uuid_v4() {
+    let a = woa_telemetry::new_install_id();
+    let b = woa_telemetry::new_install_id();
+    assert_ne!(a, b);
+    assert_eq!(a.len(), 36);
+    let parts: Vec<&str> = a.split('-').collect();
+    assert_eq!(
+        parts.iter().map(|p| p.len()).collect::<Vec<_>>(),
+        [8, 4, 4, 4, 12]
+    );
+    assert!(parts[2].starts_with('4'), "{a}");
+    assert!(a.chars().all(|c| c == '-' || c.is_ascii_hexdigit()));
+}
+
+#[test]
+fn default_ingest_url_is_own_server() {
+    assert_eq!(
+        woa_telemetry::DEFAULT_INGEST_URL,
+        "https://feedback.wironair.de/api/logs/ingest"
+    );
+}

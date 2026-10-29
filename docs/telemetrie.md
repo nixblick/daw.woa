@@ -45,8 +45,26 @@ Geprüft gegen `bretteins.infra/ansible/roles/feedback/files/app.py` (`ingest_ze
 | Antwort 200 `{"accepted":n}`; 503 = nicht gespeichert | nur 2xx leert den Puffer |
 | `Authorization: Bearer` nur, wenn der Server ein Token setzt | kein Token (die App trägt keine Geheimnisse) |
 
-Folge: Der WOA-Server muss `/ingest` ohne Token betreiben (wie bretteins mit leerem
-`LOG_INGEST_TOKEN`) oder ein eigener Endpunkt wird gebaut.
+Folge: Der WOA-Server betreibt `/api/logs/ingest` ohne Token (wie bretteins mit leerem
+`LOG_INGEST_TOKEN`); Schutz sind Whitelist für `modul`/`art` und Ratenbremse.
+
+## Einstellungen und Opt-in (`apps/woa`, seit 0.1.15)
+
+- `config.json` im Konfigurationsordner (`~/.config/woa/` bzw. `%APPDATA%\woa\`):
+  `install_id` (zufällige UUID v4, beim ersten Start erzeugt, ohne Personenbezug),
+  `telemetry_enabled` (`null` = noch nicht gefragt, `true`/`false`), optional `telemetry_url`
+  (Standard `https://feedback.wironair.de/api/logs/ingest`) und `feedback_url`.
+- Erster Start: Dialog „Fehlercodes senden?“. Ohne Ja bleibt die Senke aus (kein Thread, kein Netz).
+  Später umschaltbar unter „Einstellungen“; gilt ab dem nächsten Start.
+- `woa-headless log-test` schickt ohne `--url` an dieselbe Adresse.
+
+## Datenschutz
+
+Gesendet wird nur, wenn der Nutzer zugestimmt hat: Ereigniscode, Stufe, Zahl, Zeitpunkt, dazu
+Installations-ID, App-Version und Betriebssystem. Keine Texte, Dateinamen, Pfade, Projektinhalte
+oder Aufnahmen. Die Installations-ID ist Zufall und lässt sich durch Löschen von `install_id` in
+`config.json` neu würfeln. Server: Instanz `daw.woa` der Rolle `feedback` (bretteins.infra) auf
+lfs001, Datenbank `woa_stats`; Aufbewahrung nach der Retention der Rolle.
 
 ## Feedback
 
@@ -65,5 +83,6 @@ Screenshot nur PNG bis 3 MB. Antwort 201/200 `{"ok":true,"issue":n}`; 429/502/50
 
 ## Offen
 
-- Server für WOA (`server/`, Hetzner oder Goneo) und Ziel-URLs: Entscheidung bei André.
-- Opt-in-Dialog, Installations-ID und Einstellungsdatei: kommen mit `apps/woa` bzw. `woa-headless`.
+- Server-Seite für Logs (DB `woa_stats`, Edge-Freigabe `/api/logs/ingest`): eigener PR in
+  bretteins.infra, Ausrollen durch André. Bis dahin antwortet der Edge mit 404 und die App behält
+  die Ereignisse im Puffer.

@@ -140,9 +140,9 @@ enum Cmd {
         #[arg(long, allow_hyphen_values = true)]
         lufs: Option<f64>,
     },
-    /// Schickt ein Test-Ereignis an den Telemetrie-Endpunkt (/ingest).
+    /// Schickt ein Test-Ereignis an den Telemetrie-Endpunkt (/api/logs/ingest).
     LogTest {
-        #[arg(long, env = "WOA_TELEMETRY_URL")]
+        #[arg(long, env = "WOA_TELEMETRY_URL", default_value = woa_telemetry::DEFAULT_INGEST_URL)]
         url: String,
         /// HTTP-Timeout in Sekunden.
         #[arg(long, default_value_t = 15)]

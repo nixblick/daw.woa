@@ -93,6 +93,46 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// Log-Endpunkt des eigenen Servers (bretteins.infra, Instanz `daw.woa` auf lfs001).
+pub const DEFAULT_INGEST_URL: &str = "https://feedback.wironair.de/api/logs/ingest";
+
+/// Neue zufällige Installations-ID im UUID-v4-Format, ohne Personenbezug.
+///
+/// Zufall aus dem zufällig gesäten `RandomState` der Standardbibliothek plus Zeit und
+/// Prozess-ID (keine zusätzliche Abhängigkeit).
+pub fn new_install_id() -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    let mut words = [0u64; 2];
+    for (i, w) in words.iter_mut().enumerate() {
+        let mut h = RandomState::new().build_hasher();
+        h.write_u64(now_ms());
+        h.write_u32(std::process::id());
+        h.write_usize(i);
+        h.write_u128(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0),
+        );
+        *w = h.finish();
+    }
+    let mut b = [0u8; 16];
+    b[..8].copy_from_slice(&words[0].to_le_bytes());
+    b[8..].copy_from_slice(&words[1].to_le_bytes());
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
+    format!(
+        "{}-{}-{}-{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+    )
+}
+
 /// Einstellungen der Upload-Senke.
 #[derive(Debug, Clone)]
 pub struct UploadConfig {

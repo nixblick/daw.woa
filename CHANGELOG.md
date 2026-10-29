@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.15 — 2026-10-29
+
+- **M0 Logs, Client-Seite.** Beim ersten Start fragt WOA, ob anonyme Fehlercodes gesendet werden dürfen (Opt-in, nur Code, Stufe, Zahl). Mit Ja gehen sie ab dem nächsten Start an `https://feedback.wironair.de/api/logs/ingest`; umschaltbar unter „Einstellungen“. `config.json` bekommt `install_id` (zufällige UUID) und `telemetry_enabled`. `woa-headless log-test` nutzt dieselbe Adresse als Standard. Server-Seite folgt in bretteins.infra.
+- `docs/abnahme.md`: Klickliste M0 Fundament; `docs/telemetrie.md`: Opt-in und Datenschutz.
+
 ## 0.1.14 — 2026-10-29
 
 - **Feedback geht an den eigenen Server.** Ohne `config.json` schickt der Feedback-Knopf an `https://feedback.wironair.de/api/feedback`, und daraus wird ein Issue in daw.woa (Gegenprobe #40). Mit `"feedback_url": ""` in der `config.json` ist er abgeschaltet.
