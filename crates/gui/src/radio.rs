@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime};
 
 use eframe::egui;
@@ -14,6 +14,7 @@ use woa_stream::StreamStatus;
 use woa_stream::link::{Feeder, is_alive, link_path};
 
 use crate::theme;
+use crate::xrun::XrunLog;
 
 type Stream = Box<dyn std::any::Any>;
 
@@ -52,6 +53,11 @@ pub struct RadioDesk {
     stream_status: Option<StreamStatus>,
     stream_checked_at: Instant,
     sent_title: String,
+    /// Aussetzer der Ausgabe (vom Fehlerpfad des Stroms gezählt).
+    underruns: Arc<AtomicU64>,
+    xruns: XrunLog,
+    buffer_frames: Option<u32>,
+    device: String,
 }
 
 /// Pfad zu `woa-streamd` neben der laufenden App.
@@ -119,20 +125,37 @@ pub fn clock(seconds: f64) -> String {
 impl RadioDesk {
     /// Lädt `radio.json` und öffnet die Ausgabe. Geht das Gerät nicht, bleibt die
     /// Playlist bearbeitbar und die Meldung steht oben.
-    pub fn open(radio_path: PathBuf, data_dir: PathBuf) -> Self {
+    /// `buffer_frames`: Puffergröße der Ausgabe (`None` = Treiber).
+    pub fn open(radio_path: PathBuf, data_dir: PathBuf, buffer_frames: Option<u32>) -> Self {
         let (show, mut error) = match RadioShow::load(&radio_path) {
             Ok(s) => (s, None),
             Err(e) => (RadioShow::default(), Some(e)),
         };
-        let config = woa_engine::device::OutputConfig::default();
+        let config = woa_engine::device::OutputConfig {
+            device_id: None,
+            buffer_frames,
+        };
         let rate = woa_engine::device::output_sample_rate(&config).unwrap_or(48_000);
         let (controller, mut mixer) = Controller::new(show, rate);
+        let device = woa_engine::device::output_device_name(&config);
+        let underruns = Arc::new(AtomicU64::new(0));
+        let counter = Arc::clone(&underruns);
         let output: Option<Stream> = match woa_engine::device::start_stereo_output(
             &config,
             move |l, r| mixer.process(l, r),
-            |e| tracing::warn!(error = %e, "radio output"),
+            // Kann im Audio-Thread laufen: Aussetzer nur zählen, geloggt wird in `tick`.
+            move |e| {
+                if woa_engine::device::is_xrun(&e) {
+                    counter.fetch_add(1, Ordering::Relaxed);
+                } else {
+                    tracing::warn!(error = %e, "radio output");
+                }
+            },
         ) {
-            Ok(s) => Some(Box::new(s)),
+            Ok(s) => {
+                tracing::info!(rate, ?buffer_frames, %device, "radio output ready");
+                Some(Box::new(s))
+            }
             Err(e) => {
                 tracing::error!(error = %e, "radio output failed");
                 error = Some(format!("Keine Ausgabe: {e}"));
@@ -169,6 +192,10 @@ impl RadioDesk {
             stream_status: None,
             stream_checked_at: Instant::now(),
             sent_title: String::new(),
+            underruns,
+            xruns: XrunLog::new(Instant::now()),
+            buffer_frames,
+            device,
         }
         .reattach()
     }
@@ -249,6 +276,11 @@ impl RadioDesk {
         }
     }
 
+    /// Aussetzer der Radio-Ausgabe seit dem Öffnen.
+    pub fn underruns(&self) -> u64 {
+        self.underruns.load(Ordering::Relaxed)
+    }
+
     fn with(&self, f: impl FnOnce(&mut Controller) + Send + 'static) {
         if let Some(s) = &self.station {
             s.with(f);
@@ -256,10 +288,62 @@ impl RadioDesk {
     }
 
     /// Ein Takt: Schnappschuss holen, speichern, fremde Änderungen an radio.json laden.
-    pub fn tick(&mut self) {
+    /// `player_active`: Der Player-Strom läuft gleichzeitig (für das Log).
+    pub fn tick(&mut self, player_active: bool) {
         let Some(st) = &self.station else { return };
         self.view = st.view();
         self.tick_stream();
+        let total = self.underruns();
+        if let Some(new) = self.xruns.due(total, Instant::now()) {
+            let v = &self.view;
+            let title = v.current.and_then(|i| v.playlist.get(i));
+            let format = title
+                .and_then(|e| e.path.extension())
+                .map(|x| x.to_string_lossy().to_lowercase());
+            let line = (
+                v.last_load.as_ref().map(|(_, ms)| *ms),
+                v.last_load
+                    .as_ref()
+                    .and_then(|(p, _)| p.extension())
+                    .map(|x| x.to_string_lossy().to_lowercase()),
+            );
+            let fields = (title.map(|e| e.title.clone()), format);
+            if new > 0 {
+                tracing::warn!(
+                    output = "radio",
+                    underruns = new,
+                    total,
+                    buffer_frames = ?self.buffer_frames,
+                    rate = self.rate,
+                    device = %self.device,
+                    recording = v.recording.is_some(),
+                    player_active,
+                    playing = v.running,
+                    title = ?fields.0,
+                    format = ?fields.1,
+                    last_load_ms = ?line.0,
+                    last_load_format = ?line.1,
+                    "output underruns (last minute)"
+                );
+            } else {
+                tracing::info!(
+                    output = "radio",
+                    underruns = 0,
+                    total,
+                    buffer_frames = ?self.buffer_frames,
+                    rate = self.rate,
+                    device = %self.device,
+                    recording = v.recording.is_some(),
+                    player_active,
+                    playing = v.running,
+                    title = ?fields.0,
+                    format = ?fields.1,
+                    last_load_ms = ?line.0,
+                    last_load_format = ?line.1,
+                    "output underruns (last minute)"
+                );
+            }
+        }
         let Some(st) = &self.station else { return };
         let now = Instant::now();
         if self.view.revision != self.saved_revision
@@ -460,6 +544,18 @@ impl RadioDesk {
                                 .monospace(),
                         );
                     });
+                    let n = self.underruns();
+                    if n > 0 {
+                        ui.label(
+                            egui::RichText::new(format!("Aussetzer: {n}"))
+                                .small()
+                                .color(theme::DIM),
+                        )
+                        .on_hover_text(
+                            "Puffer-Unterläufe der Ausgabe seit dem Öffnen. Steigt die Zahl, \
+                             in config.json radio_buffer_frames setzen, etwa 4096 (Vorgabe: Treiber).",
+                        );
+                    }
                 });
             });
         });

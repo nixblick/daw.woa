@@ -55,6 +55,8 @@ pub struct View {
     pub measuring: usize,
     /// Zähler für Änderungen an Playlist/Carts/Einstellungen (zum Speichern).
     pub revision: u64,
+    /// Zuletzt geladener Titel und Dauer des Dekodierens in Millisekunden.
+    pub last_load: Option<(PathBuf, u64)>,
 }
 
 /// Griff auf den laufenden Sende-Thread.
@@ -231,6 +233,9 @@ fn run(
             messages: messages.clone(),
             measuring: measuring.load(Ordering::Relaxed),
             revision,
+            last_load: c
+                .last_load()
+                .map(|(p, d)| (p.clone(), d.as_millis() as u64)),
         };
         if let Ok(mut out) = view.lock() {
             *out = v;

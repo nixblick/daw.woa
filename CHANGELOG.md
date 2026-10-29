@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3 — 2026-10-29
+
+- **Aussetzer der Ausgabe protokollieren (#51).** Der Fehlerpfad des Stroms kann im Audio-Thread laufen. Er zählt Unterläufe jetzt nur noch, je Strom getrennt (Radio, Player), statt jede Meldung zu loggen; am 29.10. waren das 682 Zeilen. Im Log steht höchstens eine zusammengefasste Zeile je Minute (`output underruns (last minute)`). Sie nennt Anzahl, Gesamtzahl, Puffergröße, Samplerate und Gerätename. Beim Radio kommen dazu: Läuft der Mitschnitt? Läuft der Player-Strom gleichzeitig? Welcher Titel spielt, in welchem Format, und wie lange dauerte das letzte Dekodieren? Die Radio-Zeile kommt jede Minute, die Player-Zeile nur bei Aussetzern. Die Radio-Statuszeile zeigt dezent „Aussetzer: N“, sobald einer auftrat.
+- **Zwei kleine Gegenmaßnahmen.** Im Radio-Modus ruht der Player-Strom (`pause_output`), damit nicht zwei Ströme auf demselben Gerät spielen. Beim Wechsel zurück läuft er weiter. Die Radio-Ausgabe nimmt die Puffergröße des Treibers statt fester 128 Frames. Einstellbar ist das in `config.json` mit `radio_buffer_frames` (fehlt oder 0 = Treiber) und bei `woa-headless radio-play --buffer`. `radio-play` meldet Aussetzer und verlorene Mitschnitt-Samples getrennt. Die eigentliche Ursache wird später behoben; die Vermutungen stehen in #51.
+
 ## 0.3.2 — 2026-10-29
 
 - **Cover-Bild im Radio-Layout.** Neben der großen Uhr steht ein Quadrat (168 px) mit dem Cover des laufenden Titels (vor dem Start: des nächsten). Beim Titelwechsel blendet es in 0,4 s weich über. Ohne Bild steht dort eine dezente Note, nie ein leeres Loch. In der Playlist hat jede Zeile ein Vorschaubild (32 px).
