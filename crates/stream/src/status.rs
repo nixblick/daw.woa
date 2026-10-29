@@ -36,6 +36,8 @@ pub struct StreamStatus {
     pub title: String,
     pub last_error: Option<String>,
     pub reconnects: u32,
+    /// Sekunden bis zum nächsten Verbindungsversuch, solange keine Verbindung steht.
+    pub retry_in_seconds: Option<u64>,
     pub bytes_sent: u64,
     pub bytes_dropped: u64,
 }
@@ -44,6 +46,26 @@ impl StreamStatus {
     /// Frisch geschrieben und nicht beendet.
     pub fn is_running(&self, now_unix: u64) -> bool {
         self.connection != "beendet" && now_unix.saturating_sub(self.updated_unix) <= STALE_SECONDS
+    }
+
+    /// Verständliche Fehlerzeile, z. B. „Server nicht erreichbar (Port 8001 zu?), neuer
+    /// Versuch in 30 s“. `None`, solange alles läuft.
+    pub fn problem(&self) -> Option<String> {
+        let err = self.last_error.as_deref()?;
+        if self.connected {
+            return None;
+        }
+        let mut s = if err.starts_with("Server nicht erreichbar") {
+            let port = self.server.rsplit_once(':').map_or("", |(_, p)| p);
+            let port = port.split_whitespace().next().unwrap_or("");
+            format!("Server nicht erreichbar (Port {port} zu?)")
+        } else {
+            err.to_string()
+        };
+        if let Some(n) = self.retry_in_seconds {
+            s.push_str(&format!(", neuer Versuch in {n} s"));
+        }
+        Some(s)
     }
 
     /// Eine Zeile für die Oberfläche.
@@ -118,6 +140,21 @@ mod tests {
         assert_eq!(
             r.summary(),
             "verbunden · Sendemix · 3 Hörer · 128 kbit/s · 1:02:05"
+        );
+        assert_eq!(r.problem(), None);
+    }
+
+    #[test]
+    fn problem_is_readable() {
+        let s = StreamStatus {
+            server: "feedback.wironair.de:8001 (Stream 1)".into(),
+            last_error: Some("Server nicht erreichbar: [::1]:8001: connection timed out".into()),
+            retry_in_seconds: Some(30),
+            ..StreamStatus::default()
+        };
+        assert_eq!(
+            s.problem().as_deref(),
+            Some("Server nicht erreichbar (Port 8001 zu?), neuer Versuch in 30 s")
         );
     }
 }

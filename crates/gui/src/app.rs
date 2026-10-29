@@ -1638,10 +1638,13 @@ impl eframe::App for WoaApp {
         }
         self.stop_at_audio_end();
         let busy = !self.takes.is_empty() || self.player.as_ref().is_some_and(Player::is_playing);
+        // Radio: 5 Bilder/s, solange ein Titel läuft (Uhr, Pegel), sonst 2/s. Vorher 10/s
+        // dauerhaft, 34 % CPU in Ruhe (Paket 8).
+        let radio_playing = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
         let beat = if busy {
             40
-        } else if self.config.mode == Mode::Radio {
-            100
+        } else if self.config.mode == Mode::Radio && radio_playing {
+            200
         } else {
             500
         };

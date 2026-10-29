@@ -59,8 +59,15 @@ fn open(host: &str, port: u16) -> Result<TcpStream, StreamError> {
         .map_err(|e| StreamError::Connect(format!("{host}:{port}: {e}")))?
         .collect();
     let mut last = format!("{host}:{port}: keine Adresse");
+    // Höchstens CONNECT_TIMEOUT für alle Adressen zusammen (IPv6 und IPv4 kosteten
+    // sonst je 5 s; die Sendung hing 10 s pro Versuch).
+    let deadline = std::time::Instant::now() + CONNECT_TIMEOUT;
     for a in addrs {
-        match TcpStream::connect_timeout(&a, CONNECT_TIMEOUT) {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            break;
+        }
+        match TcpStream::connect_timeout(&a, left) {
             Ok(s) => {
                 let _ = s.set_read_timeout(Some(IO_TIMEOUT));
                 let _ = s.set_write_timeout(Some(IO_TIMEOUT));

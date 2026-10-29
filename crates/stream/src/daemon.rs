@@ -19,7 +19,7 @@ use crate::config::StreamConfig;
 use crate::kennwort::Kennwort;
 use crate::link::{
     HANDSHAKE, KIND_AUDIO, KIND_STOP, KIND_TITLE, LocalListener, LocalStream, MAX_FRAME,
-    decode_audio, is_alive, link_path, read_frame, read_hello,
+    decode_audio, is_alive, link_path, read_frame_patient, read_hello,
 };
 use crate::mp3::Mp3Encoder;
 use crate::status::{self, StreamStatus};
@@ -381,6 +381,9 @@ fn build_status(
         title: title.to_string(),
         last_error: u.last_error,
         reconnects: u.reconnects,
+        retry_in_seconds: u
+            .retry_at
+            .map(|t| t.saturating_duration_since(Instant::now()).as_secs()),
         bytes_sent: u.bytes_sent,
         bytes_dropped: u.bytes_dropped,
     }
@@ -493,7 +496,8 @@ fn serve(
     let mut samples = Vec::new();
     let (mut l, mut r) = (Vec::new(), Vec::new());
     while !stop.load(Ordering::Relaxed) && lock(inbox).generation == my_gen {
-        match read_frame(&mut s, &mut buf, MAX_FRAME) {
+        let go_on = || !stop.load(Ordering::Relaxed);
+        match read_frame_patient(&mut s, &mut buf, MAX_FRAME, &go_on) {
             Ok(KIND_AUDIO) => {
                 decode_audio(&buf, &mut samples);
                 let loud = samples.iter().any(|x| x.abs() > SILENCE);

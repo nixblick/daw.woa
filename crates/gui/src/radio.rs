@@ -604,12 +604,12 @@ impl RadioDesk {
                 _ => {}
             }
         });
-        if let Some(s) = st.as_ref().filter(|s| running && s.last_error.is_some()) {
-            ui.label(
-                egui::RichText::new(s.last_error.clone().unwrap_or_default())
-                    .small()
-                    .color(theme::DIM),
-            );
+        if let Some(p) = st
+            .as_ref()
+            .filter(|_| running)
+            .and_then(StreamStatus::problem)
+        {
+            ui.label(egui::RichText::new(p).small().color(theme::ON_AIR));
         }
     }
 

@@ -18,6 +18,12 @@ Erst nach dem Ausrollen des Server-PRs in bretteins.infra (#150).
 6. WOA neu starten und Playlist starten: Die Zeile zeigt wieder „verbunden“, nach 1 s Überblendung läuft die Sendung.
 7. „Sendung beenden“: Der Browser-Stream endet.
 
+Nachtrag 0.3.4 (#56, nach deiner ersten Abnahme am 29.10.):
+
+8. Radio-Modus ohne Wiedergabe, mit einem Titel ohne Cover in der Playlist: `top -p $(pgrep -x woa)` zeigt unter 5 % CPU (vorher 100 %).
+9. Ist Port 8001 noch zu, steht nach „Auf Sendung“ unter dem Knopf „Server nicht erreichbar (Port 8001 zu?), neuer Versuch in … s“. Das Notebook bleibt bedienbar. Danach „Sendung beenden“.
+10. Ist der Port offen, zeigt die Zeile „verbunden · Sendemix“. In `~/.local/share/woa/streamd-status.json` steht dann `"ui_connected": true`, und es bleibt so.
+
 Gegenprobe ohne Oberfläche: `cargo run -q -p woa-headless -- stream-test --seconds 30` sendet 30 s Testton (Exit 3 = Kennwort abgelehnt).
 
 Selbst geprüft von Claude, nur gegen einen lokalen Fake-Server und nicht gegen lfs001 (das ist deine Gegenprobe):

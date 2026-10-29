@@ -269,6 +269,59 @@ pub fn read_frame(r: &mut impl Read, buf: &mut Vec<u8>, max: usize) -> std::io::
     Ok(head[0])
 }
 
+/// Wie [`read_frame`], aber für einen Leser mit Lese-Frist: Läuft die Frist ab, bevor das
+/// erste Byte da ist, kommt der Fehler zurück (der Aufrufer prüft dann z. B. `stop`). Ist
+/// der Rahmen schon angelesen, wird weitergelesen, solange `keep_going` gilt. Sonst ginge
+/// der Rest des Rahmens verloren, der nächste Kopf wäre Audio-Bytes und die Verbindung
+/// risse ab („ui disconnected“ alle paar Sekunden, Paket 8, 29.10.2026).
+pub fn read_frame_patient(
+    r: &mut impl Read,
+    buf: &mut Vec<u8>,
+    max: usize,
+    keep_going: &dyn Fn() -> bool,
+) -> std::io::Result<u8> {
+    let mut head = [0u8; 5];
+    read_full(r, &mut head, true, keep_going)?;
+    let len = u32::from_le_bytes([head[1], head[2], head[3], head[4]]) as usize;
+    if len > max {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "frame too large",
+        ));
+    }
+    buf.resize(len, 0);
+    read_full(r, buf, false, keep_going)?;
+    Ok(head[0])
+}
+
+fn read_full(
+    r: &mut impl Read,
+    buf: &mut [u8],
+    may_idle: bool,
+    keep_going: &dyn Fn() -> bool,
+) -> std::io::Result<()> {
+    let mut got = 0;
+    while got < buf.len() {
+        match r.read(&mut buf[got..]) {
+            Ok(0) => return Err(std::io::ErrorKind::UnexpectedEof.into()),
+            Ok(n) => got += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                if (may_idle && got == 0) || !keep_going() {
+                    return Err(e);
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
 /// Vergleich in konstanter Zeit (bei gleicher Länge).
 pub fn token_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
@@ -371,6 +424,10 @@ pub fn is_alive(link: &Path) -> bool {
     open_raw(link).is_ok()
 }
 
+/// Neuer Versuch zum lokalen woa-streamd: 1 s, verdoppelt bis 10 s.
+const FEED_BACKOFF_MIN: Duration = Duration::from_secs(1);
+const FEED_BACKOFF_MAX: Duration = Duration::from_secs(10);
+
 enum FeedMsg {
     Title(String),
     Stop,
@@ -438,6 +495,7 @@ fn feed(
 ) {
     let mut conn: Option<LocalStream> = None;
     let mut next_try = Instant::now();
+    let mut backoff = FEED_BACKOFF_MIN;
     let mut title: Option<String> = None;
     let mut samples: Vec<f32> = Vec::with_capacity(rate as usize);
     let mut bytes: Vec<u8> = Vec::with_capacity(rate as usize * 4);
@@ -471,7 +529,6 @@ fn feed(
             }
         }
         if conn.is_none() && Instant::now() >= next_try {
-            next_try = Instant::now() + Duration::from_secs(1);
             match connect(&link, rate) {
                 Ok(mut s) => {
                     let ok = title
@@ -479,9 +536,14 @@ fn feed(
                         .is_none_or(|t| title_frame(&mut s, t).is_ok());
                     if ok {
                         conn = Some(s);
+                        backoff = FEED_BACKOFF_MIN;
                     }
                 }
                 Err(e) => tracing::debug!(error = %e, "streamd not reachable"),
+            }
+            if conn.is_none() {
+                next_try = Instant::now() + backoff;
+                backoff = (backoff * 2).min(FEED_BACKOFF_MAX);
             }
         }
         connected.store(conn.is_some(), Ordering::Relaxed);
@@ -514,6 +576,60 @@ fn feed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Liefert Bytes in Häppchen, dazwischen eine abgelaufene Lese-Frist.
+    struct Choppy(Vec<Vec<u8>>);
+    impl Read for Choppy {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.0.is_empty() {
+                return Err(std::io::ErrorKind::UnexpectedEof.into());
+            }
+            let mut part = self.0.remove(0);
+            if part.is_empty() {
+                return Err(std::io::ErrorKind::WouldBlock.into());
+            }
+            let n = part.len().min(buf.len());
+            buf[..n].copy_from_slice(&part[..n]);
+            if n < part.len() {
+                self.0.insert(0, part.split_off(n));
+            }
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn timeout_mid_frame_keeps_the_stream_in_sync() {
+        let mut wire = Vec::new();
+        write_frame(&mut wire, KIND_AUDIO, &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+        write_frame(&mut wire, KIND_TITLE, b"x").unwrap();
+        // Frist läuft im Kopf und mitten in den Nutzdaten ab.
+        let mut r = Choppy(vec![
+            vec![],
+            wire[..3].to_vec(),
+            vec![],
+            wire[3..9].to_vec(),
+            vec![],
+            wire[9..].to_vec(),
+        ]);
+        let mut buf = Vec::new();
+        let go = || true;
+        let e = read_frame_patient(&mut r, &mut buf, 64, &go).unwrap_err();
+        assert_eq!(
+            e.kind(),
+            std::io::ErrorKind::WouldBlock,
+            "Leerlauf meldet sich"
+        );
+        assert_eq!(
+            read_frame_patient(&mut r, &mut buf, 64, &go).unwrap(),
+            KIND_AUDIO
+        );
+        assert_eq!(buf, [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(
+            read_frame_patient(&mut r, &mut buf, 64, &go).unwrap(),
+            KIND_TITLE
+        );
+        assert_eq!(buf, b"x");
+    }
 
     #[test]
     fn frames_roundtrip() {
