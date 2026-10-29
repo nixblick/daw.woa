@@ -4,97 +4,6 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Paket 8: Sendeprozess (0.3.0, abgenommen 29.10.2026)
-
-André, 29.10.2026: „stream geht, abnahme paket 8 fertig!“ (mit 0.3.4, gegen stream.wironair.de).
-
-
-Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo build -q --release -p woa -p woa-streamd && cargo run -q --release -p woa`
-
-Erst nach dem Ausrollen des Server-PRs in bretteins.infra (#150).
-
-1. Kennwort in den Vault: den Wert aus dem Server-PR als eine Zeile nach `~/.secrets/daw.woa/shoutcast-source.pass`, danach `chmod 600`.
-2. Optional eine Notfall-Playlist eintragen: in `~/.config/woa/config.json` unter `"stream": {"emergency": ["/pfad/zu/ordner"]}`.
-3. Radio-Modus, Playlist starten, „Auf Sendung“ drücken. Die Zeile daneben zeigt „verbunden · Sendemix“.
-4. Im Browser <https://stream.wironair.de/stream> öffnen: Du hörst deine Sendung (wenige Sekunden verzögert).
-5. WOA hart beenden (`pkill -9 -x woa`). Nach etwa 2 s spielt im Browser die Notfall-Playlist, ohne Abriss.
-6. WOA neu starten und Playlist starten: Die Zeile zeigt wieder „verbunden“, nach 1 s Überblendung läuft die Sendung.
-7. „Sendung beenden“: Der Browser-Stream endet.
-
-Nachtrag 0.3.4 (#56, nach deiner ersten Abnahme am 29.10.):
-
-8. Radio-Modus ohne Wiedergabe, Fenster einmal hinter den Browser legen: `top -p $(pgrep -x woa)` zeigt um 1 % CPU (vorher bis 100 %). Im Log steht `event loop: x11`. Sieht die Schrift zu weich aus, geht es mit `WOA_WAYLAND=1` zurück zu Wayland (dann wieder hohe Last, bis eframe 0.37 mit rustc 1.95 kommt).
-9. Ist Port 8001 noch zu, steht nach „Auf Sendung“ unter dem Knopf „Server nicht erreichbar (Port 8001 zu?), neuer Versuch in … s“. Das Notebook bleibt bedienbar. Danach „Sendung beenden“.
-10. <https://stream.wironair.de/stream> spielt ohne Quelle die Notfall-Schleife des Servers (kein 401 mehr). Ist der Port offen, zeigt die Zeile „verbunden · Sendemix“. In `~/.local/share/woa/streamd-status.json` steht dann `"ui_connected": true`, und es bleibt so.
-
-Gegenprobe ohne Oberfläche: `cargo run -q -p woa-headless -- stream-test --seconds 30` sendet 30 s Testton (Exit 3 = Kennwort abgelehnt).
-
-Selbst geprüft von Claude, nur gegen einen lokalen Fake-Server und nicht gegen lfs001 (das ist deine Gegenprobe):
-
-- Anmeldung, MP3 kommt an, Titel per admin.cgi, Hörerzahl, Wiederverbinden nach Abriss, falsches Kennwort als klarer Fehler ohne Kennwort im Text (`crates/stream/tests/shoutcast.rs`).
-- Oberfläche weg führt nach höchstens 2,5 s zur Notfall-Playlist, und zurück (`crates/stream/tests/failover.rs`).
-- Die lokale Verbindung weist falsche Token, übergroße Rahmen und stumme Gegenüber ab. Auch bei 12 stummen Verbindungen kommt die Oberfläche herein.
-- Der Socket-Ordner hat 0700.
-- Der Mixer schreibt in den Sende-Ring ohne Allokation (`assert_no_alloc`, `crates/radio/tests/rt.rs`).
-- `woa-headless stream-test` gegen einen Fake: Exit 0 und Exit 3 (`apps/woa-headless/tests/cli.rs`).
-- Die Oberfläche ist gebaut. Den Knopf habe ich nicht am Gerät geklickt, und es lief kein echter Ton über lfs001.
-
-Noch nicht drin:
-
-- Titel: Shoutcast 1 trägt sie nicht in der Quellverbindung, und `admin.cgi` hätte das Kennwort im Klartext in der URL. Deshalb gibt es sie nur bei lokalem Server.
-- Hörerzahl: Der Admin-Port 8000 ist von außen gesperrt.
-- Die Quellanmeldung läuft im Klartext (bekanntes Risiko).
-- Icecast.
-- Uhrdrift zwischen Soundkarte und woa-streamd: Der Live-Puffer wird auf 0,5 s gekappt.
-- Unter Windows ist die lokale Verbindung TCP mit Token. Ein lokaler Prozess kann dort das Verbinden stören, aber nicht senden.
-
-## Paket 7: Sendeablauf (0.2.0, abgenommen 29.10.2026)
-
-André, 29.10.2026: „abnahme paket 7 fertig“.
-
-
-Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
-
-1. Oben rechts „Radio“ anklicken: Links stehen Uhr, Start/Stopp und Playlist, rechts die Cart-Wall. Beim nächsten Start ist WOA wieder im Radio-Modus.
-2. Zwei oder drei Audiodateien (WAV, FLAC oder MP3) in die Playlist ziehen (oder „+ Titel …“). Nach ein paar Sekunden stehen Länge und „bis Playlist-Ende“; beim Überfahren eines Titels mit der Maus siehst du LUFS und Auto-Gain.
-3. „▶ Start“ (oder Leertaste): Die große Uhr zählt die Restzeit des Titels. Am Ende blendet er in den nächsten über, beide gleich laut. „▶ Weiter“ blendet sofort über, „■ Stopp“ blendet aus.
-4. Mit „^ v x“ die Reihenfolge ändern oder einen Titel entfernen, auch während der Sendung.
-5. Rechtsklick auf ein Cart-Feld, „Belegen …“, Jingle wählen. Mit Klick oder Taste 1 spielt er über die Musik.
-6. Kopfhörer auf, „Mikro (M)“ oder Taste M: Die Musik geht weich um 12 dB herunter, dein Mikro ist im Mitschnitt. Noch einmal M, und die Musik kommt zurück.
-7. „Mitschnitt“ an, etwas senden, wieder aus. Unter `~/.local/share/woa/mitschnitte/` liegt `sendung-<Datum>.wav` (Zeit in UTC).
-8. Agent: `woa-headless mcp <projekt>` mit `build_playlist` füllt `~/.local/share/woa/radio.json`; die offene App übernimmt die neue Playlist nach höchstens zwei Sekunden.
-
-Selbst geprüft von Claude:
-
-- **Tests (workspace grün).** Jeder Process-Aufruf des Sendemixers lief unter `assert_no_alloc` (`crates/radio/tests/rt.rs`), nämlich:
-  - Crossfade mit konstanter Leistung, in der Mitte genau √2 des Einzelpegels
-  - Ducking mit −12 dB ± 0,2, ohne Sprung
-  - Cart über Musik
-  - Stopp
-  - Mitschnitt als 16-Bit-WAV
-- **Offline-Render.** `woa-headless radio-render` mit drei Titeln von sehr unterschiedlichem Pegel: Länge = Summe − 2 × 3 s, Lautheit −16 ± 1 LUFS (`apps/woa-headless/tests/radio.rs`).
-- **Agent-Werkzeuge.** `build_playlist`/`run_order` (`crates/agent/tests/radio.rs`) schreiben nur in die Vorgabe oder relativ im Projektordner. `../`, absolute Pfade und Symlink-Ziele lehnen sie ab.
-- **Probe am Gerät (PipeWire, 48 kHz).** `woa-headless radio-play` mit 22 s, Cart nach 4 s und Mikro nach 14 s:
-  - 0 Gerätefehler
-  - Überblendungen nach 9 s und 16 s wie berechnet
-  - Mitschnitt 22,06 s, −15,6 LUFS (ffmpeg ebur128)
-  - Musik mit offenem Mikro 11,4 dB leiser (RMS, zwei verschiedene Titel)
-- **Bildschirmfoto.** Mit `WOA_SCREENSHOT` des Radio-Layouts aufgenommen, mit Temp-Konfiguration.
-- **Nicht von Hand geklickt.** Drag-and-drop, Dateidialoge und Mikro über echten Eingang. Der Mikro-Weg ist nur in Tests mit Ring-Eingang geprüft. Hat der Eingang eine andere Abtastrate als die Ausgabe, meldet WOA das und öffnet das Mikro nicht.
-
-Nachtrag 0.2.1: **MP3 und FLAC gehen jetzt** überall, wo WOA Audio liest: Playlist, Cart-Wall, LUFS-Messung, `radio-render`, Clips im Projekt, Wellenform und Agent-Import. Dialoge und Drag-and-drop nehmen `.mp3` und `.flac` an. Selbst geprüft: Testdateien per `flacenc` und LAME erzeugt, gelesen, Länge und Pegel mit dem Original verglichen (`crates/engine/src/decode.rs`). Nebenbei repariert: WOAs eigene FLAC-Exporte hatten eine falsche Mindest-Blockgröße und waren für strenge Leser unlesbar. Bildschirmfoto bei 900 px: Die Regler „Crossfade“ und „Ducking“ sind ganz lesbar.
-
-Nachtrag 0.3.1: **Alle gängigen Formate.** Playlist, Cart-Wall und Agent-Import lesen jetzt auch OGG/Vorbis, M4A (AAC und ALAC), AAC, AIFF, CAF und MP2, Groß- und Kleinschreibung egal. Der Dialog heißt „Audio (MP3, FLAC, WAV, OGG, M4A, AAC, AIFF, CAF, MP2)“. MP3 mit großem Cover-Bild (#50, „150 Jahre Feuerwehr Frankfurt“) geht wieder. Zum Abnehmen: die Feuerwehr-MP3 und je eine OGG- und M4A-Datei in die Playlist ziehen, alle drei bekommen eine Länge und spielen. Selbst geprüft: jedes Format per ffmpeg erzeugt und auf Länge und Pegel geprüft, Andrés MP3 gelesen. Opus geht nicht (kein Decoder in symphonia).
-
-Nachtrag 0.3.2: **Cover-Bild.** Die Feuerwehr-MP3 in die Playlist ziehen und doppelklicken (oder starten): Links neben der großen Uhr erscheint ihr Cover, in der Playlist ein kleines Vorschaubild. Ein Titel ohne Bild zeigt eine Note. Beim Wechsel zum nächsten Titel blendet das Bild weich über. Selbst geprüft: Bildschirmfoto mit Wegwerf-Konfiguration (Feuerwehr-MP3, M4A mit Testbild, OGG ohne Bild), alle drei Fälle richtig; Tests für das Auslesen aus MP3, FLAC, M4A und OGG. Nicht selbst geprüft: die Überblendung beim echten Titelwechsel (nur im Code, kein Video).
-
-Noch nicht drin:
-
-- Mikro im Kopfhörer (Monitor ist aus, gegen Rückkopplung)
-- Stream ins Netz
-- Notfall-Playlist
-- 8-Stunden-Dauertest
-
 ## Paket 6: Agent (0.1.16, offen)
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo build --release -p woa-headless -p woa`
@@ -134,6 +43,10 @@ Selbst geprüft von Claude: Quellenliste gegen PipeWire (Eingang, Systemklang, P
 Noch nicht drin: Windows (WASAPI-Loopback), Quellenwahl im Projekt speichern.
 
 ## Abgenommen
+
+- Paket 8 Sendeprozess (0.3.0, mit 0.3.4): 29.10.2026, André „stream geht, abnahme paket 8 fertig!“
+
+- Paket 7 Sendeablauf (0.2.0): 29.10.2026, André „abnahme paket 7 fertig“.
 
 - Paket 4 Radio-tauglich (0.1.9): 29.10.2026, André „funktioniert alles“.
 
