@@ -19,6 +19,9 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      # Geräteausgabe (cpal) nur kompilieren, nicht abspielen; Windows braucht keine ALSA-Header.
+      - if: runner.os == 'Windows'
+        run: cargo clippy -p woa-engine --features device --all-targets -- -D warnings
 
   deny:
     runs-on: ubuntu-latest

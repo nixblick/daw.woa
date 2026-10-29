@@ -4,6 +4,15 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+# Nur "unmaintained", keine Sicherheitsluecke; alle transitiv ueber eframe/egui
+# (winit -> sctk-adwaita -> ab_glyph, accesskit_unix -> zbus). Entfaellt mit
+# kuenftigen eframe/winit-Versionen; bei jedem eframe-Update neu pruefen.
+ignore = [
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained, via winit/sctk-adwaita" },
+    { id = "RUSTSEC-2026-0370", reason = "zbus split crate unmaintained, via accesskit_unix" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus split crate unmaintained, via accesskit_unix" },
+    { id = "RUSTSEC-2026-0372", reason = "zbus split crate unmaintained, via accesskit_unix" },
+]
 
 [licenses]
 version = 2
@@ -14,6 +23,18 @@ allow = [
     "LGPL-3.0-only", "LGPL-3.0-or-later", "CC0-1.0", "BSL-1.0",
 ]
 confidence-threshold = 0.9
+
+# Mozillas CA-Liste fuer TLS (ureq/rustls, woa-telemetry). CDLA-Permissive-2.0 ist eine
+# freizuegige Datenlizenz ohne Copyleft; nur fuer diese eine Crate freigegeben.
+[[licenses.exceptions]]
+crate = "webpki-roots"
+allow = ["CDLA-Permissive-2.0"]
+
+# egui-Standardschriften (eingebettete Fontdaten, kein Code): OFL-1.1 und Ubuntu Font
+# Licence. Nur fuer diese eine Crate freigegeben; Pruefung durch Andre offen.
+[[licenses.exceptions]]
+crate = "epaint_default_fonts"
+allow = ["OFL-1.1", "Ubuntu-font-1.0"]
 
 [bans]
 multiple-versions = "warn"

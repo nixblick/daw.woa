@@ -7,3 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+eframe = "0.35.0"
+tracing = "0.1.44"
+woa-gui = { version = "0.1.0", path = "../../crates/gui" }
+woa-telemetry = { version = "0.1.0", path = "../../crates/telemetry" }

@@ -1,0 +1,323 @@
+//! Window-independent app state: everything the UI does goes through here, so it can be
+//! tested without a display. The UI only reads [`AppState`] and calls its methods.
+
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use woa_model::{Command, ModelError, Project, Session, TrackId, TrackKind};
+
+/// Autosave interval (rule 7).
+pub const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(10);
+
+/// One line in the status bar.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Status {
+    /// Nothing to report.
+    Idle,
+    /// Informational message.
+    Info(String),
+    /// Something failed; already logged.
+    Error(String),
+}
+
+/// The desktop app state around one [`Session`].
+pub struct AppState {
+    session: Session,
+    /// Where unsaved sessions autosave to (recovery folder).
+    recovery_dir: PathBuf,
+    last_autosave: Instant,
+    /// Status bar text.
+    pub status: Status,
+}
+
+impl AppState {
+    /// A fresh, empty project. `recovery_dir` receives autosaves of unsaved projects.
+    pub fn new(recovery_dir: PathBuf, now: Instant) -> Self {
+        Self {
+            session: Session::new("Neues Projekt"),
+            recovery_dir,
+            last_autosave: now,
+            status: Status::Idle,
+        }
+    }
+
+    /// The current project (read-only).
+    pub fn project(&self) -> &Project {
+        self.session.project()
+    }
+
+    /// The current session (read-only).
+    pub fn session(&self) -> &Session {
+        &self.session
+    }
+
+    /// Window title: project name, folder, dirty marker.
+    pub fn title(&self) -> String {
+        let dirty = if self.session.is_dirty() { " *" } else { "" };
+        format!("WOA – {}{}", self.project().meta.name, dirty)
+    }
+
+    fn report(&mut self, what: &str, result: Result<(), ModelError>) -> bool {
+        match result {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!(error = %e, "{what} failed");
+                self.status = Status::Error(format!("{what}: {e}"));
+                false
+            }
+        }
+    }
+
+    fn apply(&mut self, command: Command) -> bool {
+        let label = command.label();
+        let result = self.session.apply(command);
+        self.report(label, result)
+    }
+
+    /// Appends an audio track named "Spur N".
+    pub fn add_track(&mut self) -> Option<TrackId> {
+        let id = self.session.new_track_id();
+        let name = format!("Spur {}", self.project().tracks.len() + 1);
+        self.apply(Command::add_track(id, name, TrackKind::Audio))
+            .then_some(id)
+    }
+
+    /// Renames a track; empty or unchanged names are ignored.
+    pub fn rename_track(&mut self, track: TrackId, name: &str) -> bool {
+        let name = name.trim();
+        let unchanged = self.project().track(track).is_some_and(|t| t.name == name);
+        if name.is_empty() || unchanged {
+            return false;
+        }
+        self.apply(Command::RenameTrack {
+            track,
+            name: name.to_string(),
+        })
+    }
+
+    /// Sets the gain in dB (one undo step; the UI calls this when a drag ends).
+    pub fn set_gain(&mut self, track: TrackId, gain_db: f64) -> bool {
+        let unchanged = self
+            .project()
+            .track(track)
+            .is_some_and(|t| t.gain_db == gain_db);
+        if unchanged {
+            return false;
+        }
+        self.apply(Command::SetGain { track, gain_db })
+    }
+
+    /// Toggles mute.
+    pub fn toggle_mute(&mut self, track: TrackId) -> bool {
+        let Some(mute) = self.project().track(track).map(|t| !t.mute) else {
+            return false;
+        };
+        self.apply(Command::SetMute { track, mute })
+    }
+
+    /// Undo; "nothing to undo" is not an error for the user.
+    pub fn undo(&mut self) {
+        match self.session.undo() {
+            Ok(()) | Err(ModelError::NothingToUndo) => {}
+            Err(e) => {
+                self.report("Rückgängig", Err(e));
+            }
+        }
+    }
+
+    /// Redo; "nothing to redo" is not an error for the user.
+    pub fn redo(&mut self) {
+        match self.session.redo() {
+            Ok(()) | Err(ModelError::NothingToRedo) => {}
+            Err(e) => {
+                self.report("Wiederholen", Err(e));
+            }
+        }
+    }
+
+    /// Starts a new, empty project.
+    pub fn new_project(&mut self) {
+        self.session = Session::new("Neues Projekt");
+        self.status = Status::Info("Neues Projekt".into());
+    }
+
+    /// Opens a project folder.
+    pub fn open(&mut self, dir: &Path) -> bool {
+        match Session::open(dir) {
+            Ok(session) => {
+                self.session = session;
+                self.status = Status::Info(format!("Geöffnet: {}", dir.display()));
+                true
+            }
+            Err(e) => self.report("Öffnen", Err(e)),
+        }
+    }
+
+    /// Saves to the current folder; `false` with [`ModelError::NoPath`] means the UI
+    /// must ask for a folder ([`AppState::needs_save_as`]).
+    pub fn save(&mut self) -> bool {
+        let result = self.session.save();
+        if self.report("Speichern", result) {
+            self.status = Status::Info("Gespeichert".into());
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Whether "save" must first ask for a folder.
+    pub fn needs_save_as(&self) -> bool {
+        self.session.path().is_none()
+    }
+
+    /// Saves into `dir` (appends `.woa` if missing) and adopts it as project folder.
+    pub fn save_as(&mut self, dir: &Path) -> bool {
+        let dir = with_woa_extension(dir);
+        let result = self.session.save_as(&dir);
+        if self.report("Speichern", result) {
+            self.status = Status::Info(format!("Gespeichert: {}", dir.display()));
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Autosave timer hook: call every frame. Writes at most every
+    /// [`AUTOSAVE_INTERVAL`], and only if something changed. Returns whether a file was
+    /// written. Unsaved projects go to the recovery folder.
+    pub fn tick_autosave(&mut self, now: Instant) -> bool {
+        if now.duration_since(self.last_autosave) < AUTOSAVE_INTERVAL {
+            return false;
+        }
+        self.last_autosave = now;
+        let result = match self.session.path() {
+            Some(_) => self.session.autosave(),
+            None => self.session.autosave_to(&self.recovery_dir),
+        };
+        match result {
+            Ok(written) => written,
+            Err(e) => {
+                self.report("Autosave", Err(e));
+                false
+            }
+        }
+    }
+}
+
+fn with_woa_extension(dir: &Path) -> PathBuf {
+    if dir.extension().is_some_and(|e| e == "woa") {
+        dir.to_path_buf()
+    } else {
+        let mut s = dir.as_os_str().to_owned();
+        s.push(".woa");
+        PathBuf::from(s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state(dir: &Path) -> (AppState, Instant) {
+        let now = Instant::now();
+        (AppState::new(dir.join("recovery"), now), now)
+    }
+
+    #[test]
+    fn add_rename_gain_mute_with_undo_redo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        let id = s.add_track().unwrap();
+        assert_eq!(s.project().tracks[0].name, "Spur 1");
+        assert!(s.rename_track(id, " Moderation "));
+        assert!(!s.rename_track(id, "   "));
+        assert!(!s.rename_track(id, "Moderation"));
+        assert!(s.set_gain(id, -6.0));
+        assert!(!s.set_gain(id, -6.0));
+        assert!(s.toggle_mute(id));
+        let t = &s.project().tracks[0];
+        assert_eq!(
+            (t.name.as_str(), t.gain_db, t.mute),
+            ("Moderation", -6.0, true)
+        );
+
+        s.undo();
+        assert!(!s.project().tracks[0].mute);
+        s.undo();
+        assert_eq!(s.project().tracks[0].gain_db, 0.0);
+        s.redo();
+        assert_eq!(s.project().tracks[0].gain_db, -6.0);
+        s.undo();
+        s.undo();
+        s.undo();
+        assert!(s.project().tracks.is_empty());
+        s.undo(); // nothing left: no error shown
+        assert_eq!(s.status, Status::Idle);
+    }
+
+    #[test]
+    fn invalid_gain_shows_error_and_changes_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        let id = s.add_track().unwrap();
+        assert!(!s.set_gain(id, 1000.0));
+        assert!(matches!(s.status, Status::Error(_)));
+        assert_eq!(s.project().tracks[0].gain_db, 0.0);
+    }
+
+    #[test]
+    fn save_as_open_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        assert!(s.needs_save_as());
+        let id = s.add_track().unwrap();
+        s.rename_track(id, "Musik");
+        assert!(s.save_as(&tmp.path().join("show")));
+        assert!(!s.needs_save_as());
+        assert!(!s.session().is_dirty());
+        assert!(tmp.path().join("show.woa").is_dir());
+
+        s.new_project();
+        assert!(s.project().tracks.is_empty());
+        assert!(s.open(&tmp.path().join("show.woa")));
+        assert_eq!(s.project().tracks[0].name, "Musik");
+        s.toggle_mute(id);
+        assert!(s.save());
+        assert!(!s.open(&tmp.path().join("missing.woa")));
+        assert!(matches!(s.status, Status::Error(_)));
+    }
+
+    #[test]
+    fn autosave_every_ten_seconds_only_when_changed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, t0) = state(tmp.path());
+        s.add_track();
+        assert!(!s.tick_autosave(t0 + Duration::from_secs(5)));
+        assert!(s.tick_autosave(t0 + Duration::from_secs(10)));
+        assert!(tmp.path().join("recovery").is_dir());
+        // nothing changed since
+        assert!(!s.tick_autosave(t0 + Duration::from_secs(21)));
+        s.add_track();
+        assert!(!s.tick_autosave(t0 + Duration::from_secs(25)));
+        assert!(s.tick_autosave(t0 + Duration::from_secs(31)));
+
+        // saved project autosaves into its own folder
+        s.save_as(&tmp.path().join("p"));
+        s.add_track();
+        assert!(s.tick_autosave(t0 + Duration::from_secs(45)));
+        assert!(
+            woa_model::store::load_autosave(&tmp.path().join("p.woa"))
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn title_marks_dirty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        assert!(!s.title().ends_with('*'));
+        s.add_track();
+        assert!(s.title().ends_with('*'));
+    }
+}
