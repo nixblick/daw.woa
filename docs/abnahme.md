@@ -72,6 +72,8 @@ Selbst geprüft von Claude:
 
 Nachtrag 0.2.1: **MP3 und FLAC gehen jetzt** überall, wo WOA Audio liest: Playlist, Cart-Wall, LUFS-Messung, `radio-render`, Clips im Projekt, Wellenform und Agent-Import. Dialoge und Drag-and-drop nehmen `.mp3` und `.flac` an. Selbst geprüft: Testdateien per `flacenc` und LAME erzeugt, gelesen, Länge und Pegel mit dem Original verglichen (`crates/engine/src/decode.rs`). Nebenbei repariert: WOAs eigene FLAC-Exporte hatten eine falsche Mindest-Blockgröße und waren für strenge Leser unlesbar. Bildschirmfoto bei 900 px: Die Regler „Crossfade“ und „Ducking“ sind ganz lesbar.
 
+Nachtrag 0.3.1: **Alle gängigen Formate.** Playlist, Cart-Wall und Agent-Import lesen jetzt auch OGG/Vorbis, M4A (AAC und ALAC), AAC, AIFF, CAF und MP2, Groß- und Kleinschreibung egal. Der Dialog heißt „Audio (MP3, FLAC, WAV, OGG, M4A, AAC, AIFF, CAF, MP2)“. MP3 mit großem Cover-Bild (#50, „150 Jahre Feuerwehr Frankfurt“) geht wieder. Zum Abnehmen: die Feuerwehr-MP3 und je eine OGG- und M4A-Datei in die Playlist ziehen, alle drei bekommen eine Länge und spielen. Selbst geprüft: jedes Format per ffmpeg erzeugt und auf Länge und Pegel geprüft, Andrés MP3 gelesen. Opus geht nicht (kein Decoder in symphonia).
+
 Noch nicht drin:
 
 - Mikro im Kopfhörer (Monitor ist aus, gegen Rückkopplung)

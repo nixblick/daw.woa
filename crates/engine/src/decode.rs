@@ -1,4 +1,4 @@
-//! Audiodateien lesen (WAV, FLAC, MP3) – nur im Control- oder Hintergrund-Thread, nie im
+//! Audiodateien lesen (WAV, FLAC, MP3, MP2, OGG/Vorbis, M4A/AAC/ALAC, AIFF, CAF) – nur im Control- oder Hintergrund-Thread, nie im
 //! Audio-Thread. Ergebnis: interleavte f32-Samples in Dateirate; Umrechnen auf die
 //! Projektrate macht [`resample_linear`].
 
@@ -25,8 +25,22 @@ pub const MAX_CHANNELS: usize = 8;
 /// Kopf harmlos aussieht und deren Pakete dann mehr liefern.
 pub const MAX_SAMPLES: usize = 6 * 3600 * 48_000 * 2;
 
-/// Endungen, die WOA lesen kann (für Dateidialoge: beide Schreibweisen).
-pub const EXTENSIONS: [&str; 6] = ["wav", "flac", "mp3", "WAV", "FLAC", "MP3"];
+/// Endungen, die WOA lesen kann (klein geschrieben; Vergleich ohne Rücksicht auf die
+/// Schreibweise). Opus fehlt: symphonia hat keinen Opus-Decoder.
+pub const EXTENSIONS: [&str; 13] = [
+    "wav", "flac", "mp3", "mp2", "ogg", "oga", "m4a", "mp4", "aac", "aif", "aiff", "aifc", "caf",
+];
+
+/// Filtertext für Dateidialoge.
+pub const FILTER_NAME: &str = "Audio (MP3, FLAC, WAV, OGG, M4A, AAC, AIFF, CAF, MP2)";
+
+/// Endungen für Dateidialoge: jede klein und groß (GTK filtert nach Schreibweise).
+pub fn dialog_extensions() -> Vec<String> {
+    EXTENSIONS
+        .iter()
+        .flat_map(|e| [(*e).to_owned(), e.to_ascii_uppercase()])
+        .collect()
+}
 
 /// Kann WOA diese Datei (nach Endung) lesen?
 pub fn is_readable(path: &Path) -> bool {
@@ -79,8 +93,8 @@ pub fn decode_file(path: &Path) -> Result<Decoded, String> {
         .to_ascii_lowercase();
     let d = match ext.as_str() {
         "wav" => decode_wav(path)?,
-        "flac" | "mp3" => decode_symphonia(path, &ext)?,
-        _ => return Err("nur WAV, FLAC und MP3".into()),
+        e if EXTENSIONS.contains(&e) => decode_symphonia(path, &ext)?,
+        _ => return Err(format!("nicht lesbar, nur {FILTER_NAME}")),
     };
     if !(MIN_RATE..=MAX_RATE).contains(&d.rate) {
         return Err("Abtastrate außerhalb".into());
@@ -366,12 +380,160 @@ mod tests {
     #[test]
     fn unknown_extension_and_garbage_are_errors() {
         let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("x.ogg");
+        let p = dir.path().join("x.opus");
         std::fs::write(&p, b"nope").unwrap();
         assert!(!is_readable(&p));
+        assert!(decode_file(&p).is_err());
+        let p = dir.path().join("x.ogg");
+        std::fs::write(&p, b"kein ogg").unwrap();
+        assert!(is_readable(&p));
         assert!(decode_file(&p).is_err());
         let p = dir.path().join("x.mp3");
         std::fs::write(&p, b"kein mp3").unwrap();
         assert!(decode_file(&p).is_err());
+    }
+
+    /// ID3v2.3-Tag mit APIC-Bild der Größe `pic` Bytes (Inhalt egal, Bildtyp Cover vorne).
+    fn id3v23_with_apic(pic: usize) -> Vec<u8> {
+        let mut frame = vec![0u8]; // Textkodierung ISO-8859-1
+        frame.extend_from_slice(b"image/jpeg\0");
+        frame.push(3); // Cover vorne
+        frame.push(0); // leere Beschreibung
+        frame.extend(std::iter::repeat_n(0xa5u8, pic));
+        let mut body = Vec::new();
+        body.extend_from_slice(b"APIC");
+        body.extend_from_slice(&(frame.len() as u32).to_be_bytes());
+        body.extend_from_slice(&[0, 0]);
+        body.extend_from_slice(&frame);
+        let n = body.len() as u32;
+        // Tag-Größe als Synchsafe-Integer (7 Bit je Byte).
+        let size = [
+            ((n >> 21) & 0x7f) as u8,
+            ((n >> 14) & 0x7f) as u8,
+            ((n >> 7) & 0x7f) as u8,
+            (n & 0x7f) as u8,
+        ];
+        let mut tag = b"ID3\x03\x00\x00".to_vec();
+        tag.extend_from_slice(&size);
+        tag.extend_from_slice(&body);
+        tag
+    }
+
+    /// Issue #50: MP3 mit 1,2 MB großem ID3v2.3-Tag (Cover) scheiterte im Probe.
+    #[test]
+    fn mp3_with_large_id3v2_cover_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = dir.path().join("raw.mp3");
+        let (l, r) = tone(44_100);
+        export_stereo(&raw, &l, &r, 44_100).unwrap();
+        let mut b = id3v23_with_apic(1_200_000);
+        assert!(b.len() >= 500_000);
+        b.extend_from_slice(&std::fs::read(&raw).unwrap());
+        let p = dir.path().join("cover.mp3");
+        std::fs::write(&p, &b).unwrap();
+        let d = decode_file(&p).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(d.rate, 44_100);
+        assert_eq!(d.channels, 2);
+        let (dl, _) = d.stereo();
+        assert!(dl.len().abs_diff(l.len()) <= 2_400, "{}", dl.len());
+        assert!((rms(&dl) - rms(&l)).abs() < 0.01);
+    }
+
+    #[test]
+    fn extensions_ignore_case() {
+        for e in ["x.M4A", "x.Ogg", "x.AIFF", "x.mp3", "x.CAF"] {
+            assert!(is_readable(Path::new(e)), "{e}");
+        }
+        assert!(!is_readable(Path::new("x.opus")));
+        let d = dialog_extensions();
+        assert!(d.contains(&"m4a".to_owned()) && d.contains(&"M4A".to_owned()));
+    }
+
+    /// ffmpeg vorhanden? Ohne ffmpeg werden die Formattests übersprungen (mit Meldung).
+    fn has_ffmpeg() -> bool {
+        let ok = std::process::Command::new("ffmpeg")
+            .arg("-version")
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if !ok {
+            eprintln!("ffmpeg fehlt, Formattest übersprungen");
+        }
+        ok
+    }
+
+    fn ffmpeg(input: &[&str], input_path: Option<&Path>, args: &[&str], out: &Path) -> bool {
+        let mut c = std::process::Command::new("ffmpeg");
+        c.args(["-v", "error", "-y"]).args(input);
+        if let Some(i) = input_path {
+            c.arg("-i").arg(i);
+        }
+        c.args(args).arg(out).status().is_ok_and(|s| s.success())
+    }
+
+    /// Alle neuen Formate, mit ffmpeg aus dem Testton erzeugt: Länge und Pegel nach dem Lesen.
+    #[test]
+    fn new_formats_keep_length_and_level() {
+        if !has_ffmpeg() {
+            return;
+        }
+        let cases: [(&str, &[&str], usize, f32); 8] = [
+            ("t.ogg", &["-c:a", "libvorbis", "-q:a", "6"], 0, 0.01),
+            ("t.oga", &["-c:a", "libvorbis", "-f", "ogg"], 0, 0.01),
+            ("t.m4a", &["-c:a", "aac", "-b:a", "192k"], 2_400, 0.01),
+            ("t.aac", &["-c:a", "aac", "-b:a", "192k"], 2_400, 0.01),
+            ("a.m4a", &["-c:a", "alac"], 0, 1e-3),
+            ("t.aiff", &["-c:a", "pcm_s16be"], 0, 1e-3),
+            ("t.caf", &["-c:a", "pcm_s16le"], 0, 1e-3),
+            ("t.mp2", &["-c:a", "mp2", "-b:a", "256k"], 2_400, 0.02),
+        ];
+        let dir = tempfile::tempdir().unwrap();
+        let wav = dir.path().join("src.wav");
+        let (l, r) = tone(44_100);
+        export_stereo(&wav, &l, &r, 44_100).unwrap();
+        for (name, args, len_tol, rms_tol) in cases {
+            let p = dir.path().join(name);
+            assert!(ffmpeg(&[], Some(&wav), args, &p), "ffmpeg {name}");
+            assert!(is_readable(&p), "{name}");
+            let d = decode_file(&p).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(d.rate, 44_100, "{name}");
+            assert_eq!(d.channels, 2, "{name}");
+            let (dl, dr) = d.stereo();
+            assert!(
+                dl.len().abs_diff(l.len()) <= len_tol,
+                "{name}: {} statt {}",
+                dl.len(),
+                l.len()
+            );
+            assert!(
+                (rms(&dl) - rms(&l)).abs() < rms_tol,
+                "{name} links {}",
+                rms(&dl)
+            );
+            assert!(
+                (rms(&dr) - rms(&r)).abs() < rms_tol,
+                "{name} rechts {}",
+                rms(&dr)
+            );
+        }
+    }
+
+    /// Speicherschutz aus #49 gilt auch für die neuen Formate: 9 Kanäle werden abgelehnt.
+    #[test]
+    fn new_formats_respect_channel_limit() {
+        if !has_ffmpeg() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = ["-f", "lavfi", "-i", "sine=f=440:d=0.2:r=44100"];
+        let pan = "pan=FL+FR+FC+LFE+BL+BR+FLC+FRC+BC|c0=c0|c1=c0|c2=c0|c3=c0|c4=c0|c5=c0|c6=c0|c7=c0|c8=c0";
+        for (name, codec) in [("c9.aiff", "pcm_s16be"), ("c9.caf", "pcm_s16le")] {
+            let p = dir.path().join(name);
+            assert!(
+                ffmpeg(&src, None, &["-af", pan, "-c:a", codec], &p),
+                "ffmpeg {name}"
+            );
+            let e = decode_file(&p).unwrap_err();
+            assert!(e.contains("Kanäle"), "{name}: {e}");
+        }
     }
 }

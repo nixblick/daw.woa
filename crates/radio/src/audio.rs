@@ -18,17 +18,21 @@ impl Stereo {
     }
 }
 
-/// Formate, die der Sendeablauf lesen kann: WAV, FLAC, MP3 (wie die Engine).
+/// Formate, die der Sendeablauf lesen kann (wie die Engine, `woa_engine::decode::EXTENSIONS`).
 pub fn is_supported(path: &Path) -> bool {
     is_readable(path)
 }
 
 /// Fehlermeldung für eine Datei, die nicht gelesen werden kann.
 pub fn unsupported(path: &Path) -> String {
-    format!("{}: nur WAV, FLAC und MP3", path.display())
+    format!(
+        "{}: nicht lesbar, nur {}",
+        path.display(),
+        woa_engine::decode::FILTER_NAME
+    )
 }
 
-/// Liest WAV, FLAC oder MP3 als Stereo in `rate` (mono wird verdoppelt, mehr als zwei
+/// Liest jede lesbare Audiodatei als Stereo in `rate` (mono wird verdoppelt, mehr als zwei
 /// Kanäle: die ersten beiden; Rate linear umgerechnet). Nie im Audio-Thread aufrufen.
 pub fn load_stereo(path: &Path, rate: u32) -> Result<Stereo, String> {
     if !is_supported(path) {
@@ -117,7 +121,7 @@ mod tests {
         assert!((s.left[3] - 0.5).abs() < 1e-6 && s.left == s.right);
         assert_eq!(load_stereo(&p, 48_000).unwrap().frames(), 480);
         assert!(file_stamp(&p).is_some());
-        let e = load_stereo(&tmp.path().join("x.ogg"), 48_000).unwrap_err();
+        let e = load_stereo(&tmp.path().join("x.opus"), 48_000).unwrap_err();
         assert!(e.contains("MP3"), "{e}");
     }
 

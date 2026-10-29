@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1 — 2026-10-29
+
+- **MP3 mit großem Cover-Tag lesbar (Fixes #50).** Eine MP3 mit 1,2 MB großem ID3v2.3-Tag (APIC-Bild) scheiterte mit „no suitable format reader found“: symphonia lief ohne die Metadaten-Features und konnte den Tag nicht überspringen. Jetzt mit `id3v1`, `id3v2` und `ape`. Test mit selbst erzeugter MP3 und 1,2 MB APIC-Bild; Andrés Datei geht wieder (8 710 592 Frames, 44,1 kHz, Stereo).
+- **Alle gängigen Formate lesen.** Neu über symphonia 0.6.1 (alle Teile MPL-2.0, `extended` MIT, ohne C-Abhängigkeit): OGG/Vorbis (`.ogg`, `.oga`), M4A/MP4 mit AAC oder ALAC (`.m4a`, `.mp4`), rohes AAC/ADTS (`.aac`), AIFF (`.aif`, `.aiff`, `.aifc`), CAF (`.caf`) und MP2 (`.mp2`). Opus geht weiter nicht: symphonia hat keinen Opus-Decoder.
+- **Eine Liste für alle Endungen.** `woa_engine::decode::EXTENSIONS` (klein, Vergleich ohne Rücksicht auf die Schreibweise), `FILTER_NAME` und `dialog_extensions()` für die Dateidialoge der Radio-Playlist und der Cart-Wall; Drag-and-drop und Agent-Import prüfen über dieselbe Liste. Filtertext „Audio (MP3, FLAC, WAV, OGG, M4A, AAC, AIFF, CAF, MP2)“.
+- Tests: Jedes neue Format wird mit ffmpeg aus dem Testton erzeugt, gelesen und auf Länge und Pegel je Kanal geprüft; 9 Kanäle in AIFF, CAF und M4A/ALAC werden abgelehnt (Speicherschutz aus #49). Ohne ffmpeg überspringen sich diese Tests mit Meldung.
+- **Patent-Hinweis AAC:** Der AAC-Decoder ist reiner Rust-Code (MPL-2.0). AAC-Patente sind nach Kenntnis weitgehend ausgelaufen, das ist aber keine Rechtsauskunft; vor einem kommerziellen Vertrieb einmal prüfen.
+
 ## 0.3.0 — 2026-10-29
 
 - **Sendeprozess `woa-streamd` (Paket 8).** Die Sendung geht an einen eigenen Shoutcast DNAS v2. `crates/stream` enthält:

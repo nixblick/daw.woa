@@ -257,7 +257,7 @@ impl Node for ClipPlayer {
     }
 }
 
-/// Liest eine Audiodatei (WAV, FLAC, MP3), mischt auf mono und rechnet linear auf
+/// Liest eine Audiodatei (alle `decode::EXTENSIONS`), mischt auf mono und rechnet linear auf
 /// `sample_rate` um. Nur außerhalb des Audio-Threads aufrufen.
 pub fn load_wav_mono(path: &Path, sample_rate: u32) -> Result<Arc<[f32]>, EngineError> {
     if !(MIN_RATE..=MAX_RATE).contains(&sample_rate) {
