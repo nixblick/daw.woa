@@ -166,7 +166,11 @@ fn feedback_test_reports_issue() {
 #[cfg(not(feature = "device"))]
 #[test]
 fn play_and_devices_explain_missing_feature() {
-    for args in [&["play", "--seconds", "1"][..], &["devices"][..]] {
+    for args in [
+        &["play", "--seconds", "1"][..],
+        &["devices"][..],
+        &["record", "x.wav"][..],
+    ] {
         bin()
             .args(args)
             .assert()

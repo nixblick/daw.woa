@@ -71,8 +71,11 @@ enum Cmd {
     Roundtrip { path: PathBuf },
     /// Startet den MCP-Server über stdin/stdout für das Projekt <PATH> (legt es beim ersten `save` an).
     Mcp { path: PathBuf },
-    /// Listet die Audio-Ausgabegeräte (nur mit Feature `device`).
-    Devices,
+    /// Listet die Audio-Ausgabegeräte, mit `--input` die Eingänge (nur mit Feature `device`).
+    Devices {
+        #[arg(long)]
+        input: bool,
+    },
     /// Spielt einen Testton auf dem Gerät und zählt Underruns (M1-Abnahme, #2).
     /// Exit 1, wenn mindestens ein Underrun auftrat. Nur mit Feature `device`.
     Play {
@@ -91,6 +94,18 @@ enum Cmd {
         /// Lautstärke 0..1 (Vorgabe 0.3; bei 0.1 war es mit 25 % Systemlautstärke unhörbar).
         #[arg(long, default_value_t = 0.3)]
         volume: f32,
+    },
+    /// Nimmt vom Eingang (Mikrofon) als WAV auf und meldet Pegel und Überläufe.
+    /// Exit 1 bei Überläufen. Nur mit Feature `device`.
+    Record {
+        /// Zieldatei (.wav); der Ordner muss existieren.
+        out: PathBuf,
+        /// Dauer in Sekunden.
+        #[arg(long, default_value_t = 10)]
+        seconds: u64,
+        /// Eingangs-Id aus `devices --input`; ohne = Standard-Eingang.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Schickt ein Test-Ereignis an den Telemetrie-Endpunkt (/ingest).
     LogTest {
@@ -125,7 +140,12 @@ fn main() -> ExitCode {
         Cmd::UndoDemo => cmd_undo_demo(),
         Cmd::Roundtrip { path } => cmd_roundtrip(&path),
         Cmd::Mcp { path } => woa_agent::run_stdio(&path).map_err(|e| e.to_string()),
-        Cmd::Devices => audio::cmd_devices(),
+        Cmd::Devices { input } => audio::cmd_devices(input),
+        Cmd::Record {
+            out,
+            seconds,
+            device,
+        } => audio::cmd_record(&out, seconds, device),
         Cmd::Play {
             seconds,
             buffer,

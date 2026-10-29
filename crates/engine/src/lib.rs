@@ -19,6 +19,8 @@ use woa_dsp::{Node, ProcessBuffers};
 #[cfg(feature = "device")]
 pub mod device;
 pub mod project;
+#[cfg(feature = "device")]
+pub mod record;
 pub mod transport;
 
 pub use project::{ProjectGraph, TrackNodes, build_project_graph, render_project, track_gains};
