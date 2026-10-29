@@ -41,6 +41,8 @@ pub struct RecordStats {
     pub overruns: u64,
     /// Höchster Betrag eines Samples über die ganze Aufnahme, 0..1.
     pub peak: f32,
+    /// Vom Treiber gemeldete Eingangslatenz (Aufnahme bis Callback), 0 wenn unbekannt.
+    pub input_latency: Duration,
 }
 
 impl RecordStats {
@@ -92,6 +94,8 @@ struct Meters {
     overruns: AtomicU64,
     /// Vom Schreib-Thread geschriebene Samples (alle Kanäle).
     written: AtomicU64,
+    /// Zuletzt gemeldete Eingangslatenz in Mikrosekunden.
+    latency_us: AtomicU64,
     stop: AtomicBool,
 }
 
@@ -157,6 +161,7 @@ impl Recorder {
             frames: self.meters.written.load(Ordering::Acquire) / channels,
             overruns: self.meters.overruns.load(Ordering::Relaxed),
             peak: f32::from_bits(self.meters.peak.load(Ordering::Relaxed)),
+            input_latency: Duration::from_micros(self.meters.latency_us.load(Ordering::Relaxed)),
         })
     }
 }
@@ -238,7 +243,12 @@ pub fn start_recording(
     let m_audio = Arc::clone(&meters);
     let stream = device.build_input_stream(
         stream_config,
-        move |data: &[f32], _: &cpal::InputCallbackInfo| {
+        move |data: &[f32], info: &cpal::InputCallbackInfo| {
+            let ts = info.timestamp();
+            let d = ts.callback.duration_since(ts.capture);
+            m_audio
+                .latency_us
+                .store(d.as_micros() as u64, Ordering::Relaxed);
             let mut peak = 0.0f32;
             for &s in data {
                 peak = peak.max(s.abs());

@@ -223,18 +223,21 @@ impl Player {
         project: &Project,
         resolve: &dyn Fn(&str) -> Option<PathBuf>,
         out: &Path,
-    ) -> Result<f64, String> {
+        lufs: Option<f64>,
+    ) -> Result<(f64, Option<woa_engine::loudness::Normalized>), String> {
         let seconds = project_end_seconds(project);
         if seconds <= 0.0 {
             return Err("keine Clips zum Exportieren".into());
         }
         let rate = self.rate;
         let cache = &mut self.cache;
-        let (l, r) = render_clips(project, rate, seconds, &mut |rel: &str| {
+        let (mut l, mut r) = render_clips(project, rate, seconds, &mut |rel: &str| {
             load_cached(cache, resolve(rel)?, rate)
         })
         .map_err(|e| e.to_string())?;
+        let norm =
+            lufs.and_then(|t| woa_engine::loudness::normalize(&mut l, &mut r, rate, t, -1.0));
         woa_engine::export::export_stereo(out, &l, &r, rate).map_err(|e| e.to_string())?;
-        Ok(seconds)
+        Ok((seconds, norm))
     }
 }

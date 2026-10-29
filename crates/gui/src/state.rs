@@ -148,10 +148,16 @@ impl AppState {
         file: &Path,
         start_beats: f64,
         seconds: f64,
+        latency_seconds: f64,
     ) -> Option<ClipId> {
         let name = file.file_stem()?.to_string_lossy().into_owned();
         let audio = format!("{TAKES_DIR}/{}", file.file_name()?.to_string_lossy());
-        let length_beats = (seconds * self.project().tempo_bpm / 60.0).max(1e-3);
+        // Latenzausgleich: die ersten `latency` Sekunden der Datei gehören vor den Startpunkt,
+        // also überspringen (Versatz) statt den Clip zu verschieben.
+        let beats_per_s = self.project().tempo_bpm / 60.0;
+        let latency = latency_seconds.clamp(0.0, (seconds - 1e-3).max(0.0));
+        let offset_beats = latency * beats_per_s;
+        let length_beats = ((seconds - latency) * beats_per_s).max(1e-3);
         let target = track.filter(|t| {
             self.project()
                 .track(*t)
@@ -172,7 +178,7 @@ impl AppState {
                     start_beats: start_beats.max(0.0),
                     length_beats,
                     audio: Some(audio),
-                    offset_beats: 0.0,
+                    offset_beats,
                     fade_in_beats: 0.0,
                     fade_out_beats: 0.0,
                 },
@@ -314,6 +320,44 @@ impl AppState {
         let closed = self.session.end_group();
         self.report("Schneiden", closed);
         ok.then_some(id)
+    }
+
+    /// Removes several clips as one undo step.
+    pub fn remove_clips(&mut self, clips: &[ClipId]) -> bool {
+        self.session.begin_group("Clips löschen");
+        let ok = clips
+            .iter()
+            .all(|&c| self.apply(Command::RemoveClip { clip: c }));
+        let closed = self.session.end_group();
+        self.report("Clips löschen", closed);
+        ok
+    }
+
+    /// Moves several clips on their tracks by `delta_beats`, one undo step.
+    /// Nothing moves if one of them would start before 0.
+    pub fn shift_clips(&mut self, clips: &[ClipId], delta_beats: f64) -> bool {
+        let moves: Vec<(ClipId, TrackId, f64)> = clips
+            .iter()
+            .filter_map(|&c| {
+                let (t, clip) = self.project().clip(c)?;
+                Some((c, t.id, clip.start_beats + delta_beats))
+            })
+            .collect();
+        if moves.is_empty() || delta_beats.abs() < 1e-9 || moves.iter().any(|m| m.2 < 0.0) {
+            return false;
+        }
+        self.session.begin_group("Clips verschieben");
+        let ok = moves.iter().all(|&(clip, to_track, start_beats)| {
+            self.apply(Command::MoveClip {
+                clip,
+                to_track,
+                start_beats,
+                index: None,
+            })
+        });
+        let closed = self.session.end_group();
+        self.report("Clips verschieben", closed);
+        ok
     }
 
     /// Removes a clip (undoable). The audio file stays on disk.
@@ -552,7 +596,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("aufnahme-001.wav");
         std::fs::write(&file, b"RIFF").unwrap();
-        let clip = s.add_take(None, &file, 4.0, 2.0).unwrap();
+        let clip = s.add_take(None, &file, 4.0, 2.0, 0.0).unwrap();
         assert_eq!(s.project().tracks.len(), 1);
         let (_, c) = s.project().clip(clip).unwrap();
         assert_eq!(c.audio.as_deref(), Some("aufnahmen/aufnahme-001.wav"));
@@ -583,7 +627,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("aufnahme-001.wav");
         std::fs::write(&file, b"RIFF").unwrap();
-        let a = s.add_take(None, &file, 0.0, 4.0).unwrap(); // 8 beats
+        let a = s.add_take(None, &file, 0.0, 4.0, 0.0).unwrap(); // 8 beats
         assert!(s.move_clip(a, 2.0));
         let b = s.split_clip(a, 6.0).unwrap();
         let (_, ca) = s.project().clip(a).unwrap();
@@ -614,6 +658,30 @@ mod tests {
         s.undo();
         assert!(s.project().clip(b).is_none(), "split is one undo step");
         assert_eq!(s.project().clip(a).unwrap().1.length_beats, 8.0);
+    }
+
+    #[test]
+    fn latency_multi_shift_and_delete() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        let dir = s.takes_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("aufnahme-001.wav");
+        std::fs::write(&file, b"RIFF").unwrap();
+        // 120 BPM: 0.25 s Latenz = 0.5 Beats Versatz.
+        let a = s.add_take(None, &file, 0.0, 4.0, 0.25).unwrap();
+        let (_, ca) = s.project().clip(a).unwrap();
+        assert_eq!((ca.offset_beats, ca.length_beats), (0.5, 7.5));
+        let b = s.add_take(None, &file, 10.0, 1.0, 0.0).unwrap();
+        assert!(!s.shift_clips(&[a, b], -1.0), "a would start before 0");
+        assert!(s.shift_clips(&[a, b], 2.0));
+        assert_eq!(s.project().clip(b).unwrap().1.start_beats, 12.0);
+        assert!(s.remove_clips(&[a, b]));
+        assert!(s.project().clip(a).is_none() && s.project().clip(b).is_none());
+        s.undo();
+        assert!(s.project().clip(a).is_some() && s.project().clip(b).is_some());
+        s.undo();
+        assert_eq!(s.project().clip(a).unwrap().1.start_beats, 0.0);
     }
 
     #[test]

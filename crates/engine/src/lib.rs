@@ -20,6 +20,7 @@ pub mod clip;
 #[cfg(feature = "device")]
 pub mod device;
 pub mod export;
+pub mod loudness;
 pub mod project;
 #[cfg(feature = "device")]
 pub mod record;
