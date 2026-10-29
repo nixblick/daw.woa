@@ -168,7 +168,11 @@ impl WoaApp {
     fn ensure_radio(&mut self) {
         if self.radio.is_none() {
             let path = self.data_dir.join(woa_radio::RADIO_FILE);
-            self.radio = Some(RadioDesk::open(path, self.data_dir.clone()));
+            self.radio = Some(RadioDesk::open(
+                path,
+                self.data_dir.clone(),
+                self.config.radio_buffer(),
+            ));
         }
     }
 
@@ -1611,8 +1615,13 @@ impl eframe::App for WoaApp {
         if self.config.mode == Mode::Radio {
             self.ensure_radio();
         }
+        // Im Radio-Modus spielt nur der Sendemixer; der Player-Strom ruht (#51).
+        if let Some(p) = self.player.as_mut() {
+            p.set_suspended(self.config.mode == Mode::Radio);
+        }
+        let player_active = self.player.as_ref().is_some_and(Player::is_active);
         if let Some(r) = self.radio.as_mut() {
-            r.tick();
+            r.tick(player_active);
         }
         if self.config.mode == Mode::Radio {
             if let Some(r) = self.radio.as_mut() {

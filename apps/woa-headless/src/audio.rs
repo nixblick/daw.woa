@@ -308,6 +308,7 @@ pub fn cmd_radio_play(
     _: &std::path::Path,
     _: Option<f64>,
     _: Option<f64>,
+    _: u32,
 ) -> Outcome {
     Err(NOT_BUILT.to_string())
 }
@@ -321,23 +322,32 @@ pub fn cmd_radio_play(
     data_dir: &std::path::Path,
     cart_at: Option<f64>,
     mic_at: Option<f64>,
+    buffer: u32,
 ) -> Outcome {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, Instant};
 
     let show = woa_radio::RadioShow::load(radio)?;
-    let config = woa_engine::device::OutputConfig::default();
+    let config = woa_engine::device::OutputConfig {
+        device_id: None,
+        buffer_frames: (buffer > 0).then_some(buffer),
+    };
     let rate = woa_engine::device::output_sample_rate(&config).map_err(|e| e.to_string())?;
     let (mut controller, mut mixer) = woa_radio::Controller::new(show, rate);
     controller.measure_missing();
+    let status = Arc::clone(controller.status());
     let errors = Arc::new(AtomicU64::new(0));
-    let e2 = Arc::clone(&errors);
+    let underruns = Arc::new(AtomicU64::new(0));
+    let (e2, u2) = (Arc::clone(&errors), Arc::clone(&underruns));
     let stream = woa_engine::device::start_stereo_output(
         &config,
         move |l, r| mixer.process(l, r),
-        move |_| {
+        move |e| {
             e2.fetch_add(1, Ordering::Relaxed);
+            if woa_engine::device::is_xrun(&e) {
+                u2.fetch_add(1, Ordering::Relaxed);
+            }
         },
     )
     .map_err(|e| e.to_string())?;
@@ -389,7 +399,11 @@ pub fn cmd_radio_play(
         println!("mitschnitt={}", f.display());
     }
     let n = errors.load(Ordering::Relaxed);
-    println!("rate={rate} fehler={n}");
+    println!(
+        "rate={rate} puffer={buffer} fehler={n} aussetzer={} mitschnitt_verloren={}",
+        underruns.load(Ordering::Relaxed),
+        status.record_dropped.load(Ordering::Relaxed)
+    );
     if n > 0 {
         return Err(format!("{n} Gerätefehler/Aussetzer"));
     }

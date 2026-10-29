@@ -32,6 +32,20 @@ pub struct GuiConfig {
     pub mode: Mode,
     /// Sendung an den eigenen Shoutcast (liest auch woa-streamd). Ohne Kennwort.
     pub stream: woa_stream::StreamConfig,
+    /// Puffergröße der Radio-Ausgabe in Frames. Fehlt oder 0 = Vorgabe des Treibers
+    /// ([`woa_engine::device::RADIO_BUFFER_FRAMES`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub radio_buffer_frames: Option<u32>,
+}
+
+impl GuiConfig {
+    /// Puffergröße für die Radio-Ausgabe (`None` = Treiber entscheidet).
+    pub fn radio_buffer(&self) -> Option<u32> {
+        let n = self
+            .radio_buffer_frames
+            .unwrap_or(woa_engine::device::RADIO_BUFFER_FRAMES);
+        (n > 0).then_some(n)
+    }
 }
 
 /// Arbeitsmodus der Oberfläche.
@@ -60,6 +74,7 @@ impl Default for GuiConfig {
             telemetry_url: DEFAULT_INGEST_URL.to_string(),
             mode: Mode::Produzent,
             stream: woa_stream::StreamConfig::default(),
+            radio_buffer_frames: None,
         }
     }
 }

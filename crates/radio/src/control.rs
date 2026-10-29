@@ -117,9 +117,16 @@ pub struct Controller {
     message: Option<String>,
     /// Titel, die sich nicht laden ließen (werden übersprungen).
     failed: Vec<u32>,
+    /// Zuletzt geladener Titel und wie lange das Dekodieren dauerte (für das Log, #51).
+    last_load: Option<(PathBuf, std::time::Duration)>,
 }
 
 impl Controller {
+    /// Zuletzt geladener Titel und Dauer des Dekodierens.
+    pub fn last_load(&self) -> Option<&(PathBuf, std::time::Duration)> {
+        self.last_load.as_ref()
+    }
+
     /// Legt Controller und Mixer an. Der Mixer gehört danach in den Audio-Callback.
     pub fn new(show: RadioShow, rate: u32) -> (Controller, Mixer) {
         let (producer, consumer) = rtrb::RingBuffer::new(QUEUE);
@@ -139,6 +146,7 @@ impl Controller {
             recording: None,
             message: None,
             failed: Vec::new(),
+            last_load: None,
         };
         c.replace_show(show);
         (c, mixer)
@@ -352,7 +360,12 @@ impl Controller {
             return false;
         };
         let (uid, path) = (e.uid, e.path.clone());
-        match load_stereo(&path, self.rate) {
+        let t0 = std::time::Instant::now();
+        let loaded = load_stereo(&path, self.rate);
+        let took = t0.elapsed();
+        tracing::debug!(file = %path.display(), ms = took.as_millis() as u64, "track decoded");
+        self.last_load = Some((path.clone(), took));
+        match loaded {
             Ok(s) => {
                 let m = measure(&s, self.rate);
                 if let Some(e) = self.show.playlist.get_mut(index)

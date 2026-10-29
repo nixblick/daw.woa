@@ -166,6 +166,9 @@ enum Cmd {
         /// Mikro (Ducking) nach so vielen Sekunden öffnen.
         #[arg(long)]
         mic_at: Option<f64>,
+        /// Puffergröße der Ausgabe in Frames (0 = Treiber), Vorgabe wie in der App.
+        #[arg(long, default_value_t = woa_engine::device::RADIO_BUFFER_FRAMES)]
+        buffer: u32,
     },
     /// Schickt ein Test-Ereignis an den Telemetrie-Endpunkt (/api/logs/ingest).
     LogTest {
@@ -324,7 +327,8 @@ fn main() -> ExitCode {
             data,
             cart_at,
             mic_at,
-        } => audio::cmd_radio_play(&radio, seconds, &data, cart_at, mic_at),
+            buffer,
+        } => audio::cmd_radio_play(&radio, seconds, &data, cart_at, mic_at, buffer),
         Cmd::RadioRender { radio, out, rate } => cmd_radio_render(&radio, &out, rate),
         Cmd::LogTest { url, timeout } => cmd_log_test(&url, timeout),
         Cmd::FeedbackTest { url, text, timeout } => cmd_feedback_test(&url, &text, timeout),

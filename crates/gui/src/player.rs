@@ -7,14 +7,21 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 
+use std::time::Instant;
 use woa_engine::clip::{
     PEAK_BLOCK, clip_graph, load_wav_mono, peaks, project_end_seconds, render_clips, take_peak,
 };
-use woa_engine::device::{OutputConfig, output_sample_rate, start_output_with};
+
+use woa_engine::device::{
+    OutputConfig, OutputStream, output_device_name, output_sample_rate, pause_output,
+    resume_output, start_output_with,
+};
 use woa_engine::project::{ProjectGraph, TrackNodes};
 use woa_engine::transport::{TransportHandle, beats_to_samples, samples_to_beats};
 use woa_engine::{AudioProcessor, Engine};
 use woa_model::{Project, TrackId};
+
+use crate::xrun::XrunLog;
 
 /// Was einen neuen Graphen verlangt.
 type Structure = (u64, Vec<(TrackId, Vec<([u64; 5], Option<String>)>)>);
@@ -24,7 +31,13 @@ type Mixer = Vec<(TrackId, u64, u64, bool, bool)>;
 pub struct Player {
     engine: Engine,
     transport: TransportHandle,
-    _stream: cpal_stream::Stream,
+    stream: OutputStream,
+    /// Strom ruht (Radio-Modus: dort spielt der Sendemixer, ein zweiter Strom auf
+    /// demselben Gerät kostet nur Aussetzer, #51).
+    suspended: bool,
+    xruns: XrunLog,
+    buffer_frames: Option<u32>,
+    device: String,
     rate: u32,
     cache: HashMap<PathBuf, Arc<[f32]>>,
     nodes: HashMap<TrackId, TrackNodes>,
@@ -55,10 +68,6 @@ fn load_cached(
     }
 }
 
-mod cpal_stream {
-    pub type Stream = Box<dyn std::any::Any>;
-}
-
 impl Player {
     /// Öffnet den Standard-Ausgang.
     pub fn open() -> Result<Self, String> {
@@ -66,15 +75,20 @@ impl Player {
         let rate = output_sample_rate(&config).map_err(|e| e.to_string())?;
         let (engine, processor): (Engine, AudioProcessor) = Engine::new(256);
         let transport = engine.transport();
-        let stream = start_output_with(processor, transport.clone(), &config, |e| {
-            tracing::warn!(error = %e, "output stream error");
-        })
-        .map_err(|e| e.to_string())?;
-        tracing::info!(rate, "playback ready");
+        // Der Fehlerpfad kann im Audio-Thread laufen: Xruns nur zählen (macht
+        // `start_output_with` im Transport), geloggt wird je Minute in `sync`.
+        let stream = start_output_with(processor, transport.clone(), &config, |_| {})
+            .map_err(|e| e.to_string())?;
+        let device = output_device_name(&config);
+        tracing::info!(rate, buffer_frames = ?config.buffer_frames, %device, "playback ready");
         Ok(Self {
             engine,
             transport,
-            _stream: Box::new(stream),
+            stream,
+            suspended: false,
+            xruns: XrunLog::new(Instant::now()),
+            buffer_frames: config.buffer_frames,
+            device,
             rate,
             cache: HashMap::new(),
             nodes: HashMap::new(),
@@ -89,6 +103,22 @@ impl Player {
     /// Fehler (fehlende Datei) werden geloggt, der Clip bleibt dann stumm.
     pub fn sync(&mut self, project: &Project, resolve: &dyn Fn(&str) -> Option<PathBuf>) {
         self.engine.collect();
+        let total = self.engine.underruns();
+        if let Some(new) = self.xruns.due(total, Instant::now())
+            && new > 0
+        {
+            tracing::warn!(
+                output = "player",
+                underruns = new,
+                total,
+                buffer_frames = ?self.buffer_frames,
+                rate = self.rate,
+                device = %self.device,
+                suspended = self.suspended,
+                playing = self.is_playing(),
+                "output underruns (last minute)"
+            );
+        }
         let rate = self.rate as f32;
         let structure: Structure = (
             project.tempo_bpm.to_bits(),
@@ -145,6 +175,31 @@ impl Player {
                 Ok(()) => self.mixer = Some(mixer),
                 Err(e) => tracing::warn!(error = %e, "mixer update failed"),
             }
+        }
+    }
+
+    /// Läuft der Ausgabestrom (nicht ruhend)?
+    pub fn is_active(&self) -> bool {
+        !self.suspended
+    }
+
+    /// Lässt den Ausgabestrom ruhen (`true`) oder wieder laufen (`false`). Beim Ruhen
+    /// wird die Wiedergabe vorher angehalten.
+    pub fn set_suspended(&mut self, suspend: bool) {
+        if suspend == self.suspended {
+            return;
+        }
+        if suspend && self.is_playing() {
+            self.stop();
+        }
+        let r = if suspend {
+            pause_output(&self.stream)
+        } else {
+            resume_output(&self.stream)
+        };
+        match r {
+            Ok(()) => self.suspended = suspend,
+            Err(e) => tracing::warn!(error = %e, suspend, "player stream pause/resume failed"),
         }
     }
 
