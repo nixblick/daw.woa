@@ -159,7 +159,10 @@ impl RadioDesk {
 
     fn add_dialog(&self) {
         if let Some(files) = rfd::FileDialog::new()
-            .add_filter("Audio (WAV, FLAC, MP3)", &woa_engine::decode::EXTENSIONS)
+            .add_filter(
+                woa_engine::decode::FILTER_NAME,
+                &woa_engine::decode::dialog_extensions(),
+            )
             .pick_files()
             && let Some(s) = &self.station
         {
@@ -403,7 +406,7 @@ impl RadioDesk {
         if v.playlist.is_empty() {
             ui.label(
                 egui::RichText::new(
-                    "WAV-, FLAC- oder MP3-Dateien hierher ziehen oder „+ Titel …“.",
+                    "Audiodateien (MP3, FLAC, WAV, OGG, M4A, AIFF …) hierher ziehen oder „+ Titel …“.",
                 )
                 .color(theme::DIM),
             );
@@ -530,7 +533,10 @@ impl RadioDesk {
 
     fn assign_cart(&self, slot: usize) {
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Audio (WAV, FLAC, MP3)", &woa_engine::decode::EXTENSIONS)
+            .add_filter(
+                woa_engine::decode::FILTER_NAME,
+                &woa_engine::decode::dialog_extensions(),
+            )
             .pick_file()
         {
             self.with(move |c| {
