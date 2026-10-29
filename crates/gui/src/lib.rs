@@ -7,6 +7,7 @@ pub mod app;
 pub mod feedback;
 pub mod player;
 pub mod state;
+mod theme;
 
 pub use app::WoaApp;
 pub use feedback::GuiConfig;

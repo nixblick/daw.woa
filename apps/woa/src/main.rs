@@ -49,7 +49,14 @@ fn main() -> ExitCode {
     match eframe::run_native(
         "WOA",
         options,
-        Box::new(move |_cc| Ok(Box::new(WoaApp::new(config, recovery)))),
+        Box::new(move |_cc| {
+            let mut app = WoaApp::new(config, recovery);
+            // `woa <projektordner>` öffnet das Projekt gleich beim Start.
+            if let Some(dir) = std::env::args_os().nth(1) {
+                app.open_project(std::path::Path::new(&dir));
+            }
+            Ok(Box::new(app))
+        }),
     ) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
