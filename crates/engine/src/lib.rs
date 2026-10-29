@@ -18,6 +18,12 @@ use woa_dsp::{Node, ProcessBuffers};
 
 #[cfg(feature = "device")]
 pub mod device;
+pub mod project;
+pub mod transport;
+
+pub use project::{ProjectGraph, TrackNodes, build_project_graph, render_project, track_gains};
+pub use transport::{LoopRange, TransportHandle, beats_to_samples, samples_to_beats};
+use transport::{Shared, Transport};
 
 /// Kennung eines Nodes innerhalb eines [`GraphBuilder`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -64,6 +70,7 @@ pub struct GraphBuilder {
     nodes: Vec<Box<dyn Node>>,
     edges: Vec<(NodeId, NodeId)>,
     output: Option<NodeId>,
+    output_right: Option<NodeId>,
 }
 
 impl GraphBuilder {
@@ -76,6 +83,12 @@ impl GraphBuilder {
         NodeId(self.nodes.len() - 1)
     }
 
+    /// Wie [`GraphBuilder::add_node`], für bereits geboxte Nodes.
+    pub fn add_boxed(&mut self, node: Box<dyn Node>) -> NodeId {
+        self.nodes.push(node);
+        NodeId(self.nodes.len() - 1)
+    }
+
     /// Verbindet den Ausgang von `from` mit dem Eingang von `to` (Eingänge werden summiert).
     pub fn connect(&mut self, from: NodeId, to: NodeId) {
         self.edges.push((from, to));
@@ -84,6 +97,13 @@ impl GraphBuilder {
     /// Legt fest, welcher Node auf den Engine-Ausgang geht.
     pub fn set_output(&mut self, node: NodeId) {
         self.output = Some(node);
+    }
+
+    /// Stereo-Ausgang: `left` und `right` gehen auf die beiden Kanäle.
+    /// Ohne rechten Ausgang kopiert [`CompiledGraph::process_stereo`] links nach rechts.
+    pub fn set_stereo_output(&mut self, left: NodeId, right: NodeId) {
+        self.output = Some(left);
+        self.output_right = Some(right);
     }
 
     /// Kompiliert im Control-Thread: topologische Ordnung (Kahn), Puffer vorab.
@@ -103,6 +123,11 @@ impl GraphBuilder {
             }
         }
         let output = match self.output {
+            Some(id) if id.0 < n => Some(id.0),
+            Some(id) => return Err(EngineError::UnknownNode(id)),
+            None => None,
+        };
+        let output_right = match self.output_right {
             Some(id) if id.0 < n => Some(id.0),
             Some(id) => return Err(EngineError::UnknownNode(id)),
             None => None,
@@ -148,6 +173,7 @@ impl GraphBuilder {
         }
 
         let output = output.map(|i| position[i]);
+        let output_right = output_right.map(|i| position[i]);
         Ok(CompiledGraph {
             nodes,
             inputs,
@@ -155,6 +181,7 @@ impl GraphBuilder {
             in_bufs: vec![vec![0.0; max_block]; n],
             out_bufs: vec![vec![0.0; max_block]; n],
             output,
+            output_right,
             max_block,
             sample_rate,
         })
@@ -171,6 +198,7 @@ pub struct CompiledGraph {
     in_bufs: Vec<Vec<f32>>,
     out_bufs: Vec<Vec<f32>>,
     output: Option<usize>,
+    output_right: Option<usize>,
     max_block: usize,
     sample_rate: f32,
 }
@@ -199,8 +227,37 @@ impl CompiledGraph {
         }
     }
 
+    /// Rechnet Stereo in zwei gleich lange Puffer. Allokationsfrei.
+    pub fn process_stereo(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let len = left.len().min(right.len());
+        let mut done = 0;
+        while done < len {
+            let n = (len - done).min(self.max_block);
+            self.run_nodes(n);
+            let l = &mut left[done..done + n];
+            let r = &mut right[done..done + n];
+            match self.output {
+                Some(pos) => l.copy_from_slice(&self.out_bufs[pos][..n]),
+                None => l.fill(0.0),
+            }
+            match self.output_right {
+                Some(pos) => r.copy_from_slice(&self.out_bufs[pos][..n]),
+                None => r.copy_from_slice(l),
+            }
+            done += n;
+        }
+    }
+
     fn process_block(&mut self, out: &mut [f32]) {
         let len = out.len();
+        self.run_nodes(len);
+        match self.output {
+            Some(pos) => out.copy_from_slice(&self.out_bufs[pos][..len]),
+            None => out.fill(0.0),
+        }
+    }
+
+    fn run_nodes(&mut self, len: usize) {
         for pos in 0..self.nodes.len() {
             let in_buf = &mut self.in_bufs[pos][..len];
             in_buf.fill(0.0);
@@ -213,10 +270,6 @@ impl CompiledGraph {
                 input: &self.in_bufs[pos][..len],
                 output: &mut self.out_bufs[pos][..len],
             });
-        }
-        match self.output {
-            Some(pos) => out.copy_from_slice(&self.out_bufs[pos][..len]),
-            None => out.fill(0.0),
         }
     }
 }
@@ -237,6 +290,14 @@ pub enum Command {
         value: f32,
     },
     SwapGraph(Owned<CompiledGraph>),
+    /// Transport starten.
+    Play,
+    /// Transport anhalten (Position bleibt).
+    Stop,
+    /// Position in Samples setzen.
+    Seek(u64),
+    /// Loop-Bereich setzen oder aufheben.
+    SetLoop(Option<LoopRange>),
 }
 
 /// Control-Thread-Seite der Engine.
@@ -245,28 +306,38 @@ pub struct Engine {
     commands: rtrb::Producer<Command>,
     info: Arc<ArcSwap<GraphInfo>>,
     generation: u64,
+    transport: TransportHandle,
 }
 
 /// Audio-Thread-Seite der Engine.
 pub struct AudioProcessor {
     commands: rtrb::Consumer<Command>,
     graph: Option<Owned<CompiledGraph>>,
+    transport: Transport,
 }
 
 impl Engine {
     /// Legt Engine und Audio-Prozessor an. `queue_capacity` = Kommandos im Flug.
     pub fn new(queue_capacity: usize) -> (Engine, AudioProcessor) {
         let (producer, consumer) = rtrb::RingBuffer::new(queue_capacity.max(1));
+        let shared = Arc::new(Shared::default());
+        shared
+            .tempo_bits
+            .store(120.0f64.to_bits(), std::sync::atomic::Ordering::Release);
         (
             Engine {
                 collector: Collector::new(),
                 commands: producer,
                 info: Arc::new(ArcSwap::from_pointee(GraphInfo::default())),
                 generation: 0,
+                transport: TransportHandle {
+                    shared: Arc::clone(&shared),
+                },
             },
             AudioProcessor {
                 commands: consumer,
                 graph: None,
+                transport: Transport::new(shared),
             },
         )
     }
@@ -300,6 +371,68 @@ impl Engine {
             .map_err(|_| EngineError::QueueFull)
     }
 
+    fn send(&mut self, cmd: Command) -> Result<(), EngineError> {
+        self.commands.push(cmd).map_err(|_| EngineError::QueueFull)
+    }
+
+    /// Startet den Transport.
+    pub fn play(&mut self) -> Result<(), EngineError> {
+        self.send(Command::Play)
+    }
+
+    /// Hält den Transport an; die Position bleibt stehen.
+    pub fn stop(&mut self) -> Result<(), EngineError> {
+        self.send(Command::Stop)
+    }
+
+    /// Springt an eine Position in Samples.
+    pub fn seek(&mut self, position: u64) -> Result<(), EngineError> {
+        self.send(Command::Seek(position))
+    }
+
+    /// Setzt den Loop-Bereich (Samples) oder hebt ihn mit `None` auf.
+    pub fn set_loop(&mut self, range: Option<LoopRange>) -> Result<(), EngineError> {
+        self.send(Command::SetLoop(range))
+    }
+
+    /// Setzt den Loop-Bereich in Beats beim aktuellen Tempo.
+    pub fn set_loop_beats(
+        &mut self,
+        start_beats: f64,
+        end_beats: f64,
+        sample_rate: f32,
+    ) -> Result<(), EngineError> {
+        let tempo = self.transport.tempo_bpm();
+        let range = LoopRange::new(
+            beats_to_samples(start_beats, tempo, sample_rate),
+            beats_to_samples(end_beats, tempo, sample_rate),
+        )
+        .ok_or(EngineError::InvalidConfig("loop range"))?;
+        self.set_loop(Some(range))
+    }
+
+    /// Übernimmt das Tempo (z. B. aus `woa_model::Project::tempo_bpm`).
+    pub fn set_tempo(&mut self, tempo_bpm: f64) -> Result<(), EngineError> {
+        if !(tempo_bpm.is_finite() && tempo_bpm > 0.0) {
+            return Err(EngineError::InvalidConfig("tempo"));
+        }
+        self.transport
+            .shared
+            .tempo_bits
+            .store(tempo_bpm.to_bits(), std::sync::atomic::Ordering::Release);
+        Ok(())
+    }
+
+    /// Lesezugriff auf Transport und Underrun-Zähler.
+    pub fn transport(&self) -> TransportHandle {
+        self.transport.clone()
+    }
+
+    /// Bisher gezählte Unterläufe.
+    pub fn underruns(&self) -> u64 {
+        self.transport.underruns()
+    }
+
     /// Gibt im Audio-Thread verworfene Graphen frei. Regelmäßig im Control-Thread aufrufen.
     pub fn collect(&mut self) {
         self.collector.collect();
@@ -314,6 +447,42 @@ impl Engine {
 impl AudioProcessor {
     /// Ein Audio-Callback: Kommandos abarbeiten, dann rechnen. Allokationsfrei.
     pub fn process(&mut self, out: &mut [f32]) {
+        self.drain_commands();
+        let mut done = 0;
+        while done < out.len() {
+            let n = self.transport.segment(out.len() - done);
+            let chunk = &mut out[done..done + n];
+            match self.graph.as_mut() {
+                Some(g) => g.process(chunk),
+                None => chunk.fill(0.0),
+            }
+            self.transport.advance(n);
+            done += n;
+        }
+    }
+
+    /// Wie [`AudioProcessor::process`], aber Stereo in zwei Puffern. Allokationsfrei.
+    pub fn process_stereo(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.drain_commands();
+        let len = left.len().min(right.len());
+        let mut done = 0;
+        while done < len {
+            let n = self.transport.segment(len - done);
+            let l = &mut left[done..done + n];
+            let r = &mut right[done..done + n];
+            match self.graph.as_mut() {
+                Some(g) => g.process_stereo(l, r),
+                None => {
+                    l.fill(0.0);
+                    r.fill(0.0);
+                }
+            }
+            self.transport.advance(n);
+            done += n;
+        }
+    }
+
+    fn drain_commands(&mut self) {
         while let Ok(cmd) = self.commands.pop() {
             match cmd {
                 Command::SetParam { node, param, value } => {
@@ -323,11 +492,11 @@ impl AudioProcessor {
                 }
                 // Der alte Graph fällt hier; basedrop reiht ihn nur beim Collector ein.
                 Command::SwapGraph(new) => self.graph = Some(new),
+                Command::Play => self.transport.play(),
+                Command::Stop => self.transport.stop(),
+                Command::Seek(pos) => self.transport.seek(pos),
+                Command::SetLoop(range) => self.transport.set_loop(range),
             }
-        }
-        match self.graph.as_mut() {
-            Some(g) => g.process(out),
-            None => out.fill(0.0),
         }
     }
 }
@@ -355,6 +524,41 @@ pub fn write_wav(path: &Path, samples: &[f32], sample_rate: u32) -> Result<(), E
     }
     writer.finalize()?;
     Ok(())
+}
+
+/// Schreibt Stereo (links/rechts getrennt) als 32-bit-Float-WAV.
+pub fn write_wav_stereo(
+    path: &Path,
+    left: &[f32],
+    right: &[f32],
+    sample_rate: u32,
+) -> Result<(), EngineError> {
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut writer = hound::WavWriter::create(path, spec)?;
+    for (&l, &r) in left.iter().zip(right) {
+        writer.write_sample(l)?;
+        writer.write_sample(r)?;
+    }
+    writer.finalize()?;
+    Ok(())
+}
+
+/// Liest ein Stereo-Float-WAV in zwei Kanäle.
+pub fn read_wav_stereo(path: &Path) -> Result<(Vec<f32>, Vec<f32>, u32), EngineError> {
+    let mut reader = hound::WavReader::open(path)?;
+    let spec = reader.spec();
+    if spec.channels != 2 {
+        return Err(EngineError::InvalidConfig("wav is not stereo"));
+    }
+    let samples = reader.samples::<f32>().collect::<Result<Vec<_>, _>>()?;
+    let left = samples.iter().step_by(2).copied().collect();
+    let right = samples.iter().skip(1).step_by(2).copied().collect();
+    Ok((left, right, spec.sample_rate))
 }
 
 /// Liest ein Mono-Float-WAV (für Golden-Tests).
