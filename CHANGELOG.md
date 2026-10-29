@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 — 2026-10-29
+
+Paket 10 aus M3 (#4): Dauertest der Sendung.
+
+- **`woa-headless broadcast-test`**: Sendeprozess (`woa-streamd`-Kern) und Oberfläche als eigener Kindprozess (`broadcast-ui`). Die Oberfläche lässt den Sendemixer samt Sendebus-Processing im Takt der Uhr laufen, ohne Audiogerät; es wird nichts hörbar abgespielt. Die Playlist läuft im Kreis. Nach der Hälfte der Zeit (`--kill-ui-at`) wird die Oberfläche hart beendet. Der Test misst, wann die Notfall-Playlist übernimmt (Grenze 2,5 s), startet die Oberfläche neu und misst die Rückgabe. Gezählt werden zu spät gerechnete Blöcke, verlorene Bytes auf der lokalen Verbindung, leere Sendepuffer bei verbundener Oberfläche und neue Verbindungen zum Server. Bestanden nur, wenn alles null ist. Eine Fortschrittszeile je Minute, am Ende ein Bericht (`--report bericht.json`). Exit 0 = bestanden, 5 = Fehler gezählt, 3 = Kennwort abgelehnt. Vorgabe 8 Stunden.
+- **Icecast als Server** (`protocol: "icecast"`, `mount: "/stream"` in `stream.json`): Quelle per HTTP `PUT` mit Basic-Auth (`source:<kennwort>`), das Kennwort steht nur im Anfragekopf. Titel und Hörerzahl gibt es bei Icecast noch nicht. Shoutcast bleibt Vorgabe.
+- **`live_underruns`** in `streamd-status.json`: wie oft der Sendeprozess bei verbundener Oberfläche keinen Sendemix im Puffer hatte.
+- **`tests/broadcast/icecast.sh start|stop`**: lokaler Icecast im Container (`libretime/icecast:2.4.4`, nur 127.0.0.1:8000) mit Wegwerf-Kennwörtern im Laufzeitordner.
+- Tests: `broadcast-test` gegen einen Mini-Icecast im Test (14 s, Absturz der Oberfläche nach 5 s, Notfall unter 2,5 s, Rückgabe, keine Unterläufe, kein Neuverbinden) und mit falschem Kennwort; Base64 nach RFC 4648.
+
 ## 0.4.0 — 2026-10-29
 
 Paket 9 aus M3 (#4): Sendebus-Processing.

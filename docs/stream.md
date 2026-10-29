@@ -50,6 +50,21 @@ DNAS; das gehört zum Server (bretteins.infra).
 
 **Kodierung:** MP3 CBR 128 kbit/s mit LAME, 44,1 kHz (oder 48 kHz).
 
+## Protokoll: Icecast 2
+
+Mit `"protocol": "icecast"` und `"mount": "/stream"` in `stream.json` spricht woa-streamd Icecast:
+`PUT <mount> HTTP/1.1` mit `Authorization: Basic` (`source:<kennwort>`), `Content-Type: audio/mpeg`,
+`Expect: 100-continue`; `100` oder `200` heißt angenommen, `401`/`403` Kennwort falsch. Titel und
+Hörerzahl werden bei Icecast noch nicht übertragen. Für den Dauertest gibt es einen lokalen Icecast:
+`tests/broadcast/icecast.sh start|stop` (siehe `docs/abnahme.md`, Paket 10).
+
+## Dauertest
+
+`woa-headless broadcast-test radio.json --hours 8 --pass-file … --emergency …` sendet ohne Audiogerät
+gegen einen Server, beendet die Oberfläche einmal hart und prüft die Übernahme durch die
+Notfall-Playlist. Zähler und Bericht: siehe CHANGELOG 0.5.0. `streamd-status.json` hat dafür
+`live_underruns`.
+
 ## Einrichten
 
 1. Kennwort-Datei anlegen, eine Zeile, Modus 600: `~/.secrets/daw.woa/shoutcast-source.pass`.

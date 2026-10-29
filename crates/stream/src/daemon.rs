@@ -249,6 +249,7 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
     let mut sent_title = String::new();
     let mut next_status = Instant::now();
     let mut live_now = false;
+    let mut live_underruns: u32 = 0;
 
     while !stop.load(Ordering::Relaxed) {
         let due = (started.elapsed().as_secs_f64() * f64::from(rate)) as u64;
@@ -271,6 +272,9 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
                 }
                 if !buffering && ib.live.len() < block * 2 {
                     buffering = true;
+                    if ib.ui_connected {
+                        live_underruns = live_underruns.saturating_add(1);
+                    }
                 }
                 if buffering {
                     ll.fill(0.0);
@@ -323,7 +327,8 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
         if Instant::now() >= next_status {
             next_status = Instant::now() + STATUS_EVERY;
             let ui = inbox.lock().map(|i| i.ui_connected).unwrap_or(false);
-            let s = build_status(&cfg, &uplink, started, live_now, ui, &sent_title, "");
+            let mut s = build_status(&cfg, &uplink, started, live_now, ui, &sent_title, "");
+            s.live_underruns = live_underruns;
             if let Err(e) = status::write(&status_path, &s) {
                 tracing::warn!(error = %e, "status not written");
             }
@@ -334,7 +339,8 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
     if let Ok(bytes) = enc.flush() {
         uplink.send(bytes);
     }
-    let s = build_status(&cfg, &uplink, started, false, false, &sent_title, "beendet");
+    let mut s = build_status(&cfg, &uplink, started, false, false, &sent_title, "beendet");
+    s.live_underruns = live_underruns;
     drop(uplink);
     let _ = std::fs::remove_file(&link);
     if !info.socket.as_os_str().is_empty() {
@@ -386,6 +392,7 @@ fn build_status(
             .map(|t| t.saturating_duration_since(Instant::now()).as_secs()),
         bytes_sent: u.bytes_sent,
         bytes_dropped: u.bytes_dropped,
+        live_underruns: 0,
     }
 }
 
