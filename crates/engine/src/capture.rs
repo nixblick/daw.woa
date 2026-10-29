@@ -414,8 +414,9 @@ pub fn start_capture(
                 }
                 let mut peak = 0.0f32;
                 let mut n = 0u64;
-                for b in buf.chunks_exact(4) {
-                    let s = f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+                let (samples, _) = buf.as_chunks::<4>();
+                for b in samples {
+                    let s = f32::from_le_bytes(*b);
                     peak = peak.max(s.abs());
                     wav.write_sample(s).map_err(|e| e.to_string())?;
                     n += 1;
