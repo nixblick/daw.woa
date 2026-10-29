@@ -8,10 +8,15 @@ use woa_engine::record::{InputConfig, Recorder, next_take_path, start_recording}
 use woa_model::{ClipId, MAX_GAIN_DB, MIN_GAIN_DB, TrackId};
 
 use crate::player::Player;
+use crate::theme;
 
 /// Pixel je Beat in der Zeitleiste.
 /// Start-Zoom der Zeitleiste in Pixel je Beat.
-const PX_PER_BEAT: f32 = 12.0;
+const PX_PER_BEAT: f32 = 24.0;
+/// Breite der Spurköpfe.
+const HEADER_W: f32 = 250.0;
+/// Höhe einer Spur.
+const ROW_H: f32 = 64.0;
 const ZOOM_RANGE: std::ops::RangeInclusive<f32> = 2.0..=160.0;
 
 use crate::feedback::{FeedbackDialog, GuiConfig, Phase, encode_png};
@@ -59,6 +64,10 @@ pub struct WoaApp {
     track_levels: std::collections::HashMap<TrackId, f32>,
     /// Smoothed input level for the meter, 0..1.
     level: f32,
+    /// Thema schon gesetzt.
+    themed: bool,
+    /// Fotomodus (`WOA_SCREENSHOT=datei.png`): Zielpfad und gezählte Bilder.
+    photo: Option<(PathBuf, u32)>,
 }
 
 impl WoaApp {
@@ -81,6 +90,8 @@ impl WoaApp {
             selected_clip: None,
             clip_drag: None,
             fade_edit: None,
+            themed: false,
+            photo: std::env::var_os("WOA_SCREENSHOT").map(|p| (PathBuf::from(p), 0)),
             selected_clips: Vec::new(),
             export_lufs: Some(-16.0),
             latency_auto: true,
@@ -193,76 +204,169 @@ impl WoaApp {
         }
     }
 
-    fn record_bar(&mut self, ui: &mut egui::Ui) {
+    /// Transportleiste: Wiedergabe, große Zeitanzeige, Aufnahme mit Pegel, Latenz;
+    /// rechts Zoom und Export-Lautheit.
+    fn transport_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let playing = self.player.as_ref().is_some_and(Player::is_playing);
-            if ui.button("⏮").on_hover_text("Zum Anfang (Pos1)").clicked() {
+            let big = |t: &str| egui::RichText::new(t).size(18.0);
+            if ui
+                .add(egui::Button::new(big("⏮")).min_size(egui::vec2(40.0, 34.0)))
+                .on_hover_text("Zum Anfang (Pos1)")
+                .clicked()
+            {
                 self.rewind();
             }
-            let label = if playing {
-                "⏸ Pause"
+            let play = egui::Button::new(big(if playing { "⏸" } else { "▶" }).color(if playing {
+                theme::BG
             } else {
-                "▶ Abspielen"
-            };
+                ui.visuals().text_color()
+            }))
+            .min_size(egui::vec2(52.0, 34.0))
+            .fill(if playing {
+                theme::ACCENT
+            } else {
+                theme::SURFACE
+            });
             if ui
-                .add_enabled(self.player.is_some(), egui::Button::new(label))
-                .on_hover_text("Leertaste")
+                .add_enabled(self.player.is_some(), play)
+                .on_hover_text("Abspielen / Pause (Leertaste)")
                 .clicked()
             {
                 self.toggle_play();
             }
+            // Zeitanzeige: Minuten:Sekunden groß, Takt.Schlag klein.
             let secs = self.player.as_ref().map_or(0.0, Player::position_seconds);
-            ui.monospace(format!("{}:{:04.1}", (secs / 60.0) as u64, secs % 60.0));
-            ui.separator();
-            let (label, fill) = match &self.recorder {
+            let tempo = self.state.project().tempo_bpm;
+            let beats = self
+                .player
+                .as_ref()
+                .map_or(0.0, |p| p.position_beats(tempo));
+            egui::Frame::new()
+                .fill(theme::BG)
+                .corner_radius(6)
+                .inner_margin(egui::Margin::symmetric(12, 2))
+                .show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{:02}:{:04.1}",
+                                (secs / 60.0) as u64,
+                                secs % 60.0
+                            ))
+                            .monospace()
+                            .size(20.0)
+                            .color(theme::ACCENT),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Takt {}.{}  ·  {tempo:.0} BPM",
+                                (beats / 4.0) as u64 + 1,
+                                (beats % 4.0) as u64 + 1
+                            ))
+                            .small()
+                            .color(theme::DIM),
+                        );
+                    });
+                });
+            ui.add_space(12.0);
+            let recording = self.recorder.is_some();
+            let label = match &self.recorder {
                 Some(rec) => {
                     let t = rec.elapsed().as_secs();
-                    (
-                        format!("■ Stopp  {}:{:02}", t / 60, t % 60),
-                        egui::Color32::from_rgb(200, 40, 40),
-                    )
+                    format!("■  {}:{:02}", t / 60, t % 60)
                 }
-                None => (
-                    "● Aufnahme".to_string(),
-                    ui.visuals().widgets.inactive.bg_fill,
-                ),
+                None => "     Aufnahme".to_string(),
             };
-            let button = egui::Button::new(egui::RichText::new(label).strong()).fill(fill);
-            if ui
-                .add(button)
-                .on_hover_text("Nimmt den Standard-Eingang (Mikrofon) als WAV auf (Strg+R)")
-                .clicked()
-            {
+            let rec_btn = egui::Button::new(egui::RichText::new(label).strong().size(15.0).color(
+                if recording {
+                    egui::Color32::WHITE
+                } else {
+                    theme::ON_AIR
+                },
+            ))
+            .min_size(egui::vec2(120.0, 34.0))
+            .fill(if recording {
+                theme::ON_AIR
+            } else {
+                theme::SURFACE
+            });
+            let rec_resp = ui
+                .add(rec_btn)
+                .on_hover_text("Nimmt den Standard-Eingang (Mikrofon) als WAV auf (Strg+R)");
+            if !recording {
+                // Die Schrift hat kein ●, also selbst zeichnen.
+                let c = rec_resp.rect.left_center() + egui::vec2(22.0, 0.0);
+                ui.painter().circle_filled(c, 6.0, theme::ON_AIR);
+            }
+            if rec_resp.clicked() {
                 self.toggle_record();
             }
-            let out_ms = woa_engine::device::output_latency().as_secs_f64() * 1000.0;
-            ui.checkbox(&mut self.latency_auto, "Latenz ausgleichen")
-                .on_hover_text(format!(
-                    "Verschiebt jede Aufnahme um die vom Treiber gemeldete Latenz nach vorn \
-                     (Ausgang zuletzt {out_ms:.1} ms, Eingang wird bei der Aufnahme gemessen)"
-                ));
-            ui.add(
-                egui::DragValue::new(&mut self.latency_extra_ms)
-                    .range(-500.0..=500.0)
-                    .speed(0.5)
-                    .prefix("+")
-                    .suffix(" ms"),
-            )
-            .on_hover_text("Zusätzlicher Ausgleich von Hand, falls Aufnahmen noch zu spät liegen");
             if let Some(rec) = &self.recorder {
                 let fresh = rec.take_level();
                 self.level = fresh.max(self.level * 0.85);
-                let color = if self.level > 0.95 {
-                    egui::Color32::RED
-                } else {
-                    egui::Color32::from_rgb(60, 180, 75)
-                };
-                ui.add(
-                    egui::ProgressBar::new(self.level.clamp(0.0, 1.0))
-                        .desired_width(240.0)
-                        .fill(color),
-                );
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(160.0, 10.0), egui::Sense::hover());
+                level_bar(ui.painter(), rect, self.level);
             }
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                let out_ms = woa_engine::device::output_latency().as_secs_f64() * 1000.0;
+                ui.checkbox(
+                    &mut self.latency_auto,
+                    egui::RichText::new("Latenz ausgleichen").small(),
+                )
+                .on_hover_text(format!(
+                    "Verschiebt jede Aufnahme um die vom Treiber gemeldete Latenz nach vorn \
+                         (Ausgang zuletzt {out_ms:.1} ms, Eingang wird bei der Aufnahme gemessen)"
+                ));
+                ui.add(
+                    egui::DragValue::new(&mut self.latency_extra_ms)
+                        .range(-500.0..=500.0)
+                        .speed(0.5)
+                        .prefix("Zusatz +")
+                        .suffix(" ms"),
+                )
+                .on_hover_text(
+                    "Zusätzlicher Ausgleich von Hand, falls Aufnahmen noch zu spät liegen",
+                );
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let name = |v: Option<f64>| match v {
+                    None => "unverändert".to_string(),
+                    Some(l) => format!("{l:.0} LUFS"),
+                };
+                egui::ComboBox::from_id_salt("export_lufs")
+                    .selected_text(name(self.export_lufs))
+                    .width(110.0)
+                    .show_ui(ui, |ui| {
+                        for (v, hint) in [
+                            (Some(-16.0), " · Web, Podcast"),
+                            (Some(-23.0), " · Rundfunk, EBU R128"),
+                            (None, ""),
+                        ] {
+                            ui.selectable_value(
+                                &mut self.export_lufs,
+                                v,
+                                format!("{}{hint}", name(v)),
+                            );
+                        }
+                    });
+                ui.label(egui::RichText::new("Export").small().color(theme::DIM));
+                ui.separator();
+                if ui
+                    .button("+")
+                    .on_hover_text("Hineinzoomen (Strg+Mausrad)")
+                    .clicked()
+                {
+                    self.zoom = (self.zoom * 1.5).clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
+                }
+                if ui.button("−").on_hover_text("Herauszoomen").clicked() {
+                    self.zoom = (self.zoom / 1.5).clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
+                }
+                ui.label(egui::RichText::new("Zoom").small().color(theme::DIM));
+            });
         });
     }
 
@@ -282,6 +386,11 @@ impl WoaApp {
         {
             self.state.save_as(&dir);
         }
+    }
+
+    /// Öffnet einen Projektordner (z. B. von der Kommandozeile).
+    pub fn open_project(&mut self, dir: &std::path::Path) {
+        self.state.open(dir);
     }
 
     fn open(&mut self) {
@@ -375,6 +484,36 @@ impl WoaApp {
         }
     }
 
+    /// Fotomodus für Design-Prüfungen: nach ein paar Bildern ein Bildschirmfoto des Fensters
+    /// als PNG speichern und beenden.
+    fn photo(&mut self, ctx: &egui::Context) {
+        let Some((path, frames)) = &mut self.photo else {
+            return;
+        };
+        *frames += 1;
+        if *frames == 20 {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+        }
+        let image = ctx.input(|i| {
+            i.raw.events.iter().find_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+        });
+        if let Some(image) = image {
+            let [w, h] = image.size;
+            let result = encode_png(w as u32, h as u32, image.as_raw())
+                .map_err(|e| e.to_string())
+                .and_then(|png| std::fs::write(&*path, png).map_err(|e| e.to_string()));
+            match result {
+                Ok(()) => tracing::info!(path = %path.display(), "photo saved"),
+                Err(e) => tracing::error!(error = %e, "photo failed"),
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        ctx.request_repaint();
+    }
+
     fn menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("Datei", |ui| {
@@ -417,46 +556,12 @@ impl WoaApp {
     }
 
     fn tracks(&mut self, ui: &mut egui::Ui) {
-        self.record_bar(ui);
-        ui.separator();
-        ui.horizontal(|ui| {
-            if ui.button("+ Spur").clicked() {
-                self.state.add_track();
-            }
-            ui.separator();
-            ui.label("Zoom");
-            if ui.button("−").clicked() {
-                self.zoom = (self.zoom / 1.5).clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
-            }
-            if ui.button("+").clicked() {
-                self.zoom = (self.zoom * 1.5).clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
-            }
-            ui.separator();
-            let name = |v: Option<f64>| match v {
-                None => "Export-Lautheit: unverändert".to_string(),
-                Some(l) => format!("Export-Lautheit: {l:.0} LUFS"),
-            };
-            egui::ComboBox::from_id_salt("export_lufs")
-                .selected_text(name(self.export_lufs))
-                .show_ui(ui, |ui| {
-                    for (v, hint) in [
-                        (Some(-16.0), " (Web, Podcast)"),
-                        (Some(-23.0), " (Rundfunk, EBU R128)"),
-                        (None, ""),
-                    ] {
-                        ui.selectable_value(&mut self.export_lufs, v, format!("{}{hint}", name(v)));
-                    }
-                });
-            ui.separator();
-            self.clip_bar(ui);
-        });
         // Strg+Mausrad zoomt die Zeitleiste.
         let z = ui.ctx().input(|i| i.zoom_delta());
         if z != 1.0 {
             self.zoom = (self.zoom * z).clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
         }
         self.prev_track_rects = std::mem::take(&mut self.track_rects);
-        ui.separator();
         let tracks: Vec<_> = self
             .state
             .project()
@@ -464,42 +569,209 @@ impl WoaApp {
             .iter()
             .map(|t| (t.id, t.name.clone(), t.gain_db, t.mute))
             .collect();
-        egui::ScrollArea::both().show(ui, |ui| {
-            for (id, name, gain, mute) in tracks {
+        egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 4.0;
+            ui.horizontal(|ui| {
+                ui.add_space(HEADER_W + ui.spacing().item_spacing.x);
+                self.ruler(ui);
+            });
+            for (i, (id, name, gain, mute)) in tracks.into_iter().enumerate() {
                 ui.horizontal(|ui| {
-                    self.track_meter(ui, id, gain, mute);
-                    let sel = self.selected_track == Some(id);
-                    if ui
-                        .radio(sel, "")
+                    self.track_header(ui, i, id, &name, gain, mute);
+                    self.timeline(ui, id);
+                });
+            }
+            ui.horizontal(|ui| {
+                if ui
+                    .add_sized([HEADER_W, 30.0], egui::Button::new("+  Spur hinzufügen"))
+                    .clicked()
+                {
+                    self.state.add_track();
+                }
+            });
+            if self.state.project().tracks.is_empty() {
+                ui.add_space(24.0);
+                ui.label(
+                    egui::RichText::new(
+                        "Noch keine Spur. Strg+R nimmt sofort auf und legt eine an.",
+                    )
+                    .color(theme::DIM),
+                );
+            }
+        });
+    }
+
+    /// Lineal über der Zeitleiste: Taktnummern, Klick setzt den Kopf.
+    fn ruler(&mut self, ui: &mut egui::Ui) {
+        let px = self.zoom;
+        let end = self.timeline_end();
+        let (rect, resp) = ui.allocate_exact_size(
+            egui::vec2((end as f32 + 16.0) * px, 20.0),
+            egui::Sense::click_and_drag(),
+        );
+        let painter = ui.painter_at(rect);
+        let every = if px < 4.0 {
+            16
+        } else if px < 8.0 {
+            8
+        } else {
+            4
+        };
+        for beat in (0..=(end as usize + 16)).step_by(every) {
+            let x = rect.left() + beat as f32 * px;
+            painter.vline(
+                x,
+                rect.bottom() - 6.0..=rect.bottom(),
+                egui::Stroke::new(1.0, theme::DIM),
+            );
+            painter.text(
+                egui::pos2(x + 3.0, rect.top() + 2.0),
+                egui::Align2::LEFT_TOP,
+                format!("{}", beat / 4 + 1),
+                egui::FontId::proportional(11.0),
+                theme::DIM,
+            );
+        }
+        let tempo = self.state.project().tempo_bpm;
+        if let Some(p) = &self.player {
+            let x = rect.left() + p.position_beats(tempo) as f32 * px;
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    egui::pos2(x - 6.0, rect.top() + 6.0),
+                    egui::pos2(x + 6.0, rect.top() + 6.0),
+                    egui::pos2(x, rect.bottom()),
+                ],
+                theme::ACCENT,
+                egui::Stroke::NONE,
+            ));
+        }
+        if (resp.clicked() || resp.dragged())
+            && let (Some(pos), Some(p)) = (resp.interact_pointer_pos(), self.player.as_mut())
+        {
+            p.seek_beats(f64::from(((pos.x - rect.left()) / px).max(0.0)), tempo);
+        }
+    }
+
+    /// Längste Spur in Beats, mindestens 64.
+    fn timeline_end(&self) -> f64 {
+        self.state
+            .project()
+            .tracks
+            .iter()
+            .flat_map(|t| t.clips.iter().map(|c| c.end_beats()))
+            .fold(64.0f64, f64::max)
+    }
+
+    /// Spurkopf: Farbstreifen, Aufnahmeziel, Name, Mute, Pegel, Gain.
+    fn track_header(
+        &mut self,
+        ui: &mut egui::Ui,
+        index: usize,
+        id: TrackId,
+        name: &str,
+        gain: f64,
+        mute: bool,
+    ) {
+        let color = theme::track_color(index);
+        let armed = self.selected_track == Some(id);
+        let frame = egui::Frame::new()
+            .fill(if armed {
+                theme::mix(theme::SURFACE, color, 0.12)
+            } else {
+                theme::SURFACE
+            })
+            .corner_radius(6)
+            .inner_margin(egui::Margin {
+                left: 12,
+                right: 6,
+                top: 4,
+                bottom: 4,
+            });
+        // Fest reserviertes Rechteck, damit Lineal und Zeitleisten bündig bleiben.
+        let (slot, _) = ui.allocate_exact_size(egui::vec2(HEADER_W, ROW_H), egui::Sense::hover());
+        let mut child = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(slot)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        let resp = {
+            let ui = &mut child;
+            frame.show(ui, |ui| {
+                ui.set_width(HEADER_W - 18.0);
+                ui.set_max_width(HEADER_W - 18.0);
+                ui.set_height(ROW_H - 8.0);
+                ui.spacing_mut().item_spacing = egui::vec2(6.0, 4.0);
+                ui.horizontal(|ui| {
+                    let (dot, arm) =
+                        ui.allocate_exact_size(egui::vec2(18.0, 22.0), egui::Sense::click());
+                    ui.painter().circle(
+                        dot.center(),
+                        6.0,
+                        if armed { theme::ON_AIR } else { theme::BG },
+                        egui::Stroke::new(1.5, if armed { theme::ON_AIR } else { theme::DIM }),
+                    );
+                    if arm
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text("Ziel für die Aufnahme")
                         .clicked()
                     {
                         self.selected_track = Some(id);
                     }
-                    self.track_name(ui, id, &name);
+                    self.track_name(ui, id, name);
+                    {
+                        let m =
+                            egui::Button::new(egui::RichText::new("M").strong().color(if mute {
+                                theme::BG
+                            } else {
+                                theme::DIM
+                            }))
+                            .fill(if mute { theme::ACCENT } else { theme::PANEL })
+                            .min_size(egui::vec2(26.0, 22.0));
+                        if ui.add(m).on_hover_text("Stumm").clicked() {
+                            self.state.toggle_mute(id);
+                        }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    self.track_meter(ui, id, gain, mute);
                     let mut g = match self.gain_drag {
                         Some((d, v)) if d == id => v,
                         _ => gain,
                     };
-                    let r = ui.add(
-                        egui::Slider::new(&mut g, MIN_GAIN_DB..=MAX_GAIN_DB)
-                            .suffix(" dB")
-                            .text("Gain"),
-                    );
-                    if r.changed() {
-                        self.gain_drag = Some((id, g));
-                    }
-                    if r.drag_stopped() || (r.changed() && !r.dragged()) {
+                    let r = ui
+                        .add(
+                            egui::Slider::new(&mut g, MIN_GAIN_DB..=MAX_GAIN_DB)
+                                .suffix(" dB")
+                                .fixed_decimals(1),
+                        )
+                        .on_hover_text("Lautstärke der Spur (Doppelklick: 0 dB)");
+                    if r.double_clicked() {
+                        g = 0.0;
                         self.gain_drag = None;
                         self.state.set_gain(id, g);
+                    } else {
+                        if r.changed() {
+                            self.gain_drag = Some((id, g));
+                        }
+                        if r.drag_stopped() || (r.changed() && !r.dragged()) {
+                            self.gain_drag = None;
+                            self.state.set_gain(id, g);
+                        }
                     }
-                    if ui.selectable_label(mute, "M").clicked() {
-                        self.state.toggle_mute(id);
-                    }
-                    self.timeline(ui, id);
                 });
-            }
-        });
+            })
+        };
+        let r = resp.response.rect;
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(r.min, egui::vec2(4.0, r.height())),
+            egui::CornerRadius {
+                nw: 6,
+                sw: 6,
+                ne: 0,
+                se: 0,
+            },
+            color,
+        );
     }
 
     /// Pegelanzeige am Spuranfang: Spitzenpegel nach Gain und Mute, dB-Skala -60..0,
@@ -517,9 +789,15 @@ impl WoaApp {
         let shown = self.track_levels.entry(track).or_insert(0.0);
         *shown = fresh.max(*shown * 0.85);
         let level = *shown;
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(70.0, 16.0), egui::Sense::hover());
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 2.0, ui.visuals().extreme_bg_color);
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(60.0, 8.0), egui::Sense::hover());
+        level_bar(ui.painter(), rect, level);
+    }
+}
+
+/// Waagerechte Pegelanzeige, dB-Skala -60..0: grün, ab -12 dB gelb, ab -3 dB rot.
+fn level_bar(painter: &egui::Painter, rect: egui::Rect, level: f32) {
+    {
+        painter.rect_filled(rect, 3.0, theme::BG);
         let db = 20.0 * level.max(1e-6).log10();
         let frac = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
         let color = if db > -3.0 {
@@ -536,14 +814,12 @@ impl WoaApp {
         }
         for mark in [-12.0f32, -3.0] {
             let x = rect.left() + rect.width() * (mark + 60.0) / 60.0;
-            painter.vline(
-                x,
-                rect.y_range(),
-                egui::Stroke::new(1.0, egui::Color32::DARK_GRAY),
-            );
+            painter.vline(x, rect.y_range(), egui::Stroke::new(1.0, theme::PANEL));
         }
     }
+}
 
+impl WoaApp {
     /// One track's strip: clips with waveform and fades, the playhead. Click: seek,
     /// click a clip: select, drag a clip: move it (snaps to 1/4 beat).
     fn timeline(&mut self, ui: &mut egui::Ui, track: TrackId) {
@@ -553,20 +829,39 @@ impl WoaApp {
             return;
         };
         let clips = t.clips.clone();
-        let end = clips.iter().map(|c| c.end_beats()).fold(64.0f64, f64::max);
+        let index = self
+            .state
+            .project()
+            .tracks
+            .iter()
+            .position(|t| t.id == track)
+            .unwrap_or(0);
+        let color = theme::track_color(index);
+        let end = self.timeline_end();
         let width = (end as f32 + 16.0) * px;
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 40.0), egui::Sense::click());
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, ROW_H), egui::Sense::click());
         self.track_rects.push((track, rect));
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 2.0, ui.visuals().extreme_bg_color);
-        let step = if px < 4.0 { 16 } else { 4 };
-        for bar in (0..=(end as usize + 16)).step_by(step) {
-            let x = rect.left() + bar as f32 * px;
-            painter.vline(
-                x,
-                rect.y_range(),
-                ui.visuals().widgets.noninteractive.bg_stroke,
-            );
+        painter.rect_filled(rect, 6.0, theme::BG);
+        // Raster: jeder zweite Takt leicht aufgehellt, Schläge als feine Linien.
+        let bars = end as usize / 4 + 4;
+        for bar in 0..bars {
+            let x = rect.left() + (bar * 4) as f32 * px;
+            if bar % 2 == 1 {
+                let r = egui::Rect::from_x_y_ranges(x..=x + 4.0 * px, rect.y_range());
+                painter.rect_filled(r, 0.0, theme::mix(theme::BG, theme::PANEL, 0.45));
+            }
+            if px >= 10.0 {
+                for b in 1..4 {
+                    let xb = x + b as f32 * px;
+                    painter.vline(
+                        xb,
+                        rect.y_range(),
+                        egui::Stroke::new(1.0, theme::mix(theme::BG, theme::GRID, 0.4)),
+                    );
+                }
+            }
+            painter.vline(x, rect.y_range(), egui::Stroke::new(1.0, theme::GRID));
         }
         let ppb = self.player.as_ref().map(|p| p.peaks_per_beat(tempo));
         for c in &clips {
@@ -595,18 +890,27 @@ impl WoaApp {
             let start = start.max(0.0);
             let x0 = rect.left() + start as f32 * px;
             let x1 = x0 + (len as f32 * px).max(2.0);
-            let r = egui::Rect::from_x_y_ranges(x0..=x1, rect.top() + 2.0..=rect.bottom() - 2.0);
+            let r = egui::Rect::from_x_y_ranges(x0..=x1, rect.top() + 3.0..=rect.bottom() - 3.0);
             let cresp = ui.interact(
                 r,
                 ui.id().with(("clip", c.id.0)),
                 egui::Sense::click_and_drag(),
             );
-            let fill = if c.audio.is_some() {
-                egui::Color32::from_rgb(50, 100, 160)
-            } else {
-                egui::Color32::GRAY
-            };
-            painter.rect_filled(r, 3.0, fill);
+            let base = if c.audio.is_some() { color } else { theme::DIM };
+            let selected = self.selected_clip == Some(c.id) || self.selected_clips.contains(&c.id);
+            painter.rect_filled(r, 5.0, theme::mix(base, theme::BG, 0.62));
+            // Kopfzeile des Clips in der Spurfarbe, darin der Name.
+            let head = egui::Rect::from_min_max(r.min, egui::pos2(r.right(), r.top() + 14.0));
+            painter.rect_filled(
+                head,
+                egui::CornerRadius {
+                    nw: 5,
+                    ne: 5,
+                    sw: 0,
+                    se: 0,
+                },
+                theme::mix(base, theme::BG, if selected { 0.0 } else { 0.25 }),
+            );
             // Waveform from the cached peaks.
             let file = c
                 .audio
@@ -618,9 +922,9 @@ impl WoaApp {
             };
             let audio_beats = peaks.as_ref().zip(ppb).map(|(p, ppb)| p.len() as f64 / ppb);
             if let (Some(ppb), Some(peaks)) = (ppb, peaks) {
-                let mid = r.center().y;
-                let half = r.height() / 2.0 - 2.0;
-                let stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(170, 210, 250));
+                let mid = (r.top() + 14.0 + r.bottom()) / 2.0;
+                let half = (r.bottom() - r.top() - 14.0) / 2.0 - 2.0;
+                let stroke = egui::Stroke::new(1.0, theme::mix(base, egui::Color32::WHITE, 0.35));
                 let mut x = r.left();
                 while x < r.right() {
                     let b0 = offset + f64::from((x - r.left()) / px);
@@ -640,7 +944,7 @@ impl WoaApp {
                 }
             }
             // Fades as dark triangles.
-            let shade = egui::Color32::from_black_alpha(110);
+            let shade = egui::Color32::from_black_alpha(130);
             if c.fade_in_beats > 0.0 {
                 let fx = r.left() + c.fade_in_beats as f32 * px;
                 painter.add(egui::Shape::convex_polygon(
@@ -657,20 +961,20 @@ impl WoaApp {
                     egui::Stroke::NONE,
                 ));
             }
-            if self.selected_clip == Some(c.id) || self.selected_clips.contains(&c.id) {
+            if selected {
                 painter.rect_stroke(
                     r,
-                    3.0,
-                    egui::Stroke::new(2.0, egui::Color32::YELLOW),
+                    5.0,
+                    egui::Stroke::new(2.0, egui::Color32::WHITE),
                     egui::StrokeKind::Inside,
                 );
             }
-            painter.text(
-                r.left_top() + egui::vec2(4.0, 2.0),
-                egui::Align2::LEFT_TOP,
+            painter.with_clip_rect(head.intersect(rect)).text(
+                head.left_center() + egui::vec2(6.0, 0.0),
+                egui::Align2::LEFT_CENTER,
                 &c.name,
-                egui::FontId::proportional(10.0),
-                egui::Color32::WHITE,
+                egui::FontId::proportional(11.0),
+                theme::BG,
             );
             if cresp.clicked() || cresp.drag_started() {
                 let m = ui.input(|i| i.modifiers);
@@ -765,11 +1069,7 @@ impl WoaApp {
         }
         if let Some(p) = &self.player {
             let x = rect.left() + p.position_beats(tempo) as f32 * px;
-            painter.vline(
-                x,
-                rect.y_range(),
-                egui::Stroke::new(2.0, egui::Color32::RED),
-            );
+            painter.vline(x, rect.y_range(), egui::Stroke::new(2.0, theme::ACCENT));
         }
         if resp.clicked() {
             self.selected_track = Some(track);
@@ -924,7 +1224,7 @@ impl WoaApp {
     fn track_name(&mut self, ui: &mut egui::Ui, id: TrackId, name: &str) {
         match &mut self.rename {
             Some((rid, buf)) if *rid == id => {
-                let r = ui.add(egui::TextEdit::singleline(buf).desired_width(140.0));
+                let r = ui.add(egui::TextEdit::singleline(buf).desired_width(130.0));
                 r.request_focus();
                 if r.lost_focus() {
                     let new = buf.clone();
@@ -936,7 +1236,12 @@ impl WoaApp {
             }
             _ => {
                 let r = ui
-                    .add_sized([140.0, 20.0], egui::Button::new(name))
+                    .add_sized(
+                        [130.0, 22.0],
+                        egui::Button::new(egui::RichText::new(name).strong())
+                            .frame(false)
+                            .truncate(),
+                    )
                     .on_hover_text("Doppelklick zum Umbenennen");
                 if r.double_clicked() {
                     self.rename = Some((id, name.to_string()));
@@ -1015,19 +1320,61 @@ impl eframe::App for WoaApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.photo(&ctx);
+        if !self.themed {
+            theme::apply(&ctx);
+            self.themed = true;
+        }
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui, &ctx));
-        egui::Panel::bottom("status").show(ui, |ui| match &self.state.status {
-            Status::Idle => {
-                ui.label("");
-            }
-            Status::Info(m) => {
-                ui.label(m);
-            }
-            Status::Error(m) => {
-                ui.colored_label(ui.visuals().error_fg_color, m);
-            }
-        });
-        egui::CentralPanel::default().show(ui, |ui| self.tracks(ui));
+        egui::Panel::top("transport")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::PANEL)
+                    .inner_margin(egui::Margin::symmetric(12, 8)),
+            )
+            .show(ui, |ui| self.transport_bar(ui));
+        egui::Panel::top("clipbar")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::mix(theme::PANEL, theme::BG, 0.5))
+                    .inner_margin(egui::Margin::symmetric(12, 6)),
+            )
+            .show(ui, |ui| ui.horizontal(|ui| self.clip_bar(ui)));
+        egui::Panel::bottom("status")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::BG)
+                    .inner_margin(egui::Margin::symmetric(12, 4)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    match &self.state.status {
+                        Status::Idle => {
+                            ui.label("");
+                        }
+                        Status::Info(m) => {
+                            ui.label(egui::RichText::new(m).small().color(theme::DIM));
+                        }
+                        Status::Error(m) => {
+                            ui.colored_label(ui.visuals().error_fg_color, m);
+                        }
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            egui::RichText::new(format!("WOA {}", env!("CARGO_PKG_VERSION")))
+                                .small()
+                                .color(theme::DIM),
+                        );
+                    });
+                });
+            });
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::mix(theme::PANEL, theme::BG, 0.5))
+                    .inner_margin(egui::Margin::symmetric(12, 10)),
+            )
+            .show(ui, |ui| self.tracks(ui));
         self.feedback_window(&ctx);
     }
 }
