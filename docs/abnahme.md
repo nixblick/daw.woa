@@ -4,6 +4,24 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 10: Dauertest (0.5.0, offen)
+
+Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo build --release -p woa-headless --features device`
+
+1. Lokaler Icecast: `tests/broadcast/icecast.sh start` (zieht beim ersten Mal das Image `libretime/icecast:2.4.4`). Es meldet „Icecast läuft“ und den Pfad der Kennwortdatei.
+2. Kurzprobe, 2 Minuten: `target/release/woa-headless broadcast-test radio.json --seconds 120 --pass-file $XDG_RUNTIME_DIR/woa-icecast/source.pass --emergency <notfall-ordner> --report /tmp/kurz.json`. Am Ende „bestanden“, „Notfall nach … ms“ unter 2500.
+3. Dauertest über Nacht: dasselbe mit `--hours 8 --report ~/woa-dauertest.json`. Morgens „bestanden“, alle Zähler 0.
+4. Während des Laufs optional `http://127.0.0.1:8000/` im Browser: Mount `/woa-test` ist da (Hören nicht nötig).
+5. `tests/broadcast/icecast.sh stop`.
+6. Echte Testsendung auf stream.wironair.de nimmt André selbst ab (Sendeprozess aus der Oberfläche wie bei Paket 8).
+
+Selbst geprüft von Claude (nur offline, nichts hörbar, kein Container gestartet, nichts gegen lfs001 oder wironair.de):
+
+- `apps/woa-headless/tests/broadcast.rs`: 14 s gegen einen Mini-Icecast im Test, Oberfläche nach 5 s hart beendet, Notfall übernimmt, Rückgabe an den Sendemix, keine Unterläufe, kein Neuverbinden, über 150 kB MP3 angekommen; falsches Kennwort gibt Exit 5 ohne Kennwort in der Ausgabe.
+- Nicht selbst geprüft: echter Icecast im Container (Image nicht gezogen), der 8-Stunden-Lauf, die Sendung auf wironair.de.
+
+Offene Frage an André: Ist `libretime/icecast:2.4.4` als Test-Image recht, oder lieber ein anderes (oder Icecast aus dem Paket)?
+
 ## Paket 9: Sendebus-Processing (0.4.0, offen)
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

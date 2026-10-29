@@ -197,6 +197,57 @@ enum Cmd {
         #[arg(long, default_value_t = 30)]
         seconds: u32,
     },
+    /// Dauertest der Sendung (Paket 10): Sendeprozess plus Oberfläche als eigener Prozess,
+    /// Mixer im Takt ohne Audiogerät (nichts wird hörbar), einmal Absturz der Oberfläche.
+    /// Exit 0 = bestanden, 5 = Fehler gezählt, 3 = Kennwort abgelehnt, 1 = sonst.
+    BroadcastTest {
+        /// radio.json mit der Playlist (läuft endlos im Kreis).
+        radio: PathBuf,
+        /// Dauer in Stunden (für die Abnahme 8).
+        #[arg(long, default_value_t = 8.0)]
+        hours: f64,
+        /// Dauer in Sekunden; ersetzt --hours.
+        #[arg(long)]
+        seconds: Option<f64>,
+        /// Oberfläche nach so vielen Sekunden hart beenden. Vorgabe: zur Hälfte; 0 = nie.
+        #[arg(long)]
+        kill_ui_at: Option<f64>,
+        /// shoutcast oder icecast.
+        #[arg(long, default_value = "icecast")]
+        protocol: String,
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        #[arg(long, default_value_t = 8000)]
+        port: u16,
+        /// Icecast-Mountpoint.
+        #[arg(long, default_value = "/woa-test")]
+        mount: String,
+        #[arg(long, default_value_t = 1)]
+        sid: u32,
+        /// Datei mit dem Quell-Kennwort.
+        #[arg(long)]
+        pass_file: PathBuf,
+        /// Notfall-Playlist (Datei oder Ordner, mehrfach möglich).
+        #[arg(long)]
+        emergency: Vec<PathBuf>,
+        /// Ordner für Link, Status und Logs. Vorgabe: neuer Temp-Ordner.
+        #[arg(long)]
+        data: Option<PathBuf>,
+        /// Bericht als JSON.
+        #[arg(long)]
+        report: Option<PathBuf>,
+    },
+    /// Kindprozess von broadcast-test: Sendemixer im Takt, Null-Ausgabe.
+    #[command(hide = true)]
+    BroadcastUi {
+        radio: PathBuf,
+        #[arg(long)]
+        link: PathBuf,
+        #[arg(long, default_value_t = 44_100)]
+        rate: u32,
+        #[arg(long)]
+        seconds: f64,
+    },
     /// Schickt eine Test-Meldung an den Feedback-Endpunkt (/api/feedback).
     FeedbackTest {
         #[arg(long, env = "WOA_FEEDBACK_URL")]
@@ -234,6 +285,7 @@ fn cmd_radio_render(radio: &std::path::Path, out: &std::path::Path, rate: u32) -
 }
 
 mod audio;
+mod broadcast;
 
 enum StreamFail {
     Auth(String),
@@ -284,6 +336,99 @@ fn cmd_stream_test(cfg: &woa_stream::StreamConfig, seconds: u32) -> Result<(), S
     Ok(())
 }
 
+struct BroadcastArgs {
+    radio: PathBuf,
+    seconds: f64,
+    kill_ui_at: Option<f64>,
+    protocol: String,
+    host: String,
+    port: u16,
+    mount: String,
+    sid: u32,
+    pass_file: PathBuf,
+    emergency: Vec<PathBuf>,
+    data: Option<PathBuf>,
+    report: Option<PathBuf>,
+}
+
+fn run_broadcast_test(a: BroadcastArgs) -> ExitCode {
+    let protocol = match a.protocol.to_ascii_lowercase().as_str() {
+        "icecast" => woa_stream::Protocol::Icecast,
+        "shoutcast" => woa_stream::Protocol::Shoutcast,
+        p => {
+            eprintln!("woa-headless: Protokoll {p:?} unbekannt (icecast oder shoutcast)");
+            return ExitCode::from(2);
+        }
+    };
+    if !(a.seconds.is_finite() && a.seconds >= 5.0) {
+        eprintln!("woa-headless: Dauer mindestens 5 s");
+        return ExitCode::from(2);
+    }
+    let kill = match a.kill_ui_at {
+        Some(t) if t <= 0.0 => None,
+        Some(t) => Some(t),
+        None => Some(a.seconds / 2.0),
+    };
+    let data = a.data.unwrap_or_else(|| unique_temp_dir("broadcast-test"));
+    let plan = broadcast::TestPlan {
+        radio: a.radio,
+        seconds: a.seconds,
+        kill_ui_at: kill,
+        cfg: woa_stream::StreamConfig {
+            protocol,
+            mount: a.mount,
+            host: a.host,
+            port: a.port,
+            stream_id: a.sid,
+            password_file: a.pass_file,
+            emergency: a.emergency,
+            name: "WOA Dauertest".into(),
+            ..woa_stream::StreamConfig::default()
+        },
+        data,
+        report: a.report,
+    };
+    println!(
+        "broadcast-test: {} s gegen {}, Oberfläche wird {} beendet, Daten in {}",
+        plan.seconds,
+        plan.cfg.label(),
+        kill.map_or("nicht".to_string(), |t| format!("nach {t:.0} s")),
+        plan.data.display()
+    );
+    match broadcast::cmd_broadcast_test(&plan) {
+        Ok(r) => {
+            println!(
+                "broadcast-test: {:.0} s · zu spät {} · verloren {} · Puffer leer {} · neu verbunden {} · Notfall nach {} · zurück nach {} · {} Byte MP3",
+                r.seconds_run,
+                r.late_blocks,
+                r.stream_dropped,
+                r.live_underruns,
+                r.reconnects,
+                r.failover_ms.map_or("–".into(), |m| format!("{m} ms")),
+                r.handback_ms.map_or("–".into(), |m| format!("{m} ms")),
+                r.bytes_sent
+            );
+            if r.passed {
+                println!("broadcast-test: bestanden");
+                ExitCode::SUCCESS
+            } else {
+                for p in &r.problems {
+                    eprintln!("broadcast-test: {p}");
+                }
+                ExitCode::from(5)
+            }
+        }
+        Err(e) => {
+            eprintln!("woa-headless: {e}");
+            if e.contains("Kennwort") && e.contains("ablehnt") {
+                ExitCode::from(3)
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.cmd {
@@ -330,6 +475,42 @@ fn main() -> ExitCode {
             buffer,
         } => audio::cmd_radio_play(&radio, seconds, &data, cart_at, mic_at, buffer),
         Cmd::RadioRender { radio, out, rate } => cmd_radio_render(&radio, &out, rate),
+        Cmd::BroadcastUi {
+            radio,
+            link,
+            rate,
+            seconds,
+        } => broadcast::cmd_broadcast_ui(&radio, &link, rate, seconds),
+        Cmd::BroadcastTest {
+            radio,
+            hours,
+            seconds,
+            kill_ui_at,
+            protocol,
+            host,
+            port,
+            mount,
+            sid,
+            pass_file,
+            emergency,
+            data,
+            report,
+        } => {
+            return run_broadcast_test(BroadcastArgs {
+                radio,
+                seconds: seconds.unwrap_or(hours * 3600.0),
+                kill_ui_at,
+                protocol,
+                host,
+                port,
+                mount,
+                sid,
+                pass_file,
+                emergency,
+                data,
+                report,
+            });
+        }
         Cmd::LogTest { url, timeout } => cmd_log_test(&url, timeout),
         Cmd::FeedbackTest { url, text, timeout } => cmd_feedback_test(&url, &text, timeout),
         Cmd::StreamTest {

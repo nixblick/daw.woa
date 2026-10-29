@@ -110,6 +110,9 @@ impl std::fmt::Debug for Source {
 impl Source {
     /// Meldet sich auf dem Quell-Port an und schickt die Kopfzeilen.
     pub fn connect(cfg: &StreamConfig, kw: &Kennwort) -> Result<Self, StreamError> {
+        if cfg.protocol == crate::config::Protocol::Icecast {
+            return Self::connect_icecast(cfg, kw);
+        }
         let mut s = open(&cfg.host, cfg.port)?;
         let io = |e: std::io::Error| StreamError::Io(e.to_string());
         let line = cfg.login_line(kw.expose());
@@ -134,6 +137,38 @@ impl Source {
         );
         s.write_all(headers.as_bytes()).map_err(io)?;
         Ok(Self { stream: s })
+    }
+
+    /// Icecast 2: `PUT <mount>` mit Basic-Auth (`source:<kennwort>`), dann rohes MP3.
+    /// Das Kennwort steht nur im Kopf der Anfrage, nie in einer URL oder im Log.
+    fn connect_icecast(cfg: &StreamConfig, kw: &Kennwort) -> Result<Self, StreamError> {
+        let mut s = open(&cfg.host, cfg.port)?;
+        let io = |e: std::io::Error| StreamError::Io(e.to_string());
+        let auth = base64(format!("source:{}", kw.expose()).as_bytes());
+        let req = format!(
+            "PUT {} HTTP/1.1\r\nHost: {}:{}\r\nAuthorization: Basic {auth}\r\n\
+             User-Agent: {USER_AGENT}\r\nContent-Type: audio/mpeg\r\nIce-Public: 0\r\n\
+             Ice-Name: {}\r\nIce-Bitrate: {}\r\nExpect: 100-continue\r\n\r\n",
+            cfg.mount,
+            cfg.host,
+            cfg.port,
+            one_line(&cfg.name),
+            cfg.bitrate_kbps
+        );
+        s.write_all(req.as_bytes()).map_err(io)?;
+        let head = read_head(&mut s).map_err(io)?;
+        let code: u16 = head
+            .lines()
+            .next()
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|c| c.parse().ok())
+            .unwrap_or(0);
+        match code {
+            100 | 200 => Ok(Self { stream: s }),
+            401 | 403 => Err(StreamError::AuthFailed),
+            0 => Err(StreamError::Refused("keine Antwort".into())),
+            c => Err(StreamError::Refused(format!("HTTP {c}"))),
+        }
     }
 
     /// Schickt MP3-Bytes.
@@ -191,6 +226,28 @@ fn http_get(cfg: &StreamConfig, path: &str) -> Result<(u16, String), StreamError
     Ok((code, body))
 }
 
+/// Base64 (Standard-Alphabet, mit `=`), für die Basic-Auth bei Icecast.
+pub fn base64(data: &[u8]) -> String {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b = [
+            chunk[0],
+            chunk.get(1).copied().unwrap_or(0),
+            chunk.get(2).copied().unwrap_or(0),
+        ];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(A[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
 /// Ist der Host Loopback (`localhost`, 127.0.0.0/8, `::1`)?
 pub fn is_loopback(host: &str) -> bool {
     let h = host.trim_start_matches('[').trim_end_matches(']');
@@ -202,7 +259,9 @@ pub fn is_loopback(host: &str) -> bool {
 /// Können Titel gesetzt werden? Nur mit Admin-Port und nur auf Loopback: `admin.cgi`
 /// trägt das Quell-Kennwort im Klartext in der URL, das darf nicht übers Netz.
 pub fn titles_possible(cfg: &StreamConfig) -> bool {
-    cfg.admin_port.is_some() && is_loopback(&cfg.host)
+    cfg.protocol == crate::config::Protocol::Shoutcast
+        && cfg.admin_port.is_some()
+        && is_loopback(&cfg.host)
 }
 
 /// Titel setzen (`admin.cgi?mode=updinfo`). Nur für Loopback-Hosts, siehe
@@ -250,5 +309,15 @@ mod tests {
     fn encodes_query_values() {
         assert_eq!(url_encode("Ä b&c=d"), "%C3%84%20b%26c%3Dd");
         assert_eq!(one_line("a\r\nb"), "ab");
+    }
+
+    #[test]
+    fn base64_matches_rfc4648() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foo"), "Zm9v");
+        assert_eq!(base64(b"foobar"), "Zm9vYmFy");
+        assert_eq!(base64(b"source:hackme"), "c291cmNlOmhhY2ttZQ==");
     }
 }

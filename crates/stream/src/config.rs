@@ -19,9 +19,24 @@ pub fn default_password_file() -> PathBuf {
 /// Eigener Shoutcast auf lfs001 (bretteins.infra#150). Hören: `https://stream.wironair.de/stream`.
 pub const DEFAULT_HOST: &str = "stream.wironair.de";
 
+/// Quellprotokoll des Servers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Protocol {
+    /// Shoutcast 1 (Legacy-Quelle), auch DNAS v2.
+    #[default]
+    Shoutcast,
+    /// Icecast 2 (HTTP `PUT` mit Basic-Auth, Benutzer `source`).
+    Icecast,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StreamConfig {
+    /// Shoutcast (Vorgabe) oder Icecast.
+    pub protocol: Protocol,
+    /// Icecast-Mountpoint, z. B. `/stream`. Bei Shoutcast ohne Bedeutung.
+    pub mount: String,
     /// Shoutcast-Server (Hostname oder IP). Leer = nicht eingerichtet.
     pub host: String,
     /// Quell-Port (Shoutcast-1-Protokoll, beim DNAS `portbase + 1`).
@@ -48,6 +63,8 @@ pub struct StreamConfig {
 impl Default for StreamConfig {
     fn default() -> Self {
         Self {
+            protocol: Protocol::Shoutcast,
+            mount: "/stream".to_string(),
             host: DEFAULT_HOST.to_string(),
             port: 8001,
             admin_port: None,
@@ -71,6 +88,19 @@ impl StreamConfig {
         if self.port == 0 {
             return Err(format!("Port {} ungültig", self.port));
         }
+        if self.protocol == Protocol::Icecast
+            && (!self.mount.starts_with('/')
+                || self.mount.len() > 200
+                || self
+                    .mount
+                    .chars()
+                    .any(|c| c.is_whitespace() || c.is_control() || c == '?' || c == '#'))
+        {
+            return Err(format!(
+                "Mountpoint {:?} ungültig (beginnt mit /, ohne Leerzeichen)",
+                self.mount
+            ));
+        }
         if self.stream_id == 0 {
             return Err("Stream-ID muss ab 1 zählen".into());
         }
@@ -86,7 +116,12 @@ impl StreamConfig {
 
     /// `host:port (sid n)` für Anzeige und Log, ohne Kennwort.
     pub fn label(&self) -> String {
-        format!("{}:{} (Stream {})", self.host, self.port, self.stream_id)
+        match self.protocol {
+            Protocol::Shoutcast => {
+                format!("{}:{} (Stream {})", self.host, self.port, self.stream_id)
+            }
+            Protocol::Icecast => format!("{}:{}{} (Icecast)", self.host, self.port, self.mount),
+        }
     }
 
     /// Erste Zeile der Anmeldung: Kennwort, ab Stream-ID 2 mit `:#sid`.

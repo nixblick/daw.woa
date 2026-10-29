@@ -40,6 +40,8 @@ pub struct StreamStatus {
     pub retry_in_seconds: Option<u64>,
     pub bytes_sent: u64,
     pub bytes_dropped: u64,
+    /// So oft war bei verbundener Oberfläche kein Sendemix im Puffer (Unterlauf).
+    pub live_underruns: u32,
 }
 
 impl StreamStatus {

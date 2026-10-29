@@ -21,7 +21,7 @@ pub mod shoutcast;
 pub mod status;
 pub mod uplink;
 
-pub use config::StreamConfig;
+pub use config::{Protocol, StreamConfig};
 pub use kennwort::Kennwort;
 pub use status::StreamStatus;
 
