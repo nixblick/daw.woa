@@ -3,38 +3,39 @@
 Zum Durchziehen: Block für Block kopieren, Reihenfolge = Ausführung. Alles auf **Host: Notebook**,
 ein Terminal. Kein Geheimniswert steht hier. Bricht ein Block ab: stehen lassen, Ausgabe an Claude.
 
-## 100 Mergen (ca. 5 Min.)
+## 100 Mergen (Stand 29.10., 09:40)
+
+**Erledigt:** #21 gemergt. #22 war versehentlich geschlossen und ist wieder offen.
+#17 passt nach #21 nicht mehr allein auf main, deshalb geht M0 komplett über #22: der Zweig enthält
+#14, #15, #17, #18, #19, #21 konfliktfrei (lokal geprüft, Tests grün). Die CHANGELOG-Konflikte in
+#24, #25 und #26 sind gelöst. **#22 nicht schließen, sondern mergen.**
 
 ### 101 · Host: Notebook
-Vorbelegen und prüfen. Erwartet: jede Zeile nur `SUCCESS`.
+Vorbelegen.
 
 ```bash
 R=nixblick/daw.woa
 cd ~/GitHub/nixblick/daw.woa
-gh pr list -R $R --json number,title,statusCheckRollup --jq '.[]|"\(.number) \([.statusCheckRollup[].conclusion]|unique|join(",")) \(.title)"'
 ```
 
 ### 110 · Host: Notebook
-#21 ist schon gemergt. #17 hat danach einen Konflikt, deshalb geht der Rest über den
-Integrationszweig #22: er enthält #14, #15, #17, #18, #19, #21 konfliktfrei (lokal geprüft,
-Tests grün). GitHub markiert die Einzel-PRs danach selbst als gemergt.
-Erwartet: `✓ Merged pull request nixblick/daw.woa#22`.
+Wartet, bis die CI auf #22 grün ist, und mergt dann #22 bis #26 der Reihe nach.
+Erwartet: fünf Zeilen `✓ Merged pull request …`, am Ende `fertig`.
+GitHub markiert #14, #15, #17, #18, #19 danach selbst als gemergt.
 
 ```bash
-gh pr merge 22 -R $R --merge
+gh pr checks 22 -R $R --watch >/dev/null; gh pr checks 26 -R $R --watch >/dev/null; for n in 22 23 24 25 26; do gh pr merge $n -R $R --merge || { echo "STOPP bei #$n"; break; }; sleep 5; done; echo fertig
 ```
 
 ### 120 · Host: Notebook
-M1, M2 und Runbook nachziehen. Bei #24 und #25 ist der CHANGELOG-Konflikt schon gelöst.
-Vorher kurz warten, bis die CI auf #24/#25 wieder grün ist (`gh pr checks 25 -R $R --watch`).
-Erwartet: vier Zeilen `✓ Merged …`, am Ende `fertig`.
+Prüfen, dass nichts mehr offen ist. Erwartet: keine Ausgabe.
 
 ```bash
-gh pr checks 25 -R $R --watch >/dev/null; for n in 23 24 25 26; do gh pr merge $n -R $R --merge || { echo "STOPP bei #$n"; break; }; sleep 5; done; echo fertig
+gh pr list -R $R
 ```
 
 ### 130 · Host: Notebook
-CI auf main abwarten (dauert einige Minuten). Erwartet: alle Jobs grün, am Ende `rc=0`.
+CI auf main abwarten (einige Minuten). Erwartet: alle Jobs grün, am Ende `rc=0`.
 
 ```bash
 sleep 20; gh run watch -R $R "$(gh run list -R $R -b main -L 1 --json databaseId --jq '.[0].databaseId')" --exit-status; echo "rc=$?"

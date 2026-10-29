@@ -137,11 +137,13 @@ impl Command {
                     return Err(ModelError::EmptyName);
                 }
                 check_track_values(&track)?;
+                crate::project::check_id(track.id.0)?;
                 if project.id_in_use(track.id.0) {
                     return Err(ModelError::DuplicateId(track.id.0));
                 }
                 for (i, c) in track.clips.iter().enumerate() {
                     check_clip(c)?;
+                    crate::project::check_id(c.id.0)?;
                     if c.id.0 == track.id.0
                         || project.id_in_use(c.id.0)
                         || track.clips[..i].iter().any(|o| o.id == c.id)
@@ -215,6 +217,7 @@ impl Command {
             }
             Command::AddClip { track, clip, index } => {
                 check_clip(&clip)?;
+                crate::project::check_id(clip.id.0)?;
                 if project.track(track).is_none() {
                     return Err(ModelError::TrackNotFound(track));
                 }
