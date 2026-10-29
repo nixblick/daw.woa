@@ -5,6 +5,7 @@
 
 pub mod app;
 pub mod feedback;
+pub mod player;
 pub mod state;
 
 pub use app::WoaApp;

@@ -42,7 +42,7 @@ pub use error::{ModelError, Result};
 pub use history::{History, HistoryEntry};
 pub use project::{
     Clip, ClipId, DEFAULT_TEMPO_BPM, MAX_GAIN_DB, MAX_ID, MAX_TEMPO_BPM, MIN_GAIN_DB,
-    MIN_TEMPO_BPM, Project, ProjectMeta, Track, TrackId, TrackKind,
+    MIN_TEMPO_BPM, Project, ProjectMeta, Track, TrackId, TrackKind, is_safe_audio_path,
 };
 pub use session::Session;
 pub use store::{FORMAT_VERSION, ProjectFile};

@@ -221,7 +221,7 @@ Alle Meilensteine werden umgesetzt. Jeder endet mit einem prüfbaren Abnahmekrit
 ## Arbeitsweise mit Claude Code
 
 1. Dieses Dokument liegt als `docs/konzept.md` im Repo; `CLAUDE.md` verweist darauf und enthält die Regeln.
-2. Pro Session ein klar umrissenes Feature aus dem aktuellen Meilenstein, mit Akzeptanzkriterium; Plan-Mode zuerst.
+2. Gearbeitet wird in Nutzer-Paketen, nicht in Einzelfunktionen: Claude baut ein Paket am Stück, André nimmt es einmal ab (`docs/abnahme.md`). Die Meilensteine bleiben die Landkarte, Pakete dürfen quer daraus ziehen (29.10.2026).
 3. Kleine Commits, ein Feature pro Branch, Merge nur bei grüner CI (`clippy -D warnings`, `test`, `fmt --check`, `cargo-deny`).
 4. Golden-File-Tests für den Klang, `assert_no_alloc` für Echtzeit, Snapshot-Tests für das Projektformat.
 5. Testen per Feedback-Button: Screenshot plus Hinweis wird Issue, Agent arbeitet Issues ab.

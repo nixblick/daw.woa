@@ -59,7 +59,7 @@ pub struct ProjectMeta {
     pub name: String,
 }
 
-/// A clip on a track. Placeholder for M0: position and length in beats.
+/// A clip on a track: position and length in beats, optionally backed by an audio file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Clip {
     /// Stable id.
@@ -70,6 +70,36 @@ pub struct Clip {
     pub start_beats: f64,
     /// Length in beats (> 0).
     pub length_beats: f64,
+    /// Audio file of the clip, relative to the project folder (e.g. `aufnahmen/x.wav`).
+    /// `None`: placeholder clip without sound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio: Option<String>,
+}
+
+/// Whether a clip audio path is a plain relative path inside the project folder:
+/// only normal components, no `..`, no root, no drive prefix.
+pub fn is_safe_audio_path(rel: &str) -> bool {
+    let p = std::path::Path::new(rel);
+    !rel.is_empty()
+        && p.components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
+#[cfg(test)]
+mod path_tests {
+    #[test]
+    fn audio_paths_stay_inside() {
+        assert!(super::is_safe_audio_path("aufnahmen/a.wav"));
+        for bad in [
+            "",
+            "../a.wav",
+            "aufnahmen/../../a.wav",
+            "/etc/passwd",
+            "./a.wav",
+        ] {
+            assert!(!super::is_safe_audio_path(bad), "{bad}");
+        }
+    }
 }
 
 /// A track with its mixer settings and clips.

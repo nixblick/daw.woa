@@ -5,7 +5,12 @@ use std::time::Instant;
 
 use eframe::egui;
 use woa_engine::record::{InputConfig, Recorder, next_take_path, start_recording};
-use woa_model::{MAX_GAIN_DB, MIN_GAIN_DB, TrackId};
+use woa_model::{ClipId, MAX_GAIN_DB, MIN_GAIN_DB, TrackId};
+
+use crate::player::Player;
+
+/// Pixel je Beat in der Zeitleiste.
+const PX_PER_BEAT: f32 = 12.0;
 
 use crate::feedback::{FeedbackDialog, GuiConfig, Phase, encode_png};
 use crate::state::{AppState, Status};
@@ -21,10 +26,14 @@ pub struct WoaApp {
     gain_drag: Option<(TrackId, f64)>,
     /// Last title sent to the viewport.
     last_title: String,
-    /// Where takes of unsaved projects go (`<data>/aufnahmen`).
-    takes_dir: PathBuf,
     /// Running recording from the default input, if any.
     recorder: Option<Recorder>,
+    /// Target track and start beat of the running recording.
+    rec_target: (Option<TrackId>, f64),
+    /// Playback engine at the default output (`None` if the device failed).
+    player: Option<Player>,
+    selected_track: Option<TrackId>,
+    selected_clip: Option<ClipId>,
     /// Smoothed input level for the meter, 0..1.
     level: f32,
 }
@@ -32,15 +41,23 @@ pub struct WoaApp {
 impl WoaApp {
     /// Builds the app; `recovery_dir` receives autosaves of unsaved projects.
     pub fn new(config: GuiConfig, recovery_dir: PathBuf) -> Self {
-        let takes_dir = recovery_dir
-            .parent()
-            .map(|p| p.join("aufnahmen"))
-            .unwrap_or_else(|| PathBuf::from("aufnahmen"));
+        let mut state = AppState::new(recovery_dir, Instant::now());
+        let player = match Player::open() {
+            Ok(p) => Some(p),
+            Err(e) => {
+                tracing::error!(error = %e, "no playback device");
+                state.status = Status::Error(format!("Keine Wiedergabe: {e}"));
+                None
+            }
+        };
         Self {
-            takes_dir,
             recorder: None,
+            rec_target: (None, 0.0),
+            player,
+            selected_track: None,
+            selected_clip: None,
             level: 0.0,
-            state: AppState::new(recovery_dir, Instant::now()),
+            state,
             config,
             feedback: FeedbackDialog::default(),
             rename: None,
@@ -53,9 +70,20 @@ impl WoaApp {
     fn toggle_record(&mut self) {
         if let Some(rec) = self.recorder.take() {
             self.level = 0.0;
+            if let Some(p) = self.player.as_mut() {
+                p.stop();
+            }
             match rec.stop() {
                 Ok(s) => {
                     tracing::info!(seconds = s.seconds(), overruns = s.overruns, "take saved");
+                    let (track, start) = self.rec_target;
+                    if let Some(p) = self.player.as_mut() {
+                        p.forget(&s.path);
+                    }
+                    if let Some(clip) = self.state.add_take(track, &s.path, start, s.seconds()) {
+                        self.selected_clip = Some(clip);
+                        self.selected_track = self.state.project().clip(clip).map(|(t, _)| t.id);
+                    }
                     let lost = if s.overruns > 0 {
                         format!(", {} Samples verloren", s.overruns)
                     } else {
@@ -74,10 +102,12 @@ impl WoaApp {
             }
             return;
         }
-        let dir = match self.state.session().path() {
-            Some(p) => p.join("aufnahmen"),
-            None => self.takes_dir.clone(),
-        };
+        let dir = self.state.takes_dir();
+        let tempo = self.state.project().tempo_bpm;
+        let start = self
+            .player
+            .as_ref()
+            .map_or(0.0, |p| p.position_beats(tempo));
         let started = next_take_path(&dir)
             .map_err(|e| e.to_string())
             .and_then(|path| {
@@ -91,6 +121,11 @@ impl WoaApp {
                 tracing::info!(path = %rec.path().display(), "take started");
                 self.state.status = Status::Info(format!("Nimmt auf: {}", rec.path().display()));
                 self.recorder = Some(rec);
+                self.rec_target = (self.selected_track, start);
+                // Overdub: the other tracks play along from the playhead.
+                if let Some(p) = self.player.as_mut() {
+                    p.play();
+                }
             }
             Err(e) => {
                 tracing::error!(error = %e, "take start failed");
@@ -99,8 +134,42 @@ impl WoaApp {
         }
     }
 
+    fn rewind(&mut self) {
+        let tempo = self.state.project().tempo_bpm;
+        if let Some(p) = self.player.as_mut() {
+            p.seek_beats(0.0, tempo);
+        }
+    }
+
+    fn toggle_play(&mut self) {
+        if self.recorder.is_some() {
+            self.toggle_record();
+        } else if let Some(p) = self.player.as_mut() {
+            p.toggle();
+        }
+    }
+
     fn record_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
+            let playing = self.player.as_ref().is_some_and(Player::is_playing);
+            if ui.button("⏮").on_hover_text("Zum Anfang (Pos1)").clicked() {
+                self.rewind();
+            }
+            let label = if playing {
+                "⏸ Pause"
+            } else {
+                "▶ Abspielen"
+            };
+            if ui
+                .add_enabled(self.player.is_some(), egui::Button::new(label))
+                .on_hover_text("Leertaste")
+                .clicked()
+            {
+                self.toggle_play();
+            }
+            let secs = self.player.as_ref().map_or(0.0, Player::position_seconds);
+            ui.monospace(format!("{}:{:04.1}", (secs / 60.0) as u64, secs % 60.0));
+            ui.separator();
             let (label, fill) = match &self.recorder {
                 Some(rec) => {
                     let t = rec.elapsed().as_secs();
@@ -181,6 +250,25 @@ impl WoaApp {
         });
         if record {
             self.toggle_record();
+        }
+        if !ctx.egui_wants_keyboard_input() {
+            let (space, home, del) = ctx.input_mut(|i| {
+                let n = egui::Modifiers::NONE;
+                (
+                    i.consume_key(n, egui::Key::Space),
+                    i.consume_key(n, egui::Key::Home),
+                    i.consume_key(n, egui::Key::Delete),
+                )
+            });
+            if space {
+                self.toggle_play();
+            }
+            if home {
+                self.rewind();
+            }
+            if del && let Some(clip) = self.selected_clip.take() {
+                self.state.remove_clip(clip);
+            }
         }
         if undo {
             self.state.undo();
@@ -269,9 +357,17 @@ impl WoaApp {
             .iter()
             .map(|t| (t.id, t.name.clone(), t.gain_db, t.mute))
             .collect();
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        egui::ScrollArea::both().show(ui, |ui| {
             for (id, name, gain, mute) in tracks {
                 ui.horizontal(|ui| {
+                    let sel = self.selected_track == Some(id);
+                    if ui
+                        .radio(sel, "")
+                        .on_hover_text("Ziel für die Aufnahme")
+                        .clicked()
+                    {
+                        self.selected_track = Some(id);
+                    }
                     self.track_name(ui, id, &name);
                     let mut g = match self.gain_drag {
                         Some((d, v)) if d == id => v,
@@ -292,9 +388,86 @@ impl WoaApp {
                     if ui.selectable_label(mute, "M").clicked() {
                         self.state.toggle_mute(id);
                     }
+                    self.timeline(ui, id);
                 });
             }
         });
+    }
+
+    /// One track's strip: clips as boxes, the playhead, click to seek or select a clip.
+    fn timeline(&mut self, ui: &mut egui::Ui, track: TrackId) {
+        let project = self.state.project();
+        let tempo = project.tempo_bpm;
+        let Some(t) = project.track(track) else {
+            return;
+        };
+        let end = t
+            .clips
+            .iter()
+            .map(|c| c.start_beats + c.length_beats)
+            .fold(64.0f64, f64::max);
+        let width = (end as f32 + 16.0) * PX_PER_BEAT;
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 22.0), egui::Sense::click());
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 2.0, ui.visuals().extreme_bg_color);
+        for bar in (0..=(end as usize + 16)).step_by(4) {
+            let x = rect.left() + bar as f32 * PX_PER_BEAT;
+            painter.vline(
+                x,
+                rect.y_range(),
+                ui.visuals().widgets.noninteractive.bg_stroke,
+            );
+        }
+        let mut clicked_clip = None;
+        let pointer = resp.interact_pointer_pos();
+        for c in &t.clips {
+            let x0 = rect.left() + c.start_beats as f32 * PX_PER_BEAT;
+            let x1 = x0 + (c.length_beats as f32 * PX_PER_BEAT).max(2.0);
+            let r = egui::Rect::from_x_y_ranges(x0..=x1, rect.top() + 2.0..=rect.bottom() - 2.0);
+            let selected = self.selected_clip == Some(c.id);
+            let fill = if c.audio.is_some() {
+                egui::Color32::from_rgb(70, 130, 200)
+            } else {
+                egui::Color32::GRAY
+            };
+            painter.rect_filled(r, 3.0, fill);
+            if selected {
+                painter.rect_stroke(
+                    r,
+                    3.0,
+                    egui::Stroke::new(2.0, egui::Color32::YELLOW),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            painter.text(
+                r.left_center() + egui::vec2(4.0, 0.0),
+                egui::Align2::LEFT_CENTER,
+                &c.name,
+                egui::FontId::proportional(11.0),
+                egui::Color32::WHITE,
+            );
+            if resp.clicked() && pointer.is_some_and(|p| r.contains(p)) {
+                clicked_clip = Some(c.id);
+            }
+        }
+        if let Some(p) = &self.player {
+            let x = rect.left() + p.position_beats(tempo) as f32 * PX_PER_BEAT;
+            painter.vline(
+                x,
+                rect.y_range(),
+                egui::Stroke::new(2.0, egui::Color32::RED),
+            );
+        }
+        if resp.clicked() {
+            self.selected_track = Some(track);
+            self.selected_clip = clicked_clip;
+            if clicked_clip.is_none()
+                && let (Some(pos), Some(p)) = (pointer, self.player.as_mut())
+            {
+                p.seek_beats(f64::from((pos.x - rect.left()) / PX_PER_BEAT), tempo);
+            }
+        }
+        resp.on_hover_text("Klick: Abspielkopf setzen · Clip anklicken, Entf löscht");
     }
 
     fn track_name(&mut self, ui: &mut egui::Ui, id: TrackId, name: &str) {
@@ -379,7 +552,13 @@ impl eframe::App for WoaApp {
         }
         // Keep the autosave timer and the feedback poll ticking while idle; the level
         // meter needs a faster beat while recording.
-        let beat = if self.recorder.is_some() { 40 } else { 500 };
+        let project = self.state.project().clone();
+        let state = &self.state;
+        if let Some(p) = self.player.as_mut() {
+            p.sync(&project, &|rel| state.resolve_audio(rel));
+        }
+        let busy = self.recorder.is_some() || self.player.as_ref().is_some_and(Player::is_playing);
+        let beat = if busy { 40 } else { 500 };
         ctx.request_repaint_after(std::time::Duration::from_millis(beat));
     }
 

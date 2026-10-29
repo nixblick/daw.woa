@@ -323,6 +323,7 @@ impl WoaAgent {
                     name: p.name,
                     start_beats: p.start_beats,
                     length_beats: p.length_beats,
+                    audio: None,
                 },
                 index: None,
             })?;

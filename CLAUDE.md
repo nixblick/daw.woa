@@ -37,7 +37,10 @@ Notfall-Playlist laufen als eigener Prozess (`apps/woa-streamd`).
 4. Testen per Feedback-Button: Screenshot plus Hinweis wird Issue, Agent arbeitet Issues ab.
 5. Regelmäßige Telemetrie-Auswertung durch Claude Code; Auffälligkeiten werden Issues.
 6. Ab und zu Architektur-Review, damit die Codebasis verständlich bleibt.
-7. Ein Meilenstein ist erst fertig, wenn sein Abnahmekriterium nachweislich erfüllt ist; erst dann beginnt der nächste.
+7. **Abnahme in Paketen** (André, 29.10.2026: „ich will nicht jede funktion einzeln abnehmen … ich nehme pakete ab“).
+   Claude baut ein ganzes Nutzer-Paket (z. B. Aufnehmen + Abspielen + Speichern) am Stück, prüft selbst
+   (Tests, Probelauf am Gerät) und merged grüne PRs ohne Rückfrage. André nimmt nur das fertige Paket ab,
+   mit einer kurzen Klickliste in `docs/abnahme.md`. Keine Einzel-Rückfragen je Funktion.
 8. Nach jeder Änderung: `CHANGELOG.md` und Workspace-Version nachziehen, commit, push.
 9. Crate-Versionen und Pflegestand vor dem Einbinden prüfen; die Liste im Konzept ist nicht frisch recherchiert.
 
