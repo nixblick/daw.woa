@@ -48,7 +48,10 @@ Noch nicht drin:
 - Uhrdrift zwischen Soundkarte und woa-streamd: Der Live-Puffer wird auf 0,5 s gekappt.
 - Unter Windows ist die lokale Verbindung TCP mit Token. Ein lokaler Prozess kann dort das Verbinden stören, aber nicht senden.
 
-## Paket 7: Sendeablauf (0.2.0, offen)
+## Paket 7: Sendeablauf (0.2.0, abgenommen 29.10.2026)
+
+André, 29.10.2026: „abnahme paket 7 fertig“.
+
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
 
