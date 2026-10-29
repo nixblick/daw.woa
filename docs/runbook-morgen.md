@@ -99,8 +99,14 @@ git add .claude/settings.json CLAUDE.md && git commit -m "chore: merge permissio
   steht nach dem Merge in `docs/andre-handgriffe.md`. Geht erst, wenn Dave den Patch in
   bretteins.infra hat (Antwort 304). Danach `woa-headless feedback-test` und `log-test`,
   damit ist #1 (M0) abnehmbar.
-- **Audiotest am Gerät (M1, #2):** Einen Abspiel-Befehl gibt es noch nicht, der Underrun-Zähler
-  steckt nur in der Engine. Claude baut `woa-headless play` als Nächstes, dann kommt hier ein Block.
+- **Audiotest am Gerät (M1, #2), Host: Notebook, Kopfhörer auf.** Erwartet: 60 s leiser Ton,
+  am Ende `underruns=0` und `rc=0`. Zahl an Claude, dann ist #2 abnehmbar.
+
+  ```bash
+  cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa-headless --features device -- play --seconds 60; echo "rc=$?"
+  ```
+
+  Anderes Gerät: `... -- devices` zeigt die Ids, dann `play --device <id>`.
 - **Windows:** CI baut grün. Bei Gelegenheit am echten Bildschirm:
   `git clone https://github.com/nixblick/daw.woa && cd daw.woa && cargo run --release -p woa`
 - **Platte:** `df -h /home`. `cargo clean` in Repos, in denen du gerade nicht baust, gibt Platz frei.

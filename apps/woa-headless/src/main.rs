@@ -71,6 +71,27 @@ enum Cmd {
     Roundtrip { path: PathBuf },
     /// Startet den MCP-Server über stdin/stdout für das Projekt <PATH> (legt es beim ersten `save` an).
     Mcp { path: PathBuf },
+    /// Listet die Audio-Ausgabegeräte (nur mit Feature `device`).
+    Devices,
+    /// Spielt einen Testton auf dem Gerät und zählt Underruns (M1-Abnahme, #2).
+    /// Exit 1, wenn mindestens ein Underrun auftrat. Nur mit Feature `device`.
+    Play {
+        /// Dauer in Sekunden.
+        #[arg(long, default_value_t = 10)]
+        seconds: u64,
+        /// Puffergröße in Frames; 0 = Vorgabe des Treibers.
+        #[arg(long, default_value_t = 128)]
+        buffer: u32,
+        /// Geräte-Id aus `devices`; ohne = Standardgerät.
+        #[arg(long)]
+        device: Option<String>,
+        /// Frequenz des Testtons in Hz.
+        #[arg(long, default_value_t = 440.0)]
+        freq: f32,
+        /// Lautstärke 0..1 (Vorgabe leise, Kopfhörer!).
+        #[arg(long, default_value_t = 0.1)]
+        volume: f32,
+    },
     /// Schickt ein Test-Ereignis an den Telemetrie-Endpunkt (/ingest).
     LogTest {
         #[arg(long, env = "WOA_TELEMETRY_URL")]
@@ -93,6 +114,8 @@ enum Cmd {
 
 type Outcome = Result<(), String>;
 
+mod audio;
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.cmd {
@@ -102,6 +125,14 @@ fn main() -> ExitCode {
         Cmd::UndoDemo => cmd_undo_demo(),
         Cmd::Roundtrip { path } => cmd_roundtrip(&path),
         Cmd::Mcp { path } => woa_agent::run_stdio(&path).map_err(|e| e.to_string()),
+        Cmd::Devices => audio::cmd_devices(),
+        Cmd::Play {
+            seconds,
+            buffer,
+            device,
+            freq,
+            volume,
+        } => audio::cmd_play(seconds, buffer, device, freq, volume),
         Cmd::LogTest { url, timeout } => cmd_log_test(&url, timeout),
         Cmd::FeedbackTest { url, text, timeout } => cmd_feedback_test(&url, &text, timeout),
     };

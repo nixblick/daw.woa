@@ -130,6 +130,30 @@ pub fn count_if_xrun(err: &cpal::Error, transport: &TransportHandle) -> bool {
     xrun
 }
 
+/// Wählt das Gerät nach `config.device_id` (`None` = Standardgerät).
+fn pick_device(config: &OutputConfig) -> Result<cpal::Device, DeviceError> {
+    let host = cpal::default_host();
+    match &config.device_id {
+        None => host
+            .default_output_device()
+            .ok_or(DeviceError::NoOutputDevice),
+        Some(id) => {
+            let parsed = cpal::DeviceId::from_str(id)
+                .map_err(|_| DeviceError::DeviceNotFound(id.clone()))?;
+            host.device_by_id(&parsed)
+                .ok_or_else(|| DeviceError::DeviceNotFound(id.clone()))
+        }
+    }
+}
+
+/// Abtastrate, mit der [`start_output_with`] das Gerät öffnen wird. Der Graph muss
+/// mit genau dieser Rate kompiliert werden.
+pub fn output_sample_rate(config: &OutputConfig) -> Result<u32, DeviceError> {
+    let device = pick_device(config)?;
+    let supported = device.default_output_config()?;
+    Ok(supported.sample_rate())
+}
+
 /// Startet die Ausgabe auf dem Standardgerät mit Treiber-Puffergröße.
 pub fn start_output(
     processor: AudioProcessor,
@@ -155,18 +179,7 @@ pub fn start_output_with(
     config: &OutputConfig,
     mut on_error: impl FnMut(cpal::Error) + Send + 'static,
 ) -> Result<cpal::Stream, DeviceError> {
-    let host = cpal::default_host();
-    let device = match &config.device_id {
-        None => host
-            .default_output_device()
-            .ok_or(DeviceError::NoOutputDevice)?,
-        Some(id) => {
-            let parsed = cpal::DeviceId::from_str(id)
-                .map_err(|_| DeviceError::DeviceNotFound(id.clone()))?;
-            host.device_by_id(&parsed)
-                .ok_or_else(|| DeviceError::DeviceNotFound(id.clone()))?
-        }
-    };
+    let device = pick_device(config)?;
     let supported = device.default_output_config()?;
     if supported.sample_format() != cpal::SampleFormat::F32 {
         return Err(DeviceError::UnsupportedFormat);
