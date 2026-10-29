@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.5 — 2026-10-29
+
+- **Man sieht, was man aufnimmt (Fixes #43).** Während der Aufnahme wächst auf jeder aufnehmenden Spur ab dem Startpunkt ein roter Clip „Aufnahme läuft“ mit, darin die laufende Wellenform. Nach dem Stopp tritt an seine Stelle der fertige Clip. Die Zeitleiste wird mitverlängert, wenn die Aufnahme über das bisherige Ende hinausläuft.
+- **So kommen die Punkte an:** `woa_engine::live_peaks` sammelt im Schreib-Thread der Aufnahme (cpal) bzw. im Lese-Thread (PipeWire) je 256 Frames den lautesten Betrag über alle Kanäle, dieselbe Einheit wie die Wellenform fertiger Clips. Die Werte gehen über einen lock-freien Ring (`rtrb`) an die Oberfläche; der Audio-Callback bleibt unverändert. Läuft der Ring voll (etwa drei Minuten ohne Abholen), füllt die Oberfläche die fehlenden Stellen als Stille auf, damit die Zeitachse stimmt. Die Wellenform nutzt die Abtastrate der Aufnahme, nicht die der Wiedergabe.
+- **Pegel:** Die Pegelanzeigen in der Aufnahmeleiste und an der Spur gab es schon. Neu ist die Übersteuerungslampe „ÜBERSTEUERT“ neben dem Pegel, sobald ein Sample 0 dBFS erreicht; sie bleibt bis zur nächsten Aufnahme an.
+- **Keine Mehrlast:** Die Oberfläche zeichnet wie bisher nur während einer Aufnahme alle 40 ms neu, in Ruhe bleibt es bei 2 Bildern je Sekunde (#57). Gezeichnet werden nur sichtbare Spalten.
+- Tests: Peak-Sammlung gegen die Wellenform der Mono-Datei (Stereo, zerstückelt angeliefert), schrittweises Abholen, voller Ring; `assert_no_alloc` um das Sammeln (`crates/engine/tests/live_peaks_rt.rs`).
+
 ## 0.3.4 — 2026-10-29
 
 - **Oberfläche ohne Dauerlast (Fixes #56). Hauptursache ist die Ereignisschleife unter Wayland.** eframe 0.35 setzt bei jedem fälligen Repaint `ControlFlow::Poll`. Unter Wayland kommt das Neuzeichnen aber erst mit dem Frame-Callback des Compositors, und ein verdecktes Fenster (etwa hinter dem Browser) bekommt keinen. Dann dreht der UI-Thread leer in `epoll` und belegt einen ganzen Kern (egui#8326, behoben erst in eframe 0.37, das rustc 1.95 braucht; hier ist 1.92 installiert). Unter Linux nimmt WOA deshalb X11 (XWayland), solange `DISPLAY` gesetzt ist. `WOA_WAYLAND=1` erzwingt Wayland. Bei gebrochener Skalierung kann die Schrift unter XWayland etwas weicher aussehen. Gemessen am 29.10. im Radio-Modus, ohne Wiedergabe und ohne Sendung, je 20 s nach 8 s Anlauf: 0.3.2 86–102 %, 0.3.4 unter Wayland 24–91 % (je nach Fensterlage), 0.3.4 als Vorgabe (X11) 1 %. `WOA_REPAINT_DEBUG=1` schreibt alle 5 s Bilder je Sekunde und Repaint-Auslöser ins Log.

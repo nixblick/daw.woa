@@ -24,6 +24,7 @@ pub mod decode;
 #[cfg(feature = "device")]
 pub mod device;
 pub mod export;
+pub mod live_peaks;
 pub mod loudness;
 pub mod project;
 #[cfg(feature = "device")]
