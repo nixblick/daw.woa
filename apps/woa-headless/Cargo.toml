@@ -13,6 +13,7 @@ woa-dsp = { path = "../../crates/dsp", version = "0.1" }
 woa-engine = { path = "../../crates/engine", version = "0.1" }
 hound = "3.5.1"
 woa-model = { path = "../../crates/model", version = "0.1" }
+woa-radio = { path = "../../crates/radio", version = "0.1" }
 woa-telemetry = { path = "../../crates/telemetry", version = "0.1" }
 
 [features]

@@ -140,6 +140,16 @@ enum Cmd {
         #[arg(long, allow_hyphen_values = true)]
         lufs: Option<f64>,
     },
+    /// Rendert die Playlist aus radio.json offline mit Crossfades und Auto-Gain (ohne Gerät).
+    RadioRender {
+        /// radio.json (Playlist).
+        radio: PathBuf,
+        /// Zieldatei (.wav, .flac oder .mp3).
+        out: PathBuf,
+        /// Abtastrate.
+        #[arg(long, default_value_t = 48_000)]
+        rate: u32,
+    },
     /// Schickt ein Test-Ereignis an den Telemetrie-Endpunkt (/api/logs/ingest).
     LogTest {
         #[arg(long, env = "WOA_TELEMETRY_URL", default_value = woa_telemetry::DEFAULT_INGEST_URL)]
@@ -161,6 +171,28 @@ enum Cmd {
 }
 
 type Outcome = Result<(), String>;
+
+fn cmd_radio_render(radio: &std::path::Path, out: &std::path::Path, rate: u32) -> Outcome {
+    if !radio.is_file() {
+        return Err(format!("{}: nicht gefunden", radio.display()));
+    }
+    let show = woa_radio::RadioShow::load(radio)?;
+    let mix = woa_radio::render(&show, rate)?;
+    woa_engine::export::export_stereo(out, &mix.left, &mix.right, rate)
+        .map_err(|e| e.to_string())?;
+    let seconds = mix.frames() as f64 / f64::from(rate);
+    let lufs = woa_engine::loudness::integrated_lufs(&mix.left, &mix.right, rate);
+    println!(
+        "radio-render: {} Titel, {seconds:.3} s, crossfade {:.1} s",
+        show.playlist.len(),
+        show.crossfade_seconds
+    );
+    if let Some(l) = lufs {
+        println!("lufs={l:.1}");
+    }
+    println!("{}", out.display());
+    Ok(())
+}
 
 mod audio;
 
@@ -201,6 +233,7 @@ fn main() -> ExitCode {
             rate,
             lufs,
         } => audio::cmd_render(&project, &out, seconds, rate, lufs),
+        Cmd::RadioRender { radio, out, rate } => cmd_radio_render(&radio, &out, rate),
         Cmd::LogTest { url, timeout } => cmd_log_test(&url, timeout),
         Cmd::FeedbackTest { url, text, timeout } => cmd_feedback_test(&url, &text, timeout),
     };

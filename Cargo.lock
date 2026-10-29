@@ -5505,6 +5505,7 @@ dependencies = [
  "woa-dsp",
  "woa-engine",
  "woa-model",
+ "woa-radio",
  "woa-telemetry",
 ]
 
@@ -5535,6 +5536,17 @@ version = "0.1.17"
 [[package]]
 name = "woa-radio"
 version = "0.1.17"
+dependencies = [
+ "assert_no_alloc",
+ "basedrop",
+ "hound",
+ "rtrb",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "woa-engine",
+]
 
 [[package]]
 name = "woa-remote"

@@ -1,0 +1,228 @@
+//! Der Controller in einem eigenen Thread: Die Sendung läuft weiter, auch wenn die
+//! Oberfläche gerade nicht zeichnet (Fenster minimiert). Die Oberfläche schickt Aufträge
+//! als Closures und liest einen Schnappschuss ([`View`]).
+
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::Duration;
+
+use crate::audio::{Measured, measure_file};
+use crate::control::Controller;
+use crate::show::RadioShow;
+use crate::{CARTS, mixer::NONE};
+
+/// Takt des Control-Threads.
+const TICK: Duration = Duration::from_millis(10);
+
+type Job = Box<dyn FnOnce(&mut Controller) + Send>;
+
+enum Msg {
+    Job(Job),
+    Measured(PathBuf, Result<Measured, String>),
+    Quit,
+}
+
+/// Ein Titel in der Anzeige.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ViewEntry {
+    pub title: String,
+    pub path: PathBuf,
+    pub seconds: Option<f64>,
+    pub lufs: Option<f64>,
+    pub gain_db: f64,
+}
+
+/// Schnappschuss für die Oberfläche.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct View {
+    pub playlist: Vec<ViewEntry>,
+    pub current: Option<usize>,
+    pub cue: usize,
+    pub running: bool,
+    pub remaining_title: f64,
+    pub remaining_total: f64,
+    pub crossfade_seconds: f64,
+    pub duck_db: f64,
+    pub carts: Vec<Option<String>>,
+    pub carts_playing: u32,
+    pub mic_open: bool,
+    pub recording: Option<PathBuf>,
+    pub messages: Vec<String>,
+    /// Wird gerade gemessen.
+    pub measuring: usize,
+    /// Zähler für Änderungen an Playlist/Carts/Einstellungen (zum Speichern).
+    pub revision: u64,
+}
+
+/// Griff auf den laufenden Sende-Thread.
+pub struct Station {
+    tx: Sender<Msg>,
+    view: Arc<Mutex<View>>,
+    show: Arc<Mutex<RadioShow>>,
+    thread: Option<JoinHandle<()>>,
+    rate: u32,
+    measuring: Arc<AtomicUsize>,
+}
+
+impl Station {
+    /// Startet den Thread mit `controller`.
+    pub fn spawn(controller: Controller) -> Result<Self, String> {
+        let (tx, rx) = channel();
+        let view = Arc::new(Mutex::new(View::default()));
+        let show = Arc::new(Mutex::new(controller.show().clone()));
+        let rate = controller.rate();
+        let measuring = Arc::new(AtomicUsize::new(0));
+        let (v, s, m) = (Arc::clone(&view), Arc::clone(&show), Arc::clone(&measuring));
+        let thread = std::thread::Builder::new()
+            .name("woa-radio-control".into())
+            .spawn(move || run(controller, rx, v, s, m))
+            .map_err(|e| e.to_string())?;
+        Ok(Self {
+            tx,
+            view,
+            show,
+            thread: Some(thread),
+            rate,
+            measuring,
+        })
+    }
+
+    /// Führt `f` im Control-Thread aus.
+    pub fn with(&self, f: impl FnOnce(&mut Controller) + Send + 'static) {
+        if self.tx.send(Msg::Job(Box::new(f))).is_err() {
+            tracing::warn!("radio control thread gone");
+        }
+    }
+
+    /// Fügt Dateien hinzu und misst sie im Hintergrund (Ergebnis wird gecacht).
+    pub fn add_files(&self, paths: Vec<PathBuf>) {
+        let rate = self.rate;
+        let todo = paths.clone();
+        self.with(move |c| {
+            c.add(&paths, None);
+        });
+        for p in todo {
+            let tx = self.tx.clone();
+            self.measuring.fetch_add(1, Ordering::Relaxed);
+            let spawned = std::thread::Builder::new()
+                .name("woa-radio-measure".into())
+                .spawn(move || {
+                    let r = measure_file(&p, rate);
+                    let _ = tx.send(Msg::Measured(p, r));
+                });
+            if let Err(e) = spawned {
+                tracing::warn!(error = %e, "measure thread failed");
+            }
+        }
+    }
+
+    /// Letzter Schnappschuss.
+    pub fn view(&self) -> View {
+        self.view.lock().map(|v| v.clone()).unwrap_or_default()
+    }
+
+    /// Aktueller Inhalt für `radio.json`.
+    pub fn show(&self) -> RadioShow {
+        self.show.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+}
+
+impl Drop for Station {
+    fn drop(&mut self) {
+        let _ = self.tx.send(Msg::Quit);
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
+fn run(
+    mut c: Controller,
+    rx: Receiver<Msg>,
+    view: Arc<Mutex<View>>,
+    show_out: Arc<Mutex<RadioShow>>,
+    measuring: Arc<AtomicUsize>,
+) {
+    let mut revision = 0u64;
+    let mut last_show = c.show().clone();
+    let mut messages: Vec<String> = Vec::new();
+    loop {
+        loop {
+            match rx.try_recv() {
+                Ok(Msg::Job(f)) => f(&mut c),
+                Ok(Msg::Measured(p, r)) => {
+                    measuring.fetch_sub(1, Ordering::Relaxed);
+                    match r {
+                        Ok(m) => c.set_measured(&p, m),
+                        Err(e) => messages.push(e),
+                    }
+                }
+                Ok(Msg::Quit) | Err(TryRecvError::Disconnected) => {
+                    if c.is_recording() {
+                        c.stop_recording();
+                    }
+                    return;
+                }
+                Err(TryRecvError::Empty) => break,
+            }
+        }
+        c.pump();
+        if let Some(m) = c.take_message() {
+            messages.push(m);
+        }
+        if *c.show() != last_show {
+            last_show = c.show().clone();
+            revision += 1;
+            if let Ok(mut s) = show_out.lock() {
+                *s = last_show.clone();
+            }
+        }
+        let st = c.status();
+        let target = c.show().target_lufs;
+        let v = View {
+            playlist: c
+                .show()
+                .playlist
+                .iter()
+                .map(|e| ViewEntry {
+                    title: e.title(),
+                    path: e.path.clone(),
+                    seconds: e.seconds,
+                    lufs: e.lufs,
+                    gain_db: e.gain_db(target),
+                })
+                .collect(),
+            current: c.current_index(),
+            cue: c.cue_index(),
+            running: c.is_running() && st.current.load(Ordering::Acquire) != NONE,
+            remaining_title: c.remaining_title(),
+            remaining_total: c.remaining_total(),
+            crossfade_seconds: c.show().crossfade_seconds,
+            duck_db: c.show().duck_db,
+            carts: (0..CARTS)
+                .map(|i| {
+                    c.show()
+                        .carts
+                        .get(i)
+                        .and_then(|x| x.as_ref().map(|e| e.label.clone()))
+                })
+                .collect(),
+            carts_playing: st.carts.load(Ordering::Acquire),
+            mic_open: st.mic_open.load(Ordering::Acquire),
+            recording: c.recording_file().map(|p| p.to_path_buf()),
+            messages: messages.clone(),
+            measuring: measuring.load(Ordering::Relaxed),
+            revision,
+        };
+        if let Ok(mut out) = view.lock() {
+            *out = v;
+        }
+        if messages.len() > 5 {
+            messages.drain(..messages.len() - 5);
+        }
+        std::thread::sleep(TICK);
+    }
+}
