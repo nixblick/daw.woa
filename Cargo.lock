@@ -4966,6 +4966,7 @@ dependencies = [
  "hound",
  "rtrb",
  "woa-dsp",
+ "woa-model",
 ]
 
 [[package]]

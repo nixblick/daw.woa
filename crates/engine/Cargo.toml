@@ -13,6 +13,7 @@ cpal = { version = "0.18.2", optional = true }
 hound = "3.5.1"
 rtrb = "0.4.1"
 woa-dsp = { version = "0.1.0", path = "../dsp" }
+woa-model = { version = "0.1.0", path = "../model" }
 
 [features]
 device = ["dep:cpal"]
