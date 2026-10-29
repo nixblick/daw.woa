@@ -186,20 +186,71 @@ impl AppState {
 
     /// Moves a clip on its track to `start_beats` (clamped to >= 0).
     pub fn move_clip(&mut self, clip: ClipId, start_beats: f64) -> bool {
+        self.move_clip_to(clip, None, start_beats)
+    }
+
+    /// Moves a clip to `start_beats` on `to_track` (`None`: same track).
+    pub fn move_clip_to(
+        &mut self,
+        clip: ClipId,
+        to_track: Option<TrackId>,
+        start_beats: f64,
+    ) -> bool {
         let Some((track, c)) = self.project().clip(clip) else {
             return false;
         };
-        let (track, old) = (track.id, c.start_beats);
+        let (from, old) = (track.id, c.start_beats);
+        let to_track = to_track.unwrap_or(from);
         let start_beats = start_beats.max(0.0);
-        if (start_beats - old).abs() < 1e-9 {
+        if to_track == from && (start_beats - old).abs() < 1e-9 {
             return false;
         }
         self.apply(Command::MoveClip {
             clip,
-            to_track: track,
+            to_track,
             start_beats,
             index: None,
         })
+    }
+
+    /// Trims a clip: new start, length and audio offset in one undo step.
+    /// Fades are shortened to fit the new length.
+    pub fn trim_clip(&mut self, clip: ClipId, start: f64, length: f64, offset: f64) -> bool {
+        let Some((track, c)) = self.project().clip(clip) else {
+            return false;
+        };
+        let (track, c) = (track.id, c.clone());
+        let (start, offset) = (start.max(0.0), offset.max(0.0));
+        if length < 1e-3
+            || ((start - c.start_beats).abs() < 1e-9
+                && (length - c.length_beats).abs() < 1e-9
+                && (offset - c.offset_beats).abs() < 1e-9)
+        {
+            return false;
+        }
+        let fade_in = c.fade_in_beats.min(length);
+        let fade_out = c.fade_out_beats.min(length - fade_in);
+        self.session.begin_group("Trimmen");
+        let mut ok = true;
+        if (start - c.start_beats).abs() > 1e-9 {
+            ok = self.apply(Command::MoveClip {
+                clip,
+                to_track: track,
+                start_beats: start,
+                index: None,
+            });
+        }
+        ok = ok
+            && self.apply(Command::EditClip {
+                clip,
+                length_beats: length,
+                offset_beats: offset,
+                fade_in_beats: fade_in,
+                fade_out_beats: fade_out,
+            });
+        let closed = self.session.end_group();
+        self.report("Trimmen", closed);
+        ok
     }
 
     /// Sets the fades of a clip; too long fades are shortened to fit the clip.
@@ -546,6 +597,19 @@ mod tests {
         assert!(s.set_fades(b, 1.0, 9.0));
         let (_, cb) = s.project().clip(b).unwrap();
         assert_eq!((cb.fade_in_beats, cb.fade_out_beats), (1.0, 3.0), "clamped");
+        // Trim the left part from the left, move the right part to a new track.
+        assert!(s.trim_clip(a, 3.0, 3.0, 1.0));
+        let (_, ca) = s.project().clip(a).unwrap();
+        assert_eq!(
+            (ca.start_beats, ca.length_beats, ca.offset_beats),
+            (3.0, 3.0, 1.0)
+        );
+        let t2 = s.add_track().unwrap();
+        assert!(s.move_clip_to(b, Some(t2), 8.0));
+        assert_eq!(s.project().clip(b).unwrap().0.id, t2);
+        s.undo();
+        s.undo();
+        s.undo();
         s.undo();
         s.undo();
         assert!(s.project().clip(b).is_none(), "split is one undo step");

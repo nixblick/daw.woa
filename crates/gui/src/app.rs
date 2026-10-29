@@ -10,7 +10,9 @@ use woa_model::{ClipId, MAX_GAIN_DB, MIN_GAIN_DB, TrackId};
 use crate::player::Player;
 
 /// Pixel je Beat in der Zeitleiste.
+/// Start-Zoom der Zeitleiste in Pixel je Beat.
 const PX_PER_BEAT: f32 = 12.0;
+const ZOOM_RANGE: std::ops::RangeInclusive<f32> = 2.0..=160.0;
 
 use crate::feedback::{FeedbackDialog, GuiConfig, Phase, encode_png};
 use crate::state::{AppState, Status};
@@ -38,6 +40,13 @@ pub struct WoaApp {
     clip_drag: Option<(ClipId, f64)>,
     /// Fades being edited (committed as one undo step when editing ends).
     fade_edit: Option<(ClipId, f64, f64)>,
+    /// Clip-Rand, der gerade gezogen wird: (Clip, linker Rand?, Versatz in Beats).
+    trim: Option<(ClipId, bool, f64)>,
+    /// Zoom der Zeitleiste in Pixel je Beat.
+    zoom: f32,
+    /// Zeitleisten-Flächen je Spur (dieses und letztes Bild), für das Ziehen auf andere Spuren.
+    track_rects: Vec<(TrackId, egui::Rect)>,
+    prev_track_rects: Vec<(TrackId, egui::Rect)>,
     /// Angezeigter Pegel je Spur (mit Abfall), 0..1.
     track_levels: std::collections::HashMap<TrackId, f32>,
     /// Smoothed input level for the meter, 0..1.
@@ -64,6 +73,10 @@ impl WoaApp {
             selected_clip: None,
             clip_drag: None,
             fade_edit: None,
+            trim: None,
+            zoom: PX_PER_BEAT,
+            track_rects: Vec::new(),
+            prev_track_rects: Vec::new(),
             track_levels: std::collections::HashMap::new(),
             level: 0.0,
             state,
@@ -342,7 +355,10 @@ impl WoaApp {
                     self.save_as();
                 }
                 ui.separator();
-                if ui.button("Exportieren als WAV … (Strg+E)").clicked() {
+                if ui
+                    .button("Exportieren (WAV, FLAC, MP3) … (Strg+E)")
+                    .clicked()
+                {
                     self.export();
                 }
             });
@@ -372,8 +388,22 @@ impl WoaApp {
                 self.state.add_track();
             }
             ui.separator();
+            ui.label("Zoom");
+            if ui.button("−").clicked() {
+                self.zoom = (self.zoom / 1.5).clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
+            }
+            if ui.button("+").clicked() {
+                self.zoom = (self.zoom * 1.5).clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
+            }
+            ui.separator();
             self.clip_bar(ui);
         });
+        // Strg+Mausrad zoomt die Zeitleiste.
+        let z = ui.ctx().input(|i| i.zoom_delta());
+        if z != 1.0 {
+            self.zoom = (self.zoom * z).clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
+        }
+        self.prev_track_rects = std::mem::take(&mut self.track_rects);
         ui.separator();
         let tracks: Vec<_> = self
             .state
@@ -466,17 +496,20 @@ impl WoaApp {
     /// click a clip: select, drag a clip: move it (snaps to 1/4 beat).
     fn timeline(&mut self, ui: &mut egui::Ui, track: TrackId) {
         let tempo = self.state.project().tempo_bpm;
+        let px = self.zoom;
         let Some(t) = self.state.project().track(track) else {
             return;
         };
         let clips = t.clips.clone();
         let end = clips.iter().map(|c| c.end_beats()).fold(64.0f64, f64::max);
-        let width = (end as f32 + 16.0) * PX_PER_BEAT;
+        let width = (end as f32 + 16.0) * px;
         let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 40.0), egui::Sense::click());
+        self.track_rects.push((track, rect));
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 2.0, ui.visuals().extreme_bg_color);
-        for bar in (0..=(end as usize + 16)).step_by(4) {
-            let x = rect.left() + bar as f32 * PX_PER_BEAT;
+        let step = if px < 4.0 { 16 } else { 4 };
+        for bar in (0..=(end as usize + 16)).step_by(step) {
+            let x = rect.left() + bar as f32 * px;
             painter.vline(
                 x,
                 rect.y_range(),
@@ -489,9 +522,21 @@ impl WoaApp {
                 Some((id, d)) if id == c.id => d,
                 _ => 0.0,
             };
-            let start = (c.start_beats + drag).max(0.0);
-            let x0 = rect.left() + start as f32 * PX_PER_BEAT;
-            let x1 = x0 + (c.length_beats as f32 * PX_PER_BEAT).max(2.0);
+            // Gezogener Rand: Anzeige mit vorläufigen Werten.
+            let (mut start, mut len, mut offset) =
+                (c.start_beats + drag, c.length_beats, c.offset_beats);
+            if let Some((id, left, d)) = self.trim
+                && id == c.id
+            {
+                if left {
+                    (start, len, offset) = (start + d, len - d, offset + d);
+                } else {
+                    len += d;
+                }
+            }
+            let start = start.max(0.0);
+            let x0 = rect.left() + start as f32 * px;
+            let x1 = x0 + (len as f32 * px).max(2.0);
             let r = egui::Rect::from_x_y_ranges(x0..=x1, rect.top() + 2.0..=rect.bottom() - 2.0);
             let cresp = ui.interact(
                 r,
@@ -509,16 +554,19 @@ impl WoaApp {
                 .audio
                 .as_deref()
                 .and_then(|rel| self.state.resolve_audio(rel));
-            if let (Some(file), Some(ppb), Some(p)) = (file, ppb, self.player.as_mut())
-                && let Some(peaks) = p.peaks(&file)
-            {
+            let peaks = match (file, self.player.as_mut()) {
+                (Some(file), Some(p)) => p.peaks(&file),
+                _ => None,
+            };
+            let audio_beats = peaks.as_ref().zip(ppb).map(|(p, ppb)| p.len() as f64 / ppb);
+            if let (Some(ppb), Some(peaks)) = (ppb, peaks) {
                 let mid = r.center().y;
                 let half = r.height() / 2.0 - 2.0;
                 let stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(170, 210, 250));
                 let mut x = r.left();
                 while x < r.right() {
-                    let b0 = c.offset_beats + f64::from((x - r.left()) / PX_PER_BEAT);
-                    let b1 = b0 + f64::from(1.0 / PX_PER_BEAT);
+                    let b0 = offset + f64::from((x - r.left()) / px);
+                    let b1 = b0 + f64::from(1.0 / px);
                     let (i0, i1) = (
                         (b0 * ppb) as usize,
                         ((b1 * ppb) as usize).max((b0 * ppb) as usize + 1),
@@ -526,7 +574,7 @@ impl WoaApp {
                     let v = peaks
                         .get(i0.min(peaks.len())..i1.min(peaks.len()))
                         .map_or(0.0, |w| w.iter().fold(0.0f32, |m, s| m.max(*s)));
-                    let local = f64::from((x - r.left()) / PX_PER_BEAT);
+                    let local = f64::from((x - r.left()) / px);
                     let env = fade_gain(c, local) as f32;
                     let h = (v * env).min(1.0) * half;
                     painter.vline(x, (mid - h)..=(mid + h), stroke);
@@ -536,7 +584,7 @@ impl WoaApp {
             // Fades as dark triangles.
             let shade = egui::Color32::from_black_alpha(110);
             if c.fade_in_beats > 0.0 {
-                let fx = r.left() + c.fade_in_beats as f32 * PX_PER_BEAT;
+                let fx = r.left() + c.fade_in_beats as f32 * px;
                 painter.add(egui::Shape::convex_polygon(
                     vec![r.left_top(), egui::pos2(fx, r.top()), r.left_bottom()],
                     shade,
@@ -544,7 +592,7 @@ impl WoaApp {
                 ));
             }
             if c.fade_out_beats > 0.0 {
-                let fx = r.right() - c.fade_out_beats as f32 * PX_PER_BEAT;
+                let fx = r.right() - c.fade_out_beats as f32 * px;
                 painter.add(egui::Shape::convex_polygon(
                     vec![egui::pos2(fx, r.top()), r.right_top(), r.right_bottom()],
                     shade,
@@ -571,20 +619,73 @@ impl WoaApp {
                 self.selected_track = Some(track);
             }
             if cresp.dragged() {
-                let d = self.clip_drag.map_or(0.0, |(_, d)| d)
-                    + f64::from(cresp.drag_delta().x / PX_PER_BEAT);
+                let d =
+                    self.clip_drag.map_or(0.0, |(_, d)| d) + f64::from(cresp.drag_delta().x / px);
                 self.clip_drag = Some((c.id, d));
             }
             if cresp.drag_stopped()
                 && let Some((id, d)) = self.clip_drag.take()
             {
                 let snapped = ((c.start_beats + d) * 4.0).round() / 4.0;
-                self.state.move_clip(id, snapped);
+                // Losgelassen über einer anderen Spur: dorthin verschieben.
+                let target = ui
+                    .ctx()
+                    .pointer_latest_pos()
+                    .and_then(|pos| {
+                        self.prev_track_rects
+                            .iter()
+                            .find(|(_, r)| r.y_range().contains(pos.y))
+                    })
+                    .map(|(t, _)| *t);
+                self.state.move_clip_to(id, target, snapped);
             }
-            cresp.on_hover_text("Ziehen: verschieben · S: am Kopf schneiden · Entf: löschen");
+            cresp.on_hover_text(
+                "Ziehen: verschieben (auch auf andere Spur) · Ränder ziehen: kürzen · S: am Kopf schneiden · Entf: löschen",
+            );
+            // Griffe an beiden Rändern zum Kürzen.
+            for left in [true, false] {
+                let hx = if left { r.left() } else { r.right() - 6.0 };
+                let h = egui::Rect::from_x_y_ranges(hx..=hx + 6.0, r.y_range());
+                let hresp = ui
+                    .interact(h, ui.id().with(("trim", c.id.0, left)), egui::Sense::drag())
+                    .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+                if hresp.drag_started() {
+                    self.selected_clip = Some(c.id);
+                }
+                if hresp.dragged() {
+                    let d =
+                        self.trim.map_or(0.0, |(_, _, d)| d) + f64::from(hresp.drag_delta().x / px);
+                    // Grenzen: mindestens 1/4 Beat lang, links nicht vor den Audio-Anfang,
+                    // rechts nicht über das Audio-Ende (wenn bekannt).
+                    let d = if left {
+                        d.clamp(-c.offset_beats, c.length_beats - 0.25)
+                    } else {
+                        let max =
+                            audio_beats.map_or(f64::MAX, |a| a - c.offset_beats - c.length_beats);
+                        d.clamp(0.25 - c.length_beats, max.max(0.0))
+                    };
+                    self.trim = Some((c.id, left, d));
+                }
+                if hresp.drag_stopped()
+                    && let Some((id, l, d)) = self.trim.take()
+                {
+                    let d = (d * 4.0).round() / 4.0;
+                    if l {
+                        self.state.trim_clip(
+                            id,
+                            c.start_beats + d,
+                            c.length_beats - d,
+                            c.offset_beats + d,
+                        );
+                    } else {
+                        self.state
+                            .trim_clip(id, c.start_beats, c.length_beats + d, c.offset_beats);
+                    }
+                }
+            }
         }
         if let Some(p) = &self.player {
-            let x = rect.left() + p.position_beats(tempo) as f32 * PX_PER_BEAT;
+            let x = rect.left() + p.position_beats(tempo) as f32 * px;
             painter.vline(
                 x,
                 rect.y_range(),
@@ -595,7 +696,7 @@ impl WoaApp {
             self.selected_track = Some(track);
             self.selected_clip = None;
             if let (Some(pos), Some(p)) = (resp.interact_pointer_pos(), self.player.as_mut()) {
-                p.seek_beats(f64::from((pos.x - rect.left()) / PX_PER_BEAT), tempo);
+                p.seek_beats(f64::from((pos.x - rect.left()) / px), tempo);
             }
         }
     }
@@ -603,7 +704,7 @@ impl WoaApp {
     /// Bearbeitungszeile für den gewählten Clip: Fades, Schneiden, Löschen.
     fn clip_bar(&mut self, ui: &mut egui::Ui) {
         let Some(id) = self.selected_clip else {
-            ui.label("Clip anklicken zum Bearbeiten · Datei → Exportieren als WAV");
+            ui.label("Clip anklicken zum Bearbeiten · Strg+Mausrad: Zoom · Strg+E: Export");
             return;
         };
         let Some((_, c)) = self.state.project().clip(id) else {
@@ -666,12 +767,19 @@ impl WoaApp {
 
     fn export(&mut self) {
         let Some(out) = rfd::FileDialog::new()
-            .set_title("Exportieren als WAV")
+            .set_title("Exportieren")
             .set_file_name(format!("{}.wav", self.state.project().meta.name))
             .add_filter("WAV", &["wav"])
+            .add_filter("FLAC", &["flac"])
+            .add_filter("MP3 (320 kbit/s)", &["mp3"])
             .save_file()
         else {
             return;
+        };
+        let out = if out.extension().is_none() {
+            out.with_extension("wav")
+        } else {
+            out
         };
         let project = self.state.project().clone();
         let state = &self.state;

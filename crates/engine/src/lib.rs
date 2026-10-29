@@ -19,6 +19,7 @@ use woa_dsp::{Node, ProcessBuffers};
 pub mod clip;
 #[cfg(feature = "device")]
 pub mod device;
+pub mod export;
 pub mod project;
 #[cfg(feature = "device")]
 pub mod record;
@@ -45,6 +46,8 @@ pub enum EngineError {
     QueueFull,
     /// WAV schreiben fehlgeschlagen.
     Wav(hound::Error),
+    /// Export (FLAC/MP3) fehlgeschlagen.
+    Export(String),
 }
 
 impl fmt::Display for EngineError {
@@ -55,6 +58,7 @@ impl fmt::Display for EngineError {
             Self::InvalidConfig(what) => write!(f, "invalid config: {what}"),
             Self::QueueFull => write!(f, "command queue to audio thread is full"),
             Self::Wav(e) => write!(f, "wav: {e}"),
+            Self::Export(e) => write!(f, "export: {e}"),
         }
     }
 }

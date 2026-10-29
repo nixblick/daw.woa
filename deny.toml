@@ -36,6 +36,16 @@ allow = ["CDLA-Permissive-2.0"]
 crate = "epaint_default_fonts"
 allow = ["OFL-1.1", "Ubuntu-font-1.0"]
 
+# MP3-Export (LAME). Die Crates schreiben die veraltete SPDX-Kennung "LGPL-3.0", gemeint ist
+# LGPL-3.0-only (oben ohnehin erlaubt, GPLv3-vertraeglich). Nur fuer diese zwei Crates.
+[[licenses.exceptions]]
+crate = "mp3lame-encoder"
+allow = ["LGPL-3.0"]
+
+[[licenses.exceptions]]
+crate = "mp3lame-sys"
+allow = ["LGPL-3.0"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
