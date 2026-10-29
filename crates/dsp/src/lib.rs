@@ -10,6 +10,7 @@
 //! [`soundfont::SoundFontPlayer`], per [`instrument::InstrumentNode`] im Graphen,
 //! Note-Events über [`instrument::note_queue`] (`rtrb`).
 
+pub mod generate;
 pub mod instrument;
 pub mod sampler;
 pub mod soundfont;
