@@ -5,6 +5,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::{ModelError, Result};
+
 /// Tempo of a new project.
 pub const DEFAULT_TEMPO_BPM: f64 = 120.0;
 /// Lowest accepted tempo.
@@ -160,6 +162,9 @@ impl Project {
     }
 
     /// Hands out a fresh id and advances the counter.
+    ///
+    /// Loading and every command keep all ids and `next_id` at or below
+    /// [`MAX_ID`] + 1, so the loop ends and the counter cannot overflow.
     pub(crate) fn alloc_id(&mut self) -> u64 {
         // Skip anything already used, e.g. ids from hand-edited files.
         while self.id_in_use(self.next_id) {
@@ -170,10 +175,36 @@ impl Project {
         id
     }
 
+    /// Rejects a loaded project whose ids or counter exceed [`MAX_ID`].
+    pub(crate) fn check_ids(&self) -> Result<()> {
+        if self.next_id > MAX_ID + 1 {
+            return Err(ModelError::IdOutOfRange(self.next_id));
+        }
+        for t in &self.tracks {
+            check_id(t.id.0)?;
+            for c in &t.clips {
+                check_id(c.id.0)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Keeps `next_id` above every id that was inserted from outside.
     pub(crate) fn bump_next_id(&mut self, raw: u64) {
         if raw >= self.next_id {
             self.next_id = raw.saturating_add(1);
         }
     }
+}
+
+/// Largest id the model hands out or accepts (2^53, exact in JSON numbers).
+/// The cap keeps the id counter far from overflow, even for hostile files.
+pub const MAX_ID: u64 = 1 << 53;
+
+/// Errors with [`ModelError::IdOutOfRange`] if `raw` is above [`MAX_ID`].
+pub(crate) fn check_id(raw: u64) -> Result<()> {
+    if raw > MAX_ID {
+        return Err(ModelError::IdOutOfRange(raw));
+    }
+    Ok(())
 }

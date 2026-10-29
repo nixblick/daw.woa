@@ -22,6 +22,9 @@ pub enum ModelError {
     /// A track or clip with this id already exists.
     #[error("id {0} is already in use")]
     DuplicateId(u64),
+    /// An id is above [`crate::project::MAX_ID`].
+    #[error("id {0} is out of range")]
+    IdOutOfRange(u64),
     /// A numeric parameter was out of range or not finite.
     #[error("invalid value for {field}: {value}")]
     InvalidValue {

@@ -41,8 +41,8 @@ pub use command::Command;
 pub use error::{ModelError, Result};
 pub use history::{History, HistoryEntry};
 pub use project::{
-    Clip, ClipId, DEFAULT_TEMPO_BPM, MAX_GAIN_DB, MAX_TEMPO_BPM, MIN_GAIN_DB, MIN_TEMPO_BPM,
-    Project, ProjectMeta, Track, TrackId, TrackKind,
+    Clip, ClipId, DEFAULT_TEMPO_BPM, MAX_GAIN_DB, MAX_ID, MAX_TEMPO_BPM, MIN_GAIN_DB,
+    MIN_TEMPO_BPM, Project, ProjectMeta, Track, TrackId, TrackKind,
 };
 pub use session::Session;
 pub use store::{FORMAT_VERSION, ProjectFile};

@@ -9,7 +9,8 @@
 //!   audio/           # recorded and imported audio (filled by later milestones)
 //! ```
 //!
-//! Every file is written atomically: to `<file>.tmp` in the same folder, flushed to
+//! Every file is written atomically: to a fresh temp file (O_EXCL, random name) in the
+//! same folder, flushed to
 //! disk, then renamed over the target. A crash therefore leaves either the old or
 //! the new file, never a half-written one.
 
@@ -71,6 +72,7 @@ pub fn from_json(json: &str, path: &Path) -> Result<Project> {
         });
     }
     let file: ProjectFile = serde_json::from_str(json).map_err(json_err)?;
+    file.project.check_ids()?;
     Ok(file.project)
 }
 
@@ -118,15 +120,15 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
         let p = p.to_path_buf();
         move |source| ModelError::Io { path: p, source }
     };
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".tmp");
-    let tmp = PathBuf::from(tmp);
-    {
-        let mut f = fs::File::create(&tmp).map_err(io(&tmp))?;
-        f.write_all(bytes).map_err(io(&tmp))?;
-        f.sync_all().map_err(io(&tmp))?;
-    }
-    fs::rename(&tmp, path).map_err(io(path))?;
+    // A fresh, exclusively created temp file never follows a planted symlink.
+    let parent = match path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => Path::new("."),
+    };
+    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(io(parent))?;
+    tmp.write_all(bytes).map_err(io(tmp.path()))?;
+    tmp.as_file().sync_all().map_err(io(tmp.path()))?;
+    tmp.persist(path).map_err(|e| io(path)(e.error))?;
     // Persist the rename itself; directories cannot be opened for sync on Windows.
     #[cfg(unix)]
     if let Some(parent) = path.parent()
