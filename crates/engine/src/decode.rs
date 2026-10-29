@@ -18,6 +18,12 @@ pub const MIN_RATE: u32 = 8_000;
 pub const MAX_RATE: u32 = 384_000;
 /// Längste Datei, die gelesen wird (Speicherschutz).
 pub const MAX_SECONDS: u64 = 6 * 3600;
+/// Höchste Kanalzahl, die gelesen wird.
+pub const MAX_CHANNELS: usize = 8;
+/// Feste Obergrenze aller dekodierten Samples (alle Kanäle), unabhängig von Angaben aus der
+/// Datei: 6 Stunden Stereo bei 48 kHz, gut 8 GB als f32. Gegen präparierte Dateien, deren
+/// Kopf harmlos aussieht und deren Pakete dann mehr liefern.
+pub const MAX_SAMPLES: usize = 6 * 3600 * 48_000 * 2;
 
 /// Endungen, die WOA lesen kann (für Dateidialoge: beide Schreibweisen).
 pub const EXTENSIONS: [&str; 6] = ["wav", "flac", "mp3", "WAV", "FLAC", "MP3"];
@@ -89,14 +95,33 @@ fn check_len(frames: u64, rate: u32) -> Result<(), String> {
     Ok(())
 }
 
+/// Rate und Kanalzahl vor dem Dekodieren und für jeden Puffer prüfen.
+fn check_format(rate: u32, channels: usize) -> Result<(), String> {
+    if !(MIN_RATE..=MAX_RATE).contains(&rate) {
+        return Err("Abtastrate außerhalb".into());
+    }
+    if !(1..=MAX_CHANNELS).contains(&channels) {
+        return Err(format!("{channels} Kanäle (höchstens {MAX_CHANNELS})"));
+    }
+    Ok(())
+}
+
+/// Passen `more` weitere Samples noch unter [`MAX_SAMPLES`]?
+fn check_total(have: usize, more: usize) -> Result<(), String> {
+    if have.saturating_add(more) > MAX_SAMPLES {
+        return Err("zu groß (Speicherschutz)".into());
+    }
+    Ok(())
+}
+
 fn decode_wav(path: &Path) -> Result<Decoded, String> {
     let e = |x: hound::Error| x.to_string();
     let mut reader = hound::WavReader::open(path).map_err(e)?;
     let spec = reader.spec();
-    if !(MIN_RATE..=MAX_RATE).contains(&spec.sample_rate) {
-        return Err("Abtastrate außerhalb".into());
-    }
+    let channels = usize::from(spec.channels);
+    check_format(spec.sample_rate, channels)?;
     check_len(u64::from(reader.duration()), spec.sample_rate)?;
+    check_total(0, reader.len() as usize)?;
     let samples: Vec<f32> = match spec.sample_format {
         hound::SampleFormat::Float => reader
             .samples::<f32>()
@@ -113,7 +138,7 @@ fn decode_wav(path: &Path) -> Result<Decoded, String> {
     };
     Ok(Decoded {
         samples,
-        channels: usize::from(spec.channels.max(1)),
+        channels,
         rate: spec.sample_rate,
     })
 }
@@ -140,8 +165,9 @@ fn decode_symphonia(path: &Path, ext: &str) -> Result<Decoded, String> {
     let Some(CodecParameters::Audio(params)) = track.codec_params.clone() else {
         return Err("keine Tonspur".into());
     };
-    let mut rate = params.sample_rate.unwrap_or(0);
-    let mut channels = params.channels.as_ref().map_or(0, |c| c.count());
+    let rate = params.sample_rate.unwrap_or(0);
+    let channels = params.channels.as_ref().map_or(0, |c| c.count());
+    check_format(rate, channels)?;
     if let Some(n) = num_frames {
         check_len(n, rate)?;
     }
@@ -162,21 +188,23 @@ fn decode_symphonia(path: &Path, ext: &str) -> Result<Decoded, String> {
         }
         match decoder.decode(&packet) {
             Ok(buf) => {
-                rate = buf.spec().rate();
-                channels = buf.spec().channels().count();
+                // Wechselt Rate oder Kanalzahl mitten in der Datei, wird sie abgelehnt.
+                if buf.spec().rate() != rate || buf.spec().channels().count() != channels {
+                    return Err("Abtastrate oder Kanalzahl wechselt in der Datei".into());
+                }
+                let more = buf.frames().saturating_mul(channels);
+                check_total(samples.len(), more)?;
                 buf.copy_to_vec_interleaved(&mut chunk);
+                check_total(samples.len(), chunk.len())?;
                 samples.extend_from_slice(&chunk);
             }
             // Ein kaputter Frame ist kein Abbruch (z. B. MP3 mit Fehlern).
             Err(SymError::DecodeError(_)) => continue,
             Err(x) => return Err(e(x)),
         }
-        if channels > 0 {
-            check_len((samples.len() / channels) as u64, rate)?;
+        if let Some(frames) = samples.len().checked_div(channels) {
+            check_len(frames as u64, rate)?;
         }
-    }
-    if channels == 0 {
-        return Err("keine Kanäle".into());
     }
     Ok(Decoded {
         samples,
@@ -265,6 +293,74 @@ mod tests {
             let want = rms(&l) * 0.75;
             assert!((rms(&m) - want).abs() < 0.01, "{ext}: {}", rms(&m));
         }
+    }
+
+    #[test]
+    fn flac_with_rate_zero_in_header_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("r0.flac");
+        let (l, r) = tone(44_100);
+        export_stereo(&p, &l, &r, 44_100).unwrap();
+        let mut b = std::fs::read(&p).unwrap();
+        // STREAMINFO: Rate sind die 20 Bit ab Byte 18.
+        b[18] = 0;
+        b[19] = 0;
+        b[20] &= 0x0f;
+        std::fs::write(&p, &b).unwrap();
+        assert!(decode_file(&p).is_err());
+    }
+
+    #[test]
+    fn wav_with_too_many_channels_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("c9.wav");
+        let spec = hound::WavSpec {
+            channels: 9,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(&p, spec).unwrap();
+        for _ in 0..9 {
+            w.write_sample(0i16).unwrap();
+        }
+        w.finalize().unwrap();
+        let e = decode_file(&p).unwrap_err();
+        assert!(e.contains("Kanäle"), "{e}");
+    }
+
+    #[test]
+    fn wav_claiming_huge_data_is_rejected_before_reading() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("big.wav");
+        // Kopf: 8 kHz mono 8 Bit, Datenblock angeblich fast 4 GB, real 4 Byte.
+        let mut b = Vec::new();
+        b.extend_from_slice(b"RIFF");
+        b.extend_from_slice(&0xffff_fff0u32.to_le_bytes());
+        b.extend_from_slice(b"WAVEfmt ");
+        b.extend_from_slice(&16u32.to_le_bytes());
+        b.extend_from_slice(&1u16.to_le_bytes());
+        b.extend_from_slice(&1u16.to_le_bytes());
+        b.extend_from_slice(&8_000u32.to_le_bytes());
+        b.extend_from_slice(&8_000u32.to_le_bytes());
+        b.extend_from_slice(&1u16.to_le_bytes());
+        b.extend_from_slice(&8u16.to_le_bytes());
+        b.extend_from_slice(b"data");
+        b.extend_from_slice(&0xffff_ffd0u32.to_le_bytes());
+        b.extend_from_slice(&[128; 4]);
+        std::fs::write(&p, &b).unwrap();
+        assert!(decode_file(&p).is_err());
+    }
+
+    #[test]
+    fn format_and_total_limits() {
+        assert!(check_format(0, 2).is_err());
+        assert!(check_format(48_000, 0).is_err());
+        assert!(check_format(48_000, MAX_CHANNELS + 1).is_err());
+        assert!(check_format(48_000, 2).is_ok());
+        assert!(check_total(MAX_SAMPLES - 10, 10).is_ok());
+        assert!(check_total(MAX_SAMPLES - 10, 11).is_err());
+        assert!(check_total(usize::MAX, 1).is_err());
     }
 
     #[test]
