@@ -201,8 +201,8 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
         let _ = status::write(&status_path, &s);
         msg
     };
-    cfg.validate().map_err(&fail)?;
-    let kw = Kennwort::from_file(&cfg.password_file).map_err(&fail)?;
+    cfg.validate().map_err(fail)?;
+    let kw = Kennwort::from_file(&cfg.password_file).map_err(fail)?;
     let link = link_path(data_dir);
     if is_alive(&link) {
         return Err(fail("woa-streamd läuft schon".into()));
@@ -227,8 +227,8 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
             .map_err(|e| fail(e.to_string()))?;
     }
 
-    let mut enc = Mp3Encoder::new(rate, cfg.bitrate_kbps).map_err(&fail)?;
-    let uplink = Uplink::spawn(cfg.clone(), kw).map_err(&fail)?;
+    let mut enc = Mp3Encoder::new(rate, cfg.bitrate_kbps).map_err(fail)?;
+    let uplink = Uplink::spawn(cfg.clone(), kw).map_err(fail)?;
     let mut emergency = Emergency::new(&cfg.emergency, rate);
     tracing::info!(
         server = %cfg.label(),
@@ -509,7 +509,7 @@ fn serve(
                 } else {
                     l.clear();
                     r.clear();
-                    for f in samples.chunks_exact(2) {
+                    for f in samples.as_chunks::<2>().0 {
                         l.push(f[0]);
                         r.push(f[1]);
                     }
