@@ -4,6 +4,30 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 41: Auto-Updater (woa-updater) (0.34.2, offen)
+
+Aus M10. WOA sucht alle 12 Stunden nach einem veröffentlichten Release und bietet es an. Windows (MSI) und AppImage installieren sich selbst, Flatpak und Quellbau melden nur. Nie während Sendung oder Aufnahme. Ablauf: `docs/updater.md`.
+
+1. **Alte Version starten:** Eine ältere Version von WOA starten (AppImage oder MSI aus einem früheren Release; sie braucht den Updater, also frühestens diese Version) und ein neueres Release auf GitHub **veröffentlichen** (Entwurf freigeben).
+2. **Erststart-Hinweis sehen:** Beim ersten Start mit dieser Version erscheint „Nach Updates suchen“ mit „Verstanden“ und „Abschalten“. „Verstanden“ klicken. Danach sucht WOA (spätestens beim nächsten Start bzw. nach der Wartezeit); „Hilfe → Über WOA → Jetzt nach Updates suchen“ geht sofort.
+3. **Leiste klicken:** Unter dem Menü steht „Update x.y.z verfügbar“. „Neuerungen“ zeigt den Text, „Jetzt installieren“ lädt, prüft und startet neu. Bei laufender Sendung oder Aufnahme ist die Taste grau und nennt den Grund.
+4. **Neue Nummer in Über:** Nach dem Neustart „Hilfe → Über WOA“ öffnen: die Versionsnummer ist die neue, „Installiert als“ nennt die Paketart.
+5. **Nur Flatpak:** In der Flatpak-Version zeigt die Leiste `flatpak update de.wironair.woa` statt einer Installier-Taste.
+
+Selbst geprüft von Claude (ohne Ton, ohne Audiogerät, ohne Netz außer dem eigenen Rechner; lokal):
+- **Fake-Server auf 127.0.0.1:** neuere, gleiche und ältere Version; kaputte Prüfsumme (nichts auf der Platte); kein Netz; Serverfehler und Unsinn als Manifest; Weiterleitung auf fremden Host abgelehnt; Flatpak und Quellbau laden kein Byte; AppImage wird ausführbar abgelegt, ersetzt die alte Datei, bei Fehler bleibt die alte.
+- **12-Stunden-Sperre:** nach Erfolg 12 Stunden, nach Fehlversuch eine Stunde, zurückgestellte Uhr fragt einmal.
+- **Oberfläche ohne Fenster (Momentaufnahme des gezeichneten Textes):** Leiste je Paketart, graue Taste mit Grund bei Aufnahme, Erststart-Hinweis (keine Suche vor der Antwort), „Über WOA“ mit Version und Paketart.
+- **Logs:** Fund, Veto, Ablehnung und Installerstart stehen als `update …`-Zeilen im Log; keine Ausgabe auf einem Audiogerät, kein „Auf Sendung“.
+- `clippy -D warnings` und die Tests der Crates `woa-updater` und `woa-gui` (Update-Teil) grün.
+
+Nicht selbst geprüft: ein echter Update-Lauf gegen GitHub mit veröffentlichtem Release (setzt ein Release voraus); Neustart des ersetzten AppImage; Windows-Installer-Lauf; Flatpak im Sandkasten; das Signieren des AppImage in `release.yml` (läuft erst bei einem Tag oder Probelauf).
+
+**Offen für André:**
+- Windows-Codesigning-Zertifikat (kostenpflichtig), Signatur der Flatpaks.
+- Veröffentlichung: Download-Seite und Datenschutzerklärung auf wironair.de, Flathub.
+- minisign-Schlüssel für Stufe B (ohne ihn prüft der Updater nur die SHA-256 aus `latest.json`, siehe Bedrohungsmodell in `docs/updater.md`).
+
 ## Paket 40: Release-Workflow für beide Plattformen (0.34.1, offen)
 
 Aus M10. Ein Tag `v…` baut Windows und Linux und legt ein Release als **Entwurf** an. Den Probelauf gibt es ohne Tag (GitHub → Actions → Release → Run workflow); er legt kein Release an. Ablauf: `docs/release.md`.

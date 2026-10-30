@@ -114,6 +114,11 @@ Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
 - **Mixxx** (`mixxxdj/mixxx`, GPL-2.0-or-later, Commit `bc49961fd3e5`), `.github/workflows/release.yml`. **Nur den Aufbau gelesen:** ein Release-Workflow löst bei einem Tag aus und setzt die Bauten (Plattformen, AppImage, Flatpak) aus eigenen, wiederverwendbaren Workflows (`workflow_call`) zusammen; Prüfsummen liegen als Datei neben dem Paket. Bei uns: `release.yml` ruft `windows-build.yml` und `linux-build.yml` auf, dazu eine gemeinsame `SHA256SUMS`. **Kein Code übernommen.**
 - **Nicht gelesen:** Audacity und LMMS für diesen Teil (Windows-Signierung und Mixxx' Hochladen auf eigene Server sind bewusst nicht nachgebaut: Zertifikat und Veröffentlichung sind Andrés Entscheidung).
 
+## Auto-Updater (Paket 41)
+
+- **Audacity** (`audacity/audacity`, GPL-3.0 laut `LICENSE.txt`, Commit `f6be9d7522fc`), `au3/src/update/UpdateManager.cpp`. **Nur die Ideen gelesen:** ein Zeitgeber fragt im Betrieb alle 12 Stunden (nicht nur beim Start), der Zeitpunkt der nächsten Suche wird gespeichert, ein Hinweisfenster erscheint genau einmal vor der ersten Suche und lässt sich abschalten, die Suche ist in den Einstellungen abschaltbar. Bei uns: `crates/gui/src/update.rs` (`auto_check_due`, 12 Stunden, eine Stunde Wartezeit nach Fehlversuch) und `update_notice_window` in `crates/gui/src/app.rs`. Versionsvergleich, Download, Prüfsumme, Austausch von AppImage und MSI sind eigener Code (`crates/updater`). **Kein Code übernommen.**
+- **Nicht gelesen:** Mixxx und LMMS für diesen Teil (ihre Update-Wege hängen an eigenen Servern bzw. fehlen).
+
 ## Regel
 
 Quellen werden nur mit Repository, Datei und Commit genannt, nie mit Pfaden einer Maschine.

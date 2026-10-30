@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.34.2 — 2026-10-30
+
+Paket 41 aus M10: Auto-Updater für MSI, AppImage und Flatpak (Abnahme: `docs/abnahme.md`, Ablauf: `docs/updater.md`).
+
+- **12-Stunden-Takt:** Die Update-Suche läuft beim Start und danach im Betrieb höchstens alle 12 Stunden (vorher einmal am Tag beim Start); nach einem Fehlversuch (kein Netz) frühestens nach einer Stunde.
+- **Erststart-Hinweis:** Vor der allerersten Suche erklärt ein Fenster einmal, was passiert, mit „Verstanden“ und „Abschalten“. Bis zur Antwort wird nicht gesucht.
+- **Nie während Sendung oder Aufnahme:** Keine automatische Suche, „Jetzt installieren“ grau mit Grund; läuft eine Sendung an, während das Paket lädt, wird das Paket verworfen und nichts installiert.
+- **AppImage ersetzt sich selbst:** Download neben die laufende Datei, Prüfung (SHA-256, mit Schlüssel minisign), ausführbar, `rename` über die alte Datei, Neustart. **Flatpak und Quellbau melden nur** (Hinweis `flatpak update de.wironair.woa` bzw. Link). Paketart-Erkennung in `woa_updater::Kind`.
+- **`latest.json`** enthält jetzt `appimage_url`, `appimage_sha256`, `appimage_sig_url`; `release.yml` signiert das AppImage wie das MSI. Ältere Manifeste ohne AppImage-Felder bleiben lesbar.
+- **Hilfe → Über WOA:** Versionsnummer, Paketart, Zeitpunkt der letzten Suche, „Jetzt nach Updates suchen“. Einstellungs-Eintrag heißt jetzt „Alle 12 Stunden nach Updates suchen“.
+- **Tests ohne Internet:** Fake-Server auf 127.0.0.1 für neu/gleich/älter, kaputte Prüfsumme, kein Netz, Serverfehler, fremde Weiterleitung, Flatpak lädt nichts, AppImage-Austausch; GUI-Text je Paketart ohne Fenster; 12-Stunden-Regel.
+- **Herkunft:** Takt und Erststart-Hinweis nach der Idee von Audacity (GPL-3.0), kein Code übernommen (`docs/herkunft.md`).
+- **Nicht gebaut (André):** Windows-Codesigning-Zertifikat, Signatur von Flatpak, Veröffentlichung auf wironair.de und Flathub, Datenschutzerklärung dort, minisign-Schlüssel für Stufe B.
+
 ## 0.34.1 — 2026-10-30
 
 Paket 40 aus M10: Release-Workflow für beide Plattformen (Abnahme: `docs/abnahme.md`, Ablauf: `docs/release.md`).

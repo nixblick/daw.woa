@@ -24,6 +24,9 @@ pub enum UpdateError {
     Manifest(String),
     #[error("Signatur ungültig: {0}")]
     Signature(String),
+    /// Diese Paketart ersetzt sich nicht selbst (Flatpak, Quellbau) oder das Manifest hat kein Paket dafür.
+    #[error("automatische Installation nicht möglich")]
+    NotSupported,
     #[error("Dateifehler: {0}")]
     Io(String),
 }
