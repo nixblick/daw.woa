@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.26.1 — 2026-10-30
+
+Sicherheit (#101): Der DAWproject-Import begrenzt jede Audiodatei beim Lesen auf das Restbudget der Gesamtgrenze, nicht nur auf die Grenze je Datei. Eine präparierte Datei mit gefälschten ZIP-Größen kann die Platte nicht mehr vollschreiben. Test dazu.
+
 ## 0.26.0 — 2026-10-30
 
 Paket 31 aus M8: CLAP-Plugins finden und laden (Abnahme: `docs/abnahme.md`).
