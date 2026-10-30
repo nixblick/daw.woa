@@ -16,6 +16,10 @@ Paket 39 aus M10: Linux-Pakete aus der CI, AppImage und Flatpak (Abnahme: `docs/
 - **Nicht gebaut / nicht geprüft:** Signatur der Pakete; Veröffentlichung auf wironair.de oder Flathub; Start der Oberfläche im Paket (CI hat keinen Bildschirm); CLAP-Plugins im Flatpak (die Sandbox sieht die Plugins des Rechners nicht); Update-Prüfung (Paket 40).
 - **Offen für André:** Code-Signing-Zertifikat und Signatur der Pakete (Kosten); Ort der Veröffentlichung (wironair.de, Flathub, GitHub-Releases); ob die App-Kennung `de.wironair.woa` so bleiben soll (setzt die Domain wironair.de voraus).
 
+## 0.33.3 — 2026-10-30
+
+- **Spur umbenennen hielt fest:** Das Namensfeld holte sich in jedem Bild den Fokus zurück, Enter und ein Klick daneben wirkten nicht, man kam nur per Neustart heraus (André, Windows 0.33.2). Der Fokus wird jetzt nur beim Öffnen gesetzt. Enter oder ein Klick daneben übernimmt den Namen, Esc verwirft ihn.
+
 ## 0.33.2 — 2026-10-30
 
 - **Windows: Wiedergabe und Mikrofon gingen nicht** (▶ grau, „Der Threadmodus kann nicht nach dem Einstellen geändert werden“). Das Fenster richtet COM für Drag & Drop als STA ein, WASAPI braucht MTA. Jeder Gerätezugriff (Geräte auflisten, Ausgabe, Aufnahme, Live-Eingang) läuft unter Windows jetzt auf einem eigenen Thread. Außerdem bestimmt unter Windows der Treiber die Puffergröße statt fester 128 Frames. Ein grauer ▶ erklärt beim Darüberfahren, warum.
