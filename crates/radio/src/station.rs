@@ -144,6 +144,7 @@ impl Station {
     }
 
     /// Fügt Dateien hinzu und misst sie im Hintergrund (Ergebnis wird gecacht).
+    #[tracing::instrument(level = "info", skip_all, name = "station_add_files")]
     pub fn add_files(&self, paths: Vec<PathBuf>) {
         let todo = paths.clone();
         self.with(move |c| {

@@ -20,8 +20,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tracing::field::{Field, Visit};
+use tracing::span;
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
+use tracing_subscriber::registry::LookupSpan;
 
 use crate::scrub::{MAX_ART, MAX_MODUL, is_identifier, module_from_target};
 
@@ -164,8 +166,9 @@ impl Default for UploadConfig {
             install_id: String::new(),
             app_version: env!("CARGO_PKG_VERSION").to_string(),
             os: std::env::consts::OS.to_string(),
-            batch_size: 200,
-            interval: Duration::from_secs(300),
+            batch_size: 100,
+            // In der Entwicklung zeitnah sehen, was auf den Rechnern passiert (André 30.10.).
+            interval: Duration::from_secs(30),
             max_buffer: 2000,
             queue_capacity: 1024,
             timeout: Duration::from_secs(15),
@@ -366,7 +369,52 @@ impl Visit for Fields {
     fn record_debug(&mut self, _field: &Field, _value: &dyn std::fmt::Debug) {}
 }
 
-impl<S: tracing::Subscriber> Layer<S> for UploadLayer {
+/// Spans, die mindestens so lange laufen, gehen als `span.<name>` mit der Dauer in ms raus.
+pub const SPAN_MIN_MS: u64 = 20;
+
+/// Startzeit eines Spans, in dessen Extensions abgelegt.
+struct SpanStart(Instant);
+
+impl<S> Layer<S> for UploadLayer
+where
+    S: tracing::Subscriber + for<'a> LookupSpan<'a>,
+{
+    fn on_new_span(&self, _attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
+        if self.tx.is_some()
+            && let Some(span) = ctx.span(id)
+        {
+            span.extensions_mut().insert(SpanStart(Instant::now()));
+        }
+    }
+
+    fn on_close(&self, id: span::Id, ctx: Context<'_, S>) {
+        let Some(tx) = &self.tx else { return };
+        let Some(span) = ctx.span(&id) else { return };
+        let Some(ms) = span
+            .extensions()
+            .get::<SpanStart>()
+            .map(|s| s.0.elapsed().as_millis() as u64)
+        else {
+            return;
+        };
+        if ms < SPAN_MIN_MS {
+            return;
+        }
+        let meta = span.metadata();
+        let Some(modul) = module_from_target(meta.target()) else {
+            return;
+        };
+        let art = format!("span.{}", meta.name().to_ascii_lowercase());
+        if let Some(e) = Event::new(
+            Level::Info,
+            &modul,
+            &art,
+            i64::try_from(ms).unwrap_or(i64::MAX),
+        ) {
+            let _ = tx.try_send(Msg::Event(e));
+        }
+    }
+
     fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
         let Some(tx) = &self.tx else { return };
         let meta = event.metadata();
@@ -376,8 +424,9 @@ impl<S: tracing::Subscriber> Layer<S> for UploadLayer {
         let art = match f.art {
             Some(a) => a,
             None => match stufe {
-                Level::Error => "log.error".to_string(),
-                Level::Warn => "log.warn".to_string(),
+                // Ohne eigenes `art` nennt der Code-Ort den Fehler: `log.error.app.4711`.
+                Level::Error => source_art("log.error", meta.file(), meta.line()),
+                Level::Warn => source_art("log.warn", meta.file(), meta.line()),
                 _ => return,
             },
         };
@@ -387,5 +436,25 @@ impl<S: tracing::Subscriber> Layer<S> for UploadLayer {
         if let Some(e) = Event::new(stufe, &modul, &art, f.wert) {
             let _ = tx.try_send(Msg::Event(e));
         }
+    }
+}
+
+/// `prefix.<dateiname ohne .rs>.<zeile>`; nur Kleinbuchstaben, Ziffern und `_`, sonst `prefix`.
+fn source_art(prefix: &str, file: Option<&str>, line: Option<u32>) -> String {
+    let stem = file
+        .and_then(|f| f.rsplit(['/', '\\']).next())
+        .map(|f| f.trim_end_matches(".rs"))
+        .unwrap_or("");
+    let stem: String = stem
+        .chars()
+        .map(|c| match c.to_ascii_lowercase() {
+            c @ ('a'..='z' | '0'..='9') => c,
+            _ => '_',
+        })
+        .collect();
+    match (stem.is_empty(), line) {
+        (false, Some(l)) => format!("{prefix}.{stem}.{l}"),
+        (false, None) => format!("{prefix}.{stem}"),
+        _ => prefix.to_string(),
     }
 }

@@ -894,6 +894,7 @@ impl Imp {
 ///
 /// # Errors
 /// Datei nicht lesbar, kein gültiges DAWproject, zu groß, oder Projekt unzulässig.
+#[tracing::instrument(level = "info", skip_all, name = "dawproject_import")]
 pub fn import(file: &Path, dir: &Path) -> Result<(Project, Report), DawError> {
     let f = std::fs::File::open(file)?;
     let mut archive = ZipArchive::new(f)?;

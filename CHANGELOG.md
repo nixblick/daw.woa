@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.33.0 — 2026-10-30
+## 0.33.1 — 2026-10-30
+
+- **Telemetrie, die etwas sagt:** Bisher kamen fast nur leere `log.warn`-Zeilen an, alle 5 Minuten. Jetzt alle 30 Sekunden, mit Code-Ort jeder Warnung und jedes Fehlers (`log.error.app.4711`), Dauer langsamer Aktionen (`span.playlist_add`, `span.audio_load`, `span.show_load`, `span.show_render`, `span.dawproject_import` u. a. ab 20 ms), langsamen Frames (`ui.frame_slow` ab 100 ms) und Hängern der Oberfläche (`ui.hang_open` ab 2 s, auch wenn das Fenster nie mehr reagiert). Weiter nur Bezeichner und Zahlen, kein Text, keine Pfade. Übersicht in `docs/telemetrie.md`.## 0.33.0 — 2026-10-30
 
 Paket 38 aus M9: Browser-Gast per WebRTC, lokal (Abnahme: `docs/abnahme.md`).
 

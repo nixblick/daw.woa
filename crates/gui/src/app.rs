@@ -165,6 +165,8 @@ pub struct WoaApp {
     level: f32,
     /// Thema schon gesetzt.
     themed: bool,
+    /// Misst langsame Frames und Hänger für die Telemetrie (nur Dauer).
+    frame_watch: woa_telemetry::FrameWatch,
     /// Fotomodus (`WOA_SCREENSHOT=datei.png`): Zielpfad und gezählte Bilder.
     photo: Option<(PathBuf, u32)>,
     /// Party-Layout (Paket 35).
@@ -440,6 +442,7 @@ impl WoaApp {
             fade_handle: None,
             gain_preview: None,
             themed: false,
+            frame_watch: woa_telemetry::FrameWatch::new(),
             party: crate::party::PartyView::default(),
             photo: std::env::var_os("WOA_SCREENSHOT").map(|p| (PathBuf::from(p), 0)),
             selected_clips: Vec::new(),
@@ -4686,6 +4689,7 @@ impl eframe::App for WoaApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let _frame_time = self.frame_watch.frame();
         let ctx = ui.ctx().clone();
         self.photo(&ctx);
         if !self.themed {
