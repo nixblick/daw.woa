@@ -20,9 +20,9 @@ use woa_dsp::instrument::NoteEvent;
 use crate::midi_clip::midi_track_source;
 use crate::plugin_node::PluginChain;
 use crate::project::{ProjectGraph, build_project_graph_plugins, build_project_graph_taps};
-use woa_dsp::plugin::TrackPlugins;
 use crate::transport::{TransportHandle, beats_to_samples};
 use crate::{Engine, EngineError};
+use woa_dsp::plugin::TrackPlugins;
 
 use crate::decode::{MAX_RATE, MIN_RATE, decode_file, resample_linear};
 
@@ -236,7 +236,9 @@ pub fn clip_graph_analysis(
     meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
     live: Option<(TrackId, Consumer<NoteEvent>)>,
 ) -> ProjectGraph {
-    clip_graph_inner(project, transport, rate, load, meters, live, false, true, None)
+    clip_graph_inner(
+        project, transport, rate, load, meters, live, false, true, None,
+    )
 }
 
 /// Wie [`clip_graph_live`]; mit `offline` (Export) rechnen die Effekte ohne eigene Threads.
@@ -249,7 +251,9 @@ pub fn clip_graph_mode(
     live: Option<(TrackId, Consumer<NoteEvent>)>,
     offline: bool,
 ) -> ProjectGraph {
-    clip_graph_inner(project, transport, rate, load, meters, live, offline, false, None)
+    clip_graph_inner(
+        project, transport, rate, load, meters, live, offline, false, None,
+    )
 }
 
 /// Wie [`clip_graph_mode`] (mit Abgriffen, wenn `with_taps`), dazu die Plugins der Spuren
@@ -353,13 +357,7 @@ pub(crate) fn clip_graph_inner(
                 };
                 PluginChain::build(t, f(t), project.tempo_bpm, rate, queue, meter)
             };
-            build_project_graph_plugins(
-                project,
-                &mut source,
-                offline,
-                with_taps,
-                Some(&mut chain),
-            )
+            build_project_graph_plugins(project, &mut source, offline, with_taps, Some(&mut chain))
         }
     }
 }
@@ -382,7 +380,9 @@ pub fn render_clips(
     seconds: f64,
     load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
 ) -> Result<(Vec<f32>, Vec<f32>), EngineError> {
-    render_clips_plugins(project, rate, seconds, load, &mut |_| TrackPlugins::default())
+    render_clips_plugins(project, rate, seconds, load, &mut |_| {
+        TrackPlugins::default()
+    })
 }
 
 /// Wie [`render_clips`], mit den Plugins der Spuren (Paket 31).

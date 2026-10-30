@@ -44,9 +44,9 @@ pub mod stems;
 pub mod tap;
 pub mod transport;
 
-pub use project::{build_project_graph_plugins,
+pub use project::{
     ProjectGraph, TrackNodes, audibility, build_project_graph, build_project_graph_mode,
-    build_project_graph_taps, render_project, track_gains,
+    build_project_graph_plugins, build_project_graph_taps, render_project, track_gains,
 };
 pub use transport::{LoopRange, TransportHandle, beats_to_samples, samples_to_beats};
 use transport::{Shared, Transport};

@@ -53,9 +53,28 @@ impl PluginRack {
         &self.catalog
     }
 
+    /// Ein zweites, leeres Rack mit derselben Plugin-Liste und Rate. Der Export rechnet damit
+    /// eigene Instanzen, damit er die laufende Wiedergabe nicht stört.
+    pub fn fresh(&self) -> Self {
+        Self::new(Arc::clone(&self.catalog), self.rate)
+    }
+
+    /// Lädt alle Plätze neu (nach einer neuen Suche, wenn ein Plugin dazugekommen sein kann).
+    pub fn reset(&mut self, catalog: Arc<Catalog>) {
+        self.catalog = catalog;
+        self.slots.clear();
+    }
+
+    /// Ob es für diesen Platz eine Instanz gibt.
+    pub fn is_loaded(&self, id: InsertId) -> bool {
+        self.slots.get(&id.0).is_some_and(|e| e.instance.is_some())
+    }
+
     /// Gleicht das Rack mit dem Projekt ab: neue Plätze werden geladen (mit ihrem gespeicherten
     /// Zustand), entfernte abgebaut. Ein Platz, der schon geladen ist, bleibt unberührt.
-    pub fn sync(&mut self, project: &Project) {
+    /// Liefert `true`, wenn sich etwas geändert hat (dann braucht die Engine einen neuen Graphen).
+    pub fn sync(&mut self, project: &Project) -> bool {
+        let mut changed = false;
         let mut wanted: Vec<u64> = Vec::new();
         for t in &project.tracks {
             for slot in &t.plugins {
@@ -67,10 +86,13 @@ impl PluginRack {
                 if !keep {
                     let entry = self.load(slot);
                     self.slots.insert(slot.id.0, entry);
+                    changed = true;
                 }
             }
         }
+        let before = self.slots.len();
         self.slots.retain(|id, _| wanted.contains(id));
+        changed || self.slots.len() != before
     }
 
     fn load(&self, slot: &PluginSlot) -> Entry {

@@ -247,7 +247,8 @@ pub fn find_files(roots: &[PathBuf]) -> Vec<PathBuf> {
 }
 
 fn is_clap(p: &Path) -> bool {
-    p.extension().is_some_and(|e| e.eq_ignore_ascii_case("clap"))
+    p.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("clap"))
 }
 
 fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
@@ -335,6 +336,9 @@ mod tests {
         // Nur die Aufspaltung wird geprüft; die Umgebung bleibt unberührt.
         let joined = std::env::join_paths(["/a/clap", "/b/clap"]).unwrap();
         let parts: Vec<_> = std::env::split_paths(&joined).collect();
-        assert_eq!(parts, vec![PathBuf::from("/a/clap"), PathBuf::from("/b/clap")]);
+        assert_eq!(
+            parts,
+            vec![PathBuf::from("/a/clap"), PathBuf::from("/b/clap")]
+        );
     }
 }

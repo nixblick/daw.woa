@@ -8,8 +8,8 @@ use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use woa_engine::clip::{clip_graph_plugins, render_clips_plugins};
 use woa_engine::{AudioProcessor, Engine};
 use woa_model::{
-    Clip, Command, InsertId, MidiData, MidiNote, PluginParam, PluginRole, PluginSlot,
-    Project, Session, TrackId, TrackKind,
+    Clip, Command, InsertId, MidiData, MidiNote, PluginParam, PluginRole, PluginSlot, Project,
+    Session, TrackId, TrackKind,
 };
 use woa_plugins::testplugin::{self, GAIN, LEVEL};
 use woa_plugins::{PluginRack, SlotStatus};
@@ -58,7 +58,12 @@ fn setup() -> Setup {
     let inst = s.new_insert_id();
     s.apply(Command::AddPlugin {
         track: midi,
-        plugin: PluginSlot::new(inst, testplugin::ID, "WOA Test Plugin", PluginRole::Instrument),
+        plugin: PluginSlot::new(
+            inst,
+            testplugin::ID,
+            "WOA Test Plugin",
+            PluginRole::Instrument,
+        ),
         index: None,
     })
     .unwrap();

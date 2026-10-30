@@ -55,6 +55,8 @@ pub struct WoaApp {
     gain_drag: Option<(TrackId, f64)>,
     /// Laufende Änderung eines Effekt-Reglers (Effekt, Regler, Wert), ein Undo-Schritt am Ende.
     fx_drag: Option<(woa_model::InsertId, usize, f64)>,
+    /// Laufende Änderung eines Plugin-Reglers (Platz, Regler, Wert), ein Undo-Schritt am Ende.
+    plugin_drag: Option<(woa_model::InsertId, u32, f64)>,
     /// Laufende Änderung eines Send-Pegels (Spur, Ziel, dB).
     send_drag: Option<(TrackId, TrackId, f64)>,
     /// Eingabefeld "+ Bus".
@@ -460,6 +462,7 @@ impl WoaApp {
             rename: None,
             gain_drag: None,
             fx_drag: None,
+            plugin_drag: None,
             send_drag: None,
             new_bus_name: String::new(),
             pan_drag: None,
@@ -1643,7 +1646,17 @@ impl WoaApp {
         });
     }
 
+    /// Übernimmt den Zustand der laufenden Plugins ins Projekt (vor Speichern, Autosave, Export).
+    fn capture_plugins(&mut self) {
+        let Some(player) = self.player.as_mut() else {
+            return;
+        };
+        let cmds = player.capture_plugin_state(self.state.project());
+        self.state.apply_plugin_state(cmds);
+    }
+
     fn save(&mut self) {
+        self.capture_plugins();
         if self.state.needs_save_as() {
             self.save_as();
         } else {
@@ -1652,6 +1665,7 @@ impl WoaApp {
     }
 
     fn save_as(&mut self) {
+        self.capture_plugins();
         if let Some(dir) = rfd::FileDialog::new()
             .set_title("Projekt speichern")
             .set_file_name(format!("{}.woa", self.state.project().meta.name))
@@ -4156,6 +4170,7 @@ impl WoaApp {
 
     fn run_export(&mut self, req: crate::export_dialog::ExportRequest) {
         let ext = req.spec.format.extension();
+        self.capture_plugins();
         let project = self.state.project().clone();
         let name = project.meta.name.clone();
         let status = match req.stems {
@@ -4582,6 +4597,9 @@ impl eframe::App for WoaApp {
             self.drop_files(ctx);
         }
         self.feedback.poll();
+        if self.state.autosave_due(Instant::now()) {
+            self.capture_plugins();
+        }
         self.state.tick_autosave(Instant::now());
         let title = self.state.title();
         if title != self.last_title {
@@ -5532,6 +5550,187 @@ impl WoaApp {
                 .clicked()
             {
                 self.state.add_voice_chain(id);
+                ui.close();
+            }
+        });
+        self.strip_plugins(ui, id, kind);
+    }
+
+    /// CLAP-Plugins einer Spur (Paket 31): Instrument und Effekte, Regler, Browser.
+    fn strip_plugins(&mut self, ui: &mut egui::Ui, id: TrackId, kind: woa_model::TrackKind) {
+        use woa_model::PluginRole;
+        let Some(track) = self.state.project().track(id) else {
+            return;
+        };
+        let slots = track.plugins.clone();
+        let small = |s: &str| {
+            egui::RichText::new(s.to_owned())
+                .size(9.5)
+                .color(theme::DIM)
+        };
+        let has_instrument = slots.iter().any(|s| s.role == PluginRole::Instrument);
+        if !slots.is_empty() {
+            ui.label(small("PLUGINS"));
+        }
+        for slot in &slots {
+            let status = self.player.as_ref().and_then(|p| p.plugin_status(slot.id));
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 3.0;
+                if slot.role == PluginRole::Effect {
+                    let on = !slot.bypass;
+                    let b = egui::Button::new(
+                        egui::RichText::new(&slot.name).size(10.5).color(if on {
+                            theme::WELL
+                        } else {
+                            theme::DIM
+                        }),
+                    )
+                    .fill(if on { theme::CUE_CYAN } else { theme::SURFACE })
+                    .min_size(egui::vec2(70.0, 18.0));
+                    if ui.add(b).on_hover_text("Ein/Aus (Bypass)").clicked() {
+                        self.state.toggle_plugin_bypass(id, slot.id);
+                    }
+                } else {
+                    ui.label(
+                        egui::RichText::new(format!("♪ {}", slot.name))
+                            .size(10.5)
+                            .color(theme::TEXT_BRIGHT),
+                    );
+                }
+                if ui
+                    .small_button("✕")
+                    .on_hover_text("Plugin entfernen")
+                    .clicked()
+                {
+                    self.state.remove_plugin(id, slot.id);
+                }
+            });
+            match &status {
+                Some(woa_plugins::SlotStatus::Missing) => {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "nicht installiert ({}); der Platz bleibt im Projekt",
+                            slot.clap_id
+                        ))
+                        .size(9.5)
+                        .color(theme::ON_AIR),
+                    );
+                    continue;
+                }
+                Some(woa_plugins::SlotStatus::Failed(why)) => {
+                    ui.label(
+                        egui::RichText::new(why.as_str())
+                            .size(9.5)
+                            .color(theme::ON_AIR),
+                    );
+                    continue;
+                }
+                _ => {}
+            }
+            let params: Vec<woa_plugins::ParamDesc> = self
+                .player
+                .as_ref()
+                .map_or_else(Vec::new, |p| p.plugin_params(slot.id))
+                .into_iter()
+                .filter(|p| !p.hidden && !p.read_only)
+                .collect();
+            if params.is_empty() {
+                continue;
+            }
+            egui::CollapsingHeader::new(small("Regler"))
+                .id_salt(("plug", slot.id.0))
+                .show(ui, |ui| {
+                    const SHOWN: usize = 64;
+                    for p in params.iter().take(SHOWN) {
+                        let stored = slot.params.iter().find(|q| q.id == p.id).map(|q| q.value);
+                        let mut v = match self.plugin_drag {
+                            Some((f, q, v)) if f == slot.id && q == p.id => v,
+                            _ => stored
+                                .or_else(|| {
+                                    self.player
+                                        .as_mut()
+                                        .and_then(|pl| pl.plugin_value(slot.id, p.id))
+                                })
+                                .unwrap_or(p.default),
+                        };
+                        let label = if p.module.is_empty() {
+                            format!("{} ", p.name)
+                        } else {
+                            format!("{} / {} ", p.module, p.name)
+                        };
+                        let mut w = egui::DragValue::new(&mut v)
+                            .range(p.min..=p.max)
+                            .speed(((p.max - p.min) / 400.0).max(1e-6))
+                            .max_decimals(3)
+                            .prefix(label);
+                        if p.stepped {
+                            w = w.max_decimals(0).speed(0.05);
+                        }
+                        let r = ui.add(w).on_hover_text("Doppelklick: Vorgabe");
+                        if r.double_clicked() {
+                            self.plugin_drag = None;
+                            self.state.set_plugin_param(id, slot.id, p.id, p.default);
+                        } else {
+                            if r.changed() {
+                                self.plugin_drag = Some((slot.id, p.id, v));
+                            }
+                            if r.drag_stopped() || (r.changed() && !r.dragged()) {
+                                self.plugin_drag = None;
+                                self.state.set_plugin_param(id, slot.id, p.id, v);
+                            }
+                        }
+                    }
+                    if params.len() > SHOWN {
+                        ui.label(small(&format!(
+                            "… und {} weitere (Plugin-Oberfläche folgt)",
+                            params.len() - SHOWN
+                        )));
+                    }
+                });
+        }
+        ui.menu_button("+ Plugin", |ui| {
+            let list = self
+                .player
+                .as_mut()
+                .map_or_else(Vec::new, |p| p.plugin_list());
+            if list.is_empty() {
+                ui.label(small(
+                    "Keine CLAP-Plugins gefunden (Ordner ~/.clap, /usr/lib/clap oder CLAP_PATH).",
+                ));
+            }
+            for info in &list {
+                let as_instrument = info.is_instrument();
+                let as_effect = info.is_effect() || !as_instrument;
+                if as_instrument && kind == woa_model::TrackKind::Midi && !has_instrument {
+                    let label = format!("♪ {}  {}", info.name, info.vendor);
+                    if ui.button(label).on_hover_text("Als Instrument").clicked() {
+                        self.state.add_plugin(
+                            id,
+                            &info.clap_id,
+                            &info.name,
+                            PluginRole::Instrument,
+                        );
+                        ui.close();
+                    }
+                }
+                if as_effect && kind != woa_model::TrackKind::Bus {
+                    let label = format!("fx {}  {}", info.name, info.vendor);
+                    if ui.button(label).on_hover_text("Als Effekt").clicked() {
+                        self.state
+                            .add_plugin(id, &info.clap_id, &info.name, PluginRole::Effect);
+                        ui.close();
+                    }
+                }
+            }
+            ui.separator();
+            if ui
+                .button("Neu suchen")
+                .on_hover_text("Liest die Plugin-Ordner noch einmal")
+                .clicked()
+            {
+                if let Some(p) = self.player.as_mut() {
+                    p.rescan_plugins();
+                }
                 ui.close();
             }
         });

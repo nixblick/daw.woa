@@ -15,8 +15,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 
 use woa_dsp::automation::{AutoCurve, AutoNode, PanSide, db_to_amp};
-use woa_dsp::plugin::BYPASS_PARAM;
 use woa_dsp::fx::{BYPASS, FxContext, FxKind, FxNode, FxStereoNode, KeyedFxNode};
+use woa_dsp::plugin::BYPASS_PARAM;
 use woa_dsp::{DEFAULT_RAMP_SECONDS, Gain, Node, Smoother, StereoBuffers, StereoNode, gain_params};
 use woa_model::{
     AutoMode, AutoRange, AutoTarget, AutomationLane, EffectKind, Insert, InsertId, Project, Send,
@@ -467,6 +467,9 @@ pub fn build_project_graph_taps(
     build_project_graph_plugins(project, source, offline, with_taps, None)
 }
 
+/// Liefert je Spur die Plugin-Knoten (oder `None`).
+pub type PluginHook<'a> = dyn FnMut(&Track) -> Option<PluginChain> + 'a;
+
 /// Wie [`build_project_graph_taps`]. `plugins` liefert je Spur die Plugin-Knoten (Paket 31);
 /// eine Spur mit Plugins läuft ab dem Instrument oder dem ersten Plugin-Effekt in Stereo. Hat
 /// sie ein Instrument, ersetzt es die Quelle (`source` wird für diese Spur nicht gerufen).
@@ -475,7 +478,7 @@ pub fn build_project_graph_plugins(
     source: &mut dyn FnMut(&Track) -> Option<Box<dyn Node>>,
     offline: bool,
     with_taps: bool,
-    mut plugins: Option<&mut dyn FnMut(&Track) -> Option<PluginChain>>,
+    mut plugins: Option<&mut PluginHook<'_>>,
 ) -> ProjectGraph {
     let ctx = FxContext {
         tempo_bpm: project.tempo_bpm as f32,
@@ -631,7 +634,10 @@ pub fn build_project_graph_plugins(
         let mut tail = src;
         let mut inserts = Vec::new();
         let mut plugin_nodes: Vec<(InsertId, NodeId)> = Vec::new();
-        if let Some(slot) = t.plugins.iter().find(|s| s.role == woa_model::PluginRole::Instrument)
+        if let Some(slot) = t
+            .plugins
+            .iter()
+            .find(|s| s.role == woa_model::PluginRole::Instrument)
             && stereo_head
         {
             plugin_nodes.push((slot.id, src));

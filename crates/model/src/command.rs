@@ -1127,11 +1127,7 @@ impl Command {
     }
 }
 
-fn find_plugin(
-    project: &mut Project,
-    track: TrackId,
-    plugin: InsertId,
-) -> Result<&mut PluginSlot> {
+fn find_plugin(project: &mut Project, track: TrackId, plugin: InsertId) -> Result<&mut PluginSlot> {
     find(project, track)?
         .plugins
         .iter_mut()

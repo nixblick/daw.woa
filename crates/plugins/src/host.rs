@@ -177,7 +177,9 @@ pub struct ClapInstance {
 }
 
 fn lossy(b: &[u8]) -> String {
-    String::from_utf8_lossy(b).trim_end_matches('\0').to_string()
+    String::from_utf8_lossy(b)
+        .trim_end_matches('\0')
+        .to_string()
 }
 
 impl ClapInstance {
@@ -317,9 +319,9 @@ impl ClapInstance {
     /// Der Zustand des Plugins als Bytes (CLAP-State-Erweiterung).
     pub fn save_state(&mut self) -> Result<Vec<u8>, HostError> {
         let h = self.instance.plugin_handle();
-        let ext = h
-            .get_extension::<PluginState>()
-            .ok_or_else(|| HostError::State("das Plugin kann seinen Zustand nicht speichern".into()))?;
+        let ext = h.get_extension::<PluginState>().ok_or_else(|| {
+            HostError::State("das Plugin kann seinen Zustand nicht speichern".into())
+        })?;
         let mut sink = Capped(Vec::new());
         ext.save(&h, &mut sink)
             .map_err(|e| HostError::State(e.to_string()))?;
@@ -479,7 +481,10 @@ impl StereoProcessor for ClapProcessor {
                 events,
                 &chunk,
                 (in_left, in_right),
-                (&mut out_left[start..start + n], &mut out_right[start..start + n]),
+                (
+                    &mut out_left[start..start + n],
+                    &mut out_right[start..start + n],
+                ),
             );
             if !ok {
                 self.cell.errors.fetch_add(1, Ordering::Relaxed);
@@ -609,11 +614,16 @@ impl Inner {
             let chans = [ol, or];
             let mut outputs = self.out_ports.with_output_buffers([AudioPortBuffer {
                 latency: 0,
-                channels: AudioPortBufferType::f32_output_only(
-                    chans.into_iter().take(self.out_ch),
-                ),
+                channels: AudioPortBufferType::f32_output_only(chans.into_iter().take(self.out_ch)),
             }]);
-            proc.process(&inputs, &mut outputs, &in_events, &mut out_events, steady, None)
+            proc.process(
+                &inputs,
+                &mut outputs,
+                &in_events,
+                &mut out_events,
+                steady,
+                None,
+            )
         };
         self.steady = self.steady.wrapping_add(n as u64);
         if result.is_err() {

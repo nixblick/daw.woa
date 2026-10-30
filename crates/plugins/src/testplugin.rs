@@ -56,7 +56,8 @@ impl TestShared {
     }
 
     fn get(&self, id: u32) -> Option<f64> {
-        self.cell(id).map(|c| f64::from_bits(c.load(Ordering::Relaxed)))
+        self.cell(id)
+            .map(|c| f64::from_bits(c.load(Ordering::Relaxed)))
     }
 
     fn set(&self, id: u32, v: f64) {

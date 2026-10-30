@@ -2,11 +2,15 @@
 
 ## 0.26.0 — 2026-10-30
 
-Paket 31 aus M8: CLAP-Plugins finden und laden (in Arbeit, Eintrag wird am Ende vervollständigt).
+Paket 31 aus M8: CLAP-Plugins finden und laden (Abnahme: `docs/abnahme.md`).
 
 - **Modell:** Plugin-Plätze auf Spuren (`PluginSlot`), fünf Befehle mit Rückgängig, Projektformat 4 nur bei Plugins.
 - **Host (`woa-plugins`):** Suche in den Standardordnern und `CLAP_PATH`, Instanz über `clack-host`, Rechner ohne Sperre und ohne Speicheranforderung im Audio-Thread, Test-Plugin aus `clack-plugin` mit Selbstprüfung.
 - **Engine:** Spuren mit Plugins laufen in Stereo. Ein Instrument-Plugin ersetzt den eingebauten Synth der MIDI-Spur (Clip-Noten im Takt des Transports, Live-Noten, Sprung und Stopp lassen nichts hängen), Effekt-Plugins folgen den eingebauten Effekten. Fehlt ein Instrument, schweigt die Spur; ein fehlender Effekt wird durchgereicht. Export und Stems rechnen mit Plugins (`render_clips_plugins`, `render_stems_plugins`).
+- **Oberfläche:** Im Kanalzug „+ Plugin“ (Browser mit Instrumenten und Effekten, „Neu suchen“), Platz mit Ein/Aus und Entfernen, Regler als Zahlenfelder, „nicht installiert“ bei fehlendem Plugin. Die Suche startet erst beim ersten Bedarf. Der Plugin-Zustand wird beim Speichern, Autosave und Export ins Projekt übernommen; der Export rechnet mit eigenen Instanzen.
+- **Tests:** Offline-Render mit dem Test-Plugin (Pegelvergleich, Bypass, fehlendes Plugin, Zustand speichern und laden, 200 Blöcke unter `assert_no_alloc`), Zustandstest der Oberfläche.
+- **Herkunft:** Kein Code übernommen; `clack-host` und `clack-plugin` sind Abhängigkeiten. Ardour und tracktion sind noch nicht gelesen (Pakete 32/33).
+- **Nicht gebaut:** Plugin-Fenster (Paket 32), Auslagern in einen eigenen Prozess und Latenzausgleich (Paket 33), Anbindung in `woa-headless` und Agent.
 
 ## 0.25.0 — 2026-10-30
 

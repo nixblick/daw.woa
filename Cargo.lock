@@ -6191,6 +6191,7 @@ dependencies = [
  "woa-io",
  "woa-library",
  "woa-model",
+ "woa-plugins",
  "woa-radio",
  "woa-stream",
  "woa-telemetry",

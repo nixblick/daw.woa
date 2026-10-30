@@ -135,7 +135,12 @@ mod tests {
     use super::*;
 
     fn slot() -> PluginSlot {
-        PluginSlot::new(InsertId(7), "org.example.synth", "Synth", PluginRole::Instrument)
+        PluginSlot::new(
+            InsertId(7),
+            "org.example.synth",
+            "Synth",
+            PluginRole::Instrument,
+        )
     }
 
     #[test]
