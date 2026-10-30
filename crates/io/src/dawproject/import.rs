@@ -165,10 +165,9 @@ impl Imp {
             }
         };
         let size = zf.size();
-        if zf.is_dir()
-            || size > MAX_AUDIO_ENTRY
-            || self.audio_total.saturating_add(size) > MAX_AUDIO_TOTAL
-        {
+        // What this entry may still write: the per-entry cap and the rest of the total (#101).
+        let limit = entry_limit(self.audio_total);
+        if zf.is_dir() || size > limit {
             self.report
                 .note(format!("Audiodatei „{norm}“ zu groß oder ein Ordner"));
             return None;
@@ -178,11 +177,12 @@ impl Imp {
                 .write(true)
                 .create_new(true)
                 .open(&dest)?;
-            // Die Größenangabe im ZIP kann lügen: beim Lesen begrenzen.
-            std::io::copy(&mut (&mut zf).take(MAX_AUDIO_ENTRY + 1), &mut out)
+            // Die Größenangabe im ZIP kann lügen: beim Lesen auf das Restbudget begrenzen,
+            // sonst schreiben viele Einträge mit gefälschter Größe die Platte voll (#101).
+            std::io::copy(&mut (&mut zf).take(limit + 1), &mut out)
         })();
         match result {
-            Ok(n) if n <= MAX_AUDIO_ENTRY => {
+            Ok(n) if n <= limit => {
                 self.audio_total += n;
                 self.report.audio_files += 1;
                 Some(format!("{}/{name}", store::AUDIO_DIR))
@@ -1015,4 +1015,23 @@ pub fn import_to_folder(file: &Path, dir: &Path) -> Result<(Project, Report), Da
         let _ = std::fs::remove_dir_all(dir);
     }
     result
+}
+
+/// Bytes one audio entry may still write after `written` bytes: the smaller of the
+/// per-entry cap and what is left of the total cap (#101).
+fn entry_limit(written: u64) -> u64 {
+    MAX_AUDIO_ENTRY.min(MAX_AUDIO_TOTAL.saturating_sub(written))
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::*;
+
+    #[test]
+    fn entry_limit_shrinks_with_the_total_budget() {
+        assert_eq!(entry_limit(0), MAX_AUDIO_ENTRY);
+        assert_eq!(entry_limit(MAX_AUDIO_TOTAL - 10), 10);
+        assert_eq!(entry_limit(MAX_AUDIO_TOTAL), 0);
+        assert_eq!(entry_limit(u64::MAX), 0);
+    }
 }
