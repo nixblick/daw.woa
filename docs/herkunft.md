@@ -36,6 +36,15 @@ Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
 - **Was wir daraus haben:** nur die Idee: eine Sprachspur über Musik legen und die Musik währenddessen sanft absenken (Anstieg vor der Stimme, Halten, Rückkehr danach). Bei uns ist die Absenkung eine Kosinus-Rampe, die Mixer, Editor und Tests aus einer einzigen reinen Funktion (`voicetrack::duck_gain`) bekommen; die Stimme liegt auf einer festen Zeitachse zum Übergang zweier Titel. **Kein Code übernommen.** Mixxx kennt kein Voice-Tracking.
   Wo bei uns: `crates/radio/src/voicetrack.rs`.
 
+## Plugin-Fenster (Paket 32)
+
+- **Gelesen:** die Schnittstelle der Erweiterungen `gui`, `timer`, `posix-fd` und `params` in
+  `clack-extensions` 0.2.0 (Abhängigkeit, kein kopierter Code).
+- **Idee, nicht gelesen:** Ardour fasst Reglerbewegungen aus einer Plugin-Oberfläche als „Anfassen
+  und Loslassen“ zusammen (start_touch/stop_touch). Der Quelltext von Ardour wurde dafür nicht
+  gelesen; die Zusammenfassung in `crates/plugins/src/feedback.rs` ist eigener Entwurf aus der
+  CLAP-Beschreibung der Gesten. **Kein Code übernommen.**
+
 ## Regel
 
 Quellen werden nur mit Repository, Datei und Commit genannt, nie mit Pfaden einer Maschine.
