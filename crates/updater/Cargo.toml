@@ -13,5 +13,9 @@ serde_json = "1.0.154"
 sha2 = "0.10.9"
 thiserror = "2.0.21"
 tracing = "0.1.44"
+
 # Wie woa-telemetry: rustls, kein OpenSSL.
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

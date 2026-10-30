@@ -29,6 +29,45 @@ fn split(url: &str) -> Option<(&str, &str)> {
     (host_ok && path_ok).then_some((host, path))
 }
 
+/// Wer Adressen vorgeben darf. Im Programm gilt immer [`Policy::Github`]; [`Policy::Local`]
+/// (Schleife auf dem eigenen Rechner, ohne TLS) gibt es nur für die Tests mit einem
+/// Fake-Server und ist von aussen nicht erreichbar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Policy {
+    Github,
+    #[cfg_attr(not(test), allow(dead_code))]
+    Local,
+}
+
+impl Policy {
+    pub fn https_only(self) -> bool {
+        self == Policy::Github
+    }
+
+    /// Darf diese Adresse aus dem Manifest kommen (erster Schritt)?
+    pub fn start_allowed(self, url: &str) -> bool {
+        match self {
+            Policy::Github => start_allowed(url),
+            Policy::Local => local_allowed(url),
+        }
+    }
+
+    /// Darf eine Weiterleitung hierhin führen?
+    pub fn redirect_allowed(self, url: &str) -> bool {
+        match self {
+            Policy::Github => redirect_allowed(url),
+            Policy::Local => local_allowed(url),
+        }
+    }
+}
+
+fn local_allowed(url: &str) -> bool {
+    url.strip_prefix("http://127.0.0.1:").is_some_and(|rest| {
+        !url.chars().any(|c| c.is_whitespace() || c.is_control())
+            && !rest.split(['/', '?', '#']).any(|s| s == "..")
+    })
+}
+
 /// Darf diese Adresse aus dem Manifest kommen (erster Schritt)?
 pub fn start_allowed(url: &str) -> bool {
     matches!(split(url), Some((START_HOST, p)) if p.starts_with(START_PATH))

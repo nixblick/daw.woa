@@ -13,16 +13,20 @@
 
 mod error;
 mod hosts;
+mod kind;
 pub mod manifest;
 mod net;
 mod verify;
 pub mod version;
 
 pub use error::{UpdateError, Veto};
+pub use kind::Kind;
 pub use manifest::Available;
 #[cfg(windows)]
 pub use net::launch_installer;
-pub use net::{MANIFEST_URL, RELEASES_PAGE, check, download_and_verify};
+#[cfg(unix)]
+pub use net::restart_appimage;
+pub use net::{MANIFEST_URL, RELEASES_PAGE, check, download_and_verify, replace_appimage};
 pub use verify::{
     PUBLIC_KEY, configured, is_sha256_hex, key_configured, sha256_hex, verify_download,
     verify_hash, verify_package,

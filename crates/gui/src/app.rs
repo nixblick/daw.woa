@@ -53,8 +53,14 @@ pub struct WoaApp {
     update: crate::update::UpdateState,
     /// Frage „Projekt speichern?“ vor der Installation ist offen.
     update_confirm: bool,
-    /// Beim ersten Bild automatisch suchen (nur in der echten App, nicht in Tests).
-    update_autostart: bool,
+    /// Echte App (nicht Test): Hinweis und regelmäßige Suche aktiv.
+    update_live: bool,
+    /// Nächster Zeitpunkt, an dem die Fälligkeit geprüft wird (billig, ohne Netz).
+    update_next_probe: Instant,
+    /// Unix-Sekunden des letzten Versuchs (auch erfolglos), nur im Speicher.
+    update_last_attempt: Option<u64>,
+    /// Fenster „Über WOA“ offen.
+    about_open: bool,
     /// Track being renamed and its edit buffer.
     /// Spur, Eingabe, und ob der Fokus schon gesetzt wurde (nur einmal, sonst kommt man
     /// aus dem Feld nicht mehr heraus, André 30.10.).
@@ -478,7 +484,10 @@ impl WoaApp {
             feedback: FeedbackDialog::default(),
             update: crate::update::UpdateState::default(),
             update_confirm: false,
-            update_autostart: open_audio,
+            update_live: open_audio,
+            update_next_probe: Instant::now(),
+            update_last_attempt: None,
+            about_open: false,
             rename: None,
             gain_drag: None,
             fx_drag: None,
@@ -2160,6 +2169,12 @@ impl WoaApp {
                     self.set_telemetry(on);
                 }
                 self.update_menu(ui);
+            });
+            ui.menu_button("Hilfe", |ui| {
+                if ui.button("Über WOA …").clicked() {
+                    self.about_open = true;
+                    ui.close();
+                }
             });
             if ui
                 .selectable_label(self.library.open, "Bibliothek")
@@ -4781,6 +4796,8 @@ impl eframe::App for WoaApp {
             .show(ui, |ui| self.menu(ui, &ctx));
         self.update_banner(ui);
         self.update_confirm_window(&ctx);
+        self.update_notice_window(&ctx);
+        self.about_window(&ctx);
         if self.config.mode == Mode::Party
             && let Some(radio) = self.radio.as_mut()
         {
@@ -6207,17 +6224,36 @@ impl WoaApp {
         move || ctx.request_repaint()
     }
 
-    /// Jedes Bild: einmal beim Start (höchstens täglich) suchen, Ergebnisse abholen.
+    /// Warum jetzt nicht installiert werden darf (Sendung, Aufnahme).
+    fn update_blocked(&self) -> Option<&'static str> {
+        let on_air = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
+        crate::update::install_blocked(on_air, self.recording())
+    }
+
+    /// Jedes Bild: Ergebnisse abholen; höchstens einmal je Minute prüfen, ob die automatische
+    /// Suche fällig ist (alle 12 Stunden, siehe `update::auto_check_due`). Nie vor der Antwort auf
+    /// den Erststart-Hinweis und nie während Sendung oder Aufnahme.
     fn update_frame(&mut self, ctx: &egui::Context) {
-        use crate::update::{Event, check_due, unix_now};
-        if self.update_autostart {
-            self.update_autostart = false;
+        use crate::update::{Event, Phase as UPhase, auto_check_due, unix_now};
+        let now = Instant::now();
+        if self.update_live && now >= self.update_next_probe {
+            self.update_next_probe = now + std::time::Duration::from_secs(60);
+            let t = unix_now();
             if self.config.auto_update
+                && self.config.update_notice_seen
                 && self.photo.is_none()
-                && check_due(self.config.last_update_check, unix_now())
+                && !self.update.busy()
+                && self.update.phase == UPhase::Idle
+                && self.update_blocked().is_none()
+                && auto_check_due(self.config.last_update_check, self.update_last_attempt, t)
             {
+                self.update_last_attempt = Some(t);
                 self.update.start_check(false, Self::update_wake(ctx));
             }
+        }
+        // Damit die Fälligkeit auch bei ruhigem Fenster geprüft wird.
+        if self.update_live {
+            ctx.request_repaint_after(std::time::Duration::from_secs(60));
         }
         match self.update.poll() {
             Event::None => {}
@@ -6234,20 +6270,26 @@ impl WoaApp {
                     };
                 }
             }
-            #[cfg(windows)]
             Event::Downloaded(path) => self.update_install(ctx, &path),
-            #[cfg(not(windows))]
-            Event::Downloaded(_) => {}
         }
     }
 
-    /// Geprüftes MSI liegt bereit: Projekt sichern, Installer starten, App beenden. Das MSI
-    /// startet die neue Version nach der Installation selbst (`RESTARTWOA=1`).
-    #[cfg(windows)]
-    fn update_install(&mut self, ctx: &egui::Context, msi: &std::path::Path) {
+    /// Geprüftes Paket liegt bereit: Projekt sichern, Installer starten bzw. AppImage ersetzen,
+    /// App beenden. Unter Windows startet das MSI die neue Version selbst (`RESTARTWOA=1`), beim
+    /// AppImage startet `restart_appimage` die neue Datei. Ist inzwischen eine Sendung oder
+    /// Aufnahme angelaufen, wird nichts installiert.
+    fn update_install(&mut self, ctx: &egui::Context, pkg: &std::path::Path) {
+        if let Some(why) = self.update_blocked() {
+            tracing::info!(why, "update install postponed");
+            crate::update::discard_staged(self.update.kind, pkg);
+            self.update.back_to_available();
+            self.state.status = Status::Error(format!("Update nicht installiert: {why}"));
+            return;
+        }
         if self.state.session().is_dirty() {
             self.save();
             if self.state.session().is_dirty() {
+                crate::update::discard_staged(self.update.kind, pkg);
                 self.update.back_to_available();
                 self.state.status = Status::Error(
                     "Update nicht installiert: erst das Projekt speichern, dann noch einmal".into(),
@@ -6255,7 +6297,7 @@ impl WoaApp {
                 return;
             }
         }
-        match woa_updater::launch_installer(msi) {
+        match crate::update::start_installer(self.update.kind, pkg) {
             Ok(()) => {
                 tracing::info!("installer started, closing");
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -6279,6 +6321,8 @@ impl WoaApp {
             Phase::Failed(a, e) => (a, false, Some(e)),
             Phase::Idle | Phase::Checking => return,
         };
+        let blocked = self.update_blocked();
+        let kind = self.update.kind;
         egui::Panel::top("update")
             .frame(
                 egui::Frame::new()
@@ -6306,16 +6350,30 @@ impl WoaApp {
                         ui.label(egui::RichText::new("Wird geladen und geprüft …").small());
                         return;
                     }
-                    #[cfg(windows)]
-                    if ui.small_button("– Jetzt installieren").clicked() {
-                        if self.state.session().is_dirty() {
-                            self.update_confirm = true;
-                        } else {
-                            self.update.start_download(Self::update_wake(ui.ctx()));
+                    if kind.can_install() {
+                        let btn = ui.add_enabled(
+                            blocked.is_none(),
+                            egui::Button::new("– Jetzt installieren").small(),
+                        );
+                        if let Some(why) = blocked {
+                            btn.on_disabled_hover_text(why);
+                            ui.label(egui::RichText::new(why).small().color(theme::ON_AIR));
+                        } else if btn.clicked() {
+                            if self.state.session().is_dirty() {
+                                self.update_confirm = true;
+                            } else {
+                                self.update.start_download(Self::update_wake(ui.ctx()));
+                            }
                         }
+                    } else if kind == woa_updater::Kind::Flatpak {
+                        ui.label(
+                            egui::RichText::new(
+                                "– Aktualisieren mit: flatpak update de.wironair.woa",
+                            )
+                            .small(),
+                        );
                     }
-                    #[cfg(not(windows))]
-                    ui.hyperlink_to("– Zur Release-Seite", woa_updater::RELEASES_PAGE);
+                    ui.hyperlink_to("Release-Seite", woa_updater::RELEASES_PAGE);
                     if ui.small_button("Später").clicked() {
                         self.update.dismissed = true;
                     }
@@ -6356,15 +6414,97 @@ impl WoaApp {
         }
     }
 
+    /// Einmaliger Hinweis beim ersten Start (Muster wie Audacity): Bevor WOA zum ersten Mal
+    /// nach Updates fragt, steht hier, was passiert, mit „Abschalten“ gleich daneben.
+    fn update_notice_window(&mut self, ctx: &egui::Context) {
+        if !self.update_live || self.config.update_notice_seen || self.photo.is_some() {
+            return;
+        }
+        let mut ok = false;
+        let mut off = false;
+        egui::Window::new("Nach Updates suchen")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.set_max_width(420.0);
+                ui.label(
+                    "WOA schaut höchstens alle 12 Stunden bei GitHub nach, ob es eine neue \
+                     Version gibt. Dazu wird nur eine kleine Datei geladen; WOA schickt dabei \
+                     keine Daten über dich oder dein Projekt, GitHub sieht nur die \
+                     Internetadresse, wie bei jedem Seitenaufruf.",
+                );
+                ui.add_space(4.0);
+                ui.label(
+                    "Installiert wird nie von allein, erst nach deinem Klick, und nie während \
+                     einer Sendung oder Aufnahme. Ändern kannst du das jederzeit unter \
+                     Einstellungen.",
+                );
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ok = ui.button("Verstanden").clicked();
+                    off = ui.button("Abschalten").clicked();
+                });
+            });
+        if ok || off {
+            if off {
+                self.config.auto_update = false;
+            }
+            self.config.update_notice_seen = true;
+            self.save_config();
+        }
+    }
+
+    /// Fenster „Über WOA“: Versionsnummer, Paketart, Stand der Update-Suche.
+    fn about_window(&mut self, ctx: &egui::Context) {
+        if !self.about_open {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Über WOA")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.heading(format!("WOA {}", env!("CARGO_PKG_VERSION")));
+                ui.label("Wir on Air – Radio-DAW. Freie Software unter der GPLv3.");
+                ui.add_space(4.0);
+                ui.label(format!("Installiert als: {}", self.update.kind.label()));
+                let checked = match self.config.last_update_check {
+                    None => "noch nicht".to_string(),
+                    Some(t) => crate::update::ago(crate::update::unix_now(), t),
+                };
+                ui.label(format!("Letzte Update-Suche: {checked}"));
+                ui.hyperlink_to(
+                    "Quellcode und Releases",
+                    "https://github.com/nixblick/daw.woa",
+                );
+                ui.add_space(4.0);
+                if ui
+                    .add_enabled(
+                        !self.update.busy(),
+                        egui::Button::new("Jetzt nach Updates suchen"),
+                    )
+                    .clicked()
+                {
+                    self.update.dismissed = false;
+                    self.update.start_check(true, Self::update_wake(ui.ctx()));
+                    self.state.status = Status::Info("Suche nach Updates …".into());
+                }
+            });
+        self.about_open = open;
+    }
+
     /// Einträge im Menü „Einstellungen“.
     fn update_menu(&mut self, ui: &mut egui::Ui) {
         ui.separator();
         let mut on = self.config.auto_update;
         if ui
-            .checkbox(&mut on, "Beim Start nach Updates suchen (einmal am Tag)")
+            .checkbox(&mut on, "Alle 12 Stunden nach Updates suchen")
             .changed()
         {
             self.config.auto_update = on;
+            self.config.update_notice_seen = true;
             self.save_config();
         }
         if ui
@@ -6451,5 +6591,160 @@ mod tests {
         let p = ride(&mut state, t, &[]).unwrap();
         assert!(!p.keep);
         assert!(state.project().track(t).unwrap().gain_db < -20.0);
+    }
+
+    // ---- Update-Leiste und Hinweise (Paket 41), ohne Fenster, ohne Netz, ohne Ton ----------
+
+    /// Sammelt allen Text, den ein Bild zeichnet (unsere „Momentaufnahme“ der Oberfläche).
+    fn shape_text(shape: &egui::epaint::Shape, out: &mut String) {
+        use egui::epaint::Shape;
+        match shape {
+            Shape::Text(t) => {
+                out.push_str(t.galley.text());
+                out.push('\n');
+            }
+            Shape::Vec(v) => v.iter().for_each(|s| shape_text(s, out)),
+            _ => {}
+        }
+    }
+
+    struct Rig {
+        ctx: egui::Context,
+        app: WoaApp,
+        frame: eframe::Frame,
+        n: u32,
+        _tmp: tempfile::TempDir,
+    }
+
+    impl Rig {
+        fn new() -> Self {
+            let tmp = tempfile::tempdir().unwrap();
+            let app = WoaApp::without_audio(GuiConfig::default(), tmp.path().join("rec"));
+            Self {
+                ctx: egui::Context::default(),
+                app,
+                frame: eframe::Frame::_new_kittest(),
+                n: 0,
+                _tmp: tmp,
+            }
+        }
+
+        /// Ein Bild; liefert den gezeichneten Text.
+        fn frame_text(&mut self) -> String {
+            self.n += 1;
+            let mut input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1600.0, 1000.0),
+                )),
+                time: Some(f64::from(self.n) * 0.05),
+                ..Default::default()
+            };
+            input.viewports.entry(egui::ViewportId::ROOT).or_default();
+            let app = &mut self.app;
+            let frame = &mut self.frame;
+            let out = self.ctx.run_ui(input, |ui| {
+                eframe::App::logic(app, ui.ctx(), frame);
+                eframe::App::ui(app, ui, frame);
+            });
+            let mut text = String::new();
+            for s in &out.shapes {
+                shape_text(&s.shape, &mut text);
+            }
+            text
+        }
+
+        fn offer(&mut self, kind: woa_updater::Kind) {
+            self.app.update.kind = kind;
+            self.app.update.phase = crate::update::Phase::Available(woa_updater::Available {
+                version: "9.9.9".into(),
+                notes: "Neu: Dinge".into(),
+                msi_url: String::new(),
+                msi_sig_url: String::new(),
+                msi_sha256: String::new(),
+                appimage_url: String::new(),
+                appimage_sig_url: String::new(),
+                appimage_sha256: String::new(),
+            });
+        }
+    }
+
+    #[test]
+    fn banner_offers_install_for_msi_and_appimage() {
+        for kind in [woa_updater::Kind::Msi, woa_updater::Kind::AppImage] {
+            let mut r = Rig::new();
+            r.offer(kind);
+            r.frame_text();
+            let t = r.frame_text();
+            assert!(t.contains("Update 9.9.9 verfügbar"), "{t}");
+            assert!(t.contains("Jetzt installieren"), "{kind:?}: {t}");
+            assert!(t.contains("Release-Seite"), "{t}");
+        }
+    }
+
+    #[test]
+    fn banner_only_reports_for_flatpak_and_source_builds() {
+        let mut r = Rig::new();
+        r.offer(woa_updater::Kind::Flatpak);
+        r.frame_text();
+        let t = r.frame_text();
+        assert!(t.contains("flatpak update de.wironair.woa"), "{t}");
+        assert!(!t.contains("Jetzt installieren"), "{t}");
+
+        let mut r = Rig::new();
+        r.offer(woa_updater::Kind::Other);
+        r.frame_text();
+        let t = r.frame_text();
+        assert!(t.contains("Update 9.9.9 verfügbar"), "{t}");
+        assert!(
+            !t.contains("Jetzt installieren") && !t.contains("flatpak"),
+            "{t}"
+        );
+    }
+
+    #[test]
+    fn recording_blocks_the_install_button_and_says_why() {
+        let mut r = Rig::new();
+        r.offer(woa_updater::Kind::AppImage);
+        let tap = woa_io::record::record_tap();
+        let clock = std::sync::Arc::new(woa_dsp::clock::SampleClock::new());
+        r.app.midi_takes.push((
+            woa_model::TrackId(1),
+            woa_io::record::MidiTake::start(&tap, clock, 0),
+        ));
+        r.frame_text();
+        let t = r.frame_text();
+        assert!(
+            t.contains("Während der Aufnahme wird nicht installiert"),
+            "{t}"
+        );
+    }
+
+    #[test]
+    fn first_start_notice_waits_for_the_answer_and_can_switch_off() {
+        let mut r = Rig::new();
+        r.app.update_live = true;
+        r.frame_text();
+        let t = r.frame_text();
+        assert!(t.contains("alle 12 Stunden"), "{t}");
+        assert!(t.contains("Abschalten") && t.contains("Verstanden"), "{t}");
+        // Solange der Hinweis offen ist, startet keine Suche.
+        assert!(!r.app.update.busy());
+        assert!(!r.app.config.update_notice_seen);
+    }
+
+    #[test]
+    fn about_window_shows_version_and_package_kind() {
+        let mut r = Rig::new();
+        r.app.update.kind = woa_updater::Kind::AppImage;
+        r.app.about_open = true;
+        r.frame_text();
+        let t = r.frame_text();
+        assert!(
+            t.contains(&format!("WOA {}", env!("CARGO_PKG_VERSION"))),
+            "{t}"
+        );
+        assert!(t.contains("Installiert als: AppImage"), "{t}");
+        assert!(t.contains("Letzte Update-Suche: noch nicht"), "{t}");
     }
 }

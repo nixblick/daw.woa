@@ -1,13 +1,31 @@
-# Auto-Update per MSI
+# Auto-Updater (MSI, AppImage, Flatpak)
 
-WOA prüft beim Start (höchstens einmal am Tag), ob GitHub ein neueres, **veröffentlichtes**
-Release hat. Gibt es eines, zeigt ein Streifen unter dem Menü „Update x.y.z verfügbar – Jetzt
-installieren“ mit den Neuerungen. Unter Windows lädt ein Klick das MSI, prüft es, startet den
-Installer und beendet die App; das MSI startet die neue Version nach der Installation. Unter
-Linux und macOS gibt es nur den Hinweis mit Link zur Release-Seite.
+WOA prüft beim Start und danach im Betrieb **höchstens alle 12 Stunden**, ob GitHub ein
+neueres, **veröffentlichtes** Release hat (nach einem Fehlversuch, etwa ohne Netz, frühestens
+nach einer Stunde wieder). Gibt es eines, zeigt ein Streifen unter dem Menü „Update x.y.z
+verfügbar“ mit den Neuerungen. Was ein Klick tut, hängt davon ab, wie WOA installiert ist
+(„Hilfe → Über WOA“ nennt die Art):
 
-Ausschalten: Einstellungen → „Beim Start nach Updates suchen“, oder `"auto_update": false` in
-`config.json`. „Jetzt nach Updates suchen“ im selben Menü fragt sofort (ohne Tageslimit).
+| Art | Erkennung | Klick auf „Jetzt installieren“ |
+|---|---|---|
+| Windows (MSI) | Windows | lädt das MSI, prüft es, startet den Installer, beendet die App; das MSI startet die neue Version |
+| AppImage | Umgebungsvariable `APPIMAGE` zeigt auf eine vorhandene Datei | lädt das neue AppImage neben die alte Datei, prüft es, ersetzt die Datei (`rename`, atomar), startet sie neu |
+| Flatpak | `FLATPAK_ID` oder `/.flatpak-info` | **nur melden**: Streifen nennt `flatpak update de.wironair.woa`; Flatpak aktualisiert sich selbst |
+| sonst (Quellbau, ZIP) | alles andere | nur melden, Link zur Release-Seite |
+
+**Nie während Sendung oder Aufnahme:** Solange „Auf Sendung“ läuft oder eine Aufnahme (Audio
+oder MIDI) offen ist, sucht WOA nicht von selbst, und „Jetzt installieren“ ist grau mit dem
+Grund daneben. Läuft eine Sendung an, während das Paket geladen wird, wird nichts installiert;
+das geladene Paket wird gelöscht und das Update bleibt wählbar.
+
+**Erststart-Hinweis:** Vor der allerersten Suche erscheint einmal ein Fenster, das sagt, was
+passiert (eine kleine Datei von GitHub, keine Daten über dich, nie von allein installieren),
+mit „Verstanden“ und „Abschalten“. Bis zur Antwort wird nicht gesucht. Das gilt auch für
+bestehende Installationen beim ersten Start mit dieser Version.
+
+Ausschalten: Einstellungen → „Alle 12 Stunden nach Updates suchen“ (oder der Hinweis oben),
+oder `"auto_update": false` in `config.json`. „Jetzt nach Updates suchen“ (Einstellungen und
+„Über WOA“) fragt sofort, ohne die 12 Stunden abzuwarten.
 
 Code: `crates/updater` (Prüfung, Netz), `crates/gui/src/update.rs` und `update_*` in
 `crates/gui/src/app.rs` (Anzeige), `packaging/windows/woa.wxs` (Neustart),
@@ -18,8 +36,12 @@ Code: `crates/updater` (Prüfung, Netz), `crates/gui/src/update.rs` und `update_
 - `https://github.com/nixblick/daw.woa/releases/latest/download/latest.json`. „latest“ sind nur
   veröffentlichte Releases, keine Entwürfe und keine Vorabversionen. Ein Release wird also erst
   sichtbar, wenn es veröffentlicht ist.
-- `latest.json`: `{version, notes, msi_url, msi_sha256, msi_sig_url}`. `msi_sig_url` fehlt, wenn
-  das Release nicht signiert wurde.
+- `latest.json`: `{version, notes, msi_url, msi_sha256, msi_sig_url, appimage_url,
+  appimage_sha256, appimage_sig_url}`. Die `*_sig_url` fehlen, wenn das Release nicht signiert
+  wurde. Die `appimage_*`-Felder fehlen in Manifesten älterer Releases; dann meldet ein AppImage
+  das Update nur und installiert nichts.
+- MSI und AppImage laufen durch dieselbe Prüfung (Stufe A oder B unten), mit demselben
+  signierten Kommentar `woa <version>`.
 - Die App lädt nur von `https://github.com/nixblick/daw.woa/releases/…`. Weiterleitungen folgt
   sie selbst und nur auf `objects.githubusercontent.com` und `release-assets.githubusercontent.com`.
   Alles andere (anderer Host, anderes Repo, `http`, `..` im Pfad) wird abgelehnt.
@@ -116,11 +138,28 @@ Der Maintainer erzeugt ein minisign-Schlüsselpaar, hinterlegt den privaten Teil
 
 ## Tests
 
-`cargo test -p woa-updater` (ohne Netz): Signatur gut, schlecht, fremder Schlüssel, Kommentar-Version
+`cargo test -p woa-updater` und `cargo test -p woa-gui --lib -- update` (ohne Internet, ohne Ton):
+
+- **Fake-Server auf 127.0.0.1** (`crates/updater/src/net.rs`, `Policy::Local`, nur in Tests
+  erreichbar): neuere, gleiche und ältere Version; kaputte Prüfsumme (nichts wird geschrieben);
+  kein Netz (nichts lauscht); Serverfehler und Unsinn als Manifest; Weiterleitung auf fremden
+  Host abgelehnt; Flatpak und Quellbau laden **kein Byte**; AppImage wird ausführbar abgelegt
+  und ersetzt die alte Datei, bei Fehler bleibt die alte.
+- **GUI ohne Fenster** (`crates/gui/src/app.rs`, Tests am Ende): gezeichneter Text der
+  Update-Leiste je Paketart, graue Taste bei Aufnahme, Erststart-Hinweis, „Über WOA“.
+- **12-Stunden-Regel** (`crates/gui/src/update.rs`, `auto_check_due`): Erfolg, Fehlversuch,
+  zurückgestellte Uhr.
+
+Dazu: Signatur gut, schlecht, fremder Schlüssel, Kommentar-Version
 ungleich, geänderter Kommentar; Downgrade, gleiche und unlesbare Version; Manifest-Parsing;
 Host-Regeln; Stufe A (Hash) und Stufe B (Signatur Pflicht, kein Rückfall). Die Schlüssel- und
 Signaturdateien in `tests/fixtures/updater/` sind nur für Tests; der zugehörige private Schlüssel
 wurde nach dem Erzeugen gelöscht.
 
 Nicht automatisch geprüft: der echte Lauf unter Windows (`msiexec`, Neustart durch das MSI,
-Wiederherstellung bei abgebrochener Installation).
+Wiederherstellung bei abgebrochener Installation); der Neustart eines echten AppImage nach dem
+Ersetzen (die Tests ersetzen die Datei, starten sie aber nicht); AppImage-Ordner ohne
+Schreibrecht (dann meldet WOA „Dateifehler“ und der Link zur Release-Seite bleibt).
+
+Hinweis AppImage mit Schlüssel (Stufe B): Das AppImage muss dann ebenfalls signiert sein;
+`release.yml` signiert es mit demselben Schlüssel wie das MSI.

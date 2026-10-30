@@ -79,6 +79,7 @@ jobs:
           # Nichts Fremdes im Ordner (z. B. ein Test-MSI einer anderen Version).
           [ "$(ls dist | wc -l)" = 4 ] || { echo "::error::unerwartete Dateien in dist"; exit 1; }
           echo "MSI=dist/woa-$v-x64.msi" >> "$GITHUB_ENV"
+          echo "APPIMAGE=dist/WOA-$v-x86_64.AppImage" >> "$GITHUB_ENV"
       - name: minisign installieren
         run: |
           sudo apt-get update -qq
@@ -106,10 +107,13 @@ jobs:
             trap 'rm -f "$key"' EXIT
             chmod 600 "$key"
             printf '%s\n' "$WOA_UPDATER_KEY" > "$key"
+            # MSI und AppImage mit demselben Schlüssel; der signierte Kommentar nennt die Version.
             minisign -S -s "$key" -m "$MSI" -t "woa $VERSION"
+            minisign -S -s "$key" -m "$APPIMAGE" -t "woa $VERSION"
             rm -f "$key"
             if [ "$pub_real" = yes ]; then
               minisign -V -p packaging/windows/updater.pub -m "$MSI"
+              minisign -V -p packaging/windows/updater.pub -m "$APPIMAGE"
             else
               echo "::warning::Signiert, aber packaging/windows/updater.pub ist noch ein Platzhalter: Apps prüfen noch keine Signatur (Stufe A). Öffentlichen Schlüssel eintragen."
             fi
@@ -124,10 +128,17 @@ jobs:
           # Abschnitt dieser Version aus dem CHANGELOG (bis zur nächsten "## ").
           awk -v v="## $VERSION " 'index($0, v) == 1 {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
           [ -s notes.md ] || echo "Version $VERSION" > notes.md
+          afile=$(basename "$APPIMAGE")
+          asha=$(sha256sum "$APPIMAGE" | cut -d' ' -f1)
           sig=""
-          if [ "$SIGNED" = yes ]; then sig="$base/$file.minisig"; fi
+          asig=""
+          if [ "$SIGNED" = yes ]; then sig="$base/$file.minisig"; asig="$base/$afile.minisig"; fi
           jq -n --arg v "$VERSION" --rawfile n notes.md --arg u "$base/$file" --arg s "$sig" --arg h "$sha" \
-            '{version: $v, notes: $n, msi_url: $u, msi_sha256: $h} + (if $s != "" then {msi_sig_url: $s} else {} end)' \
+            --arg au "$base/$afile" --arg asg "$asig" --arg ah "$asha" \
+            '{version: $v, notes: $n, msi_url: $u, msi_sha256: $h,
+              appimage_url: $au, appimage_sha256: $ah}
+             + (if $s != "" then {msi_sig_url: $s} else {} end)
+             + (if $asg != "" then {appimage_sig_url: $asg} else {} end)' \
             > dist/latest.json
           cat dist/latest.json
       - name: Vollständigkeit prüfen und SHA256SUMS schreiben

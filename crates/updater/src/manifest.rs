@@ -3,6 +3,7 @@
 use serde::Deserialize;
 
 use crate::error::{UpdateError, Veto};
+use crate::hosts::Policy;
 use crate::version;
 
 /// Längere Notizen werden gekürzt (Anzeige, kein Schutzziel).
@@ -22,6 +23,41 @@ pub struct Available {
     /// SHA-256 des MSI als Hex. Prüfwert in Stufe A; mit Signatur (Stufe B) nur Zusatz.
     #[serde(default)]
     pub msi_sha256: String,
+    /// AppImage (Linux). Fehlt in Manifesten älterer Releases.
+    #[serde(default)]
+    pub appimage_url: String,
+    #[serde(default)]
+    pub appimage_sig_url: String,
+    #[serde(default)]
+    pub appimage_sha256: String,
+}
+
+impl Available {
+    /// Adressen und Prüfwert des Pakets für diese Paketart; `None`, wenn das Manifest keines
+    /// dafür kennt oder die Art sich nicht selbst ersetzen kann (Flatpak, Quellbau).
+    pub fn package(&self, kind: crate::Kind) -> Option<Package<'_>> {
+        match kind {
+            crate::Kind::Msi => Some(Package {
+                url: &self.msi_url,
+                sig_url: &self.msi_sig_url,
+                sha256: &self.msi_sha256,
+            }),
+            crate::Kind::AppImage if !self.appimage_url.is_empty() => Some(Package {
+                url: &self.appimage_url,
+                sig_url: &self.appimage_sig_url,
+                sha256: &self.appimage_sha256,
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// Ein Paket aus dem Manifest, geliehen.
+#[derive(Debug, Clone, Copy)]
+pub struct Package<'a> {
+    pub url: &'a str,
+    pub sig_url: &'a str,
+    pub sha256: &'a str,
 }
 
 /// Liest das Manifest und prüft Form und Version gegen die eingebaute.
@@ -30,6 +66,14 @@ pub struct Available {
 /// - `Ok(None)`: gleiche Version, nichts zu tun.
 /// - `Err`: unlesbar oder älter (Downgrade-Veto).
 pub fn evaluate(json: &[u8], current: &str) -> Result<Option<Available>, UpdateError> {
+    evaluate_with(json, current, Policy::Github)
+}
+
+pub(crate) fn evaluate_with(
+    json: &[u8],
+    current: &str,
+    policy: Policy,
+) -> Result<Option<Available>, UpdateError> {
     let mut m: Available =
         serde_json::from_slice(json).map_err(|e| UpdateError::Manifest(e.to_string()))?;
     match version::ensure_newer(&m.version, current) {
@@ -37,14 +81,18 @@ pub fn evaluate(json: &[u8], current: &str) -> Result<Option<Available>, UpdateE
         Err(Veto::SameVersion) => return Ok(None),
         Err(v) => return Err(v.into()),
     }
-    if !crate::hosts::start_allowed(&m.msi_url)
-        || (!m.msi_sig_url.is_empty() && !crate::hosts::start_allowed(&m.msi_sig_url))
-    {
+    let urls_ok = policy.start_allowed(&m.msi_url)
+        && [&m.msi_sig_url, &m.appimage_url, &m.appimage_sig_url]
+            .iter()
+            .all(|u| u.is_empty() || policy.start_allowed(u));
+    if !urls_ok {
         return Err(UpdateError::Manifest("Adresse nicht erlaubt".into()));
     }
-    m.msi_sha256 = m.msi_sha256.trim().to_ascii_lowercase();
-    if !m.msi_sha256.is_empty() && !crate::verify::is_sha256_hex(&m.msi_sha256) {
-        return Err(UpdateError::Manifest("sha256 ungültig".into()));
+    for h in [&mut m.msi_sha256, &mut m.appimage_sha256] {
+        *h = h.trim().to_ascii_lowercase();
+        if !h.is_empty() && !crate::verify::is_sha256_hex(h) {
+            return Err(UpdateError::Manifest("sha256 ungültig".into()));
+        }
     }
     if m.notes.chars().count() > MAX_NOTES_CHARS {
         m.notes = m.notes.chars().take(MAX_NOTES_CHARS).collect::<String>() + " …";
