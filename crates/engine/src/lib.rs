@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use basedrop::{Collector, Owned};
-use woa_dsp::{Node, ProcessBuffers};
+use woa_dsp::{Node, ProcessBuffers, StereoBuffers, StereoNode};
 
 #[cfg(all(feature = "device", target_os = "linux"))]
 pub mod capture;
@@ -39,7 +39,9 @@ pub mod project;
 pub mod record;
 pub mod transport;
 
-pub use project::{ProjectGraph, TrackNodes, build_project_graph, render_project, track_gains};
+pub use project::{
+    ProjectGraph, TrackNodes, audibility, build_project_graph, render_project, track_gains,
+};
 pub use transport::{LoopRange, TransportHandle, beats_to_samples, samples_to_beats};
 use transport::{Shared, Transport};
 
@@ -88,13 +90,45 @@ impl From<hound::Error> for EngineError {
     }
 }
 
+/// Ein Node im Graphen: mono (ein Ein-, ein Ausgang) oder stereo (zwei Ein-, zwei Ausgänge,
+/// z. B. ein verkoppelter Bus-Kompressor).
+enum Slot {
+    Mono(Box<dyn Node>),
+    Stereo(Box<dyn StereoNode>),
+}
+
+impl Slot {
+    fn channels(&self) -> usize {
+        match self {
+            Slot::Mono(_) => 1,
+            Slot::Stereo(_) => 2,
+        }
+    }
+
+    fn prepare(&mut self, rate: f32) {
+        match self {
+            Slot::Mono(n) => n.prepare(rate),
+            Slot::Stereo(n) => n.prepare(rate),
+        }
+    }
+}
+
+/// Eine Kante: Kanal `from_ch` von `from` geht auf Kanal `to_ch` von `to`.
+#[derive(Debug, Clone, Copy)]
+struct Edge {
+    from: NodeId,
+    from_ch: u8,
+    to: NodeId,
+    to_ch: u8,
+}
+
 /// Graph-Beschreibung im Control-Thread (noch nicht kompiliert).
 #[derive(Default)]
 pub struct GraphBuilder {
-    nodes: Vec<Box<dyn Node>>,
-    edges: Vec<(NodeId, NodeId)>,
-    output: Option<NodeId>,
-    output_right: Option<NodeId>,
+    nodes: Vec<Slot>,
+    edges: Vec<Edge>,
+    output: Option<(NodeId, u8)>,
+    output_right: Option<(NodeId, u8)>,
 }
 
 impl GraphBuilder {
@@ -103,31 +137,54 @@ impl GraphBuilder {
     }
 
     pub fn add_node(&mut self, node: impl Node + 'static) -> NodeId {
-        self.nodes.push(Box::new(node));
+        self.nodes.push(Slot::Mono(Box::new(node)));
         NodeId(self.nodes.len() - 1)
     }
 
     /// Wie [`GraphBuilder::add_node`], für bereits geboxte Nodes.
     pub fn add_boxed(&mut self, node: Box<dyn Node>) -> NodeId {
-        self.nodes.push(node);
+        self.nodes.push(Slot::Mono(node));
+        NodeId(self.nodes.len() - 1)
+    }
+
+    /// Fügt einen Stereo-Node ein (Kanäle 0 = links, 1 = rechts, ein- wie ausgangsseitig).
+    pub fn add_stereo(&mut self, node: Box<dyn StereoNode>) -> NodeId {
+        self.nodes.push(Slot::Stereo(node));
         NodeId(self.nodes.len() - 1)
     }
 
     /// Verbindet den Ausgang von `from` mit dem Eingang von `to` (Eingänge werden summiert).
     pub fn connect(&mut self, from: NodeId, to: NodeId) {
-        self.edges.push((from, to));
+        self.connect_ch(from, 0, to, 0);
+    }
+
+    /// Wie [`GraphBuilder::connect`] mit Kanalwahl (0 = links/mono, 1 = rechts). Ein
+    /// Mono-Node kennt nur Kanal 0; ungültige Kanäle meldet `compile`.
+    pub fn connect_ch(&mut self, from: NodeId, from_ch: u8, to: NodeId, to_ch: u8) {
+        self.edges.push(Edge {
+            from,
+            from_ch,
+            to,
+            to_ch,
+        });
     }
 
     /// Legt fest, welcher Node auf den Engine-Ausgang geht.
     pub fn set_output(&mut self, node: NodeId) {
-        self.output = Some(node);
+        self.output = Some((node, 0));
     }
 
     /// Stereo-Ausgang: `left` und `right` gehen auf die beiden Kanäle.
     /// Ohne rechten Ausgang kopiert [`CompiledGraph::process_stereo`] links nach rechts.
     pub fn set_stereo_output(&mut self, left: NodeId, right: NodeId) {
-        self.output = Some(left);
-        self.output_right = Some(right);
+        self.output = Some((left, 0));
+        self.output_right = Some((right, 0));
+    }
+
+    /// Stereo-Ausgang aus den beiden Kanälen eines Stereo-Nodes (z. B. des Masters).
+    pub fn set_stereo_output_of(&mut self, node: NodeId) {
+        self.output = Some((node, 0));
+        self.output_right = Some((node, 1));
     }
 
     /// Kompiliert im Control-Thread: topologische Ordnung (Kahn), Puffer vorab.
@@ -139,37 +196,42 @@ impl GraphBuilder {
             return Err(EngineError::InvalidConfig("block size"));
         }
         let n = self.nodes.len();
-        for &(a, b) in &self.edges {
-            for id in [a, b] {
-                if id.0 >= n {
-                    return Err(EngineError::UnknownNode(id));
-                }
+        let channel_ok = |id: NodeId, ch: u8| -> Result<(), EngineError> {
+            match self.nodes.get(id.0) {
+                None => Err(EngineError::UnknownNode(id)),
+                Some(slot) if usize::from(ch) < slot.channels() => Ok(()),
+                Some(_) => Err(EngineError::InvalidConfig("channel of a mono node")),
             }
+        };
+        for e in &self.edges {
+            channel_ok(e.from, e.from_ch)?;
+            channel_ok(e.to, e.to_ch)?;
         }
-        let output = match self.output {
-            Some(id) if id.0 < n => Some(id.0),
-            Some(id) => return Err(EngineError::UnknownNode(id)),
-            None => None,
+        let resolve = |o: Option<(NodeId, u8)>| -> Result<Option<(usize, u8)>, EngineError> {
+            match o {
+                Some((id, ch)) => {
+                    channel_ok(id, ch)?;
+                    Ok(Some((id.0, ch)))
+                }
+                None => Ok(None),
+            }
         };
-        let output_right = match self.output_right {
-            Some(id) if id.0 < n => Some(id.0),
-            Some(id) => return Err(EngineError::UnknownNode(id)),
-            None => None,
-        };
+        let output = resolve(self.output)?;
+        let output_right = resolve(self.output_right)?;
 
         let mut indegree = vec![0usize; n];
-        for &(_, b) in &self.edges {
-            indegree[b.0] += 1;
+        for e in &self.edges {
+            indegree[e.to.0] += 1;
         }
         let mut ready: Vec<usize> = (0..n).filter(|&i| indegree[i] == 0).collect();
         let mut order = Vec::with_capacity(n);
         while let Some(i) = ready.pop() {
             order.push(i);
-            for &(a, b) in &self.edges {
-                if a.0 == i {
-                    indegree[b.0] -= 1;
-                    if indegree[b.0] == 0 {
-                        ready.push(b.0);
+            for e in &self.edges {
+                if e.from.0 == i {
+                    indegree[e.to.0] -= 1;
+                    if indegree[e.to.0] == 0 {
+                        ready.push(e.to.0);
                     }
                 }
             }
@@ -183,7 +245,7 @@ impl GraphBuilder {
         for (pos, &i) in order.iter().enumerate() {
             position[i] = pos;
         }
-        let mut slots: Vec<Option<Box<dyn Node>>> = self.nodes.into_iter().map(Some).collect();
+        let mut slots: Vec<Option<Slot>> = self.nodes.into_iter().map(Some).collect();
         let mut nodes = Vec::with_capacity(n);
         for &i in &order {
             if let Some(mut node) = slots[i].take() {
@@ -191,19 +253,31 @@ impl GraphBuilder {
                 nodes.push(node);
             }
         }
-        let mut inputs = vec![Vec::new(); n];
-        for &(a, b) in &self.edges {
-            inputs[position[b.0]].push(position[a.0]);
+        let mut inputs: Vec<[Vec<(usize, u8)>; 2]> = (0..n).map(|_| [Vec::new(), Vec::new()]).collect();
+        for e in &self.edges {
+            inputs[position[e.to.0]][usize::from(e.to_ch)].push((position[e.from.0], e.from_ch));
         }
+        let buf = |slot: &Slot| -> [Vec<f32>; 2] {
+            [
+                vec![0.0; max_block],
+                if slot.channels() == 2 {
+                    vec![0.0; max_block]
+                } else {
+                    Vec::new()
+                },
+            ]
+        };
+        let in_bufs: Vec<[Vec<f32>; 2]> = nodes.iter().map(buf).collect();
+        let out_bufs: Vec<[Vec<f32>; 2]> = nodes.iter().map(buf).collect();
 
-        let output = output.map(|i| position[i]);
-        let output_right = output_right.map(|i| position[i]);
+        let output = output.map(|(i, ch)| (position[i], ch));
+        let output_right = output_right.map(|(i, ch)| (position[i], ch));
         Ok(CompiledGraph {
             nodes,
             inputs,
             position,
-            in_bufs: vec![vec![0.0; max_block]; n],
-            out_bufs: vec![vec![0.0; max_block]; n],
+            in_bufs,
+            out_bufs,
             output,
             output_right,
             max_block,
@@ -214,15 +288,15 @@ impl GraphBuilder {
 
 /// Fertig kompilierter Graph; gehört nach dem Tausch dem Audio-Thread.
 pub struct CompiledGraph {
-    nodes: Vec<Box<dyn Node>>,
-    /// Je Node (kompilierte Position) die Quellen.
-    inputs: Vec<Vec<usize>>,
+    nodes: Vec<Slot>,
+    /// Je Node (kompilierte Position) und Eingangskanal die Quellen (Position, Kanal).
+    inputs: Vec<[Vec<(usize, u8)>; 2]>,
     /// Builder-Index -> kompilierte Position.
     position: Vec<usize>,
-    in_bufs: Vec<Vec<f32>>,
-    out_bufs: Vec<Vec<f32>>,
-    output: Option<usize>,
-    output_right: Option<usize>,
+    in_bufs: Vec<[Vec<f32>; 2]>,
+    out_bufs: Vec<[Vec<f32>; 2]>,
+    output: Option<(usize, u8)>,
+    output_right: Option<(usize, u8)>,
     max_block: usize,
     sample_rate: f32,
 }
@@ -240,7 +314,10 @@ impl CompiledGraph {
         if let Some(&pos) = self.position.get(node.0)
             && let Some(n) = self.nodes.get_mut(pos)
         {
-            n.set_param(param, value);
+            match n {
+                Slot::Mono(n) => n.set_param(param, value),
+                Slot::Stereo(n) => n.set_param(param, value),
+            }
         }
     }
 
@@ -261,11 +338,11 @@ impl CompiledGraph {
             let l = &mut left[done..done + n];
             let r = &mut right[done..done + n];
             match self.output {
-                Some(pos) => l.copy_from_slice(&self.out_bufs[pos][..n]),
+                Some((pos, ch)) => l.copy_from_slice(&self.out_bufs[pos][usize::from(ch)][..n]),
                 None => l.fill(0.0),
             }
             match self.output_right {
-                Some(pos) => r.copy_from_slice(&self.out_bufs[pos][..n]),
+                Some((pos, ch)) => r.copy_from_slice(&self.out_bufs[pos][usize::from(ch)][..n]),
                 None => r.copy_from_slice(l),
             }
             done += n;
@@ -276,24 +353,40 @@ impl CompiledGraph {
         let len = out.len();
         self.run_nodes(len);
         match self.output {
-            Some(pos) => out.copy_from_slice(&self.out_bufs[pos][..len]),
+            Some((pos, ch)) => out.copy_from_slice(&self.out_bufs[pos][usize::from(ch)][..len]),
             None => out.fill(0.0),
         }
     }
 
     fn run_nodes(&mut self, len: usize) {
         for pos in 0..self.nodes.len() {
-            let in_buf = &mut self.in_bufs[pos][..len];
-            in_buf.fill(0.0);
-            for &src in &self.inputs[pos] {
-                for (d, s) in in_buf.iter_mut().zip(self.out_bufs[src][..len].iter()) {
-                    *d += *s;
+            let channels = self.nodes[pos].channels();
+            for ch in 0..channels {
+                let in_buf = &mut self.in_bufs[pos][ch][..len];
+                in_buf.fill(0.0);
+                for &(src, src_ch) in &self.inputs[pos][ch] {
+                    let from = &self.out_bufs[src][usize::from(src_ch)][..len];
+                    for (d, s) in in_buf.iter_mut().zip(from.iter()) {
+                        *d += *s;
+                    }
                 }
             }
-            self.nodes[pos].process(ProcessBuffers {
-                input: &self.in_bufs[pos][..len],
-                output: &mut self.out_bufs[pos][..len],
-            });
+            let [in_l, in_r] = &self.in_bufs[pos];
+            let [out_l, out_r] = &mut self.out_bufs[pos];
+            match &mut self.nodes[pos] {
+                Slot::Mono(node) => node.process(ProcessBuffers {
+                    input: &in_l[..len],
+                    output: &mut out_l[..len],
+                }),
+                Slot::Stereo(node) => node.process(
+                    StereoBuffers {
+                        in_left: &in_l[..len],
+                        in_right: &in_r[..len],
+                        out_left: &mut out_l[..len],
+                        out_right: &mut out_r[..len],
+                    },
+                ),
+            }
         }
     }
 }
@@ -625,6 +718,48 @@ mod tests {
             b.compile(48_000.0, 64),
             Err(EngineError::UnknownNode(NodeId(7)))
         ));
+    }
+
+    struct Swap;
+
+    impl StereoNode for Swap {
+        fn prepare(&mut self, _sample_rate: f32) {}
+        fn set_param(&mut self, _param: u32, _value: f32) {}
+        fn process(&mut self, b: StereoBuffers<'_>) {
+            b.out_left.copy_from_slice(b.in_right);
+            b.out_right.copy_from_slice(b.in_left);
+        }
+    }
+
+    #[test]
+    fn stereo_node_routes_channels_and_rejects_bad_ones() {
+        let mut b = GraphBuilder::new();
+        let src = b.add_node(Gain::new(1.0));
+        let swap = b.add_stereo(Box::new(Swap));
+        // Quelle nur auf den linken Eingang, Ausgang rechts -> Engine-Ausgang links.
+        b.connect_ch(src, 0, swap, 0);
+        b.set_stereo_output_of(swap);
+        let mut g = b.compile(48_000.0, 16).expect("compiles");
+        // Gain ohne Eingang liefert Stille; hier zählt nur, dass Kanal 1 getrennt bleibt.
+        let (mut l, mut r) = ([1.0f32; 8], [1.0f32; 8]);
+        g.process_stereo(&mut l, &mut r);
+        assert!(l.iter().chain(r.iter()).all(|s| *s == 0.0));
+
+        let mut b = GraphBuilder::new();
+        let a = b.add_node(Gain::new(1.0));
+        let c = b.add_node(Gain::new(1.0));
+        b.connect_ch(a, 1, c, 0);
+        assert!(matches!(
+            b.compile(48_000.0, 16),
+            Err(EngineError::InvalidConfig(_))
+        ));
+
+        let mut b = GraphBuilder::new();
+        let s1 = b.add_stereo(Box::new(Swap));
+        let s2 = b.add_stereo(Box::new(Swap));
+        b.connect_ch(s1, 1, s2, 0);
+        b.connect_ch(s2, 0, s1, 1);
+        assert!(matches!(b.compile(48_000.0, 16), Err(EngineError::Cycle)));
     }
 
     #[test]

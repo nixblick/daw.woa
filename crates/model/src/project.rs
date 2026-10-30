@@ -200,7 +200,7 @@ pub struct Send {
     pub target: TrackId,
     /// Level in dB, [`MIN_GAIN_DB`]..=[`MAX_SEND_DB`]; [`MIN_GAIN_DB`] means off.
     pub level_db: f64,
-    /// Tapped before the fader (and before mute), otherwise after it.
+    /// Tapped before the fader (mute and solo still apply), otherwise after it.
     #[serde(default, skip_serializing_if = "is_false")]
     pub pre_fader: bool,
 }

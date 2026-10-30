@@ -28,6 +28,18 @@ impl Biquad {
         }
     }
 
+    /// Durchgang ohne Wirkung (Zähler = Nenner).
+    pub fn identity() -> Self {
+        Self::new([1.0, 0.0, 0.0], 1.0, [0.0, 0.0])
+    }
+
+    /// Übernimmt die Koeffizienten von `other`, behält den eigenen Zustand (kein Sprung im
+    /// Filtergedächtnis, Grundlage für sanftes Umstimmen im Betrieb).
+    pub fn retune(&mut self, other: &Biquad) {
+        self.b = other.b;
+        self.a = other.a;
+    }
+
     /// Hochpass 2. Ordnung (RBJ).
     pub fn highpass(freq: f64, q: f64, rate: f64) -> Self {
         let w = std::f64::consts::TAU * freq / rate;
@@ -197,6 +209,12 @@ impl Limiter {
             release: coef(release_s, rate),
             gain: 1.0,
         }
+    }
+
+    /// Stellt Decke und Rückstellung im laufenden Betrieb um (Zustand bleibt).
+    pub fn set(&mut self, ceiling_db: f64, release_s: f32, rate: f32) {
+        self.ceiling = db_to_gain(ceiling_db);
+        self.release = coef(release_s, rate);
     }
 
     /// Faktor für ein Sample mit Spitze `peak` (Betrag, beide Kanäle).
