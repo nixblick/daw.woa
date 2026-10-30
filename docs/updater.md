@@ -110,54 +110,9 @@ und das Secret fehlt, bricht er ab, weil kein Gerät ein unsigniertes Update ann
 Die erste Version, die den Updater enthält, muss einmal **von Hand** installiert werden (MSI aus
 dem Windows-Bau oder dem Release doppelklicken). Erst von da an aktualisiert sie sich selbst.
 
-## Einrichten (André, einmalig) – Stufe B
+## Stufe B einschalten
 
-Optional und jederzeit nachholbar; ohne diese Schritte läuft Stufe A.
-
-```
-# 101  Notebook
-mkdir -p ~/.secrets/daw.woa && chmod 700 ~/.secrets/daw.woa
-
-# 110  Notebook – Schlüsselpaar ohne Passwort erzeugen (fragt nichts)
-minisign -G -W -p ~/.secrets/daw.woa/updater.pub -s ~/.secrets/daw.woa/updater.key
-
-# 120  Notebook
-chmod 600 ~/.secrets/daw.woa/updater.key
-
-# 130  Notebook – privaten Schlüssel als Secret ins Repo (Inhalt, kein Passwort nötig)
-gh secret set WOA_UPDATER_KEY -R nixblick/daw.woa < ~/.secrets/daw.woa/updater.key
-
-# 140  Notebook – öffentlichen Schlüssel ins Repo (er darf öffentlich sein)
-git -C ~/GitHub/nixblick/daw.woa switch -c chore/updater-key
-cp ~/.secrets/daw.woa/updater.pub ~/GitHub/nixblick/daw.woa/packaging/windows/updater.pub
-
-# 150  Notebook – committen, pushen, Pull Request
-git -C ~/GitHub/nixblick/daw.woa add packaging/windows/updater.pub
-git -C ~/GitHub/nixblick/daw.woa commit -m "Updater: public key"
-git -C ~/GitHub/nixblick/daw.woa push -u origin chore/updater-key
-gh pr create -R nixblick/daw.woa --fill
-
-# 160  Notebook – nach dem Merge ein Release taggen (Version aus Cargo.toml)
-git -C ~/GitHub/nixblick/daw.woa switch main
-git -C ~/GitHub/nixblick/daw.woa pull
-V=$(sed -n 's/^version = "\(.*\)"/\1/p' ~/GitHub/nixblick/daw.woa/Cargo.toml | head -1)
-git -C ~/GitHub/nixblick/daw.woa tag "v$V"
-git -C ~/GitHub/nixblick/daw.woa push origin "v$V"
-
-# 170  Notebook – auf den Lauf warten (grün = Entwurf liegt bereit)
-gh run watch -R nixblick/daw.woa
-
-# 180  Notebook – Entwurf ansehen: MSI, ZIP, .minisig, latest.json
-gh release view "v$V" -R nixblick/daw.woa
-
-# 190  Notebook – veröffentlichen; ab jetzt sehen Tester das Update
-gh release edit "v$V" -R nixblick/daw.woa --draft=false
-```
-
-Der private Schlüssel `~/.secrets/daw.woa/updater.key` bleibt auf dem Notebook und im
-GitHub-Secret. Geht er verloren oder wird er sichtbar: neues Paar erzeugen (Schritte 110 bis
-150), neues Release taggen. Apps mit dem alten Schlüssel erreichen das neue Release dann nicht
-mehr automatisch und müssen einmal von Hand installiert werden.
+Der Maintainer erzeugt ein minisign-Schlüsselpaar, hinterlegt den privaten Teil als Actions-Secret `WOA_UPDATER_KEY` und legt den öffentlichen Teil als `packaging/windows/updater.pub` ins Repo. Ab dem nächsten Release ist die Signatur Pflicht.
 
 ## Tests
 
