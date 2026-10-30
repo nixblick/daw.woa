@@ -100,6 +100,16 @@ impl Catalog {
         cat
     }
 
+    /// Wie [`Catalog::scan_default`], aber ohne die Dateien der Sperrliste (Paket 34). Ohne
+    /// Prozessschutz kann die Suche selbst nichts sperren; sie liest nur die Liste.
+    pub fn scan_default_filtered(blocklist: &crate::safety::Blocklist) -> Self {
+        let files: Vec<PathBuf> = find_files(&search_paths())
+            .into_iter()
+            .filter(|f| !blocklist.is_blocked(f))
+            .collect();
+        Self::scan_files(&files)
+    }
+
     /// Sucht nur in diesen Dateien (jede im eigenen Aufruf geladen). Der Plugin-Prozess benutzt es
     /// für genau eine Datei.
     pub fn scan_files(files: &[PathBuf]) -> Self {

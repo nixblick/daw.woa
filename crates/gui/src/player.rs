@@ -117,6 +117,10 @@ pub struct Player {
     rack: Option<woa_plugins::PluginRack>,
     /// Zählt Änderungen am Rack; geht in den Graph-Schlüssel ein.
     plugin_epoch: u64,
+    /// Gesperrte Plugin-Dateien (Paket 34); die Suche lädt sie nicht.
+    blocklist: woa_plugins::Blocklist,
+    /// Log-Ordner je Plugin.
+    plugin_logs: woa_plugins::PluginLogs,
 }
 
 /// Dekodiert einmal je Datei und merkt sich das Ergebnis; Fehler werden geloggt.
@@ -175,6 +179,12 @@ impl Player {
             tap_source: None,
             rack: None,
             plugin_epoch: 0,
+            blocklist: woa_plugins::Blocklist::load(&woa_plugins::Blocklist::default_path(
+                &woa_radio::config_dir(),
+            )),
+            plugin_logs: woa_plugins::PluginLogs::new(
+                woa_radio::data_dir().join("logs").join("plugins"),
+            ),
         })
     }
 
@@ -350,8 +360,8 @@ impl Player {
 
     fn ensure_rack(&mut self) {
         if self.rack.is_none() {
-            let isolation = plugin_isolation();
-            let catalog = Arc::new(scan_plugins(&isolation));
+            let isolation = plugin_isolation(&self.plugin_logs);
+            let catalog = Arc::new(scan_plugins(&isolation, &mut self.blocklist));
             for p in catalog.problems() {
                 tracing::warn!(file = %p.path.display(), error = %p.reason, "plugin scan problem");
             }
@@ -372,11 +382,11 @@ impl Player {
 
     /// Sucht die Plugins neu; alle Plätze werden danach neu geladen.
     pub fn rescan_plugins(&mut self) {
-        let isolation = self
-            .rack
-            .as_ref()
-            .map_or_else(plugin_isolation, |r| r.isolation().clone());
-        let catalog = Arc::new(scan_plugins(&isolation));
+        let isolation = match self.rack.as_ref() {
+            Some(r) => r.isolation().clone(),
+            None => plugin_isolation(&self.plugin_logs),
+        };
+        let catalog = Arc::new(scan_plugins(&isolation, &mut self.blocklist));
         tracing::info!(found = catalog.plugins().len(), "plugin rescan done");
         match self.rack.as_mut() {
             Some(r) => r.reset(catalog),
@@ -388,6 +398,56 @@ impl Player {
             }
         }
         self.plugin_epoch += 1;
+    }
+
+    /// Dateien, die beim Suchen ausfielen (Datei, Grund).
+    pub fn plugin_scan_problems(&self) -> Vec<woa_plugins::ScanProblem> {
+        self.rack
+            .as_ref()
+            .map_or_else(Vec::new, |r| r.catalog().problems().to_vec())
+    }
+
+    /// Die gesperrten Plugin-Dateien.
+    pub fn blocked_plugins(&self) -> Vec<woa_plugins::BlockEntry> {
+        self.blocklist.entries().to_vec()
+    }
+
+    /// Gibt eine Plugin-Datei frei; sie wird beim nächsten „Neu suchen“ wieder geladen.
+    pub fn unblock_plugin(&mut self, file: &std::path::Path) {
+        if self.blocklist.unblock(file) {
+            self.plugin_logs
+                .scan_line(&format!("{}: von Hand freigegeben", file.display()));
+        }
+    }
+
+    /// Hebt alle Sperren auf.
+    pub fn unblock_all_plugins(&mut self) {
+        self.blocklist.clear();
+        self.plugin_logs
+            .scan_line("alle Sperren von Hand aufgehoben");
+    }
+
+    /// Sperrt die Datei dieses Plugins (wirkt ab dem nächsten Suchen oder Start; ein laufendes
+    /// Plugin wird nicht angerührt). Liefert den Dateinamen für die Statuszeile.
+    pub fn block_plugin(&mut self, clap_id: &str) -> Option<String> {
+        let path = self.rack.as_ref()?.catalog().find(clap_id)?.path.clone();
+        if self.blocklist.block(&path, "von Hand gesperrt") {
+            self.plugin_logs.line(
+                clap_id,
+                &format!("Datei {} von Hand gesperrt", path.display()),
+            );
+        }
+        path.file_name().map(|n| n.to_string_lossy().into_owned())
+    }
+
+    /// Die letzten Zeilen aus dem Log eines Plugins.
+    pub fn plugin_log_tail(&self, clap_id: &str, n: usize) -> Vec<String> {
+        self.plugin_logs.tail(clap_id, n)
+    }
+
+    /// Der Log-Ordner der Plugins.
+    pub fn plugin_log_dir(&self) -> &std::path::Path {
+        self.plugin_logs.dir()
     }
 
     /// Startet ein ausgefallenes Plugin neu (der Graph bleibt derselbe).
@@ -744,7 +804,7 @@ impl Player {
 /// Wo Plugins laufen: im eigenen Prozess (Absturzschutz, Paket 33), wenn sich der Plugin-Prozess
 /// finden lässt; sonst im Programm selbst. `WOA_PLUGINS_IN_PROCESS=1` schaltet den Schutz aus
 /// (Fehlersuche).
-fn plugin_isolation() -> woa_plugins::Isolation {
+fn plugin_isolation(logs: &woa_plugins::PluginLogs) -> woa_plugins::Isolation {
     if std::env::var_os("WOA_PLUGINS_IN_PROCESS").is_some_and(|v| v == "1") {
         tracing::warn!(
             "plugins run inside the app (WOA_PLUGINS_IN_PROCESS=1), no crash protection"
@@ -754,7 +814,7 @@ fn plugin_isolation() -> woa_plugins::Isolation {
     match woa_plugins::HostConfig::discover().or_else(woa_plugins::HostConfig::multicall) {
         Some(cfg) => {
             tracing::info!(exe = %cfg.exe.display(), "plugins run in their own process");
-            woa_plugins::Isolation::Process(cfg)
+            woa_plugins::Isolation::Process(cfg.with_logs(logs.clone()))
         }
         None => {
             tracing::warn!("no plugin host found, plugins run inside the app");
@@ -763,9 +823,14 @@ fn plugin_isolation() -> woa_plugins::Isolation {
     }
 }
 
-fn scan_plugins(isolation: &woa_plugins::Isolation) -> woa_plugins::Catalog {
+fn scan_plugins(
+    isolation: &woa_plugins::Isolation,
+    blocklist: &mut woa_plugins::Blocklist,
+) -> woa_plugins::Catalog {
     match isolation {
-        woa_plugins::Isolation::Process(cfg) => woa_plugins::Catalog::scan_default_isolated(cfg),
-        woa_plugins::Isolation::InProcess => woa_plugins::Catalog::scan_default(),
+        woa_plugins::Isolation::Process(cfg) => {
+            woa_plugins::Catalog::scan_default_guarded(cfg, blocklist)
+        }
+        woa_plugins::Isolation::InProcess => woa_plugins::Catalog::scan_default_filtered(blocklist),
     }
 }

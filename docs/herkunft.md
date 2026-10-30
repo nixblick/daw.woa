@@ -54,6 +54,18 @@ Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
   `crates/plugins/src/{shm,remote,child}.rs` ist ein eigener Entwurf (Rust, Atome und Briefkasten
   statt Semaphoren und Pipes, andere Einteilung). **Kein Code übernommen.**
 
+## Sperrliste und Plugin-Logs (Paket 34)
+
+- **Ardour** (`Ardour/ardour`, GPL-2.0-or-later laut Kopfzeile der Datei), `libs/ardour/plugin_manager.cc`
+  und `libs/ardour/ardour/plugin_manager.h`, Commit a12b4e108ea6. **Nur die Idee gelesen:** Der
+  Plugin-Verwalter führt je Plugin einen Eintrag mit Ergebnis der Suche (neu, in Ordnung, Fehler,
+  Zeitüberschreitung, gesperrt) samt Meldungen; ein Plugin, das beim Suchen scheitert, wird gesperrt
+  und beim nächsten Suchen übersprungen, die Sperre lässt sich löschen. Bei uns: `crates/plugins/src/safety.rs`
+  (Sperrliste als Textdatei, Log je Plugin) und `Catalog::scan_guarded` in `remote.rs`. Die Suche
+  im eigenen Prozess stammt schon aus Paket 33 (LMMS-Idee). Eigener Entwurf in Rust, andere
+  Einteilung (Datei statt Plugin-Kennung als Sperrschlüssel). **Kein Code übernommen.**
+- **Nicht gelesen:** `tracktion_engine` (Plugin-Graph); Paket 34 baut keinen Graph.
+
 ## Regel
 
 Quellen werden nur mit Repository, Datei und Commit genannt, nie mit Pfaden einer Maschine.

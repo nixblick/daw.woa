@@ -4,6 +4,31 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 34: Abnahme M8: Surge XT und Vital stabil (0.29.0, offen)
+
+Aus M8, schließt den Meilenstein. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+(Für Schritt 4 zusätzlich `WOA_TESTMENU=1` davor setzen.)
+
+1. **Projekt bauen:** Zwei MIDI-Spuren, auf die erste Surge XT, auf die zweite Vital (als CLAP). Je einen Clip mit Noten anlegen. Kommt Vital nicht in der Liste unter „+ Plugin“: siehe offene Frage unten; dann ein anderes Instrument nehmen.
+2. **30 Minuten spielen:** Beide Spuren im Loop abspielen und zwischendurch live spielen, Presets wechseln, Fenster auf- und zumachen. Es soll nichts aussetzen, knacken oder hängen.
+3. **Speicher:** Nach 30 Minuten im Systemmonitor schauen: weder `woa` noch die beiden Prozesse `woa-plugin-host` (bei `cargo run` heißen sie `woa --woa-plugin-host`) sollen sich auffällig vergrößert haben.
+4. **Eine Instanz abschießen:** Beim Surge-Platz „Absturz simulieren“ (oder den Prozess im Terminal mit `kill -9` beenden). Vital und alles andere spielt weiter; beim Surge-Platz steht „Plugin abgestürzt – neu laden“. „Neu laden“ bringt Surge mit dem letzten Klang zurück.
+5. **Log:** Beim Surge-Platz „Log“ aufklappen: Start, Ausfall, Neu laden stehen mit Uhrzeit drin.
+6. **Sperrliste:** Beim abgestürzten Platz „Sperren“ drücken, dann unter „+ Plugin“ „Neu suchen“: Surge verschwindet aus der Liste und steht bei „Gesperrt“. „Freigeben“, dann „Neu suchen“: Surge ist wieder da.
+
+Selbst geprüft von Claude (ohne Ton, ohne Audiogerät, ohne Mikrofon; Test-Plugin aus `clack-plugin`, Offline-Render, Hilfsprogramme als Suchprozess):
+- **10 Minuten Musik** (56 250 Blöcke) offline durch zwei Plugin-Prozesse, unter `assert_no_alloc`: kein verspäteter Block, Klang kam heraus, der Speicher der App und beider Plugin-Prozesse ist nach der Einlaufzeit unverändert (App 4332 → 4336 KiB, Plugins ±0).
+- Eine Datei, die beim Suchen abstürzt oder hängt, wird gesperrt, beim nächsten Suchen nicht mehr angefasst und lässt sich freigeben; die Sperre überlebt einen Neustart; ein Suchprozess, der gar nicht startet, sperrt nichts.
+- Das Log je Plugin enthält Start, Ausfall, Neu laden und Ende in der richtigen Reihenfolge, mit Zeitstempel.
+
+Nicht selbst geprüft: Surge XT und Vital selbst, die Oberfläche (Knöpfe „Sperren“, „Freigeben“, „Log“ sind gebaut und übersetzt, nicht angeklickt), Windows, Speicher über 30 Minuten mit echten Plugins.
+
+**Offen für André:**
+- Gibt es Vital als CLAP in der Version, die du hast? Sonst läuft die Abnahme mit einem freien Ersatz (Odin 2, Dexed). Ein Kauf wäre deine Entscheidung; gebaut ist nichts dafür.
+- Eine Datei wird auch bei einer Zeitüberschreitung (20 s) gesperrt; auf einer sehr langsamen Platte könnte das ein gutes Plugin treffen. „Freigeben“ macht es rückgängig. Soll die Frist länger sein?
+- Im Betrieb abgestürzte Plugins werden nicht automatisch gesperrt, nur von Hand.
+- Die Suche läuft noch im Bild (kurzes Einfrieren bei vielen Plugins), nicht im Hintergrund.
+
 ## Paket 33: Absturzschutz per eigenem Prozess (0.28.0, offen)
 
 Aus M8. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && WOA_TESTMENU=1 cargo run -q --release -p woa`
