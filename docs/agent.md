@@ -47,6 +47,9 @@ Claude Desktop: derselbe Befehl als `command`/`args` in `claude_desktop_config.j
 | `move_clip` | `clip`, `start_beats`, `track` (optional) | Clip verschieben, auch auf eine andere Spur |
 | `trim_clip` | `clip`, `length_beats`, `offset_beats` (beide optional) | Länge und Versatz ins Audio |
 | `set_fades` | `clip`, `fade_in_beats`, `fade_out_beats` | Ein- und Ausblenden |
+| `split_clip` | `clip`, `at_beats` | Teilt am Punkt in zwei Clips, die wie das Original klingen; liefert die ID des rechten Teils |
+| `set_fade_curves` | `clip`, `fade_in`, `fade_out` (`linear`, `equal_power`, `s_curve`; je optional) | Form der Fades |
+| `set_clip_gain` | `clip`, `gain_db` (-96..24) | Clip-Gain vor dem Spurfader |
 | `repeat_clip` | `clip`, `times` (1..256) | `times` Kopien direkt hintereinander (Loops), liefert die neuen IDs |
 | `remove_clip` | `clip` | Clip entfernen (die Datei bleibt im Ordner) |
 | `analyze` | `track` (optional) | rendert offline (48 kHz bis zum Ende des letzten Clips): integrierte LUFS, höchste momentane und kurzzeitige Lautheit, Sample-Peak und True Peak, Clipping, Länge, Spektrum (Spitze in Hz, Oktavbänder), Stereo (Korrelation, Balance, Seiten zu Mitte) und Hinweise; ohne `track` zusätzlich Peak je Audio-Spur, mit `track` nur diese Spur; ändert nichts |

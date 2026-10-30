@@ -332,3 +332,113 @@ fn two_files_dropped_move_trim_undo_save_reopen() {
     assert!(again.open(&proj));
     assert_eq!(again.project(), rig.app.state().project());
 }
+
+// ---- Paket 21: Schnitt und Fades ----------------------------------------------------------
+
+#[test]
+fn split_curves_gain_normalize_with_undo() {
+    use woa_model::FadeCurve;
+    let (mut st, t, c, _tmp) = state_with_clip();
+    // Teilen bei Beat 8 (der Clip liegt 4..12): zwei Teile.
+    let right = st.split_clip(c, 8.0).expect("split");
+    assert_eq!(st.project().track(t).expect("t").clips.len(), 2);
+    assert_eq!(clip(&st, right).offset_beats, 4.0);
+    // Mitte (hier: den rechten Teil) löschen.
+    assert!(st.remove_clip(right));
+    assert_eq!(st.project().track(t).expect("t").clips.len(), 1);
+    st.undo();
+    st.undo();
+    assert_eq!(st.project().track(t).expect("t").clips.len(), 1);
+    assert_eq!(
+        clip(&st, c).length_beats,
+        8.0,
+        "undo restores the whole clip"
+    );
+
+    // Kurven und Gain: je ein Undo-Schritt.
+    assert!(st.set_fade_curves(c, FadeCurve::SCurve, FadeCurve::EqualPower));
+    assert!(
+        !st.set_fade_curves(c, FadeCurve::SCurve, FadeCurve::EqualPower),
+        "no change"
+    );
+    assert!(st.set_clip_gain(c, -4.5));
+    let k = clip(&st, c);
+    assert_eq!(
+        (k.fade_in_curve, k.fade_out_curve, k.gain_db),
+        (FadeCurve::SCurve, FadeCurve::EqualPower, -4.5)
+    );
+    st.undo();
+    assert_eq!(clip(&st, c).gain_db, 0.0);
+    st.undo();
+    assert_eq!(clip(&st, c).fade_in_curve, FadeCurve::Linear);
+
+    // Normalisieren: Spitze 0,5 auf -1 dBFS sind +5,02 dB; Stille wird abgelehnt.
+    assert!(st.normalize_clip(c, 0.5, -1.0));
+    assert!((clip(&st, c).gain_db - 5.0206).abs() < 1e-3);
+    assert!(
+        !st.normalize_clip(c, 0.0, -1.0),
+        "silence cannot be normalized"
+    );
+}
+
+#[test]
+fn fade_handle_drag_sets_the_fade_with_one_undo_step() {
+    let mut rig = Rig::new();
+    let t = rig.app.state_mut().add_track().expect("track");
+    rig.step(Vec::new(), Vec::new());
+    let a = wav(&rig.dir, "eins.wav", 4.0);
+    let row = rig.row(t);
+    rig.drop_files(&[&a], egui::pos2(rig.x_of(t, 4.0) + 1.0, row.center().y));
+    let (_, c) = first_clip(&rig.app);
+    assert_eq!(c.fade_in_beats, 0.0);
+    let steps = rig.app.state().session().history().undo_entries().len();
+
+    // Der Griff des Fade-in sitzt 10 Pixel rechts der linken Kante, an der Oberkante der Wellenform.
+    let y = rig.row(t).top() + 3.0 + 16.0;
+    let from = egui::pos2(rig.x_of(t, 4.0) + 10.0, y);
+    let to = egui::pos2(from.x + 2.0 * rig.app.zoom(), y);
+    rig.drag(from, to);
+    let k = rig.app.state().project().clip(c.id).expect("c").1.clone();
+    assert!(
+        (k.fade_in_beats - 2.0).abs() < 0.3,
+        "dragged by about 2 beats, got {}",
+        k.fade_in_beats
+    );
+    assert_eq!(k.start_beats, 4.0, "the clip did not move");
+    assert_eq!(k.fade_out_beats, 0.0);
+    assert_eq!(
+        rig.app.state().session().history().undo_entries().len(),
+        steps + 1,
+        "one undo step"
+    );
+    rig.key(egui::Key::Z, egui::Modifiers::COMMAND);
+    assert_eq!(
+        rig.app
+            .state()
+            .project()
+            .clip(c.id)
+            .expect("c")
+            .1
+            .fade_in_beats,
+        0.0
+    );
+}
+
+#[test]
+fn curves_and_gain_survive_save_and_reopen() {
+    use woa_model::FadeCurve;
+    let (mut st, _t, c, tmp) = state_with_clip();
+    st.set_fades(c, 1.5, 0.5);
+    st.set_fade_curves(c, FadeCurve::EqualPower, FadeCurve::SCurve);
+    st.set_clip_gain(c, 3.0);
+    let proj = tmp.path().join("shape.woa");
+    assert!(st.save_as(&proj));
+    let mut again = AppState::new(tmp.path().join("rec3"), Instant::now());
+    assert!(again.open(&proj));
+    assert_eq!(again.project(), st.project());
+    let k = clip(&again, c);
+    assert_eq!(
+        (k.fade_in_curve, k.fade_out_curve, k.gain_db),
+        (FadeCurve::EqualPower, FadeCurve::SCurve, 3.0)
+    );
+}
