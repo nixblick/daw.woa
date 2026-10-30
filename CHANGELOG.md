@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.19.0 — 2026-10-30
+
+Paket 24 aus M7: Bibliothek in SQLite mit Suche und Tags.
+
+- **`woa-library`:** Datenbank `bibliothek.sqlite3` im Datenordner. Schema 2 (Titel mit Pfad, Inhaltskennung, Dauer, Art Musik/Sample/Jingle; Tags; FTS5-Volltextindex über Titel, Tags und Pfad). Die Schemaversion steht in `PRAGMA user_version`; ältere Datenbanken werden beim Öffnen schrittweise angehoben (Test: Datenbank im Zustand von Schema 1 behält ihre Titel und bekommt den Suchindex), eine neuere wird abgelehnt statt verändert.
+- **Suche:** Jedes Wort ist ein Präfix, alle Wörter müssen passen; Groß-/Kleinschreibung und Akzente sind egal („cafe“ findet „Café“). Der Suchtext wird zu einem sicheren FTS-Ausdruck umgeschrieben (Test mit Sonderzeichen und SQL-Fragmenten). Filter nach Art und Tag.
+- **Tags:** getrimmt, klein geschrieben, höchstens 40 Zeichen und 50 je Titel; der Tag-Text steht auch im Suchindex.
+- **Import im Hintergrund:** Ordner rekursiv (ohne Symlinks, höchstens 16 Ebenen und 200 000 Dateien), eine eigene Datenbankverbindung im Hintergrund-Thread, Fortschritt und Abbruch über Atomics, Eintragen in Stapeln von 50 je Transaktion. Doppelte werden am Inhalt erkannt (eigene 128-Bit-Kennung, kein kryptographischer Hash und keine neue Abhängigkeit dafür), eine verschobene Datei zieht ihren Eintrag nach, eine geänderte aktualisiert ihn. Kaputte Dateien werden gezählt und übersprungen.
+- **Oberfläche:** Neuer Knopf „Bibliothek“ in der Menüleiste öffnet in beiden Layouts dasselbe Fenster: Suchfeld, Filter nach Art und Tag, „Ordner importieren …“ mit Fortschritt, Trefferliste, darunter Tags des gewählten Titels (anlegen und entfernen), „▶ Vorhören“ über den vorhandenen PFL-Weg (Radio-Modus mit Kopfhörer-Ausgang; nie auf Sendung). Titel lassen sich ziehen: in der Timeline auf die Spur unter dem Zeiger, im Radio auf die Playlist (hinten anhängen) oder auf ein Cart-Pad (belegen).
+- **Kennung:** Die Inhaltskennung liest ihre 8-Byte-Wörter ohne `chunks_exact` (der neuere Clippy der CI verlangt dafür `as_chunks`).
+- **Neue Abhängigkeit:** `rusqlite` 0.41 mit `bundled` (MIT; SQLite selbst ist gemeinfrei, wird mit eingebaut und braucht auf Linux und Windows einen C-Compiler im Bau). `cargo deny` läuft in der CI.
+- **Tests:** 1 000 erzeugte Sinus-Dateien werden im Hintergrund importiert (Zeit im Testlauf unter 2 s im Debug-Bau), danach Suche nach Titel und Ordnername, zweiter Import erkennt alle 1 000 als Doppelte, Kopie unter anderem Namen wird erkannt, Abbruch, fehlender Ordner, Symlink-Schleife; Suche, Tags, Grenzen, Transaktion mit Rücksetzen, Migration; Fenster-Zustand (Import, Suche, Tag, Filter) und Zeichnen ohne Fenster.
+
 ## 0.18.1 — 2026-10-30
 
 Feedback-Fenster (André: „mittig und in schön … nach 3 Sekunden automatisch schließt“).
