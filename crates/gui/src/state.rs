@@ -245,6 +245,74 @@ impl AppState {
         self.apply(Command::RemoveInsert { track, insert })
     }
 
+    /// Adds a CLAP plugin (instrument or effect) to the track (Paket 31).
+    pub fn add_plugin(
+        &mut self,
+        track: TrackId,
+        clap_id: &str,
+        name: &str,
+        role: woa_model::PluginRole,
+    ) -> Option<InsertId> {
+        let id = self.session.new_insert_id();
+        self.apply(Command::AddPlugin {
+            track,
+            plugin: woa_model::PluginSlot::new(id, clap_id, name, role),
+            index: None,
+        })
+        .then_some(id)
+    }
+
+    /// Removes a plugin from the track.
+    pub fn remove_plugin(&mut self, track: TrackId, plugin: InsertId) -> bool {
+        self.apply(Command::RemovePlugin { track, plugin })
+    }
+
+    /// Switches a plugin's bypass.
+    pub fn toggle_plugin_bypass(&mut self, track: TrackId, plugin: InsertId) -> bool {
+        let Some(bypass) = self
+            .project()
+            .track(track)
+            .and_then(|t| t.plugin(plugin))
+            .map(|p| !p.bypass)
+        else {
+            return false;
+        };
+        self.apply(Command::SetPluginBypass {
+            track,
+            plugin,
+            bypass,
+        })
+    }
+
+    /// Sets one plugin parameter (one undo step; the UI calls this when a drag ends).
+    pub fn set_plugin_param(
+        &mut self,
+        track: TrackId,
+        plugin: InsertId,
+        param: u32,
+        value: f64,
+    ) -> bool {
+        self.apply(Command::SetPluginParam {
+            track,
+            plugin,
+            param,
+            value,
+        })
+    }
+
+    /// Takes over the state of the running plugins (see `PluginRack::capture_state`). Called
+    /// before saving, autosave and export; usually applies nothing.
+    pub fn apply_plugin_state(&mut self, commands: Vec<Command>) {
+        for c in commands {
+            self.apply(c);
+        }
+    }
+
+    /// Whether [`AppState::tick_autosave`] would write now (if something changed).
+    pub fn autosave_due(&self, now: Instant) -> bool {
+        now.duration_since(self.last_autosave) >= AUTOSAVE_INTERVAL
+    }
+
     /// Switches an effect's bypass.
     pub fn toggle_insert_bypass(&mut self, track: TrackId, insert: InsertId) -> bool {
         let Some(bypass) = self
@@ -1489,5 +1557,50 @@ mod tests {
         assert_eq!(s.project().tracks.len(), 1);
         s.undo();
         assert_eq!(s.project().tracks.len(), 2);
+    }
+
+    #[test]
+    fn plugin_clicklist_add_param_bypass_remove_undo_and_save() {
+        use woa_model::PluginRole;
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        let audio = s.add_track().unwrap();
+        let midi = s.add_midi_track().unwrap();
+        // An instrument belongs on a MIDI track only.
+        assert!(
+            s.add_plugin(audio, "org.example.synth", "Synth", PluginRole::Instrument)
+                .is_none()
+        );
+        let inst = s
+            .add_plugin(midi, "org.example.synth", "Synth", PluginRole::Instrument)
+            .unwrap();
+        let fx = s
+            .add_plugin(audio, "org.example.verb", "Verb", PluginRole::Effect)
+            .unwrap();
+        assert!(s.set_plugin_param(audio, fx, 7, 0.25));
+        assert!(s.toggle_plugin_bypass(audio, fx));
+        s.undo();
+        assert!(!s.project().track(audio).unwrap().plugins[0].bypass);
+        s.redo();
+        // The state of a running plugin is taken over without touching the parameters.
+        s.apply_plugin_state(vec![Command::SetPluginState {
+            track: audio,
+            plugin: fx,
+            state: Some(woa_model::PluginSlot::encode_state(&[1, 2, 3])),
+            params: s.project().track(audio).unwrap().plugins[0].params.clone(),
+        }]);
+        let dir = tmp.path().join("p");
+        assert!(s.save_as(&dir));
+        let (mut t, _) = state(tmp.path());
+        assert!(t.open(&with_woa_extension(&dir)));
+        let slot = t.project().track(audio).unwrap().plugins[0].clone();
+        assert_eq!(slot.clap_id, "org.example.verb");
+        assert!(slot.bypass);
+        assert_eq!(slot.params[0].value, 0.25);
+        assert_eq!(slot.state_bytes(), Some(vec![1, 2, 3]));
+        assert_eq!(t.project().track(midi).unwrap().plugins[0].id, inst);
+        assert!(t.remove_plugin(audio, fx));
+        t.undo();
+        assert_eq!(t.project().track(audio).unwrap().plugins.len(), 1);
     }
 }

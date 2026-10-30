@@ -10,8 +10,7 @@ use std::sync::atomic::AtomicU32;
 use std::time::Instant;
 use woa_dsp::instrument::note_queue;
 use woa_engine::clip::{
-    PEAK_BLOCK, clip_graph_analysis, load_wav_mono, peaks, project_end_seconds, render_clips,
-    take_peak,
+    PEAK_BLOCK, clip_graph_plugins, load_wav_mono, peaks, project_end_seconds, take_peak,
 };
 
 use woa_engine::device::{
@@ -73,6 +72,9 @@ fn routing_key(project: &Project) -> String {
                 let _ = write!(key, ",{}:{}", p.beat.to_bits(), p.value.to_bits());
             }
         }
+        for p in &t.plugins {
+            let _ = write!(key, "|p{}{:?}{}", p.id.0, p.role, p.clap_id);
+        }
         key.push(';');
     }
     key
@@ -110,6 +112,11 @@ pub struct Player {
     taps: HashMap<Option<TrackId>, TapHandle>,
     /// Was das Analyse-Fenster hören will (`None`: Fenster zu, alle Abgriffe aus).
     tap_source: Option<Option<TrackId>>,
+    /// Geladene CLAP-Plugins des Projekts; entsteht erst, wenn ein Projekt Plugins hat oder der
+    /// Nutzer den Plugin-Browser öffnet (die Suche lädt Fremdcode).
+    rack: Option<woa_plugins::PluginRack>,
+    /// Zählt Änderungen am Rack; geht in den Graph-Schlüssel ein.
+    plugin_epoch: u64,
 }
 
 /// Dekodiert einmal je Datei und merkt sich das Ergebnis; Fehler werden geloggt.
@@ -166,6 +173,8 @@ impl Player {
             loop_range: None,
             taps: HashMap::new(),
             tap_source: None,
+            rack: None,
+            plugin_epoch: 0,
         })
     }
 
@@ -210,6 +219,14 @@ impl Player {
                 "output underruns (last minute)"
             );
         }
+        if project.tracks.iter().any(|t| !t.plugins.is_empty()) {
+            self.ensure_rack();
+        }
+        if let Some(rack) = self.rack.as_mut()
+            && rack.sync(project)
+        {
+            self.plugin_epoch += 1;
+        }
         let rate = self.rate as f32;
         let structure: Structure = (
             project.tempo_bpm.to_bits(),
@@ -246,7 +263,7 @@ impl Player {
                 })
                 .collect(),
             live,
-            routing_key(project),
+            format!("{}#{}", routing_key(project), self.plugin_epoch),
         );
         if self.structure.as_ref() != Some(&structure) {
             let (live_graph, producer) = match live {
@@ -260,13 +277,17 @@ impl Player {
             let sr = self.rate;
             let cache = &mut self.cache;
             let mut load = |rel: &str| load_cached(cache, resolve(rel)?, sr);
-            let graph = clip_graph_analysis(
+            let rack = self.rack.as_ref();
+            let graph = clip_graph_plugins(
                 project,
                 &transport,
                 rate,
                 &mut load,
                 Some(&mut self.meters),
                 live_graph,
+                false,
+                true,
+                &mut |t| rack.map_or_else(Default::default, |r| r.track_plugins(t)),
             );
             match self.engine.set_graph(graph.builder, rate, 4096) {
                 Ok(()) => {
@@ -302,6 +323,13 @@ impl Player {
                     extra.push(u64::from(i.bypass));
                     extra.extend(i.params.iter().map(|p| p.to_bits()));
                 }
+                for p in &t.plugins {
+                    extra.push(u64::from(p.bypass));
+                    for q in &p.params {
+                        extra.push(u64::from(q.id));
+                        extra.push(q.value.to_bits());
+                    }
+                }
                 (
                     t.id,
                     t.gain_db.to_bits(),
@@ -318,6 +346,70 @@ impl Player {
                 Err(e) => tracing::warn!(error = %e, "mixer update failed"),
             }
         }
+    }
+
+    fn ensure_rack(&mut self) {
+        if self.rack.is_none() {
+            let catalog = Arc::new(woa_plugins::Catalog::scan_default());
+            for p in catalog.problems() {
+                tracing::warn!(file = %p.path.display(), error = %p.reason, "plugin scan problem");
+            }
+            tracing::info!(found = catalog.plugins().len(), "plugin scan done");
+            self.rack = Some(woa_plugins::PluginRack::new(catalog, self.rate as f32));
+        }
+    }
+
+    /// Die Plugins dieses Rechners (sucht beim ersten Aufruf).
+    pub fn plugin_list(&mut self) -> Vec<woa_plugins::PluginInfo> {
+        self.ensure_rack();
+        self.rack
+            .as_ref()
+            .map_or_else(Vec::new, |r| r.catalog().plugins().to_vec())
+    }
+
+    /// Sucht die Plugins neu; alle Plätze werden danach neu geladen.
+    pub fn rescan_plugins(&mut self) {
+        let catalog = Arc::new(woa_plugins::Catalog::scan_default());
+        tracing::info!(found = catalog.plugins().len(), "plugin rescan done");
+        match self.rack.as_mut() {
+            Some(r) => r.reset(catalog),
+            None => self.rack = Some(woa_plugins::PluginRack::new(catalog, self.rate as f32)),
+        }
+        self.plugin_epoch += 1;
+    }
+
+    /// Status eines Plugin-Platzes.
+    pub fn plugin_status(&self, id: InsertId) -> Option<woa_plugins::SlotStatus> {
+        self.rack.as_ref()?.status(id)
+    }
+
+    /// Die Regler eines geladenen Plugins.
+    pub fn plugin_params(&self, id: InsertId) -> Vec<woa_plugins::ParamDesc> {
+        self.rack
+            .as_ref()
+            .map_or_else(Vec::new, |r| r.params(id).to_vec())
+    }
+
+    /// Wert eines Reglers laut Plugin.
+    pub fn plugin_value(&mut self, id: InsertId, param: u32) -> Option<f64> {
+        self.rack.as_mut()?.param_value(id, param)
+    }
+
+    /// Befehle, die den Zustand der laufenden Plugins ins Projekt übernehmen.
+    pub fn capture_plugin_state(&mut self, project: &Project) -> Vec<woa_model::Command> {
+        self.rack
+            .as_mut()
+            .map_or_else(Vec::new, |r| r.capture_state(project))
+    }
+
+    /// Eigene Plugin-Instanzen für einen Export (stört die Wiedergabe nicht).
+    fn offline_rack(&self, project: &Project) -> Option<woa_plugins::PluginRack> {
+        if project.tracks.iter().all(|t| t.plugins.is_empty()) {
+            return None;
+        }
+        let mut rack = self.rack.as_ref()?.fresh();
+        rack.sync(project);
+        Some(rack)
     }
 
     /// Abtastrate der Engine.
@@ -480,10 +572,18 @@ impl Player {
             return Err("keine Clips zum Exportieren".into());
         }
         let rate = self.rate;
+        let rack = self.offline_rack(project);
         let cache = &mut self.cache;
-        let (mut l, mut r) = render_clips(project, rate, seconds, &mut |rel: &str| {
-            load_cached(cache, resolve(rel)?, rate)
-        })
+        let (mut l, mut r) = woa_engine::clip::render_clips_plugins(
+            project,
+            rate,
+            seconds,
+            &mut |rel: &str| load_cached(cache, resolve(rel)?, rate),
+            &mut |t| {
+                rack.as_ref()
+                    .map_or_else(Default::default, |r| r.track_plugins(t))
+            },
+        )
         .map_err(|e| e.to_string())?;
         let norm =
             lufs.and_then(|t| woa_engine::loudness::normalize(&mut l, &mut r, rate, t, -1.0));
@@ -508,13 +608,18 @@ impl Player {
             return Err("keine Clips zum Exportieren".into());
         }
         let rate = self.rate;
+        let rack = self.offline_rack(project);
         let cache = &mut self.cache;
-        let render = woa_engine::stems::render_stems(
+        let render = woa_engine::stems::render_stems_plugins(
             project,
             rate,
             seconds,
             opts.select,
             &mut |rel: &str| load_cached(cache, resolve(rel)?, rate),
+            &mut |t| {
+                rack.as_ref()
+                    .map_or_else(Default::default, |r| r.track_plugins(t))
+            },
         )
         .map_err(|e| e.to_string())?;
         if render.stems.is_empty() {

@@ -4,6 +4,7 @@
 //! Die Samples liegen fertig dekodiert (mono, Engine-Rate) in `Arc<[f32]>`; der Audio-Thread
 //! liest nur, er allokiert nicht.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -17,9 +18,11 @@ use rtrb::Consumer;
 use woa_dsp::instrument::NoteEvent;
 
 use crate::midi_clip::midi_track_source;
-use crate::project::{ProjectGraph, build_project_graph_taps};
+use crate::plugin_node::PluginChain;
+use crate::project::{ProjectGraph, build_project_graph_plugins, build_project_graph_taps};
 use crate::transport::{TransportHandle, beats_to_samples};
 use crate::{Engine, EngineError};
+use woa_dsp::plugin::TrackPlugins;
 
 use crate::decode::{MAX_RATE, MIN_RATE, decode_file, resample_linear};
 
@@ -233,7 +236,9 @@ pub fn clip_graph_analysis(
     meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
     live: Option<(TrackId, Consumer<NoteEvent>)>,
 ) -> ProjectGraph {
-    clip_graph_inner(project, transport, rate, load, meters, live, false, true)
+    clip_graph_inner(
+        project, transport, rate, load, meters, live, false, true, None,
+    )
 }
 
 /// Wie [`clip_graph_live`]; mit `offline` (Export) rechnen die Effekte ohne eigene Threads.
@@ -246,7 +251,37 @@ pub fn clip_graph_mode(
     live: Option<(TrackId, Consumer<NoteEvent>)>,
     offline: bool,
 ) -> ProjectGraph {
-    clip_graph_inner(project, transport, rate, load, meters, live, offline, false)
+    clip_graph_inner(
+        project, transport, rate, load, meters, live, offline, false, None,
+    )
+}
+
+/// Wie [`clip_graph_mode`] (mit Abgriffen, wenn `with_taps`), dazu die Plugins der Spuren
+/// (Paket 31): `plugins` liefert je Spur ihre Plugin-Rechner (leer = keine Plugins). Ein
+/// Instrument-Plugin ersetzt den eingebauten Synth der MIDI-Spur und nimmt die Live-Noten.
+#[allow(clippy::too_many_arguments)]
+pub fn clip_graph_plugins(
+    project: &Project,
+    transport: &TransportHandle,
+    rate: f32,
+    load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
+    meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
+    live: Option<(TrackId, Consumer<NoteEvent>)>,
+    offline: bool,
+    with_taps: bool,
+    plugins: &mut dyn FnMut(&woa_model::Track) -> TrackPlugins,
+) -> ProjectGraph {
+    clip_graph_inner(
+        project,
+        transport,
+        rate,
+        load,
+        meters,
+        live,
+        offline,
+        with_taps,
+        Some(plugins),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -255,23 +290,29 @@ pub(crate) fn clip_graph_inner(
     transport: &TransportHandle,
     rate: f32,
     load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
-    mut meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
+    meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
     live: Option<(TrackId, Consumer<NoteEvent>)>,
     offline: bool,
     with_taps: bool,
+    plugins: Option<&mut dyn FnMut(&woa_model::Track) -> TrackPlugins>,
 ) -> ProjectGraph {
-    let mut live = live;
+    let live = RefCell::new(live);
+    let meters = RefCell::new(meters);
+    let take_live = |t: &woa_model::Track| -> Option<Consumer<NoteEvent>> {
+        let mut live = live.borrow_mut();
+        match live.take() {
+            Some((id, q)) if id == t.id => Some(q),
+            other => {
+                *live = other;
+                None
+            }
+        }
+    };
     let mut source = |t: &woa_model::Track| -> Option<Box<dyn Node>> {
         if t.kind == TrackKind::Midi {
-            let queue = match live.take() {
-                Some((id, q)) if id == t.id => Some(q),
-                other => {
-                    live = other;
-                    None
-                }
-            };
+            let queue = take_live(t);
             let mut player = midi_track_source(t, project.tempo_bpm, rate, transport, queue)?;
-            if let Some(m) = meters.as_deref_mut() {
+            if let Some(m) = meters.borrow_mut().as_deref_mut() {
                 player = player.with_meter(Arc::clone(m.entry(t.id).or_default()));
             }
             return Some(Box::new(player));
@@ -289,12 +330,36 @@ pub(crate) fn clip_graph_inner(
             .collect();
         apply_crossfades(&mut clips);
         let mut player = ClipPlayer::new(clips, transport.clone());
-        if let Some(m) = meters.as_deref_mut() {
+        if let Some(m) = meters.borrow_mut().as_deref_mut() {
             player = player.with_meter(Arc::clone(m.entry(t.id).or_default()));
         }
         Some(Box::new(player))
     };
-    build_project_graph_taps(project, &mut source, offline, with_taps)
+    match plugins {
+        None => build_project_graph_taps(project, &mut source, offline, with_taps),
+        Some(f) => {
+            let mut chain = |t: &woa_model::Track| -> Option<PluginChain> {
+                if t.plugins.is_empty() {
+                    return None;
+                }
+                let has_instrument = t
+                    .plugins
+                    .iter()
+                    .any(|s| s.role == woa_model::PluginRole::Instrument);
+                let queue = if has_instrument { take_live(t) } else { None };
+                let meter = if has_instrument {
+                    meters
+                        .borrow_mut()
+                        .as_deref_mut()
+                        .map(|m| Arc::clone(m.entry(t.id).or_default()))
+                } else {
+                    None
+                };
+                PluginChain::build(t, f(t), project.tempo_bpm, rate, queue, meter)
+            };
+            build_project_graph_plugins(project, &mut source, offline, with_taps, Some(&mut chain))
+        }
+    }
 }
 
 /// Ende des letzten Clips in Sekunden.
@@ -315,9 +380,22 @@ pub fn render_clips(
     seconds: f64,
     load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
 ) -> Result<(Vec<f32>, Vec<f32>), EngineError> {
+    render_clips_plugins(project, rate, seconds, load, &mut |_| {
+        TrackPlugins::default()
+    })
+}
+
+/// Wie [`render_clips`], mit den Plugins der Spuren (Paket 31).
+pub fn render_clips_plugins(
+    project: &Project,
+    rate: u32,
+    seconds: f64,
+    load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
+    plugins: &mut dyn FnMut(&woa_model::Track) -> TrackPlugins,
+) -> Result<(Vec<f32>, Vec<f32>), EngineError> {
     const BLOCK: usize = 512;
     let (mut engine, mut processor) = Engine::new(16);
-    let graph = clip_graph_mode(
+    let graph = clip_graph_plugins(
         project,
         &engine.transport(),
         rate as f32,
@@ -325,6 +403,8 @@ pub fn render_clips(
         None,
         None,
         true,
+        false,
+        plugins,
     );
     engine.set_graph(graph.builder, rate as f32, BLOCK)?;
     engine.set_tempo(project.tempo_bpm)?;

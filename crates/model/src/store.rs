@@ -30,11 +30,15 @@ use crate::project::Project;
 /// written with the lowest version that can hold it ([`required_version`]), so projects
 /// without automation and sidechain stay readable by older builds; a build that does not
 /// know version 3 refuses such a file instead of silently dropping the curves on re-save.
-pub const FORMAT_VERSION: u32 = 3;
+pub const FORMAT_VERSION: u32 = 4;
 
-/// The lowest format version that can hold `project`: 3 with automation, a sidechain, a
+/// The lowest format version that can hold `project`: 4 with plugins, 3 with automation, a sidechain, a
 /// clip gain or a fade curve, otherwise 2.
 pub fn required_version(project: &Project) -> u32 {
+    // Version 4 (Paket 31) adds `plugins` to tracks; an older build would drop them on re-save.
+    if project.tracks.iter().any(|t| !t.plugins.is_empty()) {
+        return 4;
+    }
     let v3 = project.tracks.iter().any(|t| {
         !t.automation.is_empty()
             || !t.take_folders.is_empty()

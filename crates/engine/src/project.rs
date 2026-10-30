@@ -16,6 +16,7 @@ use std::sync::atomic::AtomicU32;
 
 use woa_dsp::automation::{AutoCurve, AutoNode, PanSide, db_to_amp};
 use woa_dsp::fx::{BYPASS, FxContext, FxKind, FxNode, FxStereoNode, KeyedFxNode};
+use woa_dsp::plugin::BYPASS_PARAM;
 use woa_dsp::{DEFAULT_RAMP_SECONDS, Gain, Node, Smoother, StereoBuffers, StereoNode, gain_params};
 use woa_model::{
     AutoMode, AutoRange, AutoTarget, AutomationLane, EffectKind, Insert, InsertId, Project, Send,
@@ -23,6 +24,7 @@ use woa_model::{
 };
 
 use crate::clip::store_peak;
+use crate::plugin_node::PluginChain;
 use crate::tap::{TapHandle, tap};
 use crate::{Engine, EngineError, GraphBuilder, NodeId};
 
@@ -157,6 +159,11 @@ pub struct TrackNodes {
     /// Effekte der Kette, in Reihenfolge.
     pub inserts: Vec<(InsertId, NodeId)>,
     pub sends: Vec<SendNodes>,
+    /// Rechter Spur-Gain, wenn die Spur Plugins hat: sie läuft dann in Stereo (`gain` ist
+    /// der linke, `pan` die beiden Balance-Gains).
+    pub gain_r: Option<NodeId>,
+    /// Plugin-Knoten (Instrument und Effekte) mit der Kennung ihres Platzes.
+    pub plugins: Vec<(InsertId, NodeId)>,
 }
 
 impl TrackNodes {
@@ -236,7 +243,8 @@ impl ProjectGraph {
             let (bal_l, bal_r) = balance(t.pan);
             // Mit abgespielter Kurve bleibt vom festen Faktor nur Mute/Solo (Gain) bzw. 1.
             let gain_lane = active_lane(t, AutoTarget::Gain).is_some();
-            let pan_lane = active_lane(t, AutoTarget::Pan).is_some();
+            // Spuren mit Plugins laufen in Stereo; eine Panorama-Kurve gilt dort nicht.
+            let pan_lane = n.gain_r.is_none() && active_lane(t, AutoTarget::Pan).is_some();
             let g = if gain_lane {
                 if on { 1.0 } else { 0.0 }
             } else {
@@ -245,6 +253,9 @@ impl ProjectGraph {
             match n.pan {
                 Some((pl, pr)) => {
                     engine.set_param(n.gain, gain_params::GAIN, g)?;
+                    if let Some(gr) = n.gain_r {
+                        engine.set_param(gr, gain_params::GAIN, g)?;
+                    }
                     let (l, r) = if pan_lane { (1.0, 1.0) } else { (l, r) };
                     engine.set_param(pl, gain_params::GAIN, l)?;
                     engine.set_param(pr, gain_params::GAIN, r)?;
@@ -272,6 +283,15 @@ impl ProjectGraph {
                     engine.set_param(node, i as u32, *v as f32)?;
                 }
                 engine.set_param(node, BYPASS, if ins.bypass { 1.0 } else { 0.0 })?;
+            }
+            for slot in &t.plugins {
+                let Some(&(_, node)) = n.plugins.iter().find(|(id, _)| *id == slot.id) else {
+                    continue;
+                };
+                for p in &slot.params {
+                    engine.set_param(node, p.id, p.value as f32)?;
+                }
+                engine.set_param(node, BYPASS_PARAM, if slot.bypass { 1.0 } else { 0.0 })?;
             }
             for s in &t.sends {
                 let Some(sn) = n.sends.iter().find(|x| x.target == s.target) else {
@@ -444,6 +464,22 @@ pub fn build_project_graph_taps(
     offline: bool,
     with_taps: bool,
 ) -> ProjectGraph {
+    build_project_graph_plugins(project, source, offline, with_taps, None)
+}
+
+/// Liefert je Spur die Plugin-Knoten (oder `None`).
+pub type PluginHook<'a> = dyn FnMut(&Track) -> Option<PluginChain> + 'a;
+
+/// Wie [`build_project_graph_taps`]. `plugins` liefert je Spur die Plugin-Knoten (Paket 31);
+/// eine Spur mit Plugins läuft ab dem Instrument oder dem ersten Plugin-Effekt in Stereo. Hat
+/// sie ein Instrument, ersetzt es die Quelle (`source` wird für diese Spur nicht gerufen).
+pub fn build_project_graph_plugins(
+    project: &Project,
+    source: &mut dyn FnMut(&Track) -> Option<Box<dyn Node>>,
+    offline: bool,
+    with_taps: bool,
+    mut plugins: Option<&mut PluginHook<'_>>,
+) -> ProjectGraph {
     let ctx = FxContext {
         tempo_bpm: project.tempo_bpm as f32,
         offline,
@@ -538,6 +574,8 @@ pub fn build_project_graph_taps(
                 pan: None,
                 inserts,
                 sends: Vec::new(),
+                gain_r: None,
+                plugins: Vec::new(),
             },
         );
     }
@@ -580,19 +618,49 @@ pub fn build_project_graph_taps(
     }
 
     for t in project.tracks.iter().filter(|t| t.kind != TrackKind::Bus) {
-        let Some(src) = source(t) else { continue };
+        let chain = plugins.as_mut().and_then(|f| f(t));
+        let mut chain = chain.filter(|c| c.head.is_some() || !c.effects.is_empty());
+        let head = chain.as_mut().and_then(|c| c.head.take());
+        let stereo_head = head.is_some();
+        let src = match head {
+            Some((_, node)) => b.add_stereo(node),
+            None => {
+                let Some(src) = source(t) else { continue };
+                b.add_boxed(src)
+            }
+        };
         let on = audible_of(t.id);
         let (g, l, r) = track_gains_with(t, on);
-        let src = b.add_boxed(src);
         let mut tail = src;
         let mut inserts = Vec::new();
+        let mut plugin_nodes: Vec<(InsertId, NodeId)> = Vec::new();
+        if let Some(slot) = t
+            .plugins
+            .iter()
+            .find(|s| s.role == woa_model::PluginRole::Instrument)
+            && stereo_head
+        {
+            plugin_nodes.push((slot.id, src));
+        }
         for ins in &t.inserts {
             let lanes = insert_lanes(t, ins, tempo);
             let meter = reduction_meter(ins.kind);
             let key = ins
                 .sidechain
                 .filter(|&s| ins.kind.supports_sidechain() && project.track(s).is_some());
-            let n = if let Some(source) = key {
+            let n = if stereo_head {
+                // Ab dem Plugin-Instrument läuft die Kette in Stereo (ohne Sidechain).
+                let mut fx =
+                    FxStereoNode::with_context(fx_kind(ins.kind), &ins.params, ins.bypass, ctx);
+                fx.set_lanes(lanes);
+                if let Some(m) = &meter {
+                    fx.set_meter(Arc::clone(m));
+                }
+                let n = b.add_stereo(Box::new(fx));
+                b.connect_ch(tail, 0, n, 0);
+                b.connect_ch(tail, 1, n, 1);
+                n
+            } else if let Some(source) = key {
                 // Sidechain: Kanal 0 Signal, Kanal 1 Schlüssel (siehe `KeyedFxNode`).
                 let mut fx =
                     KeyedFxNode::with_context(fx_kind(ins.kind), &ins.params, ins.bypass, ctx);
@@ -620,12 +688,40 @@ pub fn build_project_graph_taps(
             inserts.push((ins.id, n));
             tail = n;
         }
+        // Plugin-Effekte: Stereo, nach den eingebauten Effekten. Eine Mono-Kette speist beide
+        // Eingänge des ersten Plugins.
+        let effects = chain.map(|c| c.effects).unwrap_or_default();
+        let stereo = stereo_head || !effects.is_empty();
+        let mut tail_is_mono = !stereo_head;
+        for (id, node) in effects {
+            let n = b.add_stereo(node);
+            if tail_is_mono {
+                b.connect_ch(tail, 0, n, 0);
+                b.connect_ch(tail, 0, n, 1);
+                tail_is_mono = false;
+            } else {
+                b.connect_ch(tail, 0, n, 0);
+                b.connect_ch(tail, 1, n, 1);
+            }
+            plugin_nodes.push((id, n));
+            tail = n;
+        }
         let gain_lane = lane_curve(t, AutoTarget::Gain, tempo);
-        let pan_lane = lane_curve(t, AutoTarget::Pan, tempo);
-        let gain = match gain_lane {
-            Some(c) => b.add_node(AutoNode::new(if on { 1.0 } else { 0.0 }, Some(c), None)),
+        let pan_lane = if stereo {
+            None
+        } else {
+            lane_curve(t, AutoTarget::Pan, tempo)
+        };
+        let make_gain = |b: &mut GraphBuilder| match &gain_lane {
+            Some(c) => b.add_node(AutoNode::new(
+                if on { 1.0 } else { 0.0 },
+                Some(c.clone()),
+                None,
+            )),
             None => b.add_node(Gain::new(g)),
         };
+        let gain = make_gain(&mut b);
+        let gain_r = stereo.then(|| make_gain(&mut b));
         let (pan_left, pan_right) = match pan_lane {
             Some(c) => (
                 b.add_node(AutoNode::new(1.0, None, Some((c.clone(), PanSide::Left)))),
@@ -633,9 +729,20 @@ pub fn build_project_graph_taps(
             ),
             None => (b.add_node(Gain::new(l)), b.add_node(Gain::new(r))),
         };
-        b.connect(tail, gain);
-        b.connect(gain, pan_left);
-        b.connect(gain, pan_right);
+        match gain_r {
+            Some(gr) => {
+                // Stereo: links und rechts je durch Fader und Balance.
+                b.connect_ch(tail, 0, gain, 0);
+                b.connect_ch(tail, 1, gr, 0);
+                b.connect(gain, pan_left);
+                b.connect(gr, pan_right);
+            }
+            None => {
+                b.connect(tail, gain);
+                b.connect(gain, pan_left);
+                b.connect(gain, pan_right);
+            }
+        }
         if with_taps {
             let (sink, handle) = tap();
             let n = b.add_stereo(Box::new(sink));
@@ -660,8 +767,13 @@ pub fn build_project_graph_taps(
             };
             let (left, right) = send_nodes(&mut b, t, s, on, true, tempo);
             if s.pre_fader {
-                b.connect(tail, left);
-                b.connect(tail, right);
+                if stereo && !tail_is_mono {
+                    b.connect_ch(tail, 0, left, 0);
+                    b.connect_ch(tail, 1, right, 0);
+                } else {
+                    b.connect(tail, left);
+                    b.connect(tail, right);
+                }
             } else {
                 b.connect(pan_left, left);
                 b.connect(pan_right, right);
@@ -681,6 +793,8 @@ pub fn build_project_graph_taps(
                 pan: Some((pan_left, pan_right)),
                 inserts,
                 sends,
+                gain_r,
+                plugins: plugin_nodes,
             },
         );
     }
@@ -690,7 +804,14 @@ pub fn build_project_graph_taps(
         let Some(src) = tracks.get(&source) else {
             continue;
         };
-        if src.pan.is_some() {
+        if let Some(gr) = src.gain_r {
+            // Plugin-Spur in Stereo: Mitte aus links und rechts.
+            for node in [src.gain, gr] {
+                let half = b.add_node(Gain::new(0.5));
+                b.connect(node, half);
+                b.connect_ch(half, 0, key, 1);
+            }
+        } else if src.pan.is_some() {
             b.connect_ch(src.gain, 0, key, 1);
         } else {
             for ch in 0..2u8 {

@@ -307,6 +307,9 @@ pub struct Track {
     /// Take folders made by loop recording (Paket 22).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub take_folders: Vec<crate::takes::TakeFolder>,
+    /// Fremd-Plugins (Paket 31): höchstens ein Instrument, dazu Effekte in Kettenreihenfolge.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plugins: Vec<crate::plugin::PluginSlot>,
 }
 
 /// A send from a track to a bus.
@@ -354,7 +357,13 @@ impl Track {
             inserts: Vec::new(),
             automation: Vec::new(),
             take_folders: Vec::new(),
+            plugins: Vec::new(),
         }
+    }
+
+    /// The plugin entry with this id on this track.
+    pub fn plugin(&self, id: InsertId) -> Option<&crate::plugin::PluginSlot> {
+        self.plugins.iter().find(|p| p.id == id)
     }
 }
 
@@ -405,6 +414,7 @@ impl Project {
             t.id.0 == raw
                 || t.clips.iter().any(|c| c.id.0 == raw)
                 || t.inserts.iter().any(|i| i.id.0 == raw)
+                || t.plugins.iter().any(|p| p.id.0 == raw)
                 || t.take_folders.iter().any(|f| f.id == raw)
         })
     }
@@ -442,6 +452,9 @@ impl Project {
             }
             for i in &t.inserts {
                 check_id(i.id.0)?;
+            }
+            for p in &t.plugins {
+                check_id(p.id.0)?;
             }
             for (n, f) in t.take_folders.iter().enumerate() {
                 check_id(f.id)?;
@@ -497,6 +510,25 @@ impl Project {
                 if track_ids.contains(&i.id.0) || !seen.insert(i.id.0) {
                     return Err(ModelError::DuplicateId(i.id.0));
                 }
+            }
+        }
+        for t in &self.tracks {
+            for p in &t.plugins {
+                p.check()?;
+                if track_ids.contains(&p.id.0) || !seen.insert(p.id.0) {
+                    return Err(ModelError::DuplicateId(p.id.0));
+                }
+            }
+            if t.plugins
+                .iter()
+                .filter(|p| p.role == crate::plugin::PluginRole::Instrument)
+                .count()
+                > 1
+            {
+                return Err(ModelError::InvalidArgument(format!(
+                    "track {} has more than one plugin instrument",
+                    t.id
+                )));
             }
         }
         for t in &self.tracks {

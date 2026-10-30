@@ -4,6 +4,35 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 31: CLAP-Plugins finden und laden (0.26.0, offen)
+
+Aus M8. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Surge XT installieren:** Das Paket der Distribution oder von der Webseite des Projekts, als CLAP (`~/.clap` oder `/usr/lib/clap`; `CLAP_PATH` geht auch).
+2. **Im Browser sehen:** Produzent-Modus, MIDI-Spur anlegen, in der Spur unter dem Kanalzug „+ Plugin“. Surge XT steht in der Liste (♪ als Instrument, fx als Effekt). Fehlt es, „Neu suchen“.
+3. **Auf die Spur legen:** „♪ Surge XT“ wählen. Unter „PLUGINS“ steht der Platz mit „Regler“.
+4. **Spielen:** Noten in einen Clip setzen oder die Spur scharf schalten und die Tastatur spielen; Abspielen. Einen Regler ändern, dann hört man es.
+5. **Speichern und neu öffnen:** Speichern, Projekt schließen, wieder öffnen. Das Plugin ist geladen, Reglerwerte und Klangzustand stehen wie vorher. Ohne installiertes Surge XT steht „nicht installiert“, der Platz bleibt im Projekt.
+6. **Effekt:** Auf einer Audio-Spur „fx“ eines Effekt-Plugins wählen; die Ein/Aus-Taste schaltet es um.
+
+Selbst geprüft von Claude (ohne Ton, ohne Audiogerät, ohne Mikrofon; Offline-Render durch den echten Graphen mit einem Test-Plugin aus `clack-plugin`):
+- Suche, Laden über `clack-host`, Instrument spielt den MIDI-Clip, Regler ändert den Pegel (Pegelvergleich), Effekt verdoppelt den Pegel bei Verstärkung 2 (auf 2 % genau), Bypass stellt das Signal wieder her.
+- Fehlendes Plugin: Instrument schweigt, Effekt reicht durch, der Platz bleibt im Projekt.
+- Zustand: Speichern des Plugin-Zustands ins Projekt, Laden in einer neuen Instanz gibt den Reglerwert zurück; Zustandstest der Oberfläche (Hinzufügen, Regler, Bypass, Entfernen, Rückgängig, Speichern, Öffnen).
+- Der Graph rechnet 200 Blöcke unter `assert_no_alloc`.
+
+Nicht selbst geprüft: Surge XT selbst (nicht installiert, Klang nur am Gerät), die Oberfläche im echten Bild, Wiedergabe über ein Audiogerät, Plugins mit mehr als einem Audio-Port.
+
+Bewusst so:
+- Kein Plugin-Fenster (kommt mit Paket 32); Regler stehen als Zahlenfelder (bis 64 je Plugin).
+- Suche und Laden laufen im Programm selbst; ein abstürzendes Plugin kann die App mitreißen, bis Paket 33 es auslagert. Die Suche startet erst beim ersten Bedarf (Projekt mit Plugins oder „+ Plugin“).
+- Spuren mit Plugins rechnen in Stereo; Pan-Automation wird dort ignoriert, der eingebaute Sidechain gilt nicht mit Instrument-Plugin.
+- Nur der erste Audio-Port, höchstens zwei Kanäle. Keine Latenzkompensation (Paket 33), keine Transportinfo an Plugins.
+- Ein fehlendes Instrument schweigt, ein fehlender Effekt reicht durch; der Platz bleibt im Projekt, im Projekt steht nur die CLAP-Kennung, nie ein Pfad.
+- Beim Speichern, Autosave und Export wird der Plugin-Zustand erfasst; das kann einen Rückgängig-Schritt je Plugin erzeugen.
+- Ardour und tracktion sind noch nicht gelesen (Pakete 32/33). Plugins in `woa-headless` und im Agenten sind nicht angebunden.
+- Offen für André: Vital liegt nicht als CLAP vor; Odin 2 oder Dexed wären Alternativen zum Prüfen.
+
 ## Paket 30: Voice-Tracking-Editor (0.25.0, offen)
 
 Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

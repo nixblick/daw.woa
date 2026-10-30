@@ -15,14 +15,15 @@ rtrb = "0.4.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tracing = "0.1.44"
-woa-dsp = { version = "0.25", path = "../dsp" }
-woa-io = { version = "0.25", path = "../io" }
-woa-engine = { version = "0.25", path = "../engine", features = ["device"] }
-woa-library = { version = "0.25", path = "../library" }
-woa-model = { version = "0.25", path = "../model" }
-woa-radio = { version = "0.25", path = "../radio" }
-woa-stream = { version = "0.25", path = "../stream" }
-woa-telemetry = { version = "0.25", path = "../telemetry" }
+woa-dsp = { version = "0.26", path = "../dsp" }
+woa-io = { version = "0.26", path = "../io" }
+woa-engine = { version = "0.26", path = "../engine", features = ["device"] }
+woa-plugins = { version = "0.26", path = "../plugins" }
+woa-library = { version = "0.26", path = "../library" }
+woa-model = { version = "0.26", path = "../model" }
+woa-radio = { version = "0.26", path = "../radio" }
+woa-stream = { version = "0.26", path = "../stream" }
+woa-telemetry = { version = "0.26", path = "../telemetry" }
 
 [dev-dependencies]
 assert_no_alloc = "1.1.2"
