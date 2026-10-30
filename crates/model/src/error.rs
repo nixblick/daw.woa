@@ -79,6 +79,9 @@ pub enum ModelError {
         /// Rejected index.
         index: usize,
     },
+    /// The effect has no parameter with this name.
+    #[error("effect has no parameter named {0:?}")]
+    UnknownParamName(String),
     /// There is nothing to undo.
     #[error("nothing to undo")]
     NothingToUndo,
