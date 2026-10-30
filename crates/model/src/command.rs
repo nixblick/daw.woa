@@ -117,6 +117,20 @@ pub enum Command {
         /// New gain in dB.
         gain_db: f64,
     },
+    /// Sets, replaces or removes (`folder: None`) the take folder `folder_id` of a track
+    /// together with the clips that make up its comp (Paket 22). The clips of the old
+    /// folder are removed first and `clips` are added in their place; their ids must be
+    /// exactly `folder.clip_ids`. The inverse is the same command with the old state.
+    SetTakeFolder {
+        /// Track that holds the folder.
+        track: TrackId,
+        /// Id of the folder to replace or remove (a new id adds a folder).
+        folder_id: u64,
+        /// New folder, or `None` to remove it.
+        folder: Option<crate::takes::TakeFolder>,
+        /// The comp clips of the new folder.
+        clips: Vec<Clip>,
+    },
     /// Moves a clip to another start position and/or another track.
     MoveClip {
         /// Clip to move.
@@ -257,6 +271,7 @@ impl Command {
             Command::EditClip { .. } => "Edit clip",
             Command::SetClipFadeCurves { .. } => "Set fade curves",
             Command::SetClipGain { .. } => "Set clip gain",
+            Command::SetTakeFolder { .. } => "Set take folder",
             Command::SetNotes { .. } => "Edit notes",
             Command::SetOutput { .. } => "Set output",
             Command::AddSend { .. } => "Add send",
@@ -481,6 +496,102 @@ impl Command {
                 let c = &mut project.tracks[ti].clips[ci];
                 let old = std::mem::replace(&mut c.gain_db, gain_db);
                 Ok(Command::SetClipGain { clip, gain_db: old })
+            }
+            Command::SetTakeFolder {
+                track,
+                folder_id,
+                folder,
+                clips,
+            } => {
+                let t = project
+                    .track(track)
+                    .ok_or(ModelError::TrackNotFound(track))?;
+                if let Some(f) = &folder {
+                    f.check()?;
+                    crate::project::check_id(f.id)?;
+                    if f.id != folder_id || t.kind != TrackKind::Audio {
+                        return Err(ModelError::InvalidArgument(
+                            "take folder needs its own id and an audio track".into(),
+                        ));
+                    }
+                    if f.clip_ids.len() != clips.len()
+                        || f.clip_ids.iter().zip(&clips).any(|(i, c)| *i != c.id)
+                    {
+                        return Err(ModelError::InvalidArgument(
+                            "clips do not match the folder's clip ids".into(),
+                        ));
+                    }
+                }
+                let old_pos = t.take_folders.iter().position(|f| f.id == folder_id);
+                let old_ids: Vec<ClipId> = old_pos
+                    .map(|p| t.take_folders[p].clip_ids.clone())
+                    .unwrap_or_default();
+                // Ids may be reused from the old clips, but nothing else.
+                let in_use = |raw: u64| {
+                    project.id_in_use(raw)
+                        && !old_ids.iter().any(|o| o.0 == raw)
+                        && !(old_pos.is_some() && raw == folder_id)
+                };
+                if let Some(f) = &folder {
+                    if old_pos.is_none() && project.id_in_use(f.id) {
+                        return Err(ModelError::DuplicateId(f.id));
+                    }
+                    if let Some(c) = clips.iter().find(|c| c.audio.is_none()) {
+                        return Err(ModelError::InvalidArgument(format!(
+                            "comp clip {} has no audio",
+                            c.id
+                        )));
+                    }
+                    for (n, c) in clips.iter().enumerate() {
+                        check_clip(c)?;
+                        crate::project::check_id(c.id.0)?;
+                        if c.id.0 == f.id
+                            || in_use(c.id.0)
+                            || clips[..n].iter().any(|o| o.id == c.id)
+                        {
+                            return Err(ModelError::DuplicateId(c.id.0));
+                        }
+                    }
+                } else if old_pos.is_none() {
+                    return Err(ModelError::InvalidArgument("take folder not found".into()));
+                }
+                // All checks passed; mutate.
+                let (old_clips, at) = {
+                    let t = find(project, track)?;
+                    let first = t.clips.iter().position(|c| old_ids.contains(&c.id));
+                    let mut removed = Vec::new();
+                    t.clips.retain(|c| {
+                        if old_ids.contains(&c.id) {
+                            removed.push(c.clone());
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                    (removed, first.unwrap_or(t.clips.len()))
+                };
+                for c in &clips {
+                    project.bump_next_id(c.id.0);
+                }
+                let t = find(project, track)?;
+                let old_folder = old_pos.map(|p| t.take_folders.remove(p));
+                for (k, c) in clips.into_iter().enumerate() {
+                    t.clips.insert((at + k).min(t.clips.len()), c);
+                }
+                if let Some(f) = folder {
+                    project.bump_next_id(f.id);
+                    let t = find(project, track)?;
+                    let idx = old_pos
+                        .unwrap_or(t.take_folders.len())
+                        .min(t.take_folders.len());
+                    t.take_folders.insert(idx, f);
+                }
+                Ok(Command::SetTakeFolder {
+                    track,
+                    folder_id,
+                    folder: old_folder,
+                    clips: old_clips,
+                })
             }
             Command::SetNotes { clip, mut midi } => {
                 midi.check()?;

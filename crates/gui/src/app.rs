@@ -69,6 +69,20 @@ pub struct WoaApp {
     loop_start_bar: u32,
     /// Loop-Ende in Takten (exklusiv, > `loop_start_bar`).
     loop_end_bar: u32,
+    /// Punch-Bereich aktiv (Paket 22): von der Aufnahme bleibt nur dieser Teil?
+    punch_enabled: bool,
+    /// Punch-In in Takten (ab 1).
+    punch_in_bar: u32,
+    /// Punch-Out in Takten (exklusiv, > `punch_in_bar`).
+    punch_out_bar: u32,
+    /// Loop-Bereich in Beats, wie er beim Start der laufenden Aufnahme galt.
+    rec_loop: Option<(f64, f64)>,
+    /// Punch-Bereich in Beats, wie er beim Start der laufenden Aufnahme galt.
+    rec_punch: Option<(f64, f64)>,
+    /// Aufgeklappte Take-Ordner (Paket 22).
+    open_folders: std::collections::HashSet<u64>,
+    /// Laufendes Ziehen im Take-Ordner: Spur, Ordner, Take, Anfang und Ende in Beats.
+    comp_drag: Option<(TrackId, u64, usize, f64, f64)>,
     /// Unteres Studio-Dock (Mixer-Konsole / Piano-Roll).
     studio_dock: StudioDockTab,
     /// Piano-Roll als schwebendes Fenster statt im unteren Dock?
@@ -438,6 +452,13 @@ impl WoaApp {
             loop_enabled: false,
             loop_start_bar: 1,
             loop_end_bar: 5,
+            punch_enabled: false,
+            punch_in_bar: 2,
+            punch_out_bar: 4,
+            rec_loop: None,
+            rec_punch: None,
+            open_folders: std::collections::HashSet::new(),
+            comp_drag: None,
             studio_dock: StudioDockTab::Mixer,
             piano_roll_floating: std::env::var_os("WOA_PIANOROLL").is_some(),
             analysis_open: false,
@@ -955,10 +976,13 @@ impl WoaApp {
         }
         let dir = self.state.takes_dir();
         let tempo = self.state.project().tempo_bpm;
-        let start = self
+        let mut start = self
             .player
             .as_ref()
             .map_or(0.0, |p| p.position_beats(tempo));
+        // Paket 22: Mit Loop beginnt die Aufnahme am Loop-Anfang, jede Runde wird ein Take.
+        let loop_range = self.loop_beats();
+        let punch_range = self.punch_beats();
         let targets: Vec<Option<TrackId>> = if self.armed.is_empty() {
             vec![self.selected_track]
         } else {
@@ -1008,6 +1032,17 @@ impl WoaApp {
                 Status::Error(format!("Aufnahme nicht gestartet: {}", errors.join("; ")));
             return;
         }
+        if let Some((ls, _)) = loop_range
+            && !self.takes.is_empty()
+        {
+            start = ls;
+            if let Some(p) = self.player.as_mut() {
+                p.seek_beats(ls, tempo);
+            }
+        }
+        self.rec_loop = loop_range.filter(|_| !self.takes.is_empty());
+        self.rec_punch = punch_range;
+        tracing::info!(start_beats = start, loop = ?self.rec_loop, punch = ?self.rec_punch, "recording starts");
         self.rec_start = start;
         self.live_peaks.clear();
         self.rec_clipped = false;
@@ -1023,6 +1058,26 @@ impl WoaApp {
         if let Some(p) = self.player.as_mut() {
             p.play();
         }
+    }
+
+    /// Loop-Bereich in Beats, wenn die Schleife an ist.
+    fn loop_beats(&self) -> Option<(f64, f64)> {
+        (self.loop_enabled && self.loop_end_bar > self.loop_start_bar).then(|| {
+            (
+                f64::from(self.loop_start_bar.saturating_sub(1) * 4),
+                f64::from(self.loop_end_bar.saturating_sub(1) * 4),
+            )
+        })
+    }
+
+    /// Punch-Bereich in Beats, wenn Punch an ist.
+    fn punch_beats(&self) -> Option<(f64, f64)> {
+        (self.punch_enabled && self.punch_out_bar > self.punch_in_bar).then(|| {
+            (
+                f64::from(self.punch_in_bar.saturating_sub(1) * 4),
+                f64::from(self.punch_out_bar.saturating_sub(1) * 4),
+            )
+        })
     }
 
     fn stop_record(&mut self) {
@@ -1076,13 +1131,38 @@ impl WoaApp {
                         0.0
                     };
                     let latency = measured + self.latency_extra_ms / 1000.0;
-                    tracing::info!(latency_ms = latency * 1000.0, "latency compensation");
-                    if let Some(clip) =
-                        self.state
-                            .add_take(track, &s.path, start, s.seconds(), latency)
-                    {
+                    let rate = f64::from(s.sample_rate.max(1));
+                    let latency_frames = (latency.max(0.0) * rate).round() as u64;
+                    tracing::info!(
+                        latency_ms = latency * 1000.0,
+                        latency_frames,
+                        frames = s.frames,
+                        "latency compensation"
+                    );
+                    let plan = woa_model::plan_recording(&woa_model::RecordInput {
+                        start_beats: start,
+                        tempo_bpm: tempo,
+                        rate,
+                        frames: s.frames,
+                        latency_frames,
+                        loop_beats: self.rec_loop,
+                        punch_beats: self.rec_punch,
+                    });
+                    let Some(plan) = plan else {
+                        errors.push("Aufnahme zu kurz oder außerhalb des Punch-Bereichs".into());
+                        continue;
+                    };
+                    if let woa_model::RecordPlan::Folder { offsets, .. } = &plan {
+                        tracing::info!(takes = offsets.len(), "loop takes");
+                    }
+                    if let Some(clip) = self.state.add_recording(track, &s.path, &plan) {
                         self.selected_clip = Some(clip);
                         self.selected_track = self.state.project().clip(clip).map(|(t, _)| t.id);
+                    }
+                    if let woa_model::RecordPlan::Folder { offsets, .. } = &plan {
+                        let n = offsets.len();
+                        saved.push(format!("{n} Takes"));
+                        continue;
                     }
                     let lost = if s.overruns > 0 {
                         format!(", {} Samples verloren", s.overruns)
@@ -1310,6 +1390,50 @@ impl WoaApp {
                                 .prefix("– "),
                         )
                         .on_hover_text("Loop-Ende (Takt)");
+                    }
+
+                    // Paket 22: Punch-Bereich. Von der Aufnahme bleibt nur dieser Teil.
+                    let punch_btn = egui::Button::new(
+                        egui::RichText::new("⏺ Punch")
+                            .small()
+                            .strong()
+                            .color(if self.punch_enabled {
+                                theme::WELL
+                            } else {
+                                theme::DIM
+                            }),
+                    )
+                    .min_size(egui::vec2(0.0, 32.0))
+                    .fill(if self.punch_enabled {
+                        theme::ON_AIR
+                    } else {
+                        theme::SURFACE
+                    });
+                    if ui
+                        .add(punch_btn)
+                        .on_hover_text(
+                            "Punch-Bereich: von der Aufnahme bleibt nur der Teil zwischen \
+                             Punch-In und Punch-Out. Mit Loop landet nur dieser Teil im Take-Ordner.",
+                        )
+                        .clicked()
+                    {
+                        self.punch_enabled = !self.punch_enabled;
+                    }
+                    if self.punch_enabled {
+                        ui.add(
+                            egui::DragValue::new(&mut self.punch_in_bar)
+                                .range(1..=self.punch_out_bar.saturating_sub(1).max(1))
+                                .speed(0.2)
+                                .prefix("Takt "),
+                        )
+                        .on_hover_text("Punch-In (Takt)");
+                        ui.add(
+                            egui::DragValue::new(&mut self.punch_out_bar)
+                                .range((self.punch_in_bar + 1)..=512)
+                                .speed(0.2)
+                                .prefix("– "),
+                        )
+                        .on_hover_text("Punch-Out (Takt)");
                     }
                 });
 
@@ -1890,6 +2014,7 @@ impl WoaApp {
                     self.track_header(ui, i, id, &name, gain, pan, mute, solo);
                     self.timeline(ui, id);
                 });
+                self.take_folder_rows(ui, id, i);
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
@@ -2732,6 +2857,202 @@ fn level_bar(painter: &egui::Painter, rect: egui::Rect, level: f32) {
 impl WoaApp {
     /// One track's strip: clips with waveform and fades, the playhead. Click: seek,
     /// click a clip: select, drag a clip: move it (snaps to 1/4 beat).
+    /// Take-Ordner einer Spur (Paket 22): eine Zeile mit dem Comp, aufgeklappt eine Zeile je
+    /// Take. Ziehen in einer Take-Zeile lässt diesen Take im gezogenen Bereich spielen, ein
+    /// Klick wählt den Takt unter dem Zeiger.
+    fn take_folder_rows(&mut self, ui: &mut egui::Ui, track: TrackId, index: usize) {
+        let Some(t) = self.state.project().track(track) else {
+            return;
+        };
+        let folders = t.take_folders.clone();
+        if folders.is_empty() {
+            return;
+        }
+        let tempo = self.state.project().tempo_bpm;
+        let px = self.zoom;
+        let color = theme::track_color(index);
+        let width = (self.timeline_end() as f32 + 16.0) * px;
+        let ppb = self.player.as_ref().map(|p| p.peaks_per_beat(tempo));
+        for f in folders {
+            let open = self.open_folders.contains(&f.id);
+            ui.horizontal(|ui| {
+                let (slot, _) =
+                    ui.allocate_exact_size(egui::vec2(HEADER_W, 24.0), egui::Sense::hover());
+                ui.painter().rect_filled(slot, 4.0, theme::PANEL_HEADER);
+                let toggle = egui::Rect::from_min_size(slot.min, egui::vec2(HEADER_W - 36.0, 24.0));
+                let label = format!(
+                    "{} {}  ·  {} Takes",
+                    if open { "▾" } else { "▸" },
+                    f.name,
+                    f.takes.len()
+                );
+                if ui
+                    .put(
+                        toggle,
+                        egui::Button::new(
+                            egui::RichText::new(label).small().color(theme::TEXT_BRIGHT),
+                        )
+                        .fill(egui::Color32::TRANSPARENT),
+                    )
+                    .on_hover_text("Takes auf- oder zuklappen")
+                    .clicked()
+                {
+                    if open {
+                        self.open_folders.remove(&f.id);
+                    } else {
+                        self.open_folders.insert(f.id);
+                    }
+                }
+                let del = egui::Rect::from_min_size(
+                    egui::pos2(slot.right() - 32.0, slot.top()),
+                    egui::vec2(30.0, 24.0),
+                );
+                if ui
+                    .put(
+                        del,
+                        egui::Button::new(egui::RichText::new("🗑").small().color(theme::DIM))
+                            .fill(egui::Color32::TRANSPARENT),
+                    )
+                    .on_hover_text("Take-Ordner samt Comp löschen (Strg+Z holt ihn zurück)")
+                    .clicked()
+                {
+                    self.state.remove_take_folder(track, f.id);
+                }
+                // Der Comp als Streifen: welcher Take wo spielt.
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(width, 24.0), egui::Sense::hover());
+                let painter = ui.painter_at(rect);
+                painter.rect_filled(rect, 4.0, theme::WELL);
+                let x_of = |b: f64| rect.left() + b as f32 * px;
+                for s in &f.comp {
+                    let r = egui::Rect::from_x_y_ranges(
+                        x_of(s.start_beats)..=x_of(s.end_beats),
+                        rect.top() + 2.0..=rect.bottom() - 2.0,
+                    );
+                    painter.rect_filled(r, 3.0, theme::mix(color, theme::WELL, 0.45));
+                    painter.text(
+                        r.left_center() + egui::vec2(5.0, 0.0),
+                        egui::Align2::LEFT_CENTER,
+                        format!("Take {}", s.take + 1),
+                        egui::FontId::proportional(10.0),
+                        theme::TEXT_BRIGHT,
+                    );
+                }
+            });
+            if !open {
+                continue;
+            }
+            for (k, take) in f.takes.iter().enumerate() {
+                let file = self.state.resolve_audio(&take.audio);
+                let peaks = match (file, self.player.as_mut()) {
+                    (Some(file), Some(p)) => p.peaks(&file),
+                    _ => None,
+                };
+                ui.horizontal(|ui| {
+                    let (slot, _) =
+                        ui.allocate_exact_size(egui::vec2(HEADER_W, 22.0), egui::Sense::hover());
+                    ui.painter().text(
+                        slot.left_center() + egui::vec2(22.0, 0.0),
+                        egui::Align2::LEFT_CENTER,
+                        &take.name,
+                        egui::FontId::proportional(11.0),
+                        theme::DIM,
+                    );
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::vec2(width, 22.0),
+                        egui::Sense::click_and_drag(),
+                    );
+                    let painter = ui.painter_at(rect);
+                    painter.rect_filled(rect, 3.0, theme::WELL);
+                    let x_of = |b: f64| rect.left() + b as f32 * px;
+                    let span = egui::Rect::from_x_y_ranges(
+                        x_of(f.start_beats)..=x_of(f.end_beats()),
+                        rect.y_range(),
+                    );
+                    painter.rect_filled(span, 3.0, theme::mix(color, theme::WELL, 0.85));
+                    for s in f.comp.iter().filter(|s| s.take == k) {
+                        let r = egui::Rect::from_x_y_ranges(
+                            x_of(s.start_beats)..=x_of(s.end_beats),
+                            rect.y_range(),
+                        );
+                        painter.rect_filled(r, 3.0, theme::mix(color, theme::WELL, 0.5));
+                    }
+                    if let (Some(ppb), Some(peaks)) = (ppb, peaks) {
+                        let mid = rect.center().y;
+                        let half = rect.height() / 2.0 - 2.0;
+                        let stroke =
+                            egui::Stroke::new(1.0, theme::mix(color, egui::Color32::WHITE, 0.35));
+                        let mut x = span.left();
+                        while x < span.right() {
+                            let b0 = take.offset_beats + f64::from((x - span.left()) / px);
+                            let i0 = (b0 * ppb) as usize;
+                            let i1 = (((b0 + f64::from(1.0 / px)) * ppb) as usize).max(i0 + 1);
+                            let v = peaks
+                                .get(i0.min(peaks.len())..i1.min(peaks.len()))
+                                .map_or(0.0, |w| w.iter().fold(0.0f32, |m, s| m.max(*s)));
+                            let h = v.min(1.0) * half;
+                            painter.vline(x, (mid - h)..=(mid + h), stroke);
+                            x += 1.0;
+                        }
+                    }
+                    if let Some((tr, fid, tk, a, b)) = self.comp_drag
+                        && tr == track
+                        && fid == f.id
+                        && tk == k
+                    {
+                        let r = egui::Rect::from_x_y_ranges(
+                            x_of(a.min(b))..=x_of(a.max(b)),
+                            rect.y_range(),
+                        );
+                        painter.rect_filled(r, 3.0, theme::CUE_CYAN.gamma_multiply(0.25));
+                        painter.rect_stroke(
+                            r,
+                            3.0,
+                            egui::Stroke::new(1.0, theme::CUE_CYAN),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                    let beat_at = |x: f32| f64::from((x - rect.left()) / px).max(0.0);
+                    if resp.drag_started()
+                        && let Some(pos) = resp.interact_pointer_pos()
+                    {
+                        let a = self.snap.apply(beat_at(pos.x));
+                        self.comp_drag = Some((track, f.id, k, a, a));
+                    } else if resp.dragged()
+                        && let Some(pos) = resp.interact_pointer_pos()
+                    {
+                        let b = self.snap.apply(beat_at(pos.x));
+                        if let Some(d) = self.comp_drag.as_mut() {
+                            d.4 = b;
+                        }
+                    }
+                    let mut chosen = None;
+                    if resp.drag_stopped() {
+                        if let Some((_, _, _, a, b)) = self.comp_drag.take() {
+                            chosen = Some((a.min(b), a.max(b)));
+                        }
+                    } else if resp.clicked()
+                        && let Some(pos) = resp.interact_pointer_pos()
+                    {
+                        chosen = Some((beat_at(pos.x), beat_at(pos.x)));
+                    }
+                    if let Some((a, b)) = chosen {
+                        // Ein Klick (oder ein Zug ohne Länge) wählt den ganzen Takt.
+                        let (a, b) = if b - a < 0.01 {
+                            let bar = (a / 4.0).floor() * 4.0;
+                            (bar, bar + 4.0)
+                        } else {
+                            (a, b)
+                        };
+                        if self.state.comp_range(track, f.id, a, b, k) {
+                            tracing::info!(take = k, from = a, to = b, "comp range set");
+                        }
+                    }
+                });
+            }
+        }
+    }
+
     fn timeline(&mut self, ui: &mut egui::Ui, track: TrackId) {
         let tempo = self.state.project().tempo_bpm;
         let px = self.zoom;

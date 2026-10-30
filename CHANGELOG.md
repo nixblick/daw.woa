@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.17.0 — 2026-10-30
+
+Paket 22 aus M6: Aufnahme mit Latenzausgleich, Punch-in, Loop-Takes und Comping.
+
+- **Modell:** Neuer Take-Ordner je Spur (`TakeFolder`): die Takes einer Strecke, dazu der Comp als Liste von Abschnitten. Der Comp wird als gewöhnliche Clips der Spur abgelegt, daher bleiben Engine, Export und Editoren unverändert. Ein Befehl `SetTakeFolder` mit Undo und Redo (ein Schritt je Auswahl); ungültige Takes, Bereiche und Pfade werden abgelehnt. Projektformat 3 wird auch geschrieben, wenn eine Spur einen Take-Ordner hat; alle anderen Projekte bleiben unverändert. `plan_recording` rechnet Latenz, Punch und Loop-Runden auf Samples genau.
+- **Aufnahme:** Die Aufnahme wird ein Clip an der Abspielkopf-Position beim Start, die Gerätelatenz wird am Dateianfang übersprungen. Ein Punch-Bereich (in Takten) behält nur den Teil darin. Bei eingeschalteter Schleife entsteht je volle Runde ein Take (höchstens 64, eine angefangene Runde wird verworfen), alle als Ausschnitte einer einzigen Aufnahmedatei.
+- **Oberfläche:** Schalter und Takt-Felder für Punch in der Transportleiste. Unter der Spur ein aufklappbarer Take-Ordner mit dem Comp-Streifen, aufgeklappt eine Zeile je Take mit Wellenform. Bereich ziehen oder Takt anklicken wählt den Take für diese Stelle; der Papierkorb löscht den Ordner (Strg+Z holt ihn zurück).
+- **Tests:** Fake-Eingang mit künstlicher Latenz ohne Gerät und ohne Ton: Impuls liegt nach dem Ausgleich auf dem Sample, Punch, Runden am Null-Ausgang gleich Zahl der Takes, Comp-Render mit Undo; Modelltests (Undo, Redo, schlechte Eingaben, Format) und Zustandstests der Oberfläche.
+
 ## 0.16.0 — 2026-10-30
 
 Paket 21 aus M6: Schnitt und Fades.
