@@ -16,6 +16,11 @@ Paket 39 aus M10: Linux-Pakete aus der CI, AppImage und Flatpak (Abnahme: `docs/
 - **Nicht gebaut / nicht geprüft:** Signatur der Pakete; Veröffentlichung auf wironair.de oder Flathub; Start der Oberfläche im Paket (CI hat keinen Bildschirm); CLAP-Plugins im Flatpak (die Sandbox sieht die Plugins des Rechners nicht); Update-Prüfung (Paket 40).
 - **Offen für André:** Code-Signing-Zertifikat und Signatur der Pakete (Kosten); Ort der Veröffentlichung (wironair.de, Flathub, GitHub-Releases); ob die App-Kennung `de.wironair.woa` so bleiben soll (setzt die Domain wironair.de voraus).
 
+## 0.33.4 — 2026-10-30
+
+- **Windows: App beendete sich nicht, MSI-Installation brach ab** (André). Beim Schließen wartete die Telemetrie auf einen Kanal, den der globale Logger nie freigibt. Das Fenster ging zu, der Prozess lief weiter, und der Installer verlangte, die App zu beenden. Jetzt bekommt der Upload ein Ende-Signal und hat höchstens 3 s für den letzten Versand. Test: `drop_returns_while_a_layer_still_holds_a_sender`.
+- **Windows: kein schwarzes Konsolenfenster mehr** neben der App (`windows_subsystem = "windows"`).
+
 ## 0.33.3 — 2026-10-30
 
 - **Spur umbenennen hielt fest:** Das Namensfeld holte sich in jedem Bild den Fokus zurück, Enter und ein Klick daneben wirkten nicht, man kam nur per Neustart heraus (André, Windows 0.33.2). Der Fokus wird jetzt nur beim Öffnen gesetzt. Enter oder ein Klick daneben übernimmt den Namen, Esc verwirft ihn.

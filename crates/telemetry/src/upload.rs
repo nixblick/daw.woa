@@ -190,7 +190,14 @@ struct Batch<'a> {
 enum Msg {
     Event(Event),
     Flush(mpsc::Sender<bool>),
+    /// Rest senden und enden. Nötig, weil die Layer im globalen Subscriber eigene Sender
+    /// halten: Ohne dieses Signal trennt der Kanal nie, und `Drop` wartet ewig (Fenster zu,
+    /// Prozess läuft weiter, MSI-Installer meldet „App muss beendet werden“, André 30.10.).
+    Shutdown,
 }
+
+/// So lange wartet `Drop` höchstens auf den letzten Upload, dann endet das Programm trotzdem.
+const SHUTDOWN_WAIT: Duration = Duration::from_secs(3);
 
 /// Laufende Upload-Senke. Beim Drop wird ein letzter Upload versucht.
 pub struct Uploader {
@@ -261,10 +268,18 @@ impl Uploader {
 
 impl Drop for Uploader {
     fn drop(&mut self) {
-        // Sender schließen -> Worker sendet den Rest und endet.
-        self.tx = None;
+        // Worker anweisen, den Rest zu senden und zu enden; höchstens SHUTDOWN_WAIT warten.
+        if let Some(tx) = self.tx.take() {
+            let _ = tx.try_send(Msg::Shutdown);
+        }
         if let Some(h) = self.handle.take() {
-            let _ = h.join();
+            let until = Instant::now() + SHUTDOWN_WAIT;
+            while !h.is_finished() && Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            if h.is_finished() {
+                let _ = h.join();
+            }
         }
     }
 }
@@ -299,7 +314,7 @@ fn worker(cfg: UploadConfig, rx: Receiver<Msg>) {
                 send_batch(&agent, &cfg, &mut buf);
                 last = Instant::now();
             }
-            Err(RecvTimeoutError::Disconnected) => {
+            Ok(Msg::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
                 send_batch(&agent, &cfg, &mut buf);
                 return;
             }
