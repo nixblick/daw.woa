@@ -1,0 +1,98 @@
+name: Release
+# Ein Tag `v*` löst aus: Windows-Bau (wiederverwendet windows-build.yml), dann signieren und
+# `latest.json` schreiben, dann ein Release als ENTWURF anlegen. Erst wenn André den Entwurf
+# veröffentlicht, sehen die Tester das Update (die App fragt `releases/latest`).
+# Ablauf und Einrichtung: docs/updater.md
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/windows-build.yml
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Release anlegen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: woa-*-windows-x64
+          merge-multiple: true
+          path: dist
+      - name: Version prüfen
+        run: |
+          set -eu
+          ls -l dist
+          msi=$(ls dist/woa-*-x64.msi)
+          version=${msi#dist/woa-}
+          version=${version%-x64.msi}
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME passt nicht zur Version $version aus Cargo.toml. Version anheben, Tag neu setzen."
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "MSI=$msi" >> "$GITHUB_ENV"
+      - name: minisign installieren
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq minisign
+      - name: MSI signieren (Stufe B) oder nur Prüfsumme (Stufe A)
+        env:
+          WOA_UPDATER_KEY: ${{ secrets.WOA_UPDATER_KEY }}
+        run: |
+          set -eu
+          pub_real=no
+          if head -n1 packaging/windows/updater.pub | grep -q '^untrusted comment:'; then pub_real=yes; fi
+          if [ -z "${WOA_UPDATER_KEY:-}" ]; then
+            if [ "$pub_real" = yes ]; then
+              echo "::error::updater.pub enthält einen echten Schlüssel, aber das Secret WOA_UPDATER_KEY fehlt. Apps mit diesem Schlüssel würden ein unsigniertes Update ablehnen. Secret setzen (docs/updater.md) oder den Platzhalter wiederherstellen."
+              exit 1
+            fi
+            echo "::warning::Secret WOA_UPDATER_KEY fehlt: das MSI wird NICHT signiert, latest.json enthält nur die SHA-256 (Stufe A, siehe docs/updater.md)."
+            echo "SIGNED=no" >> "$GITHUB_ENV"
+          else
+            key=$(mktemp)
+            trap 'rm -f "$key"' EXIT
+            chmod 600 "$key"
+            printf '%s\n' "$WOA_UPDATER_KEY" > "$key"
+            minisign -S -s "$key" -m "$MSI" -t "woa $VERSION"
+            rm -f "$key"
+            if [ "$pub_real" = yes ]; then
+              minisign -V -p packaging/windows/updater.pub -m "$MSI"
+            else
+              echo "::warning::Signiert, aber packaging/windows/updater.pub ist noch ein Platzhalter: Apps prüfen noch keine Signatur (Stufe A). Öffentlichen Schlüssel eintragen."
+            fi
+            echo "SIGNED=yes" >> "$GITHUB_ENV"
+          fi
+      - name: latest.json und Notizen
+        run: |
+          set -eu
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          file=$(basename "$MSI")
+          sha=$(sha256sum "$MSI" | cut -d' ' -f1)
+          # Abschnitt dieser Version aus dem CHANGELOG (bis zur nächsten "## ").
+          awk -v v="## $VERSION " 'index($0, v) == 1 {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "Version $VERSION" > notes.md
+          sig=""
+          if [ "$SIGNED" = yes ]; then sig="$base/$file.minisig"; fi
+          jq -n --arg v "$VERSION" --rawfile n notes.md --arg u "$base/$file" --arg s "$sig" --arg h "$sha" \
+            '{version: $v, notes: $n, msi_url: $u, msi_sha256: $h} + (if $s != "" then {msi_sig_url: $s} else {} end)' \
+            > dist/latest.json
+          cat dist/latest.json
+      - name: Release als Entwurf anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+            --title "WOA $VERSION" --notes-file notes.md \
+            dist/woa-*-x64.msi dist/woa-*-windows-x64.zip dist/latest.json \
+            $(ls dist/*.minisig 2>/dev/null || true)
