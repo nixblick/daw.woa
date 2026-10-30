@@ -26,7 +26,21 @@ use crate::project::Project;
 /// Current version of `project.json`. Bump on every incompatible change and add a
 /// migration in [`from_json`]. Version 2 (Paket 16) adds `output`, `sends` and `inserts`
 /// to tracks; version 1 files load unchanged because all three default to empty.
-pub const FORMAT_VERSION: u32 = 2;
+/// Version 3 (Paket 18) adds `automation` to tracks and `sidechain` to inserts. A file is
+/// written with the lowest version that can hold it ([`required_version`]), so projects
+/// without automation and sidechain stay readable by older builds; a build that does not
+/// know version 3 refuses such a file instead of silently dropping the curves on re-save.
+pub const FORMAT_VERSION: u32 = 3;
+
+/// The lowest format version that can hold `project`: 3 with automation or a sidechain,
+/// otherwise 2.
+pub fn required_version(project: &Project) -> u32 {
+    let v3 = project
+        .tracks
+        .iter()
+        .any(|t| !t.automation.is_empty() || t.inserts.iter().any(|i| i.sidechain.is_some()));
+    if v3 { 3 } else { 2 }
+}
 /// File name of the project inside the folder.
 pub const PROJECT_FILE: &str = "project.json";
 /// File name of the autosave inside the folder.
@@ -46,7 +60,7 @@ pub struct ProjectFile {
 /// Serialises a project to the pretty JSON stored in `project.json`.
 pub fn to_json(project: &Project) -> Result<String> {
     let file = ProjectFile {
-        format_version: FORMAT_VERSION,
+        format_version: required_version(project),
         project: project.clone(),
     };
     serde_json::to_string_pretty(&file).map_err(|source| ModelError::Json {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.0 — 2026-10-30
+
+Paket 18 aus M5: Automation und Sidechain (im Bau, wird mit jeder Schicht ergänzt).
+
+- **Modell:** Jede Spur kann je Ziel (Lautstärke, Pan, Send, Effekt-Regler) eine Automationskurve mit Betriebsart Lesen, Schreiben oder Latch haben (`Command::SetAutomation`). Kompressor und Gate nehmen ein Sidechain-Signal einer anderen Spur (`Command::SetInsertSidechain`); Kreise über Sidechains werden abgelehnt, Spur löschen trennt Sidechains im selben Undo-Schritt. Projektformat 3 wird nur geschrieben, wenn Automation oder Sidechain vorkommt; alle anderen Projekte bleiben Format 2, ältere Dateien laden unverändert.
+
 ## 0.12.0 — 2026-10-30
 
 Paket 17 aus M5: Alle eingebauten Effekte.
