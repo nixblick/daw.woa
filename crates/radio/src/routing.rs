@@ -30,10 +30,13 @@ pub enum Source {
     DeckA,
     DeckB,
     DeckC,
+    /// Rückweg zum Anrufer (Mix-Minus: die Sendung ohne die Stimme des Anrufers). Ohne Zuordnung
+    /// gibt es keinen Rückweg; er läuft nie im Hauptausgang.
+    PhoneReturn,
 }
 
 /// Zahl der Quellen.
-pub const SOURCES: usize = 5;
+pub const SOURCES: usize = 6;
 
 impl Source {
     /// Alle Quellen in der Reihenfolge der Oberfläche.
@@ -43,6 +46,7 @@ impl Source {
         Source::DeckA,
         Source::DeckB,
         Source::DeckC,
+        Source::PhoneReturn,
     ];
 
     /// Quelle des Decks `i` (0 = A).
@@ -62,6 +66,7 @@ impl Source {
             Source::DeckA => 2,
             Source::DeckB => 3,
             Source::DeckC => 4,
+            Source::PhoneReturn => 5,
         }
     }
 
@@ -73,6 +78,15 @@ impl Source {
             Source::DeckA => "Deck A",
             Source::DeckB => "Deck B",
             Source::DeckC => "Deck C",
+            Source::PhoneReturn => "Telefon-Rückweg",
+        }
+    }
+
+    /// Was bei einer fehlenden Zuordnung gilt, für Meldungen.
+    fn fallback(self) -> &'static str {
+        match self {
+            Source::PhoneReturn => "Der Anrufer hört vorübergehend nichts.",
+            _ => "Sie läuft vorübergehend mit der Playlist.",
         }
     }
 }
@@ -267,20 +281,22 @@ impl Plan {
                 Ok(i) => i,
                 Err(e) => {
                     warnings.push(format!(
-                        "{}: {} fehlt ({e}). Sie läuft vorübergehend mit der Playlist.",
+                        "{}: {} fehlt ({e}). {}",
                         s.label(),
-                        r.device_label()
+                        r.device_label(),
+                        s.fallback()
                     ));
                     continue;
                 }
             };
             if !pair_fits(pair, info.channels) {
                 warnings.push(format!(
-                    "{}: {} hat kein Kanal {}/{}. Sie läuft vorübergehend mit der Playlist.",
+                    "{}: {} hat kein Kanal {}/{}. {}",
                     s.label(),
                     info.name,
                     2 * pair + 1,
-                    2 * pair + 2
+                    2 * pair + 2,
+                    s.fallback()
                 ));
                 continue;
             }
@@ -298,16 +314,29 @@ impl Plan {
             };
             if slot == 0 && reserved_main.contains(&pair) {
                 warnings.push(format!(
-                    "{}: Kanal {}/{} ist fürs Vorhören reserviert. Sie läuft vorübergehend mit der Playlist.",
+                    "{}: Kanal {}/{} ist fürs Vorhören reserviert. {}",
                     s.label(),
                     2 * pair + 1,
-                    2 * pair + 2
+                    2 * pair + 2,
+                    s.fallback()
                 ));
                 continue;
             }
             // Dasselbe Gerät und Paar wie ein anderes Ziel: dasselbe Ziel (die Quellen
             // werden dort addiert).
             let dev = &mut devices[slot];
+            if s == Source::PhoneReturn && dev.dests.iter().any(|(_, p)| *p == pair) {
+                warnings.push(format!(
+                    "{}: Kanal {}/{} auf {} trägt schon eine andere Quelle. Der Rückweg braucht ein \
+                     eigenes Kanalpaar, sonst hörte der Anrufer die Sendung samt sich selbst. {}",
+                    s.label(),
+                    2 * pair + 1,
+                    2 * pair + 2,
+                    dev.info.name,
+                    s.fallback()
+                ));
+                continue;
+            }
             let dest = match dev.dests.iter().find(|(_, p)| *p == pair) {
                 Some((d, _)) => *d,
                 None => {
@@ -480,6 +509,36 @@ mod tests {
         let p = Plan::build(&m, &probe, &[1]);
         assert_eq!(p.routes.dest[..2], [0, 0]);
         assert!(p.warnings[0].contains("Vorhören"));
+    }
+
+    #[test]
+    fn phone_return_goes_to_its_own_pair_and_never_into_the_main_output() {
+        // Karte 2, Kanal 3/4: eigenes Paar, eigenes Ziel.
+        let mut m = OutputMap::default();
+        m.set(Source::PhoneReturn, route(Some("2"), 1));
+        let p = Plan::build(&m, &probe, &[]);
+        assert_eq!(p.routes.dest[Source::PhoneReturn.index()], 1);
+        assert!(p.warnings.is_empty());
+        // Nicht gewählt: kein Rückweg, kein Eintrag im Hauptausgang.
+        let p = Plan::build(&OutputMap::default(), &probe, &[]);
+        assert_eq!(p.routes.dest[Source::PhoneReturn.index()], 0);
+        // Auf dem Paar der Playlist oder einer anderen Quelle: abgelehnt mit Meldung.
+        let mut m = OutputMap::default();
+        m.set(Source::PhoneReturn, route(Some("1"), 0));
+        let p = Plan::build(&m, &probe, &[]);
+        assert_eq!(p.routes.dest[Source::PhoneReturn.index()], 0);
+        assert!(p.warnings[0].contains("Telefon-Rückweg") && p.warnings[0].contains("eigenes"));
+        let mut m = OutputMap::default();
+        m.set(Source::Carts, route(Some("2"), 1));
+        m.set(Source::PhoneReturn, route(Some("2"), 1));
+        let p = Plan::build(&m, &probe, &[]);
+        assert_eq!(p.routes.dest[Source::PhoneReturn.index()], 0);
+        assert_eq!(p.routes.dest[Source::Carts.index()], 1);
+        // Fehlendes Gerät: der Anrufer hört nichts, die Meldung sagt es.
+        let mut m = OutputMap::default();
+        m.set(Source::PhoneReturn, route(Some("weg"), 0));
+        let p = Plan::build(&m, &probe, &[]);
+        assert!(p.warnings[0].contains("Anrufer"));
     }
 
     #[test]

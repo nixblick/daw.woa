@@ -34,6 +34,8 @@ const DUCK_TAU: f32 = 0.08;
 const MIC_TAU: f32 = 0.01;
 /// Mehr Mikro-Vorlauf als das (Sekunden) wird verworfen, damit die Latenz klein bleibt.
 const MIC_BACKLOG: f32 = 0.08;
+/// Frames, die der Telefon-Eingang auf einmal aus seiner Taktverbindung holt.
+const PHONE_CHUNK: usize = 512;
 
 /// Glättung der Pegelregler (Sekunden, Zeitkonstante), gegen Zipper-Noise beim Fader.
 const LEVEL_TAU: f32 = 0.02;
@@ -110,6 +112,10 @@ pub enum Cmd {
     MicMonitor(bool),
     /// Mikro-Eingang: Stereo verschachtelt in Mixer-Rate, `None` = keiner.
     MicInput(Option<Owned<rtrb::Consumer<f32>>>),
+    /// Telefon-Eingang (Anrufer) über eine Taktverbindung in Mixer-Rate, `None` = keiner.
+    PhoneInput(Option<Owned<woa_engine::pairs::LinkRx>>),
+    /// Telefon auf Sendung: Der Anrufer liegt auf der Sendung und die Musik wird abgesenkt.
+    PhoneOn(bool),
     /// Cart abspielen (von vorn, wenn er schon läuft).
     Cart {
         slot: usize,
@@ -178,6 +184,10 @@ pub struct Status {
     /// Ende im Deck (Frames, Cue-Out).
     pub deck_end: [AtomicU64; DECKS],
     pub mic_open: AtomicBool,
+    /// Telefon auf Sendung.
+    pub phone_on: AtomicBool,
+    /// Spitze des Telefon-Eingangs seit dem letzten Abholen (auch, wenn es nicht auf Sendung ist).
+    pub phone_peak: AtomicU32,
     /// Ein Voice-Track läuft (Stimme oder Absenkung davor und danach).
     pub voice: AtomicBool,
     /// Gerechnete Frames insgesamt.
@@ -218,6 +228,8 @@ impl Default for Status {
             deck_pos: std::array::from_fn(|_| AtomicU64::new(0)),
             deck_end: std::array::from_fn(|_| AtomicU64::new(0)),
             mic_open: AtomicBool::new(false),
+            phone_on: AtomicBool::new(false),
+            phone_peak: AtomicU32::new(0),
             voice: AtomicBool::new(false),
             clock: AtomicU64::new(0),
             music_end: AtomicU64::new(0),
@@ -242,6 +254,11 @@ impl Status {
 
     pub fn take_mic_peak(&self) -> f32 {
         f32::from_bits(self.mic_peak.swap(0, Ordering::Relaxed))
+    }
+
+    /// Spitze des Telefon-Eingangs seit dem letzten Aufruf.
+    pub fn take_phone_peak(&self) -> f32 {
+        f32::from_bits(self.phone_peak.swap(0, Ordering::Relaxed))
     }
 
     /// Größte Absenkung des Sendebusses (dB) seit dem letzten Aufruf.
@@ -408,6 +425,12 @@ pub struct Mixer {
     mic_open: bool,
     mic_monitor: bool,
     mic_gain: Smoother,
+    /// Telefon: Anrufer als Taktverbindung, auf Sendung ja/nein, Blende, Zwischenblock.
+    phone: Option<Owned<woa_engine::pairs::LinkRx>>,
+    phone_on: bool,
+    phone_gain: Smoother,
+    phone_l: [f32; PHONE_CHUNK],
+    phone_r: [f32; PHONE_CHUNK],
     duck_lin: f32,
     duck: Smoother,
     mic_backlog: usize,
@@ -458,6 +481,11 @@ impl Mixer {
             mic_open: false,
             mic_monitor: false,
             mic_gain: Smoother::new(0.0, MIC_TAU, r),
+            phone: None,
+            phone_on: false,
+            phone_gain: Smoother::new(0.0, MIC_TAU, r),
+            phone_l: [0.0; PHONE_CHUNK],
+            phone_r: [0.0; PHONE_CHUNK],
             duck_lin: 0.25,
             duck: Smoother::new(1.0, DUCK_TAU, r),
             mic_backlog: (MIC_BACKLOG * r) as usize * 2,
@@ -523,14 +551,18 @@ impl Mixer {
                 Cmd::SetCrossfade(f) => self.xf_frames = f,
                 Cmd::SetDuck(g) => {
                     self.duck_lin = g.clamp(0.0, 1.0);
-                    if self.mic_open {
-                        self.duck.set_target(self.duck_lin);
-                    }
+                    self.retarget_duck();
                 }
                 Cmd::MicOpen(on) => {
                     self.mic_open = on;
                     self.mic_gain.set_target(if on { 1.0 } else { 0.0 });
-                    self.duck.set_target(if on { self.duck_lin } else { 1.0 });
+                    self.retarget_duck();
+                }
+                Cmd::PhoneInput(c) => self.phone = c,
+                Cmd::PhoneOn(on) => {
+                    self.phone_on = on;
+                    self.phone_gain.set_target(if on { 1.0 } else { 0.0 });
+                    self.retarget_duck();
                 }
                 Cmd::MicMonitor(on) => self.mic_monitor = on,
                 Cmd::MicInput(c) => self.mic = c,
@@ -798,6 +830,12 @@ impl Mixer {
         self.guests.begin_block();
         let mut peak = 0.0f32;
         let mut mic_peak = 0.0f32;
+        let mut phone_peak = 0.0f32;
+        let ret_dest = match self.routes.dest[crate::routing::Source::PhoneReturn.index()] as usize
+        {
+            d if (1..=extra.len()).contains(&d) => Some(d - 1),
+            _ => None,
+        };
         let mut reduction = 0.0f32;
         for i in 0..n {
             self.transitions();
@@ -924,6 +962,21 @@ impl Mixer {
             if self.mic_chain_on {
                 (il, ir) = self.mic_chain.process(il, ir);
             }
+
+            // Telefon: der Anrufer. Der Pegel zeigt auch, wenn er nicht auf Sendung ist.
+            let (mut pl, mut pr) = (0.0f32, 0.0f32);
+            if let Some(p) = self.phone.as_mut() {
+                let k = i % PHONE_CHUNK;
+                if k == 0 {
+                    let m = (n - i).min(PHONE_CHUNK);
+                    p.pull(&mut self.phone_l[..m], &mut self.phone_r[..m]);
+                }
+                (pl, pr) = (self.phone_l[k], self.phone_r[k]);
+            }
+            phone_peak = phone_peak.max(pl.abs()).max(pr.abs());
+            let pg = self.phone_gain.tick();
+            pl *= pg;
+            pr *= pg;
             let [lm, lc, li] = &mut self.levels;
             let (lm, lc) = (lm.tick(), lc.tick());
             let mg = self.mic_gain.tick() * li.tick();
@@ -938,8 +991,10 @@ impl Mixer {
             // Basis ohne Gäste: Musik, Carts, Moderator. Daraus entstehen die Rückwege.
             let (bl, br) = (ml * duck + cl + il + dl, mr * duck + cr + ir + dr);
             let (gl, gr) = self.guests.frame();
-            let mut sl = bl + gl;
-            let mut sr = br + gr;
+            // Rückweg zum Anrufer (Mix-Minus): alles, was auf Sendung ist, außer dem Anrufer.
+            let (mut tl, mut tr) = (bl + gl, br + gr);
+            let mut sl = tl + pl;
+            let mut sr = tr + pr;
             // Abhören ohne Mikro: derselbe Weg ohne `il`/`ir`, mit demselben Faktor.
             let (mut ql, mut qr) = (sl - il, sr - ir);
             // Rückweg eines Gastes im Kopfhörer: Basis plus alle anderen Gäste (Mix-Minus).
@@ -955,6 +1010,8 @@ impl Mixer {
                 sr = self.bus.clip(sr * g);
                 ql = self.bus.clip(ql * g);
                 qr = self.bus.clip(qr * g);
+                tl = self.bus.clip(tl * g);
+                tr = self.bus.clip(tr * g);
                 if let Some((rl, rr)) = ret.as_mut() {
                     *rl = self.bus.clip(*rl * g);
                     *rr = self.bus.clip(*rr * g);
@@ -1002,11 +1059,22 @@ impl Mixer {
                     right[i] -= xr * gain_out;
                 }
             }
+            if let Some(d) = ret_dest {
+                extra[d].l[i] += tl;
+                extra[d].r[i] += tr;
+            }
             peak = peak.max(sl.abs()).max(sr.abs());
             self.clock += 1;
         }
         self.guests.end_block();
         self.publish(peak, mic_peak, reduction);
+        store_max(&self.status.phone_peak, phone_peak);
+    }
+
+    /// Die Musik wird abgesenkt, solange das Mikro offen ist oder das Telefon auf Sendung.
+    fn retarget_duck(&mut self) {
+        let down = self.mic_open || self.phone_on;
+        self.duck.set_target(if down { self.duck_lin } else { 1.0 });
     }
 
     /// Wirft zu viel Mikro-Vorlauf weg (etwa nach einem Hänger des Eingangs).
@@ -1057,6 +1125,7 @@ impl Mixer {
             s.deck_end[k].store(end, Ordering::Release);
         }
         s.mic_open.store(self.mic_open, Ordering::Release);
+        s.phone_on.store(self.phone_on, Ordering::Release);
         s.voice.store(self.voice.is_some(), Ordering::Release);
         s.clock.store(self.clock, Ordering::Release);
         store_max(&s.peak, peak);

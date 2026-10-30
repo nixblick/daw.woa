@@ -1028,6 +1028,18 @@ impl Controller {
         self.send(Cmd::MicOpen(open));
     }
 
+    /// Hängt den Telefon-Eingang (Anrufer) ein oder aus. Er kommt über eine Taktverbindung
+    /// ([`woa_engine::pairs::link`]) in der Rate des Mixers an.
+    pub fn set_phone_input(&mut self, rx: Option<woa_engine::pairs::LinkRx>) {
+        let owned = rx.map(|c| Owned::new(&self.collector.handle(), c));
+        self.send(Cmd::PhoneInput(owned));
+    }
+
+    /// Telefon auf Sendung: Der Anrufer liegt auf der Sendung, die Musik wird abgesenkt.
+    pub fn set_phone_on(&mut self, on: bool) {
+        self.send(Cmd::PhoneOn(on));
+    }
+
     pub fn set_mic_monitor(&mut self, on: bool) {
         self.send(Cmd::MicMonitor(on));
     }

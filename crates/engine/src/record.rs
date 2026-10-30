@@ -28,6 +28,8 @@ const FLUSH_EVERY: Duration = Duration::from_millis(500);
 pub struct InputConfig {
     /// `None` = Standard-Eingang.
     pub device_id: Option<String>,
+    /// Kanalpaar des Geräts: 0 = Kanal 1/2, 1 = Kanal 3/4 … Nur für die Live-Eingänge.
+    pub pair: u8,
 }
 
 /// Ergebnis einer beendeten Aufnahme.
@@ -364,6 +366,96 @@ pub fn start_live_input(
     })
 }
 
+/// Was ein Eingang beim Öffnen anbietet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputProbe {
+    /// Stabile Kennung des Geräts.
+    pub id: String,
+    /// Anzeigename.
+    pub name: String,
+    pub rate: u32,
+    pub channels: u16,
+}
+
+/// Prüft einen Eingang, ohne ihn zu öffnen: Kennung, Name, Rate, Kanäle.
+pub fn probe_input(config: &InputConfig) -> Result<InputProbe, RecordError> {
+    crate::device::on_audio_thread(move || -> Result<InputProbe, RecordError> {
+        let device = pick_input(config)?;
+        let supported = device.default_input_config()?;
+        let id = device.id().map(|i| i.to_string()).unwrap_or_default();
+        let name = device
+            .description()
+            .map(|d| d.name().to_string())
+            .unwrap_or_else(|_| id.clone());
+        Ok(InputProbe {
+            id,
+            name,
+            rate: supported.sample_rate(),
+            channels: supported.channels(),
+        })
+    })
+}
+
+/// Die zwei Kanäle des Paars `pair` in einem Frame mit `channels` Kanälen. Gibt es das Paar
+/// nicht ganz, zählt der Kanal allein auf beiden Seiten; gibt es es gar nicht, Kanal 1.
+pub fn pair_channels(pair: u8, channels: usize) -> (usize, usize) {
+    let l = usize::from(pair) * 2;
+    if l >= channels {
+        return (0, usize::from(channels > 1));
+    }
+    (l, if l + 1 < channels { l + 1 } else { l })
+}
+
+/// Startet einen Live-Eingang auf dem Kanalpaar `config.pair` und liefert ihn über eine
+/// [`crate::pairs::link`]-Verbindung in `out_rate` (Taktausgleich zwischen zwei Soundkarten,
+/// auch bei 44,1 gegen 48 kHz). Der Aufrufer reicht den [`crate::pairs::LinkRx`] an den
+/// Mixer weiter. Liefert außerdem Eingangsrate und Zähler der Verbindung.
+pub fn start_pair_input(
+    config: &InputConfig,
+    out_rate: u32,
+    on_error: impl FnMut(cpal::Error) + Send + 'static,
+) -> Result<
+    (
+        cpal::Stream,
+        crate::pairs::LinkRx,
+        Arc<crate::pairs::LinkStats>,
+        u32,
+    ),
+    RecordError,
+> {
+    crate::device::on_audio_thread(move || {
+        let device = pick_input(config)?;
+        let supported = device.default_input_config()?;
+        if supported.sample_format() != cpal::SampleFormat::F32 {
+            return Err(DeviceError::UnsupportedFormat.into());
+        }
+        let stream_config = supported.config();
+        let rate = stream_config.sample_rate;
+        let channels = usize::from(stream_config.channels).max(1);
+        let (cl, cr) = pair_channels(config.pair, channels);
+        let (mut tx, rx, stats) = crate::pairs::link(rate, out_rate);
+        let stream = device.build_input_stream(
+            stream_config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                let mut l = [0.0f32; 256];
+                let mut r = [0.0f32; 256];
+                for block in data.chunks(256 * channels) {
+                    let n = block.len() / channels;
+                    for (i, frame) in block.chunks_exact(channels).enumerate() {
+                        l[i] = frame[cl];
+                        r[i] = frame[cr];
+                    }
+                    tx.push(&l[..n], &r[..n]);
+                }
+            },
+            on_error,
+            None,
+        )?;
+        stream.play()?;
+        Ok((stream, rx, stats, rate))
+    })
+}
+
 /// Nächster freier Name `aufnahme-NNN.wav` in `dir` (legt `dir` an).
 pub fn next_take_path(dir: &Path) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
@@ -379,6 +471,15 @@ pub fn next_take_path(dir: &Path) -> std::io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pair_channels_pick_the_pair_or_fall_back() {
+        assert_eq!(pair_channels(0, 2), (0, 1));
+        assert_eq!(pair_channels(1, 4), (2, 3));
+        assert_eq!(pair_channels(0, 1), (0, 0));
+        assert_eq!(pair_channels(1, 3), (2, 2));
+        assert_eq!(pair_channels(5, 2), (0, 1));
+    }
 
     #[test]
     fn store_max_keeps_the_largest() {
