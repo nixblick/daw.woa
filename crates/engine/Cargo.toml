@@ -15,8 +15,8 @@ hound = "3.5.1"
 mp3lame-encoder = "0.2.5"
 rtrb = "0.4.1"
 symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "mp2", "flac", "ogg", "vorbis", "isomp4", "aac", "alac", "aiff", "caf", "pcm", "id3v1", "id3v2", "ape"] }
-woa-dsp = { version = "0.30", path = "../dsp" }
-woa-model = { version = "0.30", path = "../model" }
+woa-dsp = { version = "0.31", path = "../dsp" }
+woa-model = { version = "0.31", path = "../model" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 pulseaudio = { version = "0.3.2", optional = true }
@@ -27,4 +27,4 @@ device = ["dep:cpal", "dep:pulseaudio"]
 [dev-dependencies]
 assert_no_alloc = "1.1.2"
 tempfile = "3.27.0"
-woa-plugins = { version = "0.30", path = "../plugins", features = ["test-plugin"] }
+woa-plugins = { version = "0.31", path = "../plugins", features = ["test-plugin"] }

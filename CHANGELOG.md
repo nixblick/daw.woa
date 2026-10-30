@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.31.0 — 2026-10-30
+
+Paket 36 aus M9: Web-Fernbedienung im WLAN (Abnahme: `docs/abnahme.md`).
+
+- **Fernbedienung:** Im Party-Layout gibt es unter der Wunschliste die Karte „Fernbedienung“. „Fernbedienung an“ öffnet einen lokalen Webserver (nur auf der LAN-Adresse des Rechners, Port 8787, sonst ein freier) und zeigt einen QR-Code mit der Adresse samt Gast-PIN. Aus: Der Port ist zu, offene Handys bekommen ein Close und zeigen „getrennt“. Bei jedem Programmstart ist sie aus.
+- **Zugang und Rollen:** Beim Einschalten entstehen zwei neue sechsstellige PINs (Zufall vom System). Die Gast-PIN steht im QR-Code, die DJ-PIN nur auf dem Bildschirm („DJ-PIN zeigen“, zum Eintippen). „Einmal“ heißt: pro Einschalten, denn viele Gäste scannen denselben Code; „Neue PINs“ trennt alle Handys. Gast: sieht die Anzeige, sucht Titel und reicht Wünsche ein (auch Freitext, höchstens 80 Zeichen). DJ: zusätzlich Play/Pause, Weiter, Lauter/Leiser, Wunsch als Nächstes oder verwerfen. Vollbild bleibt am Rechner.
+- **Schutz:** Fünf falsche PINs je Adresse sperren sie 60 Sekunden (429); ein Gast darf alle 10 Sekunden einen Wunsch (je Adresse, ein neuer Login hilft nicht); zehn Befehle je Sekunde und Sitzung; höchstens 64 Verbindungen; Anfragen über 4 KiB und Köpfe über 8 KiB werden abgewiesen; die Handys sehen nie einen Dateipfad, nur kurze Kennungen. Alles wird mit `tracing` geloggt (Anmeldungen, falsche PINs, Sperren, Befehle).
+- **Vollstand, dann Änderungen:** Beim Verbinden per WebSocket kommt der ganze Zustand, danach nur die geänderten Felder (Muster aus Ardours OSC-Oberfläche). Die Seite bleibt bei einem Verbindungsabbruch auf „getrennt“ und verbindet neu, wenn der Rechner wieder da ist.
+- **Dieselbe Befehlsschicht:** Befehle vom Handy sind die `PartyCommand`s der Party-Schicht (`woa-radio`), laufen durch `PartyView::run` wie die großen Tasten und stehen im Befehlsprotokoll. Neuer Code: `crates/remote` (Server mit `std::net` und `tungstenite`, ohne Async-Stapel; Anmeldung und Grenzen; Befehle; QR mit `qrcode`; Brücke zur Party-Schicht), die Karte in `crates/gui/src/remote.rs`.
+- **OSC (optional, aus):** Mit dem Haken „OSC-Eingang“ lauscht UDP-Port 9000 auf `/woa/party/play_pause`, `/next`, `/volume_up`, `/volume_down` (Tasten: nur Drücken zählt). OSC kennt keine Anmeldung und gibt darum jedem im Netz DJ-Rechte; nur mit Bedacht einschalten.
+- **Tests (ohne Ton, ohne Gerät, gegen 127.0.0.1):** falsche PIN gibt 401; Gast bekommt 403 bei jedem Steuerbefehl, per HTTP und WebSocket; Wunsch aus der Suche landet in der Befehlsschicht und in der Wunschliste; Ratenbegrenzung für Wünsche, Befehle und PIN-Raten; Sperre und Freigabe; Vollstand und Änderungen, unveränderter Stand sendet nichts; 20 Handys gleichzeitig, danach Aus: alle bekommen Close, Port ist zu; „kein Port offen, wenn aus“; neue PINs trennen; Verbindungsgrenze; zu große Anfragen; OSC-Pfade; der ganze Weg Handy – Befehl – Wunschliste – Handy – DJ reiht ein.
+- **Herkunft:** Ideen aus Ardour (OSC) und Mixxx (Controller), kein Code (`docs/herkunft.md`).
+- **Nicht gebaut / nicht geprüft:** Die Seite im echten Handy-Browser und das Scannen des QR-Codes (nur Server, Protokoll und Seite als Text geprüft); Windows-Firewall-Abfrage beim ersten Start (nicht beobachtet); verschlüsselte Verbindung (HTTPS, siehe offene Fragen); Gäste-Schalte per WebRTC und Mix-Minus (Pakete 37 und 38).
+
 ## 0.30.0 — 2026-10-30
 
 Paket 35 aus M9: Party-Layout (Abnahme: `docs/abnahme.md`).

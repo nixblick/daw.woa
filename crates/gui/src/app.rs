@@ -4611,6 +4611,9 @@ impl eframe::App for WoaApp {
         }
         self.clock_editor.tick_save();
         self.event_editor.tick_save();
+        if let Some(r) = self.radio.as_mut() {
+            self.party.pump_remote(r, ctx);
+        }
         if self.config.mode == Mode::Party {
             let cmds = crate::party::PartyView::shortcuts(ctx);
             if let Some(r) = self.radio.as_mut() {

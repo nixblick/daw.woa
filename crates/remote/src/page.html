@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>WOA Fernbedienung</title>
+<style>
+:root{--bg:#12141a;--panel:#1b1e26;--surface:#292e3a;--border:#383f4e;--text:#ecf0f8;--dim:#8a94a6;
+--accent:#ff9838;--ok:#38d070;--cue:#44baff;--air:#ee3844;--well:#0c0e12}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,sans-serif}
+main{max-width:640px;margin:0 auto;padding:12px 14px 40px}
+header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+h1{font-size:15px;letter-spacing:.12em;margin:0;color:var(--dim);font-weight:700}
+.pill{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;border:1px solid var(--border);color:var(--dim)}
+.pill.on{color:var(--ok);border-color:var(--ok)}
+.pill.off{color:var(--air);border-color:var(--air)}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px}
+.lcd{background:var(--well)}
+.label{font-size:11.5px;font-weight:700;letter-spacing:.1em;color:var(--dim);margin-bottom:6px}
+.badge{font:700 13px ui-monospace,monospace;color:var(--accent)}
+.badge.ready{color:var(--cue)}
+#title{font-size:26px;font-weight:800;overflow-wrap:anywhere}
+#artist{font-size:18px;color:var(--dim)}
+#remaining{font:800 56px/1.1 ui-monospace,monospace;color:var(--accent);margin:4px 0}
+#remaining.urgent{color:var(--air)}
+progress{width:100%;height:10px;accent-color:var(--accent)}
+#next{margin-top:8px;color:var(--cue);font-size:16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);
+border-radius:10px;padding:14px 10px;min-height:56px;font-weight:700}
+button:active{filter:brightness(1.25)}
+button.primary{background:var(--ok);color:var(--well);border-color:var(--ok);font-size:20px}
+button.big{font-size:20px;min-height:72px}
+button.small{min-height:40px;padding:6px 10px;font-size:14px}
+button:disabled{opacity:.45}
+input{font:inherit;color:var(--text);background:var(--well);border:1px solid var(--border);
+border-radius:10px;padding:12px;width:100%}
+.row{display:flex;gap:8px;align-items:center}
+.row>input{flex:1}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--border)}
+li:first-child{border-top:0}
+li .t{flex:1;overflow-wrap:anywhere}
+li .n{color:var(--accent);font-family:ui-monospace,monospace;min-width:1.6em}
+.votes{color:var(--cue);font-weight:700;font-size:13px}
+.dim{color:var(--dim)}
+#msg{min-height:1.4em;color:var(--accent);font-size:14px;margin:4px 0 8px}
+#login{text-align:center}
+#login input{font-size:28px;text-align:center;letter-spacing:.3em;margin:12px 0}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>WOA PARTY</h1>
+  <span id="status" class="pill off">getrennt</span>
+</header>
+
+<section id="login" class="card hidden">
+  <div class="label">ANMELDEN</div>
+  <div>PIN vom Bildschirm oder aus dem QR-Code eingeben.</div>
+  <input id="pin" inputmode="numeric" autocomplete="off" maxlength="12" aria-label="PIN">
+  <button id="pinGo" class="primary" style="width:100%">Verbinden</button>
+</section>
+
+<div id="app" class="hidden">
+  <section class="card lcd">
+    <div id="badge" class="badge ready">BEREIT</div>
+    <div id="title">–</div>
+    <div id="artist"></div>
+    <div id="remaining">0:00</div>
+    <progress id="prog" max="1" value="0"></progress>
+    <div id="next"></div>
+  </section>
+
+  <div id="msg" role="status"></div>
+
+  <section id="dj" class="hidden">
+    <div class="grid" style="margin-bottom:12px">
+      <button class="primary big" data-cmd="play_pause" id="playBtn">Play</button>
+      <button class="big" data-cmd="next">Weiter</button>
+      <button class="big" data-cmd="volume_down">Leiser</button>
+      <button class="big" data-cmd="volume_up">Lauter</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="label">WUNSCH EINREICHEN</div>
+    <div class="row">
+      <input id="q" type="search" placeholder="Titel oder Interpret suchen" autocomplete="off" maxlength="80">
+      <button id="free" class="small" title="Eingegebenen Text als Wunsch senden">Wünschen</button>
+    </div>
+    <ul id="results"></ul>
+  </section>
+
+  <section class="card">
+    <div class="label">WUNSCHLISTE</div>
+    <ul id="wishes"></ul>
+    <div id="nowishes" class="dim">Noch keine Wünsche.</div>
+  </section>
+</div>
+</main>
+<script>
+(function () {
+  "use strict";
+  var token = null, role = null, ws = null, state = null, retry = null, closing = false;
+  var $ = function (id) { return document.getElementById(id); };
+
+  function setStatus(on, text) {
+    var s = $("status");
+    s.textContent = text;
+    s.className = "pill " + (on ? "on" : "off");
+  }
+  function say(t) { $("msg").textContent = t || ""; }
+
+  function api(method, path, body) {
+    var h = { "Content-Type": "application/json" };
+    if (token) h["Authorization"] = "Bearer " + token;
+    return fetch(path, { method: method, headers: h, body: body ? JSON.stringify(body) : undefined })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, json: j }; });
+      });
+  }
+
+  function showLogin(note) {
+    token = null; role = null;
+    $("app").classList.add("hidden");
+    $("login").classList.remove("hidden");
+    setStatus(false, "getrennt");
+    if (note) $("login").querySelector("div:nth-child(2)").textContent = note;
+  }
+
+  function login(pin) {
+    return api("POST", "/api/login", { pin: pin }).then(function (r) {
+      if (r.status === 200) {
+        token = r.json.token; role = r.json.role;
+        $("login").classList.add("hidden");
+        $("app").classList.remove("hidden");
+        $("dj").classList.toggle("hidden", role !== "dj");
+        connect();
+      } else {
+        showLogin(r.json.error || "Anmeldung fehlgeschlagen");
+      }
+    }).catch(function () { showLogin("Rechner nicht erreichbar"); });
+  }
+
+  function connect() {
+    closing = false;
+    var proto = location.protocol === "https:" ? "wss://" : "ws://";
+    ws = new WebSocket(proto + location.host + "/ws?token=" + encodeURIComponent(token));
+    ws.onopen = function () { setStatus(true, role === "dj" ? "DJ verbunden" : "verbunden"); };
+    ws.onmessage = function (ev) {
+      var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === "full") { state = m.state; render(); }
+      else if (m.type === "delta" && state) { for (var k in m.changes) { state[k] = m.changes[k]; } render(); }
+      else if (m.type === "error") { say(m.message || "Fehler"); }
+      else if (m.type === "ack") { say(""); }
+    };
+    ws.onclose = function () {
+      setStatus(false, "getrennt");
+      if (closing) return;
+      // Läuft der Rechner nicht mehr, bleibt es bei „getrennt“; sonst versuchen wir es erneut.
+      reconnect();
+    };
+  }
+
+  function reconnect() {
+    clearTimeout(retry);
+    retry = setTimeout(function () {
+      api("GET", "/api/state").then(function (r) {
+        if (r.status === 401) showLogin("Sitzung beendet. PIN erneut eingeben.");
+        else connect();
+      }).catch(function () { setStatus(false, "getrennt"); reconnect(); });
+    }, 3000);
+  }
+
+  function send(obj) {
+    if (ws && ws.readyState === 1) { ws.send(JSON.stringify(obj)); return; }
+    api("POST", "/api/cmd", obj).then(function (r) { say(r.status === 200 ? "" : (r.json.error || "Fehler")); });
+  }
+
+  function li(parent, cells) {
+    var el = document.createElement("li");
+    cells.forEach(function (c) { el.appendChild(c); });
+    parent.appendChild(el);
+  }
+  function span(cls, text) {
+    var s = document.createElement("span"); s.className = cls; s.textContent = text; return s;
+  }
+  function btn(text, fn) {
+    var b = document.createElement("button"); b.className = "small"; b.textContent = text;
+    b.addEventListener("click", fn); return b;
+  }
+
+  function render() {
+    if (!state) return;
+    var n = state.now;
+    $("badge").textContent = n && n.playing ? "JETZT" : "BEREIT";
+    $("badge").className = "badge" + (n && n.playing ? "" : " ready");
+    $("title").textContent = n ? n.title : "–";
+    $("artist").textContent = n ? n.artist : "";
+    $("remaining").textContent = n ? n.remaining : "0:00";
+    $("remaining").className = n && n.playing && /^0:0\d$/.test(n.remaining) ? "urgent" : "";
+    $("prog").value = n ? n.progress : 0;
+    $("next").textContent = state.next ? "NÄCHSTER: " + state.next : "";
+    $("playBtn").textContent = n && n.playing ? "Pause" : "Play";
+    var ul = $("wishes"); ul.textContent = "";
+    var w = state.wishes || [];
+    $("nowishes").classList.toggle("hidden", w.length > 0);
+    w.forEach(function (x, i) {
+      var cells = [span("n", (i + 1) + "."), span("t", x.title)];
+      if (x.votes > 1) cells.push(span("votes", "×" + x.votes));
+      if (role === "dj") {
+        cells.push(btn("Als Nächstes", function () { send({ cmd: "play_wish", id: x.id }); }));
+        cells.push(btn("✕", function () { send({ cmd: "drop_wish", id: x.id }); }));
+      } else {
+        cells.push(btn("+1", function () { send({ cmd: "wish", id: x.id }); }));
+      }
+      li(ul, cells);
+    });
+  }
+
+  var timer = null;
+  function search() {
+    var q = $("q").value.trim();
+    var ul = $("results"); ul.textContent = "";
+    if (q.length < 2) return;
+    api("GET", "/api/search?q=" + encodeURIComponent(q)).then(function (r) {
+      ul.textContent = "";
+      (r.json.results || []).forEach(function (x) {
+        li(ul, [span("t", x.title), btn("Wünschen", function () { send({ cmd: "wish", id: x.id }); say("Wunsch gesendet"); })]);
+      });
+      if (!(r.json.results || []).length) li(ul, [span("t dim", "Nichts gefunden – du kannst den Text trotzdem wünschen.")]);
+    });
+  }
+  $("q").addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(search, 250); });
+  $("free").addEventListener("click", function () {
+    var t = $("q").value.trim();
+    if (!t) { say("Bitte erst einen Titel eintippen."); return; }
+    send({ cmd: "wish", title: t }); say("Wunsch gesendet"); $("q").value = ""; $("results").textContent = "";
+  });
+  document.querySelectorAll("[data-cmd]").forEach(function (b) {
+    b.addEventListener("click", function () { send({ cmd: b.getAttribute("data-cmd") }); });
+  });
+  $("pinGo").addEventListener("click", function () { login($("pin").value.trim()); });
+  $("pin").addEventListener("keydown", function (e) { if (e.key === "Enter") login($("pin").value.trim()); });
+
+  // PIN aus dem QR-Code: einmal nutzen und aus der Adresszeile entfernen.
+  var m = /[?&]pin=(\d+)/.exec(location.search);
+  if (m) {
+    try { history.replaceState(null, "", location.pathname); } catch (e) {}
+    login(m[1]);
+  } else {
+    showLogin();
+  }
+})();
+</script>
+</body>
+</html>

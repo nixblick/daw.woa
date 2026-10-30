@@ -101,7 +101,7 @@ Zusätzlich zum Bild: Der Stream-Encoder und die Notfall-Playlist laufen als eig
 | Audio-I/O | Interfaces, Mikro, Kopfhörer-Cue | `cpal`; PipeWire/JACK unter Linux, WASAPI/ASIO unter Windows |
 | Plugins | Fremd-Instrumente und Effekte | CLAP via `clack`, später VST3 |
 | Gäste-Schalte | Mikro von Freunden per Browser | WebRTC (`webrtc-rs`) |
-| Party-Fernbedienung | Wünsche und Steuerung per Handy | lokaler Webserver (`axum`) |
+| Party-Fernbedienung | Wünsche und Steuerung per Handy | lokaler Webserver (`std::net` + `tungstenite`, statt `axum`: kein zweiter Async-Stapel, Paket 36) |
 | Feedback | Lob, Kritik, Bugs mit Screenshot aus der App | HTTPS an eigenen Server, der GitHub-Issues erzeugt |
 | Telemetrie | technische Logs aller Installationen | HTTPS-Upload an eigenen Server |
 | Auto-Updater | neue Versionen prüfen und installieren | signierte MSI- bzw. AppImage-Pakete |
