@@ -63,7 +63,7 @@
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var invite = new URLSearchParams(location.search).get('i') || '';
-  var pc = null, stream = null, ticket = '', timer = 0, ctx = null, answered = false, over = false;
+  var pc = null, stream = null, ticket = '', timer = 0, statsTimer = 0, ctx = null, answered = false, over = false;
 
   // Der Titel trägt den Stand; Testläufe lesen ihn aus.
   function setTitle(s) { document.title = 'WOA-GAST ' + s; }
@@ -81,7 +81,7 @@
 
   function finish(text, cls, title) {
     if (over) return; over = true;
-    clearInterval(timer);
+    clearInterval(timer); clearInterval(statsTimer);
     if (pc) { try { pc.close(); } catch (e) {} pc = null; }
     if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
     if (ctx) { try { ctx.close(); } catch (e) {} ctx = null; }
@@ -115,6 +115,16 @@
       pc.addEventListener('icegatheringstatechange', on);
       setTimeout(done, 3000);
     });
+  }
+
+  // Zählt die Pakete des Rückwegs; der Titel trägt die Zahl (Testläufe lesen sie aus).
+  function stats() {
+    if (!pc || over) return;
+    pc.getStats().then(function (rep) {
+      rep.forEach(function (s) {
+        if (s.type === 'inbound-rtp' && s.kind === 'audio' && !over) setTitle('verbunden rx=' + (s.packetsReceived || 0));
+      });
+    }).catch(function () {});
   }
 
   function poll() {
@@ -153,7 +163,10 @@
       pc.ontrack = function (e) { var a = $('out'); a.srcObject = e.streams[0] || new MediaStream([e.track]); a.play().catch(function () {}); };
       pc.onconnectionstatechange = function () {
         if (over) return;
-        if (pc.connectionState === 'connected') { show('Du bist auf Sendung geschaltet. Sprich los.', 'ok'); setTitle('verbunden'); }
+        if (pc.connectionState === 'connected') {
+          show('Du bist auf Sendung geschaltet. Sprich los.', 'ok'); setTitle('verbunden rx=0');
+          statsTimer = setInterval(stats, 1000);
+        }
         else if (pc.connectionState === 'failed') finish('Verbindung fehlgeschlagen. Seid ihr im selben WLAN?', 'bad', 'fehler');
         else if (pc.connectionState === 'disconnected') finish('Verbindung verloren.', 'bad', 'ende');
       };
