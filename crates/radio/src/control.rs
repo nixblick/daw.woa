@@ -149,6 +149,11 @@ pub struct Controller {
     /// Titelwechsel-Zähler des Mixers, als `pending` bereitgelegt wurde: so ist erkennbar,
     /// dass auch derselbe Titel (Wiederholen) wirklich neu begonnen hat.
     pending_plays: u32,
+    /// Pausiert: Titel (uid), Stelle und Ende in Frames. `None`, wenn nicht pausiert.
+    paused: Option<(u32, u64, u64)>,
+    /// Nach dem Beginn des Titels (uid) einmal an diese Stelle springen; dazu der Stand des
+    /// Titelwechsel-Zählers beim Start.
+    resume_at: Option<(u32, u64, u32)>,
     /// Wiederholen und Zufall (laufen nur, nicht in der gespeicherten Sendung).
     repeat: Repeat,
     shuffle: bool,
@@ -216,6 +221,8 @@ impl Controller {
             next_uid: 1,
             pending: None,
             pending_plays: 0,
+            paused: None,
+            resume_at: None,
             repeat: Repeat::Off,
             shuffle: false,
             played: Vec::new(),
@@ -575,6 +582,10 @@ impl Controller {
     /// Start (wenn nichts läuft) oder Weiter (Überblenden zum nächsten Titel). Bei „Titel
     /// wiederholen“ springt Weiter trotzdem zum nächsten Titel.
     pub fn start_or_next(&mut self) {
+        if self.paused.is_some() {
+            self.play();
+            return;
+        }
         if self.running && self.status.current.load(Ordering::Acquire) != NONE {
             if self.repeat == Repeat::One {
                 let cur = self.current_index();
@@ -620,12 +631,81 @@ impl Controller {
 
     /// Blendet die Musik aus und hält an. „Start“ beginnt danach mit dem Titel, der lief.
     pub fn stop(&mut self) {
+        self.paused = None;
+        self.resume_at = None;
         if let Some(i) = self.current_index() {
             self.set_cue(i);
         }
         self.running = false;
         self.pending = None;
         self.send(Cmd::Stop);
+    }
+
+    /// Pause: blendet aus und merkt sich die Stelle. [`Self::play`] macht dort weiter.
+    pub fn pause(&mut self) {
+        let cur = self.status.current.load(Ordering::Acquire);
+        if !self.running || cur == NONE {
+            return;
+        }
+        let pos = self.status.position.load(Ordering::Acquire);
+        let end = self.status.end.load(Ordering::Acquire);
+        self.stop();
+        self.paused = Some((cur, pos, end));
+    }
+
+    /// Pausiert (Stelle gemerkt)?
+    pub fn is_paused(&self) -> bool {
+        self.paused.is_some()
+    }
+
+    /// Restzeit des pausierten Titels (Sekunden) und seine Länge bis Cue-Out, wenn pausiert.
+    pub fn paused_times(&self) -> Option<(f64, f64)> {
+        let (_, pos, end) = self.paused?;
+        let r = f64::from(self.rate);
+        Some((end.saturating_sub(pos) as f64 / r, end as f64 / r))
+    }
+
+    /// Play: nach einer Pause an der gemerkten Stelle weiter, sonst starten (wie
+    /// [`Self::start_or_next`]).
+    pub fn play(&mut self) {
+        let Some((uid, pos, _)) = self.paused else {
+            self.start_or_next();
+            return;
+        };
+        let Some(i) = self.index_of(uid) else {
+            // Der Titel ist nicht mehr in der Playlist: normal starten.
+            self.paused = None;
+            self.start();
+            return;
+        };
+        self.paused = None;
+        if self.status.current.load(Ordering::Acquire) == uid {
+            // Die Ausblendung läuft noch: Play nimmt sie zurück, der Titel läuft einfach weiter.
+            self.running = true;
+            self.send(Cmd::Play);
+            return;
+        }
+        let plays = self.status.plays.load(Ordering::Acquire);
+        self.set_cue(i);
+        self.start();
+        if self.running {
+            self.resume_at = Some((uid, pos, plays));
+        }
+    }
+
+    /// Nach dem Beginn des pausierten Titels an die gemerkte Stelle springen.
+    fn resume_tick(&mut self) {
+        let Some((uid, pos, plays)) = self.resume_at else {
+            return;
+        };
+        if self.status.current.load(Ordering::Acquire) != uid
+            || self.status.plays.load(Ordering::Acquire) == plays
+        {
+            return;
+        }
+        self.resume_at = None;
+        let now = self.status.position.load(Ordering::Acquire);
+        self.send(Cmd::Seek(pos as i64 - now as i64));
     }
 
     /// Legt Titel `index` beim Mixer bereit. `false` bei Fehler (Titel wird übersprungen
@@ -909,6 +989,7 @@ impl Controller {
     pub fn pump_at(&mut self, now: f64) {
         self.sync_voices();
         self.pump_queue();
+        self.resume_tick();
         self.event_tick(now);
     }
 

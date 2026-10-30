@@ -58,6 +58,8 @@ pub struct View {
     pub repeat: crate::control::Repeat,
     /// Zufällige Reihenfolge.
     pub shuffle: bool,
+    /// Pausiert: (Restzeit, Länge) des angehaltenen Titels in Sekunden.
+    pub paused: Option<(f64, f64)>,
     pub remaining_total: f64,
     pub crossfade_seconds: f64,
     pub duck_db: f64,
@@ -278,6 +280,7 @@ fn run(
             remaining_title: c.remaining_title(),
             repeat: c.repeat(),
             shuffle: c.shuffle(),
+            paused: c.paused_times(),
             remaining_total: c.remaining_total(),
             crossfade_seconds: c.show().crossfade_seconds,
             duck_db: c.show().duck_db,

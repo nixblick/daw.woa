@@ -215,8 +215,8 @@ li .n{color:var(--accent);font-family:ui-monospace,monospace;min-width:1.6em}
   function render() {
     if (!state) return;
     var n = state.now;
-    $("badge").textContent = n && n.playing ? "JETZT" : "BEREIT";
-    $("badge").className = "badge" + (n && n.playing ? "" : " ready");
+    $("badge").textContent = n && n.playing ? "JETZT" : n && n.paused ? "PAUSE" : "BEREIT";
+    $("badge").className = "badge" + (n && (n.playing || n.paused) ? "" : " ready");
     $("title").textContent = n ? n.title : "–";
     $("artist").textContent = n ? n.artist : "";
     $("remaining").textContent = n ? n.remaining : "0:00";

@@ -575,6 +575,8 @@ impl RadioDesk {
         match e {
             Effect::StartOrNext => self.with(|c| c.start_or_next()),
             Effect::Stop => self.with(|c| c.stop()),
+            Effect::Pause => self.with(|c| c.pause()),
+            Effect::Play => self.with(|c| c.play()),
             Effect::Previous => self.with(|c| c.previous()),
             Effect::Restart => self.with(|c| c.restart()),
             Effect::Seek(s) => self.with(move |c| c.seek(s)),

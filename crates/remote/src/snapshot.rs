@@ -18,6 +18,8 @@ pub struct NowSnap {
     /// 0..1.
     pub progress: f32,
     pub playing: bool,
+    /// Pausiert: Play macht an der Stelle weiter.
+    pub paused: bool,
 }
 
 /// Ein Wunsch in der Liste. Der Pfad bleibt im Programm und geht nie ans Handy.
@@ -69,6 +71,7 @@ impl PartySnapshot {
                 // Auf ganze Prozent, damit der Strom nicht bei jedem Bruchteil sendet.
                 "progress": (f64::from(n.progress) * 100.0).round() / 100.0,
                 "playing": n.playing,
+                "paused": n.paused,
             }),
             None => Value::Null,
         };
@@ -127,6 +130,7 @@ mod tests {
                 remaining: "1:00".into(),
                 progress: 0.5,
                 playing: true,
+                paused: false,
             }),
             next: Some("N".into()),
             wishes: vec![WishSnap {

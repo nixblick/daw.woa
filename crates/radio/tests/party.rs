@@ -127,8 +127,8 @@ fn next_button_crossfades_and_wish_is_played_after_the_current_title() {
 
     // Play: Taste -> Effekt -> Controller.
     for e in state.apply(PartyCommand::PlayPause, c.is_running()) {
-        assert_eq!(e, Effect::StartOrNext);
-        c.start_or_next();
+        assert_eq!(e, Effect::Play);
+        c.play();
     }
     step(&mut c, &mut m, 20);
     assert_eq!(c.current_index(), Some(0));
@@ -186,6 +186,8 @@ fn press(c: &mut Controller, state: &mut PartyState, cmd: PartyCommand) {
         match e {
             Effect::StartOrNext => c.start_or_next(),
             Effect::Stop => c.stop(),
+            Effect::Pause => c.pause(),
+            Effect::Play => c.play(),
             Effect::Previous => c.previous(),
             Effect::Restart => c.restart(),
             Effect::Seek(s) => c.seek(s),
@@ -425,13 +427,13 @@ fn mute_remembers_the_old_level_and_volume_unmutes() {
 #[test]
 fn play_and_stop_buttons_are_idempotent() {
     let mut s = PartyState::default();
-    assert_eq!(
-        s.apply(PartyCommand::Play, false),
-        vec![Effect::StartOrNext]
-    );
+    assert_eq!(s.apply(PartyCommand::Play, false), vec![Effect::Play]);
     assert!(s.apply(PartyCommand::Play, true).is_empty());
     assert_eq!(s.apply(PartyCommand::Stop, true), vec![Effect::Stop]);
-    assert!(s.apply(PartyCommand::Stop, false).is_empty());
+    // Auch im Stand räumt Stopp die Pausenstelle ab.
+    assert_eq!(s.apply(PartyCommand::Stop, false), vec![Effect::Stop]);
+    assert_eq!(s.apply(PartyCommand::PlayPause, true), vec![Effect::Pause]);
+    assert_eq!(s.apply(PartyCommand::PlayPause, false), vec![Effect::Play]);
 }
 
 #[test]
@@ -447,4 +449,72 @@ fn layout_shows_the_active_modes() {
     assert!(t.contains("🔂 Titel*") && t.contains("🔀 Zufall*"), "{t}");
     view.repeat = Repeat::All;
     assert!(layout(&view, &state).to_text().contains("🔁 Playlist*"));
+}
+
+#[test]
+fn pause_remembers_the_spot_and_play_continues_there() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = tracks(tmp.path(), 2, 30.0);
+    let mut s = PartyState::default();
+    press(&mut c, &mut s, PartyCommand::PlayPause);
+    step(&mut c, &mut m, secs(8.0));
+    let before = c.remaining_title();
+    assert!((before - 22.0).abs() < 0.6, "{before}");
+    // Pause: blendet aus, Stelle gemerkt, Musik steht.
+    press(&mut c, &mut s, PartyCommand::PlayPause);
+    assert!(c.is_paused());
+    step(&mut c, &mut m, secs(2.0));
+    assert_eq!(c.current_index(), None);
+    let (rest, len) = c.paused_times().unwrap();
+    assert!(
+        (rest - before).abs() < 0.1 && (len - 30.0).abs() < 0.1,
+        "{rest} {len}"
+    );
+    // Das Layout zeigt „pausiert“ mit der gemerkten Restzeit, nicht den ganzen Titel.
+    let mut v = view_of(&c);
+    v.paused = c.paused_times();
+    let l = layout(&v, &s);
+    let now = l.now.unwrap();
+    assert!(now.paused && !now.playing);
+    assert_eq!(now.remaining, woa_radio::party::clock(rest));
+    assert!(now.progress > 0.2);
+    // Play: weiter an derselben Stelle (nicht von vorn), derselbe Titel.
+    press(&mut c, &mut s, PartyCommand::PlayPause);
+    assert!(!c.is_paused());
+    step(&mut c, &mut m, 4);
+    assert_eq!(c.current_index(), Some(0));
+    let after = c.remaining_title();
+    assert!(
+        (after - before).abs() < 0.3,
+        "vorher {before}, nachher {after}"
+    );
+    // Und es läuft weiter.
+    step(&mut c, &mut m, secs(1.0));
+    assert!(c.remaining_title() < after - 0.8);
+}
+
+#[test]
+fn play_during_the_fade_out_just_keeps_playing_and_stop_forgets_the_spot() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = tracks(tmp.path(), 1, 30.0);
+    c.start();
+    step(&mut c, &mut m, secs(3.0));
+    c.pause();
+    step(&mut c, &mut m, 2);
+    assert!(
+        c.is_paused() && c.current_index().is_some(),
+        "Ausblendung läuft noch"
+    );
+    c.play();
+    step(&mut c, &mut m, secs(1.0));
+    assert!(c.is_running() && c.current_index() == Some(0));
+    // Stopp nach Pause: Stelle vergessen, Play beginnt von vorn.
+    c.pause();
+    step(&mut c, &mut m, secs(1.0));
+    assert!(c.is_paused());
+    c.stop();
+    assert!(!c.is_paused());
+    c.play();
+    step(&mut c, &mut m, 4);
+    assert!(c.remaining_title() > 29.0, "{}", c.remaining_title());
 }

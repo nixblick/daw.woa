@@ -111,7 +111,7 @@ pub enum PartyCommand {
     PlayPause,
     /// Starten, wenn nichts läuft; sonst nichts.
     Play,
-    /// Anhalten (Ausblenden), wenn die Musik läuft; sonst nichts.
+    /// Stopp: ausblenden und die gemerkte Pausenstelle vergessen.
     Stop,
     /// Weiter: Crossfade zum nächsten Titel (startet, wenn nichts läuft). Auch bei
     /// „Titel wiederholen“ geht es zum nächsten Titel.
@@ -176,6 +176,10 @@ pub enum Effect {
     StartOrNext,
     /// `Controller::stop`.
     Stop,
+    /// `Controller::pause`.
+    Pause,
+    /// `Controller::play`: nach einer Pause an der Stelle weiter, sonst starten.
+    Play,
     /// `Controller::previous`.
     Previous,
     /// `Controller::restart`.
@@ -230,12 +234,12 @@ impl PartyState {
         }
         self.log.push(cmd.name());
         match cmd {
-            PartyCommand::PlayPause if running => vec![Effect::Stop],
-            PartyCommand::PlayPause | PartyCommand::Next => vec![Effect::StartOrNext],
-            PartyCommand::Play if !running => vec![Effect::StartOrNext],
+            PartyCommand::PlayPause if running => vec![Effect::Pause],
+            PartyCommand::PlayPause => vec![Effect::Play],
+            PartyCommand::Next => vec![Effect::StartOrNext],
+            PartyCommand::Play if !running => vec![Effect::Play],
             PartyCommand::Play => Vec::new(),
-            PartyCommand::Stop if running => vec![Effect::Stop],
-            PartyCommand::Stop => Vec::new(),
+            PartyCommand::Stop => vec![Effect::Stop],
             PartyCommand::Previous => vec![Effect::Previous],
             PartyCommand::Restart => vec![Effect::Restart],
             PartyCommand::SeekBack => vec![Effect::Seek(-SEEK_STEP_SECONDS)],
@@ -325,6 +329,8 @@ pub struct NowPlaying {
     pub progress: f32,
     /// Läuft, sonst „bereit“.
     pub playing: bool,
+    /// Pausiert: die Stelle ist gemerkt, Play macht dort weiter.
+    pub paused: bool,
 }
 
 /// Eine große Taste.
@@ -402,14 +408,18 @@ pub fn layout(view: &View, state: &PartyState) -> PartyLayout {
     let entry = idx.and_then(|i| view.playlist.get(i));
     let now = entry.map(|e| {
         let (artist, title) = split_title(&e.title);
-        let playing = view.current.is_some();
-        let progress = match (playing, e.seconds) {
-            (true, Some(len)) if len > 0.0 => {
+        let paused = view.paused;
+        let playing = view.current.is_some() && paused.is_none();
+        let progress = match (playing, paused, e.seconds) {
+            (_, Some((rest, len)), _) if len > 0.0 => (1.0 - rest / len).clamp(0.0, 1.0) as f32,
+            (true, None, Some(len)) if len > 0.0 => {
                 (1.0 - view.remaining_title / len).clamp(0.0, 1.0) as f32
             }
             _ => 0.0,
         };
-        let remaining = if playing {
+        let remaining = if let Some((rest, _)) = paused {
+            clock(rest)
+        } else if playing {
             clock(view.remaining_title)
         } else {
             clock(e.seconds.unwrap_or(0.0))
@@ -420,6 +430,7 @@ pub fn layout(view: &View, state: &PartyState) -> PartyLayout {
             remaining,
             progress,
             playing,
+            paused: paused.is_some(),
         }
     });
     let next = idx.and_then(|i| {
@@ -474,7 +485,13 @@ impl PartyLayout {
                         format!("{} – ", n.artist)
                     },
                     n.title,
-                    if n.playing { "läuft" } else { "bereit" },
+                    if n.playing {
+                        "läuft"
+                    } else if n.paused {
+                        "pausiert"
+                    } else {
+                        "bereit"
+                    },
                     n.remaining,
                     n.progress * 100.0
                 );
@@ -541,11 +558,8 @@ mod tests {
     #[test]
     fn buttons_emit_the_expected_commands() {
         let mut s = PartyState::default();
-        assert_eq!(
-            s.apply(PartyCommand::PlayPause, false),
-            vec![Effect::StartOrNext]
-        );
-        assert_eq!(s.apply(PartyCommand::PlayPause, true), vec![Effect::Stop]);
+        assert_eq!(s.apply(PartyCommand::PlayPause, false), vec![Effect::Play]);
+        assert_eq!(s.apply(PartyCommand::PlayPause, true), vec![Effect::Pause]);
         assert_eq!(s.apply(PartyCommand::Next, true), vec![Effect::StartOrNext]);
         assert_eq!(
             s.apply(PartyCommand::VolumeDown, true),

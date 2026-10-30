@@ -225,6 +225,7 @@ fn now_card(ui: &mut egui::Ui, l: &PartyLayout, _height: f32) {
         ui.set_min_height(260.0);
         let (badge, col) = match &l.now {
             Some(n) if n.playing => ("JETZT", theme::ACCENT),
+            Some(n) if n.paused => ("PAUSE", theme::ON_AIR),
             _ => ("BEREIT", theme::CUE_CYAN),
         };
         ui.label(
