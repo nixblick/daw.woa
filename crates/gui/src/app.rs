@@ -165,6 +165,8 @@ struct Pending {
     track: TrackId,
     value: f64,
     at: Instant,
+    /// Die Spur nimmt gerade Automation auf: Der Wert geht in die Kurve, nicht ins Projekt.
+    keep: bool,
 }
 
 /// Ruhepause, nach der ein Controller-Wert ins Projekt geht.
@@ -175,6 +177,9 @@ struct AppSurface<'a> {
     state: &'a mut AppState,
     radio: Option<&'a mut RadioDesk>,
     gain_drag: &'a mut Option<(TrackId, f64)>,
+    pan_drag: &'a mut Option<(TrackId, f64)>,
+    /// Ziele, die gerade aufgenommen werden (Wiedergabe läuft, Kurve in Schreiben oder Latch).
+    recording: &'a [(TrackId, woa_model::AutoTarget)],
     pending: &'a mut Option<Pending>,
     touches: &'a mut Vec<(TrackId, woa_model::AutoTarget, f64)>,
     mode: Mode,
@@ -187,6 +192,10 @@ impl AppSurface<'_> {
     }
 
     fn commit(state: &mut AppState, gain_drag: &mut Option<(TrackId, f64)>, p: Pending) {
+        if p.keep {
+            // Aufnahme: weder Undo-Schritt noch fester Reglerstand; die Kurve entsteht beim Stopp.
+            return;
+        }
         match p.target {
             Target::TrackGain(_) => {
                 if gain_drag.is_some_and(|(t, _)| t == p.track) {
@@ -205,14 +214,24 @@ impl AppSurface<'_> {
         if let Some(old) = self.pending.take_if(|p| p.target != target) {
             Self::commit(self.state, self.gain_drag, old);
         }
+        let auto = match target {
+            Target::TrackGain(_) => Some(woa_model::AutoTarget::Gain),
+            Target::TrackPan(_) => Some(woa_model::AutoTarget::Pan),
+            _ => None,
+        };
+        let keep = auto.is_some_and(|a| self.recording.contains(&(track, a)));
         *self.pending = Some(Pending {
             target,
             track,
             value,
             at: Instant::now(),
+            keep,
         });
         if matches!(target, Target::TrackGain(_)) {
             *self.gain_drag = Some((track, value));
+        }
+        if keep && matches!(target, Target::TrackPan(_)) {
+            *self.pan_drag = Some((track, value));
         }
         match target {
             Target::TrackGain(_) => self
@@ -243,7 +262,14 @@ impl Surface for AppSurface<'_> {
                 };
                 Some(gain_to_norm(g))
             }
-            Target::TrackPan(i) => Some(pan_to_norm(self.track(i)?.pan)),
+            Target::TrackPan(i) => {
+                let t = self.track(i)?;
+                let p = match *self.pan_drag {
+                    Some((d, v)) if d == t.id => v,
+                    _ => t.pan,
+                };
+                Some(pan_to_norm(p))
+            }
             Target::Level(b) => Some(level_to_norm(self.radio.as_ref()?.level_db(b))),
             _ => None,
         }
@@ -431,10 +457,34 @@ impl WoaApp {
         {
             self.controls.mapper.learn(t);
         }
+        let playing = self.player.as_ref().is_some_and(Player::is_playing);
+        let recording: Vec<(TrackId, woa_model::AutoTarget)> = if playing {
+            self.state
+                .project()
+                .tracks
+                .iter()
+                .flat_map(|t| {
+                    t.automation
+                        .iter()
+                        .filter(|l| {
+                            l.mode != woa_model::AutoMode::Read
+                                && matches!(
+                                    l.target,
+                                    woa_model::AutoTarget::Gain | woa_model::AutoTarget::Pan
+                                )
+                        })
+                        .map(move |l| (t.id, l.target))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let mut surface = AppSurface {
             state: &mut self.state,
             radio: self.radio.as_mut(),
             gain_drag: &mut self.gain_drag,
+            pan_drag: &mut self.pan_drag,
+            recording: &recording,
             pending: &mut self.ctrl_pending,
             touches: &mut self.ctrl_touches,
             mode: self.config.mode,
@@ -474,6 +524,7 @@ impl WoaApp {
         use woa_model::{AutoMode, AutoTarget};
         let touches = std::mem::take(&mut self.ctrl_touches);
         let project = self.state.project();
+        let tempo = project.tempo_bpm;
         let armed: Vec<(
             TrackId,
             AutoTarget,
@@ -500,9 +551,17 @@ impl WoaApp {
                     })
             })
             .collect();
+        let dropped: Vec<TrackId> = self
+            .auto_rec
+            .keys()
+            .filter(|k| !armed.iter().any(|(t, x, ..)| (*t, *x) == **k))
+            .map(|k| k.0)
+            .collect();
         self.auto_rec
             .retain(|k, _| armed.iter().any(|(t, x, ..)| (*t, *x) == *k));
-        let tempo = project.tempo_bpm;
+        for t in dropped {
+            self.release_held(t);
+        }
         let playing = self.player.as_ref().is_some_and(Player::is_playing);
         let beat = self
             .player
@@ -527,12 +586,24 @@ impl WoaApp {
                     .entry((track, target))
                     .or_insert_with(|| crate::automation::AutoRecorder::new(mode, range))
                     .update(beat, touch, fader);
-            } else if let Some(rec) = self.auto_rec.remove(&(track, target))
-                && let Some(next) = rec.finish(&points)
-            {
-                self.state
-                    .set_automation(track, target, next, AutoMode::Read);
+            } else if let Some(rec) = self.auto_rec.remove(&(track, target)) {
+                self.release_held(track);
+                let _ = self.ctrl_pending.take_if(|p| p.keep && p.track == track);
+                if let Some(next) = rec.finish(&points) {
+                    self.state
+                        .set_automation(track, target, next, AutoMode::Read);
+                }
             }
+        }
+    }
+
+    /// Lässt die vom Controller gehaltenen Reglerwerte einer Spur los (Aufnahme beendet).
+    fn release_held(&mut self, track: TrackId) {
+        if self.gain_drag.is_some_and(|(t, _)| t == track) {
+            self.gain_drag = None;
+        }
+        if self.pan_drag.is_some_and(|(t, _)| t == track) {
+            self.pan_drag = None;
         }
     }
 
@@ -4223,4 +4294,76 @@ fn fade_gain(c: &woa_model::Clip, local: f64) -> f64 {
         g = g.min((c.length_beats - local) / c.fade_out_beats);
     }
     g.clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use woa_model::{AutoMode, AutoTarget};
+
+    fn setup(mode: AutoMode) -> (AppState, TrackId, tempfile::TempDir) {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = AppState::new(tmp.path().join("p.woa"), Instant::now());
+        let t = state.add_track().unwrap();
+        state.set_automation(t, AutoTarget::Gain, Vec::new(), mode);
+        (state, t, tmp)
+    }
+
+    /// Ein Fader-Ruck über die echte Oberfläche des Controllers samt Übernahme nach der Ruhepause.
+    fn ride(
+        state: &mut AppState,
+        t: TrackId,
+        recording: &[(TrackId, AutoTarget)],
+    ) -> Option<Pending> {
+        let (mut gain_drag, mut pan_drag, mut pending, mut touches) =
+            (None, None, None, Vec::new());
+        {
+            let mut surface = AppSurface {
+                state,
+                radio: None,
+                gain_drag: &mut gain_drag,
+                pan_drag: &mut pan_drag,
+                recording,
+                pending: &mut pending,
+                touches: &mut touches,
+                mode: Mode::Produzent,
+                mode_request: None,
+            };
+            surface.set(Target::TrackGain(0), 0.25);
+        }
+        assert_eq!(touches.len(), 1);
+        assert_eq!(touches[0].0, t);
+        let p = pending.take();
+        if let Some(p) = p {
+            AppSurface::commit(state, &mut gain_drag, p);
+        }
+        p
+    }
+
+    #[test]
+    fn a_ride_during_recording_leaves_gain_and_undo_alone() {
+        let (mut state, t, _tmp) = setup(AutoMode::Write);
+        let before = state.project().track(t).unwrap().gain_db;
+        let p = ride(&mut state, t, &[(t, AutoTarget::Gain)]).unwrap();
+        assert!(p.keep);
+        assert_eq!(state.project().track(t).unwrap().gain_db, before);
+        // Der letzte Schritt im Verlauf ist weiter das Setzen der Betriebsart.
+        state.undo();
+        assert!(
+            state
+                .project()
+                .track(t)
+                .unwrap()
+                .lane(&AutoTarget::Gain)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn without_recording_the_ride_sets_the_gain_as_before() {
+        let (mut state, t, _tmp) = setup(AutoMode::Read);
+        let p = ride(&mut state, t, &[]).unwrap();
+        assert!(!p.keep);
+        assert!(state.project().track(t).unwrap().gain_db < -20.0);
+    }
 }
