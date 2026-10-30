@@ -117,6 +117,35 @@ pub enum Command {
         /// New gain in dB.
         gain_db: f64,
     },
+    /// Time-stretches a clip (Paket 23): sets the new timeline length and the stretch factor
+    /// together, so the audio shown stays the same. The fades must fit the new length.
+    SetClipStretch {
+        /// Clip to change.
+        clip: ClipId,
+        /// New length on the timeline in beats.
+        length_beats: f64,
+        /// New stretch factor, within [`crate::STRETCH_RANGE`].
+        stretch: f64,
+        /// Fade-in in beats after the change.
+        fade_in_beats: f64,
+        /// Fade-out in beats after the change.
+        fade_out_beats: f64,
+    },
+    /// Sets the pitch shift of a clip in semitones (Paket 23), within [`crate::PITCH_RANGE`].
+    SetClipPitch {
+        /// Clip to change.
+        clip: ClipId,
+        /// New shift in semitones.
+        semitones: f64,
+    },
+    /// Makes a clip follow the project tempo (`bpm`: the tempo its audio belongs to) or
+    /// stops following (`None`) (Paket 23).
+    SetClipFollowTempo {
+        /// Clip to change.
+        clip: ClipId,
+        /// Tempo the audio's beats refer to, within [`crate::FOLLOW_TEMPO_RANGE`].
+        bpm: Option<f64>,
+    },
     /// Sets, replaces or removes (`folder: None`) the take folder `folder_id` of a track
     /// together with the clips that make up its comp (Paket 22). The clips of the old
     /// folder are removed first and `clips` are added in their place; their ids must be
@@ -271,6 +300,9 @@ impl Command {
             Command::EditClip { .. } => "Edit clip",
             Command::SetClipFadeCurves { .. } => "Set fade curves",
             Command::SetClipGain { .. } => "Set clip gain",
+            Command::SetClipStretch { .. } => "Stretch clip",
+            Command::SetClipPitch { .. } => "Set clip pitch",
+            Command::SetClipFollowTempo { .. } => "Set clip tempo follow",
             Command::SetTakeFolder { .. } => "Set take folder",
             Command::SetNotes { .. } => "Edit notes",
             Command::SetOutput { .. } => "Set output",
@@ -496,6 +528,49 @@ impl Command {
                 let c = &mut project.tracks[ti].clips[ci];
                 let old = std::mem::replace(&mut c.gain_db, gain_db);
                 Ok(Command::SetClipGain { clip, gain_db: old })
+            }
+            Command::SetClipStretch {
+                clip,
+                length_beats,
+                stretch,
+                fade_in_beats,
+                fade_out_beats,
+            } => {
+                check_range("stretch", stretch, crate::STRETCH_RANGE)?;
+                let (ti, ci) = locate_clip(project, clip)?;
+                let mut next = project.tracks[ti].clips[ci].clone();
+                next.length_beats = length_beats;
+                next.stretch = stretch;
+                next.fade_in_beats = fade_in_beats;
+                next.fade_out_beats = fade_out_beats;
+                check_clip(&next)?;
+                let old = std::mem::replace(&mut project.tracks[ti].clips[ci], next);
+                Ok(Command::SetClipStretch {
+                    clip,
+                    length_beats: old.length_beats,
+                    stretch: old.stretch,
+                    fade_in_beats: old.fade_in_beats,
+                    fade_out_beats: old.fade_out_beats,
+                })
+            }
+            Command::SetClipPitch { clip, semitones } => {
+                check_range("pitch_semitones", semitones, crate::PITCH_RANGE)?;
+                let (ti, ci) = locate_clip(project, clip)?;
+                let c = &mut project.tracks[ti].clips[ci];
+                let old = std::mem::replace(&mut c.pitch_semitones, semitones);
+                Ok(Command::SetClipPitch {
+                    clip,
+                    semitones: old,
+                })
+            }
+            Command::SetClipFollowTempo { clip, bpm } => {
+                if let Some(b) = bpm {
+                    check_range("follow_tempo_bpm", b, crate::FOLLOW_TEMPO_RANGE)?;
+                }
+                let (ti, ci) = locate_clip(project, clip)?;
+                let c = &mut project.tracks[ti].clips[ci];
+                let old = std::mem::replace(&mut c.follow_tempo_bpm, bpm);
+                Ok(Command::SetClipFollowTempo { clip, bpm: old })
             }
             Command::SetTakeFolder {
                 track,
@@ -921,6 +996,14 @@ fn check_start(v: f64) -> Result<()> {
     }
 }
 
+fn check_range(field: &'static str, value: f64, (lo, hi): (f64, f64)) -> Result<()> {
+    if value.is_finite() && (lo..=hi).contains(&value) {
+        Ok(())
+    } else {
+        Err(ModelError::InvalidValue { field, value })
+    }
+}
+
 fn check_clip(c: &Clip) -> Result<()> {
     check_start(c.start_beats)?;
     if !(c.length_beats.is_finite() && c.length_beats > 0.0) {
@@ -940,6 +1023,11 @@ fn check_clip(c: &Clip) -> Result<()> {
     }
     if let Some(m) = &c.midi {
         m.check()?;
+    }
+    check_range("stretch", c.stretch, crate::STRETCH_RANGE)?;
+    check_range("pitch_semitones", c.pitch_semitones, crate::PITCH_RANGE)?;
+    if let Some(b) = c.follow_tempo_bpm {
+        check_range("follow_tempo_bpm", b, crate::FOLLOW_TEMPO_RANGE)?;
     }
     let fades = c.fade_in_beats + c.fade_out_beats;
     if fades > c.length_beats + 1e-9 {

@@ -98,7 +98,34 @@ pub struct Clip {
     /// Clip gain in dB, applied before the track fader (Paket 21).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub gain_db: f64,
+    /// Time-stretch factor (Paket 23): `length_beats` shows `length / stretch` beats of the
+    /// audio, so 1.1 plays the same audio 10 % longer at the same pitch. 1.0 = unchanged.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub stretch: f64,
+    /// Pitch shift in semitones (Paket 23), independent of the length. 0 = unchanged.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub pitch_semitones: f64,
+    /// Follow the project tempo (Paket 23): the tempo (BPM) the audio's beats refer to. When
+    /// the project tempo differs, the audio is stretched so that it stays on the beat grid.
+    /// `None`: the audio keeps its own speed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow_tempo_bpm: Option<f64>,
 }
+
+fn one() -> f64 {
+    1.0
+}
+
+fn is_one(v: &f64) -> bool {
+    *v == 1.0
+}
+
+/// Range of the clip stretch factor.
+pub const STRETCH_RANGE: (f64, f64) = (0.25, 4.0);
+/// Range of the clip pitch shift in semitones.
+pub const PITCH_RANGE: (f64, f64) = (-24.0, 24.0);
+/// Range of a followed tempo in BPM.
+pub const FOLLOW_TEMPO_RANGE: (f64, f64) = (20.0, 400.0);
 
 /// Shape of a fade. `gain(t)` runs from 0 (start of the fade) to 1 (end); a fade-out
 /// uses `gain(1 - t)`.
@@ -172,7 +199,32 @@ impl Clip {
             fade_in_curve: FadeCurve::Linear,
             fade_out_curve: FadeCurve::Linear,
             gain_db: 0.0,
+            stretch: 1.0,
+            pitch_semitones: 0.0,
+            follow_tempo_bpm: None,
         }
+    }
+
+    /// Tempo (BPM) that maps the clip's source beats to seconds of the audio file.
+    pub fn source_bpm(&self, project_tempo: f64) -> f64 {
+        self.follow_tempo_bpm.unwrap_or(project_tempo)
+    }
+
+    /// Playing time of the audio divided by its original time: `stretch` times the tempo
+    /// change of a followed tempo. 1.0 = the audio plays at its own speed and pitch-shifting
+    /// aside needs no processing.
+    pub fn time_ratio(&self, project_tempo: f64) -> f64 {
+        self.stretch * self.source_bpm(project_tempo) / project_tempo
+    }
+
+    /// Whether the audio needs processing (stretch, tempo change or pitch).
+    pub fn is_processed(&self, project_tempo: f64) -> bool {
+        (self.time_ratio(project_tempo) - 1.0).abs() > 1e-9 || self.pitch_semitones != 0.0
+    }
+
+    /// Length of the audio shown by the clip, in source beats.
+    pub fn source_length_beats(&self) -> f64 {
+        self.length_beats / self.stretch
     }
 
     /// A MIDI clip holding `midi` (no audio).

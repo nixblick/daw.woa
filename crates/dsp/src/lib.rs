@@ -20,6 +20,7 @@ pub mod generate;
 pub mod instrument;
 pub mod sampler;
 pub mod soundfont;
+pub mod stretch;
 pub mod synth;
 
 /// Puffer für einen Process-Aufruf. `input` ist die Summe aller Eingänge

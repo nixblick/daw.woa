@@ -26,6 +26,9 @@ fn sample() -> Session {
             fade_in_curve: woa_model::FadeCurve::Linear,
             fade_out_curve: woa_model::FadeCurve::Linear,
             gain_db: 0.0,
+            stretch: 1.0,
+            pitch_semitones: 0.0,
+            follow_tempo_bpm: None,
         },
         index: None,
     })
@@ -214,6 +217,9 @@ fn build(s: &mut Session, (kind, a, b, x, flag): (u8, usize, usize, f64, bool)) 
                     fade_in_curve: woa_model::FadeCurve::Linear,
                     fade_out_curve: woa_model::FadeCurve::Linear,
                     gain_db: 0.0,
+                    stretch: 1.0,
+                    pitch_semitones: 0.0,
+                    follow_tempo_bpm: None,
                 },
                 index: Some(b),
             }

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.18.0 — 2026-10-30
+
+Paket 23 aus M6: Time-Stretch, Tonhöhe und die Abnahme „ganzer Song“.
+
+- **Dehnung (`woa_dsp::stretch`):** Eigene Zeitdehnung nach WSOLA, rein in Rust und ohne neue Abhängigkeit (die Alternative `signalsmith-stretch` hätte eine C++-Bindung und einen Windows-CI-Check gebraucht, das bleibt eine spätere Option). Die Tonhöhe bleibt beim Dehnen erhalten; die Ausgabe hat genau `round(Länge × Faktor)` Samples. Die Tonhöhe ändert sich über Dehnen plus kubische Neuabtastung. Das läuft nur beim Bau des Graphen im Control-Thread, ein kleiner Zwischenspeicher verhindert, dass jeder Graphbau alles neu rechnet; der Audio-Thread spielt das fertige Ergebnis wie jeden anderen Clip.
+- **Modell:** Jeder Clip hat `stretch` (Faktor, 0,25 bis 4), `pitch_semitones` (±24) und optional `follow_tempo_bpm`. Neue Befehle `SetClipStretch` (Länge, Faktor und Blenden zusammen), `SetClipPitch` und `SetClipFollowTempo`, je ein Undo-Schritt; ungültige Werte werden abgelehnt. Projektformat 3 wird nur geschrieben, wenn ein Clip eines dieser Felder nutzt; alle anderen Projekte bleiben Format 2. Der Versatz im Ton (`offset_beats`) zählt in Beats des Tons, die Länge in Beats der Zeitachse; Schneiden (Oberfläche und Agent) rechnet das um.
+- **Tempo folgen:** Ein Clip mit „Tempo folgen“ merkt sich das Tempo, zu dem sein Ton gehört. Ändert sich das Projekttempo, wird der Ton gedehnt statt abgeschnitten oder verschoben: er bleibt auf dem Raster, die Tonhöhe bleibt. Ohne den Haken verhält sich der Clip wie bisher.
+- **Oberfläche:** Alt gedrückt am linken oder rechten Clip-Rand ziehen dehnt die Zeit (ohne Alt kürzt der Rand wie bisher); die Wellenform zeigt die Dehnung schon beim Ziehen, das Raster rastet ein und der Faktor bleibt zwischen 0,25 und 4. In der Clip-Leiste eine neue Zeile „ZEIT“: Dehnung in Prozent, Tonhöhe in Halbtönen, Haken „Tempo folgen“; Doppelklick setzt zurück.
+- **Agent:** neue Werkzeuge `stretch_clip`, `set_clip_pitch` und `set_clip_follow_tempo`, beschrieben in `docs/agent.md`.
+- **Tests:** Sinus 440 Hz um 10 % gedehnt: Länge ±1 %, Frequenz bleibt (FFT-Spitze); Tonhöhe +2 Halbtöne: FFT-Spitze bei 493,9 Hz ±1 %, Länge gleich; Tempo 120 auf 100 mit Folgen: Länge und Frequenz stimmen; Undo bitgleich, 0 Halbtöne und gleiches Tempo lassen den Render bitgleich; Echtzeit unter `assert_no_alloc`. Modelltests (Undo, Redo, Fades, schlechte Werte, Format), Zustands- und Oberflächentest ohne Fenster und ohne Ton (Alt-Ziehen, ein Undo-Schritt, ohne Alt nur Kürzen), Agent über MCP. Dazu die M6-Abnahme als Test: ein ganzer Song mit geteilten, gedehnten, transponierten und überblendeten Clips und geändertem Tempo wird exportiert und wieder eingelesen (Länge, kein NaN, keine Knackser, Pegel, Frequenz).
+
 ## 0.17.0 — 2026-10-30
 
 Paket 22 aus M6: Aufnahme mit Latenzausgleich, Punch-in, Loop-Takes und Comping.

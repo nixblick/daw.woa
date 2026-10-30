@@ -50,6 +50,9 @@ Claude Desktop: derselbe Befehl als `command`/`args` in `claude_desktop_config.j
 | `split_clip` | `clip`, `at_beats` | Teilt am Punkt in zwei Clips, die wie das Original klingen; liefert die ID des rechten Teils |
 | `set_fade_curves` | `clip`, `fade_in`, `fade_out` (`linear`, `equal_power`, `s_curve`; je optional) | Form der Fades |
 | `set_clip_gain` | `clip`, `gain_db` (-96..24) | Clip-Gain vor dem Spurfader |
+| `stretch_clip` | `clip`, `length_beats` | Zeitdehnung auf neue Länge, Tonhöhe bleibt (Faktor 0,25 bis 4) |
+| `set_clip_pitch` | `clip`, `semitones` (-24..24) | Tonhöhe in Halbtönen, Länge bleibt |
+| `set_clip_follow_tempo` | `clip`, `follow` | Audio folgt Tempoänderungen des Projekts (Dehnung statt Verschiebung) |
 | `repeat_clip` | `clip`, `times` (1..256) | `times` Kopien direkt hintereinander (Loops), liefert die neuen IDs |
 | `remove_clip` | `clip` | Clip entfernen (die Datei bleibt im Ordner) |
 | `analyze` | `track` (optional) | rendert offline (48 kHz bis zum Ende des letzten Clips): integrierte LUFS, höchste momentane und kurzzeitige Lautheit, Sample-Peak und True Peak, Clipping, Länge, Spektrum (Spitze in Hz, Oktavbänder), Stereo (Korrelation, Balance, Seiten zu Mitte) und Hinweise; ohne `track` zusätzlich Peak je Audio-Spur, mit `track` nur diese Spur; ändert nichts |

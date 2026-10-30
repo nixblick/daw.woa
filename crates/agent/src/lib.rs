@@ -611,6 +611,35 @@ pub struct SetClipGainParams {
     pub gain_db: f64,
 }
 
+/// Parameters of `stretch_clip`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct StretchClipParams {
+    /// Clip id.
+    pub clip: u64,
+    /// New length of the clip on the timeline in beats; the audio is stretched to fit
+    /// (pitch stays). The resulting factor must be between 0.25 and 4.
+    pub length_beats: f64,
+}
+
+/// Parameters of `set_clip_pitch`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetClipPitchParams {
+    /// Clip id.
+    pub clip: u64,
+    /// Pitch shift in semitones (-24..24), independent of the length.
+    pub semitones: f64,
+}
+
+/// Parameters of `set_clip_follow_tempo`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetClipFollowTempoParams {
+    /// Clip id.
+    pub clip: u64,
+    /// `true`: the clip's audio belongs to the current project tempo and is stretched
+    /// whenever the tempo changes; `false`: the audio keeps its own speed.
+    pub follow: bool,
+}
+
 /// Parameters of `repeat_clip`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RepeatClipParams {
@@ -1272,6 +1301,9 @@ impl WoaAgent {
                     fade_in_curve: woa_model::FadeCurve::Linear,
                     fade_out_curve: woa_model::FadeCurve::Linear,
                     gain_db: 0.0,
+                    stretch: 1.0,
+                    pitch_semitones: 0.0,
+                    follow_tempo_bpm: None,
                 },
                 index: None,
             })?;
@@ -1571,7 +1603,7 @@ impl WoaAgent {
             part.id = id;
             part.start_beats = p.at_beats;
             part.length_beats = right;
-            part.offset_beats = c.offset_beats + left;
+            part.offset_beats = c.offset_beats + left / c.stretch;
             part.fade_in_beats = 0.0;
             part.fade_out_beats = c.fade_out_beats.min(right);
             s.apply(Command::EditClip {
@@ -1630,6 +1662,67 @@ impl WoaAgent {
             s.apply(Command::SetClipGain {
                 clip: ClipId(p.clip),
                 gain_db: p.gain_db,
+            })?;
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(
+        description = "Time-stretch a clip to a new length in beats; the pitch stays. The stretch factor (new length / length of the audio shown) must be 0.25..4. Fades are shortened to fit."
+    )]
+    async fn stretch_clip(
+        &self,
+        Parameters(p): Parameters<StretchClipParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            let c = Self::clip_of(s, p.clip)?;
+            if !(p.length_beats.is_finite() && p.length_beats > 0.0) {
+                return Err(ModelError::InvalidArgument(format!(
+                    "length_beats {} ungültig",
+                    p.length_beats
+                )));
+            }
+            let fade_in = c.fade_in_beats.min(p.length_beats);
+            let fade_out = c.fade_out_beats.min(p.length_beats - fade_in);
+            s.apply(Command::SetClipStretch {
+                clip: c.id,
+                length_beats: p.length_beats,
+                stretch: c.stretch * p.length_beats / c.length_beats,
+                fade_in_beats: fade_in,
+                fade_out_beats: fade_out,
+            })?;
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(
+        description = "Shift the pitch of a clip in semitones (-24..24) without changing its length."
+    )]
+    async fn set_clip_pitch(
+        &self,
+        Parameters(p): Parameters<SetClipPitchParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            s.apply(Command::SetClipPitch {
+                clip: ClipId(p.clip),
+                semitones: p.semitones,
+            })?;
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(
+        description = "Let a clip follow the project tempo: with follow=true the audio is time-stretched whenever the project tempo changes (pitch stays); follow=false lets it play at its own speed."
+    )]
+    async fn set_clip_follow_tempo(
+        &self,
+        Parameters(p): Parameters<SetClipFollowTempoParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            let tempo = s.project().tempo_bpm;
+            s.apply(Command::SetClipFollowTempo {
+                clip: ClipId(p.clip),
+                bpm: p.follow.then_some(tempo),
             })?;
             Ok(serde_json::json!({ "ok": true }))
         })

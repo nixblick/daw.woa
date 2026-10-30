@@ -107,15 +107,79 @@ pub fn apply_crossfades(clips: &mut [PlacedClip]) {
     }
 }
 
+/// Ein bereits gedehntes Stück im Zwischenspeicher: Quelle (schwach), Ausschnitt, Verhältnis
+/// und Halbtöne als Schlüssel.
+struct StretchEntry {
+    file: std::sync::Weak<[f32]>,
+    from: usize,
+    until: usize,
+    ratio: u64,
+    semitones: u64,
+    result: Arc<[f32]>,
+}
+
+/// Kleiner Zwischenspeicher, damit ein erneuter Graphbau (jede Änderung am Projekt) nicht jedes
+/// gedehnte Stück neu rechnet. Nur im Control-Thread benutzt.
+static STRETCH_CACHE: std::sync::Mutex<Vec<StretchEntry>> = std::sync::Mutex::new(Vec::new());
+const STRETCH_CACHE_LEN: usize = 6;
+
+/// Dehnt und verschiebt die Tonhöhe von `file[from..until]` (Control-Thread, rechnet
+/// gegebenenfalls Sekunden lang bei sehr langem Audio, daher mit Zwischenspeicher).
+fn processed_samples(
+    file: &Arc<[f32]>,
+    from: usize,
+    until: usize,
+    ratio: f64,
+    semitones: f64,
+) -> Arc<[f32]> {
+    let (rb, sb) = (ratio.to_bits(), semitones.to_bits());
+    if let Ok(mut cache) = STRETCH_CACHE.lock() {
+        cache.retain(|e| e.file.strong_count() > 0);
+        if let Some(e) = cache.iter().find(|e| {
+            e.from == from
+                && e.until == until
+                && e.ratio == rb
+                && e.semitones == sb
+                && e.file.upgrade().is_some_and(|f| Arc::ptr_eq(&f, file))
+        }) {
+            return Arc::clone(&e.result);
+        }
+    }
+    let result: Arc<[f32]> =
+        woa_dsp::stretch::stretch_and_pitch(&file[from..until], ratio, semitones).into();
+    if let Ok(mut cache) = STRETCH_CACHE.lock() {
+        if cache.len() >= STRETCH_CACHE_LEN {
+            cache.remove(0);
+        }
+        cache.push(StretchEntry {
+            file: Arc::downgrade(file),
+            from,
+            until,
+            ratio: rb,
+            semitones: sb,
+            result: Arc::clone(&result),
+        });
+    }
+    result
+}
+
 /// Setzt einen Modell-Clip auf die Zeitachse: Versatz und Länge schneiden die Samples zu,
-/// Fades werden in Samples umgerechnet.
+/// Fades werden in Samples umgerechnet. Hat der Clip Dehnung, Tonhöhe oder folgt er dem
+/// Tempo (Paket 23), wird das Stück hier fertig gerechnet; der Audio-Thread spielt es dann
+/// wie jedes andere.
 pub fn place_clip(clip: &Clip, file: &Arc<[f32]>, tempo_bpm: f64, rate: f32) -> PlacedClip {
     let to = |b: f64| beats_to_samples(b.max(0.0), tempo_bpm, rate);
+    // Quell-Beats beziehen sich auf das Tempo der Datei (bei Tempo-Folgen das gemerkte).
+    let src = |b: f64| beats_to_samples(b.max(0.0), clip.source_bpm(tempo_bpm), rate);
     // Beide Grenzen einzeln gerundet: zwei Teile eines geteilten Clips schließen so ohne
     // Lücke und ohne Doppelung an derselben Dateistelle an.
-    let from = (to(clip.offset_beats) as usize).min(file.len());
-    let until = (to(clip.offset_beats + clip.length_beats) as usize).clamp(from, file.len());
-    let samples: Arc<[f32]> = if from == 0 && until == file.len() {
+    let from = (src(clip.offset_beats) as usize).min(file.len());
+    let until =
+        (src(clip.offset_beats + clip.source_length_beats()) as usize).clamp(from, file.len());
+    let samples: Arc<[f32]> = if clip.is_processed(tempo_bpm) {
+        let ratio = clip.time_ratio(tempo_bpm);
+        processed_samples(file, from, until, ratio, clip.pitch_semitones)
+    } else if from == 0 && until == file.len() {
         Arc::clone(file)
     } else {
         file[from..until].into()

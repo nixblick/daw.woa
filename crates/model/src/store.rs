@@ -40,7 +40,12 @@ pub fn required_version(project: &Project) -> u32 {
             || !t.take_folders.is_empty()
             || t.inserts.iter().any(|i| i.sidechain.is_some())
             || t.clips.iter().any(|c| {
-                c.gain_db != 0.0 || !c.fade_in_curve.is_linear() || !c.fade_out_curve.is_linear()
+                c.gain_db != 0.0
+                    || !c.fade_in_curve.is_linear()
+                    || !c.fade_out_curve.is_linear()
+                    || c.stretch != 1.0
+                    || c.pitch_semitones != 0.0
+                    || c.follow_tempo_bpm.is_some()
             })
     });
     if v3 { 3 } else { 2 }
