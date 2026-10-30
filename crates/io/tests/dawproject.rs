@@ -362,7 +362,11 @@ fn export_zip_has_the_expected_entries() {
     )
     .expect("export");
     let z = zip::ZipArchive::new(Cursor::new(buf.into_inner())).expect("zip");
-    let names: Vec<_> = z.file_names().map(str::to_owned).collect();
+    let names: Vec<_> = z
+        .file_names()
+        .filter_map(Result::ok)
+        .map(std::borrow::Cow::into_owned)
+        .collect();
     assert!(names.contains(&"project.xml".to_owned()));
     assert!(names.contains(&"metadata.xml".to_owned()));
     assert!(names.iter().any(|n| n.starts_with("audio/")));

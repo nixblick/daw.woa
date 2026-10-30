@@ -11,7 +11,7 @@ Paket 27 aus M7: DAWproject-Import und -Export.
 - **Konventionen nach den Referenztests von Bitwig:** Lautstärke linear, Pan normalisiert (0,5 = Mitte), Master als Track mit `Channel role="master"`, Audio über `Warps` mit Inhalt in Sekunden und Zeit in Beats, MIDI-Controller als `Points` mit `Target expression="channelController"`.
 - **Oberfläche:** Menü Datei: „Als DAWproject exportieren …“ und „DAWproject öffnen …“ (legt `<Name>.woa` neben der Datei an und öffnet es). Rate und Länge der Audiodateien kommen aus dem WAV-Kopf, sonst vom Decoder.
 - **Schema-Datei:** `crates/io/tests/schema/Project.xsd` stammt aus dem DAWproject-Repository (MIT, Copyright 2020 Bitwig), die Lizenz liegt daneben.
-- **Abhängigkeiten:** `zip` 8.6 (nur Deflate) und `quick-xml` 0.42, beide MIT; `tempfile` jetzt auch für das atomare Schreiben. `zip` 9 wurde bewusst nicht genommen (rund zehn Korrekturversionen in drei Wochen).
+- **Abhängigkeiten:** `zip` 9.0 (nur Deflate) und `quick-xml` 0.42, beide MIT; `tempfile` jetzt auch für das atomare Schreiben. `zip` 8.6 fiel durch `cargo deny` (RUSTSEC-2026-0367 bis 0369, alle zu `extract()`, das wir nicht benutzen; behoben ab 9.0).
 - **Tests:** Rundreise (Spuren, Mixer, Bus, Send, Effekte, Automation, MIDI, Clip-Werte), gedehnter Clip mit „Tempo folgen“, `project.xml` gegen das offizielle Schema geprüft (`xmllint`, übersprungen wo es fehlt), Schnappschuss des XML, handgebaute fremde Datei nach den Konventionen von Bitwig (mit fremdem Plugin im Bericht), feindliche Dateien (kein ZIP, ohne `project.xml`, zu tief, falsche Wurzel, Pfad-Trick im Audiopfad). Offizielle Beispieldateien: im DAWproject-Repository gibt es keine `.dawproject`-Dateien, nicht gefunden.
 
 ## 0.21.0 — 2026-10-30

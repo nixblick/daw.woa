@@ -902,7 +902,8 @@ pub fn import(file: &Path, dir: &Path) -> Result<(Project, Report), DawError> {
     }
     let names: HashMap<String, String> = archive
         .file_names()
-        .map(|n| (n.replace('\\', "/"), n.to_owned()))
+        .filter_map(Result::ok)
+        .map(|n| (n.replace('\\', "/"), n.into_owned()))
         .collect();
     let mut xml_bytes = Vec::new();
     {
