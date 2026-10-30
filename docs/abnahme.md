@@ -4,54 +4,6 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Paket 10: Dauertest (0.5.0, offen)
-
-Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo build --release -p woa-headless --features device`
-
-1. Lokaler Icecast: `tests/broadcast/icecast.sh start` (zieht beim ersten Mal das Image `libretime/icecast:2.4.4`). Es meldet „Icecast läuft“ und den Pfad der Kennwortdatei.
-2. Kurzprobe, 2 Minuten: `target/release/woa-headless broadcast-test radio.json --seconds 120 --pass-file $XDG_RUNTIME_DIR/woa-icecast/source.pass --emergency <notfall-ordner> --report /tmp/kurz.json`. Am Ende „bestanden“, „Notfall nach … ms“ unter 2500.
-3. Dauertest über Nacht: dasselbe mit `--hours 8 --report ~/woa-dauertest.json`. Morgens „bestanden“, alle Zähler 0.
-4. Während des Laufs optional `http://127.0.0.1:8000/` im Browser: Mount `/woa-test` ist da (Hören nicht nötig).
-5. `tests/broadcast/icecast.sh stop`.
-6. Echte Testsendung auf stream.wironair.de nimmt André selbst ab (Sendeprozess aus der Oberfläche wie bei Paket 8).
-
-Selbst geprüft von Claude (nur offline, nichts hörbar, kein Container gestartet, nichts gegen lfs001 oder wironair.de):
-
-- `apps/woa-headless/tests/broadcast.rs`: 14 s gegen einen Mini-Icecast im Test, Oberfläche nach 5 s hart beendet, Notfall übernimmt, Rückgabe an den Sendemix, keine Unterläufe, kein Neuverbinden, über 150 kB MP3 angekommen; falsches Kennwort gibt Exit 5 ohne Kennwort in der Ausgabe.
-- Nicht selbst geprüft: echter Icecast im Container (Image nicht gezogen), der 8-Stunden-Lauf, die Sendung auf wironair.de.
-
-Offene Frage an André: Ist `libretime/icecast:2.4.4` als Test-Image recht, oder lieber ein anderes (oder Icecast aus dem Paket)?
-
-## Paket 9: Sendebus-Processing (0.4.0, offen)
-
-Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
-
-1. Radio-Modus: Unter „Crossfade“ und „Ducking“ stehen die Haken „Sendebus“ und „Mikro-Kette“, beide an.
-2. Playlist starten. Daneben steht z. B. „−16.2 LUFS · Regelung +1.5 dB · Begrenzer −0.8 dB“. Nach etwa 10 s liegt die Lautheit um −16.
-3. Einen sehr leisen und einen sehr lauten Titel nacheinander spielen: Beide klingen etwa gleich laut, nichts verzerrt hörbar.
-4. Cart über laute Musik: Der Begrenzer-Wert steigt kurz, die Sendung übersteuert nicht.
-5. Mikro auf (M) und sprechen: „Gate offen“; schweigen: nach kurzer Zeit „Gate zu“, das Grundrauschen ist leiser. Die Stimme klingt gleichmäßiger als ohne Kette.
-6. Haken „Sendebus“ aus: Die Anzeige verschwindet, der Ton ist wie in 0.3.4. Wieder an.
-7. Optional „Mitschnitt“ an, eine Minute senden, dann `ffmpeg -i ~/.local/share/woa/mitschnitte/<datei>.wav -af ebur128 -f null - 2>&1 | tail -12`: I um −16 LUFS, Peak unter −1 dBFS.
-
-Selbst geprüft von Claude (nur offline, nichts hörbar abgespielt, kein Mikro, kein Senden):
-
-- Tests in `crates/radio/src/dynamics.rs` und `crates/radio/tests/rt.rs`, jeder Process-Aufruf unter `assert_no_alloc`: Limiter nie über −1 dBFS, Regelung auf −16 ± 1 LUFS bei leisem und lautem Material, steht in Stille, höchstens 3 dB/s; Gate, Hochpass, Mikro-Kompressor; Sendemix mit lautem Titel, Cart und Mikro unter −1 dBFS und nach 10 s bei −16 ± 2 LUFS.
-- `radio-render` (drei Titel, sehr unterschiedliche Pegel): −16 ± 1 LUFS, Spitze unter −1 dBFS, Länge unverändert.
-- Nicht selbst geprüft: Klang am Gerät, echte Stimme durch die Mikro-Kette, die Anzeige im Fenster (nur gebaut).
-
-Noch nicht drin: De-Esser (M5), einstellbare Werte der Kette (feste Vorgaben), Limiter mit Vorausschau / True Peak.
-
-## Nachtrag #43: Wellenform während der Aufnahme (0.3.5, offen)
-
-Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
-
-1. Spur wählen, Quelle z. B. „Programm: firefox“ mit laufender Musik, „Aufnahme“ drücken: Ab dem Abspielkopf wächst ein roter Clip „Aufnahme läuft“, darin die Wellenform. Der Pegel oben läuft mit.
-2. Laut aufnehmen, bis es übersteuert: Neben dem Pegel steht rot „ÜBERSTEUERT“.
-3. Stopp: Der rote Clip wird zum normalen Clip mit derselben Wellenform an derselben Stelle.
-
-Selbst geprüft von Claude: Workspace-Tests grün, darunter die Peak-Sammlung und `assert_no_alloc`. Kein Bildschirmfoto: Ohne Mikrofon oder hörbare Quelle lässt sich keine Aufnahme starten (Andrés Regel), eine Testquelle gibt es nicht.
-
 ## Paket 6: Agent (0.1.16, offen)
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo build --release -p woa-headless -p woa`
@@ -76,22 +28,15 @@ Abnahmekriterium (#1): Projekt-Roundtrip, Feedback erzeugt GitHub-Issue, Logs ko
 
 Selbst geprüft von Claude: Workspace-Tests grün, darunter Opt-in gegen lokalen Fake-Server (`crates/gui/tests/telemetry_optin.rs`: ohne Ja geht nichts raus, mit Ja kommt der Code an und der Puffer wird geleert) und die Roundtrip-Tests (`apps/woa-headless/tests/cli.rs`, `crates/model/tests/model.rs`).
 
-## Paket 5: Quellen (0.1.11, offen)
-
-Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
-
-1. Im Browser oder Player Musik laufen lassen. Bei Spur 1 unten in der Liste „Programm: firefox“ (oder den Player) wählen. Roter Punkt an, Aufnahme, nach ein paar Sekunden stoppen: Die Musik liegt auf Spur 1.
-2. Bei Spur 2 „Mikrofon“ lassen und den roten Punkt ebenfalls an: Bei der Aufnahme laufen beide Pegel, danach hat jede Spur ihren eigenen Clip ab derselben Stelle.
-3. In der Liste „Systemklang“ wählen: Damit wird alles aufgenommen, was gerade zu hören ist.
-4. Bei einem Eingang (Liste, „Eingang: …“) den Haken „hören“ setzen, mit Kopfhörer aufnehmen: Du hörst dich selbst.
-5. „Stopp am Ende“ (neben ▶, orange = an): Die Wiedergabe hält am Ende des letzten Clips an. Noch einmal ▶ startet von vorn.
-6. (#44, 0.3.6) Erst die Quellenliste einer Spur öffnen, dann in Chromium Musik starten und die Liste erneut öffnen: Dort steht „Programm: Chromium“ (bei sprechendem Titel mit „– Titel“), WOA selbst steht nicht drin. Musik stoppen, Liste erneut öffnen: Ohne Programm erscheint unten grau „Programm spielt gerade keinen Ton?“.
-
-Selbst geprüft von Claude: Quellenliste gegen PipeWire (Eingang, Systemklang, Programme). Ein Testton mit Lautstärke 0,05 kam über Systemklang und über „Programm“ jeweils mit Spitze 0,050 an (`woa-headless sources` und `capture`). Workspace-Tests grün.
-
-Noch nicht drin: Windows (WASAPI-Loopback), Quellenwahl im Projekt speichern.
-
 ## Abgenommen
+
+- Paket 10 Dauertest (0.5.0): 30.10.2026, André „2 abgenommen“ (Sammelabnahme Pakete 5, 9, 10 und Nachtrag #43).
+
+- Paket 9 Sendebus-Processing (0.4.0): 30.10.2026, Sammelabnahme.
+
+- Nachtrag #43 Wellenform während der Aufnahme (0.3.5): 30.10.2026, Sammelabnahme.
+
+- Paket 5 Quellen (0.1.11, mit #44 in 0.3.6): 30.10.2026, Sammelabnahme.
 
 - Paket 8 Sendeprozess (0.3.0, mit 0.3.4): 29.10.2026, André „stream geht, abnahme paket 8 fertig!“
 

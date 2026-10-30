@@ -167,7 +167,7 @@ enum Cmd {
         #[arg(long)]
         mic_at: Option<f64>,
         /// Puffergröße der Ausgabe in Frames (0 = Treiber), Vorgabe wie in der App.
-        #[arg(long, default_value_t = woa_engine::device::RADIO_BUFFER_FRAMES)]
+        #[arg(long, default_value_t = woa_engine::RADIO_BUFFER_FRAMES)]
         buffer: u32,
     },
     /// Schickt ein Test-Ereignis an den Telemetrie-Endpunkt (/api/logs/ingest).

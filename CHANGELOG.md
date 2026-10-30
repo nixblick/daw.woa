@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1 — 2026-10-30
+
+- `cargo build -p woa-headless` ohne Feature `device` baut wieder. `RADIO_BUFFER_FRAMES` stand im Modul `device`, das ohne Feature fehlt; die Konstante liegt jetzt im Wurzelmodul von `woa-engine`, `device` reicht sie weiter. Gefunden beim Bau von Paket 10.
+
 ## 0.5.0 — 2026-10-29
 
 Paket 10 aus M3 (#4): Dauertest der Sendung.
