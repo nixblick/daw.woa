@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1 — 2026-10-30
+
+- Neues Studio- und Sende-Design (von Gemini gebaut, von André übernommen: „gefällt mir ganz gut“): Tiefenstaffelung und Hardware-Rahmen, Status-Pillen, 20-Segment-LED-Meter; Radio-Ansicht in Modulen (Sende-Deck mit Master-Uhr, Playlist mit LUFS, Cart-Wall im Drumpad-Stil, Processing-Rack).
+- Studio: unteres Dock mit Mischpult (Kanalzüge mit M/S/Aufnahme/Löschen, LED-Meter, Gain, Pan) und angedockter Piano-Roll (lösbar als Fenster); Solo und Pan im Spurkopf, Kontextmenü (Umbenennen, leerer MIDI-Clip, Audio importieren, Spur löschen); Tempo im LCD editierbar, Loop mit Klammer im Lineal; Audio importieren, leere MIDI-Clips per Doppelklick.
+- MIDI-Learn (Paket 14) bleibt an Start, Stopp, Mikro, Pegeln und Stumm erhalten.
+
 ## 0.9.0 — 2026-10-30
 
 Paket 14 aus M4 (#5): Controller und MIDI-Learn.
