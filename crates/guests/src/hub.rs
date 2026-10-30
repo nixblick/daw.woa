@@ -20,6 +20,12 @@ pub struct NetGuest {
     pub ret: ReturnRx,
 }
 
+impl std::fmt::Debug for NetGuest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NetGuest(slot {})", self.slot)
+    }
+}
+
 /// Ein Gast in der Anzeige.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct GuestView {
@@ -132,11 +138,7 @@ impl GuestHub {
         self.add_named(label, None)
     }
 
-    fn add_named(
-        &mut self,
-        label: &str,
-        name: Option<&str>,
-    ) -> Result<(usize, GuestFeed), String> {
+    fn add_named(&mut self, label: &str, name: Option<&str>) -> Result<(usize, GuestFeed), String> {
         let (slot, feed) = self.claim()?;
         let name = match name.map(str::trim).filter(|n| !n.is_empty()) {
             Some(n) => n.chars().take(24).collect::<String>(),

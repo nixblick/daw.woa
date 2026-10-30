@@ -16,8 +16,11 @@
 //!   am selben [`jitter::GuestFeed`].
 
 pub mod bank;
+pub mod codec;
 pub mod hub;
 pub mod jitter;
+pub mod net;
+pub mod resample;
 pub mod ret;
 pub mod source;
 
