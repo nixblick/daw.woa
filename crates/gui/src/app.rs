@@ -6,11 +6,19 @@ use std::time::Instant;
 use eframe::egui;
 use woa_engine::clip::PEAK_BLOCK;
 use woa_engine::record::next_take_path;
-use woa_model::{ClipId, MAX_GAIN_DB, MIN_GAIN_DB, TrackId};
+use woa_model::{ClipId, MAX_GAIN_DB, MAX_TEMPO_BPM, MIN_GAIN_DB, MIN_TEMPO_BPM, TrackId};
 
 use crate::player::Player;
 use crate::sources::{self, SourceEntry, Take};
 use crate::theme;
+
+/// Aktiver Reiter im angedockten unteren Studio-Panel (Ableton-Detailansicht).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StudioDockTab {
+    Closed,
+    Mixer,
+    PianoRoll,
+}
 
 /// Pixel je Beat in der Zeitleiste.
 /// Start-Zoom der Zeitleiste in Pixel je Beat.
@@ -43,6 +51,20 @@ pub struct WoaApp {
     rename: Option<(TrackId, String)>,
     /// Gain being dragged (committed as one undo step on release).
     gain_drag: Option<(TrackId, f64)>,
+    /// Stereo-Panorama beim Ziehen (wird beim Loslassen als ein Undo-Schritt übernommen).
+    pan_drag: Option<(TrackId, f64)>,
+    /// Tempo beim Ziehen (wird beim Loslassen als ein Undo-Schritt übernommen).
+    tempo_drag: Option<f64>,
+    /// Loop-Wiedergabe aktiv?
+    loop_enabled: bool,
+    /// Loop-Anfang in Takten (ab 1).
+    loop_start_bar: u32,
+    /// Loop-Ende in Takten (exklusiv, > `loop_start_bar`).
+    loop_end_bar: u32,
+    /// Unteres Studio-Dock (Mixer-Konsole / Piano-Roll).
+    studio_dock: StudioDockTab,
+    /// Piano-Roll als schwebendes Fenster statt im unteren Dock?
+    piano_roll_floating: bool,
     /// Last title sent to the viewport.
     last_title: String,
     /// Laufende Aufnahmen, je Zielspur eine (leer = keine Aufnahme).
@@ -314,6 +336,13 @@ impl WoaApp {
             feedback: FeedbackDialog::default(),
             rename: None,
             gain_drag: None,
+            pan_drag: None,
+            tempo_drag: None,
+            loop_enabled: false,
+            loop_start_bar: 1,
+            loop_end_bar: 5,
+            studio_dock: StudioDockTab::Mixer,
+            piano_roll_floating: std::env::var_os("WOA_PIANOROLL").is_some(),
             last_title: String::new(),
             data_dir: woa_radio::data_dir(),
             radio: None,
@@ -944,9 +973,49 @@ impl WoaApp {
                     {
                         self.stop_at_end = !self.stop_at_end;
                     }
+
+                    let loop_btn = egui::Button::new(
+                        egui::RichText::new("🔁 Loop")
+                            .small()
+                            .strong()
+                            .color(if self.loop_enabled {
+                                theme::WELL
+                            } else {
+                                theme::DIM
+                            }),
+                    )
+                    .min_size(egui::vec2(0.0, 32.0))
+                    .fill(if self.loop_enabled {
+                        theme::CUE_CYAN
+                    } else {
+                        theme::SURFACE
+                    });
+                    if ui
+                        .add(loop_btn)
+                        .on_hover_text("Wiedergabe im gewählten Taktbereich im Kreis abspielen")
+                        .clicked()
+                    {
+                        self.loop_enabled = !self.loop_enabled;
+                    }
+                    if self.loop_enabled {
+                        ui.add(
+                            egui::DragValue::new(&mut self.loop_start_bar)
+                                .range(1..=self.loop_end_bar.saturating_sub(1).max(1))
+                                .speed(0.2)
+                                .prefix("Takt "),
+                        )
+                        .on_hover_text("Loop-Start (Takt)");
+                        ui.add(
+                            egui::DragValue::new(&mut self.loop_end_bar)
+                                .range((self.loop_start_bar + 1)..=512)
+                                .speed(0.2)
+                                .prefix("– "),
+                        )
+                        .on_hover_text("Loop-Ende (Takt)");
+                    }
                 });
 
-            // 2. Tiefschwarzes LCD-Zeit- & Takt-Display
+            // 2. Tiefschwarzes LCD-Zeit-, Takt- & Tempo-Display
             let secs = self.player.as_ref().map_or(0.0, Player::position_seconds);
             let tempo = self.state.project().tempo_bpm;
             let beats = self
@@ -961,7 +1030,7 @@ impl WoaApp {
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 0.0;
+                            ui.spacing_mut().item_spacing.y = 1.0;
                             ui.label(
                                 egui::RichText::new(format!(
                                     "{:02}:{:04.1}",
@@ -970,19 +1039,46 @@ impl WoaApp {
                                 ))
                                 .monospace()
                                 .strong()
-                                .size(19.0)
+                                .size(18.5)
                                 .color(theme::ACCENT),
                             );
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "Takt {}.{}  ·  {tempo:.0} BPM",
-                                    (beats / 4.0) as u64 + 1,
-                                    (beats % 4.0) as u64 + 1
-                                ))
-                                .small()
-                                .monospace()
-                                .color(theme::DIM),
-                            );
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 5.0;
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "Takt {}.{}  ·",
+                                        (beats / 4.0) as u64 + 1,
+                                        (beats % 4.0) as u64 + 1
+                                    ))
+                                    .small()
+                                    .monospace()
+                                    .color(theme::DIM),
+                                );
+                                let mut bpm = self.tempo_drag.unwrap_or(tempo);
+                                let r = ui
+                                    .add(
+                                        egui::DragValue::new(&mut bpm)
+                                            .range(MIN_TEMPO_BPM..=MAX_TEMPO_BPM)
+                                            .speed(0.5)
+                                            .fixed_decimals(0)
+                                            .suffix(" BPM"),
+                                    )
+                                    .on_hover_text(
+                                        "Projekttempo in Schlägen pro Minute (Doppelklick: 120 BPM)",
+                                    );
+                                if r.double_clicked() {
+                                    self.tempo_drag = None;
+                                    self.state.set_tempo(120.0);
+                                } else {
+                                    if r.changed() {
+                                        self.tempo_drag = Some(bpm);
+                                    }
+                                    if r.drag_stopped() || (r.changed() && !r.dragged()) {
+                                        self.tempo_drag = None;
+                                        self.state.set_tempo(bpm);
+                                    }
+                                }
+                            });
                         });
                     });
                 });
@@ -1122,10 +1218,16 @@ impl WoaApp {
         self.selected_clip = Some(clip);
         tracing::info!(clip = clip.0, "piano roll opened");
         self.piano_roll = Some(crate::pianoroll::PianoRoll::new(clip));
+        if !self.piano_roll_floating {
+            self.studio_dock = StudioDockTab::PianoRoll;
+        }
     }
 
     /// Draws the open piano roll; closes it when its window or clip is gone.
     fn piano_roll_window(&mut self, ctx: &egui::Context) {
+        if !self.piano_roll_floating {
+            return;
+        }
         let Some(pr) = self.piano_roll.as_mut() else {
             return;
         };
@@ -1351,8 +1453,17 @@ impl WoaApp {
                     self.export();
                 }
                 ui.separator();
+                if ui
+                    .button("Audio-Datei importieren (WAV, FLAC, MP3, OGG) …")
+                    .clicked()
+                {
+                    self.import_audio();
+                }
                 if ui.button("MIDI importieren (.mid) …").clicked() {
                     self.import_midi();
+                }
+                if ui.button("Leeren MIDI-Clip anlegen (4 Takte)").clicked() {
+                    self.create_midi_clip_at_playhead(self.selected_track);
                 }
                 if ui.button("MIDI-Clip exportieren (.mid) …").clicked() {
                     self.export_midi();
@@ -1404,7 +1515,7 @@ impl WoaApp {
             .project()
             .tracks
             .iter()
-            .map(|t| (t.id, t.name.clone(), t.gain_db, t.mute))
+            .map(|t| (t.id, t.name.clone(), t.gain_db, t.pan, t.mute, t.solo))
             .collect();
         egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 5.0;
@@ -1416,15 +1527,15 @@ impl WoaApp {
                 ui.painter().text(
                     corner_rect.left_center() + egui::vec2(10.0, 0.0),
                     egui::Align2::LEFT_CENTER,
-                    format!("SPUREN ({})  ·  MIXER", tracks.len()),
+                    format!("SPUREN ({})  ·  KANALZUG", tracks.len()),
                     egui::FontId::proportional(11.0),
                     theme::DIM,
                 );
                 self.ruler(ui);
             });
-            for (i, (id, name, gain, mute)) in tracks.into_iter().enumerate() {
+            for (i, (id, name, gain, pan, mute, solo)) in tracks.into_iter().enumerate() {
                 ui.horizontal(|ui| {
-                    self.track_header(ui, i, id, &name, gain, mute);
+                    self.track_header(ui, i, id, &name, gain, pan, mute, solo);
                     self.timeline(ui, id);
                 });
             }
@@ -1432,7 +1543,7 @@ impl WoaApp {
             ui.horizontal(|ui| {
                 if ui
                     .add_sized(
-                        [150.0, 32.0],
+                        [136.0, 32.0],
                         egui::Button::new(
                             egui::RichText::new("+  Audio-Spur")
                                 .strong()
@@ -1446,7 +1557,7 @@ impl WoaApp {
                 }
                 if ui
                     .add_sized(
-                        [106.0, 32.0],
+                        [116.0, 32.0],
                         egui::Button::new(
                             egui::RichText::new("+  MIDI-Spur")
                                 .strong()
@@ -1462,6 +1573,40 @@ impl WoaApp {
                     .clicked()
                 {
                     self.state.add_midi_track();
+                }
+                if ui
+                    .add_sized(
+                        [154.0, 32.0],
+                        egui::Button::new(
+                            egui::RichText::new("📂 Audio importieren …")
+                                .small()
+                                .strong()
+                                .color(theme::TEXT_BRIGHT),
+                        )
+                        .fill(theme::WELL),
+                    )
+                    .on_hover_text("WAV, FLAC, MP3, OGG oder M4A als Clip am Abspielkopf einfügen")
+                    .clicked()
+                {
+                    self.import_audio();
+                }
+                if ui
+                    .add_sized(
+                        [146.0, 32.0],
+                        egui::Button::new(
+                            egui::RichText::new("🎹 + MIDI-Clip (4 T.)")
+                                .small()
+                                .strong()
+                                .color(theme::CUE_CYAN),
+                        )
+                        .fill(theme::WELL),
+                    )
+                    .on_hover_text(
+                        "Leeren 4-Takt-MIDI-Clip anlegen und direkt in der Piano-Roll öffnen (oder Doppelklick in eine MIDI-Spur)",
+                    )
+                    .clicked()
+                {
+                    self.create_midi_clip_at_playhead(self.selected_track);
                 }
             });
             if self.state.project().tracks.is_empty() {
@@ -1524,6 +1669,29 @@ impl WoaApp {
             }
         }
         let tempo = self.state.project().tempo_bpm;
+        if self.loop_enabled && self.loop_end_bar > self.loop_start_bar {
+            let l0 = ((self.loop_start_bar - 1) * 4) as f32 * px;
+            let l1 = ((self.loop_end_bar - 1) * 4) as f32 * px;
+            let loop_rect = egui::Rect::from_x_y_ranges(
+                (rect.left() + l0)..=(rect.left() + l1),
+                rect.top()..=rect.bottom(),
+            );
+            painter.rect_filled(
+                loop_rect,
+                2.0,
+                egui::Color32::from_rgba_unmultiplied(
+                    theme::CUE_CYAN.r(),
+                    theme::CUE_CYAN.g(),
+                    theme::CUE_CYAN.b(),
+                    48,
+                ),
+            );
+            painter.hline(
+                loop_rect.x_range(),
+                rect.top() + 1.5,
+                egui::Stroke::new(2.5, theme::CUE_CYAN),
+            );
+        }
         if let Some(p) = &self.player {
             let x = rect.left() + p.position_beats(tempo) as f32 * px;
             painter.add(egui::Shape::convex_polygon(
@@ -1555,9 +1723,9 @@ impl WoaApp {
     }
 
     /// Hält die Wiedergabe am Ende des letzten Clips an, wenn „Stopp am Ende“ an ist.
-    /// Beim Aufnehmen nie: da läuft die Zeit absichtlich über das Ende hinaus.
+    /// Beim Aufnehmen oder aktivem Loop nie.
     fn stop_at_audio_end(&mut self) {
-        if !self.stop_at_end || self.recording() {
+        if !self.stop_at_end || self.recording() || self.loop_enabled {
             return;
         }
         let end = self.audio_end();
@@ -1590,6 +1758,96 @@ impl WoaApp {
     fn drain_midi_takes(&mut self) {
         for (_, take) in &mut self.midi_takes {
             take.drain();
+        }
+    }
+
+    /// Importiert eine Audiodatei (WAV, FLAC, MP3, OGG, M4A …) in `aufnahmen/` und legt
+    /// sie als Clip am Abspielkopf auf eine Audio-Spur.
+    fn import_audio(&mut self) {
+        let exts = woa_engine::decode::dialog_extensions();
+        let ext_refs: Vec<&str> = exts.iter().map(String::as_str).collect();
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("Audiodatei importieren")
+            .add_filter(woa_engine::decode::FILTER_NAME, &ext_refs)
+            .pick_file()
+        else {
+            return;
+        };
+        let decoded = match woa_engine::decode::decode_file(&path) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::error!(error = %e, path = %path.display(), "audio import decode failed");
+                self.state.status = Status::Error(format!("Audio-Import: {e}"));
+                return;
+            }
+        };
+        let secs = decoded.frames() as f64 / f64::from(decoded.rate.max(1));
+        if secs <= 0.0 {
+            self.state.status = Status::Error("Audio-Import: Datei ist leer".into());
+            return;
+        }
+        let dir = self.state.takes_dir();
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            tracing::error!(error = %e, dir = %dir.display(), "creating takes_dir failed");
+            self.state.status = Status::Error(format!("Audio-Import: {e}"));
+            return;
+        }
+        let stem: String = path
+            .file_stem()
+            .map_or_else(|| "audio".into(), |s| s.to_string_lossy().into_owned())
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("wav")
+            .to_ascii_lowercase();
+        let mut dst = dir.join(format!("{stem}.{ext}"));
+        let mut n = 2u32;
+        while dst.exists() && dst != path {
+            dst = dir.join(format!("{stem}-{n}.{ext}"));
+            n += 1;
+        }
+        if dst != path
+            && let Err(e) = std::fs::copy(&path, &dst)
+        {
+            tracing::error!(error = %e, "copying imported audio failed");
+            self.state.status = Status::Error(format!("Audio-Import: {e}"));
+            return;
+        }
+        let tempo = self.state.project().tempo_bpm;
+        let at = self
+            .player
+            .as_ref()
+            .map_or(0.0, |p| p.position_beats(tempo));
+        if let Some(clip) = self
+            .state
+            .add_take(self.selected_track, &dst, at, secs, 0.0)
+        {
+            self.selected_clip = Some(clip);
+            self.selected_track = self.state.project().clip(clip).map(|(t, _)| t.id);
+            self.state.status = Status::Info(format!("Audio importiert ({secs:.1} s)"));
+        }
+    }
+
+    /// Legt einen leeren 4-Takt-MIDI-Clip am Abspielkopf an und öffnet die Piano-Roll.
+    fn create_midi_clip_at_playhead(&mut self, target: Option<TrackId>) {
+        let tempo = self.state.project().tempo_bpm;
+        let at = self
+            .player
+            .as_ref()
+            .map_or(0.0, |p| ((p.position_beats(tempo) / 4.0).floor()) * 4.0);
+        if let Some(clip) = self.state.create_empty_midi_clip(target, at, 16.0) {
+            self.open_piano_roll(clip);
+            self.state.status =
+                Status::Info("Leerer MIDI-Clip (4 Takte) angelegt – Piano-Roll bereit".into());
         }
     }
 
@@ -1690,7 +1948,8 @@ impl WoaApp {
         }
     }
 
-    /// Spurkopf: Farbstreifen, Aufnahmeziel, Name, Mute, Pegel, Gain.
+    /// Spurkopf: Farbstreifen, Aufnahmeziel, Name, Mute/Solo, Pegel, Gain, Pan.
+    #[allow(clippy::too_many_arguments)]
     fn track_header(
         &mut self,
         ui: &mut egui::Ui,
@@ -1698,7 +1957,9 @@ impl WoaApp {
         id: TrackId,
         name: &str,
         gain: f64,
+        pan: f64,
         mute: bool,
+        solo: bool,
     ) {
         let color = theme::track_color(index);
         let is_midi = self
@@ -1748,7 +2009,7 @@ impl WoaApp {
                 ui.set_width(HEADER_W - 20.0);
                 ui.set_max_width(HEADER_W - 20.0);
                 ui.set_height(ROW_H - 10.0);
-                ui.spacing_mut().item_spacing = egui::vec2(6.0, 5.0);
+                ui.spacing_mut().item_spacing = egui::vec2(5.0, 5.0);
                 ui.horizontal(|ui| {
                     let (dot, arm) =
                         ui.allocate_exact_size(egui::vec2(20.0, 22.0), egui::Sense::click());
@@ -1787,8 +2048,29 @@ impl WoaApp {
                     }
                     self.track_name(ui, id, name);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 3.0;
+                        let s_btn = egui::Button::new(
+                            egui::RichText::new("S").size(11.5).strong().color(if solo {
+                                theme::WELL
+                            } else {
+                                theme::DIM
+                            }),
+                        )
+                        .fill(if solo { theme::CUE_CYAN } else { theme::WELL })
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            if solo { theme::CUE_CYAN } else { theme::BORDER },
+                        ))
+                        .min_size(egui::vec2(22.0, 21.0));
+                        if ui
+                            .add(s_btn)
+                            .on_hover_text("Solo: nur Solo-Spuren sind zu hören")
+                            .clicked()
+                        {
+                            self.state.toggle_solo(id);
+                        }
                         let m = egui::Button::new(
-                            egui::RichText::new("M").size(12.0).strong().color(if mute {
+                            egui::RichText::new("M").size(11.5).strong().color(if mute {
                                 theme::WELL
                             } else {
                                 theme::DIM
@@ -1799,7 +2081,7 @@ impl WoaApp {
                             1.0,
                             if mute { theme::ACCENT } else { theme::BORDER },
                         ))
-                        .min_size(egui::vec2(25.0, 21.0));
+                        .min_size(egui::vec2(22.0, 21.0));
                         let r = ui.add(m).on_hover_text("Stumm (Rechtsklick: MIDI lernen)");
                         if r.clicked() {
                             self.state.toggle_mute(id);
@@ -1867,10 +2149,38 @@ impl WoaApp {
                         }
                     }
                 });
-                self.track_source_row(ui, id);
+                self.track_source_row(ui, id, pan);
             })
         };
         let r = resp.response.rect;
+        resp.response.context_menu(|ui| {
+            if ui.button("✏ Spur umbenennen").clicked() {
+                self.rename = Some((id, name.to_string()));
+                ui.close();
+            }
+            if is_midi {
+                if ui.button("🎹 + Leerer MIDI-Clip (4 Takte)").clicked() {
+                    self.create_midi_clip_at_playhead(Some(id));
+                    ui.close();
+                }
+            } else if ui.button("📂 Audio-Datei importieren …").clicked() {
+                self.selected_track = Some(id);
+                self.import_audio();
+                ui.close();
+            }
+            ui.separator();
+            if ui
+                .button(egui::RichText::new("🗑 Spur löschen").color(theme::ON_AIR))
+                .clicked()
+            {
+                self.armed.remove(&id);
+                if self.selected_track == Some(id) {
+                    self.selected_track = None;
+                }
+                self.state.remove_track(id);
+                ui.close();
+            }
+        });
         ui.painter().rect_filled(
             egui::Rect::from_min_size(r.min, egui::vec2(5.0, r.height())),
             egui::CornerRadius {
@@ -1883,10 +2193,11 @@ impl WoaApp {
         );
     }
 
-    /// Quellenwahl und Mithören einer Spur.
-    fn track_source_row(&mut self, ui: &mut egui::Ui, id: TrackId) {
+    /// Quellenwahl, Mithören und Stereo-Panorama einer Spur.
+    fn track_source_row(&mut self, ui: &mut egui::Ui, id: TrackId, pan: f64) {
         let busy = self.recording();
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 5.0;
             let current = self.track_source.get(&id).cloned().unwrap_or_default();
             let mut chosen = None;
             let mut opened = false;
@@ -1897,7 +2208,7 @@ impl WoaApp {
                             .small()
                             .color(theme::DIM),
                     )
-                    .width(156.0)
+                    .width(108.0)
                     .truncate()
                     .show_ui(ui, |ui| {
                         let list = self.sources().to_vec();
@@ -1945,6 +2256,42 @@ impl WoaApp {
                     self.track_monitor.insert(id);
                 } else {
                     self.track_monitor.remove(&id);
+                }
+            }
+            let mut p = match self.pan_drag {
+                Some((d, v)) if d == id => v,
+                _ => pan,
+            };
+            let mut p_pct = (p * 100.0).round();
+            let pr = ui
+                .add(
+                    egui::DragValue::new(&mut p_pct)
+                        .range(-100.0..=100.0)
+                        .speed(1.0)
+                        .fixed_decimals(0)
+                        .custom_formatter(|v, _| {
+                            let iv = v.round() as i32;
+                            if iv == 0 {
+                                "Pan C".to_string()
+                            } else if iv < 0 {
+                                format!("L{}", -iv)
+                            } else {
+                                format!("R{iv}")
+                            }
+                        }),
+                )
+                .on_hover_text("Stereo-Panorama links/rechts (Doppelklick: Mitte)");
+            if pr.double_clicked() {
+                self.pan_drag = None;
+                self.state.set_pan(id, 0.0);
+            } else {
+                p = (p_pct / 100.0).clamp(-1.0, 1.0);
+                if pr.changed() {
+                    self.pan_drag = Some((id, p));
+                }
+                if pr.drag_stopped() || (pr.changed() && !pr.dragged()) {
+                    self.pan_drag = None;
+                    self.state.set_pan(id, p);
                 }
             }
         });
@@ -2362,7 +2709,24 @@ impl WoaApp {
             let x = rect.left() + p.position_beats(tempo) as f32 * px;
             painter.vline(x, rect.y_range(), egui::Stroke::new(2.0, theme::ACCENT));
         }
-        if resp.clicked() {
+        let is_midi_track = self
+            .state
+            .project()
+            .track(track)
+            .is_some_and(|t| t.kind == woa_model::TrackKind::Midi);
+        if resp.double_clicked()
+            && is_midi_track
+            && let Some(pos) = resp.interact_pointer_pos()
+        {
+            let beat = f64::from(((pos.x - rect.left()) / px).max(0.0));
+            let bar_start = (beat / 4.0).floor() * 4.0;
+            if let Some(clip) = self
+                .state
+                .create_empty_midi_clip(Some(track), bar_start, 16.0)
+            {
+                self.open_piano_roll(clip);
+            }
+        } else if resp.clicked() {
             self.selected_track = Some(track);
             self.selected_clip = None;
             self.selected_clips.clear();
@@ -2372,13 +2736,13 @@ impl WoaApp {
         }
     }
 
-    /// Bearbeitungszeile für den gewählten Clip: Fades, Schneiden, Löschen.
+    /// Bearbeitungszeile für den gewählten Clip: Fades, Schneiden, Löschen, Piano-Roll.
     fn clip_bar(&mut self, ui: &mut egui::Ui) {
         let Some(id) = self.selected_clip else {
             theme::status_pill(ui, "CLIP-INSPEKTOR", theme::DIM, false);
             ui.label(
                 egui::RichText::new(
-                    "Clip anklicken zum Bearbeiten  ·  Strg+Klick: mehrere  ·  S: Schneiden am Kopf  ·  Strg+Mausrad: Zoom  ·  Strg+E: Export",
+                    "Clip anklicken zum Bearbeiten  ·  Doppelklick in MIDI-Spur: neuer MIDI-Clip  ·  S: Schneiden am Kopf  ·  Strg+Mausrad: Zoom",
                 )
                 .small()
                 .color(theme::DIM),
@@ -2392,9 +2756,36 @@ impl WoaApp {
         };
         let c = c.clone();
         ui.horizontal(|ui| {
-            theme::status_pill(ui, "CLIP", theme::ACCENT, true);
+            theme::status_pill(
+                ui,
+                if c.midi.is_some() {
+                    "MIDI-CLIP"
+                } else {
+                    "AUDIO-CLIP"
+                },
+                if c.midi.is_some() {
+                    theme::CUE_CYAN
+                } else {
+                    theme::ACCENT
+                },
+                true,
+            );
             ui.strong(&c.name);
             ui.separator();
+            if c.midi.is_some()
+                && ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("🎹 Piano-Roll öffnen")
+                                .strong()
+                                .color(theme::CUE_CYAN),
+                        )
+                        .fill(theme::WELL),
+                    )
+                    .clicked()
+            {
+                self.open_piano_roll(id);
+            }
             let (mut fi, mut fo) = match self.fade_edit {
                 Some((cid, a, b)) if cid == id => (a, b),
                 _ => (c.fade_in_beats, c.fade_out_beats),
@@ -2699,8 +3090,17 @@ impl eframe::App for WoaApp {
         self.controller_frame(ctx);
         let live = self.live_midi_track();
         let state = &self.state;
+        let loop_beats = self
+            .loop_enabled
+            .then(|| {
+                let s = f64::from(self.loop_start_bar.saturating_sub(1) * 4);
+                let e = f64::from(self.loop_end_bar.saturating_sub(1) * 4);
+                (s < e).then_some((s, e))
+            })
+            .flatten();
         if let Some(p) = self.player.as_mut() {
             p.sync(&project, &|rel| state.resolve_audio(rel), live);
+            p.set_loop_beats(loop_beats, project.tempo_bpm);
         }
         self.stop_at_audio_end();
         self.drain_live_peaks();
@@ -2802,6 +3202,7 @@ impl eframe::App for WoaApp {
                     });
                 });
             });
+        self.studio_dock_panel(ui);
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -2813,6 +3214,454 @@ impl eframe::App for WoaApp {
         self.controller_window(&ctx);
         self.feedback_window(&ctx);
         self.telemetry_window(&ctx);
+    }
+}
+
+impl WoaApp {
+    /// Unteres Ableton-Style Studio-Dock: Umschaltbar zwischen Studio-Mixer-Konsole und
+    /// angedockter Piano-Roll (oder eingeklappt für maximale Zeitleisten-Höhe).
+    fn studio_dock_panel(&mut self, ui: &mut egui::Ui) {
+        let is_open = self.studio_dock != StudioDockTab::Closed;
+        let panel = egui::Panel::bottom("studio_dock")
+            .resizable(is_open)
+            .default_size(if is_open { 235.0 } else { 32.0 })
+            .size_range(if is_open { 175.0..=440.0 } else { 32.0..=32.0 })
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::PANEL)
+                    .stroke(egui::Stroke::new(1.0, theme::BORDER))
+                    .inner_margin(egui::Margin::symmetric(12, 6)),
+            );
+        panel.show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                theme::status_pill(ui, "STUDIO-DOCK", theme::ACCENT, is_open);
+
+                let mixer_active = self.studio_dock == StudioDockTab::Mixer;
+                let mixer_btn = egui::Button::new(
+                    egui::RichText::new("🎚 Studio-Mixer")
+                        .small()
+                        .strong()
+                        .color(if mixer_active {
+                            theme::WELL
+                        } else {
+                            theme::TEXT_BRIGHT
+                        }),
+                )
+                .fill(if mixer_active {
+                    theme::ACCENT
+                } else {
+                    theme::WELL
+                });
+                if ui
+                    .add(mixer_btn)
+                    .on_hover_text("Vertikale Mischpult-Kanalzüge für alle Spuren")
+                    .clicked()
+                {
+                    self.studio_dock = if mixer_active {
+                        StudioDockTab::Closed
+                    } else {
+                        StudioDockTab::Mixer
+                    };
+                }
+
+                let pr_active = self.studio_dock == StudioDockTab::PianoRoll;
+                let pr_btn = egui::Button::new(
+                    egui::RichText::new("🎹 Piano-Roll (Clip-Editor)")
+                        .small()
+                        .strong()
+                        .color(if pr_active {
+                            theme::WELL
+                        } else {
+                            theme::CUE_CYAN
+                        }),
+                )
+                .fill(if pr_active {
+                    theme::CUE_CYAN
+                } else {
+                    theme::WELL
+                });
+                if ui
+                    .add(pr_btn)
+                    .on_hover_text("Angedockter MIDI-Noten-Editor wie in Ableton Live")
+                    .clicked()
+                {
+                    self.studio_dock = if pr_active {
+                        StudioDockTab::Closed
+                    } else {
+                        StudioDockTab::PianoRoll
+                    };
+                }
+
+                if self.studio_dock == StudioDockTab::PianoRoll {
+                    let float_label = if self.piano_roll_floating {
+                        "⤡ Im Dock einbetten"
+                    } else {
+                        "⤢ Als Fenster lösen"
+                    };
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new(float_label).small().color(theme::DIM),
+                            )
+                            .fill(theme::SURFACE),
+                        )
+                        .clicked()
+                    {
+                        self.piano_roll_floating = !self.piano_roll_floating;
+                    }
+                }
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let toggle_lbl = if is_open {
+                        "▾ Dock einklappen"
+                    } else {
+                        "▴ Dock ausklappen"
+                    };
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new(toggle_lbl).small().color(theme::DIM),
+                            )
+                            .fill(theme::WELL),
+                        )
+                        .clicked()
+                    {
+                        self.studio_dock = if is_open {
+                            StudioDockTab::Closed
+                        } else {
+                            StudioDockTab::Mixer
+                        };
+                    }
+                });
+            });
+
+            if !is_open {
+                return;
+            }
+            ui.add_space(4.0);
+            match self.studio_dock {
+                StudioDockTab::Closed => {}
+                StudioDockTab::Mixer => self.mixer_console(ui),
+                StudioDockTab::PianoRoll => self.docked_piano_roll(ui),
+            }
+        });
+    }
+
+    /// Vertikale Mischpult-Konsole im unteren Studio-Dock.
+    fn mixer_console(&mut self, ui: &mut egui::Ui) {
+        let tracks: Vec<_> = self
+            .state
+            .project()
+            .tracks
+            .iter()
+            .map(|t| {
+                (
+                    t.id,
+                    t.name.clone(),
+                    t.kind,
+                    t.gain_db,
+                    t.pan,
+                    t.mute,
+                    t.solo,
+                )
+            })
+            .collect();
+        if tracks.is_empty() {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "Noch keine Spuren im Mischpult. Lege eine Audio- oder MIDI-Spur an:",
+                    )
+                    .color(theme::DIM),
+                );
+                if ui.button("+ Audio-Spur").clicked() {
+                    self.state.add_track();
+                }
+                if ui.button("+ MIDI-Spur").clicked() {
+                    self.state.add_midi_track();
+                }
+            });
+            return;
+        }
+        egui::ScrollArea::horizontal()
+            .id_salt("studio_mixer_scroll")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    for (i, (id, name, kind, gain, pan, mute, solo)) in
+                        tracks.into_iter().enumerate()
+                    {
+                        let color = theme::track_color(i);
+                        let is_sel = self.selected_track == Some(id);
+                        let armed = if self.armed.is_empty() {
+                            is_sel
+                        } else {
+                            self.armed.contains(&id)
+                        };
+                        let level = self.track_levels.get(&id).copied().unwrap_or(0.0);
+
+                        egui::Frame::new()
+                            .fill(theme::WELL)
+                            .stroke(egui::Stroke::new(
+                                1.0,
+                                if is_sel { color } else { theme::BORDER },
+                            ))
+                            .corner_radius(5)
+                            .inner_margin(egui::Margin::symmetric(8, 6))
+                            .show(ui, |ui| {
+                                ui.set_width(118.0);
+                                ui.vertical(|ui| {
+                                    ui.spacing_mut().item_spacing.y = 4.0;
+                                    // Farbiger Kanal-Kopfstreifen
+                                    let (bar_rect, bar_resp) = ui.allocate_exact_size(
+                                        egui::vec2(118.0, 18.0),
+                                        egui::Sense::click(),
+                                    );
+                                    ui.painter().rect_filled(bar_rect, 3.0, color);
+                                    ui.painter().text(
+                                        bar_rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        &name,
+                                        egui::FontId::proportional(11.5),
+                                        theme::WELL,
+                                    );
+                                    if bar_resp.clicked() {
+                                        self.selected_track = Some(id);
+                                    }
+
+                                    // M / S / Arm Tastenreihe
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 4.0;
+                                        let m_btn = egui::Button::new(
+                                            egui::RichText::new("M")
+                                                .size(11.0)
+                                                .strong()
+                                                .color(if mute { theme::WELL } else { theme::DIM }),
+                                        )
+                                        .fill(if mute { theme::ACCENT } else { theme::SURFACE })
+                                        .min_size(egui::vec2(28.0, 20.0));
+                                        if ui.add(m_btn).on_hover_text("Stumm").clicked() {
+                                            self.state.toggle_mute(id);
+                                        }
+
+                                        let s_btn = egui::Button::new(
+                                            egui::RichText::new("S")
+                                                .size(11.0)
+                                                .strong()
+                                                .color(if solo { theme::WELL } else { theme::DIM }),
+                                        )
+                                        .fill(if solo {
+                                            theme::CUE_CYAN
+                                        } else {
+                                            theme::SURFACE
+                                        })
+                                        .min_size(egui::vec2(28.0, 20.0));
+                                        if ui.add(s_btn).on_hover_text("Solo").clicked() {
+                                            self.state.toggle_solo(id);
+                                        }
+
+                                        let arm_btn = egui::Button::new(
+                                            egui::RichText::new("●").size(11.0).strong().color(
+                                                if armed {
+                                                    egui::Color32::WHITE
+                                                } else {
+                                                    theme::ON_AIR
+                                                },
+                                            ),
+                                        )
+                                        .fill(if armed { theme::ON_AIR } else { theme::SURFACE })
+                                        .min_size(egui::vec2(28.0, 20.0));
+                                        if ui
+                                            .add(arm_btn)
+                                            .on_hover_text("Aufnahme scharf schalten")
+                                            .clicked()
+                                            && !self.armed.remove(&id)
+                                        {
+                                            self.armed.insert(id);
+                                        }
+
+                                        if ui
+                                            .add(
+                                                egui::Button::new(
+                                                    egui::RichText::new("🗑")
+                                                        .size(10.5)
+                                                        .color(theme::DIM),
+                                                )
+                                                .fill(theme::SURFACE)
+                                                .min_size(egui::vec2(22.0, 20.0)),
+                                            )
+                                            .on_hover_text("Spur löschen")
+                                            .clicked()
+                                        {
+                                            self.armed.remove(&id);
+                                            if self.selected_track == Some(id) {
+                                                self.selected_track = None;
+                                            }
+                                            self.state.remove_track(id);
+                                        }
+                                    });
+
+                                    // Vertikale LED-Pegelanzeige + Gain- & Pan-Steuerung
+                                    ui.horizontal(|ui| {
+                                        let (m_rect, _) = ui.allocate_exact_size(
+                                            egui::vec2(14.0, 78.0),
+                                            egui::Sense::hover(),
+                                        );
+                                        theme::led_meter_vertical(ui.painter(), m_rect, level);
+
+                                        ui.vertical(|ui| {
+                                            ui.spacing_mut().item_spacing.y = 4.0;
+                                            ui.label(
+                                                egui::RichText::new(
+                                                    if kind == woa_model::TrackKind::Midi {
+                                                        "MIDI-SYNTH"
+                                                    } else {
+                                                        "AUDIO-KANAL"
+                                                    },
+                                                )
+                                                .size(9.5)
+                                                .monospace()
+                                                .color(if kind == woa_model::TrackKind::Midi {
+                                                    theme::CUE_CYAN
+                                                } else {
+                                                    theme::DIM
+                                                }),
+                                            );
+                                            let mut g = match self.gain_drag {
+                                                Some((d, v)) if d == id => v,
+                                                _ => gain,
+                                            };
+                                            let r = ui
+                                                .add(
+                                                    egui::DragValue::new(&mut g)
+                                                        .range(MIN_GAIN_DB..=MAX_GAIN_DB)
+                                                        .speed(0.2)
+                                                        .fixed_decimals(1)
+                                                        .prefix("Pegel ")
+                                                        .suffix(" dB"),
+                                                )
+                                                .on_hover_text("Kanal-Gain (Doppelklick: 0 dB)");
+                                            if r.double_clicked() {
+                                                self.gain_drag = None;
+                                                self.state.set_gain(id, 0.0);
+                                            } else {
+                                                if r.changed() {
+                                                    self.gain_drag = Some((id, g));
+                                                }
+                                                if r.drag_stopped() || (r.changed() && !r.dragged())
+                                                {
+                                                    self.gain_drag = None;
+                                                    self.state.set_gain(id, g);
+                                                }
+                                            }
+
+                                            let mut p = match self.pan_drag {
+                                                Some((d, v)) if d == id => v,
+                                                _ => pan,
+                                            };
+                                            let mut p_pct = (p * 100.0).round();
+                                            let pr = ui
+                                                .add(
+                                                    egui::DragValue::new(&mut p_pct)
+                                                        .range(-100.0..=100.0)
+                                                        .speed(1.0)
+                                                        .fixed_decimals(0)
+                                                        .custom_formatter(|v, _| {
+                                                            let iv = v.round() as i32;
+                                                            if iv == 0 {
+                                                                "Pan Mitte".to_string()
+                                                            } else if iv < 0 {
+                                                                format!("Pan L{}", -iv)
+                                                            } else {
+                                                                format!("Pan R{iv}")
+                                                            }
+                                                        }),
+                                                )
+                                                .on_hover_text("Panorama (Doppelklick: Mitte)");
+                                            if pr.double_clicked() {
+                                                self.pan_drag = None;
+                                                self.state.set_pan(id, 0.0);
+                                            } else {
+                                                p = (p_pct / 100.0).clamp(-1.0, 1.0);
+                                                if pr.changed() {
+                                                    self.pan_drag = Some((id, p));
+                                                }
+                                                if pr.drag_stopped()
+                                                    || (pr.changed() && !pr.dragged())
+                                                {
+                                                    self.pan_drag = None;
+                                                    self.state.set_pan(id, p);
+                                                }
+                                            }
+                                        });
+                                    });
+                                });
+                            });
+                    }
+                });
+            });
+    }
+
+    /// Angedockte Piano-Roll im unteren Studio-Dock.
+    fn docked_piano_roll(&mut self, ui: &mut egui::Ui) {
+        if self.piano_roll_floating {
+            ui.label(
+                egui::RichText::new(
+                    "Die Piano-Roll ist aktuell als schwebendes Fenster geöffnet. Klicke oben auf „⤡ Im Dock einbetten“, um sie hier unten anzudocken.",
+                )
+                .color(theme::DIM),
+            );
+            return;
+        }
+        // Wenn ein MIDI-Clip ausgewählt wurde, aber noch nicht in `piano_roll` liegt, automatisch laden:
+        if let Some(sel) = self.selected_clip
+            && self
+                .state
+                .project()
+                .clip(sel)
+                .is_some_and(|(_, c)| c.midi.is_some())
+            && self.piano_roll.as_ref().is_none_or(|pr| pr.clip != sel)
+        {
+            self.piano_roll = Some(crate::pianoroll::PianoRoll::new(sel));
+        }
+
+        let live = self.live_midi_track();
+        if let Some(mut pr) = self.piano_roll.take() {
+            let track = self.state.project().clip(pr.clip).map(|(t, _)| t.id);
+            let sink = self
+                .player
+                .as_ref()
+                .filter(|_| track.is_some() && track == live)
+                .map(Player::midi_sink);
+            if pr.show_inline(ui, &mut self.state, sink.as_ref()) {
+                self.piano_roll = Some(pr);
+                return;
+            }
+        }
+
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(
+                    "Kein MIDI-Clip ausgewählt. Doppelklicke auf einen MIDI-Clip in der Zeitleiste oder lege direkt einen neuen an:",
+                )
+                .color(theme::DIM),
+            );
+            if ui
+                .add(
+                    egui::Button::new(
+                        egui::RichText::new("🎹 + Leeren MIDI-Clip (4 Takte) anlegen")
+                            .strong()
+                            .color(theme::CUE_CYAN),
+                    )
+                    .fill(theme::SURFACE),
+                )
+                .clicked()
+            {
+                self.create_midi_clip_at_playhead(self.selected_track);
+            }
+        });
     }
 }
 

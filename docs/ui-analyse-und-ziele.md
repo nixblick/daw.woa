@@ -103,3 +103,19 @@ Grundsatz: **Alle bisherigen Bedienelemente, Anzeigen und Tastenkürzel bleiben 
   - [x] Zeitleiste mit abgedunkeltem `WELL`-Hintergrund und Zebra-Taktschattierung.
   - [x] **Audio-Clips** mit farbigem Titelbalken, zweistufiger Wellenform (Körper + Spitzenkontur) und **sichtbaren diagonalen Fade-Linien**.
   - [x] **MIDI-Clips** mit automatischer **Mini-Piano-Roll-Notenvorschau** direkt im Clip auf der Zeitleiste.
+
+### 2.4 Studio- & Produzenten-Ausbau (Phase 2 – DAW-Workflow & Ableton-Dock)
+- [x] **Vollständige Kanalzug-Bedienung (`state.rs` & `app.rs`):**
+  - [x] **Solo-Taster (`S`)** (leuchtend in `CUE_CYAN`) neben Mute (`M`) in jedem Spurkopf und im Studio-Mixer (`Command::SetSolo`).
+  - [x] **Stereo-Panorama (`Pan L/C/R`)** mit Doppelklick-Reset auf Mitte (`0.0`, `Command::SetPan`).
+  - [x] **Spur-Kontextmenü (Rechtsklick)** und Lösch-Funktion (`Command::RemoveTrack`) mit vollem Undo/Redo.
+- [x] **Interaktiver Studio-Transport & Loop-Engine (`player.rs` & `app.rs`):**
+  - [x] **Editierbares Projekttempo (`20..=400 BPM`)** direkt im schwarzen LCD-Display (Doppelklick setzt auf `120 BPM` zurück, `Command::SetTempo`).
+  - [x] **Loop-Steuerung (`🔁 Loop` + Start-/End-Takt)** in der Transportleiste, gekoppelt an `Engine::set_loop` (`LoopRange`) und als farbige Cyan-Loop-Klammer im Takt-Lineal eingezeichnet.
+- [x] **Durchgängiger Audio- & MIDI-Erstellungs-Workflow:**
+  - [x] **Audio-Datei-Import (`📂 Audio importieren …`)**: Importiert WAV, FLAC, MP3, OGG, M4A etc. in den Projektordner (`aufnahmen/`) und legt sie als Clip am Abspielkopf an.
+  - [x] **Leere MIDI-Clips direkt anlegen (`🎹 + MIDI-Clip (4 T.)` oder Doppelklick in leere MIDI-Spur)**: Erzeugt sofort einen 4-Takt-MIDI-Clip zum Komponieren ohne externes Keyboard.
+- [x] **Ableton-Style Unteres Studio-Dock (`studio_dock_panel`):**
+  - [x] Umschaltbares, größenverstellbares Dock am unteren Fensterrand mit Reitern **`🎚 Studio-Mixer`**, **`🎹 Piano-Roll (Clip-Editor)`** und **`▾ Dock einklappen`**.
+  - [x] **Vertikale Studio-Mixer-Konsole:** Nebeneinanderliegende Kanalzüge für alle Spuren mit Farbheader, `M`/`S`/`●`/`🗑`-Tasten, vertikaler 20-Segment-LED-Pegelanzeige (`led_meter_vertical`), dB-Pegel und Panorama.
+  - [x] **Angedockte Piano-Roll (`show_inline`)** mit Umschalter **`⤢ Als Fenster lösen` / `⤡ Im Dock einbetten`**.

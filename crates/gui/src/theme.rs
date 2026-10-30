@@ -150,6 +150,48 @@ pub fn led_meter(painter: &egui::Painter, rect: Rect, level: f32) {
     }
 }
 
+/// Zeichnet eine vertikale Studio-LED-Pegelanzeige (von unten nach oben, -60..0 dB) für den Mixer.
+pub fn led_meter_vertical(painter: &egui::Painter, rect: Rect, level: f32) {
+    painter.rect_filled(rect, 3.0, WELL);
+    painter.rect_stroke(
+        rect,
+        3.0,
+        Stroke::new(1.0, mix(BORDER, WELL, 0.35)),
+        StrokeKind::Inside,
+    );
+    let inner = rect.shrink2(vec2(2.0, 2.0));
+    if inner.width() <= 2.0 || inner.height() <= 8.0 {
+        return;
+    }
+    let db = 20.0 * level.max(1e-6).log10();
+    let frac = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
+    let segments = ((inner.height() / 4.5).floor() as usize).clamp(10, 32);
+    let gap = 1.5f32;
+    let seg_h = ((inner.height() - gap * (segments as f32 - 1.0)) / segments as f32).max(1.5);
+    let lit_count = (frac * segments as f32).ceil() as usize;
+
+    for i in 0..segments {
+        let seg_frac = (i + 1) as f32 / segments as f32;
+        let seg_db = seg_frac * 60.0 - 60.0;
+        let base_col = if seg_db > -3.0 {
+            ON_AIR
+        } else if seg_db > -12.0 {
+            Color32::from_rgb(245, 198, 48)
+        } else {
+            OK_GREEN
+        };
+        let col = if i < lit_count && frac > 0.005 {
+            base_col
+        } else {
+            mix(base_col, WELL, 0.86)
+        };
+        let y0 = inner.bottom() - (i as f32 + 1.0) * seg_h - i as f32 * gap;
+        let seg_rect =
+            Rect::from_min_size(egui::pos2(inner.left(), y0), vec2(inner.width(), seg_h));
+        painter.rect_filled(seg_rect, 1.0, col);
+    }
+}
+
 /// Setzt Farben, Abstände und Schriftgrößen.
 pub fn apply(ctx: &egui::Context) {
     // Helles Thema nur zur Probe (`WOA_THEME=hell`): Fenster und Piano-Roll folgen ihm,
