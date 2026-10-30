@@ -371,11 +371,11 @@ pub fn buttons(running: bool, repeat: Repeat, shuffle: bool, muted: bool) -> Vec
         vec![
             b("Zurück", PartyCommand::Previous, false),
             b(
-                if running { "Pause" } else { "Play" },
+                if running { "⏸ Pause" } else { "▶ Play" },
                 PartyCommand::PlayPause,
                 false,
             ),
-            b("Stopp", PartyCommand::Stop, false),
+            b("■ Stopp", PartyCommand::Stop, false),
             b("Weiter", PartyCommand::Next, false),
         ],
         vec![
@@ -641,7 +641,7 @@ mod tests {
             l.to_text(),
             "jetzt: Abba – Waterloo [läuft] rest 0:50 fortschritt 75%\n\
              nächster: Queen – Radio Ga Ga\n\
-             tasten: Zurück | Pause | Stopp | Weiter\n\
+             tasten: Zurück | ⏸ Pause | ■ Stopp | Weiter\n\
              tasten: Von vorn | −10 s | +10 s | Stumm\n\
              tasten: Leiser | Lauter | 🔀 Zufall | 🔁 Aus\n\
              pegel: +0 dB, vollbild: aus\n\
@@ -656,7 +656,7 @@ mod tests {
         };
         let t = layout(&idle, &PartyState::default()).to_text();
         assert!(t.starts_with("jetzt: Queen – Radio Ga Ga [bereit] rest 3:00 fortschritt 0%\n"));
-        assert!(t.contains("nächster: Solo\n") && t.contains("tasten: Zurück | Play |"));
+        assert!(t.contains("nächster: Solo\n") && t.contains("tasten: Zurück | ▶ Play |"));
         assert!(
             layout(&View::default(), &PartyState::default())
                 .to_text()

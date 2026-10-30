@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.34.3 — 2026-10-30
+
+Ein Knopf für Play und Pause (Refs #137).
+
+- **Überall genau ein Knopf:** ▶ wenn nichts läuft oder pausiert ist, ⏸ während es spielt, daneben Stopp. Party-Modus, Radio-Layout (statt „Start“/„Weiter“; die Leertaste auch) und Handy. Der Player hatte das schon.
+- **Radio-Layout:** „Weiter“ (nächster Titel) ist als ⏭ in die Reihe der Transportknöpfe gewandert.
+
 ## 0.34.2 — 2026-10-30
 
 Transportknöpfe (#137), Abnahme: `docs/abnahme.md`.
