@@ -33,6 +33,10 @@ pub struct PlaylistEntry {
     /// Cue-Punkte (Paket 15).
     #[serde(default, skip_serializing_if = "Cues::is_empty")]
     pub cues: Cues,
+    /// Voice-Track (Paket 30): gesetzt, wenn der Eintrag eine Moderation ist, die zwischen
+    /// ihren Nachbarn über die Musik gelegt wird. `path` ist dann die Sprachdatei.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<crate::voicetrack::VoiceTrack>,
     /// Laufzeit-Kennung (nicht gespeichert), vom Controller vergeben.
     #[serde(skip)]
     pub uid: u32,
@@ -47,6 +51,7 @@ impl PlaylistEntry {
             seconds: None,
             stamp: None,
             cues: Cues::default(),
+            voice: None,
             uid: 0,
         }
     }
@@ -180,6 +185,11 @@ impl RadioShow {
         }
         self.target_lufs = self.target_lufs.clamp(-40.0, -5.0);
         self.carts.resize(CARTS, None);
+        for e in &mut self.playlist {
+            if let Some(v) = e.voice.as_mut() {
+                v.params = v.params.sanitized();
+            }
+        }
     }
 
     /// Liest `path`. Fehlt die Datei, gibt es eine leere Sendung.
@@ -282,11 +292,18 @@ impl RadioShow {
     /// Gesamtlänge der Playlist ab Titel `from` (Sekunden): gespielte Längen minus
     /// Überblendungen. Ungemessene Titel zählen 0.
     pub fn total_seconds_from(&self, from: usize) -> f64 {
-        let rest = self.playlist.get(from..).unwrap_or(&[]);
+        // Voice-Tracks liegen über der Musik und verlängern die Sendung nicht.
+        let rest: Vec<&PlaylistEntry> = self
+            .playlist
+            .get(from..)
+            .unwrap_or(&[])
+            .iter()
+            .filter(|e| e.voice.is_none())
+            .collect();
         let sum: f64 = rest.iter().map(|e| e.play_seconds().unwrap_or(0.0)).sum();
         let fades: f64 = rest
             .windows(2)
-            .map(|w| self.crossfade_entries(&w[0], &w[1]))
+            .map(|w| self.crossfade_entries(w[0], w[1]))
             .sum();
         sum - fades
     }

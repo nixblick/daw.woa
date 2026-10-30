@@ -32,6 +32,10 @@ Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
   10 ms und löst über `EventClock::tick` aus. **Kein Code übernommen.**
   Wo bei uns: `crates/radio/src/events.rs`.
 
+- **Datei:** `src/libs/extra/audio.liq`, Funktion `smooth_add` (Commit `cb8ba5d3276fe6e3c772699c00d885d025384aa4`, Lizenz wie oben: GPL-2.0-or-later).
+- **Was wir daraus haben:** nur die Idee: eine Sprachspur über Musik legen und die Musik währenddessen sanft absenken (Anstieg vor der Stimme, Halten, Rückkehr danach). Bei uns ist die Absenkung eine Kosinus-Rampe, die Mixer, Editor und Tests aus einer einzigen reinen Funktion (`voicetrack::duck_gain`) bekommen; die Stimme liegt auf einer festen Zeitachse zum Übergang zweier Titel. **Kein Code übernommen.** Mixxx kennt kein Voice-Tracking.
+  Wo bei uns: `crates/radio/src/voicetrack.rs`.
+
 ## Regel
 
 Quellen werden nur mit Repository, Datei und Commit genannt, nie mit Pfaden einer Maschine.

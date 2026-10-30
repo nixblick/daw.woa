@@ -18,6 +18,7 @@ use woa_stream::link::{Feeder, is_alive, link_path};
 use crate::cue_editor::{CueAction, CueEditor};
 use crate::feedback::PflOutput;
 use crate::theme;
+use crate::voice_editor::{VoiceAction, VoiceEditor, VoiceInput};
 use crate::xrun::XrunLog;
 
 const NO_PFL: &str = "Kein Kopfhörer-Ausgang: Einstellungen → Vorhören (PFL)";
@@ -73,6 +74,8 @@ pub struct RadioDesk {
     cart_rects: Vec<egui::Rect>,
     /// Offener Cue-Editor (Paket 15).
     cue_editor: Option<CueEditor>,
+    /// Offener Voice-Track-Editor (Paket 30).
+    voice_editor: Option<VoiceEditor>,
     /// Zuletzt in den Editor übernommene Cue-Punkte je Titel (erkennt Undo/Redo).
     cue_seen: std::collections::HashMap<usize, woa_radio::Cues>,
     /// Eigener Strom für das Vorhören auf einem zweiten Gerät.
@@ -296,6 +299,7 @@ impl RadioDesk {
             playlist_rect: egui::Rect::NOTHING,
             cart_rects: Vec::new(),
             cue_editor: None,
+            voice_editor: None,
             cue_seen: std::collections::HashMap::new(),
             _pfl_output: pfl_output,
         }
@@ -1349,6 +1353,26 @@ impl RadioDesk {
                         );
                         let thumb = self.covers.as_mut().and_then(|c| c.thumb(&e.path));
                         crate::covers::paint_square(ui, 34.0, thumb.as_ref(), None, 1.0);
+                        if let Some(vb) = e.voice {
+                            ui.label(
+                                egui::RichText::new("VOICE")
+                                    .small()
+                                    .strong()
+                                    .color(theme::ACCENT),
+                            );
+                            if vb.check {
+                                ui.label(
+                                    egui::RichText::new("prüfen")
+                                        .small()
+                                        .strong()
+                                        .color(theme::ON_AIR),
+                                )
+                                .on_hover_text(
+                                    "Ein Nachbar hat sich geändert: der Voice-Track geht erst \
+                                     nach der Bestätigung im Editor auf Sendung",
+                                );
+                            }
+                        }
 
                         // Rechte Seite zuerst reservieren (Steuerung + Dauer + LUFS-Badge),
                         // damit der Titel links sauber abschneidet.
@@ -1570,6 +1594,15 @@ impl RadioDesk {
 
     /// Rechtsklick auf einen Titel: Cue-Punkte, Vorhören (Paket 15).
     fn title_menu(&mut self, ui: &mut egui::Ui, i: usize, e: &ViewEntry, v: &View) {
+        if e.voice.is_some() {
+            if ui.button("Voice-Track bearbeiten …").clicked() {
+                self.open_voice_editor(i);
+                ui.close();
+            }
+        } else if ui.button("Voice-Track danach einfügen …").clicked() {
+            self.add_voice_dialog(i + 1);
+            ui.close();
+        }
         if ui.button("Cue-Punkte …").clicked() {
             self.cue_editor = Some(CueEditor::open(
                 i,
@@ -1600,6 +1633,101 @@ impl RadioDesk {
         if v.pfl_playing && ui.button("Vorhören anhalten").clicked() {
             self.with(Controller::pfl_stop);
             ui.close();
+        }
+    }
+
+    /// Wählt eine Sprachdatei und legt sie als Voice-Track bei `at` in die Playlist.
+    fn add_voice_dialog(&self, at: usize) {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter(
+                woa_engine::decode::FILTER_NAME,
+                &woa_engine::decode::dialog_extensions(),
+            )
+            .pick_file()
+        {
+            self.add_voice_file(path, Some(at));
+        }
+    }
+
+    /// Legt eine Sprachdatei als Voice-Track bei `at` (sonst hinten) in die Playlist.
+    pub fn add_voice_file(&self, path: PathBuf, at: Option<usize>) {
+        self.with(move |c| {
+            if let Err(e) = c.add_voice(&path, at) {
+                c.report(e);
+            }
+        });
+    }
+
+    /// Öffnet den Voice-Track-Editor für Eintrag `i` (falls es ein Voice-Track ist).
+    pub fn open_voice_editor(&mut self, i: usize) {
+        let v = &self.view;
+        let Some(e) = v.playlist.get(i) else { return };
+        let Some(vb) = e.voice else { return };
+        let music = |k: Option<usize>| k.and_then(|k| v.playlist.get(k));
+        let a = music((0..i).rev().find(|&k| v.playlist[k].voice.is_none()));
+        let b = music((i + 1..v.playlist.len()).find(|&k| v.playlist[k].voice.is_none()));
+        let input = VoiceInput {
+            index: i,
+            title: e.title.clone(),
+            voice_path: e.path.clone(),
+            voice_seconds: e.seconds,
+            a_path: a.map(|x| x.path.clone()),
+            a_title: a.map(|x| x.title.clone()).unwrap_or_else(|| "–".into()),
+            a_seconds: a.and_then(|x| x.seconds),
+            a_cues: a.map(|x| x.cues).unwrap_or_default(),
+            b_path: b.map(|x| x.path.clone()),
+            b_title: b.map(|x| x.title.clone()).unwrap_or_else(|| "–".into()),
+            b_seconds: b.and_then(|x| x.seconds),
+            b_cues: b.map(|x| x.cues).unwrap_or_default(),
+            crossfade: v.crossfade_seconds,
+            params: vb.params,
+            check: vb.check,
+        };
+        self.voice_editor = Some(VoiceEditor::open(input));
+    }
+
+    /// Zeichnet den Voice-Track-Editor, falls offen, und reicht seine Aufträge weiter.
+    pub fn voice_window(&mut self, ctx: &egui::Context) {
+        let Some(ed) = self.voice_editor.as_mut() else {
+            return;
+        };
+        let v = &self.view;
+        // Eintrag verschoben oder entfernt: Editor schließen statt falschen zu ändern.
+        let Some(cur) = v
+            .playlist
+            .get(ed.input.index)
+            .filter(|e| e.path == ed.input.voice_path && e.voice.is_some())
+        else {
+            self.voice_editor = None;
+            return;
+        };
+        if let Some(vb) = cur.voice {
+            ed.sync(vb.params, vb.check);
+        }
+        let mut open = true;
+        let actions = ed.ui(ctx, &mut open, (v.pfl_available, v.pfl_playing));
+        if !open {
+            self.voice_editor = None;
+        }
+        for a in actions {
+            match a {
+                VoiceAction::Apply(i, p) => self.with(move |c| {
+                    if let Err(e) = c.set_voice(i, p) {
+                        c.report(e);
+                    }
+                }),
+                VoiceAction::Confirm(i) => self.with(move |c| {
+                    if let Err(e) = c.confirm_voice(i) {
+                        c.report(e);
+                    }
+                }),
+                VoiceAction::Preview(i) => self.with(move |c| {
+                    if let Err(e) = c.pfl_voice(i) {
+                        c.report(e);
+                    }
+                }),
+                VoiceAction::StopPreview => self.with(Controller::pfl_stop),
+            }
         }
     }
 

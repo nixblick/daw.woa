@@ -15,6 +15,7 @@ use crate::audio::Stereo;
 use crate::cues::CueFrames;
 use crate::dynamics::{BusProcessor, MicChain};
 use crate::level::{Smoother, crossfade};
+use crate::voicetrack::{EDGE_SECONDS, VoiceFrames, duck_gain, edge_gain};
 
 /// Kennung „kein Titel“.
 pub const NONE: u32 = u32::MAX;
@@ -73,6 +74,14 @@ pub enum Cmd {
     StartAt(u64),
     /// Nimmt [`Cmd::StartAt`] zurück.
     ClearStartAt,
+    /// Voice-Track zum bereitgelegten Titel `uid` (Paket 30): die Stimme beginnt `frames.offset`
+    /// Frames nach dem Beginn der Überblendung zu diesem Titel, die Musik wird davor abgesenkt.
+    VoiceOver {
+        uid: u32,
+        buf: Shared<Stereo>,
+        gain: f32,
+        frames: VoiceFrames,
+    },
     /// Bereitgelegten Titel verwerfen.
     ClearNext,
     /// Sendung starten: der bereitgelegte Titel beginnt.
@@ -124,6 +133,8 @@ pub struct Status {
     /// Bit je laufendem Cart.
     pub carts: AtomicU32,
     pub mic_open: AtomicBool,
+    /// Ein Voice-Track läuft (Stimme oder Absenkung davor und danach).
+    pub voice: AtomicBool,
     /// Gerechnete Frames insgesamt.
     pub clock: AtomicU64,
     /// Frame, an dem zuletzt die Musik endete (Ende der Playlist).
@@ -158,6 +169,7 @@ impl Default for Status {
             playing: AtomicBool::new(false),
             carts: AtomicU32::new(0),
             mic_open: AtomicBool::new(false),
+            voice: AtomicBool::new(false),
             clock: AtomicU64::new(0),
             music_end: AtomicU64::new(0),
             record_dropped: AtomicU64::new(0),
@@ -288,6 +300,24 @@ struct Voice {
     gain: f32,
 }
 
+/// Ein Voice-Track, der auf seinen Titel wartet.
+struct VoicePending {
+    uid: u32,
+    buf: Shared<Stereo>,
+    gain: f32,
+    frames: VoiceFrames,
+}
+
+/// Ein laufender Voice-Track. `pos` ist negativ, solange nur die Musik abgesenkt wird.
+struct VoicePlay {
+    buf: Shared<Stereo>,
+    gain: f32,
+    frames: VoiceFrames,
+    pos: i64,
+    /// Weiches Ein- und Ausblenden der Ränder (Frames).
+    fade: i64,
+}
+
 /// Der Mixer im Audio-Thread.
 pub struct Mixer {
     cmds: rtrb::Consumer<Cmd>,
@@ -308,6 +338,8 @@ pub struct Mixer {
     stop_len: usize,
     stopping: Option<usize>,
     carts: [Option<Voice>; CARTS],
+    voice_pending: Option<VoicePending>,
+    voice: Option<VoicePlay>,
     mic: Option<Owned<rtrb::Consumer<f32>>>,
     mic_open: bool,
     mic_monitor: bool,
@@ -346,6 +378,8 @@ impl Mixer {
             stop_len: (STOP_SECONDS * r).max(1.0) as usize,
             stopping: None,
             carts: std::array::from_fn(|_| None),
+            voice_pending: None,
+            voice: None,
             mic: None,
             mic_open: false,
             mic_monitor: false,
@@ -382,7 +416,23 @@ impl Mixer {
                 }
                 Cmd::StartAt(frame) => self.start_at = Some(frame),
                 Cmd::ClearStartAt => self.start_at = None,
-                Cmd::ClearNext => self.next = None,
+                Cmd::VoiceOver {
+                    uid,
+                    buf,
+                    gain,
+                    frames,
+                } => {
+                    self.voice_pending = Some(VoicePending {
+                        uid,
+                        buf,
+                        gain,
+                        frames,
+                    });
+                }
+                Cmd::ClearNext => {
+                    self.next = None;
+                    self.voice_pending = None;
+                }
                 Cmd::Play => {
                     self.playing = true;
                     self.stopping = None;
@@ -466,10 +516,43 @@ impl Mixer {
         }
     }
 
+    /// Startet einen wartenden Voice-Track, sobald der Übergang zu seinem Titel nah genug ist:
+    /// Die Stimme beginnt `offset` Frames nach dem Beginn der Überblendung, die Absenkung
+    /// `attack` Frames vor der Stimme. Kommt der Übergang früher als geplant (etwa „Weiter“),
+    /// beginnt die Stimme sofort ganz von vorn, nie mittendrin.
+    fn voice_arm(&mut self) {
+        let Some(p) = self.voice_pending.as_ref() else {
+            return;
+        };
+        let f = p.frames;
+        let pos = match (&self.current, &self.next) {
+            // Der Titel läuft schon (auch: erster Titel der Sendung).
+            (Some(c), _) if c.uid == p.uid => -f.offset - (c.pos.saturating_sub(c.start)) as i64,
+            (Some(c), Some(n)) if n.uid == p.uid && self.outgoing.is_none() => {
+                let until = c.remaining() as i64 - self.xf_for(c, n) as i64;
+                if until > f.attack - f.offset {
+                    return;
+                }
+                -f.offset - until
+            }
+            _ => return,
+        };
+        if let Some(p) = self.voice_pending.take() {
+            self.voice = Some(VoicePlay {
+                buf: p.buf,
+                gain: p.gain,
+                frames: p.frames,
+                pos: pos.min(-p.frames.attack),
+                fade: ((EDGE_SECONDS * f64::from(self.rate_hz)) as i64).max(1),
+            });
+        }
+    }
+
     fn transitions(&mut self) {
         if !self.playing || self.stopping.is_some() {
             return;
         }
+        self.voice_arm();
         let due = self.start_at.is_some_and(|t| self.clock >= t);
         let held = self.next.as_ref().is_some_and(|n| n.hold);
         if due && self.outgoing.is_some() && held {
@@ -566,6 +649,7 @@ impl Mixer {
                     self.current = None;
                     self.outgoing = None;
                     self.next = None;
+                    self.voice_pending = None;
                     self.playing = false;
                     self.stopping = None;
                 } else {
@@ -587,6 +671,23 @@ impl Mixer {
                 }
             }
 
+            // Voice-Track: Stimme auf den Carts-Zweig, Musik wird abgesenkt.
+            let mut vduck = 1.0f32;
+            if let Some(v) = self.voice.as_mut() {
+                let f = v.frames;
+                if v.pos >= 0 && v.pos < f.len {
+                    let k = v.pos as usize;
+                    let g = v.gain * edge_gain(v.pos, f.len, v.fade);
+                    cl += v.buf.left.get(k).copied().unwrap_or(0.0) * g;
+                    cr += v.buf.right.get(k).copied().unwrap_or(0.0) * g;
+                }
+                vduck = duck_gain(v.pos, f.len, f.attack, f.release, f.depth);
+                v.pos += 1;
+                if v.pos >= f.len + f.release {
+                    self.voice = None;
+                }
+            }
+
             // Mikro.
             let (mut il, mut ir) = (0.0f32, 0.0f32);
             if let Some(m) = self.mic.as_mut() {
@@ -603,7 +704,7 @@ impl Mixer {
             let [lm, lc, li] = &mut self.levels;
             let (lm, lc) = (lm.tick(), lc.tick());
             let mg = self.mic_gain.tick() * li.tick();
-            let duck = self.duck.tick() * lm;
+            let duck = self.duck.tick() * lm * vduck;
             cl *= lc;
             cr *= lc;
             il *= mg;
@@ -683,6 +784,7 @@ impl Mixer {
         }
         s.carts.store(mask, Ordering::Release);
         s.mic_open.store(self.mic_open, Ordering::Release);
+        s.voice.store(self.voice.is_some(), Ordering::Release);
         s.clock.store(self.clock, Ordering::Release);
         store_max(&s.peak, peak);
         store_max(&s.mic_peak, mic_peak);

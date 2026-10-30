@@ -1,0 +1,71 @@
+---
+source: crates/radio/tests/voicetrack.rs
+expression: text
+---
+{
+  "version": 1,
+  "crossfade_seconds": 3.0,
+  "duck_db": -12.0,
+  "target_lufs": -16.0,
+  "bus_processing": false,
+  "mic_processing": false,
+  "playlist": [
+    {
+      "path": "musik/a.wav",
+      "seconds": 200.0,
+      "cues": {
+        "cue_out": 195.5
+      }
+    },
+    {
+      "path": "moderation/ansage-1.wav",
+      "seconds": 6.0,
+      "voice": {
+        "offset": -3.25,
+        "gain_db": 1.5,
+        "duck_db": -14.0,
+        "attack": 0.5,
+        "release": 1.0,
+        "before": {
+          "path": "musik/a.wav",
+          "ms": 200000,
+          "cues": {
+            "cue_out": 195.5
+          }
+        },
+        "after": {
+          "path": "musik/b.wav",
+          "ms": 180000,
+          "cues": {
+            "ramp": 8.0
+          }
+        }
+      }
+    },
+    {
+      "path": "musik/b.wav",
+      "seconds": 180.0,
+      "cues": {
+        "ramp": 8.0
+      }
+    }
+  ],
+  "carts": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ]
+}

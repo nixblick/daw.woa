@@ -4,6 +4,30 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 30: Voice-Tracking-Editor (0.25.0, offen)
+
+Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Zwei Titel, dazwischen ein Voice-Track:** Radio-Modus, zwei Titel in die Playlist. Rechtsklick auf den ersten Titel, „Voice-Track danach einfügen …“, eine Sprachdatei wählen. Der Eintrag steht zwischen den Titeln, markiert „VOICE“.
+2. **Sprachdatei importieren:** Rechtsklick auf den Voice-Track, „Voice-Track bearbeiten …“. Das Fenster zeigt Ausklang von A, Anfang von B, die Stimme und die Absenkungskurve. „Vorschlag“ setzt die Stimme so, dass sie am Ramp-Punkt von B endet.
+3. **Stimme in den Ausklang schieben:** Stimme mit der Maus nach links ziehen, die rote Kurve zeigt die Absenkung der Musik. „Übernehmen“, dann **über Kopfhörer vorhören** („Vorhören“, braucht den Kopfhörer-Ausgang in den Einstellungen). Nie auf Sendung.
+4. **Zweiten Titel tauschen:** Den Titel hinter dem Voice-Track entfernen und einen anderen einfügen. Der Voice-Track zeigt „prüfen“ und geht nicht auf Sendung; im Editor löscht „Prüfung bestätigen“ den Hinweis.
+
+Selbst geprüft von Claude (ohne Ton, ohne Mikrofon, ohne Gerät, erzeugte Töne durch den echten Mixer offline):
+- A, Stimme, B als Sinustöne mit verschiedener Frequenz (Goertzel-Messung je Ton): Die Stimme beginnt auf 0,06 s genau zum eingestellten Versatz, B beginnt zum Übergang, die Musik unter der Stimme ist um 12 dB abgesenkt (auf 3 % genau), die Rampe beginnt 0,4 s vor der Stimme, nach der Rückholzeit ist die Musik wieder unberührt, und über die ganze Strecke bleibt der Pegel hörbar (keine Lücke).
+- Der Mixer läuft in diesen Tests in `assert_no_alloc`.
+- Kommt der Übergang früher („Weiter“ nach 10 s), läuft die Stimme vollständig von vorn, nie angeschnitten.
+- Tausch eines Nachbarn setzt „prüfen“, die Stimme wird nicht gesendet (kein Ton, Musik nicht abgesenkt); nach „Bestätigen“ läuft sie.
+- Speichern und Laden als Schnappschuss (`insta`) samt Nachbarbindung; ein Titel, der sich nach dem Laden ändert, setzt „prüfen“.
+- Editor als Zustandstest (Vorschlag, Verschieben mit Grenzen, Wellenformen), Fenster zeichnet ohne Display; Auswahl aus `moderation` wird Voice-Track.
+
+Nicht selbst geprüft: das Fenster im echten Bild, der Klang der Absenkung bei echter Musik und Sprache, das Vorhören im Kopfhörer (nur der Offline-Render ist getestet, kein Gerät), das Ziehen mit der Maus und das Verhalten mit langen echten Dateien.
+
+Bewusst so:
+- Die Stimme läuft über den Cart-Regler; ein Voice-Track folgt damit dem Cart-Pegel.
+- Eine Sprachdatei darf bis 300 s lang sein, die Stimme bis 60 s vor dem Übergang beginnen.
+- Aufnahme der Stimme direkt im Editor und ein MCP-Werkzeug für Voice-Tracks sind nicht gebaut. Aufnahme braucht einen Mikrofontest am Gerät; das entscheidet André.
+
 ## Paket 29: Feste Zeit-Events und pünktliche volle Stunde (0.24.0, offen)
 
 Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
