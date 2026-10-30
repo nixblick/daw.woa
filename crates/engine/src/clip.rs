@@ -13,6 +13,10 @@ use woa_dsp::{Node, ProcessBuffers};
 
 use woa_model::{Clip, Project, TrackId, TrackKind};
 
+use rtrb::Consumer;
+use woa_dsp::instrument::NoteEvent;
+
+use crate::midi_clip::midi_track_source;
 use crate::project::{ProjectGraph, build_project_graph};
 use crate::transport::{TransportHandle, beats_to_samples};
 use crate::{Engine, EngineError};
@@ -90,27 +94,33 @@ pub fn clip_graph(
     clip_graph_live(project, transport, rate, load, meters, None)
 }
 
-/// Wie [`clip_graph`], dazu eine Live-Quelle (Instrument der scharfen MIDI-Spur, Paket 11)
-/// auf der Spur `live.0`. Sie läuft unabhängig vom Transport und geht durch Fader, Pan,
-/// Mute und Solo der Spur.
+/// Wie [`clip_graph`], dazu die Live-Queue der scharfen MIDI-Spur (Paket 11) auf der
+/// Spur `live.0`. MIDI-Spuren spielen ihre MIDI-Clips (Paket 12) über das Spur-Instrument;
+/// die Live-Events gehen unabhängig vom Transport in dasselbe Instrument. Alles läuft
+/// durch Fader, Pan, Mute und Solo der Spur.
 pub fn clip_graph_live(
     project: &Project,
     transport: &TransportHandle,
     rate: f32,
     load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
     mut meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
-    live: Option<(TrackId, Box<dyn Node>)>,
+    live: Option<(TrackId, Consumer<NoteEvent>)>,
 ) -> ProjectGraph {
     let mut live = live;
     let mut source = |t: &woa_model::Track| -> Option<Box<dyn Node>> {
         if t.kind == TrackKind::Midi {
-            return match live.take() {
-                Some((id, node)) if id == t.id => Some(node),
+            let queue = match live.take() {
+                Some((id, q)) if id == t.id => Some(q),
                 other => {
                     live = other;
                     None
                 }
             };
+            let mut player = midi_track_source(t, project.tempo_bpm, rate, transport, queue)?;
+            if let Some(m) = meters.as_deref_mut() {
+                player = player.with_meter(Arc::clone(m.entry(t.id).or_default()));
+            }
+            return Some(Box::new(player));
         }
         if t.kind != TrackKind::Audio {
             return None;
@@ -264,19 +274,20 @@ impl Node for ClipPlayer {
             }
         }
         if let Some(m) = &self.meter {
-            let peak = out.iter().fold(0.0f32, |a, s| a.max(s.abs()));
-            let mut cur = m.load(Ordering::Relaxed);
-            while peak > f32::from_bits(cur) {
-                match m.compare_exchange_weak(
-                    cur,
-                    peak.to_bits(),
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => break,
-                    Err(seen) => cur = seen,
-                }
-            }
+            store_peak(m, out);
+        }
+    }
+}
+
+/// Merkt sich den Spitzenpegel von `block` in `meter`, falls höher. Echtzeitsicher.
+pub(crate) fn store_peak(meter: &AtomicU32, block: &[f32]) {
+    let peak = block.iter().fold(0.0f32, |a, s| a.max(s.abs()));
+    let mut cur = meter.load(Ordering::Relaxed);
+    while peak > f32::from_bits(cur) {
+        match meter.compare_exchange_weak(cur, peak.to_bits(), Ordering::Relaxed, Ordering::Relaxed)
+        {
+            Ok(_) => break,
+            Err(seen) => cur = seen,
         }
     }
 }
@@ -347,8 +358,7 @@ mod tests {
 
     #[test]
     fn live_instrument_plays_on_its_midi_track_while_stopped() {
-        use woa_dsp::instrument::{InstrumentNode, NoteEvent, note_queue};
-        use woa_dsp::synth::{PolySynth, Waveform};
+        use woa_dsp::instrument::{NoteEvent, note_queue};
         let mut project = Project::new("live");
         project
             .tracks
@@ -358,14 +368,13 @@ mod tests {
         project.tracks.push(quiet);
         let (mut engine, mut proc_) = Engine::new(16);
         let (mut tx, rx) = note_queue(64);
-        let node = InstrumentNode::new(PolySynth::new(4, Waveform::Sine), rx);
         let graph = clip_graph_live(
             &project,
             &engine.transport(),
             48_000.0,
             &mut |_| None,
             None,
-            Some((TrackId(1), Box::new(node))),
+            Some((TrackId(1), rx)),
         );
         assert_eq!(
             graph.tracks.len(),

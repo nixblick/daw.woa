@@ -195,12 +195,51 @@ impl AppState {
                     offset_beats,
                     fade_in_beats: 0.0,
                     fade_out_beats: 0.0,
+                    midi: None,
                 },
                 index: None,
             })
         });
         let closed = self.session.end_group();
         self.report("Aufnahme", closed);
+        ok.then_some(id)
+    }
+
+    /// Puts recorded or imported notes as a MIDI clip on `track` (or on a new MIDI
+    /// track) as one undo step (Paket 12).
+    pub fn add_midi_clip(
+        &mut self,
+        track: Option<TrackId>,
+        name: &str,
+        start_beats: f64,
+        length_beats: f64,
+        midi: woa_model::MidiData,
+    ) -> Option<ClipId> {
+        let target = track.filter(|t| {
+            self.project()
+                .track(*t)
+                .is_some_and(|t| t.kind == TrackKind::Midi)
+        });
+        self.session.begin_group("MIDI-Aufnahme");
+        let track = match target {
+            Some(t) => Some(t),
+            None => {
+                let id = self.session.new_track_id();
+                let name = format!("MIDI {}", self.project().tracks.len() + 1);
+                self.apply(Command::add_track(id, name, TrackKind::Midi))
+                    .then_some(id)
+            }
+        };
+        let id = self.session.new_clip_id();
+        let ok = track.is_some_and(|track| {
+            self.apply(Command::AddClip {
+                track,
+                clip: Clip::new_midi(id, name, start_beats.max(0.0), length_beats.max(1e-3), midi),
+                index: None,
+            })
+        });
+        let closed = self.session.end_group();
+        self.report("MIDI-Aufnahme", closed);
         ok.then_some(id)
     }
 

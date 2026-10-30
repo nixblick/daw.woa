@@ -5848,7 +5848,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "woa"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "eframe",
  "tracing",
@@ -5860,7 +5860,7 @@ dependencies = [
 
 [[package]]
 name = "woa-agent"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "hound",
  "rmcp",
@@ -5878,7 +5878,7 @@ dependencies = [
 
 [[package]]
 name = "woa-dsp"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "assert_no_alloc",
  "hound",
@@ -5888,7 +5888,7 @@ dependencies = [
 
 [[package]]
 name = "woa-engine"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "arc-swap",
  "assert_no_alloc",
@@ -5907,11 +5907,11 @@ dependencies = [
 
 [[package]]
 name = "woa-guests"
-version = "0.6.0"
+version = "0.7.0"
 
 [[package]]
 name = "woa-gui"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "eframe",
  "image",
@@ -5933,7 +5933,7 @@ dependencies = [
 
 [[package]]
 name = "woa-headless"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -5954,22 +5954,23 @@ dependencies = [
 
 [[package]]
 name = "woa-io"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "assert_no_alloc",
  "midir",
  "rtrb",
  "tracing",
  "woa-dsp",
+ "woa-model",
 ]
 
 [[package]]
 name = "woa-library"
-version = "0.6.0"
+version = "0.7.0"
 
 [[package]]
 name = "woa-model"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "insta",
  "proptest",
@@ -5981,11 +5982,11 @@ dependencies = [
 
 [[package]]
 name = "woa-plugins"
-version = "0.6.0"
+version = "0.7.0"
 
 [[package]]
 name = "woa-radio"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "assert_no_alloc",
  "basedrop",
@@ -6000,11 +6001,11 @@ dependencies = [
 
 [[package]]
 name = "woa-remote"
-version = "0.6.0"
+version = "0.7.0"
 
 [[package]]
 name = "woa-stream"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "hound",
  "mp3lame-encoder",
@@ -6018,7 +6019,7 @@ dependencies = [
 
 [[package]]
 name = "woa-streamd"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "tracing",
  "woa-radio",
@@ -6028,7 +6029,7 @@ dependencies = [
 
 [[package]]
 name = "woa-telemetry"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "base64",
  "serde",
@@ -6043,7 +6044,7 @@ dependencies = [
 
 [[package]]
 name = "woa-updater"
-version = "0.6.0"
+version = "0.7.0"
 
 [[package]]
 name = "writeable"

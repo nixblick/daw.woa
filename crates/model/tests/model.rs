@@ -22,6 +22,7 @@ fn sample() -> Session {
             offset_beats: 0.0,
             fade_in_beats: 0.0,
             fade_out_beats: 0.0,
+            midi: None,
         },
         index: None,
     })
@@ -206,6 +207,7 @@ fn build(s: &mut Session, (kind, a, b, x, flag): (u8, usize, usize, f64, bool)) 
                     offset_beats: 0.0,
                     fade_in_beats: 0.0,
                     fade_out_beats: 0.0,
+                    midi: None,
                 },
                 index: Some(b),
             }

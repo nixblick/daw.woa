@@ -164,6 +164,7 @@ pub struct MidiIn {
     wanted: Option<String>,
     conn: Option<(String, MidiInputConnection<()>)>,
     sink: EventSink,
+    tap: crate::record::RecordTap,
     counters: Arc<MidiCounters>,
     last_poll: Option<Instant>,
     ports: Vec<String>,
@@ -177,11 +178,17 @@ impl MidiIn {
             wanted: None,
             conn: None,
             sink,
+            tap: crate::record::record_tap(),
             counters: Arc::new(MidiCounters::default()),
             last_poll: None,
             ports: Vec::new(),
             last_error: None,
         }
+    }
+
+    /// Abzweig für die MIDI-Aufnahme (Paket 12), siehe [`crate::record::MidiTake`].
+    pub fn record_tap(&self) -> crate::record::RecordTap {
+        Arc::clone(&self.tap)
     }
 
     pub fn counters(&self) -> Arc<MidiCounters> {
@@ -287,14 +294,21 @@ impl MidiIn {
             return;
         };
         let sink = Arc::clone(&self.sink);
+        let tap = Arc::clone(&self.tap);
         let counters = Arc::clone(&self.counters);
         let mut parser = MidiParser::new();
         let callback = move |_stamp: u64, bytes: &[u8], _: &mut ()| {
+            // Ankunftszeit zuerst, damit Sperren die Aufnahme nicht verschieben.
+            let at = Instant::now();
             let Ok(mut guard) = sink.lock() else {
                 return;
             };
+            let mut tap = tap.lock().ok();
             parser.feed_all(bytes, |ev| {
                 counters.events.fetch_add(1, Ordering::Relaxed);
+                if let Some(t) = tap.as_deref_mut() {
+                    crate::record::tap_event(t, at, ev);
+                }
                 let pushed = guard.as_mut().is_some_and(|p| p.push(ev).is_ok());
                 if !pushed {
                     counters.dropped.fetch_add(1, Ordering::Relaxed);
