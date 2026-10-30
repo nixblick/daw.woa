@@ -306,7 +306,7 @@ impl Command {
                 }
                 for ins in &track.inserts {
                     if let Some(src) = ins.sidechain {
-                        project.check_sidechain(track.id, ins, src)?;
+                        project.check_sidechain(&track, ins, src)?;
                         if src == track.id {
                             return Err(ModelError::RoutingCycle {
                                 from: src,
@@ -618,7 +618,7 @@ impl Command {
                     .find(|i| i.id == insert)
                     .ok_or(ModelError::InsertNotFound(insert))?;
                 if let Some(src) = source {
-                    project.check_sidechain(track, ins, src)?;
+                    project.check_sidechain(t, ins, src)?;
                     if project.reaches(track, src) {
                         return Err(ModelError::RoutingCycle {
                             from: src,

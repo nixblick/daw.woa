@@ -5,6 +5,8 @@
 Paket 18 aus M5: Automation und Sidechain (im Bau, wird mit jeder Schicht ergänzt).
 
 - **Modell:** Jede Spur kann je Ziel (Lautstärke, Pan, Send, Effekt-Regler) eine Automationskurve mit Betriebsart Lesen, Schreiben oder Latch haben (`Command::SetAutomation`). Kompressor und Gate nehmen ein Sidechain-Signal einer anderen Spur (`Command::SetInsertSidechain`); Kreise über Sidechains werden abgelehnt, Spur löschen trennt Sidechains im selben Undo-Schritt. Projektformat 3 wird nur geschrieben, wenn Automation oder Sidechain vorkommt; alle anderen Projekte bleiben Format 2, ältere Dateien laden unverändert.
+- **Engine und DSP:** Kurven laufen im Audio-Thread sample-genau (Blockgröße ohne Einfluss, Loop-Sprung exakt, bei Stopp gilt der Wert am Cursor). Lautstärke, Pan (auch Balance am Bus) und Sends rechnen die Kurve pro Sample (dB-Interpolation), Effekt-Regler folgen in 64-Sample-Schritten. Nur wo eine Kurve spielt, tauscht der Graph die Knoten; Projekte ohne Automation klingen bit-gleich wie vorher. Kompressor und Gate einer Spur nehmen einen Sidechain-Schlüssel (Signal der Quelle nach Fader, vor Pan); jeder dynamische Effekt hat einen Absenkungsmesser (`ProjectGraph::reductions`). Kurven im Modus Schreiben oder Latch spielen nicht ab.
+- **Tests:** Rampe mit drei Punkten gegen die dB-Rechnung Sample für Sample in Blöcken zu 1, 128 und 1000; Pan-Fahrt; Send-Kurve; Regler-Kurve (+12 dB); Loop-Sprung; Stopp am Cursor; Ducking per Sidechain gemessen (Musik mehr als 6 dB leiser, Absenkungsmesser schlägt aus); alles zusammen unter `assert_no_alloc`.
 
 ## 0.12.0 — 2026-10-30
 

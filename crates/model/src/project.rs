@@ -364,7 +364,7 @@ impl Project {
             for i in &t.inserts {
                 i.check()?;
                 if let Some(src) = i.sidechain {
-                    self.check_sidechain(t.id, i, src)?;
+                    self.check_sidechain(t, i, src)?;
                 }
                 if seen.contains(&i.id.0) || self.tracks.iter().any(|o| o.id.0 == i.id.0) {
                     return Err(ModelError::DuplicateId(i.id.0));
@@ -402,11 +402,12 @@ impl Project {
     /// The sidechain source exists and the effect can listen to it.
     pub(crate) fn check_sidechain(
         &self,
-        _track: TrackId,
+        target: &Track,
         insert: &Insert,
         source: TrackId,
     ) -> Result<()> {
-        if !insert.kind.supports_sidechain() {
+        // Bus-Inserts haben (noch) keinen Schlüsseleingang.
+        if !insert.kind.supports_sidechain() || target.kind == TrackKind::Bus {
             return Err(ModelError::SidechainNotSupported(insert.id));
         }
         self.track(source)

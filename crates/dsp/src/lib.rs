@@ -10,6 +10,7 @@
 //! [`soundfont::SoundFontPlayer`], per [`instrument::InstrumentNode`] im Graphen,
 //! Note-Events über [`instrument::note_queue`] (`rtrb`).
 
+pub mod automation;
 pub mod clock;
 pub mod dynamics;
 pub mod effects;
@@ -33,6 +34,10 @@ pub trait Node: Send {
     fn prepare(&mut self, sample_rate: f32);
     /// Setzt einen Parameter; Wertsprünge werden intern geglättet. Echtzeitsicher.
     fn set_param(&mut self, param: u32, value: f32);
+    /// Meldet vor jedem Abschnitt die Transportposition (Samples) und ob sie weiterläuft.
+    /// Nur Knoten mit Automation brauchen das; sie zählen die Position im Block selbst weiter.
+    /// Echtzeitsicher.
+    fn locate(&mut self, _position: u64, _playing: bool) {}
     /// Rechnet einen Block. Darf nicht allokieren.
     fn process(&mut self, buffers: ProcessBuffers<'_>);
 }
@@ -52,6 +57,8 @@ pub trait StereoNode: Send {
     fn prepare(&mut self, sample_rate: f32);
     /// Setzt einen Parameter; Wertsprünge werden intern geglättet. Echtzeitsicher.
     fn set_param(&mut self, param: u32, value: f32);
+    /// Wie [`Node::locate`].
+    fn locate(&mut self, _position: u64, _playing: bool) {}
     /// Rechnet einen Block. Darf nicht allokieren.
     fn process(&mut self, buffers: StereoBuffers<'_>);
 }
