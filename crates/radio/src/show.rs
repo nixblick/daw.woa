@@ -67,6 +67,10 @@ impl PlaylistEntry {
         self.peak_db = m.peak_db;
         self.seconds = Some(m.seconds);
         self.stamp = file_stamp(&self.path);
+        // Cue-Vorschlag nur, wo noch nichts gesetzt ist: von Hand gesetzte Punkte bleiben.
+        if self.cues.is_empty() && m.auto_cues.validate(Some(m.seconds)).is_ok() {
+            self.cues = m.auto_cues;
+        }
     }
 
     /// Gespielte Länge (Cue-In bis Cue-Out), falls gemessen.
@@ -377,6 +381,40 @@ mod tests {
         assert!(show.move_entry(2, 0));
         assert_eq!(show.playlist[0].seconds, Some(4.0));
         assert!(!show.move_entry(5, 0));
+    }
+
+    #[test]
+    fn measuring_proposes_cues_but_never_overrides_manual_ones() {
+        let auto = Cues {
+            cue_in: Some(1.0),
+            fade_out: Some(8.0),
+            cue_out: Some(10.0),
+            ..Cues::default()
+        };
+        let m = Measured {
+            lufs: Some(-20.0),
+            peak_db: Some(-3.0),
+            seconds: 12.0,
+            auto_cues: auto,
+        };
+        let mut fresh = PlaylistEntry::new("/musik/a.wav");
+        fresh.set_measured(m);
+        assert_eq!(fresh.cues, auto);
+        assert_eq!(fresh.play_seconds(), Some(9.0));
+
+        let manual = Cues {
+            cue_out: Some(11.0),
+            ..Cues::default()
+        };
+        let mut hand = PlaylistEntry::new("/musik/b.wav");
+        hand.cues = manual;
+        hand.set_measured(m);
+        assert_eq!(hand.cues, manual, "Handarbeit hat Vorrang");
+
+        // Ein Vorschlag, der nicht zur Länge passt, wird verworfen.
+        let mut bad = PlaylistEntry::new("/musik/c.wav");
+        bad.set_measured(Measured { seconds: 5.0, ..m });
+        assert!(bad.cues.is_empty());
     }
 
     #[test]
