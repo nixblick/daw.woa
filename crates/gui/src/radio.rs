@@ -752,7 +752,13 @@ impl RadioDesk {
             self.toggle_mic();
         }
         if go {
-            self.with(|c| c.start_or_next());
+            // Leertaste: ein Knopf, läuft es, dann Pause, sonst Play.
+            let running = self.view.running;
+            for e in woa_radio::party::PartyState::default()
+                .apply(woa_radio::party::PartyCommand::PlayPause, running)
+            {
+                self.party_effect(e);
+            }
         }
         let dropped: Vec<PathBuf> = ctx.input(|i| {
             i.raw
@@ -1056,7 +1062,7 @@ impl RadioDesk {
         // Hardware-Tastenreihe (Broadcast-Konsole)
         ui.horizontal_wrapped(|ui| {
             let big = |t: &str| egui::RichText::new(t).size(15.0).strong();
-            let go = if v.running { "▶ Weiter" } else { "▶ Start" };
+            let go = if v.running { "⏸ Pause" } else { "▶ Play" };
             let go_btn = egui::Button::new(big(go).color(if v.running {
                 theme::WELL
             } else {
@@ -1069,9 +1075,13 @@ impl RadioDesk {
             })
             .stroke(egui::Stroke::new(1.0, theme::OK_GREEN))
             .min_size(egui::vec2(104.0, 38.0));
-            let r = ui.add(go_btn).on_hover_text("Leertaste");
+            let r = ui.add(go_btn).on_hover_text("Play / Pause (Leertaste)");
             if r.clicked() {
-                self.with(|c| c.start_or_next());
+                for e in woa_radio::party::PartyState::default()
+                    .apply(woa_radio::party::PartyCommand::PlayPause, v.running)
+                {
+                    self.party_effect(e);
+                }
             }
             self.learn_menu(&r, Target::StartNext);
 
@@ -1093,6 +1103,11 @@ impl RadioDesk {
                     "⏮",
                     woa_radio::party::PartyCommand::Previous,
                     "Vorheriger Titel (P)",
+                ),
+                (
+                    "⏭",
+                    woa_radio::party::PartyCommand::Next,
+                    "Nächster Titel (N)",
                 ),
                 (
                     "↺",

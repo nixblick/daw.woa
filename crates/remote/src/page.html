@@ -86,7 +86,7 @@ li .n{color:var(--accent);font-family:ui-monospace,monospace;min-width:1.6em}
   <section id="dj" class="hidden">
     <div class="grid4" style="margin-bottom:8px">
       <button class="big" data-cmd="previous" aria-label="Vorheriger Titel">&#9198;<small>Zurück</small></button>
-      <button class="primary big" data-cmd="play_pause" id="playBtn">Play</button>
+      <button class="primary big" data-cmd="play_pause" id="playBtn">&#9654; Play</button>
       <button class="big" data-cmd="stop" aria-label="Stopp">&#9209;<small>Stopp</small></button>
       <button class="big" data-cmd="next" aria-label="Nächster Titel">&#9197;<small>Weiter</small></button>
     </div>
@@ -223,7 +223,7 @@ li .n{color:var(--accent);font-family:ui-monospace,monospace;min-width:1.6em}
     $("remaining").className = n && n.playing && /^0:0\d$/.test(n.remaining) ? "urgent" : "";
     $("prog").value = n ? n.progress : 0;
     $("next").textContent = state.next ? "NÄCHSTER: " + state.next : "";
-    $("playBtn").textContent = n && n.playing ? "Pause" : "Play";
+    $("playBtn").textContent = n && n.playing ? "\u23F8 Pause" : "\u25B6 Play";
     // Wiederholen, Zufall und Stumm zeigen denselben Zustand wie die App.
     var rep = state.repeat || "off";
     $("repeatBtn").textContent = rep === "one" ? "\uD83D\uDD02 Titel" : rep === "all" ? "\uD83D\uDD01 Playlist" : "\uD83D\uDD01 Aus";
