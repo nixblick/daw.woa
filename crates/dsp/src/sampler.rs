@@ -195,7 +195,10 @@ impl Instrument for Sampler {
                     v.env.release();
                 }
             }
-            NoteEventKind::ProgramChange { .. } => {}
+            // Haltepedal und Pitchbend kann bisher nur der Synthesizer (Paket 11).
+            NoteEventKind::ProgramChange { .. }
+            | NoteEventKind::Sustain { .. }
+            | NoteEventKind::PitchBend { .. } => {}
         }
     }
 

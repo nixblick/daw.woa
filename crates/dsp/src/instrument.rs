@@ -20,6 +20,20 @@ pub enum NoteEventKind {
     AllNotesOff,
     /// Programmwechsel (nur SoundFont-Player, General MIDI).
     ProgramChange { program: u8 },
+    /// Haltepedal (CC 64): `true` ab Wert 64.
+    Sustain { on: bool },
+    /// Tonhöhenrad, -8192..=8191 (0 = Mitte).
+    PitchBend { value: i16 },
+}
+
+/// Pitchbend-Bereich der eingebauten Instrumente in Halbtönen.
+pub const PITCH_BEND_SEMITONES: f64 = 2.0;
+
+/// Frequenzfaktor für einen Pitchbend-Wert (±[`PITCH_BEND_SEMITONES`]).
+#[inline]
+pub fn bend_factor(value: i16) -> f64 {
+    let semis = f64::from(value) / 8192.0 * PITCH_BEND_SEMITONES;
+    (semis / 12.0).exp2()
 }
 
 /// Ein Event mit Sample-Versatz innerhalb des Blocks, in dem es ankommt.

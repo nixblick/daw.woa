@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0 — 2026-10-30
+
+Paket 11 aus M4 (#5): Keyboard spielt live.
+
+- **MIDI-Eingang** (`woa_io::midi`, mit `midir` 0.11, MIT): Eingänge auflisten, verbinden, alle 2 s neu abfragen. Wird das Gerät abgezogen, trennt WOA die Verbindung, schickt „Pedal los“ und „alle Noten aus“ (nichts hängt) und verbindet von selbst wieder, sobald es zurück ist, auch mit neuer ALSA-Nummer. Log-Zeile je Auswahl, Verbindung, Trennung und Fehler (gleiche Fehler nur einmal).
+- **Parser** für Note On/Off (Note On mit Velocity 0 = Note aus), Anschlagstärke, Haltepedal (CC 64), Pitchbend, Program Change und All Notes Off (CC 120/123); versteht Running Status, überspringt SysEx und Echtzeit-Bytes.
+- **Scharfe MIDI-Spur spielt:** Neuer Knopf „+ MIDI-Spur“. Die erste scharf geschaltete MIDI-Spur (sonst die ausgewählte, wenn sie eine MIDI-Spur ist) bekommt ein Live-Instrument (Synthesizer, 16 Stimmen) und klingt durch Fader, Pan, Mute und Solo der Spur, auch ohne ▶. Die Events gehen über die `rtrb`-Queue in den Audio-Thread, dort ohne Sperre und ohne Allokation.
+- **Synthesizer** versteht jetzt Haltepedal und Pitchbend (±2 Halbtöne), der SoundFont-Player reicht beides weiter. Der Sampler ignoriert beides noch.
+- **Einstellungen → MIDI-Eingang:** Aus oder ein Gerät, gespeichert in `config.json` (`midi_input`). Ein gewähltes, nicht eingestecktes Gerät steht mit „(nicht verbunden)“ in der Liste.
+- **MIDI-Lampe** rechts in der Kopfzeile: grau = aus oder verbunden in Ruhe, rot = gewählt, aber nicht da, grün bei jedem Event. Der Tooltip nennt Gerät und gespielte Spur.
+- Tests: Parser mit Bytefolgen; virtueller ALSA-Port spielt eine leise und eine laute Note mit Pedal in die Instrument-Node (Offline-Render unter `assert_no_alloc`: nicht still, laut mehr als dreimal so laut wie leise, Pedal hält, Pedal los gibt frei), schließt den Port (Status „wartet“, keine hängende Note) und öffnet ihn wieder (verbunden, Events kommen an); Live-Instrument im Projekt-Graphen klingt ohne laufenden Transport.
+
 ## 0.5.1 — 2026-10-30
 
 - `cargo build -p woa-headless` ohne Feature `device` baut wieder. `RADIO_BUFFER_FRAMES` stand im Modul `device`, das ohne Feature fehlt; die Konstante liegt jetzt im Wurzelmodul von `woa-engine`, `device` reicht sie weiter. Gefunden beim Bau von Paket 10.
