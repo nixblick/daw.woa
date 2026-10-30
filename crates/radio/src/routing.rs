@@ -26,19 +26,42 @@ pub enum Source {
     Playlist,
     /// Cart-Wall.
     Carts,
+    /// Deck A, B, C (Silvester Teil 2).
+    DeckA,
+    DeckB,
+    DeckC,
 }
 
 /// Zahl der Quellen.
-pub const SOURCES: usize = 2;
+pub const SOURCES: usize = 5;
 
 impl Source {
     /// Alle Quellen in der Reihenfolge der Oberfläche.
-    pub const ALL: [Source; SOURCES] = [Source::Playlist, Source::Carts];
+    pub const ALL: [Source; SOURCES] = [
+        Source::Playlist,
+        Source::Carts,
+        Source::DeckA,
+        Source::DeckB,
+        Source::DeckC,
+    ];
+
+    /// Quelle des Decks `i` (0 = A).
+    pub fn deck(i: usize) -> Option<Source> {
+        match i {
+            0 => Some(Source::DeckA),
+            1 => Some(Source::DeckB),
+            2 => Some(Source::DeckC),
+            _ => None,
+        }
+    }
 
     pub fn index(self) -> usize {
         match self {
             Source::Playlist => 0,
             Source::Carts => 1,
+            Source::DeckA => 2,
+            Source::DeckB => 3,
+            Source::DeckC => 4,
         }
     }
 
@@ -47,6 +70,9 @@ impl Source {
         match self {
             Source::Playlist => "Playlist",
             Source::Carts => "Cart-Wall",
+            Source::DeckA => "Deck A",
+            Source::DeckB => "Deck B",
+            Source::DeckC => "Deck C",
         }
     }
 }
@@ -79,8 +105,8 @@ impl Route {
     }
 }
 
-/// Die Zuordnung aller Quellen; gespeichert in `config.json`. Fehlt eine Quelle, gilt das
-/// Standardgerät, Kanal 1/2.
+/// Die Zuordnung aller Quellen; gespeichert in `config.json`. Fehlt die Playlist, gilt das
+/// Standardgerät, Kanal 1/2. Fehlt eine andere Quelle, läuft sie mit der Playlist (Hauptausgang).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct OutputMap {
@@ -89,7 +115,7 @@ pub struct OutputMap {
 
 impl OutputMap {
     pub fn is_default(&self) -> bool {
-        self.routes.values().all(|r| *r == Route::default())
+        self.routes.is_empty()
     }
 
     /// Route einer Quelle (Vorgabe, wenn nicht gesetzt).
@@ -97,12 +123,23 @@ impl OutputMap {
         self.routes.get(&s).cloned().unwrap_or_default()
     }
 
+    /// Die gesetzte Route einer Quelle; `None` = nicht gesetzt (Playlist: Standardgerät, andere
+    /// Quellen: mit der Playlist).
+    pub fn explicit(&self, s: Source) -> Option<&Route> {
+        self.routes.get(&s)
+    }
+
     pub fn set(&mut self, s: Source, r: Route) {
-        if r == Route::default() {
+        if s == Source::Playlist && r == Route::default() {
             self.routes.remove(&s);
         } else {
             self.routes.insert(s, r);
         }
+    }
+
+    /// Nimmt die Zuordnung einer Quelle zurück (sie läuft dann mit der Playlist).
+    pub fn clear(&mut self, s: Source) {
+        self.routes.remove(&s);
     }
 }
 
@@ -222,7 +259,9 @@ impl Plan {
             if s == Source::Playlist {
                 continue;
             }
-            let r = map.get(s);
+            let Some(r) = map.explicit(s).cloned() else {
+                continue;
+            };
             let pair = usize::from(r.pair);
             let info = match probe(r.device_id.as_deref()) {
                 Ok(i) => i,
@@ -391,7 +430,7 @@ mod tests {
         assert_eq!(p.devices[1].open_id.as_deref(), Some("2"));
         assert_eq!(p.devices[1].pairs, 2);
         assert_eq!(p.devices[1].dests, vec![(1, 1)]);
-        assert_eq!(p.routes.dest, [0, 1]);
+        assert_eq!(p.routes.dest[..2], [0, 1]);
         assert!(p.warnings.is_empty());
     }
 
@@ -403,13 +442,13 @@ mod tests {
         let p = Plan::build(&m, &probe, &[]);
         assert_eq!(p.devices.len(), 1);
         assert_eq!(p.devices[0].pairs, 2);
-        assert_eq!(p.routes.dest, [0, 1]);
+        assert_eq!(p.routes.dest[..2], [0, 1]);
         // Das Standardgerät ist Karte 1: dieselbe Karte unter anderem Namen zählt als eine.
         let mut m = OutputMap::default();
         m.set(Source::Carts, route(Some("1"), 0));
         let p = Plan::build(&m, &probe, &[]);
         assert_eq!(p.devices.len(), 1);
-        assert_eq!(p.routes.dest, [0, 0]);
+        assert_eq!(p.routes.dest[..2], [0, 0]);
     }
 
     #[test]
@@ -417,7 +456,7 @@ mod tests {
         let mut m = OutputMap::default();
         m.set(Source::Carts, route(Some("weg"), 0));
         let p = Plan::build(&m, &probe, &[]);
-        assert_eq!(p.routes.dest, [0, 0]);
+        assert_eq!(p.routes.dest[..2], [0, 0]);
         assert_eq!(p.warnings.len(), 1);
         assert!(p.warnings[0].contains("Cart-Wall") && p.warnings[0].contains("fehlt"));
         // Fehlt das Gerät der Playlist, läuft sie über das Standardgerät.
@@ -433,13 +472,13 @@ mod tests {
         let mut m = OutputMap::default();
         m.set(Source::Carts, route(Some("1"), 1));
         let p = Plan::build(&m, &probe, &[]);
-        assert_eq!(p.routes.dest, [0, 0]);
+        assert_eq!(p.routes.dest[..2], [0, 0]);
         assert!(p.warnings[0].contains("Kanal 3/4"));
         let mut m = OutputMap::default();
         m.set(Source::Playlist, route(Some("2"), 0));
         m.set(Source::Carts, route(Some("2"), 1));
         let p = Plan::build(&m, &probe, &[1]);
-        assert_eq!(p.routes.dest, [0, 0]);
+        assert_eq!(p.routes.dest[..2], [0, 0]);
         assert!(p.warnings[0].contains("Vorhören"));
     }
 
@@ -452,7 +491,7 @@ mod tests {
         let json = serde_json::to_string(&m).unwrap();
         assert_eq!(json, r#"{"carts":{"device_id":"2","pair":1}}"#);
         assert_eq!(serde_json::from_str::<OutputMap>(&json).unwrap(), m);
-        m.set(Source::Carts, Route::default());
+        m.clear(Source::Carts);
         assert!(m.is_default());
     }
 }

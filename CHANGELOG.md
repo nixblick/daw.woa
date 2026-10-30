@@ -1,8 +1,42 @@
 # Changelog
 
-## 0.34.2 — 2026-10-30
+## 0.34.6 — 2026-10-30
 
 - **Design System im Repo:** `docs/design/woa-design-system.zip` (Original aus Claude Design) und entpackt unter `docs/design/woa-design-system/` (Brand-Book, Tokens für 6 Themen, Bausteine mit Vorschau, Screen-Entwürfe, Logos, Schriften). Übersicht in `docs/design/README.md`, Schriftlizenzen (SIL OFL 1.1) in `docs/herkunft.md`, `CLAUDE.md` nennt das Design System als verbindliche Vorgabe für `crates/gui`. Kein Code geändert.
+
+## 0.34.5 — 2026-10-30
+
+Fix #139: Kopfhörer unter Windows blieben stumm, nachdem Windows das Standard-Ausgabegerät umgeschaltet hatte.
+
+- **Ausgabe verbindet sich selbst neu.** Player, Sendeausgänge (Hauptgerät und weitere Geräte) und Vorhören laufen jetzt über `ManagedOutput` (`crates/engine/src/device.rs`). Meldet der Strom `StreamInvalidated`, `DeviceNotAvailable` oder einen Treiberfehler, oder wechselt bei „Standard“ das Standardgerät (Prüfung alle 2 s), öffnet der GUI-Takt den Strom neu auf dem aktuellen Standardgerät, nie im Audio-Thread. Wartezeiten 1, 2, 4 … höchstens 16 s. Aussetzer und Umleitungen lösen nichts aus. Die Render-Funktion (Mixer) liegt außerhalb des Stroms und überlebt das Neuöffnen; der Audio-Thread nimmt sie nur mit `try_lock` (kein Warten). Grenze: Ändert sich dabei die Abtastrate, bleibt es still (Klasse `config`).
+- **Telemetrie mit Fehlerklasse:** `audio.output.device_invalidated`, `device_not_available`, `device_busy`, `config`, `backend`, `other`; kein Freitext, kein Gerätename.
+- **Einstellungen, „Ausgabe neu verbinden“** als Rettungsknopf.
+- Tests mit simulierten Gerätefehlern (Klasse, Neuöffnen nur bei echten Fehlern, Wartezeiten, Render überlebt). Abnahme: `docs/abnahme.md`, „Kopfhörer unter Windows“.
+
+## 0.34.4 — 2026-10-30
+
+Silvestersendung Teil 2, Paket 2 von 4 (#134): drei Decks.
+
+- **Decks A, B, C** im Radio-Fenster über der Cart-Wall: große Restzeit (rot unter 10 s), Start/Stopp, Cue (zurück an den Anfang) und Vorhören je Deck. Stopp blendet kurz aus und hält die Stelle, Start läuft von dort weiter; am Ende steht das Deck wieder am Anfang. Mehrere Decks laufen gleichzeitig, auch neben Playlist und Carts. Ohne Ausgänge-Zuordnung erscheinen sie im Hauptausgang.
+- **Laden:** Datei aus dem Explorer oder aus der Bibliothek auf das Deck ziehen, Rechtsklick auf den Decktitel, „Datei laden …“, oder Rechtsklick auf einen Playlist-Titel, „Auf Deck laden“ (mit dessen Cue-In und Cue-Out). Die Decks bleiben in `radio.json` erhalten (`decks`, alte Dateien laden unverändert).
+- **Schnitt und Vorhören:** Rechtsklick auf den Decktitel, „Start und Ende schneiden …“ wie bei den Carts; „Vorhören“ läuft über den Kopfhörer-Ausgang, nie auf Sendung.
+- **Ausgänge:** Jedes Deck bekommt ein eigenes Gerät und Kanalpaar (Einstellungen, „Ausgänge (Soundkarten) …“). Neu: „Wie Playlist“ ist die Vorgabe für alle Quellen außer der Playlist. Bisher lief eine nicht eingestellte Cart-Wall auf dem Windows-Standardgerät, jetzt mit der Playlist.
+
+## 0.34.3 — 2026-10-30
+
+Ein Knopf für Play und Pause (Refs #137).
+
+- **Überall genau ein Knopf:** ▶ wenn nichts läuft oder pausiert ist, ⏸ während es spielt, daneben Stopp. Party-Modus, Radio-Layout (statt „Start“/„Weiter“; die Leertaste auch) und Handy. Der Player hatte das schon.
+- **Radio-Layout:** „Weiter“ (nächster Titel) ist als ⏭ in die Reihe der Transportknöpfe gewandert.
+
+## 0.34.2 — 2026-10-30
+
+Transportknöpfe (#137), Abnahme: `docs/abnahme.md`.
+
+- **Normale Knöpfe in App und Fernbedienung:** Zurück, Play/Pause, Stopp, Weiter, Von vorn, 10 s zurück, 10 s vor, Stumm, Leiser, Lauter. Im Party-Modus in drei Reihen, am Handy (nur mit DJ-PIN) dieselben, im Radio-Modus neben „Stopp“. Alles läuft über eine Befehlsschicht (`PartyCommand` und `Effect` in `woa-radio`); die Tabelle der Befehlsnamen (`simple_command`) gilt für das Handy und für OSC (`/woa/party/<name>`). Neue Befehle sind in der Fernbedienung automatisch nur für den DJ, Anmeldung, Ratenbegrenzung und Eingabeprüfung sind unverändert.
+- **Echtes Pause:** „Pause“ blendet aus und merkt sich die Stelle, „Play“ macht dort weiter (Sprung per `Seek`), auch wenn die Ausblendung noch läuft. „Stopp“ vergisst die Stelle. Der Zustand „PAUSE“ mit gemerkter Restzeit steht in App und Handy (`paused` im Schnappschuss).
+- **Wiederholen wie bei Apple Music:** Ein Knopf, jeder Klick schaltet weiter: aus, 🔁 Playlist, 🔂 Titel, aus. „Titel“ beginnt den Titel am Ende neu, „Weiter“ springt trotzdem zum nächsten. „Playlist“ beginnt nach dem letzten Titel von vorn. **Zufall** ist ein eigener Umschalter (jeder Titel einmal je Runde, mit „Playlist“ endlos). Ist eine Funktion an, ist der Knopf orange, in der App und am Handy gleich (Zustand im Schnappschuss: `repeat`, `shuffle`, `muted`).
+- **Mixer:** neues Kommando `Seek` (Sprung im laufenden Titel, begrenzt auf Cue-In bis Cue-Out) und ein Titelwechsel-Zähler im Status, damit auch derselbe Titel als neu begonnen erkannt wird. Tasten in der Party-Ansicht: P/Pfeil links, M, R, S.
 
 ## 0.34.1 — 2026-10-30
 

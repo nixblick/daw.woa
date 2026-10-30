@@ -4,6 +4,42 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Silvester Teil 2, Paket 2: drei Decks (0.34.4, offen, #134)
+
+Start wie immer, Modus „Radio“. Die Decks A, B, C stehen rechts über der Cart-Wall.
+
+1. **Laden:** Eine Musikdatei aus dem Explorer auf Deck A ziehen: Titel und Restzeit erscheinen, das Deck steht. Auf Deck B per Rechtsklick auf den Titel, „Datei laden …“. Auf Deck C per Rechtsklick auf einen Playlist-Titel, „Auf Deck laden“.
+2. **Start und Stopp:** „Start“ auf Deck A: Die Restzeit läuft rückwärts, unter 10 s wird sie rot. „Stopp“: kurz ausgeblendet, die Stelle bleibt. „Start“ geht von dort weiter. „Cue“ stellt das Deck an den Anfang. Am Ende des Titels steht das Deck wieder am Anfang.
+3. **Gleichzeitig:** Alle drei Decks starten, dazu Playlist und ein Cart: Alles ist zu hören.
+4. **Schnitt:** Rechtsklick auf den Decktitel, „Start und Ende schneiden …“, Cue-In und Cue-Out setzen, „Übernehmen“. Das Deck springt an den neuen Anfang und spielt nur bis zum neuen Ende.
+5. **Vorhören:** „Vorhören“ am Deck: nur im Kopfhörer, der Sendepegel bewegt sich nicht.
+6. **Ausgänge:** Unter Einstellungen, „Ausgänge (Soundkarten) …“ Deck A auf Karte 2 Kanal 1/2 legen, Deck B auf „Wie Playlist“. Deck A kommt nur am Pult-Kanal von Karte 2, Deck B im normalen Programm.
+7. **Neu starten:** Programm schließen und öffnen: Die Titel liegen noch auf den Decks, die Zuordnung ist noch da.
+
+Die Decks laufen ohne Software-Pegel (der Pegel kommt vom Pult) und werden vom Mikro nicht abgesenkt. Sie laufen im Sendeweg mit, also in Aufnahme und Stream und im Rückkanal der Gäste.
+
+Selbst geprüft von Claude (ohne Ton, offline durch den echten Mixer, ohne Allokation im Audio-Pfad): Restzeit zählt herunter, Start, Stopp mit gehaltener Stelle, Weiterspielen, Cue, Ende; Schnitt zwischen Cue-In und Cue-Out genau (0,75 s), Schnitt ändern bei stehendem Deck; drei Decks addieren sich im Hauptausgang; ein Deck auf eigenem Kanalpaar fehlt im Hauptausgang; Speichern und Laden der Decks, alte Dateien.
+
+Nicht selbst geprüft: Aussehen der Decks, Ziehen von Dateien und Rechtsklick-Menüs (kein Bildschirm), echtes Gerät und Pult unter Windows.
+
+## Transportknöpfe: Zurück, Spulen, Stumm, Wiederholen, Zufall (offen, #137)
+
+Wunsch von André bei der Abnahme von Party-Modus und Fernbedienung (30.10.2026): normale Knöpfe in der App und am Handy, dazu Wiederholen und Zufall wie bei Apple Music. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`, Modus „Party“, Playlist mit mindestens drei Titeln laden (Knopf „Ordner laden …“), Fernbedienung an, Handy per QR-Code als DJ anmelden („DJ-PIN zeigen“, Adresse mit der DJ-PIN öffnen). Zum Prüfen leise stellen oder Kopfhörer nehmen.
+
+Die Tasten stehen in drei Reihen, in der App und am Handy gleich: **Zurück · Play/Pause · Stopp · Weiter**, dann **Von vorn · −10 s · +10 s · Stumm**, dann **Leiser · Lauter · Zufall · Wiederholen**. Im Radio-Modus stehen neben „Stopp“ zusätzlich ⏮, ↺, −10 s, +10 s, Wiederholen und Zufall.
+
+1. **Ein Knopf für Play und Pause, daneben Stopp:** Es gibt überall genau einen solchen Knopf: ▶ wenn nichts läuft oder pausiert ist, ⏸ solange gespielt wird, daneben ■ Stopp (am Handy ⏹). Das gilt im Party-Modus, im Radio-Layout (dort ist „Weiter“ als ⏭ in die Reihe daneben gewandert), im Player und am Handy; die Leertaste macht dasselbe. In der App ▶ drücken: Titel läuft, der Knopf zeigt jetzt ⏸, am Handy auch. „Pause“ (App oder Handy) blendet kurz aus und merkt sich die Stelle: oben steht „PAUSE“ statt „JETZT“, die Restzeit bleibt stehen, der Balken auch, in der App und am Handy. „Play“ macht an derselben Stelle weiter (nicht von vorn). „Stopp“ blendet aus und vergisst die Stelle: danach beginnt „Play“ den Titel von vorn. „Weiter“ während der Pause macht an der Stelle weiter, springt nicht zum nächsten Titel.
+2. **Weiter und Zurück:** „Weiter“ blendet zum nächsten Titel über. „Zurück“ blendet zum vorherigen Titel. Beim ersten Titel beginnt „Zurück“ den Titel von vorn. Tasten in der App: P oder Pfeil links für Zurück.
+3. **Von vorn, −10 s, +10 s:** Titel eine Weile laufen lassen, „+10 s“ springt zehn Sekunden vor (die Restzeit sinkt um 10, am Handy und in der App), „−10 s“ zurück. „Von vorn“ setzt den Titel auf den Anfang, ohne Überblendung. Am Ende des Titels hören die Sprünge an, sie springen nie über das Ende hinaus.
+4. **Stumm:** „Stumm“ drücken: Pegel ganz unten, die Taste ist orange in der App und am Handy. Nochmal: alter Pegel ist wieder da. „Lauter“ bei Stumm holt den alten Pegel und geht einen Schritt höher. Taste M in der App.
+5. **Wiederholen (ein Knopf, drei Zustände):** Jeder Klick schaltet weiter: aus → 🔁 Playlist → 🔂 Titel → aus. Ist es an, ist der Knopf orange, in der App und am Handy gleich, auch wenn du am Handy drückst. **Playlist:** Nach dem letzten Titel geht es mit dem ersten weiter. **Titel:** Der Titel beginnt am Ende von vorn; „Weiter“ springt trotzdem zum nächsten Titel (der wird dann wiederholt). Taste R in der App.
+6. **Zufall:** Eigener Knopf, orange, wenn an. Die Titel kommen in zufälliger Reihenfolge, jeder einmal, danach ist die Sendung zu Ende. Mit Wiederholen „Playlist“ geht es mit einer neuen Runde weiter. Taste S in der App.
+7. **Gast:** Mit der Gast-PIN am Handy erscheinen die Tasten nicht, ein Gast kann nur wünschen. Wiederholen, Zufall und Stumm gelten für die Sendung, nicht für den einzelnen Handy-Besucher. OSC: dieselben Namen unter `/woa/party/previous`, `/stop`, `/seek_back`, `/seek_forward`, `/restart`, `/mute`, `/repeat`, `/shuffle`, `/play`.
+
+Selbst geprüft von Claude (ohne Ton, offline durch den echten Mixer): Pause mit Play an derselben Stelle (Restzeit vor und nach der Pause gleich, läuft danach weiter), Play während der Ausblendung, Stopp vergisst die Stelle, Zurück, Weiter, Von vorn, Spulen ±10 s (Restzeit gemessen, Grenzen am Anfang und am Ende), Stumm mit altem Pegel, Wiederholen aus/Playlist/Titel je mit eigenem Test (Titel wechselt nicht, Playlist beginnt von vorn, aus beendet die Sendung), Weiter bei „Titel wiederholen“, Zufall (jeder Titel genau einmal, mit Wiederholen endlos), die Befehle durch dieselbe Prüfung wie bisher (Gast bekommt 403, Unbekanntes 400, Zusatzfelder ohne Wirkung) und der Weg Handy → Party-Schicht für alle 13 Befehle.
+
+Nicht selbst geprüft: das Aussehen der Tasten in der App und im Handy-Browser (gebaut und von Clippy geprüft, nicht angeklickt, kein Bildschirm), die Emoji-Symbole 🔁 🔂 🔀 in der App-Schrift (ein leeres Kästchen statt Symbol wäre ein Befund), und das Hören von Sprung, Überblendung und Stumm am echten Gerät. Wiederholen und Zufall sind bei jedem Programmstart aus.
+
 ## Paket 40: Release-Workflow für beide Plattformen (0.34.1, offen)
 
 Aus M10. Ein Tag `v…` baut Windows und Linux und legt ein Release als **Entwurf** an. Den Probelauf gibt es ohne Tag (GitHub → Actions → Release → Run workflow); er legt kein Release an. Ablauf: `docs/release.md`.
@@ -44,6 +80,25 @@ Nicht selbst geprüft: Start der Oberfläche aus dem Paket (die CI hat keinen Bi
 - Signatur der Pakete (Zertifikat, Kosten) und der Ort der Veröffentlichung (wironair.de, Flathub, GitHub-Releases).
 - Die App-Kennung `de.wironair.woa` setzt voraus, dass die Domain wironair.de dir gehört.
 - CLAP-Plugins des Rechners sieht ein Flatpak nicht; dafür bräuchte es eine Erweiterung oder das AppImage.
+
+## Kopfhörer unter Windows (0.34.1, offen, #139)
+
+Zweck: Stecken Sie Kopfhörer ein oder aus, schaltet Windows das Standard-Ausgabegerät um. Bisher blieb WOA stumm; jetzt verbindet es sich selbst neu. Windows-Notebook mit Kopfhörern (Klinke oder USB), Ausgabegerät in den Windows-Einstellungen auf „Standard“, WOA aus der neuen Version.
+
+1. **Einstecken im Player:** Modus „Arrangement“, ein Projekt mit Ton starten. Kopfhörer einstecken. Nach ein bis drei Sekunden kommt der Ton auf den Kopfhörern weiter, ohne dass Sie etwas klicken. Wiedergabe und Playhead laufen ohne Sprung.
+2. **Ausstecken:** Kopfhörer wieder abziehen. Der Ton kommt nach ein bis drei Sekunden aus den Lautsprechern zurück.
+3. **Im Radio-Modus:** Modus „Radio“, Titel starten, Kopfhörer ein- und ausstecken wie oben. Titel und Carts laufen auf dem neuen Gerät weiter. Oben im Sendepult darf kurz eine Meldung zu einem ausgefallenen Ausgang stehen.
+4. **Vorhören (PFL):** Einstellungen, Vorhören auf „Gerät: Kopfhörer“ stellen. Kopfhörer abziehen und wieder einstecken, dann ein Vorhören auslösen. Der Ton kommt wieder an.
+5. **Rettungsknopf:** Einstellungen, „Ausgabe neu verbinden“. Der Ton setzt kurz aus und läuft danach auf dem aktuellen Standardgerät. Probieren Sie ihn, falls einmal nach dem Umstecken Stille bleibt.
+6. **Ohne Neustart prüfen:** Das Ganze dreimal hintereinander. Es darf kein Neustart des Programms nötig sein.
+
+Telemetrie: Für Gerätefehler gibt es Codes der Form `audio.output.device_invalidated`, `audio.output.device_not_available`, `audio.output.device_busy`, `audio.output.config`, `audio.output.backend`, `audio.output.other`; kein Freitext, kein Gerätename.
+
+Grenze: Hat das neue Gerät eine andere Abtastrate als das alte (zum Beispiel 44,1 statt 48 kHz), kann WOA den laufenden Mix nicht darauf umstellen. Dann bleibt es still, und der Code `audio.output.config` erscheint. Dann bitte melden; WOA versucht es mit wachsenden Pausen weiter, bis zum Programmneustart.
+
+Selbst geprüft von Claude (ohne Ton, ohne Windows): Fehlerklassen, Neuöffnen nur bei Gerätefehlern (nicht bei Aussetzern), Wartezeiten zwischen Versuchen, dass die Render-Funktion ein Neuöffnen überlebt und im Audio-Thread nie wartet. Quelle für die Windows-Fehler: der Quelltext von cpal 0.18.2 (WASAPI meldet beim Wechsel des Standardgeräts `StreamInvalidated` oder `DeviceNotAvailable` und baut den Strom nicht selbst neu).
+
+Nicht selbst geprüft: das Verhalten mit echten Kopfhörern unter Windows (kein Windows, kein Gerät hier), Bluetooth-Kopfhörer, der Bauvorgang für Windows, ob die Fehlermeldungen von cpal in der Praxis genau so ankommen, wie der Quelltext es erwarten lässt.
 
 ## Silvester Teil 2, Paket 1: Ausgänge je Soundkarte (0.33.6, offen, #134)
 
@@ -575,7 +630,7 @@ Noch nicht drin: Cue-Punkte automatisch aus der Analyse (kommt mit der Bibliothe
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
 
 1. **Controller einstecken:** Einstellungen → „Controller und MIDI-Learn …“ → Gerät wählen. Die Zeile darunter sagt „Verbunden“ (mit LEDs, wenn das Gerät sie kann).
-2. **Fader und zwei Pads lernen:** Radio-Layout. Rechtsklick auf „Pegel Musik“ → „MIDI lernen“, einen Fader bewegen. Rechtsklick auf eine belegte Cart-Taste (Jingle) → „MIDI lernen“, Pad drücken; dasselbe mit „▶ Start“ und einem zweiten Pad. Im Controller-Fenster stehen die drei Zeilen.
+2. **Fader und zwei Pads lernen:** Radio-Layout. Rechtsklick auf „Pegel Musik“ → „MIDI lernen“, einen Fader bewegen. Rechtsklick auf eine belegte Cart-Taste (Jingle) → „MIDI lernen“, Pad drücken; dasselbe mit „▶ Play“ und einem zweiten Pad. Im Controller-Fenster stehen die drei Zeilen.
 3. **Musik-Fader fahren:** Sendung mit dem Start-Pad starten, Fader fahren. Der Regler springt nicht, er greift, sobald er die Stellung auf dem Bildschirm erreicht; danach folgt die Musik weich.
 4. **Jingle per Pad:** Pad drücken, der Jingle läuft über der Musik, die Pad-LED leuchtet (falls das Gerät LEDs hat). Nochmal drücken hält ihn an.
 5. **Neustart:** WOA schließen und starten, Controller-Fenster öffnen: Die Zuordnung ist noch da, Fader und Pads gehen sofort.

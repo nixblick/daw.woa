@@ -14,8 +14,7 @@ use woa_engine::clip::{
 };
 
 use woa_engine::device::{
-    OutputConfig, OutputStream, output_device_name, output_sample_rate, pause_output,
-    resume_output, start_output_with,
+    ManagedOutput, OutputConfig, PairsRender, count_if_xrun, output_device_name, output_sample_rate,
 };
 use woa_engine::project::{ProjectGraph, TrackNodes};
 use woa_engine::tap::TapHandle;
@@ -88,7 +87,7 @@ type Mixer = Vec<(TrackId, u64, u64, bool, bool, Vec<u64>)>;
 pub struct Player {
     engine: Engine,
     transport: TransportHandle,
-    stream: OutputStream,
+    stream: ManagedOutput,
     /// Strom ruht (Radio-Modus: dort spielt der Sendemixer, ein zweiter Strom auf
     /// demselben Gerät kostet nur Aussetzer, #51).
     suspended: bool,
@@ -153,8 +152,17 @@ impl Player {
         let transport = engine.transport();
         // Der Fehlerpfad kann im Audio-Thread laufen: Xruns nur zählen (macht
         // `start_output_with` im Transport), geloggt wird je Minute in `sync`.
-        let stream = start_output_with(processor, transport.clone(), &config, |_| {})
-            .map_err(|e| e.to_string())?;
+        let xrun_transport = transport.clone();
+        let mut processor = processor;
+        let render: PairsRender = Box::new(move |bufs, frames| {
+            if let Some(b) = bufs.first_mut() {
+                processor.process_stereo(&mut b.l[..frames], &mut b.r[..frames]);
+            }
+        });
+        let stream = ManagedOutput::open("player", &config, 1, true, render, move |e| {
+            count_if_xrun(&e, &xrun_transport);
+        })
+        .map_err(|e| e.to_string())?;
         let device = output_device_name(&config);
         tracing::info!(rate, buffer_frames = ?config.buffer_frames, %device, "playback ready");
         Ok(Self {
@@ -188,6 +196,11 @@ impl Player {
         })
     }
 
+    /// Rettungsknopf „Ausgabe neu verbinden“ für den Player-Strom.
+    pub fn reconnect_output(&mut self) {
+        self.stream.reconnect_now();
+    }
+
     /// Sample-Uhr des Audio-Threads (MIDI-Aufnahme stempelt damit, Paket 12).
     pub fn clock(&self) -> Arc<woa_dsp::clock::SampleClock> {
         self.transport.clock()
@@ -213,6 +226,9 @@ impl Player {
         live: Option<TrackId>,
     ) {
         self.engine.collect();
+        if !self.suspended {
+            self.stream.poll();
+        }
         let total = self.engine.underruns();
         if let Some(new) = self.xruns.due(total, Instant::now())
             && new > 0
@@ -617,9 +633,9 @@ impl Player {
             self.stop();
         }
         let r = if suspend {
-            pause_output(&self.stream)
+            self.stream.pause()
         } else {
-            resume_output(&self.stream)
+            self.stream.resume()
         };
         match r {
             Ok(()) => self.suspended = suspend,

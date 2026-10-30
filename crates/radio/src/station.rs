@@ -46,6 +46,20 @@ pub struct VoiceBrief {
     pub check: bool,
 }
 
+/// Zustand eines Decks für die Anzeige.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DeckView {
+    /// Titelname, `None` = leer.
+    pub title: Option<String>,
+    pub path: Option<PathBuf>,
+    pub cues: crate::Cues,
+    pub playing: bool,
+    /// Sekunden bis zum Ende (Cue-Out).
+    pub remaining: f64,
+    /// Länge von Cue-In bis Cue-Out in Sekunden.
+    pub length: f64,
+}
+
 /// Schnappschuss für die Oberfläche.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct View {
@@ -54,6 +68,12 @@ pub struct View {
     pub cue: usize,
     pub running: bool,
     pub remaining_title: f64,
+    /// Wiederholen: aus, Playlist, Titel.
+    pub repeat: crate::control::Repeat,
+    /// Zufällige Reihenfolge.
+    pub shuffle: bool,
+    /// Pausiert: (Restzeit, Länge) des angehaltenen Titels in Sekunden.
+    pub paused: Option<(f64, f64)>,
     pub remaining_total: f64,
     pub crossfade_seconds: f64,
     pub duck_db: f64,
@@ -79,6 +99,8 @@ pub struct View {
     /// Start und Ende je Cart.
     pub cart_cues: Vec<crate::Cues>,
     pub carts_playing: u32,
+    /// Die Decks A bis C.
+    pub decks: Vec<DeckView>,
     pub mic_open: bool,
     pub recording: Option<PathBuf>,
     pub messages: Vec<String>,
@@ -207,6 +229,30 @@ impl Drop for Station {
     }
 }
 
+/// Zustand von Deck `k` aus Sendung und Mixer-Status.
+fn deck_view(c: &Controller, k: usize) -> DeckView {
+    let st = c.status();
+    let rate = f64::from(c.rate());
+    let entry = c.show().decks.get(k).and_then(Option::as_ref);
+    let state = st.deck_state[k].load(Ordering::Acquire);
+    if entry.is_none() || state == crate::mixer::DECK_EMPTY {
+        return DeckView::default();
+    }
+    let (pos, end) = (
+        st.deck_pos[k].load(Ordering::Acquire),
+        st.deck_end[k].load(Ordering::Acquire),
+    );
+    let start = entry.map_or(0.0, |e| e.cues.start());
+    DeckView {
+        title: entry.map(|e| e.label.clone()),
+        path: entry.map(|e| e.path.clone()),
+        cues: entry.map(|e| e.cues).unwrap_or_default(),
+        playing: state == crate::mixer::DECK_PLAYING,
+        remaining: end.saturating_sub(pos) as f64 / rate,
+        length: (end as f64 / rate - start).max(0.0),
+    }
+}
+
 fn run(
     mut c: Controller,
     rx: Receiver<Msg>,
@@ -272,6 +318,9 @@ fn run(
             cue: c.cue_index(),
             running: c.is_running() && st.current.load(Ordering::Acquire) != NONE,
             remaining_title: c.remaining_title(),
+            repeat: c.repeat(),
+            shuffle: c.shuffle(),
+            paused: c.paused_times(),
             remaining_total: c.remaining_total(),
             crossfade_seconds: c.show().crossfade_seconds,
             duck_db: c.show().duck_db,
@@ -311,6 +360,7 @@ fn run(
                 })
                 .collect(),
             carts_playing: st.carts.load(Ordering::Acquire),
+            decks: (0..crate::DECKS).map(|k| deck_view(&c, k)).collect(),
             mic_open: st.mic_open.load(Ordering::Acquire),
             recording: c.recording_file().map(|p| p.to_path_buf()),
             messages: messages.clone(),

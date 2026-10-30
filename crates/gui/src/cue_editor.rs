@@ -119,6 +119,8 @@ pub struct CueEditor {
     pub path: PathBuf,
     /// Cart-Wall statt Playlist: `index` ist das Cart, nur Cue-In und Cue-Out zählen.
     pub cart: bool,
+    /// Deck statt Cart: `index` ist das Deck (mit `cart` gesetzt).
+    pub deck: bool,
     title: String,
     seconds: Option<f64>,
     pub draft: Cues,
@@ -158,6 +160,7 @@ impl CueEditor {
             index,
             path,
             cart: false,
+            deck: false,
             title,
             seconds,
             draft: cues,
@@ -251,7 +254,9 @@ impl CueEditor {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
         let mut out = Vec::new();
-        let title = if self.cart {
+        let title = if self.deck {
+            format!("Deck schneiden: {}", self.title)
+        } else if self.cart {
             format!("Cart schneiden: {}", self.title)
         } else {
             format!("Cue-Punkte: {}", self.title)
