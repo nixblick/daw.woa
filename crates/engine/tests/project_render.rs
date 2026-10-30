@@ -75,6 +75,7 @@ fn setup(project: &Project) -> (Engine, AudioProcessor, ProjectGraph) {
             tracks,
             bus_meters: Default::default(),
             taps: Default::default(),
+            reductions: Default::default(),
         },
     )
 }

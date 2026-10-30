@@ -113,6 +113,13 @@ impl Slot {
             Slot::Stereo(n) => n.prepare(rate),
         }
     }
+
+    fn locate(&mut self, position: u64, playing: bool) {
+        match self {
+            Slot::Mono(n) => n.locate(position, playing),
+            Slot::Stereo(n) => n.locate(position, playing),
+        }
+    }
 }
 
 /// Eine Kante: Kanal `from_ch` von `from` geht auf Kanal `to_ch` von `to`.
@@ -321,6 +328,14 @@ impl CompiledGraph {
                 Slot::Mono(n) => n.set_param(param, value),
                 Slot::Stereo(n) => n.set_param(param, value),
             }
+        }
+    }
+
+    /// Meldet allen Knoten die Transportposition am Anfang des nächsten Abschnitts
+    /// (Automation, Paket 18). Allokationsfrei.
+    pub fn locate(&mut self, position: u64, playing: bool) {
+        for n in &mut self.nodes {
+            n.locate(position, playing);
         }
     }
 
@@ -571,8 +586,12 @@ impl AudioProcessor {
         while done < out.len() {
             let n = self.transport.segment(out.len() - done);
             let chunk = &mut out[done..done + n];
+            let (pos, playing) = (self.transport.position(), self.transport.is_playing());
             match self.graph.as_mut() {
-                Some(g) => g.process(chunk),
+                Some(g) => {
+                    g.locate(pos, playing);
+                    g.process(chunk);
+                }
                 None => chunk.fill(0.0),
             }
             self.transport.advance(n);
@@ -590,8 +609,12 @@ impl AudioProcessor {
             let n = self.transport.segment(len - done);
             let l = &mut left[done..done + n];
             let r = &mut right[done..done + n];
+            let (pos, playing) = (self.transport.position(), self.transport.is_playing());
             match self.graph.as_mut() {
-                Some(g) => g.process_stereo(l, r),
+                Some(g) => {
+                    g.locate(pos, playing);
+                    g.process_stereo(l, r);
+                }
                 None => {
                     l.fill(0.0);
                     r.fill(0.0);

@@ -127,6 +127,16 @@ impl Transport {
         self.looping = range;
     }
 
+    /// Position in Samples am Anfang des nächsten Abschnitts.
+    pub(crate) fn position(&self) -> u64 {
+        self.position
+    }
+
+    /// Läuft der Transport?
+    pub(crate) fn is_playing(&self) -> bool {
+        self.playing
+    }
+
     /// Länge des nächsten Abschnitts ohne Loop-Sprung, höchstens `max`.
     pub(crate) fn segment(&self, max: usize) -> usize {
         match self.looping {

@@ -51,6 +51,7 @@ fn rig(project: &Project) -> Rig {
             tracks,
             bus_meters,
             taps: Default::default(),
+            reductions: Default::default(),
         },
     }
 }

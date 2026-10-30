@@ -17,6 +17,10 @@ use crate::effects::delay::DelayFx;
 use crate::effects::denoise::Denoiser;
 use crate::effects::reverb::Reverb;
 use crate::effects::saturation::Saturator;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+use crate::automation::AutoCurve;
 use crate::{DEFAULT_RAMP_SECONDS, Node, ProcessBuffers, Smoother, StereoBuffers, StereoNode};
 
 /// Parameter-ID für Bypass (`0.0` = aktiv, `1.0` = umgangen).
@@ -24,6 +28,9 @@ pub const BYPASS: u32 = 100;
 
 /// Höchste Zahl Parameter eines Effekts.
 pub const MAX_PARAMS: usize = 12;
+
+/// Schrittweite, in der Automation die Regler eines Effekts nachführt (Samples).
+pub const AUTOMATION_STEP: usize = 64;
 
 /// Effektart; die Reihenfolge der Parameter entspricht dem Modell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,6 +183,12 @@ pub struct Fx {
     lim: Limiter,
     gate: Gate,
     extra: Extra,
+    /// Automationskurven je Reglerindex (Paket 18).
+    lanes: Vec<(u32, AutoCurve)>,
+    pos: u64,
+    playing: bool,
+    /// Größte Absenkung seit dem letzten Abholen, als Bits eines f32 (>= 0).
+    meter: Option<Arc<AtomicU32>>,
 }
 
 impl Fx {
@@ -215,15 +228,39 @@ impl Fx {
             lim: Limiter::new(-1.0, 0.05, rate),
             gate: Gate::new(-45.0, 40.0, rate),
             extra: Extra::None,
+            lanes: Vec::new(),
+            pos: 0,
+            playing: true,
+            meter: None,
         };
         fx.prepare(rate);
         fx
+    }
+
+    /// Hängt Automationskurven an (Control-Thread). Während sie laufen, setzen sie die Regler
+    /// alle [`AUTOMATION_STEP`] Samples.
+    pub fn set_lanes(&mut self, lanes: Vec<(u32, AutoCurve)>) {
+        self.lanes = lanes;
+    }
+
+    /// Hängt den Absenkungsmesser an (Kompressor, Gate, Limiter, De-Esser).
+    pub fn set_meter(&mut self, meter: Arc<AtomicU32>) {
+        self.meter = Some(meter);
+    }
+
+    /// Siehe [`Node::locate`].
+    pub fn locate(&mut self, position: u64, playing: bool) {
+        self.pos = position;
+        self.playing = playing;
     }
 
     /// Rechnet alle ratenabhängigen Größen aus den Parametern neu (Control-Thread; darf
     /// allokieren und Threads starten).
     pub fn prepare(&mut self, rate: f32) {
         self.rate = rate.max(1.0);
+        for (_, c) in &mut self.lanes {
+            c.prepare(self.rate);
+        }
         self.wet.prepare(self.rate);
         self.makeup.prepare(self.rate);
         self.fade_len = ((DEFAULT_RAMP_SECONDS * self.rate).round() as u32).max(1);
@@ -340,7 +377,7 @@ impl Fx {
 
     /// Verarbeitet ein Sample-Paar. `stereo` = false: nur `l` zählt.
     #[inline]
-    fn step(&mut self, l: f32, r: f32, stereo: bool) -> (f32, f32) {
+    fn step(&mut self, l: f32, r: f32, stereo: bool, key: Option<f32>) -> (f32, f32) {
         match self.kind {
             FxKind::Eq => {
                 let n = if stereo { 2 } else { 1 };
@@ -365,7 +402,11 @@ impl Fx {
                 (out[0], out[1])
             }
             FxKind::Compressor => {
-                let power = if stereo { 0.5 * (l * l + r * r) } else { l * l };
+                let power = match key {
+                    Some(k) => k * k,
+                    None if stereo => 0.5 * (l * l + r * r),
+                    None => l * l,
+                };
                 let g = self.comp.gain(power) * self.makeup.next_value();
                 (l * g, r * g)
             }
@@ -382,10 +423,10 @@ impl Fx {
                 (l.clamp(-c, c), r.clamp(-c, c))
             }
             FxKind::Gate => {
-                let peak = if stereo {
-                    l.abs().max(r.abs())
-                } else {
-                    l.abs()
+                let peak = match key {
+                    Some(k) => k.abs(),
+                    None if stereo => l.abs().max(r.abs()),
+                    None => l.abs(),
                 };
                 let g = self.gate.gain(peak);
                 (l * g, r * g)
@@ -407,7 +448,57 @@ impl Fx {
         in_l: &[f32],
         in_r: Option<&[f32]>,
         out_l: &mut [f32],
+        out_r: Option<&mut [f32]>,
+        key: Option<&[f32]>,
+    ) {
+        if self.lanes.is_empty() {
+            self.run_span(in_l, in_r, out_l, out_r, key);
+        } else {
+            // Automation: Regler in kleinen Schritten nachführen.
+            let len = out_l.len();
+            let mut out_r = out_r;
+            let mut at = 0;
+            while at < len {
+                let end = (at + AUTOMATION_STEP).min(len);
+                let pos = self.pos;
+                for (param, curve) in &mut self.lanes {
+                    let v = curve.value_at(pos);
+                    if let Some(slot) = self.p.get_mut(*param as usize)
+                        && v.is_finite()
+                        && *slot != v
+                    {
+                        *slot = v;
+                        self.dirty = true;
+                    }
+                }
+                self.run_span(
+                    &in_l[at..end],
+                    in_r.map(|b| &b[at..end]),
+                    &mut out_l[at..end],
+                    out_r.as_deref_mut().map(|b| &mut b[at..end]),
+                    key.map(|k| &k[at..end]),
+                );
+                if self.playing {
+                    self.pos += (end - at) as u64;
+                }
+                at = end;
+            }
+        }
+        if let Some(m) = &self.meter {
+            let red = self.reduction_db().max(0.0);
+            if red.is_finite() {
+                m.fetch_max(red.to_bits(), Ordering::Relaxed);
+            }
+        }
+    }
+
+    fn run_span(
+        &mut self,
+        in_l: &[f32],
+        in_r: Option<&[f32]>,
+        out_l: &mut [f32],
         mut out_r: Option<&mut [f32]>,
+        key: Option<&[f32]>,
     ) {
         self.apply_dirty();
         let stereo = in_r.is_some() && out_r.is_some();
@@ -422,7 +513,7 @@ impl Fx {
                 }
                 continue;
             }
-            let (wl, wr) = self.step(dl, dr, stereo);
+            let (wl, wr) = self.step(dl, dr, stereo, key.map(|k| k[i]));
             out_l[i] = dl + (wl - dl) * w;
             if let Some(o) = out_r.as_deref_mut() {
                 o[i] = dr + (wr - dr) * w;
@@ -471,6 +562,16 @@ impl FxNode {
     pub fn latency_samples(&self) -> usize {
         self.0.latency_samples()
     }
+
+    /// Siehe [`Fx::set_lanes`].
+    pub fn set_lanes(&mut self, lanes: Vec<(u32, AutoCurve)>) {
+        self.0.set_lanes(lanes);
+    }
+
+    /// Siehe [`Fx::set_meter`].
+    pub fn set_meter(&mut self, meter: Arc<AtomicU32>) {
+        self.0.set_meter(meter);
+    }
 }
 
 impl Node for FxNode {
@@ -482,8 +583,12 @@ impl Node for FxNode {
         self.0.set_param(param, value);
     }
 
+    fn locate(&mut self, position: u64, playing: bool) {
+        self.0.locate(position, playing);
+    }
+
     fn process(&mut self, buffers: ProcessBuffers<'_>) {
-        self.0.run(buffers.input, None, buffers.output, None);
+        self.0.run(buffers.input, None, buffers.output, None, None);
     }
 }
 
@@ -511,6 +616,16 @@ impl FxStereoNode {
     pub fn latency_samples(&self) -> usize {
         self.0.latency_samples()
     }
+
+    /// Siehe [`Fx::set_lanes`].
+    pub fn set_lanes(&mut self, lanes: Vec<(u32, AutoCurve)>) {
+        self.0.set_lanes(lanes);
+    }
+
+    /// Siehe [`Fx::set_meter`].
+    pub fn set_meter(&mut self, meter: Arc<AtomicU32>) {
+        self.0.set_meter(meter);
+    }
 }
 
 impl StereoNode for FxStereoNode {
@@ -522,9 +637,60 @@ impl StereoNode for FxStereoNode {
         self.0.set_param(param, value);
     }
 
+    fn locate(&mut self, position: u64, playing: bool) {
+        self.0.locate(position, playing);
+    }
+
+    fn process(&mut self, b: StereoBuffers<'_>) {
+        self.0.run(
+            b.in_left,
+            Some(b.in_right),
+            b.out_left,
+            Some(b.out_right),
+            None,
+        );
+    }
+}
+
+/// Kompressor oder Gate einer Spur mit Sidechain: Kanal 0 ist das Signal, Kanal 1 das
+/// Schlüsselsignal, das den Pegel misst. Ausgang ist nur Kanal 0.
+#[derive(Debug, Clone)]
+pub struct KeyedFxNode(Fx);
+
+impl KeyedFxNode {
+    /// Mit Projekttempo und Betriebsart (ein Kanal).
+    pub fn with_context(kind: FxKind, params: &[f64], bypass: bool, ctx: FxContext) -> Self {
+        Self(Fx::with_context(kind, params, bypass, ctx, 1))
+    }
+
+    /// Siehe [`Fx::set_lanes`].
+    pub fn set_lanes(&mut self, lanes: Vec<(u32, AutoCurve)>) {
+        self.0.set_lanes(lanes);
+    }
+
+    /// Siehe [`Fx::set_meter`].
+    pub fn set_meter(&mut self, meter: Arc<AtomicU32>) {
+        self.0.set_meter(meter);
+    }
+}
+
+impl StereoNode for KeyedFxNode {
+    fn prepare(&mut self, sample_rate: f32) {
+        self.0.prepare(sample_rate);
+    }
+
+    fn set_param(&mut self, param: u32, value: f32) {
+        self.0.set_param(param, value);
+    }
+
+    fn locate(&mut self, position: u64, playing: bool) {
+        self.0.locate(position, playing);
+    }
+
     fn process(&mut self, b: StereoBuffers<'_>) {
         self.0
-            .run(b.in_left, Some(b.in_right), b.out_left, Some(b.out_right));
+            .run(b.in_left, None, b.out_left, None, Some(b.in_right));
+        b.out_right.fill(0.0);
     }
 }
 

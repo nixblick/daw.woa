@@ -1,0 +1,71 @@
+---
+source: crates/model/tests/automation.rs
+expression: "store::to_json(s.project()).unwrap()"
+---
+{
+  "format_version": 3,
+  "project": {
+    "meta": {
+      "name": "Auto"
+    },
+    "tempo_bpm": 120.0,
+    "tracks": [
+      {
+        "id": 1,
+        "name": "Musik",
+        "kind": "audio",
+        "gain_db": 0.0,
+        "pan": 0.0,
+        "mute": false,
+        "solo": false,
+        "clips": [],
+        "inserts": [
+          {
+            "id": 3,
+            "kind": "compressor",
+            "params": [
+              -18.0,
+              2.0,
+              10.0,
+              120.0,
+              0.0
+            ],
+            "sidechain": 2
+          }
+        ],
+        "automation": [
+          {
+            "target": {
+              "kind": "gain"
+            },
+            "points": [
+              {
+                "beat": 0.0,
+                "value": 0.0
+              },
+              {
+                "beat": 4.0,
+                "value": -6.0
+              },
+              {
+                "beat": 8.0,
+                "value": -20.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "name": "Sprache",
+        "kind": "audio",
+        "gain_db": 0.0,
+        "pan": 0.0,
+        "mute": false,
+        "solo": false,
+        "clips": []
+      }
+    ],
+    "next_id": 4
+  }
+}

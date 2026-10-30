@@ -5,6 +5,7 @@
 
 pub mod analysis;
 pub mod app;
+pub mod automation;
 pub mod controls;
 pub mod covers;
 pub mod cue_editor;

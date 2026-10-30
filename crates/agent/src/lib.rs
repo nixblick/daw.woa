@@ -21,8 +21,8 @@ use rmcp::{ErrorData as McpError, ServerHandler, ServiceExt, tool, tool_handler,
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use woa_model::{
-    Clip, ClipId, Command, EffectKind, Insert, InsertId, ModelError, Send as SendRoute, Session,
-    TrackId, TrackKind, VOICE_CHAIN, store,
+    AutoMode, AutoPoint, AutoTarget, Clip, ClipId, Command, EffectKind, Insert, InsertId,
+    ModelError, Send as SendRoute, Session, TrackId, TrackKind, VOICE_CHAIN, store,
 };
 
 pub mod audio;
@@ -219,6 +219,129 @@ pub struct RemoveSendParams {
     pub track: u64,
     /// Destination bus id.
     pub target: u64,
+}
+
+/// What an automation lane controls.
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentAutoTarget {
+    /// Track volume in dB.
+    Gain,
+    /// Pan, -1 (left) to 1 (right).
+    Pan,
+    /// Level of the send to the bus `send_target`, in dB.
+    Send,
+    /// A parameter of the effect `insert`, named by `param`.
+    Param,
+}
+
+/// Mode of an automation lane.
+#[derive(Debug, Clone, Copy, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentAutoMode {
+    /// The curve is played (default).
+    #[default]
+    Read,
+    /// The next run records over the curve (controller or fader).
+    Write,
+    /// Recording starts at the first touch and lasts until stop.
+    Latch,
+}
+
+impl From<AgentAutoMode> for AutoMode {
+    fn from(m: AgentAutoMode) -> Self {
+        match m {
+            AgentAutoMode::Read => AutoMode::Read,
+            AgentAutoMode::Write => AutoMode::Write,
+            AgentAutoMode::Latch => AutoMode::Latch,
+        }
+    }
+}
+
+/// One automation point.
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+pub struct AgentAutoPoint {
+    /// Position in beats, 0 or later.
+    pub beat: f64,
+    /// Value within the range of the target (dB, pan, or the effect's parameter range).
+    pub value: f64,
+}
+
+/// Selects the target of an automation lane.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AutomationTargetParams {
+    /// Track id (audio, MIDI or bus) that owns the target.
+    pub track: u64,
+    /// What to automate.
+    pub target: AgentAutoTarget,
+    /// For `send`: the bus id of the send.
+    #[serde(default)]
+    pub send_target: Option<u64>,
+    /// For `param`: the insert id of the effect.
+    #[serde(default)]
+    pub insert: Option<u64>,
+    /// For `param`: the parameter name, e.g. `makeup_db` (see `list_effects`).
+    #[serde(default)]
+    pub param: Option<String>,
+}
+
+/// Parameters of `add_automation`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddAutomationParams {
+    /// The target of the lane.
+    #[serde(flatten)]
+    pub target: AutomationTargetParams,
+    /// The points; they are sorted, a second point on the same beat replaces the first.
+    /// Between points the value glides linearly (volume and sends in dB); choice parameters
+    /// hold until the next point; before the first and after the last point the nearest point
+    /// holds. At most 4096 points.
+    pub points: Vec<AgentAutoPoint>,
+    /// `read` (default), `write` or `latch`.
+    #[serde(default)]
+    pub mode: AgentAutoMode,
+}
+
+/// Parameters of `set_sidechain`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetSidechainParams {
+    /// Insert id of a compressor or gate on an audio or MIDI track.
+    pub insert: u64,
+    /// Track whose signal (after its fader, before its pan) measures the level; omit or null
+    /// for the effect's own signal. A source that would form a loop is rejected.
+    #[serde(default)]
+    pub source: Option<u64>,
+}
+
+/// Resolves the target of an automation lane against the project.
+fn resolve_auto_target(
+    s: &Session,
+    p: &AutomationTargetParams,
+) -> Result<(TrackId, AutoTarget), ModelError> {
+    let track = TrackId(p.track);
+    let missing = |what: &str| ModelError::InvalidArgument(format!("{what} fehlt"));
+    let target = match p.target {
+        AgentAutoTarget::Gain => AutoTarget::Gain,
+        AgentAutoTarget::Pan => AutoTarget::Pan,
+        AgentAutoTarget::Send => AutoTarget::Send {
+            target: TrackId(p.send_target.ok_or_else(|| missing("send_target"))?),
+        },
+        AgentAutoTarget::Param => {
+            let insert = InsertId(p.insert.ok_or_else(|| missing("insert"))?);
+            let name = p.param.as_deref().ok_or_else(|| missing("param"))?;
+            let (owner, kind) = find_insert(s, insert)?;
+            if owner != track {
+                return Err(ModelError::InvalidArgument(format!(
+                    "Effekt {} liegt nicht auf Spur {}",
+                    insert.0, p.track
+                )));
+            }
+            let param = kind
+                .param_index(name)
+                .ok_or_else(|| ModelError::UnknownParamName(name.to_string()))?;
+            AutoTarget::InsertParam { insert, param }
+        }
+    };
+    Ok((track, target))
 }
 
 /// Finds the track that holds `insert`, and the effect kind.
@@ -1643,6 +1766,70 @@ impl WoaAgent {
             s.apply(Command::RemoveSend {
                 track: TrackId(p.track),
                 target: TrackId(p.target),
+            })?;
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(
+        description = "Set the automation curve of one parameter: track volume (gain, dB), pan, the level of a send (send_target = bus id) or a parameter of an effect (insert + param name). Replaces the whole curve of that target; points are beats with values inside the parameter's range; between points the value glides (volume and sends in dB). mode is read (default), write or latch (recording by fader or controller). One undo step. An empty points list with mode read removes the curve."
+    )]
+    async fn add_automation(
+        &self,
+        Parameters(p): Parameters<AddAutomationParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            let (track, target) = resolve_auto_target(s, &p.target)?;
+            let n = p.points.len();
+            s.apply(Command::SetAutomation {
+                track,
+                target,
+                points: p
+                    .points
+                    .iter()
+                    .map(|q| AutoPoint {
+                        beat: q.beat,
+                        value: q.value,
+                    })
+                    .collect(),
+                mode: p.mode.into(),
+            })?;
+            Ok(serde_json::json!({ "ok": true, "points": n }))
+        })
+    }
+
+    #[tool(
+        description = "Remove the automation curve of one parameter (same selection as add_automation)."
+    )]
+    async fn remove_automation(
+        &self,
+        Parameters(p): Parameters<AutomationTargetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            let (track, target) = resolve_auto_target(s, &p)?;
+            s.apply(Command::SetAutomation {
+                track,
+                target,
+                points: Vec::new(),
+                mode: AutoMode::Read,
+            })?;
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(
+        description = "Sidechain: let a compressor or gate on an audio or MIDI track measure its level from another track (source = track id, signal after the fader and before the pan), for example to duck music under a voice. source omitted returns the effect to its own signal. Loops and effects without a sidechain input (and inserts on buses) are rejected."
+    )]
+    async fn set_sidechain(
+        &self,
+        Parameters(p): Parameters<SetSidechainParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            let (track, _) = find_insert(s, InsertId(p.insert))?;
+            s.apply(Command::SetInsertSidechain {
+                track,
+                insert: InsertId(p.insert),
+                source: p.source.map(TrackId),
             })?;
             Ok(serde_json::json!({ "ok": true }))
         })

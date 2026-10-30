@@ -37,6 +37,9 @@ Claude Desktop: derselbe Befehl als `command`/`args` in `claude_desktop_config.j
 | `set_output` | `track`, `output` (Bus-ID, leer = Master) | Ausgang einer Spur; Schleifen werden abgelehnt |
 | `set_send` | `track`, `target` (Bus), `level_db` (-96..12), `pre_fader` | Send anlegen oder ändern; Schleifen werden abgelehnt |
 | `remove_send` | `track`, `target` | Send entfernen |
+| `add_automation` | `track`, `target` (`gain`/`pan`/`send`/`param`), `send_target` (bei `send`), `insert` + `param` (bei `param`), `points` (`beat`, `value`), `mode` (`read`/`write`/`latch`) | Automationskurve eines Reglers setzen (ersetzt die ganze Kurve, ein Undo-Schritt); dazwischen gleitet der Wert, Lautstärke und Sends in dB; Wert wird gegen den Bereich geprüft |
+| `remove_automation` | wie `add_automation` ohne `points` | Kurve entfernen |
+| `set_sidechain` | `insert` (Kompressor oder Gate auf Audio-/MIDI-Spur), `source` (Spur-ID, leer = eigenes Signal) | Pegel von einer anderen Spur messen lassen (Ducking); Schleifen werden abgelehnt |
 | `add_clip` | `track`, `name`, `start_beats`, `length_beats` | Platzhalter-Clip ohne Klang, liefert `clip`-ID |
 | `generate_notes` | `track`, `length_beats`, `notes` (`beat`, `pitch` MIDI, `length_beats`, `velocity`), `waveform` (`sine`/`saw`/`square`), `start_beats`, `name` | rendert die Noten mit dem eingebauten Synth als WAV nach `aufnahmen/agent-<id>.wav` und legt einen Audio-Clip an |
 | `generate_drums` | `track`, `kick`, `snare`, `hihat` (je Zeichen ein 16tel: `x` Schlag, `o` leise, `.` Pause), `start_beats`, `name` | synthetische Drums (Kick: Sinus-Sweep, Snare: Ton + Rauschen, Hi-Hat: gefiltertes Rauschen) als Audio-Clip; Länge = längstes Muster |
