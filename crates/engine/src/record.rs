@@ -191,22 +191,24 @@ impl Drop for Recorder {
 
 /// Listet alle Eingabegeräte des Standard-Hosts.
 pub fn list_input_devices() -> Result<Vec<OutputDeviceInfo>, DeviceError> {
-    let host = cpal::default_host();
-    let default_id = host.default_input_device().and_then(|d| d.id().ok());
-    let mut list = Vec::new();
-    for device in host.input_devices()? {
-        let Ok(id) = device.id() else { continue };
-        let name = device
-            .description()
-            .map(|d| d.name().to_string())
-            .unwrap_or_else(|_| id.to_string());
-        list.push(OutputDeviceInfo {
-            is_default: default_id.as_ref() == Some(&id),
-            id: id.to_string(),
-            name,
-        });
-    }
-    Ok(list)
+    crate::device::on_audio_thread(move || -> Result<Vec<OutputDeviceInfo>, DeviceError> {
+        let host = cpal::default_host();
+        let default_id = host.default_input_device().and_then(|d| d.id().ok());
+        let mut list = Vec::new();
+        for device in host.input_devices()? {
+            let Ok(id) = device.id() else { continue };
+            let name = device
+                .description()
+                .map(|d| d.name().to_string())
+                .unwrap_or_else(|_| id.to_string());
+            list.push(OutputDeviceInfo {
+                is_default: default_id.as_ref() == Some(&id),
+                id: id.to_string(),
+                name,
+            });
+        }
+        Ok(list)
+    })
 }
 
 fn pick_input(config: &InputConfig) -> Result<cpal::Device, DeviceError> {
@@ -231,91 +233,93 @@ pub fn start_recording(
     path: &Path,
     on_error: impl FnMut(cpal::Error) + Send + 'static,
 ) -> Result<Recorder, RecordError> {
-    let device = pick_input(config)?;
-    let supported = device.default_input_config()?;
-    if supported.sample_format() != cpal::SampleFormat::F32 {
-        return Err(DeviceError::UnsupportedFormat.into());
-    }
-    let stream_config = supported.config();
-    let sample_rate = stream_config.sample_rate;
-    let channels = stream_config.channels.max(1);
+    crate::device::on_audio_thread(move || -> Result<Recorder, RecordError> {
+        let device = pick_input(config)?;
+        let supported = device.default_input_config()?;
+        if supported.sample_format() != cpal::SampleFormat::F32 {
+            return Err(DeviceError::UnsupportedFormat.into());
+        }
+        let stream_config = supported.config();
+        let sample_rate = stream_config.sample_rate;
+        let channels = stream_config.channels.max(1);
 
-    let spec = hound::WavSpec {
-        channels,
-        sample_rate,
-        bits_per_sample: 32,
-        sample_format: hound::SampleFormat::Float,
-    };
-    let mut wav =
-        hound::WavWriter::create(path, spec).map_err(|e| RecordError::Wav(e.to_string()))?;
+        let spec = hound::WavSpec {
+            channels,
+            sample_rate,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut wav =
+            hound::WavWriter::create(path, spec).map_err(|e| RecordError::Wav(e.to_string()))?;
 
-    let capacity = sample_rate as usize * usize::from(channels) * QUEUE_SECONDS;
-    let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(capacity.max(1024));
-    let meters = Arc::new(Meters::default());
+        let capacity = sample_rate as usize * usize::from(channels) * QUEUE_SECONDS;
+        let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(capacity.max(1024));
+        let meters = Arc::new(Meters::default());
 
-    let m_audio = Arc::clone(&meters);
-    let stream = device.build_input_stream(
-        stream_config,
-        move |data: &[f32], info: &cpal::InputCallbackInfo| {
-            let ts = info.timestamp();
-            let d = ts.callback.duration_since(ts.capture);
-            m_audio
-                .latency_us
-                .store(d.as_micros() as u64, Ordering::Relaxed);
-            let mut peak = 0.0f32;
-            for &s in data {
-                peak = peak.max(s.abs());
-                if producer.push(s).is_err() {
-                    m_audio.overruns.fetch_add(1, Ordering::Relaxed);
+        let m_audio = Arc::clone(&meters);
+        let stream = device.build_input_stream(
+            stream_config,
+            move |data: &[f32], info: &cpal::InputCallbackInfo| {
+                let ts = info.timestamp();
+                let d = ts.callback.duration_since(ts.capture);
+                m_audio
+                    .latency_us
+                    .store(d.as_micros() as u64, Ordering::Relaxed);
+                let mut peak = 0.0f32;
+                for &s in data {
+                    peak = peak.max(s.abs());
+                    if producer.push(s).is_err() {
+                        m_audio.overruns.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
-            }
-            store_max(&m_audio.level, peak);
-            store_max(&m_audio.peak, peak);
-        },
-        on_error,
-        None,
-    )?;
+                store_max(&m_audio.level, peak);
+                store_max(&m_audio.peak, peak);
+            },
+            on_error,
+            None,
+        )?;
 
-    let m_writer = Arc::clone(&meters);
-    let (mut collector, peaks) = live_peaks(channels);
-    let writer = std::thread::Builder::new()
-        .name("woa-record-writer".into())
-        .spawn(move || -> Result<(), String> {
-            let mut last_flush = Instant::now();
-            loop {
-                let stopping = m_writer.stop.load(Ordering::Acquire);
-                let mut n = 0u64;
-                while let Ok(s) = consumer.pop() {
-                    collector.push(s);
-                    wav.write_sample(s).map_err(|e| e.to_string())?;
-                    n += 1;
+        let m_writer = Arc::clone(&meters);
+        let (mut collector, peaks) = live_peaks(channels);
+        let writer = std::thread::Builder::new()
+            .name("woa-record-writer".into())
+            .spawn(move || -> Result<(), String> {
+                let mut last_flush = Instant::now();
+                loop {
+                    let stopping = m_writer.stop.load(Ordering::Acquire);
+                    let mut n = 0u64;
+                    while let Ok(s) = consumer.pop() {
+                        collector.push(s);
+                        wav.write_sample(s).map_err(|e| e.to_string())?;
+                        n += 1;
+                    }
+                    m_writer.written.fetch_add(n, Ordering::Release);
+                    if stopping {
+                        break;
+                    }
+                    if last_flush.elapsed() >= FLUSH_EVERY {
+                        wav.flush().map_err(|e| e.to_string())?;
+                        last_flush = Instant::now();
+                    }
+                    if n == 0 {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
                 }
-                m_writer.written.fetch_add(n, Ordering::Release);
-                if stopping {
-                    break;
-                }
-                if last_flush.elapsed() >= FLUSH_EVERY {
-                    wav.flush().map_err(|e| e.to_string())?;
-                    last_flush = Instant::now();
-                }
-                if n == 0 {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-            }
-            wav.finalize().map_err(|e| e.to_string())
+                wav.finalize().map_err(|e| e.to_string())
+            })
+            .map_err(|e| RecordError::Wav(e.to_string()))?;
+
+        stream.play()?;
+        Ok(Recorder {
+            stream: Some(stream),
+            writer: Some(writer),
+            meters,
+            path: path.to_path_buf(),
+            sample_rate,
+            channels,
+            started: Instant::now(),
+            peaks,
         })
-        .map_err(|e| RecordError::Wav(e.to_string()))?;
-
-    stream.play()?;
-    Ok(Recorder {
-        stream: Some(stream),
-        writer: Some(writer),
-        meters,
-        path: path.to_path_buf(),
-        sample_rate,
-        channels,
-        started: Instant::now(),
-        peaks,
     })
 }
 
@@ -329,33 +333,35 @@ pub fn start_live_input(
     dropped: Arc<AtomicU64>,
     on_error: impl FnMut(cpal::Error) + Send + 'static,
 ) -> Result<(cpal::Stream, u32), RecordError> {
-    let device = pick_input(config)?;
-    let supported = device.default_input_config()?;
-    if supported.sample_format() != cpal::SampleFormat::F32 {
-        return Err(DeviceError::UnsupportedFormat.into());
-    }
-    let stream_config = supported.config();
-    let sample_rate = stream_config.sample_rate;
-    let channels = usize::from(stream_config.channels).max(1);
-    let stream = device.build_input_stream(
-        stream_config,
-        move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            for frame in data.chunks(channels) {
-                let l = frame[0];
-                let r = if channels > 1 { frame[1] } else { l };
-                if producer.slots() < 2 {
-                    dropped.fetch_add(1, Ordering::Relaxed);
-                    continue;
+    crate::device::on_audio_thread(move || -> Result<(cpal::Stream, u32), RecordError> {
+        let device = pick_input(config)?;
+        let supported = device.default_input_config()?;
+        if supported.sample_format() != cpal::SampleFormat::F32 {
+            return Err(DeviceError::UnsupportedFormat.into());
+        }
+        let stream_config = supported.config();
+        let sample_rate = stream_config.sample_rate;
+        let channels = usize::from(stream_config.channels).max(1);
+        let stream = device.build_input_stream(
+            stream_config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                for frame in data.chunks(channels) {
+                    let l = frame[0];
+                    let r = if channels > 1 { frame[1] } else { l };
+                    if producer.slots() < 2 {
+                        dropped.fetch_add(1, Ordering::Relaxed);
+                        continue;
+                    }
+                    let _ = producer.push(l);
+                    let _ = producer.push(r);
                 }
-                let _ = producer.push(l);
-                let _ = producer.push(r);
-            }
-        },
-        on_error,
-        None,
-    )?;
-    stream.play()?;
-    Ok((stream, sample_rate))
+            },
+            on_error,
+            None,
+        )?;
+        stream.play()?;
+        Ok((stream, sample_rate))
+    })
 }
 
 /// Nächster freier Name `aufnahme-NNN.wav` in `dir` (legt `dir` an).

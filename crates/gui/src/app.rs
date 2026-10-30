@@ -1330,6 +1330,9 @@ impl WoaApp {
                     if ui
                         .add_enabled(self.player.is_some(), play)
                         .on_hover_text("Abspielen / Pause (Leertaste)")
+                        .on_disabled_hover_text(
+                            "Keine Audioausgabe geöffnet. Den Grund nennt die Statuszeile beim Start.",
+                        )
                         .clicked()
                     {
                         self.toggle_play();

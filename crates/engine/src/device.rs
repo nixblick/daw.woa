@@ -20,6 +20,24 @@ pub const DEFAULT_BUFFER_FRAMES: u32 = 128;
 
 pub use crate::RADIO_BUFFER_FRAMES;
 
+/// Führt einen Gerätezugriff aus. Unter Windows auf einem frischen Thread: Das Fenster (winit,
+/// Drag & Drop) richtet COM im GUI-Thread als STA ein, WASAPI braucht MTA und scheitert sonst
+/// mit „Der Threadmodus kann nicht nach dem Einstellen geändert werden“ (RPC_E_CHANGED_MODE,
+/// André 30.10.: keine Wiedergabe, Mikrofon startet nicht). Anderswo direkt.
+#[cfg(windows)]
+pub fn on_audio_thread<T: Send>(f: impl FnOnce() -> T + Send) -> T {
+    std::thread::scope(|s| match s.spawn(f).join() {
+        Ok(v) => v,
+        Err(p) => std::panic::resume_unwind(p),
+    })
+}
+
+/// Siehe die Windows-Fassung; hier gibt es kein COM, der Zugriff läuft direkt.
+#[cfg(not(windows))]
+pub fn on_audio_thread<T>(f: impl FnOnce() -> T) -> T {
+    f()
+}
+
 /// Ein laufender Ausgabestrom; er spielt, solange er lebt.
 pub type OutputStream = cpal::Stream;
 
@@ -35,10 +53,12 @@ pub fn resume_output(stream: &OutputStream) -> Result<(), DeviceError> {
 
 /// Anzeigename des Geräts, das `config` wählt (für Logs), `"?"` wenn unbekannt.
 pub fn output_device_name(config: &OutputConfig) -> String {
-    pick_device(config)
-        .ok()
-        .and_then(|d| d.description().ok().map(|x| x.name().to_string()))
-        .unwrap_or_else(|| "?".into())
+    crate::device::on_audio_thread(move || -> String {
+        pick_device(config)
+            .ok()
+            .and_then(|d| d.description().ok().map(|x| x.name().to_string()))
+            .unwrap_or_else(|| "?".into())
+    })
 }
 
 /// Ist der Fehler ein Unter- oder Überlauf (Xrun)?
@@ -132,22 +152,24 @@ pub fn output_latency() -> std::time::Duration {
 }
 
 pub fn list_output_devices() -> Result<Vec<OutputDeviceInfo>, DeviceError> {
-    let host = cpal::default_host();
-    let default_id = host.default_output_device().and_then(|d| d.id().ok());
-    let mut list = Vec::new();
-    for device in host.output_devices()? {
-        let Ok(id) = device.id() else { continue };
-        let name = device
-            .description()
-            .map(|d| d.name().to_string())
-            .unwrap_or_else(|_| id.to_string());
-        list.push(OutputDeviceInfo {
-            is_default: default_id.as_ref() == Some(&id),
-            id: id.to_string(),
-            name,
-        });
-    }
-    Ok(list)
+    crate::device::on_audio_thread(move || -> Result<Vec<OutputDeviceInfo>, DeviceError> {
+        let host = cpal::default_host();
+        let default_id = host.default_output_device().and_then(|d| d.id().ok());
+        let mut list = Vec::new();
+        for device in host.output_devices()? {
+            let Ok(id) = device.id() else { continue };
+            let name = device
+                .description()
+                .map(|d| d.name().to_string())
+                .unwrap_or_else(|_| id.to_string());
+            list.push(OutputDeviceInfo {
+                is_default: default_id.as_ref() == Some(&id),
+                id: id.to_string(),
+                name,
+            });
+        }
+        Ok(list)
+    })
 }
 
 /// Prüft eine gewünschte Puffergröße gegen den Bereich des Geräts.
@@ -196,9 +218,11 @@ fn pick_device(config: &OutputConfig) -> Result<cpal::Device, DeviceError> {
 /// Abtastrate, mit der [`start_output_with`] das Gerät öffnen wird. Der Graph muss
 /// mit genau dieser Rate kompiliert werden.
 pub fn output_sample_rate(config: &OutputConfig) -> Result<u32, DeviceError> {
-    let device = pick_device(config)?;
-    let supported = device.default_output_config()?;
-    Ok(supported.sample_rate())
+    crate::device::on_audio_thread(move || -> Result<u32, DeviceError> {
+        let device = pick_device(config)?;
+        let supported = device.default_output_config()?;
+        Ok(supported.sample_rate())
+    })
 }
 
 /// Startet die Ausgabe auf dem Standardgerät mit Treiber-Puffergröße.
@@ -252,8 +276,10 @@ pub type AuxRender = Box<dyn FnMut(&mut [f32], &mut [f32]) + Send>;
 
 /// Kanäle, mit denen [`start_output_aux`] das Gerät öffnet.
 pub fn output_channels(config: &OutputConfig) -> Result<u16, DeviceError> {
-    let device = pick_device(config)?;
-    Ok(device.default_output_config()?.channels())
+    crate::device::on_audio_thread(move || -> Result<u16, DeviceError> {
+        let device = pick_device(config)?;
+        Ok(device.default_output_config()?.channels())
+    })
 }
 
 /// Schreibt einen Block in verschachtelte Geräte-Frames: `main` auf Kanal 1/2 (bei Mono
@@ -294,52 +320,57 @@ pub fn start_output_aux(
     mut aux: Option<AuxRender>,
     on_error: impl FnMut(cpal::Error) + Send + 'static,
 ) -> Result<cpal::Stream, DeviceError> {
-    let device = pick_device(config)?;
-    let supported = device.default_output_config()?;
-    if supported.sample_format() != cpal::SampleFormat::F32 {
-        return Err(DeviceError::UnsupportedFormat);
-    }
-    let mut stream_config = supported.config();
-    if let Some(frames) = config.buffer_frames {
-        check_buffer_size(frames, supported.buffer_size())?;
-        stream_config.buffer_size = cpal::BufferSize::Fixed(frames);
-    }
-    let channels = usize::from(stream_config.channels).max(1);
-    if aux.is_some() && channels < 4 {
-        return Err(DeviceError::TooFewChannels(stream_config.channels));
-    }
-    let mut left = vec![0.0f32; SCRATCH_FRAMES];
-    let mut right = vec![0.0f32; SCRATCH_FRAMES];
-    let mut aux_l = vec![0.0f32; SCRATCH_FRAMES];
-    let mut aux_r = vec![0.0f32; SCRATCH_FRAMES];
+    crate::device::on_audio_thread(move || -> Result<cpal::Stream, DeviceError> {
+        let device = pick_device(config)?;
+        let supported = device.default_output_config()?;
+        if supported.sample_format() != cpal::SampleFormat::F32 {
+            return Err(DeviceError::UnsupportedFormat);
+        }
+        let mut stream_config = supported.config();
+        // Windows (WASAPI, geteilter Modus): ein fester Puffer unter der Geräteperiode (~10 ms,
+        // 128 Frames sind 2,7 ms) lässt das Öffnen scheitern, dann bleibt ▶ grau. Dort entscheidet
+        // der Treiber (André 30.10., Windows-Notebook ohne Wiedergabe).
+        if let Some(frames) = config.buffer_frames.filter(|_| !cfg!(windows)) {
+            check_buffer_size(frames, supported.buffer_size())?;
+            stream_config.buffer_size = cpal::BufferSize::Fixed(frames);
+        }
+        let channels = usize::from(stream_config.channels).max(1);
+        if aux.is_some() && channels < 4 {
+            return Err(DeviceError::TooFewChannels(stream_config.channels));
+        }
+        let mut left = vec![0.0f32; SCRATCH_FRAMES];
+        let mut right = vec![0.0f32; SCRATCH_FRAMES];
+        let mut aux_l = vec![0.0f32; SCRATCH_FRAMES];
+        let mut aux_r = vec![0.0f32; SCRATCH_FRAMES];
 
-    let stream = device.build_output_stream(
-        stream_config,
-        move |data: &mut [f32], info: &cpal::OutputCallbackInfo| {
-            let ts = info.timestamp();
-            let d = ts.playback.duration_since(ts.callback);
-            OUTPUT_LATENCY_US.store(d.as_micros() as u64, Ordering::Relaxed);
-            for frame_chunk in data.chunks_mut(SCRATCH_FRAMES * channels) {
-                let frames = frame_chunk.len() / channels;
-                let l = &mut left[..frames];
-                let r = &mut right[..frames];
-                render(l, r);
-                let side = match aux.as_mut() {
-                    Some(f) => {
-                        let (al, ar) = (&mut aux_l[..frames], &mut aux_r[..frames]);
-                        f(al, ar);
-                        Some((&al[..], &ar[..]))
-                    }
-                    None => None,
-                };
-                interleave(frame_chunk, channels, (l, r), side);
-            }
-        },
-        on_error,
-        None,
-    )?;
-    stream.play()?;
-    Ok(stream)
+        let stream = device.build_output_stream(
+            stream_config,
+            move |data: &mut [f32], info: &cpal::OutputCallbackInfo| {
+                let ts = info.timestamp();
+                let d = ts.playback.duration_since(ts.callback);
+                OUTPUT_LATENCY_US.store(d.as_micros() as u64, Ordering::Relaxed);
+                for frame_chunk in data.chunks_mut(SCRATCH_FRAMES * channels) {
+                    let frames = frame_chunk.len() / channels;
+                    let l = &mut left[..frames];
+                    let r = &mut right[..frames];
+                    render(l, r);
+                    let side = match aux.as_mut() {
+                        Some(f) => {
+                            let (al, ar) = (&mut aux_l[..frames], &mut aux_r[..frames]);
+                            f(al, ar);
+                            Some((&al[..], &ar[..]))
+                        }
+                        None => None,
+                    };
+                    interleave(frame_chunk, channels, (l, r), side);
+                }
+            },
+            on_error,
+            None,
+        )?;
+        stream.play()?;
+        Ok(stream)
+    })
 }
 
 #[cfg(test)]
