@@ -31,12 +31,14 @@ pub mod device;
 pub const RADIO_BUFFER_FRAMES: u32 = 0;
 
 pub mod export;
+pub mod ffmpeg;
 pub mod live_peaks;
 pub mod loudness;
 pub mod midi_clip;
 pub mod project;
 #[cfg(feature = "device")]
 pub mod record;
+pub mod stems;
 pub mod tap;
 pub mod transport;
 

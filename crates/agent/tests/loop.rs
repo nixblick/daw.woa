@@ -269,7 +269,7 @@ async fn editing_tools_and_error_cases() {
         ("export", json!({"path": "../x.wav"})),
         ("export", json!({"path": "/tmp/x.wav"})),
         ("export", json!({"path": "sub/../../x.wav"})),
-        ("export", json!({"path": "x.ogg"})),
+        ("export", json!({"path": "x.xyz"})),
         ("export", json!({"path": "x.wav", "target_lufs": 5.0})),
     ] {
         let r = call(&client, tool, args.clone()).await;
@@ -443,7 +443,7 @@ async fn failed_export_leaves_no_new_folders() {
     assert!(!dir.join("da/tief").exists());
 
     // Unknown format: nothing is created at all.
-    let r = call(&client, "export", json!({"path": "neu2/x.ogg"})).await;
+    let r = call(&client, "export", json!({"path": "neu2/x.xyz"})).await;
     assert_eq!(r.is_error, Some(true), "{r:?}");
     assert!(!dir.join("neu2").exists());
 

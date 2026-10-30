@@ -1126,7 +1126,7 @@ impl WoaAgent {
     fn write_mix(out: &Path, mix: &audio::Mix) -> Result<(), String> {
         let dir = out.parent().ok_or("kein Zielordner")?;
         let format = woa_engine::export::ExportFormat::from_path(out)
-            .ok_or("Endung muss .wav, .flac oder .mp3 sein")?;
+            .ok_or(woa_engine::export::EXTENSION_HINT)?;
         let ext = out.extension().and_then(|e| e.to_str()).unwrap_or("wav");
         let mut opened = None;
         for n in 0..100u32 {
@@ -2152,7 +2152,7 @@ impl WoaAgent {
     }
 
     #[tool(
-        description = "Export the mixdown as WAV, FLAC (24 bit) or MP3 (320 kbit/s), chosen by the file extension. Optional target_lufs normalises the loudness (peaks stay below -1 dBFS). Returns loudness and peak of the written audio. If target_reached is false (normalized.peak_limited), the mix has too much peak for that loudness: lower the gain of the drum/percussive tracks by a few dB and export again."
+        description = "Export the mixdown as WAV (32 bit float), FLAC (24 bit), MP3 (320 kbit/s), or Opus (.opus), Ogg Vorbis (.ogg) or AAC (.aac) through an installed ffmpeg, chosen by the file extension. Without ffmpeg the last three fail with a clear message. Optional target_lufs normalises the loudness (peaks stay below -1 dBFS). Returns loudness and peak of the written audio. If target_reached is false (normalized.peak_limited), the mix has too much peak for that loudness: lower the gain of the drum/percussive tracks by a few dB and export again."
     )]
     async fn export(
         &self,
@@ -2160,7 +2160,7 @@ impl WoaAgent {
     ) -> Result<CallToolResult, McpError> {
         let project = self.lock()?.project().clone();
         if woa_engine::export::ExportFormat::from_path(Path::new(&p.path)).is_none() {
-            return Ok(fail("Endung muss .wav, .flac oder .mp3 sein"));
+            return Ok(fail(woa_engine::export::EXTENSION_HINT));
         }
         let (out, created) = match self.resolve_out(&p.path) {
             Ok(o) => o,

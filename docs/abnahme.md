@@ -4,6 +4,24 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 26: Alle Export-Formate und Stems (0.21.0, offen)
+
+Aus M7. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Opus exportieren:** Ein Projekt mit Audio öffnen, Strg+E. Im Fenster „Exportieren“ das Format **Opus** wählen (ist es grau, fehlt ffmpeg: Hinweis beim Darüberfahren, dann ffmpeg installieren und das Fenster neu öffnen), „Datei wählen und exportieren …“. Die `.opus`-Datei in einem Player öffnen: klingt wie das Projekt, Länge stimmt. Dasselbe mit Ogg Vorbis und AAC, und mit WAV 16 Bit, 24 Bit und 32 Bit Float sowie FLAC 16 und 24 Bit.
+2. **Stems exportieren:** Strg+E, Haken „Stems: eine Datei je Spur in einen Ordner“, „Busse dazu“ und „Mixdown dazu“ nach Wunsch, Ordner wählen. Es entsteht ein Unterordner „<Projekt> Stems“ mit einer Datei je Spur („01 Bass.wav“, „02 …“), je Bus eine und „00 Mixdown“. Stumme Spuren fehlen, die Statuszeile nennt sie.
+3. **In einer anderen DAW anlegen:** Alle Dateien (ohne den Mixdown) in einer anderen DAW auf getrennte Spuren an Position 0 legen. Sie liegen deckungsgleich und klingen zusammen wie der Mixdown, solange keine Spur über einen Bus mit Effekt läuft. Läuft eine Spur in einen Bus, steckt sie schon im Bus-Stem: dann entweder „Busse dazu“ abwählen oder die Spur-Dateien und den Bus nicht beide anlegen.
+
+Selbst geprüft von Claude (ohne Ton, im Offline-Render): Stems und Mixdown in einem Durchgang über die Abgriffe des Graphen; alle Stems gleich lang wie der Mixdown; **die Summe der obersten Stems (Spuren und Busse mit Ausgang Master) ist der Mixdown auf 1e-4 genau**, getestet mit einem Projekt aus direkter Spur, Spur über Bus, Send auf den Bus, gedrehtem Pan, Pegel und einer stummen Spur (die keine Datei bekommt); die Dateien werden zurückgelesen und die Summe der zurückgelesenen Dateien stimmt. Lautheitsangleich gilt mit demselben Gain für alle Dateien (Pegelverhältnis −6 dB gemessen). WAV 16/24/32f und FLAC 16/24 gelesen: Länge gleich, Fehler höchstens eine Quantisierungsstufe, Dateigrößen wachsen mit der Breite. FLAC mit Float wird abgelehnt und hinterlässt keine Datei. Opus, Ogg Vorbis und AAC über das echte ffmpeg: Dateikopf (OggS, ADTS), Rücklesen über ffmpeg, Länge auf 100 ms, Pegel auf 12 %, rechter Kanal bleibt still, wenn nur links Signal ist. **Fehlt ffmpeg, kommt der Text „ffmpeg nicht gefunden: …“ für jedes der drei Formate und es bleibt keine halbe Datei zurück**, auch bei Stems (keine Datei im Ordner). Dateinamen: laufende Nummer vorn, Sonderzeichen, `..`, reservierte Windows-Namen und Überlänge bereinigt; ein Symlink als Ziel wird abgelehnt. Export-Fenster als Zustandstest (ausgegraut ohne ffmpeg oder ohne Encoder, Wahl wird zurückgesetzt, Grenzen der Bitrate) und Zeichnen ohne Fenster. Der Agent-Export (`export`) kennt `.opus`, `.ogg`, `.aac` mit derselben Fehlermeldung.
+
+Nicht selbst geprüft: der Klang der verlustbehafteten Formate (kein Ton auf dem Notebook), das Öffnen der Dateien in anderen Playern und DAWs, das Aussehen des Export-Fensters und der Dialoge im echten Fenster. Die Tests mit ffmpeg laufen in der CI nur, wo ffmpeg installiert ist (sonst übersprungen mit einer Logzeile); lokal wurden sie mit ffmpeg ausgeführt. Der Export läuft wie bisher im Oberflächen-Thread: bei langen Projekten mit Opus kann die Oberfläche einige Sekunden stehen.
+
+Bewusst so: **FLAC kann keine Fließkommazahlen speichern** (nur ganze Zahlen, bis 24 Bit hier); „32 Bit Float“ gibt es deshalb nur als WAV. AAC wird als `.aac` (ADTS) geschrieben, nicht als `.m4a`, weil der MP4-Container ein suchbares Ziel braucht. Opus lesen kann WOA weiterhin nicht (symphonia hat keinen Opus-Decoder); Opus-Dateien lassen sich nur über ffmpeg zurücklesen (so prüfen es die Tests), in die Bibliothek importieren geht sie noch nicht.
+
+Offene Frage an André (nicht gebaut, weil es eine Entscheidung über Lizenz und Größe ist): ffmpeg im Installer mitliefern (LGPL-Build, etwa 80 MB, bei AAC eine Patentfrage unter Windows) oder vom Nutzer installieren lassen? Bis dahin sucht WOA ffmpeg in `WOA_FFMPEG`, neben dem Programm und im `PATH`.
+
+Noch nicht drin: Stems über den Agenten (MCP), Opus-Import in die Bibliothek, Export im Hintergrund-Thread mit Fortschritt.
+
 ## Paket 25: Analyse: BPM, Tonart, Lautheit, automatische Cue-Punkte (0.20.0, offen)
 
 Aus M7. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

@@ -169,6 +169,8 @@ pub struct WoaApp {
     data_dir: PathBuf,
     /// Bibliotheks-Fenster (Paket 24).
     library: crate::library::LibraryWindow,
+    /// Export-Fenster (Paket 26).
+    export_dialog: crate::export_dialog::ExportDialog,
     /// Sendeablauf; läuft weiter, auch wenn das Produzent-Layout zu sehen ist.
     radio: Option<RadioDesk>,
     /// MIDI-Eingang (Paket 11), spielt das Instrument der scharfen MIDI-Spur.
@@ -480,6 +482,7 @@ impl WoaApp {
             library: crate::library::LibraryWindow::new(
                 woa_radio::data_dir().join(crate::library::DB_FILE),
             ),
+            export_dialog: crate::export_dialog::ExportDialog::new(),
             radio: None,
             frames: (0, Instant::now()),
         }
@@ -1936,10 +1939,7 @@ impl WoaApp {
                     self.save_as();
                 }
                 ui.separator();
-                if ui
-                    .button("Exportieren (WAV, FLAC, MP3) … (Strg+E)")
-                    .clicked()
-                {
+                if ui.button("Exportieren … (Strg+E)").clicked() {
                     self.export();
                 }
                 ui.separator();
@@ -4044,56 +4044,149 @@ impl WoaApp {
         }
     }
 
+    /// Öffnet das Export-Fenster (Format, Stems); gerechnet wird nach dem Klick darin.
     fn export(&mut self) {
-        let Some(out) = rfd::FileDialog::new()
-            .set_title("Exportieren")
-            .set_file_name(format!("{}.wav", self.state.project().meta.name))
-            .add_filter("WAV", &["wav"])
-            .add_filter("FLAC", &["flac"])
-            .add_filter("MP3 (320 kbit/s)", &["mp3"])
-            .save_file()
-        else {
-            return;
+        self.export_dialog.open_now();
+    }
+
+    fn export_window(&mut self, ctx: &egui::Context) {
+        if let Some(req) = self.export_dialog.show(ctx) {
+            self.run_export(req);
+        }
+    }
+
+    fn run_export(&mut self, req: crate::export_dialog::ExportRequest) {
+        let ext = req.spec.format.extension();
+        let project = self.state.project().clone();
+        let name = project.meta.name.clone();
+        let status = match req.stems {
+            None => self.export_file(&project, &name, ext, &req.spec),
+            Some(opts) => self.export_stem_folder(&project, &name, &req.spec, opts),
         };
+        if let Some(s) = status {
+            self.state.status = s;
+        }
+    }
+
+    /// Text zur Lautheit für die Statuszeile.
+    fn loudness_note(norm: Option<woa_engine::loudness::Normalized>) -> String {
+        match norm {
+            Some(n) => format!(
+                ", Lautheit {:.1} → {:.1} LUFS{}",
+                n.before_lufs,
+                n.before_lufs + n.gain_db,
+                if n.peak_limited {
+                    " (Spitzen begrenzen, leiser als Ziel)"
+                } else {
+                    ""
+                }
+            ),
+            None => String::new(),
+        }
+    }
+
+    fn export_file(
+        &mut self,
+        project: &woa_model::Project,
+        name: &str,
+        ext: &str,
+        spec: &woa_engine::export::ExportSpec,
+    ) -> Option<Status> {
+        let out = rfd::FileDialog::new()
+            .set_title("Exportieren")
+            .set_file_name(format!("{name}.{ext}"))
+            .add_filter(spec.format.label(), &[ext])
+            .save_file()?;
         let out = if out.extension().is_none() {
-            out.with_extension("wav")
+            out.with_extension(ext)
         } else {
             out
         };
-        let project = self.state.project().clone();
         let state = &self.state;
         let result = match self.player.as_mut() {
             Some(p) => p.export(
-                &project,
+                project,
                 &|rel| state.resolve_audio(rel),
                 &out,
+                spec,
                 self.export_lufs,
             ),
             None => Err("keine Audio-Engine".into()),
         };
-        self.state.status = match result {
+        Some(match result {
             Ok((secs, norm)) => {
                 tracing::info!(seconds = secs, ?norm, "export done");
-                let loud = match norm {
-                    Some(n) => format!(
-                        ", Lautheit {:.1} → {:.1} LUFS{}",
-                        n.before_lufs,
-                        n.before_lufs + n.gain_db,
-                        if n.peak_limited {
-                            " (Spitzen begrenzen, leiser als Ziel)"
-                        } else {
-                            ""
-                        }
-                    ),
-                    None => String::new(),
-                };
-                Status::Info(format!("Exportiert: {} ({secs:.1} s{loud})", out.display()))
+                Status::Info(format!(
+                    "Exportiert: {} ({secs:.1} s{})",
+                    out.display(),
+                    Self::loudness_note(norm)
+                ))
             }
             Err(e) => {
                 tracing::error!(error = %e, "export failed");
                 Status::Error(format!("Export fehlgeschlagen: {e}"))
             }
+        })
+    }
+
+    fn export_stem_folder(
+        &mut self,
+        project: &woa_model::Project,
+        name: &str,
+        spec: &woa_engine::export::ExportSpec,
+        opts: crate::export_dialog::StemOptions,
+    ) -> Option<Status> {
+        let parent = rfd::FileDialog::new()
+            .set_title("Ordner für die Stems wählen")
+            .pick_folder()?;
+        // Eigener Unterordner „<Projekt> Stems“, damit nichts Fremdes überschrieben wird.
+        let dir = parent.join(format!("{} Stems", woa_engine::stems::sanitize_name(name)));
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            tracing::error!(error = %e, "stem folder not created");
+            return Some(Status::Error(format!(
+                "Ordner {} nicht anlegbar: {e}",
+                dir.display()
+            )));
+        }
+        let state = &self.state;
+        let result = match self.player.as_mut() {
+            Some(p) => p.export_stems(
+                project,
+                &|rel| state.resolve_audio(rel),
+                &dir,
+                spec,
+                opts,
+                self.export_lufs,
+            ),
+            None => Err("keine Audio-Engine".into()),
         };
+        Some(match result {
+            Ok(done) => {
+                tracing::info!(
+                    files = done.files,
+                    seconds = done.seconds,
+                    "stem export done"
+                );
+                let skipped = if done.skipped.is_empty() {
+                    String::new()
+                } else {
+                    format!(", ohne stumme Spuren: {}", done.skipped.join(", "))
+                };
+                Status::Info(format!(
+                    "{} Dateien in {} ({:.1} s{}{skipped})",
+                    done.files,
+                    dir.display(),
+                    done.seconds,
+                    Self::loudness_note(done.norm)
+                ))
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "stem export failed");
+                // Ein leerer Ordner, den dieser Lauf angelegt hat, bleibt nicht liegen.
+                let _ = std::fs::remove_dir(&dir);
+                Status::Error(format!("Export fehlgeschlagen: {e}"))
+            }
+        })
     }
 
     fn track_name(&mut self, ui: &mut egui::Ui, id: TrackId, name: &str) {
@@ -4440,6 +4533,7 @@ impl eframe::App for WoaApp {
                 .show(ui, |ui| radio.ui(ui));
             radio.cue_window(&ctx);
             self.library_window(&ctx);
+            self.export_window(&ctx);
             self.controller_window(&ctx);
             self.feedback_window(&ctx);
             self.telemetry_window(&ctx);
@@ -4503,6 +4597,7 @@ impl eframe::App for WoaApp {
         self.piano_roll_window(&ctx);
         self.analysis_window(&ctx);
         self.library_window(&ctx);
+        self.export_window(&ctx);
         self.controller_window(&ctx);
         self.feedback_window(&ctx);
         self.telemetry_window(&ctx);

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.21.0 — 2026-10-30
+
+Paket 26 aus M7: Alle Export-Formate und Stems.
+
+- **Neue Formate:** Opus (`.opus`), Ogg Vorbis (`.ogg`) und AAC (`.aac`, ADTS) über ein externes `ffmpeg` (`woa_engine::ffmpeg`): als Prozess aufgerufen, nichts gelinkt, Argumente als Liste ohne Shell, Rohdaten über Pipes (Eingang in eigenem Thread, damit kein Pipe-Puffer verklemmt). Gesucht wird in `WOA_FFMPEG`, neben dem Programm und im `PATH`. Fehlt ffmpeg oder der Encoder, kommt eine klare Meldung und es bleibt keine halbe Datei zurück (erst kodieren, dann anlegen). Opus rechnet ffmpeg auf 48 kHz um.
+- **Wortbreite:** WAV in 16 Bit, 24 Bit oder 32 Bit Float (Vorgabe wie bisher Float); FLAC in 16 oder 24 Bit (Vorgabe wie bisher 24). FLAC kennt kein Float, die Auswahl wird abgelehnt statt still etwas anderes zu bauen. `export_stereo` und `export_stereo_to` behalten ihr Verhalten; `export_with`/`export_with_to` nehmen einen `ExportSpec`.
+- **Stems (`woa_engine::stems`):** Eine Datei je Spur und je Bus, alle gleich lang, dazu auf Wunsch der Mixdown (`00 Mixdown`). Gerechnet in einem Offline-Durchgang über die Abgriffe des Graphen, nach jedem Block geleert (ein Verlust wäre ein Fehler). Die Summe der obersten Stems (Ausgang Master) ist der Mixdown; Spuren in einem Bus stecken schon im Bus-Stem. Stumme Spuren bekommen keine Datei. Dateinamen mit laufender Nummer und bereinigt (Sonderzeichen, `..`, reservierte Windows-Namen); ein Symlink als Ziel wird abgelehnt; bei einem Fehler werden die neu angelegten Dateien entfernt. Der Lautheitsangleich gilt mit demselben Gain für alle Dateien.
+- **Oberfläche:** Neues Export-Fenster (Strg+E, Menü Datei): Format (ausgegraut mit Hinweis, wenn ffmpeg oder der Encoder fehlt), Wortbreite oder Bitrate, Haken für Stems, Busse und Mixdown. Die Suche nach ffmpeg läuft einmal beim Öffnen, nie je Bild. Stems gehen in einen Unterordner „<Projekt> Stems“.
+- **Kennung:** Das Lesen der ffmpeg-Ausgabe nutzt `as_chunks` (der neuere Clippy der CI verlangt es).
+- **Agent:** `export` nimmt auch `.opus`, `.ogg`, `.aac`; die Fehlermeldung für eine unbekannte Endung nennt alle sechs.
+- **Tests:** Summe der Stems gleich Mixdown (Projekt mit Bus, Send, Pan, Pegel, stummer Spur), Rücklesen aller Dateien, gleicher Gain, Wortbreiten, FLAC ohne Float, fehlendes ffmpeg für alle drei Formate, Opus/Ogg/AAC über das echte ffmpeg (übersprungen, wo es fehlt), Dateinamen, Symlink-Ziel, Export-Fenster als Zustandstest. Zwei bestehende Agent-Tests nutzten `.ogg` als „unbekannte Endung“ und nehmen jetzt `.xyz`.
+
 ## 0.20.1 — 2026-10-30
 
 Öffentliches Repo aufgeräumt (André: „push nach nix hin was da nicht hin soll“).
