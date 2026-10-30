@@ -6,6 +6,7 @@ Paket 31 aus M8: CLAP-Plugins finden und laden (in Arbeit, Eintrag wird am Ende 
 
 - **Modell:** Plugin-Plätze auf Spuren (`PluginSlot`), fünf Befehle mit Rückgängig, Projektformat 4 nur bei Plugins.
 - **Host (`woa-plugins`):** Suche in den Standardordnern und `CLAP_PATH`, Instanz über `clack-host`, Rechner ohne Sperre und ohne Speicheranforderung im Audio-Thread, Test-Plugin aus `clack-plugin` mit Selbstprüfung.
+- **Engine:** Spuren mit Plugins laufen in Stereo. Ein Instrument-Plugin ersetzt den eingebauten Synth der MIDI-Spur (Clip-Noten im Takt des Transports, Live-Noten, Sprung und Stopp lassen nichts hängen), Effekt-Plugins folgen den eingebauten Effekten. Fehlt ein Instrument, schweigt die Spur; ein fehlender Effekt wird durchgereicht. Export und Stems rechnen mit Plugins (`render_clips_plugins`, `render_stems_plugins`).
 
 ## 0.25.0 — 2026-10-30
 

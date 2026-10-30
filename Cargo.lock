@@ -6163,6 +6163,7 @@ dependencies = [
  "tempfile",
  "woa-dsp",
  "woa-model",
+ "woa-plugins",
 ]
 
 [[package]]

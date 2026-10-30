@@ -36,6 +36,7 @@ pub mod live_peaks;
 pub mod localtime;
 pub mod loudness;
 pub mod midi_clip;
+pub mod plugin_node;
 pub mod project;
 #[cfg(feature = "device")]
 pub mod record;
@@ -43,7 +44,7 @@ pub mod stems;
 pub mod tap;
 pub mod transport;
 
-pub use project::{
+pub use project::{build_project_graph_plugins,
     ProjectGraph, TrackNodes, audibility, build_project_graph, build_project_graph_mode,
     build_project_graph_taps, render_project, track_gains,
 };

@@ -70,6 +70,20 @@ pub fn render_stems(
     select: StemSelect,
     load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
 ) -> Result<StemRender, EngineError> {
+    render_stems_plugins(project, rate, seconds, select, load, &mut |_| {
+        woa_dsp::plugin::TrackPlugins::default()
+    })
+}
+
+/// Wie [`render_stems`], mit den Plugins der Spuren (Paket 31).
+pub fn render_stems_plugins(
+    project: &Project,
+    rate: u32,
+    seconds: f64,
+    select: StemSelect,
+    load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
+    plugins: &mut dyn FnMut(&woa_model::Track) -> woa_dsp::plugin::TrackPlugins,
+) -> Result<StemRender, EngineError> {
     const BLOCK: usize = 512;
     let (mut engine, mut processor) = Engine::new(16);
     let graph = clip_graph_inner(
@@ -81,6 +95,7 @@ pub fn render_stems(
         None,
         true,
         true,
+        Some(plugins),
     );
     let mut taps = graph.taps;
     engine.set_graph(graph.builder, rate as f32, BLOCK)?;
