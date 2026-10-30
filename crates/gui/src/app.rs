@@ -4788,6 +4788,22 @@ impl WoaApp {
             }
         }
         player.reconcile_plugins(self.state.project());
+        for insert in player.new_plugin_failures() {
+            let name = self
+                .state
+                .project()
+                .tracks
+                .iter()
+                .find_map(|t| t.plugin(insert))
+                .map_or_else(|| "Plugin".to_string(), |s| s.name.clone());
+            self.state.status = Status::Error(format!(
+                "{name}: Plugin abgestürzt – neu laden. Der Rest läuft weiter."
+            ));
+        }
+        if player.has_isolated_plugins() {
+            // Die Aufsicht über die Plugin-Prozesse läuft in diesem Takt.
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        }
         if player.any_plugin_gui_open() {
             // Offene Plugin-Fenster brauchen den Takt für Zeitgeber und Reglermeldungen.
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
@@ -5660,6 +5676,20 @@ impl WoaApp {
                         }
                     }
                 }
+                if matches!(status, Some(woa_plugins::SlotStatus::Loaded))
+                    && std::env::var_os("WOA_TESTMENU").is_some_and(|v| v == "1")
+                    && self
+                        .player
+                        .as_ref()
+                        .is_some_and(|p| p.plugin_isolated(slot.id))
+                    && ui
+                        .small_button("Absturz simulieren")
+                        .on_hover_text("Testmenü: beendet den Plugin-Prozess hart")
+                        .clicked()
+                    && let Some(p) = self.player.as_mut()
+                {
+                    p.simulate_plugin_crash(slot.id);
+                }
                 if ui
                     .small_button("✕")
                     .on_hover_text("Plugin entfernen")
@@ -5681,11 +5711,28 @@ impl WoaApp {
                     continue;
                 }
                 Some(woa_plugins::SlotStatus::Failed(why)) => {
-                    ui.label(
-                        egui::RichText::new(why.as_str())
-                            .size(9.5)
-                            .color(theme::ON_AIR),
-                    );
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(why.as_str())
+                                .size(9.5)
+                                .color(theme::ON_AIR),
+                        );
+                        let isolated = self
+                            .player
+                            .as_ref()
+                            .is_some_and(|p| p.plugin_isolated(slot.id));
+                        if isolated
+                            && ui
+                                .small_button("Neu laden")
+                                .on_hover_text("Startet das Plugin neu, mit seinem letzten Zustand")
+                                .clicked()
+                            && let Some(p) = self.player.as_mut()
+                            && let Err(e) = p.reload_plugin(self.state.project(), slot.id)
+                        {
+                            tracing::warn!(plugin = %slot.clap_id, error = %e, "plugin reload failed");
+                            self.state.status = Status::Error(format!("{}: {e}", slot.name));
+                        }
+                    });
                     continue;
                 }
                 _ => {}

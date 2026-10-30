@@ -264,3 +264,97 @@ fn plugin_graph_does_not_allocate_in_the_audio_thread() {
     }
     assert!(peak > 0.01, "silent graph");
 }
+
+/// Ein Impuls bei Abtastwert 1000, sonst Stille.
+fn impulse() -> Arc<[f32]> {
+    let mut v = vec![0.0f32; SR as usize];
+    v[1000] = 1.0;
+    v.into()
+}
+
+fn two_impulse_tracks() -> Project {
+    let mut s = Session::new("Latenz");
+    for (i, name) in ["Mit Plugin", "Ohne Plugin"].iter().enumerate() {
+        let t = s.new_track_id();
+        s.apply(Command::add_track(t, *name, TrackKind::Audio))
+            .unwrap();
+        let c = s.new_clip_id();
+        s.apply(Command::AddClip {
+            track: t,
+            clip: Clip::new(c, "imp", 0.0, 1.0, Some("imp.wav".into())),
+            index: None,
+        })
+        .unwrap();
+        if i == 0 {
+            let id = s.new_insert_id();
+            s.apply(Command::AddPlugin {
+                track: t,
+                plugin: PluginSlot::new(id, testplugin::ID, "WOA Test Plugin", PluginRole::Effect),
+                index: None,
+            })
+            .unwrap();
+        }
+    }
+    s.project().clone()
+}
+
+fn render_impulses(project: &Project, rack: &mut PluginRack) -> Vec<f32> {
+    rack.sync(project);
+    let rack = &*rack;
+    render_clips_plugins(
+        project,
+        SR,
+        0.1,
+        &mut |p| (p == "imp.wav").then(impulse),
+        &mut |t| rack.track_plugins(t),
+    )
+    .expect("render")
+    .0
+}
+
+fn peak_at(x: &[f32]) -> usize {
+    x.iter()
+        .enumerate()
+        .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+        .map_or(0, |(i, _)| i)
+}
+
+#[test]
+fn plugin_latency_is_compensated_between_tracks() {
+    let _g = testplugin::serial();
+    testplugin::set_latency(64);
+    let project = two_impulse_tracks();
+    let mut rack = PluginRack::new(Arc::new(testplugin::catalog()), SR as f32);
+    let mixed = render_impulses(&project, &mut rack);
+    // Nur die Spur mit Plugin, als Maß für einen Impuls.
+    let mut solo = project.clone();
+    solo.tracks.truncate(1);
+    let mut rack_solo = PluginRack::new(Arc::new(testplugin::catalog()), SR as f32);
+    let single = render_impulses(&solo, &mut rack_solo);
+    testplugin::set_latency(0);
+
+    assert_eq!(peak_at(&single), 1064, "plugin delays its own track");
+    // Beide Spuren fallen auf denselben Abtastwert: nichts bleibt bei 1000.
+    assert_eq!(peak_at(&mixed), 1064);
+    assert!(
+        mixed[1000].abs() < 1e-6,
+        "uncompensated track leaks: {}",
+        mixed[1000]
+    );
+    assert!(
+        (mixed[1064] - 2.0 * single[1064]).abs() < 1e-4,
+        "mixed {} single {}",
+        mixed[1064],
+        single[1064]
+    );
+}
+
+#[test]
+fn without_latency_nothing_is_delayed() {
+    let _g = testplugin::serial();
+    testplugin::set_latency(0);
+    let project = two_impulse_tracks();
+    let mut rack = PluginRack::new(Arc::new(testplugin::catalog()), SR as f32);
+    let mixed = render_impulses(&project, &mut rack);
+    assert_eq!(peak_at(&mixed), 1000);
+}

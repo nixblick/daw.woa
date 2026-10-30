@@ -4,6 +4,35 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 33: Absturzschutz per eigenem Prozess (0.28.0, offen)
+
+Aus M8. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && WOA_TESTMENU=1 cargo run -q --release -p woa`
+(Das Testmenü ist nur für diese Probe; ohne die Variable fehlt der Knopf „Absturz simulieren“.)
+
+1. **Absturz simulieren:** MIDI-Spur mit einem Plugin (Surge XT oder ein anderes), eine zweite Spur mit einem eingebauten Klang. Beides abspielen. Beim Plugin-Platz „Absturz simulieren“ drücken.
+2. **Hinweis:** Beim Platz steht „Plugin abgestürzt – neu laden“, die Statuszeile nennt es ebenfalls. Die App bleibt bedienbar.
+3. **Rest spielt:** Die andere Spur spielt ohne Aussetzer weiter; nur das Plugin ist stumm.
+4. **Neu laden:** „Neu laden“ drücken: Das Plugin spielt wieder, mit seinem letzten Klang und denselben Reglern. Mehrfach wiederholen.
+5. **Latenz:** Ein Plugin mit Latenz (z. B. ein Limiter mit Vorausschau) neben einer Spur ohne: Beide bleiben zeitgleich (Schlag auf Schlag, kein Versatz).
+
+Selbst geprüft von Claude (ohne Ton, ohne Audiogerät, ohne Mikrofon; Test-Plugin aus `clack-plugin`, das auf Befehl abstürzt oder hängt; Offline-Render und ein Echtzeit-Fenster ohne Gerät):
+- Das Plugin im eigenen Prozess liefert dieselben Samples wie im Programm, und 0 verspätete Blöcke im Offline-Lauf.
+- Absturz mitten im Block: dieser Block ist still, der Rest läuft, die Blöcke warten nie lange, der Ausfall wird erkannt, ein zweites Plugin spielt weiter; „Neu laden“ bringt das Plugin zurück.
+- Hänger (Endlosschleife im Plugin): der Block wartet nicht darauf, der Prozess wird nach der Frist beendet.
+- Latenz: Ein Impuls kommt exakt um die gemeldete Latenz später heraus; die Engine gleicht zwei Spuren aus; ohne Latenz wird nichts verzögert.
+- Zustand und Regler wandern über die Prozessgrenze; ein Suchprozess, der stirbt, wird ein Suchproblem; keine Allokation im Audio-Thread (`assert_no_alloc`).
+
+Nicht selbst geprüft: Surge XT und andere echte Plugins, die Oberfläche (Knöpfe und Hinweis sind nur gebaut und übersetzt), Windows, Dauerlast.
+
+Bewusst so und **offen für André:**
+- Ein Prozess je Plugin: sauber getrennt, kostet aber Arbeitsspeicher bei vielen Plugins. Ein gemeinsamer Prozess für alle wäre sparsamer, ein Absturz träfe dann alle.
+- Neu laden nur von Hand, nicht automatisch (sonst flattert ein abstürzendes Plugin).
+- Plugin-Fenster im Schutzprozess unter Windows ist nicht gebaut; eingebettete Fenster wären M11.
+- Ändert ein Plugin seine Latenz nach dem Laden, wird das nicht nachgeführt.
+- Reglerverläufe (Automation) würden um den Ausgleich verschoben, sobald es Automation für Plugins gibt.
+- Das zweite Programm `woa-plugin-host` ist in AppImage, MSI und Flatpak noch nicht verpackt; die App ruft sich bis dahin selbst mit `--woa-plugin-host` auf.
+- Ob Vital als CLAP gegenüber Odin 2 und Dexed der bessere Test-Klang ist, ist nicht entschieden.
+
 ## Paket 32: Plugin-Fenster (GUI) (0.27.0, offen)
 
 Aus M8. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

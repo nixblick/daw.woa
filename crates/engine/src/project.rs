@@ -24,6 +24,7 @@ use woa_model::{
 };
 
 use crate::clip::store_peak;
+use crate::compensate::{DelayNode, StereoDelayNode};
 use crate::plugin_node::PluginChain;
 use crate::tap::{TapHandle, tap};
 use crate::{Engine, EngineError, GraphBuilder, NodeId};
@@ -617,9 +618,21 @@ pub fn build_project_graph_plugins(
         }
     }
 
+    // Alle Plugin-Ketten vorab holen: Die größte Latenz bestimmt, wie weit die anderen Spuren
+    // verzögert werden (Latenzausgleich, Paket 33).
+    let mut chains: HashMap<TrackId, PluginChain> = HashMap::new();
+    if let Some(f) = plugins.as_mut() {
+        for t in project.tracks.iter().filter(|t| t.kind != TrackKind::Bus) {
+            if let Some(c) = f(t).filter(|c| c.head.is_some() || !c.effects.is_empty()) {
+                chains.insert(t.id, c);
+            }
+        }
+    }
+    let max_latency = chains.values().map(|c| c.latency).max().unwrap_or(0);
+
     for t in project.tracks.iter().filter(|t| t.kind != TrackKind::Bus) {
-        let chain = plugins.as_mut().and_then(|f| f(t));
-        let mut chain = chain.filter(|c| c.head.is_some() || !c.effects.is_empty());
+        let mut chain = chains.remove(&t.id);
+        let own_latency = chain.as_ref().map_or(0, |c| c.latency);
         let head = chain.as_mut().and_then(|c| c.head.take());
         let stereo_head = head.is_some();
         let src = match head {
@@ -705,6 +718,20 @@ pub fn build_project_graph_plugins(
             }
             plugin_nodes.push((id, n));
             tail = n;
+        }
+        // Latenzausgleich: kürzere Spuren warten auf die längste.
+        let pad = max_latency.saturating_sub(own_latency);
+        if pad > 0 {
+            if tail_is_mono {
+                let n = b.add_boxed(Box::new(DelayNode::new(pad)));
+                b.connect(tail, n);
+                tail = n;
+            } else {
+                let n = b.add_stereo(Box::new(StereoDelayNode::new(pad)));
+                b.connect_ch(tail, 0, n, 0);
+                b.connect_ch(tail, 1, n, 1);
+                tail = n;
+            }
         }
         let gain_lane = lane_curve(t, AutoTarget::Gain, tempo);
         let pan_lane = if stereo {

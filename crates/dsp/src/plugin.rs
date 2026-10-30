@@ -30,6 +30,13 @@ pub trait StereoProcessor: Send {
 
     /// Alle Noten beenden und Hallfahnen leeren (nach Sprung oder Stopp); echtzeitsicher.
     fn reset(&mut self);
+
+    /// Latenz in Abtastwerten: Um so viel kommt der Ausgang später als der Eingang (oder das
+    /// Note-Event). Die Engine gleicht sie zwischen den Spuren aus (Paket 33). Wird beim Bau des
+    /// Graphen gelesen, nicht im Audio-Thread.
+    fn latency(&self) -> u32 {
+        0
+    }
 }
 
 /// Ein Effekt-Plugin in der Kette einer Spur.

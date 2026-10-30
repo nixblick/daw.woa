@@ -8,6 +8,10 @@ use std::process::ExitCode;
 use woa_gui::{GuiConfig, WoaApp};
 
 fn main() -> ExitCode {
+    // Als Plugin-Prozess gerufen (Absturzschutz, Paket 33): nur das Plugin bedienen, keine Oberfläche.
+    if let Some(code) = woa_plugins::child::dispatch() {
+        return ExitCode::from(u8::try_from(code).unwrap_or(1));
+    }
     let config_dir = woa_radio::config_dir();
     let data_dir = woa_radio::data_dir();
 

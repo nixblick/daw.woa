@@ -45,6 +45,15 @@ Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
   gelesen; die Zusammenfassung in `crates/plugins/src/feedback.rs` ist eigener Entwurf aus der
   CLAP-Beschreibung der Gesten. **Kein Code übernommen.**
 
+## Plugin-Prozess (Paket 33)
+
+- **LMMS** (`LMMS/lmms`, GPL-2.0-or-later), `include/RemotePluginBase.h` und
+  `src/core/RemotePlugin.cpp`, Commit bed447b. **Nur die Idee gelesen:** Das Plugin läuft in einem
+  eigenen Prozess, Audio geht über gemeinsamen Speicher, Befehle über einen Nachrichtenweg, der
+  Hauptprozess merkt, wenn der Partner stirbt. Die Umsetzung in
+  `crates/plugins/src/{shm,remote,child}.rs` ist ein eigener Entwurf (Rust, Atome und Briefkasten
+  statt Semaphoren und Pipes, andere Einteilung). **Kein Code übernommen.**
+
 ## Regel
 
 Quellen werden nur mit Repository, Datei und Commit genannt, nie mit Pfaden einer Maschine.

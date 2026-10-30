@@ -13,7 +13,12 @@ use woa_model::{Command, InsertId, PluginParam, PluginRole, PluginSlot, Project,
 
 use crate::feedback::ParamEdit;
 use crate::host::{ClapInstance, HostError, ParamDesc};
+use crate::instance::Instance;
+use crate::remote::{Isolation, RemoteInstance};
 use crate::scan::Catalog;
+
+/// Text im Status eines Plugins, dessen Prozess ausgefallen ist.
+pub const CRASHED: &str = "Plugin abgestürzt – neu laden";
 
 /// Wie es einem Plugin-Platz geht.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,7 +34,7 @@ pub enum SlotStatus {
 struct Entry {
     clap_id: String,
     status: SlotStatus,
-    instance: Option<ClapInstance>,
+    instance: Option<Instance>,
     /// Reglerwerte nach dem Laden: dorthin geht ein Regler zurück, wenn „Rückgängig“ seinen
     /// gespeicherten Wert aus dem Projekt nimmt.
     baseline: HashMap<u32, f64>,
@@ -40,12 +45,15 @@ struct Entry {
     /// Was das Projekt zuletzt für diesen Platz hielt (um Änderungen durch Rückgängig zu merken).
     seen_params: Vec<PluginParam>,
     seen_state: Option<String>,
+    /// Der Ausfall wurde der Oberfläche schon gemeldet.
+    reported: bool,
 }
 
 /// Geladene Plugins eines Projekts.
 pub struct PluginRack {
     catalog: Arc<Catalog>,
     rate: f32,
+    isolation: Isolation,
     slots: HashMap<u64, Entry>,
 }
 
@@ -55,8 +63,21 @@ impl PluginRack {
         Self {
             catalog,
             rate,
+            isolation: Isolation::InProcess,
             slots: HashMap::new(),
         }
+    }
+
+    /// Lässt jedes Plugin in einem eigenen Prozess laufen (Absturzschutz, Paket 33).
+    #[must_use]
+    pub fn with_isolation(mut self, isolation: Isolation) -> Self {
+        self.isolation = isolation;
+        self
+    }
+
+    /// Wo die Plugins laufen.
+    pub fn isolation(&self) -> &Isolation {
+        &self.isolation
     }
 
     /// Die Plugin-Liste dieses Rechners.
@@ -67,7 +88,12 @@ impl PluginRack {
     /// Ein zweites, leeres Rack mit derselben Plugin-Liste und Rate. Der Export rechnet damit
     /// eigene Instanzen, damit er die laufende Wiedergabe nicht stört.
     pub fn fresh(&self) -> Self {
-        Self::new(Arc::clone(&self.catalog), self.rate)
+        // Der Export hat lange Fristen: Ein langsamer Block ergibt dort nie Stille.
+        let isolation = match &self.isolation {
+            Isolation::InProcess => Isolation::InProcess,
+            Isolation::Process(c) => Isolation::Process(c.for_export()),
+        };
+        Self::new(Arc::clone(&self.catalog), self.rate).with_isolation(isolation)
     }
 
     /// Lädt alle Plätze neu (nach einer neuen Suche, wenn ein Plugin dazugekommen sein kann).
@@ -116,8 +142,9 @@ impl PluginRack {
             initial_state: None,
             seen_params: slot.params.clone(),
             seen_state: slot.state.clone(),
+            reported: false,
         };
-        match ClapInstance::new(&self.catalog, &slot.clap_id, self.rate) {
+        match self.open(&slot.clap_id) {
             Ok(mut inst) => {
                 entry.initial_state = inst.save_state().ok();
                 if let Some(bytes) = slot.state_bytes()
@@ -140,13 +167,32 @@ impl PluginRack {
         entry
     }
 
+    fn open(&self, clap_id: &str) -> Result<Instance, HostError> {
+        match &self.isolation {
+            Isolation::InProcess => ClapInstance::new(&self.catalog, clap_id, self.rate)
+                .map(|i| Instance::Local(Box::new(i))),
+            Isolation::Process(cfg) => {
+                let info = self
+                    .catalog
+                    .find(clap_id)
+                    .ok_or_else(|| HostError::Unknown(clap_id.to_string()))?;
+                RemoteInstance::new(cfg, info, self.rate).map(|i| Instance::Remote(Box::new(i)))
+            }
+        }
+    }
+
     /// Status eines Platzes (`None`: das Rack kennt ihn nicht; erst [`PluginRack::sync`]).
     pub fn status(&self, id: InsertId) -> Option<SlotStatus> {
         let e = self.slots.get(&id.0)?;
         if let Some(i) = &e.instance
             && i.failed()
         {
-            return Some(SlotStatus::Failed("Das Plugin ist ausgefallen".to_string()));
+            let text = if i.is_remote() {
+                CRASHED.to_string()
+            } else {
+                "Das Plugin ist ausgefallen".to_string()
+            };
+            return Some(SlotStatus::Failed(text));
         }
         Some(e.status.clone())
     }
@@ -176,7 +222,9 @@ impl PluginRack {
             let Some(inst) = self.slots.get(&slot.id.0).and_then(|e| e.instance.as_ref()) else {
                 continue;
             };
-            if inst.failed() {
+            // Ein Plugin im eigenen Prozess bleibt im Graphen (stumm), damit ein Neuladen ohne
+            // neuen Graphen wirkt.
+            if inst.failed() && !inst.is_remote() {
                 continue;
             }
             let mut proc = inst.processor();
@@ -197,7 +245,7 @@ impl PluginRack {
 
     /// Ob dieses Plugin ein eigenes Fenster anbietet.
     pub fn has_gui(&mut self, id: InsertId) -> bool {
-        self.instance_mut(id).is_some_and(ClapInstance::has_gui)
+        self.instance_mut(id).is_some_and(Instance::has_gui)
     }
 
     /// Ob das Fenster dieses Plugins offen ist.
@@ -205,7 +253,7 @@ impl PluginRack {
         self.slots
             .get(&id.0)
             .and_then(|e| e.instance.as_ref())
-            .is_some_and(ClapInstance::gui_open)
+            .is_some_and(Instance::gui_open)
     }
 
     /// Ob irgendein Plugin-Fenster offen ist (dann muss die Oberfläche ständig neu zeichnen).
@@ -213,7 +261,7 @@ impl PluginRack {
         self.slots
             .values()
             .filter_map(|e| e.instance.as_ref())
-            .any(ClapInstance::gui_open)
+            .any(Instance::gui_open)
     }
 
     /// Öffnet das Fenster eines Plugins.
@@ -231,7 +279,7 @@ impl PluginRack {
         }
     }
 
-    fn instance_mut(&mut self, id: InsertId) -> Option<&mut ClapInstance> {
+    fn instance_mut(&mut self, id: InsertId) -> Option<&mut Instance> {
         self.slots.get_mut(&id.0)?.instance.as_mut()
     }
 
@@ -242,6 +290,84 @@ impl PluginRack {
                 i.pump();
             }
         }
+    }
+
+    /// Startet ein ausgefallenes Plugin neu (eigener Prozess): Zustand und Reglerwerte kommen
+    /// zurück, der Graph bleibt derselbe. Läuft das Plugin noch, ändert sich nichts.
+    pub fn reload(&mut self, project: &Project, id: InsertId) -> Result<(), HostError> {
+        let slot = project
+            .tracks
+            .iter()
+            .find_map(|t| t.plugin(id))
+            .ok_or_else(|| HostError::Load("Platz unbekannt".into()))?;
+        let e = self
+            .slots
+            .get_mut(&id.0)
+            .ok_or_else(|| HostError::Load("Platz nicht geladen".into()))?;
+        let inst = e
+            .instance
+            .as_mut()
+            .ok_or_else(|| HostError::Load("Plugin nicht geladen".into()))?;
+        if !inst.failed() {
+            return Ok(());
+        }
+        let bytes = slot.state_bytes();
+        inst.reload(bytes.as_deref())?;
+        for p in &slot.params {
+            inst.push_param(p.id, p.value);
+        }
+        e.baseline = inst.all_values().into_iter().collect();
+        e.origin.clear();
+        e.status = SlotStatus::Loaded;
+        e.reported = false;
+        tracing::info!(plugin = %slot.clap_id, "plugin reloaded after failure");
+        Ok(())
+    }
+
+    /// Beendet den Plugin-Prozess dieses Platzes hart (Absturztest im Menü, nur mit
+    /// Schutzprozess).
+    pub fn simulate_crash(&mut self, id: InsertId) {
+        if let Some(i) = self.instance_mut(id) {
+            i.simulate_crash();
+        }
+    }
+
+    /// Plätze, die seit dem letzten Aufruf ausgefallen sind (jeder nur einmal), damit die
+    /// Oberfläche es melden kann.
+    pub fn new_failures(&mut self) -> Vec<InsertId> {
+        let mut out = Vec::new();
+        for (id, e) in &mut self.slots {
+            if !e.reported && e.instance.as_ref().is_some_and(Instance::failed) {
+                e.reported = true;
+                out.push(InsertId(*id));
+            }
+        }
+        out
+    }
+
+    /// Ob ein Plugin im eigenen Prozess läuft (dann braucht die Oberfläche den Takt für die
+    /// Aufsicht).
+    pub fn has_isolated(&self) -> bool {
+        self.slots
+            .values()
+            .filter_map(|e| e.instance.as_ref())
+            .any(Instance::is_remote)
+    }
+
+    /// Ob dieser Platz in einem eigenen Prozess läuft.
+    pub fn is_isolated(&self, id: InsertId) -> bool {
+        self.slots
+            .get(&id.0)
+            .and_then(|e| e.instance.as_ref())
+            .is_some_and(Instance::is_remote)
+    }
+
+    /// Latenz eines Platzes in Abtastwerten.
+    pub fn latency(&self, id: InsertId) -> u32 {
+        self.slots
+            .get(&id.0)
+            .and_then(|e| e.instance.as_ref())
+            .map_or(0, Instance::latency)
     }
 
     /// Reglerbewegungen aus den Plugin-Fenstern seit dem letzten Aufruf, als Bearbeitungen je Platz.

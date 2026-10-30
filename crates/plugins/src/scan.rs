@@ -4,9 +4,10 @@
 //! es verlangt: Ordnerliste, getrennt mit `:` bzw. `;` unter Windows). Jede Datei mit der
 //! Endung `.clap` wird geladen und nach ihren Plugins gefragt.
 //!
-//! Das Laden geschieht im eigenen Prozess: Eine kaputte Plugin-Bibliothek kann die Suche, im
-//! schlimmsten Fall das Programm abstürzen lassen. Ein eigener Suchprozess folgt mit
-//! Paket 33; bis dahin sucht die Oberfläche nur auf Knopfdruck und beim Start.
+//! Eine kaputte Plugin-Bibliothek kann die Suche, im schlimmsten Fall das Programm abstürzen
+//! lassen. Darum sucht die Oberfläche über `Catalog::scan_isolated` (Paket 33): je Datei ein
+//! eigener Prozess, dessen Absturz oder Hängen nur ein Suchproblem ergibt. Gesucht wird nur auf
+//! Knopfdruck und beim ersten Bedarf.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -99,10 +100,40 @@ impl Catalog {
         cat
     }
 
+    /// Sucht nur in diesen Dateien (jede im eigenen Aufruf geladen). Der Plugin-Prozess benutzt es
+    /// für genau eine Datei.
+    pub fn scan_files(files: &[PathBuf]) -> Self {
+        let mut cat = Self::default();
+        for file in files {
+            cat.add_file(file);
+        }
+        cat.plugins.sort_by_key(|p| p.name.to_lowercase());
+        cat
+    }
+
+    /// Trägt ein Plugin ein, das ein anderer Prozess gefunden hat (ohne es hier zu laden). Es
+    /// lässt sich nur im Plugin-Prozess laden, nicht in diesem.
+    pub(crate) fn add_unloaded(&mut self, info: PluginInfo) {
+        if !self.plugins.iter().any(|p| p.clap_id == info.clap_id) {
+            self.plugins.push(info);
+        }
+    }
+
+    /// Merkt eine Datei, die sich nicht laden ließ.
+    pub(crate) fn add_problem(&mut self, path: PathBuf, reason: String) {
+        self.problems.push(ScanProblem { path, reason });
+    }
+
+    /// Sortiert die Liste nach Name.
+    pub(crate) fn sort(&mut self) {
+        self.plugins.sort_by_key(|p| p.name.to_lowercase());
+    }
+
     fn add_file(&mut self, file: &Path) {
         // SAFETY: Eine Plugin-Bibliothek ist fremder Code; ihn zu laden führt ihn aus. Das ist
         // der Zweck der Suche, die Datei steht in einem Ordner, den der Nutzer (oder
-        // `CLAP_PATH`) bestimmt hat. Schutz durch einen eigenen Prozess: Paket 33.
+        // `CLAP_PATH`) bestimmt hat. Schutz durch einen eigenen Prozess: `Catalog::scan_isolated`
+        // (Paket 33); dieser Weg läuft dann im Plugin-Prozess.
         let entry = match unsafe { PluginEntry::load(file) } {
             Ok(e) => e,
             Err(e) => {
