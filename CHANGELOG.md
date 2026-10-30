@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.20.0 — 2026-10-30
+
+Paket 25 aus M7: Analyse mit Tempo, Tonart, Lautheit und automatischen Cue-Punkten.
+
+- **Analyse (`woa_dsp::analysis::track`):** Tempo aus der Autokorrelation der Einsatzkurve (70 bis 180 BPM, `None` bei Sinus ohne Einsätze, Stille oder zu kurzem Material), Tonart aus einem Chroma-Vektor gegen die Krumhansl-Profile (Anzeige „C-Dur“, „a-Moll“), Stille vorn und hinten (Schwelle −50 dBFS), Lautheit und True Peak aus dem vorhandenen Code. Alles ohne neue Abhängigkeit, im Hintergrund-Thread, nie im Audio-Thread. Die Treffsicherheit an echter Musik ist eine Vermutung, bis André sie an bekannten Titeln gesehen hat.
+- **Cue-Vorschläge:** Cue-In hinter der Stille am Anfang, Cue-Out vor der Stille am Ende, Fade-Out am Beginn des Ausklangs (höchstens 15 s). Kürzer als 2 s oder ohne Stille: kein Vorschlag. Im Radio-Modus setzt das Messen einer Playlist-Zeile die Vorschläge nur, wo noch keine Cue-Punkte stehen; von Hand gesetzte haben Vorrang. Im Cue-Editor zeigt eine blasse Linie den Vorschlag, „Vorschlag einsetzen“ übernimmt nur die fehlenden Marker.
+- **Bibliothek:** Schema 3 (Spalten für Tempo, Tonart, Lautheit, True Peak, Stille und Cue-Vorschlag; `analyzed_hash` verknüpft die Werte mit dem Inhalt, eine geänderte Datei kommt wieder an die Reihe). Schema 2 wird beim Öffnen angehoben, die Titel bleiben. Die Analyse läuft nach dem Import im Hintergrund mit eigener Datenbankverbindung, Fortschritt und Abbruch über Atomics; eine nicht lesbare Datei wird einmal gezählt und nicht endlos wiederholt.
+- **Oberfläche:** Neue Spalten BPM, TONART und LUFS in der Bibliothek („…“ bis der Titel dran war), die Detailzeile zeigt alle Messwerte und „Neu analysieren“. Fenster etwas breiter.
+- **Lautheitsangleich:** Der Radio-Modus gleicht Titel schon auf −16 LUFS an (Spitze höchstens −1 dBFS); die Rechnung steht jetzt an einer Stelle (`gain_to_target_db`), Radio und Bibliothek nutzen dieselbe.
+- **Tests:** Klicktrack 120 BPM (und andere Tempi und Abtastraten) gibt 120 ±1; Sinus-Akkorde geben ihre Tonart; Stille vorn und hinten; EBU-Tech-3341-Referenz (1 kHz bei −23 dBFS gibt −23,0 LUFS) auch über den Dateiweg; 1 000 erzeugte Titel offline analysiert, danach liegen alle mit dem Gain auf dem Ziel; Migration, kaputte Datei, geänderter Inhalt; Cue-Editor und Bibliothek-Fenster als Zustandstests.
+
 ## 0.19.0 — 2026-10-30
 
 Paket 24 aus M7: Bibliothek in SQLite mit Suche und Tags.

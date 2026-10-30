@@ -16,14 +16,8 @@ pub fn db_to_gain(db: f64) -> f32 {
 /// Verstärkung (dB), die einen Titel mit `lufs` und Spitze `peak_db` auf `target` bringt,
 /// ohne dass die Spitze über [`CEILING_DB`] kommt. Ohne Messung: 0 dB.
 pub fn auto_gain_db(lufs: Option<f64>, peak_db: Option<f64>, target: f64) -> f64 {
-    let Some(l) = lufs.filter(|l| l.is_finite()) else {
-        return 0.0;
-    };
-    let mut g = target - l;
-    if let Some(p) = peak_db.filter(|p| p.is_finite()) {
-        g = g.min(CEILING_DB - p);
-    }
-    g.clamp(MIN_GAIN_DB, MAX_GAIN_DB)
+    woa_dsp::analysis::track::gain_to_target_db(lufs, peak_db, target, CEILING_DB)
+        .clamp(MIN_GAIN_DB, MAX_GAIN_DB)
 }
 
 /// Crossfade mit konstanter Leistung: bei `t` (0..=1) die Faktoren (abgehend, kommend).

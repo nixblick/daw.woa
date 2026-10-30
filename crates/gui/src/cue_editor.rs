@@ -76,6 +76,9 @@ impl Marker {
     }
 }
 
+/// Marker, die die Analyse vorschlägt.
+const AUTO_MARKERS: [Marker; 3] = [Marker::CueIn, Marker::FadeOut, Marker::CueOut];
+
 /// Was der Editor nach einem Bild vom Radio-Layout will.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CueAction {
@@ -108,7 +111,7 @@ pub fn peaks(left: &[f32], right: &[f32], bins: usize) -> Vec<f32> {
 }
 
 /// Wellenform und Länge in Sekunden, oder Fehler.
-type PeakResult = Result<(Vec<f32>, f64), String>;
+type PeakResult = Result<(Vec<f32>, f64, Cues), String>;
 
 /// Ein offener Editor.
 pub struct CueEditor {
@@ -121,6 +124,8 @@ pub struct CueEditor {
     peaks: Option<Vec<f32>>,
     loading: Option<Receiver<PeakResult>>,
     error: Option<String>,
+    /// Vorschlag aus der Analyse (Stille vorn und hinten, Ausklang).
+    auto: Cues,
 }
 
 impl CueEditor {
@@ -141,6 +146,7 @@ impl CueEditor {
                     (
                         peaks(&s.left, &s.right, BINS),
                         s.frames() as f64 / f64::from(PEAK_RATE),
+                        woa_radio::audio::suggest_cues(&s.left, &s.right, PEAK_RATE),
                     )
                 });
                 let _ = tx.send(r);
@@ -156,13 +162,52 @@ impl CueEditor {
             peaks: None,
             loading: Some(rx),
             error,
+            auto: Cues::default(),
+        }
+    }
+
+    /// Gibt es einen Vorschlag für einen Marker, der noch nicht gesetzt ist?
+    pub fn can_fill_auto(&self) -> bool {
+        AUTO_MARKERS
+            .iter()
+            .any(|m| m.get(&self.draft).is_none() && m.get(&self.auto).is_some())
+    }
+
+    /// Setzt die vorgeschlagenen Marker, die noch fehlen. Gesetzte bleiben (Handarbeit hat
+    /// Vorrang). Passt das Ergebnis nicht zusammen, bleibt der Entwurf unverändert.
+    pub fn fill_auto(&mut self) -> bool {
+        let mut next = self.draft;
+        for m in AUTO_MARKERS {
+            if m.get(&next).is_none() {
+                m.set(&mut next, m.get(&self.auto));
+            }
+        }
+        if next == self.draft || next.validate(self.seconds).is_err() {
+            return false;
+        }
+        self.draft = next;
+        true
+    }
+
+    fn auto_text(&self) -> String {
+        let parts: Vec<String> = AUTO_MARKERS
+            .iter()
+            .filter_map(|m| m.get(&self.auto).map(|v| format!("{} {v:.2} s", m.label())))
+            .collect();
+        if self.loading.is_some() {
+            String::new()
+        } else if parts.is_empty() {
+            "Kein Vorschlag: keine Stille vorn oder hinten".into()
+        } else {
+            format!("Vorschlag: {}", parts.join(" · "))
         }
     }
 
     fn poll(&mut self) {
         let Some(rx) = &self.loading else { return };
         match rx.try_recv() {
-            Ok(Ok((p, secs))) => {
+            Ok(Ok((p, secs, auto))) => {
+                self.auto = auto;
                 self.peaks = Some(p);
                 self.seconds.get_or_insert(secs);
                 self.loading = None;
@@ -270,6 +315,25 @@ impl CueEditor {
                     );
                 }
             }
+            // Vorschläge der Analyse als blasse Linien, solange der Marker nicht gesetzt ist.
+            for m in AUTO_MARKERS {
+                if m.get(&self.draft).is_none()
+                    && let Some(s) = m.get(&self.auto)
+                {
+                    let x = x_of(s);
+                    painter.line_segment(
+                        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                        egui::Stroke::new(1.0, theme::mix(m.color(), theme::WELL, 0.45)),
+                    );
+                    painter.text(
+                        egui::pos2(x + 3.0, rect.bottom() - 2.0),
+                        egui::Align2::LEFT_BOTTOM,
+                        format!("{} (Vorschlag)", m.label()),
+                        egui::FontId::proportional(10.0),
+                        theme::mix(m.color(), theme::WELL, 0.35),
+                    );
+                }
+            }
             if let Some(pos) = resp.interact_pointer_pos()
                 && (resp.clicked() || resp.dragged())
             {
@@ -314,6 +378,29 @@ impl CueEditor {
                     ui.end_row();
                 }
             });
+        ui.horizontal(|ui| {
+            let can_fill = self.can_fill_auto();
+            if ui
+                .add_enabled(can_fill, egui::Button::new("Vorschlag einsetzen"))
+                .on_hover_text(
+                    "Setzt Cue-In, Fade-Out und Cue-Out aus der Analyse (Stille vorn und hinten, \
+                     Beginn des Ausklangs). Schon gesetzte Marker bleiben unverändert.",
+                )
+                .on_disabled_hover_text(if self.auto.is_empty() {
+                    "Die Analyse schlägt hier nichts vor (keine Stille vorn oder hinten)"
+                } else {
+                    "Alle vorgeschlagenen Marker sind schon gesetzt"
+                })
+                .clicked()
+            {
+                self.fill_auto();
+            }
+            ui.label(
+                egui::RichText::new(self.auto_text())
+                    .small()
+                    .color(theme::DIM),
+            );
+        });
         let check = self.draft.validate(self.seconds);
         if let Err(e) = &check {
             ui.colored_label(theme::ON_AIR, e);
@@ -387,6 +474,64 @@ mod tests {
         assert!(peaks(&[], &[], 10).is_empty());
         // Mehr Balken als Werte: kein Panik, jeder Balken hat mindestens einen Wert.
         assert_eq!(peaks(&[0.5; 3], &[0.5; 3], 8).len(), 8);
+    }
+
+    /// 1 s Stille, 5 s Ton, 2 s Stille als WAV.
+    fn write_gapped(path: &std::path::Path) {
+        let rate = 22_050u32;
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: rate,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(path, spec).unwrap();
+        for i in 0..8 * rate as usize {
+            let loud = (rate as usize..6 * rate as usize).contains(&i);
+            let v = if loud {
+                (i as f32 * 440.0 * std::f32::consts::TAU / rate as f32).sin() * 0.5
+            } else {
+                0.0
+            };
+            w.write_sample((v * 32767.0) as i16).unwrap();
+        }
+        w.finalize().unwrap();
+    }
+
+    #[test]
+    fn auto_cues_fill_only_what_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("luecke.wav");
+        write_gapped(&p);
+        let manual = Cues {
+            cue_out: Some(7.5),
+            ..Cues::default()
+        };
+        let mut ed = CueEditor::open(0, p, "Lücke".into(), None, manual);
+        let t0 = std::time::Instant::now();
+        while ed.loading.is_some() {
+            assert!(t0.elapsed().as_secs() < 30, "loading hangs");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            ed.poll();
+        }
+        assert!(ed.error.is_none(), "{:?}", ed.error);
+        assert!(
+            (ed.auto.cue_in.unwrap() - 0.98).abs() < 0.05,
+            "{:?}",
+            ed.auto
+        );
+        assert!(
+            (ed.auto.cue_out.unwrap() - 6.05).abs() < 0.1,
+            "{:?}",
+            ed.auto
+        );
+        assert!(ed.can_fill_auto());
+        assert!(ed.fill_auto());
+        assert!((ed.draft.cue_in.unwrap() - 0.98).abs() < 0.05);
+        assert_eq!(ed.draft.cue_out, Some(7.5), "Handarbeit bleibt");
+        assert!(ed.draft.validate(ed.seconds).is_ok());
+        assert!(!ed.can_fill_auto());
+        assert!(!ed.fill_auto(), "zweites Mal nichts zu tun");
     }
 
     #[test]
