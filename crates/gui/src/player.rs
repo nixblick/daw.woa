@@ -30,7 +30,7 @@ use crate::xrun::XrunLog;
 /// Das letzte Feld ist das Routing (Art, Ausgang, Sends, Insert-Kette je Spur).
 type Structure = (
     u64,
-    Vec<(TrackId, Vec<([u64; 6], Option<String>, Option<u64>)>)>,
+    Vec<(TrackId, Vec<([u64; 9], Option<String>, Option<u64>)>)>,
     Option<TrackId>,
     String,
 );
@@ -220,6 +220,10 @@ impl Player {
                                     c.gain_db.to_bits()
                                         ^ (u64::from(c.fade_in_curve as u8) << 1)
                                         ^ (u64::from(c.fade_out_curve as u8) << 3),
+                                    // Dehnung, Tonhöhe und Tempo-Folgen (Paket 23).
+                                    c.stretch.to_bits(),
+                                    c.pitch_semitones.to_bits(),
+                                    c.follow_tempo_bpm.map_or(0, f64::to_bits),
                                 ],
                                 c.audio.clone(),
                                 c.midi.as_ref().map(woa_model::MidiData::fingerprint),

@@ -145,6 +145,7 @@ struct Rig {
     app: WoaApp,
     frame: eframe::Frame,
     n: u32,
+    mods: egui::Modifiers,
     _tmp: tempfile::TempDir,
     dir: PathBuf,
 }
@@ -159,6 +160,7 @@ impl Rig {
             app,
             frame: eframe::Frame::_new_kittest(),
             n: 0,
+            mods: egui::Modifiers::NONE,
             _tmp: tmp,
             dir,
         };
@@ -177,6 +179,7 @@ impl Rig {
             time: Some(f64::from(self.n) * 0.05),
             events,
             dropped_files: dropped,
+            modifiers: self.mods,
             ..Default::default()
         };
         input.viewports.entry(egui::ViewportId::ROOT).or_default();
@@ -214,11 +217,12 @@ impl Rig {
     }
 
     fn drag(&mut self, from: egui::Pos2, to: egui::Pos2) {
+        let mods = self.mods;
         let btn = |pressed, pos| egui::Event::PointerButton {
             pos,
             button: egui::PointerButton::Primary,
             pressed,
-            modifiers: egui::Modifiers::NONE,
+            modifiers: mods,
         };
         self.step(vec![egui::Event::PointerMoved(from)], Vec::new());
         self.step(vec![btn(true, from)], Vec::new());
@@ -441,4 +445,101 @@ fn curves_and_gain_survive_save_and_reopen() {
         (k.fade_in_curve, k.fade_out_curve, k.gain_db),
         (FadeCurve::EqualPower, FadeCurve::SCurve, 3.0)
     );
+}
+
+// ---- Paket 23: Time-Stretch und Tonhöhe -----------------------------------------------------
+
+#[test]
+fn stretch_pitch_follow_as_state_with_undo_and_save() {
+    let (mut st, _t, c, tmp) = state_with_clip();
+    let steps = st.session().history().undo_entries().len();
+    // Zehn Prozent länger: Länge 8 -> 8,8, Faktor 1,1, ein Undo-Schritt.
+    assert!(st.stretch_clip(c, 8.8, false));
+    let k = clip(&st, c);
+    assert!((k.length_beats - 8.8).abs() < 1e-9 && (k.stretch - 1.1).abs() < 1e-9);
+    assert_eq!(k.start_beats, 4.0);
+    assert_eq!(st.session().history().undo_entries().len(), steps + 1);
+    // Am linken Rand gedehnt: das Ende bleibt, der Anfang rückt.
+    assert!(st.stretch_clip(c, 11.0, true));
+    let k = clip(&st, c);
+    assert!((k.start_beats - 1.8).abs() < 1e-9 && (k.end_beats() - 12.8).abs() < 1e-9);
+    assert!((k.stretch - 1.375).abs() < 1e-9);
+    st.undo();
+    st.undo();
+    let k = clip(&st, c);
+    assert_eq!((k.start_beats, k.length_beats, k.stretch), (4.0, 8.0, 1.0));
+    // Außerhalb des Bereichs: abgelehnt, nichts ändert sich.
+    assert!(!st.stretch_clip(c, 80.0, false));
+    assert!(!st.stretch_clip(c, 1.0, false));
+    assert_eq!(clip(&st, c).stretch, 1.0);
+
+    // Tonhöhe und Tempo-Folgen, dann Schneiden: der Versatz des rechten Teils folgt der Dehnung.
+    assert!(st.set_clip_pitch(c, 2.0));
+    assert!(st.set_clip_follow_tempo(c, true));
+    assert!(st.set_clip_stretch(c, 2.0));
+    assert_eq!(clip(&st, c).length_beats, 16.0);
+    let right = st.split_clip(c, 12.0).expect("split");
+    let (l, r) = (clip(&st, c), clip(&st, right));
+    assert_eq!((l.length_beats, r.length_beats), (8.0, 8.0));
+    assert!(
+        (r.offset_beats - 4.0).abs() < 1e-9,
+        "8 Beats Zeitachse = 4 Beats Ton, offset {}",
+        r.offset_beats
+    );
+    assert_eq!((r.stretch, r.pitch_semitones), (2.0, 2.0));
+    assert_eq!(r.follow_tempo_bpm, Some(120.0));
+
+    // Speichern, neu öffnen: alles steht wie zuvor.
+    let proj = tmp.path().join("song.woa");
+    assert!(st.save_as(&proj));
+    let mut again = AppState::new(tmp.path().join("rec2"), Instant::now());
+    assert!(again.open(&proj));
+    assert_eq!(again.project(), st.project());
+}
+
+#[test]
+fn alt_drag_on_the_edge_stretches_and_plain_drag_still_trims() {
+    let mut rig = Rig::new();
+    let t = rig.app.state_mut().add_track().expect("track");
+    rig.step(Vec::new(), Vec::new());
+    let a = wav(&rig.dir, "eins.wav", 4.0);
+    let row = rig.row(t);
+    rig.drop_files(&[&a], egui::pos2(rig.x_of(t, 4.0) + 1.0, row.center().y));
+    let (_, c) = first_clip(&rig.app);
+    assert_eq!((c.start_beats, c.length_beats, c.stretch), (4.0, 8.0, 1.0));
+    let steps = rig.app.state().session().history().undo_entries().len();
+
+    // Mit Alt den rechten Rand 2 Beats nach rechts: Länge 8 -> 10, Faktor 1,25, Ton bleibt.
+    let y = rig.row(t).center().y + 8.0;
+    let end = 12.0;
+    let from = egui::pos2(rig.x_of(t, end) - 3.0, y);
+    let to = egui::pos2(from.x + 2.0 * rig.app.zoom(), y);
+    rig.mods = egui::Modifiers::ALT;
+    rig.drag(from, to);
+    rig.mods = egui::Modifiers::NONE;
+    let k = rig.app.state().project().clip(c.id).expect("c").1.clone();
+    assert!(
+        (k.length_beats - 10.0).abs() < 0.3,
+        "stretched by about 2 beats, got {}",
+        k.length_beats
+    );
+    assert!((k.stretch - k.length_beats / 8.0).abs() < 1e-9);
+    assert_eq!(k.start_beats, 4.0, "the start stays");
+    assert_eq!(k.offset_beats, 0.0, "the audio is not cut");
+    assert_eq!(
+        rig.app.state().session().history().undo_entries().len(),
+        steps + 1,
+        "one undo step"
+    );
+    rig.key(egui::Key::Z, egui::Modifiers::COMMAND);
+    let k = rig.app.state().project().clip(c.id).expect("c").1.clone();
+    assert_eq!((k.length_beats, k.stretch), (8.0, 1.0));
+
+    // Ohne Alt kürzt derselbe Zug nur: Faktor bleibt 1.
+    let end = 12.0;
+    let from = egui::pos2(rig.x_of(t, end) - 3.0, y);
+    let to = egui::pos2(from.x - 2.0 * rig.app.zoom(), y);
+    rig.drag(from, to);
+    let k = rig.app.state().project().clip(c.id).expect("c").1.clone();
+    assert_eq!((k.length_beats, k.stretch), (6.0, 1.0));
 }
