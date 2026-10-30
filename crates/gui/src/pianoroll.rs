@@ -241,6 +241,24 @@ impl PianoRoll {
         open
     }
 
+    /// Draws the Piano-Roll inline inside an existing panel (e.g. the docked bottom Studio panel).
+    /// Returns `false` if the edited clip no longer exists.
+    pub fn show_inline(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: &mut AppState,
+        sink: Option<&woa_io::midi::EventSink>,
+    ) -> bool {
+        let Some((midi, length, _)) = Self::notes(state, self.clip) else {
+            return false;
+        };
+        self.sel.retain(|&i| i < midi.notes.len());
+        self.toolbar(ui, state, &midi);
+        ui.separator();
+        self.editor(ui, state, &midi, length, sink);
+        true
+    }
+
     fn toolbar(&mut self, ui: &mut egui::Ui, state: &mut AppState, midi: &MidiData) {
         ui.horizontal_wrapped(|ui| {
             ui.label("Raster");

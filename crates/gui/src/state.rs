@@ -149,6 +149,35 @@ impl AppState {
         self.apply(Command::SetSolo { track, solo })
     }
 
+    /// Removes a track with all its clips as one undo step.
+    pub fn remove_track(&mut self, track: TrackId) -> bool {
+        self.apply(Command::RemoveTrack { track })
+    }
+
+    /// Sets the project tempo in BPM (20..=400) as one undo step.
+    pub fn set_tempo(&mut self, bpm: f64) -> bool {
+        if (self.project().tempo_bpm - bpm).abs() < 1e-6 {
+            return false;
+        }
+        self.apply(Command::SetTempo { bpm })
+    }
+
+    /// Creates an empty MIDI clip for composing in the Piano-Roll.
+    pub fn create_empty_midi_clip(
+        &mut self,
+        track: Option<TrackId>,
+        start_beats: f64,
+        length_beats: f64,
+    ) -> Option<ClipId> {
+        self.add_midi_clip(
+            track,
+            "MIDI-Clip",
+            start_beats,
+            length_beats.max(1.0),
+            woa_model::MidiData::default(),
+        )
+    }
+
     /// Where new takes are written: the project folder, or the recovery folder while unsaved.
     pub fn takes_dir(&self) -> PathBuf {
         self.session
@@ -775,5 +804,27 @@ mod tests {
         assert!(!s.title().ends_with('*'));
         s.add_track();
         assert!(s.title().ends_with('*'));
+    }
+
+    #[test]
+    fn solo_pan_tempo_remove_and_empty_midi_clip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        let id = s.add_track().unwrap();
+        assert!(s.toggle_solo(id));
+        assert!(s.project().track(id).unwrap().solo);
+        assert!(s.set_pan(id, -0.5));
+        assert!(!s.set_pan(id, -0.5));
+        assert_eq!(s.project().track(id).unwrap().pan, -0.5);
+        assert!(s.set_tempo(128.0));
+        assert!(!s.set_tempo(128.0));
+        assert_eq!(s.project().tempo_bpm, 128.0);
+        let midi_clip = s.create_empty_midi_clip(None, 4.0, 8.0).unwrap();
+        assert_eq!(s.project().tracks.len(), 2);
+        assert!(s.project().clip(midi_clip).unwrap().1.midi.is_some());
+        assert!(s.remove_track(id));
+        assert_eq!(s.project().tracks.len(), 1);
+        s.undo();
+        assert_eq!(s.project().tracks.len(), 2);
     }
 }

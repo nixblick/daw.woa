@@ -18,7 +18,7 @@ use woa_engine::device::{
     resume_output, start_output_with,
 };
 use woa_engine::project::{ProjectGraph, TrackNodes};
-use woa_engine::transport::{TransportHandle, beats_to_samples, samples_to_beats};
+use woa_engine::transport::{LoopRange, TransportHandle, beats_to_samples, samples_to_beats};
 use woa_engine::{AudioProcessor, Engine};
 use woa_model::{Project, TrackId};
 
@@ -55,6 +55,8 @@ pub struct Player {
     peaks: HashMap<PathBuf, Arc<[f32]>>,
     /// Producer der Note-Queue des Live-Instruments; der MIDI-Eingang schreibt hinein.
     midi_sink: woa_io::midi::EventSink,
+    /// Zuletzt gesetzter Loop-Bereich in Samples.
+    loop_range: Option<LoopRange>,
 }
 
 /// Dekodiert einmal je Datei und merkt sich das Ergebnis; Fehler werden geloggt.
@@ -107,6 +109,7 @@ impl Player {
             meters: HashMap::new(),
             peaks: HashMap::new(),
             midi_sink: woa_io::midi::event_sink(),
+            loop_range: None,
         })
     }
 
@@ -287,6 +290,22 @@ impl Player {
         let pos = beats_to_samples(beats.max(0.0), tempo_bpm, self.rate as f32);
         if let Err(e) = self.engine.seek(pos) {
             tracing::warn!(error = %e, "seek failed");
+        }
+    }
+
+    /// Setzt oder löscht den Loop-Bereich in Beats (`start_beats < end_beats`).
+    pub fn set_loop_beats(&mut self, range: Option<(f64, f64)>, tempo_bpm: f64) {
+        let next = range.and_then(|(s, e)| {
+            let start = beats_to_samples(s.max(0.0), tempo_bpm, self.rate as f32);
+            let end = beats_to_samples(e.max(0.0), tempo_bpm, self.rate as f32);
+            LoopRange::new(start, end)
+        });
+        if self.loop_range == next {
+            return;
+        }
+        match self.engine.set_loop(next) {
+            Ok(()) => self.loop_range = next,
+            Err(e) => tracing::warn!(error = %e, "set_loop failed"),
         }
     }
 
