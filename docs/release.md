@@ -41,7 +41,7 @@ passiert bei Änderungen an `release.yml` und am Prüfskript im Pull Request.
 
 `windows-build.yml` baut nach dem MSI aus denselben Programmen ein MSI mit Version 0.0.1 und führt auf
 dem Windows-Runner `packaging/windows/test-upgrade.ps1` aus: alt installieren, neu darüber (genau ein
-Eintrag, neue Version, alle Dateien da), Downgrade wird abgelehnt (Fehler 1638), Deinstallation räumt
+Eintrag, neue Version, alle Dateien da), Downgrade wird abgelehnt (Abbruch, Version bleibt), Deinstallation räumt
 auf. Die App wird dabei nicht gestartet. Der **UpgradeCode** in `packaging/windows/woa.wxs` ist fest und
 darf sich nie ändern; `release-check.sh` prüft ihn bei jedem Tag.
 

@@ -49,8 +49,8 @@ foreach ($f in 'woa.exe', 'woa-headless.exe', 'woa-streamd.exe', 'LICENSE.txt') 
 }
 Assert ((Get-Item (Join-Path $dir 'woa.exe')).Length -eq (Get-Item (Join-Path $Bin 'woa.exe')).Length) 'woa.exe stammt aus dem neuen Paket'
 
-# Downgrade: 1638 = eine andere Version ist schon installiert (MajorUpgrade, DowngradeErrorMessage).
-Run-Msi @('/i', "`"$oldMsi`"", '/qn', '/norestart') -ok @(1638)
+# Downgrade: MajorUpgrade mit DowngradeErrorMessage bricht ab (Fehler 1603, in manchen Fällen 1638 = andere Version schon da).
+Run-Msi @('/i', "`"$oldMsi`"", '/qn', '/norestart') -ok @(1603, 1638)
 Assert ((Get-Installed)[0].DisplayVersion -eq $Version) 'Downgrade abgelehnt, die neue Version bleibt'
 
 Run-Msi @('/x', "`"$newMsi`"", '/qn', '/norestart')
