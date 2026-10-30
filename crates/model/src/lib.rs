@@ -33,6 +33,7 @@
 mod command;
 mod error;
 mod history;
+pub mod midi;
 mod project;
 mod session;
 pub mod store;
@@ -40,6 +41,7 @@ pub mod store;
 pub use command::Command;
 pub use error::{ModelError, Result};
 pub use history::{History, HistoryEntry};
+pub use midi::{CC_SUSTAIN, MidiCc, MidiData, MidiNote};
 pub use project::{
     Clip, ClipId, DEFAULT_TEMPO_BPM, MAX_GAIN_DB, MAX_ID, MAX_TEMPO_BPM, MIN_GAIN_DB,
     MIN_TEMPO_BPM, Project, ProjectMeta, Track, TrackId, TrackKind, is_safe_audio_path,

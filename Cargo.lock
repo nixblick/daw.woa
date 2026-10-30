@@ -5961,6 +5961,7 @@ dependencies = [
  "rtrb",
  "tracing",
  "woa-dsp",
+ "woa-model",
 ]
 
 [[package]]

@@ -78,15 +78,9 @@ pub fn check_length(length_beats: f64) -> Result<(), String> {
     }
 }
 
-/// Rendert Noten zu einem Mono-Puffer über `length_beats`.
-pub fn notes_buffer(
-    wave: AgentWaveform,
-    notes: &[AgentNote],
-    length_beats: f64,
-    bpm: f64,
-) -> Result<Vec<f32>, String> {
+/// Prüft Länge und Noten (Beginn im Clip, Länge > 0, Tonhöhe, Anschlag).
+pub fn check_notes(notes: &[AgentNote], length_beats: f64) -> Result<(), String> {
     check_length(length_beats)?;
-    let mut out = Vec::with_capacity(notes.len());
     for (i, n) in notes.iter().enumerate() {
         if !(n.beat.is_finite() && n.beat >= 0.0 && n.beat < length_beats) {
             return Err(format!("Note {i}: beat {} liegt nicht im Clip", n.beat));
@@ -97,15 +91,48 @@ pub fn notes_buffer(
         if n.pitch > 127 || n.velocity == 0 || n.velocity > 127 {
             return Err(format!("Note {i}: pitch 0..=127, velocity 1..=127"));
         }
+    }
+    if notes.is_empty() {
+        return Err("notes ist leer".into());
+    }
+    Ok(())
+}
+
+/// Noten als Inhalt eines MIDI-Clips (Paket 12); Noten über das Clip-Ende werden gekürzt.
+pub fn notes_midi(notes: &[AgentNote], length_beats: f64) -> Result<woa_model::MidiData, String> {
+    check_notes(notes, length_beats)?;
+    let mut m = woa_model::MidiData {
+        notes: notes
+            .iter()
+            .map(|n| woa_model::MidiNote {
+                beat: n.beat,
+                length_beats: n.length_beats.min(length_beats - n.beat),
+                pitch: n.pitch,
+                velocity: n.velocity,
+            })
+            .collect(),
+        cc: Vec::new(),
+    };
+    m.sort();
+    Ok(m)
+}
+
+/// Rendert Noten zu einem Mono-Puffer über `length_beats`.
+pub fn notes_buffer(
+    wave: AgentWaveform,
+    notes: &[AgentNote],
+    length_beats: f64,
+    bpm: f64,
+) -> Result<Vec<f32>, String> {
+    check_notes(notes, length_beats)?;
+    let mut out = Vec::with_capacity(notes.len());
+    for n in notes {
         out.push(Note {
             start: samples(n.beat, bpm),
             length: samples(n.length_beats.min(length_beats - n.beat), bpm),
             pitch: n.pitch,
             velocity: n.velocity,
         });
-    }
-    if out.is_empty() {
-        return Err("notes ist leer".into());
     }
     let total = samples(length_beats, bpm) as usize;
     Ok(render_notes(wave.into(), &out, RATE as f32, total))

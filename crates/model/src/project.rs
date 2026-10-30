@@ -83,6 +83,9 @@ pub struct Clip {
     /// Fade-out length in beats.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub fade_out_beats: f64,
+    /// Notes of a MIDI clip (Paket 12). `None`: audio or placeholder clip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub midi: Option<crate::midi::MidiData>,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -108,7 +111,21 @@ impl Clip {
             offset_beats: 0.0,
             fade_in_beats: 0.0,
             fade_out_beats: 0.0,
+            midi: None,
         }
+    }
+
+    /// A MIDI clip holding `midi` (no audio).
+    pub fn new_midi(
+        id: ClipId,
+        name: impl Into<String>,
+        start_beats: f64,
+        length_beats: f64,
+        midi: crate::midi::MidiData,
+    ) -> Self {
+        let mut c = Self::new(id, name, start_beats, length_beats, None);
+        c.midi = Some(midi);
+        c
     }
 
     /// End on the timeline in beats.
@@ -255,6 +272,9 @@ impl Project {
             check_id(t.id.0)?;
             for c in &t.clips {
                 check_id(c.id.0)?;
+                if let Some(m) = &c.midi {
+                    m.check()?;
+                }
             }
         }
         Ok(())
