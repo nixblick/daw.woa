@@ -2,6 +2,15 @@
 
 ## 0.33.7 — 2026-10-30
 
+Silvestersendung Teil 2, Paket 2 von 4 (#134): drei Decks.
+
+- **Decks A, B, C** im Radio-Fenster über der Cart-Wall: große Restzeit (rot unter 10 s), Start/Stopp, Cue (zurück an den Anfang) und Vorhören je Deck. Stopp blendet kurz aus und hält die Stelle, Start läuft von dort weiter; am Ende steht das Deck wieder am Anfang. Mehrere Decks laufen gleichzeitig, auch neben Playlist und Carts. Ohne Ausgänge-Zuordnung erscheinen sie im Hauptausgang.
+- **Laden:** Datei aus dem Explorer oder aus der Bibliothek auf das Deck ziehen, Rechtsklick auf den Decktitel, „Datei laden …“, oder Rechtsklick auf einen Playlist-Titel, „Auf Deck laden“ (mit dessen Cue-In und Cue-Out). Die Decks bleiben in `radio.json` erhalten (`decks`, alte Dateien laden unverändert).
+- **Schnitt und Vorhören:** Rechtsklick auf den Decktitel, „Start und Ende schneiden …“ wie bei den Carts; „Vorhören“ läuft über den Kopfhörer-Ausgang, nie auf Sendung.
+- **Ausgänge:** Jedes Deck bekommt ein eigenes Gerät und Kanalpaar (Einstellungen, „Ausgänge (Soundkarten) …“). Neu: „Wie Playlist“ ist die Vorgabe für alle Quellen außer der Playlist. Bisher lief eine nicht eingestellte Cart-Wall auf dem Windows-Standardgerät, jetzt mit der Playlist.
+
+## 0.33.7 — 2026-10-30
+
 Silvestersendung Teil 2, Paket 1 von 4 (#134): Ausgänge je Gerät.
 
 - **Ausgänge (Soundkarten):** Einstellungen, „Ausgänge (Soundkarten) …“. Playlist und Cart-Wall bekommen je ein Gerät und ein Kanalpaar (1/2 bis 7/8). Mehrere Geräte laufen gleichzeitig, der Pegel wird am Pult gefahren. Gespeichert in `config.json` (`outputs`, alte Dateien laden unverändert). Ohne Zuordnung klingt alles wie bisher.

@@ -4,6 +4,24 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Silvester Teil 2, Paket 2: drei Decks (0.33.7, offen, #134)
+
+Start wie immer, Modus „Radio“. Die Decks A, B, C stehen rechts über der Cart-Wall.
+
+1. **Laden:** Eine Musikdatei aus dem Explorer auf Deck A ziehen: Titel und Restzeit erscheinen, das Deck steht. Auf Deck B per Rechtsklick auf den Titel, „Datei laden …“. Auf Deck C per Rechtsklick auf einen Playlist-Titel, „Auf Deck laden“.
+2. **Start und Stopp:** „Start“ auf Deck A: Die Restzeit läuft rückwärts, unter 10 s wird sie rot. „Stopp“: kurz ausgeblendet, die Stelle bleibt. „Start“ geht von dort weiter. „Cue“ stellt das Deck an den Anfang. Am Ende des Titels steht das Deck wieder am Anfang.
+3. **Gleichzeitig:** Alle drei Decks starten, dazu Playlist und ein Cart: Alles ist zu hören.
+4. **Schnitt:** Rechtsklick auf den Decktitel, „Start und Ende schneiden …“, Cue-In und Cue-Out setzen, „Übernehmen“. Das Deck springt an den neuen Anfang und spielt nur bis zum neuen Ende.
+5. **Vorhören:** „Vorhören“ am Deck: nur im Kopfhörer, der Sendepegel bewegt sich nicht.
+6. **Ausgänge:** Unter Einstellungen, „Ausgänge (Soundkarten) …“ Deck A auf Karte 2 Kanal 1/2 legen, Deck B auf „Wie Playlist“. Deck A kommt nur am Pult-Kanal von Karte 2, Deck B im normalen Programm.
+7. **Neu starten:** Programm schließen und öffnen: Die Titel liegen noch auf den Decks, die Zuordnung ist noch da.
+
+Die Decks laufen ohne Software-Pegel (der Pegel kommt vom Pult) und werden vom Mikro nicht abgesenkt. Sie laufen im Sendeweg mit, also in Aufnahme und Stream und im Rückkanal der Gäste.
+
+Selbst geprüft von Claude (ohne Ton, offline durch den echten Mixer, ohne Allokation im Audio-Pfad): Restzeit zählt herunter, Start, Stopp mit gehaltener Stelle, Weiterspielen, Cue, Ende; Schnitt zwischen Cue-In und Cue-Out genau (0,75 s), Schnitt ändern bei stehendem Deck; drei Decks addieren sich im Hauptausgang; ein Deck auf eigenem Kanalpaar fehlt im Hauptausgang; Speichern und Laden der Decks, alte Dateien.
+
+Nicht selbst geprüft: Aussehen der Decks, Ziehen von Dateien und Rechtsklick-Menüs (kein Bildschirm), echtes Gerät und Pult unter Windows.
+
 ## Silvester Teil 2, Paket 1: Ausgänge je Soundkarte (0.33.6, offen, #134)
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`, Modus „Radio“. Möglichst beide Soundkarten und das Pult angeschlossen.
