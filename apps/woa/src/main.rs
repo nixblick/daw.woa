@@ -3,6 +3,9 @@
 //! Ordner: Konfiguration `<config>/woa/config.json` (Feld `feedback_url`), Logs und
 //! Wiederherstellung unter `<data>/woa/`. Unter Linux XDG, unter Windows `%APPDATA%`.
 
+// Unter Windows ohne Konsolenfenster starten (blieb schwarz im Hintergrund offen, André 30.10.).
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 use std::process::ExitCode;
 
 use woa_gui::{GuiConfig, WoaApp};
