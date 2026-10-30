@@ -9,6 +9,7 @@ pub mod automation;
 pub mod controls;
 pub mod covers;
 pub mod cue_editor;
+pub mod export_dialog;
 pub mod feedback;
 pub mod library;
 pub mod pianoroll;

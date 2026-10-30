@@ -24,7 +24,19 @@ use woa_engine::transport::{LoopRange, TransportHandle, beats_to_samples, sample
 use woa_engine::{AudioProcessor, Engine};
 use woa_model::{InsertId, Project, TrackId};
 
+use crate::export_dialog::StemOptions;
 use crate::xrun::XrunLog;
+use woa_engine::export::ExportSpec;
+
+/// Ergebnis eines Stem-Exports.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StemsDone {
+    pub seconds: f64,
+    pub files: usize,
+    /// Spuren ohne Datei, weil sie nicht klingen.
+    pub skipped: Vec<String>,
+    pub norm: Option<woa_engine::loudness::Normalized>,
+}
 
 /// Was einen neuen Graphen verlangt (Tempo, Clips, scharfe MIDI-Spur).
 /// Das letzte Feld ist das Routing (Art, Ausgang, Sends, Insert-Kette je Spur).
@@ -453,12 +465,14 @@ impl Player {
         f64::from(self.rate) * 60.0 / tempo_bpm / PEAK_BLOCK as f64
     }
 
-    /// Rendert das ganze Projekt (bis zum Ende des letzten Clips) als Stereo-WAV.
+    /// Rendert das ganze Projekt (bis zum Ende des letzten Clips) und schreibt es nach `out`
+    /// im Format von `spec`.
     pub fn export(
         &mut self,
         project: &Project,
         resolve: &dyn Fn(&str) -> Option<PathBuf>,
         out: &Path,
+        spec: &ExportSpec,
         lufs: Option<f64>,
     ) -> Result<(f64, Option<woa_engine::loudness::Normalized>), String> {
         let seconds = project_end_seconds(project);
@@ -473,7 +487,51 @@ impl Player {
         .map_err(|e| e.to_string())?;
         let norm =
             lufs.and_then(|t| woa_engine::loudness::normalize(&mut l, &mut r, rate, t, -1.0));
-        woa_engine::export::export_stereo(out, &l, &r, rate).map_err(|e| e.to_string())?;
+        woa_engine::export::export_with(out, spec, &l, &r, rate).map_err(|e| e.to_string())?;
         Ok((seconds, norm))
+    }
+
+    /// Rendert Stems (und den Mixdown) in einem Durchgang und schreibt sie in den Ordner
+    /// `dir`. Der Lautheitsangleich rechnet auf dem Mixdown; sein Gain gilt für jede Datei
+    /// gleich, damit die Summe der Stems der Mixdown bleibt.
+    pub fn export_stems(
+        &mut self,
+        project: &Project,
+        resolve: &dyn Fn(&str) -> Option<PathBuf>,
+        dir: &Path,
+        spec: &ExportSpec,
+        opts: StemOptions,
+        lufs: Option<f64>,
+    ) -> Result<StemsDone, String> {
+        let seconds = project_end_seconds(project);
+        if seconds <= 0.0 {
+            return Err("keine Clips zum Exportieren".into());
+        }
+        let rate = self.rate;
+        let cache = &mut self.cache;
+        let render = woa_engine::stems::render_stems(
+            project,
+            rate,
+            seconds,
+            opts.select,
+            &mut |rel: &str| load_cached(cache, resolve(rel)?, rate),
+        )
+        .map_err(|e| e.to_string())?;
+        if render.stems.is_empty() {
+            return Err("keine Spur zum Exportieren (alles stumm oder nichts gewählt)".into());
+        }
+        let norm = lufs.and_then(|t| {
+            let (mut l, mut r) = (render.mix_left.clone(), render.mix_right.clone());
+            woa_engine::loudness::normalize(&mut l, &mut r, rate, t, -1.0)
+        });
+        let gain_db = norm.as_ref().map_or(0.0, |n| n.gain_db);
+        let files = woa_engine::stems::write_stems(dir, &render, spec, rate, gain_db, opts.mixdown)
+            .map_err(|e| e.to_string())?;
+        Ok(StemsDone {
+            seconds,
+            files: files.len(),
+            skipped: render.skipped,
+            norm,
+        })
     }
 }

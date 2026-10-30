@@ -250,7 +250,7 @@ pub fn clip_graph_mode(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn clip_graph_inner(
+pub(crate) fn clip_graph_inner(
     project: &Project,
     transport: &TransportHandle,
     rate: f32,
