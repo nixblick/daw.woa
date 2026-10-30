@@ -211,7 +211,7 @@ pub fn paint_square(
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
     let painter = ui.painter_at(rect);
     let r = egui::CornerRadius::same((size / 16.0).clamp(2.0, 10.0) as u8);
-    painter.rect_filled(rect, r, crate::theme::SURFACE);
+    painter.rect_filled(rect, r, crate::theme::surface());
     let draw = |tex: &egui::TextureHandle, alpha: f32| {
         let [w, h] = tex.size();
         let s = size / w.max(h).max(1) as f32;
@@ -229,7 +229,11 @@ pub fn paint_square(
     match now {
         Some(n) => draw(n, t),
         None => {
-            let c = crate::theme::mix(crate::theme::DIM, crate::theme::SURFACE, 1.0 - t * 0.6);
+            let c = crate::theme::mix(
+                crate::theme::text_dim(),
+                crate::theme::surface(),
+                1.0 - t * 0.6,
+            );
             painter.text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,

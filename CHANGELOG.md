@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.7 — 2026-10-31
+## 0.34.8 — 2026-10-31
 
 Silvestersendung Teil 2, Paket 3 von 4 (#134): Telefon mit Rückweg.
 
@@ -9,6 +9,16 @@ Silvestersendung Teil 2, Paket 3 von 4 (#134): Telefon mit Rückweg.
 - **Rückweg (Mix-Minus):** neue Quelle „Telefon-Rückweg“ unter „Ausgänge (Soundkarten)“, Gerät und Kanalpaar frei (Karte 1). Er trägt alles, was auf Sendung ist, nur nicht den Anrufer. Ohne Wahl gibt es keinen Rückweg und nie eine Ausgabe im Hauptausgang; ein Paar, das schon eine andere Quelle trägt, wird abgelehnt.
 - **Zwei Karten, ein Takt:** Der Eingang kommt über dieselbe Taktverbindung wie die weiteren Ausgänge (`woa_engine::pairs::link`, leichter Hermite-Umrechner, 50 ms Polster): andere Rate und auseinanderlaufende Takte werden ausgeglichen. Neu in der Engine: `record::start_pair_input`, `probe_input`, `InputConfig.pair`.
 - Tests ohne Ton und ohne Allokation: Rückweg ohne Anrufer-Anteil, ohne Anrufer-Signal gleich dem Programm, Pegel ohne Sendung, 44,1 kHz, kein Rückweg, Absenkung, Zuordnung. Abnahme: `docs/abnahme.md`, „Silvester Teil 2, Paket 3“.
+
+## 0.34.7 — 2026-10-31
+
+Design D1: zwei Themen, Hell und Dunkel, mit Modusfarbe (Vorgabe `docs/design/woa-design-system/`).
+
+- **Thema wählbar:** Einstellungen, „Erscheinungsbild“: Dunkel (Vorgabe) oder Hell, gespeichert in der Konfiguration (`theme`). Alte Konfigurationen starten dunkel.
+- **Modusfarbe folgt dem Layout:** Akzent, Zweitfarbe und Leuchtziffern wechseln mit Produzent (Amber), Radio (Rot) und Party (Magenta); sechs Paletten (3 Modi × 2 Themen) aus `tokens.json`.
+- **Farben als Palette:** `crates/gui/src/theme.rs` hält alle Tokens (neu: `border_strong`, `lcd_bg`, `led_off`, `vu_face`, `vu_ink`, Abstände und Radien); die alten Konstanten (`ACCENT`, `WELL` …) sind Funktionen (`accent()`, `well()` …) der aktiven Palette. Ein Test liest `tokens.json` und prüft, dass alle Werte übereinstimmen.
+- **LCDs und LED-Ketten bleiben auch im hellen Thema dunkel** (wie Hardware), Pegelanzeigen nutzen `lcd_bg` und die LED-Farben des Design Systems. Bedienbare Elemente haben die kräftigere Kontur `border_strong`.
+- Die Probe `WOA_THEME=hell|dunkel` bleibt für den Fotomodus; sie schlägt die Einstellung.
 
 ## 0.34.6 — 2026-10-30
 

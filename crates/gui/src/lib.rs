@@ -24,7 +24,7 @@ pub mod radio;
 pub mod remote;
 mod sources;
 pub mod state;
-mod theme;
+pub mod theme;
 pub mod timeline;
 pub mod update;
 pub mod voice_editor;

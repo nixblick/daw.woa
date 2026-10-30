@@ -22,7 +22,7 @@ Selbst geprüft von Claude (ohne Ton, offline durch den echten Mixer, ohne Allok
 
 Nicht selbst geprüft: Aussehen der Decks, Ziehen von Dateien und Rechtsklick-Menüs (kein Bildschirm), echtes Gerät und Pult unter Windows.
 
-## Silvester Teil 2, Paket 3: Telefon mit Rückweg (0.34.7, offen, #134)
+## Silvester Teil 2, Paket 3: Telefon mit Rückweg (0.34.8, offen, #134)
 
 Start wie immer, Modus „Radio“. Das Handy hängt über den Adapter am Pult; sein Signal kommt in einen Eingang einer Soundkarte, der Rückweg zum Handy geht aus Karte 1 zurück ins Pult.
 

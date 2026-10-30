@@ -143,7 +143,7 @@ impl PartyView {
                     egui::RichText::new("WUNSCHLISTE")
                         .size(11.5)
                         .strong()
-                        .color(theme::DIM),
+                        .color(theme::text_dim()),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("+ Wunsch aus Datei").clicked()
@@ -167,7 +167,7 @@ impl PartyView {
                 ui.label(
                     egui::RichText::new("Noch keine Wünsche.")
                         .size(18.0)
-                        .color(theme::DIM),
+                        .color(theme::text_dim()),
                 );
             }
             for (i, w) in items.iter().enumerate() {
@@ -176,18 +176,18 @@ impl PartyView {
                         egui::RichText::new(format!("{}.", i + 1))
                             .size(20.0)
                             .monospace()
-                            .color(theme::ACCENT),
+                            .color(theme::accent()),
                     );
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new(&w.title)
                                 .size(20.0)
-                                .color(theme::TEXT_BRIGHT),
+                                .color(theme::text()),
                         )
                         .truncate(),
                     );
                     if w.votes > 1 {
-                        theme::status_pill(ui, &format!("×{}", w.votes), theme::CUE_CYAN, true);
+                        theme::status_pill(ui, &format!("×{}", w.votes), theme::cue(), true);
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("✕").on_hover_text("Wunsch verwerfen").clicked() {
@@ -220,13 +220,13 @@ impl PartyView {
 }
 
 fn now_card(ui: &mut egui::Ui, l: &PartyLayout, _height: f32) {
-    theme::lcd_frame().show(ui, |ui| {
+    theme::lcd_show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.set_min_height(260.0);
         let (badge, col) = match &l.now {
-            Some(n) if n.playing => ("JETZT", theme::ACCENT),
-            Some(n) if n.paused => ("PAUSE", theme::ON_AIR),
-            _ => ("BEREIT", theme::CUE_CYAN),
+            Some(n) if n.playing => ("JETZT", theme::accent()),
+            Some(n) if n.paused => ("PAUSE", theme::on_air()),
+            _ => ("BEREIT", theme::cue()),
         };
         ui.label(
             egui::RichText::new(badge)
@@ -242,14 +242,16 @@ fn now_card(ui: &mut egui::Ui, l: &PartyLayout, _height: f32) {
                         egui::RichText::new(&n.title)
                             .size(40.0)
                             .strong()
-                            .color(theme::TEXT_BRIGHT),
+                            .color(theme::text()),
                     )
                     .truncate(),
                 );
                 if !n.artist.is_empty() {
                     ui.add(
                         egui::Label::new(
-                            egui::RichText::new(&n.artist).size(26.0).color(theme::DIM),
+                            egui::RichText::new(&n.artist)
+                                .size(26.0)
+                                .color(theme::text_dim()),
                         )
                         .truncate(),
                     );
@@ -261,19 +263,23 @@ fn now_card(ui: &mut egui::Ui, l: &PartyLayout, _height: f32) {
                         .size(84.0)
                         .strong()
                         .monospace()
-                        .color(if urgent { theme::ON_AIR } else { theme::ACCENT }),
+                        .color(if urgent {
+                            theme::on_air()
+                        } else {
+                            theme::accent()
+                        }),
                 );
                 ui.add(
                     egui::ProgressBar::new(n.progress)
                         .desired_height(12.0)
-                        .fill(theme::ACCENT),
+                        .fill(theme::accent()),
                 );
             }
             None => {
                 ui.label(
                     egui::RichText::new("Noch kein Titel – Ordner laden")
                         .size(28.0)
-                        .color(theme::DIM),
+                        .color(theme::text_dim()),
                 );
             }
         }
@@ -286,7 +292,7 @@ fn now_card(ui: &mut egui::Ui, l: &PartyLayout, _height: f32) {
                     .unwrap_or("– nichts mehr in der Playlist –")
             ))
             .size(20.0)
-            .color(theme::CUE_CYAN),
+            .color(theme::cue()),
         );
     });
 }
@@ -307,14 +313,14 @@ fn buttons_row(ui: &mut egui::Ui, l: &PartyLayout, cmds: &mut Vec<PartyCommand>)
                     egui::RichText::new(b.label)
                         .size(size)
                         .strong()
-                        .color(if lit { theme::WELL } else { theme::TEXT_BRIGHT }),
+                        .color(if lit { theme::well() } else { theme::text() }),
                 )
                 .fill(if primary {
-                    theme::OK_GREEN
+                    theme::ok()
                 } else if b.active {
-                    theme::ACCENT
+                    theme::accent()
                 } else {
-                    theme::SURFACE
+                    theme::surface()
                 })
                 .min_size(egui::vec2(w, h));
                 if ui.add(btn).clicked() {
@@ -329,7 +335,7 @@ fn buttons_row(ui: &mut egui::Ui, l: &PartyLayout, cmds: &mut Vec<PartyCommand>)
         ui.label(
             egui::RichText::new(format!("Lautstärke {:+.0} dB", l.level_db))
                 .size(16.0)
-                .color(theme::DIM),
+                .color(theme::text_dim()),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let t = if l.fullscreen {

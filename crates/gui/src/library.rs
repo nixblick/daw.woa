@@ -308,7 +308,7 @@ impl LibraryWindow {
 
     fn body(&mut self, ui: &mut egui::Ui, pfl_available: bool, out: &mut Output) {
         if let Some(e) = &self.error {
-            ui.colored_label(theme::ON_AIR, e);
+            ui.colored_label(theme::on_air(), e);
             return;
         }
         // Suche und Filter
@@ -352,7 +352,7 @@ impl LibraryWindow {
             ui.label(
                 egui::RichText::new(format!("{} von {}", self.results.len(), self.total))
                     .small()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
             );
         });
         // Import
@@ -362,8 +362,8 @@ impl LibraryWindow {
                 .add_enabled(
                     !busy,
                     egui::Button::new(egui::RichText::new("Ordner importieren …").strong())
-                        .fill(theme::mix(theme::ACCENT, theme::SURFACE, 0.72))
-                        .stroke(egui::Stroke::new(1.0, theme::ACCENT)),
+                        .fill(theme::mix(theme::accent(), theme::surface(), 0.72))
+                        .stroke(egui::Stroke::new(1.0, theme::accent())),
                 )
                 .clicked()
                 && let Some(dir) = rfd::FileDialog::new()
@@ -394,7 +394,7 @@ impl LibraryWindow {
                         format!("{done} von {total}")
                     })
                     .small()
-                    .color(theme::ACCENT),
+                    .color(theme::accent()),
                 );
                 if ui.small_button("Abbrechen").clicked() {
                     imp.cancel();
@@ -409,11 +409,11 @@ impl LibraryWindow {
                         Progress::get(&p.total)
                     ))
                     .small()
-                    .color(theme::ACCENT),
+                    .color(theme::accent()),
                 )
                 .on_hover_text("BPM, Tonart, Lautheit und Stille im Hintergrund");
             } else if let Some(n) = &self.note {
-                ui.label(egui::RichText::new(n).small().color(theme::TEXT_BRIGHT));
+                ui.label(egui::RichText::new(n).small().color(theme::text()));
             }
         });
         ui.add_space(4.0);
@@ -431,7 +431,7 @@ impl LibraryWindow {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(theme::WELL)
+                    .fill(theme::well())
                     .corner_radius(4)
                     .inner_margin(egui::Margin::same(4)),
             )
@@ -447,7 +447,7 @@ impl LibraryWindow {
                 } else {
                     "Nichts gefunden."
                 })
-                .color(theme::DIM),
+                .color(theme::text_dim()),
             );
             return;
         }
@@ -464,7 +464,7 @@ impl LibraryWindow {
                     align,
                     s,
                     egui::FontId::proportional(10.0),
-                    theme::DIM,
+                    theme::text_dim(),
                 );
             };
             head(rect.left() + 8.0, egui::Align2::LEFT_CENTER, "TITEL");
@@ -489,15 +489,19 @@ impl LibraryWindow {
                     let sel = self.selected == Some(t.id);
                     let painter = ui.painter_at(rect);
                     if sel {
-                        painter.rect_filled(rect, 3, theme::mix(theme::ACCENT, theme::WELL, 0.78));
+                        painter.rect_filled(
+                            rect,
+                            3,
+                            theme::mix(theme::accent(), theme::well(), 0.78),
+                        );
                     } else if resp.hovered() {
-                        painter.rect_filled(rect, 3, theme::PANEL);
+                        painter.rect_filled(rect, 3, theme::panel());
                     }
                     let mid = rect.center().y;
                     let text_col = if sel {
-                        theme::TEXT_BRIGHT
+                        theme::text()
                     } else {
-                        theme::mix(theme::TEXT_BRIGHT, theme::DIM, 0.2)
+                        theme::mix(theme::text(), theme::text_dim(), 0.2)
                     };
                     painter.text(
                         egui::pos2(rect.left() + 8.0, mid),
@@ -512,14 +516,14 @@ impl LibraryWindow {
                         egui::Align2::RIGHT_CENTER,
                         duration_text(t.duration),
                         egui::FontId::monospace(12.0),
-                        theme::DIM,
+                        theme::text_dim(),
                     );
                     painter.text(
                         egui::pos2(cols.kind, mid),
                         egui::Align2::RIGHT_CENTER,
                         t.kind.label(),
                         egui::FontId::proportional(11.0),
-                        theme::CUE_CYAN,
+                        theme::cue(),
                     );
                     // Analyse (Paket 25): „…“ solange der Titel noch nicht dran war.
                     let a = t.analysis.as_ref();
@@ -533,7 +537,11 @@ impl LibraryWindow {
                             egui::Align2::RIGHT_CENTER,
                             text,
                             egui::FontId::monospace(12.0),
-                            if a.is_some() { text_col } else { theme::DIM },
+                            if a.is_some() {
+                                text_col
+                            } else {
+                                theme::text_dim()
+                            },
                         );
                     }
                     if !t.tags.is_empty() {
@@ -542,7 +550,7 @@ impl LibraryWindow {
                             egui::Align2::RIGHT_CENTER,
                             t.tags.join(" · "),
                             egui::FontId::proportional(11.0),
-                            theme::DIM,
+                            theme::text_dim(),
                         );
                     }
                     if resp.clicked() || resp.drag_started() {
@@ -578,14 +586,14 @@ impl LibraryWindow {
                 let galley = painter.layout_no_wrap(
                     format!("♪ {name}"),
                     egui::FontId::proportional(13.0),
-                    theme::WELL,
+                    theme::well(),
                 );
                 let r = egui::Rect::from_min_size(
                     pos + egui::vec2(14.0, 10.0),
                     galley.size() + egui::vec2(14.0, 8.0),
                 );
-                painter.rect_filled(r, 4, theme::ACCENT);
-                painter.galley(r.min + egui::vec2(7.0, 4.0), galley, theme::WELL);
+                painter.rect_filled(r, 4, theme::accent());
+                painter.galley(r.min + egui::vec2(7.0, 4.0), galley, theme::well());
             }
         }
         if let Some(path) = stopped {
@@ -607,20 +615,16 @@ impl LibraryWindow {
             ui.label(
                 egui::RichText::new("Titel anklicken: Tags vergeben, vorhören. In die Timeline, Playlist oder auf ein Cart-Pad ziehen.")
                     .small()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
             );
             return;
         };
         ui.horizontal_wrapped(|ui| {
-            ui.label(
-                egui::RichText::new(&t.title)
-                    .strong()
-                    .color(theme::TEXT_BRIGHT),
-            );
+            ui.label(egui::RichText::new(&t.title).strong().color(theme::text()));
             if ui
                 .add_enabled(
                     pfl_available,
-                    egui::Button::new("▶ Vorhören").fill(theme::SURFACE),
+                    egui::Button::new("▶ Vorhören").fill(theme::surface()),
                 )
                 .on_disabled_hover_text(
                     "Kein Kopfhörer-Ausgang: Radio-Modus und Einstellungen → Vorhören (PFL)",
@@ -630,7 +634,7 @@ impl LibraryWindow {
                 out.preview = Some(PathBuf::from(&t.path));
             }
             if ui
-                .add_enabled(pfl_available, egui::Button::new("■").fill(theme::SURFACE))
+                .add_enabled(pfl_available, egui::Button::new("■").fill(theme::surface()))
                 .on_hover_text("Vorhören stoppen")
                 .clicked()
             {
@@ -655,12 +659,16 @@ impl LibraryWindow {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            ui.label(egui::RichText::new("TAGS").size(10.0).color(theme::DIM));
+            ui.label(
+                egui::RichText::new("TAGS")
+                    .size(10.0)
+                    .color(theme::text_dim()),
+            );
             let mut remove = None;
             for tag in &t.tags {
                 let b = ui.add(
                     egui::Button::new(egui::RichText::new(format!("{tag}  ✕")).small())
-                        .fill(theme::mix(theme::CUE_CYAN, theme::SURFACE, 0.8)),
+                        .fill(theme::mix(theme::cue(), theme::surface(), 0.8)),
                 );
                 if b.on_hover_text("Tag entfernen").clicked() {
                     remove = Some(tag.clone());
@@ -681,13 +689,17 @@ impl LibraryWindow {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            ui.label(egui::RichText::new("ANALYSE").size(10.0).color(theme::DIM));
+            ui.label(
+                egui::RichText::new("ANALYSE")
+                    .size(10.0)
+                    .color(theme::text_dim()),
+            );
             match &t.analysis {
                 Some(a) => {
                     ui.label(
                         egui::RichText::new(analysis_summary(a))
                             .small()
-                            .color(theme::TEXT_BRIGHT),
+                            .color(theme::text()),
                     );
                     if ui
                         .small_button("Neu analysieren")
@@ -706,7 +718,7 @@ impl LibraryWindow {
                     ui.label(
                         egui::RichText::new("wartet auf die Hintergrundanalyse …")
                             .small()
-                            .color(theme::DIM),
+                            .color(theme::text_dim()),
                     );
                 }
             }

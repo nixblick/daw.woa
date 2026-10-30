@@ -250,10 +250,10 @@ impl ControlDesk {
             changed = true;
         }
         let (text, color) = match self.input.status() {
-            MidiStatus::Off => ("Kein Controller gewählt".to_string(), theme::DIM),
+            MidiStatus::Off => ("Kein Controller gewählt".to_string(), theme::text_dim()),
             MidiStatus::Waiting(n) => (
                 format!("{} nicht da, suche alle 2 s", stable_name(&n)),
-                theme::ON_AIR,
+                theme::on_air(),
             ),
             MidiStatus::Connected(_) => (
                 if self.led.is_some() {
@@ -261,7 +261,7 @@ impl ControlDesk {
                 } else {
                     "Verbunden (Gerät ohne LED-Eingang)".to_string()
                 },
-                theme::ACCENT,
+                theme::accent(),
             ),
         };
         ui.label(egui::RichText::new(text).small().color(color));
@@ -272,12 +272,12 @@ impl ControlDesk {
                  nicht: sie greifen erst, wenn sie den Wert auf dem Bildschirm erreichen.",
             )
             .small()
-            .color(theme::DIM),
+            .color(theme::text_dim()),
         );
         ui.separator();
         if let Some(t) = self.learning_text() {
             ui.horizontal(|ui| {
-                ui.colored_label(theme::ACCENT, t);
+                ui.colored_label(theme::accent(), t);
                 if ui.small_button("Abbrechen").clicked() {
                     self.mapper.cancel_learn();
                 }
@@ -285,7 +285,7 @@ impl ControlDesk {
         }
         let mut remove = None;
         if self.mapper.mappings().is_empty() {
-            ui.label(egui::RichText::new("Noch nichts zugeordnet.").color(theme::DIM));
+            ui.label(egui::RichText::new("Noch nichts zugeordnet.").color(theme::text_dim()));
         } else {
             egui::Grid::new("controller-maps")
                 .num_columns(3)

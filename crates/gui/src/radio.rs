@@ -904,14 +904,14 @@ impl RadioDesk {
         let v = self.view.clone();
         if let Some(e) = self.error.clone() {
             egui::Frame::new()
-                .fill(theme::mix(theme::ON_AIR, theme::WELL, 0.78))
-                .stroke(egui::Stroke::new(1.0, theme::ON_AIR))
+                .fill(theme::mix(theme::on_air(), theme::well(), 0.78))
+                .stroke(egui::Stroke::new(1.0, theme::on_air()))
                 .corner_radius(5)
                 .inner_margin(egui::Margin::symmetric(10, 6))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("⚠").strong().color(theme::ON_AIR));
-                        ui.colored_label(theme::TEXT_BRIGHT, e);
+                        ui.label(egui::RichText::new("⚠").strong().color(theme::on_air()));
+                        ui.colored_label(theme::text(), e);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui.small_button("✕").clicked() {
                                 self.error = None;
@@ -922,7 +922,7 @@ impl RadioDesk {
             ui.add_space(6.0);
         }
         for m in &v.messages {
-            ui.label(egui::RichText::new(m).small().color(theme::DIM));
+            ui.label(egui::RichText::new(m).small().color(theme::text_dim()));
         }
         ui.columns(2, |cols| {
             cols[0].spacing_mut().item_spacing.y = 10.0;
@@ -979,18 +979,18 @@ impl RadioDesk {
                 egui::RichText::new("SENDE-DECK & MASTER-UHR")
                     .size(11.5)
                     .strong()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
             );
             if v.running {
-                theme::status_pill(ui, "DECK LÄUFT", theme::OK_GREEN, true);
+                theme::status_pill(ui, "DECK LÄUFT", theme::ok(), true);
             } else {
-                theme::status_pill(ui, "BEREIT / CUE", theme::ACCENT, false);
+                theme::status_pill(ui, "BEREIT / CUE", theme::accent(), false);
             }
             if v.mic_open {
-                theme::status_pill(ui, "MIKRO OFFEN", theme::ON_AIR, true);
+                theme::status_pill(ui, "MIKRO OFFEN", theme::on_air(), true);
             }
             if v.recording.is_some() {
-                theme::status_pill(ui, "REC LÄUFT", theme::ON_AIR, true);
+                theme::status_pill(ui, "REC LÄUFT", theme::on_air(), true);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let n = self.underruns();
@@ -998,7 +998,7 @@ impl RadioDesk {
                     ui.label(
                         egui::RichText::new(format!("Aussetzer: {n}"))
                             .small()
-                            .color(theme::ON_AIR),
+                            .color(theme::on_air()),
                     )
                     .on_hover_text(
                         "Puffer-Unterläufe der Ausgabe seit dem Öffnen. Steigt die Zahl, \
@@ -1012,8 +1012,8 @@ impl RadioDesk {
         // Haupt-Display: Cover links, tiefschwarzes LCD-Cockpit rechts.
         ui.horizontal(|ui| {
             egui::Frame::new()
-                .fill(theme::WELL)
-                .stroke(egui::Stroke::new(1.0, theme::BORDER))
+                .fill(theme::well())
+                .stroke(egui::Stroke::new(1.0, theme::border()))
                 .corner_radius(6)
                 .inner_margin(egui::Margin::same(3))
                 .show(ui, |ui| {
@@ -1021,7 +1021,7 @@ impl RadioDesk {
                         .on_hover_text("Cover des Titels (aus der Datei)");
                 });
 
-            theme::lcd_frame().show(ui, |ui| {
+            theme::lcd_show(ui, |ui| {
                 ui.set_min_height(142.0);
                 ui.set_width(ui.available_width());
                 ui.vertical(|ui| {
@@ -1032,9 +1032,9 @@ impl RadioDesk {
                             "NÄCHSTER START (CUE)"
                         };
                         let badge_col = if v.running {
-                            theme::ACCENT
+                            theme::accent()
                         } else {
-                            theme::CUE_CYAN
+                            theme::cue()
                         };
                         ui.label(
                             egui::RichText::new(badge_text)
@@ -1051,7 +1051,7 @@ impl RadioDesk {
                                         egui::RichText::new(format!("{lufs:.1} LUFS"))
                                             .size(11.0)
                                             .monospace()
-                                            .color(theme::DIM),
+                                            .color(theme::text_dim()),
                                     );
                                 },
                             );
@@ -1062,7 +1062,7 @@ impl RadioDesk {
                             egui::RichText::new(title)
                                 .size(17.5)
                                 .strong()
-                                .color(theme::TEXT_BRIGHT),
+                                .color(theme::text()),
                         )
                         .truncate(),
                     );
@@ -1080,19 +1080,23 @@ impl RadioDesk {
                             .size(40.0)
                             .strong()
                             .monospace()
-                            .color(theme::TEXT_BRIGHT),
+                            .color(theme::text()),
                         )
                         .on_hover_text("Uhrzeit (Ortszeit der Stundenuhr)");
                         ui.label(
                             egui::RichText::new("UHR")
                                 .size(11.0)
                                 .strong()
-                                .color(theme::DIM),
+                                .color(theme::text_dim()),
                         );
                     });
 
                     let urgent = v.running && v.remaining_title < 10.0;
-                    let clock_col = if urgent { theme::ON_AIR } else { theme::ACCENT };
+                    let clock_col = if urgent {
+                        theme::on_air()
+                    } else {
+                        theme::accent()
+                    };
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new(clock(v.remaining_title))
@@ -1109,7 +1113,7 @@ impl RadioDesk {
                                     .size(28.0)
                                     .strong()
                                     .monospace()
-                                    .color(theme::ACCENT),
+                                    .color(theme::accent()),
                             )
                             .on_hover_text(
                                 "Sekunden bis zum Intro-Ende (Ramp): bis dahin sprechen",
@@ -1122,14 +1126,14 @@ impl RadioDesk {
                             ui.label(
                                 egui::RichText::new("bis Playlist-Ende")
                                     .size(11.0)
-                                    .color(theme::DIM),
+                                    .color(theme::text_dim()),
                             );
                             ui.label(
                                 egui::RichText::new(clock(v.remaining_total))
                                     .size(24.0)
                                     .strong()
                                     .monospace()
-                                    .color(theme::TEXT_BRIGHT),
+                                    .color(theme::text()),
                             );
                         });
                     });
@@ -1145,9 +1149,9 @@ impl RadioDesk {
                             .size(12.0)
                             .monospace()
                             .color(if near {
-                                theme::ON_AIR
+                                theme::on_air()
                             } else {
-                                theme::DIM
+                                theme::text_dim()
                             }),
                         )
                         .on_hover_text("Zeit-Events: Fenster „Zeit-Events“");
@@ -1159,7 +1163,7 @@ impl RadioDesk {
                             ))
                             .size(11.0)
                             .monospace()
-                            .color(theme::DIM),
+                            .color(theme::text_dim()),
                         );
                     }
                     // Visueller Restzeit-Balken im LCD
@@ -1175,7 +1179,7 @@ impl RadioDesk {
                         egui::vec2(ui.available_width(), 6.0),
                         egui::Sense::hover(),
                     );
-                    ui.painter().rect_filled(bar_rect, 3.0, theme::PANEL);
+                    ui.painter().rect_filled(bar_rect, 3.0, theme::panel());
                     if progress > 0.0 {
                         let mut fill_r = bar_rect;
                         fill_r.set_width(bar_rect.width() * progress);
@@ -1192,16 +1196,16 @@ impl RadioDesk {
             let big = |t: &str| egui::RichText::new(t).size(15.0).strong();
             let go = if v.running { "⏸ Pause" } else { "▶ Play" };
             let go_btn = egui::Button::new(big(go).color(if v.running {
-                theme::WELL
+                theme::well()
             } else {
-                theme::TEXT_BRIGHT
+                theme::text()
             }))
             .fill(if v.running {
-                theme::OK_GREEN
+                theme::ok()
             } else {
-                theme::mix(theme::OK_GREEN, theme::SURFACE, 0.72)
+                theme::mix(theme::ok(), theme::surface(), 0.72)
             })
-            .stroke(egui::Stroke::new(1.0, theme::OK_GREEN))
+            .stroke(egui::Stroke::new(1.0, theme::ok()))
             .min_size(egui::vec2(104.0, 38.0));
             let r = ui.add(go_btn).on_hover_text("Play / Pause (Leertaste)");
             if r.clicked() {
@@ -1215,7 +1219,7 @@ impl RadioDesk {
 
             let r = ui.add(
                 egui::Button::new(big("■ Stopp"))
-                    .fill(theme::SURFACE)
+                    .fill(theme::surface())
                     .min_size(egui::vec2(88.0, 38.0)),
             );
             if r.clicked() {
@@ -1254,7 +1258,7 @@ impl RadioDesk {
                 ),
             ] {
                 let b = egui::Button::new(big(label))
-                    .fill(theme::SURFACE)
+                    .fill(theme::surface())
                     .min_size(egui::vec2(48.0, 38.0));
                 if ui.add(b).on_hover_text(tip).clicked() {
                     for e in state.apply(cmd, v.running) {
@@ -1269,24 +1273,28 @@ impl RadioDesk {
             };
             let on = v.repeat != woa_radio::control::Repeat::Off;
             let b = egui::Button::new(big(rep_label).color(if on {
-                theme::WELL
+                theme::well()
             } else {
-                theme::TEXT_BRIGHT
+                theme::text()
             }))
-            .fill(if on { theme::ACCENT } else { theme::SURFACE })
+            .fill(if on {
+                theme::accent()
+            } else {
+                theme::surface()
+            })
             .min_size(egui::vec2(48.0, 38.0));
             if ui.add(b).on_hover_text(rep_tip).clicked() {
                 self.party_effect(woa_radio::party::Effect::CycleRepeat);
             }
             let b = egui::Button::new(big("🔀").color(if v.shuffle {
-                theme::WELL
+                theme::well()
             } else {
-                theme::TEXT_BRIGHT
+                theme::text()
             }))
             .fill(if v.shuffle {
-                theme::ACCENT
+                theme::accent()
             } else {
-                theme::SURFACE
+                theme::surface()
             })
             .min_size(egui::vec2(48.0, 38.0));
             if ui
@@ -1304,19 +1312,19 @@ impl RadioDesk {
             let mic = egui::Button::new(big("🎙 Mikro (M)").color(if v.mic_open {
                 egui::Color32::WHITE
             } else {
-                theme::TEXT_BRIGHT
+                theme::text()
             }))
             .fill(if v.mic_open {
-                theme::ON_AIR
+                theme::on_air()
             } else {
-                theme::SURFACE
+                theme::surface()
             })
             .stroke(egui::Stroke::new(
                 1.0,
                 if v.mic_open {
-                    theme::mix(theme::ON_AIR, egui::Color32::WHITE, 0.35)
+                    theme::emphasize(theme::on_air(), 0.35)
                 } else {
-                    theme::BORDER
+                    theme::border()
                 },
             ))
             .min_size(egui::vec2(108.0, 38.0));
@@ -1336,16 +1344,20 @@ impl RadioDesk {
                 .color(if ph {
                     egui::Color32::WHITE
                 } else {
-                    theme::TEXT_BRIGHT
+                    theme::text()
                 }),
             )
-            .fill(if ph { theme::ON_AIR } else { theme::SURFACE })
+            .fill(if ph {
+                theme::on_air()
+            } else {
+                theme::surface()
+            })
             .stroke(egui::Stroke::new(
                 1.0,
                 if ph {
-                    theme::mix(theme::ON_AIR, egui::Color32::WHITE, 0.35)
+                    theme::mix(theme::on_air(), egui::Color32::WHITE, 0.35)
                 } else {
-                    theme::BORDER
+                    theme::border()
                 },
             ))
             .min_size(egui::vec2(176.0, 38.0));
@@ -1362,7 +1374,7 @@ impl RadioDesk {
             let (rect, _) = ui.allocate_exact_size(egui::vec2(70.0, 12.0), egui::Sense::hover());
             theme::led_meter(ui.painter(), rect, self.phone_level);
             if let Some(e) = &self.phone_error {
-                ui.colored_label(theme::ON_AIR, e);
+                ui.colored_label(theme::on_air(), e);
             }
 
             let rec_on = v.recording.is_some();
@@ -1376,16 +1388,20 @@ impl RadioDesk {
                     egui::Button::new(big(rec).color(if rec_on {
                         egui::Color32::WHITE
                     } else {
-                        theme::TEXT_BRIGHT
+                        theme::text()
                     }))
                     .fill(if rec_on {
-                        theme::ON_AIR
+                        theme::on_air()
                     } else {
-                        theme::SURFACE
+                        theme::surface()
                     })
                     .stroke(egui::Stroke::new(
                         1.0,
-                        if rec_on { theme::ON_AIR } else { theme::BORDER },
+                        if rec_on {
+                            theme::on_air()
+                        } else {
+                            theme::border()
+                        },
                     ))
                     .min_size(egui::vec2(126.0, 38.0)),
                 )
@@ -1411,13 +1427,13 @@ impl RadioDesk {
                 egui::RichText::new("BROADCAST-PROCESSING & ÜBERGÄNGE")
                     .size(11.5)
                     .strong()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 theme::status_pill(
                     ui,
                     &format!("ZIEL {:.0} LUFS", v.target_lufs),
-                    theme::ACCENT,
+                    theme::accent(),
                     v.bus_processing,
                 );
             });
@@ -1425,7 +1441,7 @@ impl RadioDesk {
         ui.add_space(4.0);
 
         // Regler für Crossfade und Ducking in einem eingefassten Panel
-        theme::lcd_frame().show(ui, |ui| {
+        theme::lcd_show(ui, |ui| {
             ui.set_width(ui.available_width());
             let mut xf = v.crossfade_seconds;
             if ui
@@ -1483,7 +1499,7 @@ impl RadioDesk {
         let v = &self.view;
         let (mut bus, mut mic) = (v.bus_processing, v.mic_processing);
         let mut changed = false;
-        theme::lcd_frame().show(ui, |ui| {
+        theme::lcd_show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_wrapped(|ui| {
                 changed |= ui
@@ -1503,9 +1519,9 @@ impl RadioDesk {
                     .changed();
                 if v.mic_processing && v.mic_open {
                     let (t, c, active) = if v.mic_gate_open {
-                        ("Gate offen", theme::OK_GREEN, true)
+                        ("Gate offen", theme::ok(), true)
                     } else {
-                        ("Gate zu", theme::DIM, false)
+                        ("Gate zu", theme::text_dim(), false)
                     };
                     theme::status_pill(ui, t, c, active);
                 }
@@ -1527,7 +1543,7 @@ impl RadioDesk {
                         ))
                         .small()
                         .monospace()
-                        .color(theme::ACCENT),
+                        .color(theme::accent()),
                     )
                     .on_hover_text("Kurzzeit-Lautheit am Sendeausgang, Verstärkung der Regelung, Absenkung durch Kompressor und Limiter");
                 });
@@ -1548,7 +1564,7 @@ impl RadioDesk {
                 egui::RichText::new("GÄSTE & MIX-MINUS")
                     .size(11.5)
                     .strong()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let full = guests.len() >= woa_guests::MAX_GUESTS;
@@ -1577,7 +1593,7 @@ impl RadioDesk {
             });
         });
         ui.add_space(4.0);
-        theme::lcd_frame().show(ui, |ui| {
+        theme::lcd_show(ui, |ui| {
             ui.set_width(ui.available_width());
             if guests.is_empty() {
                 ui.label(
@@ -1585,7 +1601,7 @@ impl RadioDesk {
                         "Kein Gast. Jeder Gast bekommt einen Kanal und einen Rückweg ohne die eigene Stimme.",
                     )
                     .small()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
                 );
             }
             for g in &guests {
@@ -1605,7 +1621,7 @@ impl RadioDesk {
                 egui::RichText::new("BROWSER-GÄSTE")
                     .size(11.5)
                     .strong()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if web.running {
@@ -1641,7 +1657,7 @@ impl RadioDesk {
             });
         });
         ui.add_space(4.0);
-        theme::lcd_frame().show(ui, |ui| {
+        theme::lcd_show(ui, |ui| {
             ui.set_width(ui.available_width());
             if !web.running {
                 ui.label(
@@ -1650,7 +1666,7 @@ impl RadioDesk {
                          spricht über den Browser, ohne App.",
                     )
                     .small()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
                 );
                 return;
             }
@@ -1659,12 +1675,12 @@ impl RadioDesk {
                     ui.label(
                         egui::RichText::new(format!("{} wartet seit {} s", w.name, w.waited_s))
                             .strong()
-                            .color(theme::ACCENT),
+                            .color(theme::accent()),
                     )
                     .on_hover_text(&w.peer);
                     let ticket = w.ticket.clone();
                     if ui
-                        .button(egui::RichText::new("Annehmen").color(theme::OK_GREEN))
+                        .button(egui::RichText::new("Annehmen").color(theme::ok()))
                         .clicked()
                     {
                         self.with(move |c| {
@@ -1702,7 +1718,7 @@ impl RadioDesk {
                                 egui::RichText::new(link)
                                     .small()
                                     .monospace()
-                                    .color(theme::CUE_CYAN),
+                                    .color(theme::cue()),
                             )
                             .wrap()
                             .selectable(true),
@@ -1722,7 +1738,7 @@ impl RadioDesk {
                                  „Erweitert“, dann „Weiter“.",
                             )
                             .small()
-                            .color(theme::DIM),
+                            .color(theme::text_dim()),
                         );
                     });
                 });
@@ -1732,7 +1748,7 @@ impl RadioDesk {
                 ui.label(
                     egui::RichText::new("Bereit. „＋ Einladung“ erzeugt einen Link mit QR-Code.")
                         .small()
-                        .color(theme::DIM),
+                        .color(theme::text_dim()),
                 );
             }
         });
@@ -1749,12 +1765,8 @@ impl RadioDesk {
     fn guest_row(&mut self, ui: &mut egui::Ui, g: &woa_guests::GuestView) {
         let slot = g.slot;
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(&g.name)
-                    .strong()
-                    .color(theme::TEXT_BRIGHT),
-            )
-            .on_hover_text(&g.source);
+            ui.label(egui::RichText::new(&g.name).strong().color(theme::text()))
+                .on_hover_text(&g.source);
             let (rect, _) = ui.allocate_exact_size(egui::vec2(90.0, 12.0), egui::Sense::hover());
             theme::led_meter(ui.painter(), rect, g.peak);
             let mut db = g.gain_db;
@@ -1772,9 +1784,9 @@ impl RadioDesk {
                 self.with(move |c| c.guests().set_gain_db(slot, db));
             }
             let mute = egui::Button::new(egui::RichText::new("M").strong().color(if g.muted {
-                theme::ON_AIR
+                theme::on_air()
             } else {
-                theme::DIM
+                theme::text_dim()
             }));
             if ui.add(mute).on_hover_text("Gast stumm").clicked() {
                 let on = !g.muted;
@@ -1784,9 +1796,9 @@ impl RadioDesk {
                 self.with(move |c| c.guests().set_mute(slot, on));
             }
             let ret = egui::Button::new(egui::RichText::new("🎧").color(if g.monitored {
-                theme::CUE_CYAN
+                theme::cue()
             } else {
-                theme::DIM
+                theme::text_dim()
             }));
             if ui
                 .add(ret)
@@ -1827,7 +1839,7 @@ impl RadioDesk {
                 egui::RichText::new(line)
                     .small()
                     .monospace()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
             );
             if g.underruns > 0 || g.overflows > 0 {
                 ui.label(
@@ -1836,7 +1848,7 @@ impl RadioDesk {
                         g.underruns, g.overflows
                     ))
                     .small()
-                    .color(theme::ON_AIR),
+                    .color(theme::on_air()),
                 );
             }
         });
@@ -1847,26 +1859,26 @@ impl RadioDesk {
         let st = self.stream_status.clone();
         let running = st.as_ref().is_some_and(|s| s.is_running(now));
         let on = self.feeder.is_some();
-        theme::lcd_frame().show(ui, |ui| {
+        theme::lcd_show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_wrapped(|ui| {
                 let (label, fill, border) = if on {
                     (
                         "📡 Sendung beenden",
-                        theme::ON_AIR,
-                        theme::mix(theme::ON_AIR, egui::Color32::WHITE, 0.35),
+                        theme::on_air(),
+                        theme::emphasize(theme::on_air(), 0.35),
                     )
                 } else {
                     (
                         "📡 Auf Sendung",
-                        theme::mix(theme::ACCENT, theme::SURFACE, 0.72),
-                        theme::ACCENT,
+                        theme::mix(theme::accent(), theme::surface(), 0.72),
+                        theme::accent(),
                     )
                 };
                 let text = egui::RichText::new(label).size(14.5).strong().color(if on {
                     egui::Color32::WHITE
                 } else {
-                    theme::TEXT_BRIGHT
+                    theme::text()
                 });
                 if ui
                     .add(
@@ -1887,9 +1899,9 @@ impl RadioDesk {
                 match &st {
                     Some(s) if running => {
                         let color = if s.emergency || !s.connected {
-                            theme::ON_AIR
+                            theme::on_air()
                         } else {
-                            theme::OK_GREEN
+                            theme::ok()
                         };
                         theme::status_pill(ui, &s.summary(), color, true);
                     }
@@ -1900,13 +1912,15 @@ impl RadioDesk {
                         );
                     }
                     _ if on => {
-                        ui.label(egui::RichText::new("starte woa-streamd …").color(theme::DIM));
+                        ui.label(
+                            egui::RichText::new("starte woa-streamd …").color(theme::text_dim()),
+                        );
                     }
                     _ => {
                         ui.label(
                             egui::RichText::new("Stream-Encoder bereit (Shoutcast / Icecast)")
                                 .small()
-                                .color(theme::DIM),
+                                .color(theme::text_dim()),
                         );
                     }
                 }
@@ -1916,7 +1930,7 @@ impl RadioDesk {
                 .filter(|_| running)
                 .and_then(StreamStatus::problem)
             {
-                ui.label(egui::RichText::new(p).small().color(theme::ON_AIR));
+                ui.label(egui::RichText::new(p).small().color(theme::on_air()));
             }
         });
     }
@@ -1927,19 +1941,19 @@ impl RadioDesk {
                 egui::RichText::new("SENDE-PLAYLIST")
                     .size(11.5)
                     .strong()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
             );
             ui.label(
                 egui::RichText::new(format!("({} Titel)", v.playlist.len()))
                     .small()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
             );
             if v.measuring > 0 {
                 ui.spinner();
                 ui.label(
                     egui::RichText::new("misst Lautheit …")
                         .small()
-                        .color(theme::ACCENT),
+                        .color(theme::accent()),
                 );
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1948,10 +1962,10 @@ impl RadioDesk {
                         egui::Button::new(
                             egui::RichText::new("+ Titel …")
                                 .strong()
-                                .color(theme::TEXT_BRIGHT),
+                                .color(theme::text()),
                         )
-                        .fill(theme::mix(theme::ACCENT, theme::SURFACE, 0.72))
-                        .stroke(egui::Stroke::new(1.0, theme::ACCENT)),
+                        .fill(theme::mix(theme::accent(), theme::surface(), 0.72))
+                        .stroke(egui::Stroke::new(1.0, theme::accent())),
                     )
                     .clicked()
                 {
@@ -1962,7 +1976,7 @@ impl RadioDesk {
         ui.add_space(4.0);
 
         if v.playlist.is_empty() {
-            theme::lcd_frame().show(ui, |ui| {
+            theme::lcd_show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.vertical_centered(|ui| {
                     ui.add_space(12.0);
@@ -1970,7 +1984,7 @@ impl RadioDesk {
                         egui::RichText::new(
                             "Audiodateien (MP3, FLAC, WAV, OGG, M4A, AIFF …) hierher ziehen oder „+ Titel …“.",
                         )
-                        .color(theme::DIM),
+                        .color(theme::text_dim()),
                     );
                     ui.add_space(12.0);
                 });
@@ -1978,7 +1992,7 @@ impl RadioDesk {
         } else {
             // Spaltenkopf wie in mAirList
             egui::Frame::new()
-                .fill(theme::PANEL_HEADER)
+                .fill(theme::panel_header())
                 .corner_radius(egui::CornerRadius {
                     nw: 4,
                     ne: 4,
@@ -1989,20 +2003,25 @@ impl RadioDesk {
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("#").small().strong().color(theme::DIM));
+                        ui.label(
+                            egui::RichText::new("#")
+                                .small()
+                                .strong()
+                                .color(theme::text_dim()),
+                        );
                         ui.add_space(30.0);
                         ui.label(
                             egui::RichText::new("TITEL & LAUTHEIT")
                                 .small()
                                 .strong()
-                                .color(theme::DIM),
+                                .color(theme::text_dim()),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(
                                 egui::RichText::new("AKTION  ·  DAUER")
                                     .small()
                                     .strong()
-                                    .color(theme::DIM),
+                                    .color(theme::text_dim()),
                             );
                         });
                     });
@@ -2015,20 +2034,20 @@ impl RadioDesk {
                 let on_air = v.current == Some(i);
                 let is_cue = i == v.cue && !v.running;
                 let row_fill = if on_air {
-                    theme::mix(theme::ON_AIR, theme::PANEL, 0.72)
+                    theme::mix(theme::on_air(), theme::panel(), 0.72)
                 } else if is_cue {
-                    theme::mix(theme::CUE_CYAN, theme::PANEL, 0.82)
+                    theme::mix(theme::cue(), theme::panel(), 0.82)
                 } else if i % 2 == 1 {
-                    theme::mix(theme::WELL, theme::PANEL, 0.65)
+                    theme::mix(theme::well(), theme::panel(), 0.65)
                 } else {
-                    theme::WELL
+                    theme::well()
                 };
                 let stroke = if on_air {
-                    egui::Stroke::new(1.0, theme::ON_AIR)
+                    egui::Stroke::new(1.0, theme::on_air())
                 } else if is_cue {
-                    egui::Stroke::new(1.0, theme::CUE_CYAN)
+                    egui::Stroke::new(1.0, theme::cue())
                 } else {
-                    egui::Stroke::new(1.0, theme::mix(theme::BORDER, theme::WELL, 0.5))
+                    egui::Stroke::new(1.0, theme::mix(theme::border(), theme::well(), 0.5))
                 };
                 let frame = egui::Frame::new()
                     .fill(row_fill)
@@ -2043,11 +2062,11 @@ impl RadioDesk {
                                 .monospace()
                                 .strong()
                                 .color(if on_air {
-                                    theme::ON_AIR
+                                    theme::on_air()
                                 } else if is_cue {
-                                    theme::CUE_CYAN
+                                    theme::cue()
                                 } else {
-                                    theme::DIM
+                                    theme::text_dim()
                                 }),
                         );
                         let thumb = self.covers.as_mut().and_then(|c| c.thumb(&e.path));
@@ -2057,14 +2076,14 @@ impl RadioDesk {
                                 egui::RichText::new("VOICE")
                                     .small()
                                     .strong()
-                                    .color(theme::ACCENT),
+                                    .color(theme::accent()),
                             );
                             if vb.check {
                                 ui.label(
                                     egui::RichText::new("prüfen")
                                         .small()
                                         .strong()
-                                        .color(theme::ON_AIR),
+                                        .color(theme::on_air()),
                                 )
                                 .on_hover_text(
                                     "Ein Nachbar hat sich geändert: der Voice-Track geht erst \
@@ -2081,9 +2100,7 @@ impl RadioDesk {
                         let title_resp = ui
                             .add(
                                 egui::Label::new(
-                                    egui::RichText::new(&e.title)
-                                        .strong()
-                                        .color(theme::TEXT_BRIGHT),
+                                    egui::RichText::new(&e.title).strong().color(theme::text()),
                                 )
                                 .truncate()
                                 .sense(egui::Sense::click()),
@@ -2124,14 +2141,14 @@ impl RadioDesk {
                                 )
                                 .monospace()
                                 .strong()
-                                .color(theme::ACCENT),
+                                .color(theme::accent()),
                             );
                             if let Some(lb) = lufs_badge {
                                 ui.label(
                                     egui::RichText::new(lb)
                                         .size(10.5)
                                         .monospace()
-                                        .color(theme::DIM),
+                                        .color(theme::text_dim()),
                                 );
                             }
                         });
@@ -2150,9 +2167,9 @@ impl RadioDesk {
                             se: 0,
                         },
                         if on_air {
-                            theme::ON_AIR
+                            theme::on_air()
                         } else {
-                            theme::CUE_CYAN
+                            theme::cue()
                         },
                     );
                 }
@@ -2166,7 +2183,7 @@ impl RadioDesk {
                 egui::RichText::new("CART-WALL (JINGLES & SOUNDS)")
                     .size(11.5)
                     .strong()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
@@ -2180,7 +2197,7 @@ impl RadioDesk {
                         }
                     })
                     .small()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
                 );
             });
         });
@@ -2209,26 +2226,26 @@ impl RadioDesk {
                         label.clone().unwrap_or_else(|| "leer".into())
                     );
                     let fill = if playing {
-                        theme::mix(theme::ACCENT, theme::SURFACE, 0.25)
+                        theme::mix(theme::accent(), theme::surface(), 0.25)
                     } else if label.is_some() {
-                        theme::mix(pad_color, theme::SURFACE, 0.80)
+                        theme::mix(pad_color, theme::surface(), 0.80)
                     } else {
-                        theme::WELL
+                        theme::well()
                     };
                     let stroke = if playing {
-                        egui::Stroke::new(2.0, theme::ACCENT)
+                        egui::Stroke::new(2.0, theme::accent())
                     } else if label.is_some() {
-                        egui::Stroke::new(1.0, theme::mix(pad_color, theme::BORDER, 0.45))
+                        egui::Stroke::new(1.0, theme::mix(pad_color, theme::border(), 0.45))
                     } else {
-                        egui::Stroke::new(1.0, theme::BORDER)
+                        egui::Stroke::new(1.0, theme::border())
                     };
                     let b =
                         egui::Button::new(egui::RichText::new(text).strong().color(if playing {
-                            theme::WELL
+                            theme::well()
                         } else if label.is_some() {
-                            theme::TEXT_BRIGHT
+                            theme::text()
                         } else {
-                            theme::DIM
+                            theme::text_dim()
                         }))
                         .fill(fill)
                         .stroke(stroke)
@@ -2249,28 +2266,25 @@ impl RadioDesk {
                             text,
                             font,
                             if capturing {
-                                theme::ACCENT
+                                theme::accent()
                             } else {
-                                theme::TEXT_BRIGHT
+                                theme::text()
                             },
                         );
                         let tag = egui::Rect::from_min_size(
                             pad_rect.left_top() + egui::vec2(4.0, 4.0),
                             galley.size() + egui::vec2(8.0, 2.0),
                         );
-                        ui.painter().rect_filled(tag, 3.0, theme::WELL);
-                        ui.painter().galley(
-                            tag.min + egui::vec2(4.0, 1.0),
-                            galley,
-                            theme::TEXT_BRIGHT,
-                        );
+                        ui.painter().rect_filled(tag, 3.0, theme::well());
+                        ui.painter()
+                            .galley(tag.min + egui::vec2(4.0, 1.0), galley, theme::text());
                     }
                     let led_col = if playing {
-                        theme::WELL
+                        theme::well()
                     } else if label.is_some() {
                         pad_color
                     } else {
-                        theme::mix(theme::DIM, theme::WELL, 0.6)
+                        theme::mix(theme::text_dim(), theme::well(), 0.6)
                     };
                     ui.painter().circle_filled(
                         egui::pos2(pad_rect.right() - 9.0, pad_rect.top() + 9.0),
@@ -2285,7 +2299,7 @@ impl RadioDesk {
                         ui.painter().rect_filled(
                             bottom_bar,
                             1.0,
-                            if playing { theme::WELL } else { pad_color },
+                            if playing { theme::well() } else { pad_color },
                         );
                     }
 
@@ -2676,7 +2690,7 @@ impl RadioDesk {
             egui::RichText::new("DECKS A · B · C")
                 .size(11.5)
                 .strong()
-                .color(theme::DIM),
+                .color(theme::text_dim()),
         );
         ui.add_space(4.0);
         for k in 0..woa_radio::DECKS {
@@ -2685,18 +2699,18 @@ impl RadioDesk {
             let loaded = d.title.is_some();
             let urgent = d.playing && d.remaining < 10.0;
             let fill = if d.playing {
-                theme::mix(theme::ACCENT, theme::SURFACE, 0.2)
+                theme::mix(theme::accent(), theme::surface(), 0.2)
             } else {
-                theme::WELL
+                theme::well()
             };
             let frame = egui::Frame::new()
                 .fill(fill)
                 .stroke(egui::Stroke::new(
                     if d.playing { 2.0 } else { 1.0 },
                     if d.playing {
-                        theme::ACCENT
+                        theme::accent()
                     } else {
-                        theme::BORDER
+                        theme::border()
                     },
                 ))
                 .corner_radius(5)
@@ -2708,7 +2722,7 @@ impl RadioDesk {
                         egui::RichText::new(name.to_string())
                             .size(26.0)
                             .strong()
-                            .color(theme::TEXT_BRIGHT),
+                            .color(theme::text()),
                     );
                     ui.vertical(|ui| {
                         ui.set_min_width(110.0);
@@ -2722,9 +2736,9 @@ impl RadioDesk {
                             .monospace()
                             .strong()
                             .color(if urgent {
-                                theme::ON_AIR
+                                theme::on_air()
                             } else {
-                                theme::TEXT_BRIGHT
+                                theme::text()
                             }),
                         );
                         let frac = if d.length > 0.0 {
@@ -2745,9 +2759,9 @@ impl RadioDesk {
                                     )
                                     .small()
                                     .color(if loaded {
-                                        theme::TEXT_BRIGHT
+                                        theme::text()
                                     } else {
-                                        theme::DIM
+                                        theme::text_dim()
                                     }),
                                 )
                                 .sense(egui::Sense::click()),

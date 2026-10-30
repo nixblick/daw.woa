@@ -83,7 +83,7 @@ impl OutputsUi {
                          den Takt vor.",
                     )
                     .small()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
                 );
                 ui.add_space(6.0);
                 egui::Grid::new("outputs-grid")
@@ -114,7 +114,7 @@ impl OutputsUi {
                         }
                     });
                 if let Some(e) = &self.list_error {
-                    ui.colored_label(theme::ON_AIR, e);
+                    ui.colored_label(theme::on_air(), e);
                 }
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
@@ -132,7 +132,7 @@ impl OutputsUi {
                              nächste Mal öffnet (Programm neu starten).",
                         )
                         .small()
-                        .color(theme::DIM),
+                        .color(theme::text_dim()),
                     );
                 }
                 if !lines.is_empty() {

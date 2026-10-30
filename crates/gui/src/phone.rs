@@ -127,7 +127,7 @@ impl PhoneUi {
                          einem eigenen Kanalpaar.",
                     )
                     .small()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
                 );
                 ui.add_space(6.0);
                 egui::Grid::new("phone-grid")
@@ -186,11 +186,11 @@ impl PhoneUi {
                     ui.label(
                         egui::RichText::new(format!("Das Gerät hat {c} Eingangskanäle."))
                             .small()
-                            .color(theme::DIM),
+                            .color(theme::text_dim()),
                     );
                 }
                 for e in [&self.list_error, &self.probe_error].into_iter().flatten() {
-                    ui.colored_label(theme::ON_AIR, e);
+                    ui.colored_label(theme::on_air(), e);
                 }
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
