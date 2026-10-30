@@ -816,6 +816,7 @@ impl WoaApp {
             ));
             if let Some(r) = self.radio.as_mut() {
                 r.set_phone_config(self.config.phone.clone());
+                r.set_wish_folder(self.config.wish_folder.clone());
             }
         }
     }
@@ -4710,6 +4711,14 @@ impl eframe::App for WoaApp {
         let player_active = self.player.as_ref().is_some_and(Player::is_active);
         if let Some(r) = self.radio.as_mut() {
             r.tick(player_active);
+            if let Some(dir) = r.take_wish_choice() {
+                self.config.wish_folder = Some(dir);
+                if let Some(p) = &self.config_path
+                    && let Err(e) = self.config.save(p)
+                {
+                    tracing::warn!(error = %e, "config not saved");
+                }
+            }
             // Zeit-Events: Tabelle laden, Zone von der Stundenuhr, an den Sende-Thread reichen;
             // der AutoDJ plant rückwärts auf das nächste harte Event.
             self.event_editor.ensure_loaded();

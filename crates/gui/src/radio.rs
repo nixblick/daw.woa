@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui;
 use woa_io::controller::{Bus, Target};
@@ -46,6 +46,9 @@ pub struct RadioDesk {
     phone_stats: Option<Arc<woa_engine::pairs::LinkStats>>,
     phone_lost: Arc<std::sync::atomic::AtomicBool>,
     phone_level: f32,
+    /// Wunschordner: Beobachter. Ohne Wahl liegt er im Datenordner der Sendung.
+    wishes: Option<crate::wishes::WishWatcher>,
+    wish_chosen: Option<PathBuf>,
     rate: u32,
     error: Option<String>,
     view: View,
@@ -313,6 +316,8 @@ impl RadioDesk {
             phone_stats: None,
             phone_lost: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             phone_level: 0.0,
+            wishes: None,
+            wish_chosen: None,
             rate,
             error,
             view: View::default(),
@@ -788,6 +793,130 @@ impl RadioDesk {
         v
     }
 
+    /// Wunschordner wählen (`None` = der Ordner `Wunschtitel` im Datenordner der Sendung).
+    pub fn set_wish_folder(&mut self, folder: Option<PathBuf>) {
+        let dir = folder.unwrap_or_else(|| self.data_dir.join("Wunschtitel"));
+        if self.wishes.as_ref().is_some_and(|w| w.dir() == dir) {
+            return;
+        }
+        self.wishes = Some(crate::wishes::WishWatcher::start(
+            dir,
+            Duration::from_secs(1),
+        ));
+    }
+
+    /// Der Wunschordner, den die App speichern soll, wenn er gewählt wurde.
+    pub fn wish_folder(&self) -> Option<&Path> {
+        self.wishes.as_ref().map(|w| w.dir())
+    }
+
+    /// Die Wunschtitel: Liste mit einem Klick in die Playlist oder auf ein Deck.
+    fn wish_card(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("WUNSCHTITEL")
+                    .size(11.5)
+                    .strong()
+                    .color(theme::text_dim()),
+            );
+            if ui
+                .small_button("Ordner wählen …")
+                .on_hover_text("Alles, was hier hineinkommt, erscheint sofort in der Liste")
+                .clicked()
+                && let Some(dir) = rfd::FileDialog::new().pick_folder()
+            {
+                self.set_wish_folder(Some(dir.clone()));
+                self.wish_chosen = Some(dir);
+            }
+        });
+        let Some(w) = self.wishes.as_ref() else {
+            ui.label(
+                egui::RichText::new("Kein Wunschordner.")
+                    .small()
+                    .color(theme::text_dim()),
+            );
+            return;
+        };
+        let list = w.list();
+        ui.label(
+            egui::RichText::new(w.dir().display().to_string())
+                .small()
+                .color(theme::text_dim()),
+        );
+        if let Some(e) = &list.error {
+            ui.colored_label(theme::on_air(), e);
+        }
+        if list.files.is_empty() && list.error.is_none() {
+            ui.label(
+                egui::RichText::new("Noch kein Wunsch im Ordner.")
+                    .small()
+                    .color(theme::text_dim()),
+            );
+        }
+        // Die Liste ändert sich ohne Eingabe: ab und zu neu zeichnen.
+        ui.ctx().request_repaint_after(Duration::from_secs(1));
+        let mut act: Option<(PathBuf, Option<usize>)> = None;
+        egui::ScrollArea::vertical()
+            .id_salt("wishes")
+            .max_height(150.0)
+            .show(ui, |ui| {
+                for f in &list.files {
+                    let fresh = list.fresh.contains(&f.path);
+                    ui.horizontal(|ui| {
+                        let mut name = egui::RichText::new(&f.name).color(if f.copying {
+                            theme::text_dim()
+                        } else {
+                            theme::text()
+                        });
+                        if fresh {
+                            name = name.strong();
+                        }
+                        ui.add(egui::Label::new(name).truncate())
+                            .on_hover_text(f.path.display().to_string());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if f.copying {
+                                ui.label(
+                                    egui::RichText::new("wird kopiert …")
+                                        .small()
+                                        .color(theme::text_dim()),
+                                );
+                                return;
+                            }
+                            for k in (0..woa_radio::DECKS).rev() {
+                                if ui
+                                    .small_button(woa_radio::show::deck_name(k).to_string())
+                                    .on_hover_text("Auf dieses Deck laden")
+                                    .clicked()
+                                {
+                                    act = Some((f.path.clone(), Some(k)));
+                                }
+                            }
+                            if ui
+                                .small_button("In die Playlist")
+                                .on_hover_text("Direkt nach dem laufenden Titel einreihen")
+                                .clicked()
+                            {
+                                act = Some((f.path.clone(), None));
+                            }
+                            if fresh {
+                                ui.label(egui::RichText::new("neu").small().color(theme::accent()));
+                            }
+                        });
+                    });
+                }
+            });
+        match act {
+            Some((path, Some(k))) => self.deck_load_file(k, path),
+            Some((path, None)) => self.party_effect(woa_radio::party::Effect::InsertNext(path)),
+            None => {}
+        }
+    }
+
+    /// Der Ordner, den der Nutzer eben gewählt hat (die App speichert ihn einmal).
+    pub fn take_wish_choice(&mut self) -> Option<PathBuf> {
+        self.wish_chosen.take()
+    }
+
     fn toggle_recording(&mut self) {
         if self.view.recording.is_some() {
             self.with(|c| {
@@ -938,6 +1067,9 @@ impl RadioDesk {
                 .rect;
             theme::card_frame().show(&mut cols[1], |ui| {
                 self.deck_card(ui, &v);
+            });
+            theme::card_frame().show(&mut cols[1], |ui| {
+                self.wish_card(ui);
             });
             theme::card_frame().show(&mut cols[1], |ui| {
                 self.cart_wall(ui, &v);

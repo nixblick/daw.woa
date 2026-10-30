@@ -22,6 +22,22 @@ Selbst geprüft von Claude (ohne Ton, offline durch den echten Mixer, ohne Allok
 
 Nicht selbst geprüft: Aussehen der Decks, Ziehen von Dateien und Rechtsklick-Menüs (kein Bildschirm), echtes Gerät und Pult unter Windows.
 
+## Silvester Teil 2, Paket 4: Wunschtitel-Ordner (0.34.9, offen, #134)
+
+Start wie immer, Modus „Radio“. Rechts unter den Decks steht die Karte „WUNSCHTITEL“.
+
+1. **Ordner:** Ohne Wahl legt WOA den Ordner `Wunschtitel` im Datenordner der Sendung an; sein Pfad steht in der Karte. „Ordner wählen …“ nimmt einen anderen (etwa einen Ordner, in den ein Helfer am zweiten Rechner kopiert). Die Wahl bleibt nach dem Neustart.
+2. **Erscheinen:** Eine Musikdatei in den Ordner kopieren (Explorer, USB-Stick, Netzfreigabe): Sie steht innerhalb einer Sekunde ganz oben in der Liste, fett mit „neu“. Während sie noch kopiert wird, steht „wird kopiert …“ und die Knöpfe fehlen. Andere Dateien (Text, Bilder) und versteckte Dateien erscheinen nicht. Löschen aus dem Ordner nimmt sie aus der Liste.
+3. **In die Playlist:** „In die Playlist“ reiht den Titel direkt nach dem laufenden Titel ein. Läuft nichts, kommt er hinter den Cue-Punkt.
+4. **Aufs Deck:** „A“, „B“ oder „C“ lädt den Titel auf das Deck, es steht dann bereit zum Start.
+5. **Ordner fehlt:** Ordner im Explorer umbenennen: rote Meldung mit Pfad, die Sendung läuft weiter. Wieder zurückbenennen: Die Liste füllt sich von selbst.
+
+Es gibt keine Anbindung an Spotify oder einen anderen Dienst, nur Dateien. Die Datei bleibt im Wunschordner liegen; WOA verschiebt oder löscht nichts. Last: ein `read_dir` pro Sekunde in einem eigenen Faden und ein Neuzeichnen pro Sekunde, kaum messbar.
+
+Selbst geprüft von Claude (offline, ohne Fenster): Die Liste zeigt nur lesbare Audiodateien, neueste zuerst, ohne versteckte Dateien und Ordner; eine frische oder leere Datei gilt als „wird kopiert“; eine neue Datei erscheint von selbst und ist neu, vorhandene nicht; fehlender Ordner wird angelegt, ein nicht lesbarer gibt eine klare Meldung; das Beenden des Beobachters hängt nicht. Das Einreihen und Laden benutzt dieselben Wege wie Ziehen auf die Playlist und Deck-Laden (Pakete 1 und 2).
+
+Nicht selbst geprüft: Aussehen der Karte, Klicks, Ordnerwahl-Dialog, Netzfreigaben unter Windows (Verzögerung beim Erscheinen), sehr große Ordner.
+
 ## Silvester Teil 2, Paket 3: Telefon mit Rückweg (0.34.8, offen, #134)
 
 Start wie immer, Modus „Radio“. Das Handy hängt über den Adapter am Pult; sein Signal kommt in einen Eingang einer Soundkarte, der Rückweg zum Handy geht aus Karte 1 zurück ins Pult.
