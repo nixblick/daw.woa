@@ -36,6 +36,7 @@ use woa_dsp::plugin::StereoProcessor;
 
 use crate::feedback::ParamEdit;
 use crate::host::{HostError, MAX_FRAMES, ParamDesc};
+use crate::safety::{Blocklist, PluginLogs};
 use crate::scan::{Catalog, PluginInfo};
 use crate::shm::{
     EV_CAP, MAILBOX_CAP, MIRROR_CAP, Mapping, RawEvent, RawSet, Reader, SET_CAP, STATE_ERROR,
@@ -80,6 +81,9 @@ pub struct HostConfig {
     pub offline: bool,
     /// Feste Frist je Block in Millisekunden (Tests); 0 heißt: aus der Blockdauer errechnen.
     pub wait_ms: u32,
+    /// Log-Ordner je Plugin (Paket 34); `None`: kein Log, `stderr` des Plugin-Prozesses geht an
+    /// die Oberfläche.
+    pub logs: Option<PluginLogs>,
 }
 
 impl HostConfig {
@@ -107,6 +111,7 @@ impl HostConfig {
                 extra: Vec::new(),
                 offline: false,
                 wait_ms: 0,
+                logs: None,
             })
     }
 
@@ -120,7 +125,22 @@ impl HostConfig {
             extra: Vec::new(),
             offline: false,
             wait_ms: 0,
+            logs: None,
         })
+    }
+
+    /// Dieselbe Einstellung mit Log-Ordner (Paket 34).
+    #[must_use]
+    pub fn with_logs(mut self, logs: PluginLogs) -> Self {
+        self.logs = Some(logs);
+        self
+    }
+
+    /// Schreibt eine Zeile ins Log des Plugins, falls es Logs gibt.
+    pub(crate) fn log(&self, clap_id: &str, text: &str) {
+        if let Some(l) = &self.logs {
+            l.line(clap_id, text);
+        }
     }
 
     /// Dieselbe Einstellung mit langer Frist (Export).
@@ -335,11 +355,25 @@ impl RemoteInstance {
         cmd.args(&self.cfg.extra)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::inherit());
+            .stderr(
+                self.cfg
+                    .logs
+                    .as_ref()
+                    .and_then(|l| l.child_output(&self.clap_id))
+                    .map_or_else(Stdio::inherit, Stdio::from),
+            );
         let child = cmd
             .spawn()
             .map_err(|e| HostError::Load(format!("Plugin-Prozess startet nicht: {e}")))?;
         tracing::info!(plugin = %self.clap_id, pid = child.id(), "plugin process started");
+        self.cfg.log(
+            &self.clap_id,
+            &format!(
+                "Start: Prozess {} lädt {}",
+                child.id(),
+                self.clap_path.display()
+            ),
+        );
         self.child = Some(child);
 
         let t0 = Instant::now();
@@ -467,6 +501,13 @@ impl RemoteInstance {
         self.link.running.store(false, Ordering::Release);
         self.kill_child();
         tracing::error!(plugin = %self.clap_id, reason = %reason, late_blocks = self.link.late_total.load(Ordering::Relaxed), "plugin process failed; track is muted");
+        self.cfg.log(
+            &self.clap_id,
+            &format!(
+                "Ausfall: {reason} (verspätete Blöcke: {})",
+                self.link.late_total.load(Ordering::Relaxed)
+            ),
+        );
         self.health = Health::Crashed(reason);
     }
 
@@ -512,6 +553,7 @@ impl RemoteInstance {
     /// Beendet den Plugin-Prozess hart, als wäre das Plugin abgestürzt (Absturztest im Menü).
     pub fn simulate_crash(&mut self) {
         tracing::warn!(plugin = %self.clap_id, "plugin crash simulated");
+        self.cfg.log(&self.clap_id, "Absturz simuliert (Testmenü)");
         if let Some(c) = self.child.as_mut() {
             let _ = c.kill();
         }
@@ -524,8 +566,11 @@ impl RemoteInstance {
             .last_state
             .clone()
             .or_else(|| fallback.map(<[u8]>::to_vec));
+        self.cfg.log(&self.clap_id, "Neu laden");
         let r = self.start(bytes.as_deref());
         if let Err(e) = &r {
+            self.cfg
+                .log(&self.clap_id, &format!("Neu laden gescheitert: {e}"));
             self.health = Health::Crashed(e.to_string());
             self.link.running.store(false, Ordering::Release);
         }
@@ -703,6 +748,13 @@ impl Drop for RemoteInstance {
         if let Some(h) = self.watchdog.take() {
             let _ = h.join();
         }
+        self.cfg.log(
+            &self.clap_id,
+            &format!(
+                "Ende (verspätete Blöcke: {})",
+                self.link.late_total.load(Ordering::Relaxed)
+            ),
+        );
     }
 }
 
@@ -950,21 +1002,66 @@ pub(crate) fn info_reply(has_gui: bool, latency: u32, params: &[ParamDesc]) -> V
 impl Catalog {
     /// Wie [`Catalog::scan`], aber jede Datei in einem eigenen Prozess: Eine Bibliothek, die beim
     /// Laden abstürzt oder hängt, wird zum [`crate::ScanProblem`], die App läuft weiter. Die
-    /// gefundenen Plugins lassen sich nur über [`Isolation::Process`] laden.
+    /// gefundenen Plugins lassen sich nur über [`Isolation::Process`] laden. Ohne Sperrliste.
     pub fn scan_isolated(roots: &[PathBuf], host: &HostConfig) -> Self {
+        Self::scan_guarded(roots, host, &mut Blocklist::in_memory())
+    }
+
+    /// Wie [`Catalog::scan_isolated`] mit Sperrliste (Paket 34): Gesperrte Dateien werden nicht
+    /// geladen; eine Datei, die beim Suchen abstürzt oder hängt, kommt neu auf die Liste. Jedes
+    /// Ergebnis steht im Suchlog, wenn `host` einen Log-Ordner hat.
+    pub fn scan_guarded(roots: &[PathBuf], host: &HostConfig, blocklist: &mut Blocklist) -> Self {
+        Self::scan_guarded_with(roots, host, blocklist, SCAN_TIMEOUT)
+    }
+
+    /// Wie [`Catalog::scan_guarded`] mit eigener Frist je Datei (Tests).
+    pub fn scan_guarded_with(
+        roots: &[PathBuf],
+        host: &HostConfig,
+        blocklist: &mut Blocklist,
+        timeout: Duration,
+    ) -> Self {
         let mut cat = Self::empty();
+        let log = |text: String| {
+            if let Some(l) = &host.logs {
+                l.scan_line(&text);
+            }
+        };
+        let (mut skipped, mut newly) = (0usize, 0usize);
         for file in crate::scan::find_files(roots) {
-            match scan_one(&file, host) {
+            if let Some(reason) = blocklist.reason(&file) {
+                skipped += 1;
+                log(format!(
+                    "{}: gesperrt, nicht geladen ({reason})",
+                    file.display()
+                ));
+                continue;
+            }
+            match scan_one(&file, host, timeout) {
                 Ok(list) => {
                     if list.is_empty() {
+                        log(format!("{}: keine Plugin-Fabrik", file.display()));
                         cat.add_problem(file, "keine Plugin-Fabrik".into());
+                    } else {
+                        let ids: Vec<&str> = list.iter().map(|i| i.clap_id.as_str()).collect();
+                        log(format!(
+                            "{}: in Ordnung ({})",
+                            file.display(),
+                            ids.join(", ")
+                        ));
                     }
                     for info in list {
                         cat.add_unloaded(info);
                     }
                 }
-                Err(reason) => {
-                    tracing::warn!(file = %file.display(), error = %reason, "clap scan failed");
+                Err(fail) => {
+                    tracing::warn!(file = %file.display(), error = %fail.reason, "clap scan failed");
+                    let mut reason = fail.reason;
+                    if fail.blockable && blocklist.block(&file, &reason) {
+                        newly += 1;
+                        reason.push_str(" – gesperrt");
+                    }
+                    log(format!("{}: {reason}", file.display()));
                     cat.add_problem(file, reason);
                 }
             }
@@ -973,6 +1070,8 @@ impl Catalog {
         tracing::info!(
             plugins = cat.plugins().len(),
             problems = cat.problems().len(),
+            skipped,
+            newly_blocked = newly,
             "clap scan done (isolated)"
         );
         cat
@@ -982,12 +1081,28 @@ impl Catalog {
     pub fn scan_default_isolated(host: &HostConfig) -> Self {
         Self::scan_isolated(&crate::scan::search_paths(), host)
     }
+
+    /// Sucht in den Standardordnern mit Sperrliste, jede Datei in einem eigenen Prozess.
+    pub fn scan_default_guarded(host: &HostConfig, blocklist: &mut Blocklist) -> Self {
+        Self::scan_guarded(&crate::scan::search_paths(), host, blocklist)
+    }
 }
 
 /// So lange darf das Laden einer einzelnen Datei bei der Suche dauern.
 const SCAN_TIMEOUT: Duration = Duration::from_secs(20);
 
-fn scan_one(file: &std::path::Path, host: &HostConfig) -> Result<Vec<PluginInfo>, String> {
+/// Warum eine Datei beim Suchen ausfiel, und ob das eine Sperre rechtfertigt (Absturz,
+/// Hänger: ja; der Suchprozess selbst ließ sich nicht starten: nein).
+struct ScanFail {
+    reason: String,
+    blockable: bool,
+}
+
+fn scan_one(
+    file: &std::path::Path,
+    host: &HostConfig,
+    timeout: Duration,
+) -> Result<Vec<PluginInfo>, ScanFail> {
     let out = std::env::temp_dir().join(format!(
         "woa-scan-{}-{}.txt",
         std::process::id(),
@@ -1003,29 +1118,41 @@ fn scan_one(file: &std::path::Path, host: &HostConfig) -> Result<Vec<PluginInfo>
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Suchprozess startet nicht: {e}"))?;
+    let mut child = cmd.spawn().map_err(|e| ScanFail {
+        reason: format!("Suchprozess startet nicht: {e}"),
+        blockable: false,
+    })?;
     let t0 = Instant::now();
     let status = loop {
         match child.try_wait() {
             Ok(Some(s)) => break s,
-            Ok(None) if t0.elapsed() < SCAN_TIMEOUT => {
+            Ok(None) if t0.elapsed() < timeout => {
                 std::thread::sleep(Duration::from_millis(5));
             }
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 let _ = std::fs::remove_file(&out);
-                return Err("Laden dauert zu lange (Plugin hängt)".into());
+                return Err(ScanFail {
+                    reason: "Laden dauert zu lange (Plugin hängt)".into(),
+                    blockable: true,
+                });
             }
-            Err(e) => return Err(format!("Suchprozess: {e}")),
+            Err(e) => {
+                return Err(ScanFail {
+                    reason: format!("Suchprozess: {e}"),
+                    blockable: false,
+                });
+            }
         }
     };
     let text = std::fs::read_to_string(&out).unwrap_or_default();
     let _ = std::fs::remove_file(&out);
     if !status.success() {
-        return Err(format!("Plugin ist beim Laden abgestürzt ({status})"));
+        return Err(ScanFail {
+            reason: format!("Plugin ist beim Laden abgestürzt ({status})"),
+            blockable: true,
+        });
     }
     let mut list = Vec::new();
     for line in text.lines() {

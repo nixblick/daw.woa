@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.29.0 — 2026-10-30
+
+Paket 34 aus M8: Abnahme „Surge XT und Vital stabil“ (Abnahme: `docs/abnahme.md`).
+
+- **Sperrliste:** Eine Plugin-Datei, die beim Suchen abstürzt oder hängt, kommt auf die Sperrliste (`plugin-blocklist.tsv` im Konfigurationsordner, atomar gespeichert, kaputte Zeilen werden übergangen) und wird beim nächsten Suchen nicht mehr geladen. Wer den Suchprozess selbst nicht starten kann, sperrt keine Datei. Beim abgestürzten Platz gibt es „Sperren“ (gilt ab dem nächsten Suchen, nichts Laufendes wird angerührt). Unter „+ Plugin“ stehen die übersprungenen Dateien mit Grund, die gesperrten Dateien mit „Freigeben“ und „Alle freigeben“.
+- **Neu-Scan:** „Neu suchen“ lässt gesperrte Dateien aus und trägt neue Fehler ein; Freigeben lädt die Datei beim nächsten Suchen wieder. Die Suche läuft weiter je Datei in einem eigenen Prozess (Frist 20 s).
+- **Logs je Plugin:** Jedes Plugin im eigenen Prozess bekommt eine Datei `<Kennung>.log` im Datenordner (`logs/plugins/`): Start mit Prozessnummer, Ausfall mit Grund und Zahl verspäteter Blöcke, Neu laden, Ende, dazu alles, was der Plugin-Prozess auf `stderr` ausgibt. `scan.log` hält je Datei das Suchergebnis (in Ordnung, übersprungen, gesperrt, freigegeben). Im Audio-Thread wird nicht geschrieben. Eine Datei über 512 KiB wird beim nächsten Öffnen nach `.1` verschoben. Im Kanalzug zeigt „Log“ die letzten acht Zeilen.
+- **Tests (ohne Ton, ohne Gerät):** Absturz und Hänger beim Suchen führen zur Sperre (mit Neustart der Liste, Freigabe, Suchlog); Log je Plugin mit Start, Ausfall, Neu laden, Ende in der richtigen Reihenfolge; **10 Minuten Musik offline durch zwei Plugin-Prozesse** (56 250 Blöcke je Plugin, unter `assert_no_alloc`): kein verspäteter Block, Klang kam heraus, Speicher von App und beiden Plugin-Prozessen nach der Einlaufzeit unverändert (Messung auf dem Notebook: App 4332 → 4336 KiB, Plugins 3944 → 3944 und 3704 → 3704 KiB; Grenze im Test 2 MiB je Prozess; nur unter Linux gemessen).
+- **Herkunft:** Idee der Sperrliste und des Ergebnisses je Plugin aus dem Plugin-Verwalter von Ardour (`docs/herkunft.md`); kein Code übernommen.
+- **Nicht gebaut / nicht geprüft:** Surge XT und Vital selbst (kein Ton am Gerät erlaubt, Probe durch André); Suche im Hintergrund statt im Bild; Sperre nach wiederholtem Absturz im Betrieb (nur von Hand); Rotation der Plugin-Logs, solange der Prozess läuft.
+
 ## 0.28.0 — 2026-10-30
 
 Paket 33 aus M8: Absturzschutz per eigenem Prozess (Abnahme: `docs/abnahme.md`).

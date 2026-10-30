@@ -5732,10 +5732,25 @@ impl WoaApp {
                             tracing::warn!(plugin = %slot.clap_id, error = %e, "plugin reload failed");
                             self.state.status = Status::Error(format!("{}: {e}", slot.name));
                         }
+                        if ui
+                            .small_button("Sperren")
+                            .on_hover_text(
+                                "Die Plugin-Datei wird beim nächsten Suchen nicht mehr geladen \
+                                 (unter „+ Plugin“ wieder freigeben)",
+                            )
+                            .clicked()
+                            && let Some(p) = self.player.as_mut()
+                            && let Some(file) = p.block_plugin(&slot.clap_id)
+                        {
+                            self.state.status = Status::Info(format!(
+                                "{file} gesperrt; gilt ab dem nächsten Suchen"
+                            ));
+                        }
                     });
+                    self.plugin_log_ui(ui, &slot.clap_id, slot.id);
                     continue;
                 }
-                _ => {}
+                _ => self.plugin_log_ui(ui, &slot.clap_id, slot.id),
             }
             let params: Vec<woa_plugins::ParamDesc> = self
                 .player
@@ -5843,7 +5858,105 @@ impl WoaApp {
                 }
                 ui.close();
             }
+            self.plugin_safety_ui(ui);
         });
+    }
+
+    /// Sperrliste und Suchprobleme im Plugin-Menü (Paket 34).
+    fn plugin_safety_ui(&mut self, ui: &mut egui::Ui) {
+        let small = |s: &str| {
+            egui::RichText::new(s.to_owned())
+                .size(9.5)
+                .color(theme::DIM)
+        };
+        let Some(p) = self.player.as_mut() else {
+            return;
+        };
+        let blocked = p.blocked_plugins();
+        let problems: Vec<_> = p
+            .plugin_scan_problems()
+            .into_iter()
+            .filter(|q| !blocked.iter().any(|b| b.file == q.path))
+            .collect();
+        let name = |f: &std::path::Path| {
+            f.file_name().map_or_else(
+                || f.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            )
+        };
+        if !problems.is_empty() {
+            ui.label(small(&format!(
+                "{} Datei(en) beim Suchen übersprungen:",
+                problems.len()
+            )));
+            for q in problems.iter().take(8) {
+                ui.label(
+                    egui::RichText::new(format!("{}: {}", name(&q.path), q.reason))
+                        .size(9.5)
+                        .color(theme::DIM),
+                );
+            }
+        }
+        if blocked.is_empty() {
+            return;
+        }
+        ui.separator();
+        ui.label(small(&format!(
+            "Gesperrt ({}): werden nicht geladen",
+            blocked.len()
+        )));
+        let mut free: Option<std::path::PathBuf> = None;
+        for b in blocked.iter().take(50) {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!("{}: {}", name(&b.file), b.reason))
+                        .size(9.5)
+                        .color(theme::ON_AIR),
+                )
+                .on_hover_text(b.file.display().to_string());
+                if ui.small_button("Freigeben").clicked() {
+                    free = Some(b.file.clone());
+                }
+            });
+        }
+        if let Some(f) = free {
+            p.unblock_plugin(&f);
+            self.state.status =
+                Status::Info("Freigegeben; „Neu suchen“ lädt die Datei wieder".into());
+        } else if blocked.len() > 1 && ui.small_button("Alle freigeben").clicked() {
+            p.unblock_all_plugins();
+            self.state.status =
+                Status::Info("Alle Sperren aufgehoben; „Neu suchen“ lädt neu".into());
+        }
+    }
+
+    /// Das Log eines Plugins im eigenen Prozess (Paket 34): die letzten Zeilen, eingeklappt.
+    fn plugin_log_ui(&mut self, ui: &mut egui::Ui, clap_id: &str, id: woa_model::InsertId) {
+        let small = |s: &str| {
+            egui::RichText::new(s.to_owned())
+                .size(9.5)
+                .color(theme::DIM)
+        };
+        let Some(p) = self.player.as_ref().filter(|p| p.plugin_isolated(id)) else {
+            return;
+        };
+        egui::CollapsingHeader::new(small("Log"))
+            .id_salt(("plog", id.0))
+            .show(ui, |ui| {
+                let lines = p.plugin_log_tail(clap_id, 8);
+                if lines.is_empty() {
+                    ui.label(small("Noch nichts eingetragen."));
+                }
+                for l in &lines {
+                    ui.label(
+                        egui::RichText::new(l)
+                            .monospace()
+                            .size(9.0)
+                            .color(theme::DIM),
+                    );
+                }
+                ui.label(small(&format!("Ordner: {}", p.plugin_log_dir().display())));
+            });
     }
 
     /// Kurven-Editor im unteren Studio-Dock für die gewählte Spur.

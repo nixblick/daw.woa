@@ -25,6 +25,7 @@ fn config(extra: &[&str], offline: bool) -> HostConfig {
         extra: extra.iter().map(|s| (*s).to_string()).collect(),
         offline,
         wait_ms: if offline { 0 } else { 100 },
+        logs: None,
     }
 }
 
@@ -220,6 +221,7 @@ fn a_scan_that_dies_becomes_a_problem() {
         extra: Vec::new(),
         offline: false,
         wait_ms: 0,
+        logs: None,
     };
     let cat = Catalog::scan_isolated(&[dir.path().to_path_buf()], &cfg);
     assert!(cat.plugins().is_empty());
