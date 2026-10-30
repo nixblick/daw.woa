@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.18.1 — 2026-10-30
+
+Feedback-Fenster (André: „mittig und in schön … nach 3 Sekunden automatisch schließt“).
+
+- **Oberfläche:** Das Feedback-Fenster steht mittig über der abgedunkelten App, als Karte im Studio-Look mit Überschrift, breitem Textfeld und orangem Senden-Knopf.
+- **Danke:** Nach erfolgreichem Senden zeigt es ein grünes Häkchen und „Danke!“ mit einem ablaufenden Balken und schließt sich nach 3 Sekunden von selbst. Fehlermeldungen bleiben stehen, bis man sie schließt. Test dazu.
+
 ## 0.18.0 — 2026-10-30
 
 Paket 23 aus M6: Time-Stretch, Tonhöhe und die Abnahme „ganzer Song“.
