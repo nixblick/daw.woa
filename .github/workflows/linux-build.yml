@@ -74,9 +74,12 @@ jobs:
           set -euo pipefail
           version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
           test "$(flatpak run de.wironair.woa --version)" = "woa $version"
-          flatpak run --command=woa-headless de.wironair.woa new "$RUNNER_TEMP/probe.woa"
-          flatpak run --command=woa-headless de.wironair.woa render "$RUNNER_TEMP/probe.woa" "$RUNNER_TEMP/probe.wav" --seconds 2
-          test -s "$RUNNER_TEMP/probe.wav"
+          # Die Sandbox sieht nur Dokumente, nicht den Temp-Ordner des Läufers.
+          p="$HOME/Documents/woa-probe"
+          mkdir -p "$p"
+          flatpak run --command=woa-headless de.wironair.woa new "$p/probe.woa"
+          flatpak run --command=woa-headless de.wironair.woa render "$p/probe.woa" "$p/probe.wav" --seconds 2
+          test -s "$p/probe.wav"
           d="$HOME/.local/share/flatpak/app/de.wironair.woa/current/active/files/share"
           desktop-file-validate "$d/applications/de.wironair.woa.desktop"
           appstreamcli validate --no-net "$d/metainfo/de.wironair.woa.metainfo.xml"
