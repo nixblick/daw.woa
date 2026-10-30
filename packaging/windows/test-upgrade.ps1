@@ -29,11 +29,11 @@ function Assert([bool] $cond, [string] $msg) {
 
 if ((Get-Installed).Count -ne 0) { throw 'WOA ist auf dem Runner schon installiert; der Test braucht einen sauberen Runner.' }
 
-$oldMsi = Join-Path $PWD "woa-$old-x64.msi"
+$oldMsi = Join-Path ([System.IO.Path]::GetTempPath()) "woa-$old-x64.msi"  # nicht ins Arbeitsverzeichnis: sonst landet es im Artefakt
 wix build packaging/windows/woa.wxs -arch x64 -d Version=$old -d Bin=$Bin -o $oldMsi
 if ($LASTEXITCODE -ne 0) { throw 'wix build (alte Version) fehlgeschlagen' }
 $newMsi = (Resolve-Path $Msi).Path
-$log = Join-Path $PWD 'msi-upgrade.log'
+$log = Join-Path ([System.IO.Path]::GetTempPath()) 'msi-upgrade.log'
 
 Run-Msi @('/i', "`"$oldMsi`"", '/qn', '/norestart', '/l*v', "`"$log`"")
 $inst = Get-Installed

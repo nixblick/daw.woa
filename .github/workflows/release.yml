@@ -72,10 +72,13 @@ jobs:
           ls -l dist
           echo "VERSION=$(packaging/release-check.sh version "$TAG")" >> "$GITHUB_ENV"
           # latest.json entsteht erst unten; hier nur, was die Bauten liefern.
-          for f in dist/woa-*-x64.msi dist/woa-*-windows-x64.zip dist/WOA-*-x86_64.AppImage dist/woa-*.flatpak; do
-            [ -s "$f" ] || { echo "::error::fehlt oder leer: $f"; exit 1; }
+          v="$(packaging/release-check.sh version "$TAG")"
+          for f in "woa-$v-x64.msi" "woa-$v-windows-x64.zip" "WOA-$v-x86_64.AppImage" "woa-$v.flatpak"; do
+            [ -s "dist/$f" ] || { echo "::error::fehlt oder leer: dist/$f"; exit 1; }
           done
-          echo "MSI=$(ls dist/woa-*-x64.msi)" >> "$GITHUB_ENV"
+          # Nichts Fremdes im Ordner (z. B. ein Test-MSI einer anderen Version).
+          [ "$(ls dist | wc -l)" = 4 ] || { echo "::error::unerwartete Dateien in dist"; exit 1; }
+          echo "MSI=dist/woa-$v-x64.msi" >> "$GITHUB_ENV"
       - name: minisign installieren
         run: |
           sudo apt-get update -qq
