@@ -10,7 +10,7 @@ Paket 31 aus M8: CLAP-Plugins finden und laden (Abnahme: `docs/abnahme.md`).
 - **Oberfläche:** Im Kanalzug „+ Plugin“ (Browser mit Instrumenten und Effekten, „Neu suchen“), Platz mit Ein/Aus und Entfernen, Regler als Zahlenfelder, „nicht installiert“ bei fehlendem Plugin. Die Suche startet erst beim ersten Bedarf. Der Plugin-Zustand wird beim Speichern, Autosave und Export ins Projekt übernommen; der Export rechnet mit eigenen Instanzen.
 - **Tests:** Offline-Render mit dem Test-Plugin (Pegelvergleich, Bypass, fehlendes Plugin, Zustand speichern und laden, 200 Blöcke unter `assert_no_alloc`), Zustandstest der Oberfläche.
 - **Herkunft:** Kein Code übernommen; `clack-host` und `clack-plugin` sind Abhängigkeiten. Ardour und tracktion sind noch nicht gelesen (Pakete 32/33).
-- **Abhängigkeiten:** `clack-host`, `clack-plugin` und `base64` (Lizenzen geprüft in `cargo deny`, CI).
+- **Abhängigkeiten:** `clack-host`, `clack-plugin` und `base64` (Lizenzen prüft `cargo deny` in der CI).
 - **Nicht gebaut:** Plugin-Fenster (Paket 32), Auslagern in einen eigenen Prozess und Latenzausgleich (Paket 33), Anbindung in `woa-headless` und Agent.
 
 ## 0.25.0 — 2026-10-30

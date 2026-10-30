@@ -90,8 +90,7 @@ impl Catalog {
         for file in find_files(roots) {
             cat.add_file(&file);
         }
-        cat.plugins
-            .sort_by_key(|p| p.name.to_lowercase());
+        cat.plugins.sort_by_key(|p| p.name.to_lowercase());
         tracing::info!(
             plugins = cat.plugins.len(),
             problems = cat.problems.len(),
