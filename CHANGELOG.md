@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.33.0 — 2026-10-30
+
+Paket 38 aus M9: Browser-Gast per WebRTC (lokal). Arbeitsstand, wird bis zum Merge ergänzt.
+
+- **Rückweg ins Netz:** Die Gast-Bank schreibt je Gast den Mix-Minus in einen eigenen `rtrb`-Ring (`woa_guests::ret`), nach derselben Summenbearbeitung wie die Sendung. Kein Lock, keine Allokation im Audio-Thread; ist der Ring voll, werden Frames gezählt und verworfen.
+- **Abhängigkeiten:** `str0m` (Sans-IO-WebRTC, reines Rust für DTLS) und `opus`.
+
 ## 0.32.0 — 2026-10-30
 
 Paket 37 aus M9: Gast-Kanäle mit Mix-Minus, ohne Netz (Abnahme: `docs/abnahme.md`).

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::MAX_GUESTS;
 use crate::jitter::{JitterReader, SlotStats};
+use crate::ret::ReturnTx;
 
 /// Glättung der Fader gegen Zipper-Noise (Sekunden).
 const FADER_TAU: f32 = 0.015;
@@ -30,6 +31,11 @@ pub enum GuestCmd {
     },
     /// Rückweg dieses Gastes im Abhörausgang (Kopfhörer); `None`: normaler Abhörmix.
     Monitor(Option<usize>),
+    /// Rückweg dieses Kanals ins Netz an oder aus (Mix-Minus für den Browser-Gast).
+    Return {
+        slot: usize,
+        on: bool,
+    },
 }
 
 /// Einpoliger Glätter.
@@ -68,6 +74,8 @@ struct Slot {
     gain: f32,
     fader: Ramp,
     gate: Ramp,
+    ret: ReturnTx,
+    ret_on: bool,
 }
 
 impl Slot {
@@ -91,13 +99,13 @@ pub struct GuestBank {
 impl GuestBank {
     pub(crate) fn new(
         cmds: rtrb::Consumer<GuestCmd>,
-        readers: Vec<(JitterReader, Arc<SlotStats>)>,
+        readers: Vec<(JitterReader, Arc<SlotStats>, ReturnTx)>,
         rate: u32,
     ) -> Option<Self> {
         let r = rate.max(1) as f32;
         let slots: [Slot; MAX_GUESTS] = readers
             .into_iter()
-            .map(|(reader, stats)| Slot {
+            .map(|(reader, stats, ret)| Slot {
                 reader,
                 stats,
                 active: false,
@@ -105,6 +113,8 @@ impl GuestBank {
                 gain: 1.0,
                 fader: Ramp::new(1.0, FADER_TAU, r),
                 gate: Ramp::new(0.0, GATE_TAU, r),
+                ret,
+                ret_on: false,
             })
             .collect::<Vec<_>>()
             .try_into()
@@ -141,6 +151,7 @@ impl GuestBank {
                         } else if !on && s.active {
                             s.reader.flush();
                             s.active = false;
+                            s.ret_on = false;
                             self.own[slot] = (0.0, 0.0);
                         }
                         s.stats
@@ -161,6 +172,11 @@ impl GuestBank {
                     }
                 }
                 GuestCmd::Monitor(m) => self.monitor = m,
+                GuestCmd::Return { slot, on } => {
+                    if let Some(s) = self.slots.get_mut(slot) {
+                        s.ret_on = on && s.active;
+                    }
+                }
             }
         }
         self.active_count = self.slots.iter().filter(|s| s.active).count();
@@ -208,6 +224,21 @@ impl GuestBank {
             }
         }
         (l, r)
+    }
+
+    /// Schreibt den Rückweg jedes Gastes mit Rückweg ins Netz: `base` plus alle anderen Gäste,
+    /// danach `post` (die Summenbearbeitung der Sendung, damit der Gast hört, was gesendet wird).
+    /// Aufruf einmal je Frame nach [`Self::frame`]. Ohne Rückweg-Gast kostet das eine Schleife.
+    #[inline]
+    pub fn send_returns(&mut self, base: (f32, f32), post: impl Fn(f32, f32) -> (f32, f32)) {
+        for i in 0..MAX_GUESTS {
+            if !(self.slots[i].active && self.slots[i].ret_on) {
+                continue;
+            }
+            let (l, r) = self.return_bus(i, base);
+            let (l, r) = post(l, r);
+            self.slots[i].ret.push_frame(l, r);
+        }
     }
 
     /// Am Blockende: Spitzen für die Anzeige.

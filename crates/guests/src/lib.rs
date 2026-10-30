@@ -18,10 +18,11 @@
 pub mod bank;
 pub mod hub;
 pub mod jitter;
+pub mod ret;
 pub mod source;
 
 pub use bank::{GuestBank, GuestCmd};
-pub use hub::{GuestHub, GuestView, channel};
+pub use hub::{GuestHub, GuestView, NetGuest, channel};
 pub use jitter::{GuestFeed, SlotStats};
 pub use source::TestSignal;
 

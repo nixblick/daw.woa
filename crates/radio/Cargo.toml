@@ -13,9 +13,9 @@ rtrb = "0.4.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tracing = "0.1.44"
-woa-dsp = { version = "0.32", path = "../dsp" }
-woa-engine = { version = "0.32", path = "../engine" }
-woa-guests = { version = "0.32", path = "../guests" }
+woa-dsp = { version = "0.33", path = "../dsp" }
+woa-engine = { version = "0.33", path = "../engine" }
+woa-guests = { version = "0.33", path = "../guests" }
 
 [dev-dependencies]
 assert_no_alloc = "1.1.2"
