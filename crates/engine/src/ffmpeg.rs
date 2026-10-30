@@ -268,6 +268,7 @@ impl Ffmpeg {
 
     /// Liest eine Datei, die symphonia nicht kann (Opus), über ffmpeg als Stereo-f32 in der
     /// Rate `rate`.
+    #[tracing::instrument(level = "info", skip_all, name = "ffmpeg_decode")]
     pub fn decode(&self, path: &Path, rate: u32) -> Result<Decoded, String> {
         let mut child = self
             .command()

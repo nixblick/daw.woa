@@ -34,6 +34,7 @@ pub fn unsupported(path: &Path) -> String {
 
 /// Liest jede lesbare Audiodatei als Stereo in `rate` (mono wird verdoppelt, mehr als zwei
 /// Kanäle: die ersten beiden; Rate linear umgerechnet). Nie im Audio-Thread aufrufen.
+#[tracing::instrument(level = "info", skip_all, name = "audio_load")]
 pub fn load_stereo(path: &Path, rate: u32) -> Result<Stereo, String> {
     if !is_supported(path) {
         return Err(unsupported(path));

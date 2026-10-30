@@ -193,6 +193,7 @@ impl RadioShow {
     }
 
     /// Liest `path`. Fehlt die Datei, gibt es eine leere Sendung.
+    #[tracing::instrument(level = "info", skip_all, name = "show_load")]
     pub fn load(path: &Path) -> Result<Self, String> {
         let text = match std::fs::read_to_string(path) {
             Ok(t) => t,
@@ -217,6 +218,7 @@ impl RadioShow {
     }
 
     /// Schreibt atomar nach `path` (Endung `.json`, kein Symlink). Legt den Ordner an.
+    #[tracing::instrument(level = "info", skip_all, name = "show_save")]
     pub fn save(&self, path: &Path) -> Result<(), String> {
         let is_json = path
             .extension()

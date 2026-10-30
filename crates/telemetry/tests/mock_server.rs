@@ -157,10 +157,32 @@ fn layer_forwards_codes_but_never_text() {
     assert!(!raw.contains("/x/y"));
     let ev = bodies[0].1["ereignisse"].as_array().unwrap().clone();
     assert_eq!(ev.len(), 2);
-    assert_eq!(ev[0]["art"], "log.warn");
+    // Ohne eigenes `art` steht der Code-Ort da, nie die Nachricht.
+    let art = ev[0]["art"].as_str().unwrap();
+    assert!(art.starts_with("log.warn.mock_server."), "{art}");
     assert_eq!(ev[0]["modul"], "woa_engine.graph");
     assert_eq!(ev[1]["art"], "perf.load.ms");
     assert_eq!(ev[1]["wert"], 42);
+}
+
+#[test]
+fn slow_spans_are_uploaded_with_their_duration() {
+    let m = mock(vec![(200, "{}")]);
+    let up = Uploader::start(upload_cfg(format!("{}/ingest", m.url))).unwrap();
+    let subscriber = tracing_subscriber::registry().with(up.layer());
+    tracing::subscriber::with_default(subscriber, || {
+        let _fast = tracing::info_span!(target: "woa_radio", "fast_step").entered();
+        drop(_fast);
+        let _slow = tracing::info_span!(target: "woa_radio", "playlist_add").entered();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    });
+    assert!(up.flush());
+    let bodies = m.bodies.lock().unwrap();
+    let ev = bodies[0].1["ereignisse"].as_array().unwrap().clone();
+    assert_eq!(ev.len(), 1, "{ev:?}");
+    assert_eq!(ev[0]["art"], "span.playlist_add");
+    assert_eq!(ev[0]["modul"], "woa_radio");
+    assert!(ev[0]["wert"].as_i64().unwrap() >= 30);
 }
 
 #[test]

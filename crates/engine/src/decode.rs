@@ -85,6 +85,7 @@ impl Decoded {
 }
 
 /// Liest WAV (hound), FLAC oder MP3 (symphonia). Fehlertext ohne Pfad.
+#[tracing::instrument(level = "info", skip_all, name = "decode_file")]
 pub fn decode_file(path: &Path) -> Result<Decoded, String> {
     let ext = path
         .extension()
