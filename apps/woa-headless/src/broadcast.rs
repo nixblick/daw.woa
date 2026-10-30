@@ -67,13 +67,102 @@ impl UiCounts {
     }
 }
 
+/// Ein zu spät gerechneter Block: Position (Frames) und Verspätung (µs).
+#[derive(Debug, Clone, Copy)]
+struct Late {
+    frame: u64,
+    micros: u64,
+}
+
+/// Zähler, die der Takt-Thread schreibt und der Steuer-Thread liest.
+#[derive(Default)]
+struct Clock {
+    frames: AtomicU64,
+    late: AtomicU64,
+    stop: AtomicBool,
+}
+
+/// Takt-Thread: rechnet den Mixer im Takt der Uhr, wie ein Audio-Callback. Hier geschieht nichts außer `process` und Warten: kein Dekodieren,
+/// kein Logging.
+/// Verspätungen gehen über eine `rtrb`-Queue an den Steuer-Thread.
+fn run_clock(
+    mut mixer: woa_radio::Mixer,
+    rate: u32,
+    total: u64,
+    clock: &Clock,
+    mut late_tx: rtrb::Producer<Late>,
+) {
+    let mut l = vec![0.0f32; BLOCK];
+    let mut r = vec![0.0f32; BLOCK];
+    let block = Duration::from_secs_f64(BLOCK as f64 / f64::from(rate));
+    let start = Instant::now();
+    let mut frames = 0u64;
+    while frames < total && !clock.stop.load(Ordering::Relaxed) {
+        mixer.process(&mut l, &mut r);
+        frames += BLOCK as u64;
+        clock.frames.store(frames, Ordering::Release);
+        let due = start + Duration::from_secs_f64(frames as f64 / f64::from(rate));
+        let now = Instant::now();
+        if now > due + block {
+            clock.late.fetch_add(1, Ordering::Release);
+            let _ = late_tx.push(Late {
+                frame: frames,
+                micros: (now - due).as_micros() as u64,
+            });
+        } else if let Some(wait) = due.checked_duration_since(now) {
+            std::thread::sleep(wait);
+        }
+    }
+}
+
+/// Logzeile der Oberfläche auf stderr: Unix-Zeit (zum Abgleich mit dem Systemjournal),
+/// Prozess-ID (erste und neu gestartete Oberfläche unterscheiden) und Sekunden seit Start.
+fn ui_log(start: Instant, msg: &str) {
+    let unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64());
+    eprintln!(
+        "ui-log unix={unix:.3} pid={} t={:.3} {msg}",
+        std::process::id(),
+        start.elapsed().as_secs_f64()
+    );
+}
+
+/// Seitenfehler und Auslagerung des Prozesses (nur Linux), um ein Stocken des ganzen
+/// Prozesses (Speicherdruck) von einem langsamen Mixer zu unterscheiden.
+fn memory_note() -> String {
+    let majflt = std::fs::read_to_string("/proc/self/stat")
+        .ok()
+        .and_then(|s| {
+            // Feld 12 (majflt), gezählt nach dem Programmnamen in Klammern.
+            let rest = s.rsplit_once(')')?.1;
+            rest.split_whitespace().nth(9).map(str::to_owned)
+        })
+        .unwrap_or_else(|| "?".into());
+    let swap = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("VmSwap:"))
+                .map(|l| l.trim_start_matches("VmSwap:").trim().to_owned())
+        })
+        .unwrap_or_else(|| "?".into());
+    format!("Speicher: majflt={majflt} VmSwap={swap}")
+}
+
 /// Kindprozess: Sendemixer im Takt, Null-Ausgabe, Sendemix an `link`.
+///
+/// Zwei Threads wie in der Oberfläche: Der Takt-Thread rechnet nur den Mixer
+/// ([`run_clock`]), dieser Thread steuert (Titel dekodieren, Playlist im Kreis, Titel an den
+/// Feeder, Bericht). Bis 0.5.1 lief beides in einer Schleife; das Dekodieren beim Neustart
+/// der Playlist (rund 250 ms für 3 min MP3) hielt den Takt an, daher die Bündel zu später
+/// Blöcke im Dauertest vom 30.10.2026.
 pub fn cmd_broadcast_ui(radio: &Path, link: &Path, rate: u32, seconds: f64) -> Result<(), String> {
     let show = RadioShow::load(radio)?;
     if show.playlist.is_empty() {
         return Err(format!("{}: Playlist ist leer", radio.display()));
     }
-    let (mut c, mut mixer) = Controller::new(show, rate);
+    let (mut c, mixer) = Controller::new(show, rate);
     c.measure_missing();
     // 2 s Puffer zum Feeder; er schickt alle paar Millisekunden.
     let (producer, consumer) = rtrb::RingBuffer::new(rate as usize * 4);
@@ -83,23 +172,41 @@ pub fn cmd_broadcast_ui(radio: &Path, link: &Path, rate: u32, seconds: f64) -> R
     if let Some(m) = c.take_message() {
         return Err(m);
     }
-    let mut l = vec![0.0f32; BLOCK];
-    let mut r = vec![0.0f32; BLOCK];
-    let block = Duration::from_secs_f64(BLOCK as f64 / f64::from(rate));
     let total = (seconds.max(0.0) * f64::from(rate)) as u64;
+    let clock = Arc::new(Clock::default());
+    let (late_tx, mut late_rx) = rtrb::RingBuffer::<Late>::new(4096);
+    let ticker = {
+        let clock = Arc::clone(&clock);
+        std::thread::Builder::new()
+            .name("woa-takt".into())
+            .spawn(move || run_clock(mixer, rate, total, &clock, late_tx))
+            .map_err(|e| format!("Takt-Thread: {e}"))?
+    };
     let start = Instant::now();
     let mut counts = UiCounts::default();
     let mut next_report = start + Duration::from_secs(5);
     let mut title = String::new();
-    while counts.frames < total {
+    let mut last_turn = Instant::now();
+    loop {
         c.pump();
         if c.finished() {
             // Playlist zu Ende: von vorn, damit die Sendung durchläuft.
             c.set_cue(0);
             c.start();
+            if let Some((p, d)) = c.last_load() {
+                ui_log(
+                    start,
+                    &format!(
+                        "playlist neu, {} in {} ms dekodiert",
+                        p.display(),
+                        d.as_millis()
+                    ),
+                );
+            }
         }
-        mixer.process(&mut l, &mut r);
-        counts.frames += BLOCK as u64;
+        if let Some(m) = c.take_message() {
+            ui_log(start, &m);
+        }
         if let Some(i) = c.current_index()
             && let Some(e) = c.show().playlist.get(i)
         {
@@ -109,21 +216,47 @@ pub fn cmd_broadcast_ui(radio: &Path, link: &Path, rate: u32, seconds: f64) -> R
                 title = t;
             }
         }
-        let due = start + Duration::from_secs_f64(counts.frames as f64 / f64::from(rate));
-        let now = Instant::now();
-        if now > due + block {
-            counts.late += 1;
-        } else if let Some(wait) = due.checked_duration_since(now) {
-            std::thread::sleep(wait);
+        let mut any_late = false;
+        while let Ok(x) = late_rx.pop() {
+            any_late = true;
+            ui_log(
+                start,
+                &format!(
+                    "block zu spät um {:.1} ms (Sendezeit {:.3} s)",
+                    x.micros as f64 / 1000.0,
+                    x.frame as f64 / f64::from(rate)
+                ),
+            );
         }
-        if Instant::now() >= next_report {
+        if any_late {
+            ui_log(start, &memory_note());
+        }
+        let now = Instant::now();
+        let gap = now - last_turn;
+        last_turn = now;
+        if gap > Duration::from_millis(100) {
+            ui_log(
+                start,
+                &format!("Steuer-Thread stand {} ms still", gap.as_millis()),
+            );
+        }
+        counts.frames = clock.frames.load(Ordering::Acquire);
+        counts.late = clock.late.load(Ordering::Acquire);
+        let done = ticker.is_finished();
+        if done || Instant::now() >= next_report {
             next_report += Duration::from_secs(5);
             counts.dropped = c.status().stream_dropped.load(Ordering::Relaxed);
             println!("{}", counts.line());
         }
+        if done {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
     }
-    counts.dropped = c.status().stream_dropped.load(Ordering::Relaxed);
-    println!("{}", counts.line());
+    clock.stop.store(true, Ordering::Relaxed);
+    if ticker.join().is_err() {
+        return Err("Takt-Thread abgestürzt".into());
+    }
     // Nur den Feeder lösen: Der Sendeprozess gehört dem Test.
     drop(feeder);
     Ok(())

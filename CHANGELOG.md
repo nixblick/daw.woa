@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2 — 2026-10-30
+
+- **Dauertest: Bündel zu später Blöcke behoben.** Ursache: `broadcast-ui` rechnete den Mixer und dekodierte Titel in derselben Schleife. Läuft die Playlist im Kreis, wird der Titel beim Neustart neu dekodiert (rund 250 ms für 3 min MP3), und der Takt stand so lange still. Belegt mit Zeitstempeln: alle 25 späten Blöcke im Probelauf fielen auf t = 197,8 s, das Ende des 197,6-s-Titels, unmittelbar nach „decode_ms=255“; die Verspätung fiel von 296 ms in 11,6-ms-Schritten (ein Block) ab. Jetzt läuft der Mixer wie in der Oberfläche in einem eigenen Takt-Thread, der nur rechnet; Dekodieren, Titel und Bericht macht der Steuer-Thread. Jeder späte Block und jeder Neustart der Playlist steht als `ui-log` auf stderr, mit Unix-Zeit (Abgleich mit dem Journal), Prozess-ID (erste oder neu gestartete Oberfläche) und Sekunden seit Start; dazu ein Hinweis, wenn der Steuer-Thread über 100 ms still stand, und bei späten Blöcken Seitenfehler und Auslagerung des Prozesses. Probe nach dem Umbau: zwei Läufe à 10 min gegen lokalen Icecast, beide bestanden (0 zu spät, 0 verloren, 0 Puffer leer, 0 Neuverbindungen, Notfall nach 2009 und 2113 ms), obwohl der Steuer-Thread bei jedem Neustart der Playlist 315–382 ms stand.
+- Nicht geklärt: Im ersten 10-min-Probelauf nach dem Umbau stand der ganze Rechner rund 5 s (Oberfläche und Prüfprozess gleichzeitig, Nutzer-Journal von 07:16:30 bis 07:18:32 leer, dann viele Timer auf einmal). Vermutung: Ruhezustand oder Speicherdruck des Notebooks, nicht der Mixer. Die neuen Logzeilen trennen das beim nächsten Mal.
+- **CI-Test wackelt nicht mehr unter Windows (#66).** `broadcast_test_survives_ui_crash_against_icecast` prüft die Logik (Notfall übernimmt binnen 2,5 s, Oberfläche übernimmt wieder, keine verlorenen Samples, keine Neuverbindung, Bytes beim Server). Zu späte Blöcke und leere Sendepuffer auf dem geteilten Runner werden nur gemeldet; die Grenzen im Code und die strenge Zählung im echten Dauertest bleiben.
+
 ## 0.5.1 — 2026-10-30
 
 - `cargo build -p woa-headless` ohne Feature `device` baut wieder. `RADIO_BUFFER_FRAMES` stand im Modul `device`, das ohne Feature fehlt; die Konstante liegt jetzt im Wurzelmodul von `woa-engine`, `device` reicht sie weiter. Gefunden beim Bau von Paket 10.
