@@ -102,6 +102,13 @@ Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
 - **Liquidsoap** (`savonet/liquidsoap`, GPL-2.0-or-later), Harbor-Eingang: die Idee eines Eingangs mit Vorlauf und Obergrenze, schon in Paket 37 genutzt; der Gast-Eingang aus dem Netz schreibt in denselben Jitterpuffer. Kein Code übernommen.
 - **Nicht gelesen:** Mixxx, Ardour, Tracktion Engine (für dieses Paket nicht nötig).
 
+## Linux-Pakete (Paket 39)
+
+- **LMMS** (`LMMS/lmms`, GPL-2.0-or-later, Commit `bed447baab18`), `cmake/linux/LinuxDeploy.cmake`. **Nur den Ablauf gelesen:** AppDir mit `usr/`, Startmenü-Eintrag um `X-AppImage-Version` ergänzen, harte Kopie des 256-Pixel-Symbols als `.DirIcon`, `linuxdeploy` sammelt Bibliotheken, `appimagetool` schreibt das Paket, Werkzeuge laufen entpackt ohne FUSE. Bei uns: `packaging/linux/build-appimage.sh` als Shell-Skript, Werkzeuge mit fester Version statt „continuous“. **Kein Code übernommen.**
+- **Mixxx** (`mixxxdj/mixxx`, GPL-2.0-or-later, Commit `bc49961fd3e5`), `packaging/flatpak/org.mixxx.Mixxx.yaml`. **Nur die Zugriffsrechte gelesen** (Wayland, X11-Rückfall, Pulse, alle Geräte, Netz, IPC, PipeWire-Socket, Musik und Wechseldatenträger). Bei uns: `packaging/linux/flatpak/de.wironair.woa.yaml`. **Kein Code übernommen.**
+- **flatpak-builder-tools** (`flatpak/flatpak-builder-tools`, MIT, Commit `9d86d336a39b`), `cargo/flatpak-cargo-generator.py`. Wird im CI-Lauf heruntergeladen und ausgeführt, nicht ins Repo kopiert.
+- **Nicht gelesen:** Audacity (Windows-Teil, MSI folgt in Paket 40).
+
 ## Regel
 
 Quellen werden nur mit Repository, Datei und Commit genannt, nie mit Pfaden einer Maschine.

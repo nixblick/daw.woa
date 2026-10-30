@@ -1,0 +1,10 @@
+#!/bin/sh
+# Startet im AppImage das Programm, das der Aufrufer wählt: ohne Zusatz "woa" (Oberfläche),
+# mit WOA_APP=woa-headless oder woa-streamd die anderen. Sonst startet nichts anderes.
+here="$(dirname "$(readlink -f "$0")")"
+export PATH="$here/usr/bin:$PATH"
+export LD_LIBRARY_PATH="$here/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+case "${WOA_APP:-woa}" in
+  woa|woa-headless|woa-streamd) exec "$here/usr/bin/${WOA_APP:-woa}" "$@" ;;
+  *) echo "WOA_APP muss woa, woa-headless oder woa-streamd sein" >&2; exit 2 ;;
+esac

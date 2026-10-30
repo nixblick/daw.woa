@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.34.0 — 2026-10-30
+
+Paket 39 aus M10: Linux-Pakete aus der CI, AppImage und Flatpak (Abnahme: `docs/abnahme.md`).
+
+- **Workflow `linux-build.yml`:** Von Hand oder bei Änderungen an `packaging/linux/` startbar. Job „appimage“ (Ubuntu 22.04, ältere glibc) und Job „flatpak“. Beide laden ihr Paket als Artefakt (`WOA-<version>-x86_64.AppImage`, `woa-<version>.flatpak`), unsigniert.
+- **AppImage:** `packaging/linux/build-appimage.sh` legt den AppDir an (Programme, Startmenü-Eintrag, Metainfo, Symbol), lässt `linuxdeploy` die Bibliotheken einsammeln und `appimagetool` das Paket schreiben (Ablauf nach LMMS). Beide Werkzeuge mit fester Version. Eigenes `AppRun`: ohne Zusatz startet `woa`, mit `WOA_APP=woa-headless` oder `woa-streamd` die anderen Programme.
+- **Flatpak:** `packaging/linux/flatpak/de.wironair.woa.yaml` (Laufzeit freedesktop 25.08, Rust aus der SDK-Erweiterung). Zugriffsrechte nach Mixxx: Wayland/X11, Pulse/PipeWire, Geräte (Audio, MIDI), Netz, Musik, Dokumente, Wechseldatenträger. Alle Crates kommen als Quellen aus `Cargo.lock` (`flatpak-cargo-generator`), der Bau läuft ohne Netz.
+- **Metainfo und Startmenü:** `de.wironair.woa.desktop`, `de.wironair.woa.metainfo.xml` (Version und Datum setzt `render-metainfo.sh` aus `Cargo.toml` und CHANGELOG), Symbol als SVG und PNG in den Farben der Oberfläche.
+- **`woa --version` und `--help`:** Das Programm gibt Version bzw. Aufruf aus und beendet sich, ohne Fenster. Vorher hätte `--version` versucht, einen Projektordner dieses Namens zu öffnen.
+- **Prüfungen im Lauf (ohne Ton, ohne Gerät):** `desktop-file-validate`, `appstreamcli validate`, `woa --version` stimmt mit der Version überein, Offline-Render eines neuen Projekts mit `woa-headless` (2 Sekunden Stille, Datei nicht leer) aus dem fertigen Paket; beim Flatpak im Lauf installiert und mit `flatpak run` gestartet.
+- **Test:** Einheitstests für `--version` und für den Projektordner als erstes Argument.
+- **Herkunft:** Ablauf aus LMMS (`LinuxDeploy.cmake`, GPL-2.0-or-later), Zugriffsrechte aus Mixxx (GPL-2.0-or-later); kein Code übernommen (`docs/herkunft.md`).
+- **Nicht gebaut / nicht geprüft:** Signatur der Pakete; Veröffentlichung auf wironair.de oder Flathub; Start der Oberfläche im Paket (CI hat keinen Bildschirm); CLAP-Plugins im Flatpak (die Sandbox sieht die Plugins des Rechners nicht); Update-Prüfung (Paket 40).
+- **Offen für André:** Code-Signing-Zertifikat und Signatur der Pakete (Kosten); Ort der Veröffentlichung (wironair.de, Flathub, GitHub-Releases); ob die App-Kennung `de.wironair.woa` so bleiben soll (setzt die Domain wironair.de voraus).
+
 ## 0.33.0 — 2026-10-30
 
 Paket 38 aus M9: Browser-Gast per WebRTC, lokal (Abnahme: `docs/abnahme.md`).
