@@ -30,6 +30,7 @@
 //!
 //! No function in this crate panics on bad input; all failures are [`ModelError`].
 
+pub mod automation;
 mod command;
 pub mod effect;
 mod error;
@@ -39,6 +40,9 @@ mod project;
 mod session;
 pub mod store;
 
+pub use automation::{
+    AutoMode, AutoPoint, AutoRange, AutoTarget, AutomationLane, MAX_AUTOMATION_POINTS,
+};
 pub use command::Command;
 pub use effect::{
     DELAY_SYNC_CHOICES, EffectKind, Insert, InsertId, ParamSpec, Preset, VOICE_CHAIN,
@@ -51,4 +55,4 @@ pub use project::{
     MIN_TEMPO_BPM, Project, ProjectMeta, Send, Track, TrackId, TrackKind, is_safe_audio_path,
 };
 pub use session::Session;
-pub use store::{FORMAT_VERSION, ProjectFile};
+pub use store::{FORMAT_VERSION, ProjectFile, required_version};

@@ -14,9 +14,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 
-use woa_dsp::fx::{BYPASS, FxContext, FxKind, FxNode, FxStereoNode};
+use woa_dsp::automation::{AutoCurve, AutoNode, PanSide, db_to_amp};
+use woa_dsp::fx::{BYPASS, FxContext, FxKind, FxNode, FxStereoNode, KeyedFxNode};
 use woa_dsp::{DEFAULT_RAMP_SECONDS, Gain, Node, Smoother, StereoBuffers, StereoNode, gain_params};
-use woa_model::{EffectKind, InsertId, Project, Track, TrackId, TrackKind};
+use woa_model::{
+    AutoMode, AutoRange, AutoTarget, AutomationLane, EffectKind, Insert, InsertId, Project, Send,
+    Track, TrackId, TrackKind,
+};
 
 use crate::clip::store_peak;
 use crate::{Engine, EngineError, GraphBuilder, NodeId};
@@ -51,6 +55,11 @@ struct BusStrip {
     left: Smoother,
     right: Smoother,
     meter: Option<Arc<AtomicU32>>,
+    /// Automation (Paket 18): Pegelkurve in dB und Balancekurve.
+    level: Option<AutoCurve>,
+    pan: Option<AutoCurve>,
+    pos: u64,
+    playing: bool,
 }
 
 impl BusStrip {
@@ -60,7 +69,17 @@ impl BusStrip {
             left: Smoother::new(left, DEFAULT_RAMP_SECONDS),
             right: Smoother::new(right, DEFAULT_RAMP_SECONDS),
             meter,
+            level: None,
+            pan: None,
+            pos: 0,
+            playing: true,
         }
+    }
+
+    fn with_lanes(mut self, level: Option<AutoCurve>, pan: Option<AutoCurve>) -> Self {
+        self.level = level;
+        self.pan = pan;
+        self
     }
 }
 
@@ -69,6 +88,17 @@ impl StereoNode for BusStrip {
         self.gain.prepare(sample_rate);
         self.left.prepare(sample_rate);
         self.right.prepare(sample_rate);
+        if let Some(c) = &mut self.level {
+            c.prepare(sample_rate);
+        }
+        if let Some(c) = &mut self.pan {
+            c.prepare(sample_rate);
+        }
+    }
+
+    fn locate(&mut self, position: u64, playing: bool) {
+        self.pos = position;
+        self.playing = playing;
     }
 
     fn set_param(&mut self, param: u32, value: f32) {
@@ -81,11 +111,25 @@ impl StereoNode for BusStrip {
     }
 
     fn process(&mut self, b: StereoBuffers<'_>) {
+        let mut pos = self.pos;
         for i in 0..b.out_left.len() {
-            let g = self.gain.next_value();
-            b.out_left[i] = b.in_left[i] * g * self.left.next_value();
-            b.out_right[i] = b.in_right[i] * g * self.right.next_value();
+            let mut g = self.gain.next_value();
+            let (mut bl, mut br) = (self.left.next_value(), self.right.next_value());
+            if let Some(c) = &mut self.level {
+                g *= db_to_amp(c.value_at(pos));
+            }
+            if let Some(c) = &mut self.pan {
+                let (l, r) = balance(f64::from(c.value_at(pos)));
+                bl *= l;
+                br *= r;
+            }
+            b.out_left[i] = b.in_left[i] * g * bl;
+            b.out_right[i] = b.in_right[i] * g * br;
+            if self.playing {
+                pos += 1;
+            }
         }
+        self.pos = pos;
         if let Some(m) = &self.meter {
             store_peak(m, b.out_left);
             store_peak(m, b.out_right);
@@ -133,6 +177,43 @@ pub struct ProjectGraph {
     pub tracks: HashMap<TrackId, TrackNodes>,
     /// Pegelmesser der Busse (Spitze am Bus-Ausgang, abholen mit [`crate::clip::take_peak`]).
     pub bus_meters: HashMap<TrackId, Arc<AtomicU32>>,
+    /// Absenkungsmesser der dynamischen Effekte (Kompressor, Gate, Limiter, De-Esser) in dB,
+    /// größter Wert seit dem Abholen als Bits eines `f32`; abholen mit [`crate::clip::take_peak`].
+    pub reductions: HashMap<InsertId, Arc<AtomicU32>>,
+}
+
+/// Die Kurve eines Ziels, wenn sie abgespielt wird: Betriebsart Lesen, mindestens ein Punkt,
+/// das Ziel (Effekt, Send, Regler) gibt es noch.
+fn active_lane(t: &Track, target: AutoTarget) -> Option<(&AutomationLane, AutoRange)> {
+    let lane = t.lane(&target)?;
+    if lane.mode != AutoMode::Read || lane.points.is_empty() {
+        return None;
+    }
+    let range = target.range_in(t).ok()?;
+    Some((lane, range))
+}
+
+fn lane_curve(t: &Track, target: AutoTarget, tempo_bpm: f64) -> Option<AutoCurve> {
+    let (lane, range) = active_lane(t, target)?;
+    let pts: Vec<(f64, f32)> = lane
+        .points
+        .iter()
+        .map(|p| (p.beat, p.value as f32))
+        .collect();
+    Some(AutoCurve::from_beats(&pts, tempo_bpm, range.step))
+}
+
+/// Kurven der Regler eines Effekts: (Reglerindex, Kurve).
+fn insert_lanes(t: &Track, ins: &Insert, tempo_bpm: f64) -> Vec<(u32, AutoCurve)> {
+    (0..ins.params.len())
+        .filter_map(|param| {
+            let target = AutoTarget::InsertParam {
+                insert: ins.id,
+                param,
+            };
+            lane_curve(t, target, tempo_bpm).map(|c| (param as u32, c))
+        })
+        .collect()
 }
 
 impl ProjectGraph {
@@ -149,13 +230,23 @@ impl ProjectGraph {
             let Some(n) = tracks.get(&t.id) else { continue };
             let (g, l, r) = track_gains_with(t, on);
             let (bal_l, bal_r) = balance(t.pan);
+            // Mit abgespielter Kurve bleibt vom festen Faktor nur Mute/Solo (Gain) bzw. 1.
+            let gain_lane = active_lane(t, AutoTarget::Gain).is_some();
+            let pan_lane = active_lane(t, AutoTarget::Pan).is_some();
+            let g = if gain_lane {
+                if on { 1.0 } else { 0.0 }
+            } else {
+                g
+            };
             match n.pan {
                 Some((pl, pr)) => {
                     engine.set_param(n.gain, gain_params::GAIN, g)?;
+                    let (l, r) = if pan_lane { (1.0, 1.0) } else { (l, r) };
                     engine.set_param(pl, gain_params::GAIN, l)?;
                     engine.set_param(pr, gain_params::GAIN, r)?;
                 }
                 None => {
+                    let (bal_l, bal_r) = if pan_lane { (1.0, 1.0) } else { (bal_l, bal_r) };
                     engine.set_param(n.gain, bus_params::GAIN, g)?;
                     engine.set_param(n.gain, bus_params::BALANCE_LEFT, bal_l)?;
                     engine.set_param(n.gain, bus_params::BALANCE_RIGHT, bal_r)?;
@@ -166,6 +257,14 @@ impl ProjectGraph {
                     continue;
                 };
                 for (i, v) in ins.params.iter().enumerate() {
+                    // Eine abgespielte Kurve führt den Regler selbst.
+                    let target = AutoTarget::InsertParam {
+                        insert: ins.id,
+                        param: i,
+                    };
+                    if active_lane(t, target).is_some() {
+                        continue;
+                    }
                     engine.set_param(node, i as u32, *v as f32)?;
                 }
                 engine.set_param(node, BYPASS, if ins.bypass { 1.0 } else { 0.0 })?;
@@ -174,7 +273,7 @@ impl ProjectGraph {
                 let Some(sn) = n.sends.iter().find(|x| x.target == s.target) else {
                     continue;
                 };
-                let (a, b) = send_gains(t, s.pre_fader, s.linear(), on, n.pan.is_some());
+                let (a, b) = send_fixed(t, s, on, n.pan.is_some());
                 engine.set_param(sn.left, gain_params::GAIN, a)?;
                 engine.set_param(sn.right, gain_params::GAIN, b)?;
             }
@@ -194,16 +293,47 @@ fn balance(pan: f64) -> (f32, f32) {
     ((1.0 - p.max(0.0)) as f32, (1.0 + p.min(0.0)) as f32)
 }
 
-/// Faktoren der beiden Gains eines Sends. Vor dem Fader hat eine Spur noch kein Panorama,
-/// also bekommt der Send das der Spur; nach dem Fader steckt es schon im Signal.
-fn send_gains(track: &Track, pre: bool, level: f64, audible: bool, is_track: bool) -> (f32, f32) {
-    let f = if audible { level as f32 } else { 0.0 };
-    if pre && is_track {
+/// Feste Faktoren der beiden Gains eines Sends. Vor dem Fader hat eine Spur noch kein
+/// Panorama, also bekommt der Send das der Spur; nach dem Fader steckt es schon im Signal.
+/// Spielt eine Pegel- oder Panoramakurve, rechnet der Node sie selbst und der feste Faktor
+/// lässt den jeweiligen Teil weg.
+fn send_fixed(track: &Track, s: &Send, audible: bool, is_track: bool) -> (f32, f32) {
+    let level_lane = active_lane(track, AutoTarget::Send { target: s.target }).is_some();
+    let pan_lane = active_lane(track, AutoTarget::Pan).is_some();
+    let level = if level_lane { 1.0 } else { s.linear() as f32 };
+    let f = if audible { level } else { 0.0 };
+    if s.pre_fader && is_track && !pan_lane {
         let (_, l, r) = track_gains_with(track, true);
         (f * l, f * r)
     } else {
         (f, f)
     }
+}
+
+/// Die beiden Nodes eines Sends: ein Gain, oder ein [`AutoNode`] mit Pegel- und (vor dem
+/// Fader einer Spur) Panoramakurve.
+fn send_nodes(
+    b: &mut GraphBuilder,
+    t: &Track,
+    s: &Send,
+    audible: bool,
+    is_track: bool,
+    tempo_bpm: f64,
+) -> (NodeId, NodeId) {
+    let (a, c) = send_fixed(t, s, audible, is_track);
+    let level = lane_curve(t, AutoTarget::Send { target: s.target }, tempo_bpm);
+    let pan = if s.pre_fader && is_track {
+        lane_curve(t, AutoTarget::Pan, tempo_bpm)
+    } else {
+        None
+    };
+    if level.is_none() && pan.is_none() {
+        return (b.add_node(Gain::new(a)), b.add_node(Gain::new(c)));
+    }
+    let side = |side| pan.clone().map(|p| (p, side));
+    let left = b.add_node(AutoNode::new(a, level.clone(), side(PanSide::Left)));
+    let right = b.add_node(AutoNode::new(c, level, side(PanSide::Right)));
+    (left, right)
 }
 
 /// Ob jede Spur klingt, in Reihenfolge der Projekt-Spuren.
@@ -316,6 +446,10 @@ pub fn build_project_graph_mode(
     };
     let mut tracks = HashMap::new();
     let mut bus_meters = HashMap::new();
+    let mut reductions: HashMap<InsertId, Arc<AtomicU32>> = HashMap::new();
+    let tempo = project.tempo_bpm;
+    // Sidechain-Eingänge (Node, Quellspur), nach dem Bau aller Züge verdrahtet.
+    let mut pending_keys: Vec<(NodeId, TrackId)> = Vec::new();
 
     // Busse zuerst: Spuren und andere Busse brauchen ihre Eingänge.
     let mut buses: HashMap<TrackId, BusPorts> = HashMap::new();
@@ -327,12 +461,14 @@ pub fn build_project_graph_mode(
         let mut prev = head;
         let mut inserts = Vec::new();
         for ins in &t.inserts {
-            let n = b.add_stereo(Box::new(FxStereoNode::with_context(
-                fx_kind(ins.kind),
-                &ins.params,
-                ins.bypass,
-                ctx,
-            )));
+            let mut fx =
+                FxStereoNode::with_context(fx_kind(ins.kind), &ins.params, ins.bypass, ctx);
+            fx.set_lanes(insert_lanes(t, ins, tempo));
+            if let Some(m) = reduction_meter(ins.kind) {
+                fx.set_meter(Arc::clone(&m));
+                reductions.insert(ins.id, m);
+            }
+            let n = b.add_stereo(Box::new(fx));
             b.connect_ch(prev, 0, n, 0);
             b.connect_ch(prev, 1, n, 1);
             inserts.push((ins.id, n));
@@ -340,7 +476,20 @@ pub fn build_project_graph_mode(
         }
         let meter = Arc::new(AtomicU32::new(0));
         bus_meters.insert(t.id, Arc::clone(&meter));
-        let strip = b.add_stereo(Box::new(BusStrip::new(g, bal_l, bal_r, Some(meter))));
+        let gain_lane = lane_curve(t, AutoTarget::Gain, tempo);
+        let pan_lane = lane_curve(t, AutoTarget::Pan, tempo);
+        let (g, bal_l, bal_r) = (
+            if gain_lane.is_some() {
+                if on { 1.0 } else { 0.0 }
+            } else {
+                g
+            },
+            if pan_lane.is_some() { 1.0 } else { bal_l },
+            if pan_lane.is_some() { 1.0 } else { bal_r },
+        );
+        let strip = b.add_stereo(Box::new(
+            BusStrip::new(g, bal_l, bal_r, Some(meter)).with_lanes(gain_lane, pan_lane),
+        ));
         b.connect_ch(prev, 0, strip, 0);
         b.connect_ch(prev, 1, strip, 1);
         buses.insert(
@@ -383,9 +532,7 @@ pub fn build_project_graph_mode(
                 continue;
             };
             let tap = if s.pre_fader { ports.pre } else { ports.strip };
-            let (a, c) = send_gains(t, s.pre_fader, s.linear(), on, false);
-            let left = b.add_node(Gain::new(a));
-            let right = b.add_node(Gain::new(c));
+            let (left, right) = send_nodes(&mut b, t, s, on, false, tempo);
             b.connect_ch(tap, 0, left, 0);
             b.connect_ch(tap, 1, right, 0);
             b.connect_ch(left, 0, dest.head, 0);
@@ -409,19 +556,52 @@ pub fn build_project_graph_mode(
         let mut tail = src;
         let mut inserts = Vec::new();
         for ins in &t.inserts {
-            let n = b.add_boxed(Box::new(FxNode::with_context(
-                fx_kind(ins.kind),
-                &ins.params,
-                ins.bypass,
-                ctx,
-            )));
-            b.connect(tail, n);
+            let lanes = insert_lanes(t, ins, tempo);
+            let meter = reduction_meter(ins.kind);
+            let key = ins
+                .sidechain
+                .filter(|&s| ins.kind.supports_sidechain() && project.track(s).is_some());
+            let n = if let Some(source) = key {
+                // Sidechain: Kanal 0 Signal, Kanal 1 Schlüssel (siehe `KeyedFxNode`).
+                let mut fx =
+                    KeyedFxNode::with_context(fx_kind(ins.kind), &ins.params, ins.bypass, ctx);
+                fx.set_lanes(lanes);
+                if let Some(m) = &meter {
+                    fx.set_meter(Arc::clone(m));
+                }
+                let n = b.add_stereo(Box::new(fx));
+                b.connect_ch(tail, 0, n, 0);
+                pending_keys.push((n, source));
+                n
+            } else {
+                let mut fx = FxNode::with_context(fx_kind(ins.kind), &ins.params, ins.bypass, ctx);
+                fx.set_lanes(lanes);
+                if let Some(m) = &meter {
+                    fx.set_meter(Arc::clone(m));
+                }
+                let n = b.add_boxed(Box::new(fx));
+                b.connect(tail, n);
+                n
+            };
+            if let Some(m) = meter {
+                reductions.insert(ins.id, m);
+            }
             inserts.push((ins.id, n));
             tail = n;
         }
-        let gain = b.add_node(Gain::new(g));
-        let pan_left = b.add_node(Gain::new(l));
-        let pan_right = b.add_node(Gain::new(r));
+        let gain_lane = lane_curve(t, AutoTarget::Gain, tempo);
+        let pan_lane = lane_curve(t, AutoTarget::Pan, tempo);
+        let gain = match gain_lane {
+            Some(c) => b.add_node(AutoNode::new(if on { 1.0 } else { 0.0 }, Some(c), None)),
+            None => b.add_node(Gain::new(g)),
+        };
+        let (pan_left, pan_right) = match pan_lane {
+            Some(c) => (
+                b.add_node(AutoNode::new(1.0, None, Some((c.clone(), PanSide::Left)))),
+                b.add_node(AutoNode::new(1.0, None, Some((c, PanSide::Right)))),
+            ),
+            None => (b.add_node(Gain::new(l)), b.add_node(Gain::new(r))),
+        };
         b.connect(tail, gain);
         b.connect(gain, pan_left);
         b.connect(gain, pan_right);
@@ -440,9 +620,7 @@ pub fn build_project_graph_mode(
             let Some(dest) = buses.get(&s.target) else {
                 continue;
             };
-            let (a, c) = send_gains(t, s.pre_fader, s.linear(), on, true);
-            let left = b.add_node(Gain::new(a));
-            let right = b.add_node(Gain::new(c));
+            let (left, right) = send_nodes(&mut b, t, s, on, true, tempo);
             if s.pre_fader {
                 b.connect(tail, left);
                 b.connect(tail, right);
@@ -468,11 +646,37 @@ pub fn build_project_graph_mode(
             },
         );
     }
+    // Sidechains: Schlüssel ist das Signal der Quellspur nach dem Fader, vor dem Panorama
+    // (Bus: Mitte aus links und rechts).
+    for (key, source) in pending_keys {
+        let Some(src) = tracks.get(&source) else {
+            continue;
+        };
+        if src.pan.is_some() {
+            b.connect_ch(src.gain, 0, key, 1);
+        } else {
+            for ch in 0..2u8 {
+                let half = b.add_node(Gain::new(0.5));
+                b.connect_ch(src.gain, ch, half, 0);
+                b.connect_ch(half, 0, key, 1);
+            }
+        }
+    }
     ProjectGraph {
         builder: b,
         tracks,
         bus_meters,
+        reductions,
     }
+}
+
+/// Messer für die Absenkung, wenn der Effekt eine kennt.
+fn reduction_meter(kind: EffectKind) -> Option<Arc<AtomicU32>> {
+    matches!(
+        kind,
+        EffectKind::Compressor | EffectKind::Gate | EffectKind::Limiter | EffectKind::DeEsser
+    )
+    .then(|| Arc::new(AtomicU32::new(0)))
 }
 
 /// Rendert ein Projekt offline in Stereo (links, rechts), ab Position 0, Transport läuft.

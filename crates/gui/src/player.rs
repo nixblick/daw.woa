@@ -20,7 +20,7 @@ use woa_engine::device::{
 use woa_engine::project::{ProjectGraph, TrackNodes};
 use woa_engine::transport::{LoopRange, TransportHandle, beats_to_samples, samples_to_beats};
 use woa_engine::{AudioProcessor, Engine};
-use woa_model::{Project, TrackId};
+use woa_model::{InsertId, Project, TrackId};
 
 use crate::xrun::XrunLog;
 
@@ -43,7 +43,21 @@ fn routing_key(project: &Project) -> String {
             let _ = write!(key, "|s{}{}", s.target.0, u8::from(s.pre_fader));
         }
         for i in &t.inserts {
-            let _ = write!(key, "|i{}{:?}", i.id.0, i.kind);
+            let _ = write!(
+                key,
+                "|i{}{:?}{:?}",
+                i.id.0,
+                i.kind,
+                i.sidechain.map(|s| s.0)
+            );
+        }
+        // Kurven: jede Änderung (Punkt, Betriebsart) baut den Graphen neu, Ziehen schreibt
+        // erst beim Loslassen.
+        for l in &t.automation {
+            let _ = write!(key, "|a{:?}{:?}", l.target, l.mode);
+            for p in &l.points {
+                let _ = write!(key, ",{}:{}", p.beat.to_bits(), p.value.to_bits());
+            }
         }
         key.push(';');
     }
@@ -71,6 +85,8 @@ pub struct Player {
     structure: Option<Structure>,
     mixer: Option<Mixer>,
     meters: HashMap<TrackId, Arc<AtomicU32>>,
+    /// Absenkungsmesser der dynamischen Effekte (Kompressor, Gate ...).
+    reductions: HashMap<InsertId, Arc<AtomicU32>>,
     peaks: HashMap<PathBuf, Arc<[f32]>>,
     /// Producer der Note-Queue des Live-Instruments; der MIDI-Eingang schreibt hinein.
     midi_sink: woa_io::midi::EventSink,
@@ -126,6 +142,7 @@ impl Player {
             structure: None,
             mixer: None,
             meters: HashMap::new(),
+            reductions: HashMap::new(),
             peaks: HashMap::new(),
             midi_sink: woa_io::midi::event_sink(),
             loop_range: None,
@@ -236,6 +253,7 @@ impl Player {
                     for (id, m) in graph.bus_meters {
                         self.meters.insert(id, m);
                     }
+                    self.reductions = graph.reductions;
                     self.nodes = graph.tracks;
                     self.structure = Some(structure);
                     self.mixer = None;
@@ -359,6 +377,11 @@ impl Player {
     /// Spitzenpegel einer Spur seit dem letzten Aufruf (vor Gain/Mute), 0..1+.
     pub fn take_level(&self, track: TrackId) -> f32 {
         self.meters.get(&track).map_or(0.0, |m| take_peak(m))
+    }
+
+    /// Größte Gain-Reduction in dB eines Effekts seit dem letzten Aufruf (0 ohne Messer).
+    pub fn take_reduction(&self, insert: InsertId) -> f32 {
+        self.reductions.get(&insert).map_or(0.0, |m| take_peak(m))
     }
 
     /// Vergisst eine dekodierte Datei (nach neuer Aufnahme unter gleichem Namen).

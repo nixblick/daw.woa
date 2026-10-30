@@ -475,6 +475,11 @@ impl EffectKind {
         EffectKind::Denoise,
     ];
 
+    /// Ob der Effekt einen Sidechain-Eingang hat (Kompressor, Gate).
+    pub fn supports_sidechain(self) -> bool {
+        matches!(self, EffectKind::Compressor | EffectKind::Gate)
+    }
+
     /// Name für Menüs und Meldungen.
     pub fn label(self) -> &'static str {
         match self {
@@ -574,6 +579,10 @@ pub struct Insert {
     pub bypass: bool,
     /// Werte der Regler, Reihenfolge wie [`EffectKind::params`].
     pub params: Vec<f64>,
+    /// Sidechain (Paket 18): Spur, deren Signal (nach Fader, vor Pan) statt des eigenen den
+    /// Pegel misst. Nur Kompressor und Gate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sidechain: Option<crate::project::TrackId>,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -589,6 +598,7 @@ impl Insert {
             kind,
             bypass: false,
             params: kind.defaults(),
+            sidechain: None,
         }
     }
 

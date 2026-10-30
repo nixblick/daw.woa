@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::automation::{AutoMode, AutoPoint, AutoTarget, AutomationLane};
 use crate::effect::{Insert, InsertId};
 use crate::error::{ModelError, Result};
 use crate::project::{
@@ -191,6 +192,27 @@ pub enum Command {
         /// New state.
         bypass: bool,
     },
+    /// Sets the sidechain source of a compressor or gate (`None`: its own signal).
+    SetInsertSidechain {
+        /// Track holding the effect.
+        track: TrackId,
+        /// The effect.
+        insert: InsertId,
+        /// Track whose signal measures the level; it must not depend on `track`.
+        source: Option<TrackId>,
+    },
+    /// Replaces the automation lane of one target (points and mode). No points and mode
+    /// `Read` remove the lane.
+    SetAutomation {
+        /// Track holding the target.
+        track: TrackId,
+        /// What the lane controls; it must exist on the track.
+        target: AutoTarget,
+        /// The points; sorted on apply, values inside the range of the target.
+        points: Vec<AutoPoint>,
+        /// Read, write or latch.
+        mode: AutoMode,
+    },
 }
 
 impl Command {
@@ -226,6 +248,8 @@ impl Command {
             Command::RemoveInsert { .. } => "Remove effect",
             Command::SetInsertParam { .. } => "Set effect parameter",
             Command::SetInsertBypass { .. } => "Bypass effect",
+            Command::SetInsertSidechain { .. } => "Set sidechain",
+            Command::SetAutomation { .. } => "Edit automation",
         }
     }
 
@@ -280,6 +304,18 @@ impl Command {
                         return Err(ModelError::DuplicateId(ins.id.0));
                     }
                 }
+                for ins in &track.inserts {
+                    if let Some(src) = ins.sidechain {
+                        project.check_sidechain(&track, ins, src)?;
+                        if src == track.id {
+                            return Err(ModelError::RoutingCycle {
+                                from: src,
+                                to: track.id,
+                            });
+                        }
+                    }
+                }
+                Project::check_automation(&track)?;
                 let id = track.id;
                 for ins in &track.inserts {
                     project.bump_next_id(ins.id.0);
@@ -298,11 +334,11 @@ impl Command {
                 let at = project
                     .track_index(track)
                     .ok_or(ModelError::TrackNotFound(track))?;
-                if project
-                    .tracks
-                    .iter()
-                    .any(|t| t.output == Some(track) || t.sends.iter().any(|s| s.target == track))
-                {
+                if project.tracks.iter().any(|t| {
+                    t.output == Some(track)
+                        || t.sends.iter().any(|s| s.target == track)
+                        || t.inserts.iter().any(|i| i.sidechain == Some(track))
+                }) {
                     return Err(ModelError::TrackInUse(track));
                 }
                 let removed = project.tracks.remove(at);
@@ -566,6 +602,92 @@ impl Command {
                     track,
                     insert,
                     bypass: old,
+                })
+            }
+            Command::SetInsertSidechain {
+                track,
+                insert,
+                source,
+            } => {
+                let t = project
+                    .track(track)
+                    .ok_or(ModelError::TrackNotFound(track))?;
+                let ins = t
+                    .inserts
+                    .iter()
+                    .find(|i| i.id == insert)
+                    .ok_or(ModelError::InsertNotFound(insert))?;
+                if let Some(src) = source {
+                    project.check_sidechain(t, ins, src)?;
+                    if project.reaches(track, src) {
+                        return Err(ModelError::RoutingCycle {
+                            from: src,
+                            to: track,
+                        });
+                    }
+                } else if !ins.kind.supports_sidechain() {
+                    return Err(ModelError::SidechainNotSupported(insert));
+                }
+                let t = find(project, track)?;
+                let ins = t
+                    .inserts
+                    .iter_mut()
+                    .find(|i| i.id == insert)
+                    .ok_or(ModelError::InsertNotFound(insert))?;
+                let old = std::mem::replace(&mut ins.sidechain, source);
+                Ok(Command::SetInsertSidechain {
+                    track,
+                    insert,
+                    source: old,
+                })
+            }
+            Command::SetAutomation {
+                track,
+                target,
+                mut points,
+                mode,
+            } => {
+                let t = project
+                    .track(track)
+                    .ok_or(ModelError::TrackNotFound(track))?;
+                let range = target.range_in(t)?;
+                AutomationLane::normalise(&mut points, &range)?;
+                let t = find(project, track)?;
+                let blank = points.is_empty() && mode == AutoMode::Read;
+                let at = t.automation.iter().position(|l| l.target == target);
+                let old = match (at, blank) {
+                    (Some(i), true) => t.automation.remove(i),
+                    (Some(i), false) => {
+                        let lane = &mut t.automation[i];
+                        AutomationLane {
+                            target,
+                            mode: std::mem::replace(&mut lane.mode, mode),
+                            points: std::mem::replace(&mut lane.points, points),
+                        }
+                    }
+                    (None, true) => AutomationLane {
+                        target,
+                        mode: AutoMode::Read,
+                        points: Vec::new(),
+                    },
+                    (None, false) => {
+                        t.automation.push(AutomationLane {
+                            target,
+                            mode,
+                            points,
+                        });
+                        AutomationLane {
+                            target,
+                            mode: AutoMode::Read,
+                            points: Vec::new(),
+                        }
+                    }
+                };
+                Ok(Command::SetAutomation {
+                    track,
+                    target,
+                    points: old.points,
+                    mode: old.mode,
                 })
             }
             Command::MoveClip {

@@ -91,8 +91,8 @@ impl Session {
         InsertId(self.project.alloc_id())
     }
 
-    /// Removes a track and first cuts every output and send that leads to it, as one
-    /// undo step. [`Command::RemoveTrack`] alone refuses a track that is still routed to.
+    /// Removes a track and first cuts every output, send and sidechain that leads to it, as
+    /// one undo step. [`Command::RemoveTrack`] alone refuses a track that is still routed to.
     pub fn remove_track_routed(&mut self, track: TrackId) -> Result<()> {
         let mut steps = Vec::new();
         for t in &self.project.tracks {
@@ -106,6 +106,13 @@ impl Session {
                 steps.push(Command::RemoveSend {
                     track: t.id,
                     target: track,
+                });
+            }
+            for i in t.inserts.iter().filter(|i| i.sidechain == Some(track)) {
+                steps.push(Command::SetInsertSidechain {
+                    track: t.id,
+                    insert: i.id,
+                    source: None,
                 });
             }
         }

@@ -191,6 +191,9 @@ pub struct Track {
     /// Effect chain, first insert first (Paket 16).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inserts: Vec<Insert>,
+    /// Automation curves, at most one per target (Paket 18).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub automation: Vec<crate::automation::AutomationLane>,
 }
 
 /// A send from a track to a bus.
@@ -236,6 +239,7 @@ impl Track {
             output: None,
             sends: Vec::new(),
             inserts: Vec::new(),
+            automation: Vec::new(),
         }
     }
 }
@@ -338,8 +342,10 @@ impl Project {
         }
     }
 
-    /// Checks outputs, sends and inserts of all tracks: destinations exist and are buses,
-    /// no track feeds itself, no cycles, ids unique, values in range.
+    /// Checks outputs, sends, inserts, sidechains and automation of all tracks: destinations
+    /// exist and are buses, no track feeds itself, no cycles, ids unique, values in range.
+    /// Automation of a target that no longer exists (deleted effect or send) is kept; it
+    /// comes back to life with Undo and the engine ignores it meanwhile.
     pub(crate) fn check_routing(&self) -> Result<()> {
         let mut seen: Vec<u64> = Vec::new();
         for t in &self.tracks {
@@ -357,20 +363,82 @@ impl Project {
             }
             for i in &t.inserts {
                 i.check()?;
+                if let Some(src) = i.sidechain {
+                    self.check_sidechain(t, i, src)?;
+                }
                 if seen.contains(&i.id.0) || self.tracks.iter().any(|o| o.id.0 == i.id.0) {
                     return Err(ModelError::DuplicateId(i.id.0));
                 }
                 seen.push(i.id.0);
             }
         }
+        for t in &self.tracks {
+            Self::check_automation(t)?;
+        }
         // Cycle search: every connection must not lead back to its source.
         for t in &self.tracks {
+            for i in &t.inserts {
+                if let Some(src) = i.sidechain
+                    && self.reaches(t.id, src)
+                {
+                    return Err(ModelError::RoutingCycle {
+                        from: src,
+                        to: t.id,
+                    });
+                }
+            }
             for to in t.output.iter().chain(t.sends.iter().map(|s| &s.target)) {
                 if self.reaches(*to, t.id) {
                     return Err(ModelError::RoutingCycle {
                         from: t.id,
                         to: *to,
                     });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The sidechain source exists and the effect can listen to it.
+    pub(crate) fn check_sidechain(
+        &self,
+        target: &Track,
+        insert: &Insert,
+        source: TrackId,
+    ) -> Result<()> {
+        // Bus-Inserts haben (noch) keinen Schlüsseleingang.
+        if !insert.kind.supports_sidechain() || target.kind == TrackKind::Bus {
+            return Err(ModelError::SidechainNotSupported(insert.id));
+        }
+        self.track(source)
+            .map(|_| ())
+            .ok_or(ModelError::TrackNotFound(source))
+    }
+
+    /// Lanes: one per target, at most [`crate::automation::MAX_AUTOMATION_POINTS`] points,
+    /// sorted, finite. Values are checked against the range when the target exists.
+    pub(crate) fn check_automation(t: &Track) -> Result<()> {
+        for (i, lane) in t.automation.iter().enumerate() {
+            if t.automation[..i].iter().any(|o| o.target == lane.target) {
+                return Err(ModelError::DuplicateAutomation { track: t.id });
+            }
+            if lane.points.len() > crate::automation::MAX_AUTOMATION_POINTS {
+                return Err(ModelError::TooManyPoints {
+                    max: crate::automation::MAX_AUTOMATION_POINTS,
+                });
+            }
+            let range = lane.target.range_in(t).ok();
+            let mut prev = f64::NEG_INFINITY;
+            for p in &lane.points {
+                if !(p.beat.is_finite() && p.beat >= 0.0 && p.beat > prev && p.value.is_finite()) {
+                    return Err(ModelError::InvalidValue {
+                        field: "automation beat",
+                        value: p.beat,
+                    });
+                }
+                prev = p.beat;
+                if let Some(r) = &range {
+                    r.check(p.value)?;
                 }
             }
         }
@@ -405,6 +473,13 @@ impl Project {
                 stack.extend(t.output);
                 stack.extend(t.sends.iter().map(|s| s.target));
             }
+            // A sidechain feeds the track whose insert listens to `id` (Paket 18).
+            stack.extend(
+                self.tracks
+                    .iter()
+                    .filter(|o| o.inserts.iter().any(|i| i.sidechain == Some(id)))
+                    .map(|o| o.id),
+            );
         }
         false
     }
