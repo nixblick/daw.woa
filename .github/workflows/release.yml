@@ -1,45 +1,84 @@
 name: Release
-# Ein Tag `v*` löst aus: Windows-Bau (wiederverwendet windows-build.yml), dann signieren und
-# `latest.json` schreiben, dann ein Release als ENTWURF anlegen. Erst wenn André den Entwurf
-# veröffentlicht, sehen die Tester das Update (die App fragt `releases/latest`).
-# Ablauf und Einrichtung: docs/updater.md
+# Ein Tag `v*` löst aus: Windows-Bau (windows-build.yml, mit MSI-Upgrade-Probe) und Linux-Bau
+# (linux-build.yml: AppImage, Flatpak) laufen nebeneinander, dann prüfen, signieren, `latest.json` und
+# `SHA256SUMS` schreiben und ein Release als ENTWURF anlegen. Erst wenn André den Entwurf veröffentlicht,
+# sehen die Tester das Update (die App fragt `releases/latest`).
+# Probelauf ohne Tag: Actions → Release → Run workflow (oder bei Änderungen an diesem Workflow im PR).
+# Dann läuft alles bis zum fertigen Ordner, aber es wird KEIN Release angelegt; der Ordner hängt als
+# Artefakt „release-probe“ am Lauf.
+# Ablauf und Einrichtung: docs/updater.md, docs/release.md
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - packaging/release-check.sh
+      - packaging/test-release-check.sh
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  # Schnell und vor den teuren Bauten: Tag = Cargo-Version = CHANGELOG, fester UpgradeCode.
+  pruefen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prüfskript testen
+        run: packaging/test-release-check.sh
+      - name: Tag, Cargo-Version, CHANGELOG, UpgradeCode
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: packaging/release-check.sh version "$TAG"
+      - name: Tag liegt auf main
+        if: github.ref_type == 'tag'
+        run: |
+          set -eu
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::Der Tag zeigt auf einen Stand, der nicht in main liegt. Erst mergen, dann taggen."; exit 1; }
+
+  windows:
+    needs: pruefen
     uses: ./.github/workflows/windows-build.yml
 
-  publish:
-    needs: build
+  linux:
+    needs: pruefen
+    uses: ./.github/workflows/linux-build.yml
+
+  paket:
+    needs: [windows, linux]
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Release anlegen
+      contents: write # Release anlegen (nur bei einem Tag)
+    env:
+      IS_TAG: ${{ github.ref_type == 'tag' }}
+      TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: woa-*-windows-x64
+          pattern: woa-*
           merge-multiple: true
           path: dist
-      - name: Version prüfen
+      - name: Version und Dateien prüfen
         run: |
           set -eu
           ls -l dist
-          msi=$(ls dist/woa-*-x64.msi)
-          version=${msi#dist/woa-}
-          version=${version%-x64.msi}
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME passt nicht zur Version $version aus Cargo.toml. Version anheben, Tag neu setzen."
-            exit 1
-          fi
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-          echo "MSI=$msi" >> "$GITHUB_ENV"
+          echo "VERSION=$(packaging/release-check.sh version "$TAG")" >> "$GITHUB_ENV"
+          # latest.json entsteht erst unten; hier nur, was die Bauten liefern.
+          v="$(packaging/release-check.sh version "$TAG")"
+          for f in "woa-$v-x64.msi" "woa-$v-windows-x64.zip" "WOA-$v-x86_64.AppImage" "woa-$v.flatpak"; do
+            [ -s "dist/$f" ] || { echo "::error::fehlt oder leer: dist/$f"; exit 1; }
+          done
+          # Nichts Fremdes im Ordner (z. B. ein Test-MSI einer anderen Version).
+          [ "$(ls dist | wc -l)" = 4 ] || { echo "::error::unerwartete Dateien in dist"; exit 1; }
+          echo "MSI=dist/woa-$v-x64.msi" >> "$GITHUB_ENV"
       - name: minisign installieren
         run: |
           sudo apt-get update -qq
@@ -53,10 +92,14 @@ jobs:
           if head -n1 packaging/windows/updater.pub | grep -q '^untrusted comment:'; then pub_real=yes; fi
           if [ -z "${WOA_UPDATER_KEY:-}" ]; then
             if [ "$pub_real" = yes ]; then
-              echo "::error::updater.pub enthält einen echten Schlüssel, aber das Secret WOA_UPDATER_KEY fehlt. Apps mit diesem Schlüssel würden ein unsigniertes Update ablehnen. Secret setzen (docs/updater.md) oder den Platzhalter wiederherstellen."
-              exit 1
+              if [ "$IS_TAG" = true ]; then
+                echo "::error::updater.pub enthält einen echten Schlüssel, aber das Secret WOA_UPDATER_KEY fehlt. Apps mit diesem Schlüssel würden ein unsigniertes Update ablehnen. Secret setzen (docs/updater.md) oder den Platzhalter wiederherstellen."
+                exit 1
+              fi
+              echo "::warning::Probelauf: WOA_UPDATER_KEY nicht verfügbar (Pull Request). Ein Tag würde hier abbrechen."
+            else
+              echo "::warning::Secret WOA_UPDATER_KEY fehlt: das MSI wird NICHT signiert, latest.json enthält nur die SHA-256 (Stufe A, siehe docs/updater.md)."
             fi
-            echo "::warning::Secret WOA_UPDATER_KEY fehlt: das MSI wird NICHT signiert, latest.json enthält nur die SHA-256 (Stufe A, siehe docs/updater.md)."
             echo "SIGNED=no" >> "$GITHUB_ENV"
           else
             key=$(mktemp)
@@ -75,7 +118,7 @@ jobs:
       - name: latest.json und Notizen
         run: |
           set -eu
-          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}"
           file=$(basename "$MSI")
           sha=$(sha256sum "$MSI" | cut -d' ' -f1)
           # Abschnitt dieser Version aus dem CHANGELOG (bis zur nächsten "## ").
@@ -87,12 +130,25 @@ jobs:
             '{version: $v, notes: $n, msi_url: $u, msi_sha256: $h} + (if $s != "" then {msi_sig_url: $s} else {} end)' \
             > dist/latest.json
           cat dist/latest.json
+      - name: Vollständigkeit prüfen und SHA256SUMS schreiben
+        run: |
+          set -eu
+          WOA_TAG="$TAG" packaging/release-check.sh dist dist
+          packaging/release-check.sh sums dist
+      - name: Probelauf, Ordner als Artefakt
+        if: env.IS_TAG != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-probe
+          path: dist
+          retention-days: 7
       - name: Release als Entwurf anlegen
+        if: env.IS_TAG == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
           gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
             --title "WOA $VERSION" --notes-file notes.md \
-            dist/woa-*-x64.msi dist/woa-*-windows-x64.zip dist/latest.json \
-            $(ls dist/*.minisig 2>/dev/null || true)
+            dist/*
+          gh release view "$GITHUB_REF_NAME" --json isDraft,assets --jq '"Entwurf: \(.isDraft), Dateien: \(.assets | map(.name) | join(", "))"'

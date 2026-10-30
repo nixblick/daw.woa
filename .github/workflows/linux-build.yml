@@ -5,6 +5,8 @@ name: Linux-Bau
 # gültig, Offline-Render ohne Audiogerät (nie Ton).
 on:
   workflow_dispatch:
+  # Vom Release-Workflow (release.yml) aufgerufen.
+  workflow_call:
   # Prüft Änderungen an den Paketen schon im PR.
   pull_request:
     paths:

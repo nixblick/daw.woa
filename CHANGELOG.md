@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.1 — 2026-10-30
+
+Paket 40 aus M10: Release-Workflow für beide Plattformen (Abnahme: `docs/abnahme.md`, Ablauf: `docs/release.md`).
+
+- **`release.yml` auf Tag `v*`:** Erst „pruefen“ (Tag = Cargo-Version = oberster, nicht leerer CHANGELOG-Eintrag, fester MSI-UpgradeCode, Tag liegt in `main`), dann Windows- und Linux-Bau nebeneinander (`windows-build.yml`, `linux-build.yml` sind jetzt auch aufrufbar), dann ein Release als **Entwurf** mit MSI, ZIP, AppImage, Flatpak, `latest.json`, ggf. `.minisig` und neu **`SHA256SUMS`**. Veröffentlichen macht das Update sichtbar. Vorher hing der Versionsvergleich an einem Dateinamen; jetzt prüft ihn `packaging/release-check.sh` (getestet mit `packaging/test-release-check.sh`, 19 Fälle).
+- **Probelauf ohne Tag:** `workflow_dispatch` (und Änderungen an `release.yml` im PR) laufen bis zum fertigen Ordner, legen aber kein Release an; der Ordner hängt als Artefakt `release-probe` am Lauf.
+- **MSI-Upgrade-Probe im Windows-Bau:** `packaging/windows/test-upgrade.ps1` installiert eine 0.0.1 aus denselben Programmen, dann das neue MSI darüber (genau ein Eintrag, neue Version, alle Dateien), prüft die Downgrade-Sperre (Abbruch mit 1603) und die Deinstallation. Ohne Start der App. Das Test-MSI liegt im Temp-Ordner und gerät nicht ins Release-Artefakt.
+- Neu: `docs/release.md`. Offen für André (im PR): Codesigning-Zertifikat, Signatur der Linux-Pakete, Download-Seite und Datenschutzerklärung auf wironair.de.
+
 ## 0.34.0 — 2026-10-30
 
 Paket 39 aus M10: Linux-Pakete aus der CI, AppImage und Flatpak (Abnahme: `docs/abnahme.md`).
