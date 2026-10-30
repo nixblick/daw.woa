@@ -3,7 +3,7 @@ source: crates/model/tests/model.rs
 expression: "store::to_json(sample().project()).unwrap()"
 ---
 {
-  "format_version": 1,
+  "format_version": 2,
   "project": {
     "meta": {
       "name": "Jingle"

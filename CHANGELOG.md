@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.0 — 2026-10-30
+
+Paket 16 aus M5: Mixer mit Bussen, Sends und Inserts (in Arbeit).
+
+- **Modell:** Bus-Spuren sind jetzt verschaltbar. Jede Spur hat einen Ausgang (Master oder Bus), Sends (vor oder nach dem Fader) und eine Insert-Kette. Alles sind Commands mit genauem Gegenstück (Rückgängig/Wiederholen); ein Bus auf sich selbst oder im Kreis wird abgelehnt. Projektformat 2, Dateien der Version 1 laden unverändert.
+- **DSP:** Biquad-EQ, Kompressor, Limiter und Gate liegen jetzt in `woa-dsp` (vorher `woa-radio`); der Radio-Bus nutzt sie von dort.
+
 ## 0.10.0 — 2026-10-30
 
 Paket 15: Cue-Punkte und Vorhören (PFL), aus M7 nach M4 vorgezogen (André, 30.10.2026).

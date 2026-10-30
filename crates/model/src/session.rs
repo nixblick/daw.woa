@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::command::Command;
+use crate::effect::InsertId;
 use crate::error::{ModelError, Result};
 use crate::history::{History, HistoryEntry};
 use crate::project::{ClipId, Project, TrackId};
@@ -83,6 +84,38 @@ impl Session {
     /// Reserves a new clip id.
     pub fn new_clip_id(&mut self) -> ClipId {
         ClipId(self.project.alloc_id())
+    }
+
+    /// Reserves a new insert id.
+    pub fn new_insert_id(&mut self) -> InsertId {
+        InsertId(self.project.alloc_id())
+    }
+
+    /// Removes a track and first cuts every output and send that leads to it, as one
+    /// undo step. [`Command::RemoveTrack`] alone refuses a track that is still routed to.
+    pub fn remove_track_routed(&mut self, track: TrackId) -> Result<()> {
+        let mut steps = Vec::new();
+        for t in &self.project.tracks {
+            if t.output == Some(track) {
+                steps.push(Command::SetOutput {
+                    track: t.id,
+                    output: None,
+                });
+            }
+            if t.sends.iter().any(|s| s.target == track) {
+                steps.push(Command::RemoveSend {
+                    track: t.id,
+                    target: track,
+                });
+            }
+        }
+        steps.push(Command::RemoveTrack { track });
+        self.group("Remove track", |s| {
+            for c in steps {
+                s.apply(c)?;
+            }
+            Ok(())
+        })
     }
 
     /// Applies `command` and records it as one undo step (or as part of the open

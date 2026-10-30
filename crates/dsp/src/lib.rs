@@ -11,6 +11,7 @@
 //! Note-Events über [`instrument::note_queue`] (`rtrb`).
 
 pub mod clock;
+pub mod dynamics;
 pub mod generate;
 pub mod instrument;
 pub mod sampler;

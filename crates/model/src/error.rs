@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use crate::effect::InsertId;
 use crate::project::{ClipId, TrackId};
 
 /// Result alias used throughout `woa-model`.
@@ -39,6 +40,45 @@ pub enum ModelError {
     /// A track or project name was empty.
     #[error("name must not be empty")]
     EmptyName,
+    /// A routing change would feed a bus back into itself.
+    #[error("routing {from} -> {to} would create a cycle")]
+    RoutingCycle {
+        /// Source of the new connection.
+        from: TrackId,
+        /// Destination of the new connection.
+        to: TrackId,
+    },
+    /// Outputs and sends can only go to bus tracks.
+    #[error("track {0} is not a bus")]
+    NotABus(TrackId),
+    /// The track is still the destination of an output or send.
+    #[error("track {0} is still a routing destination")]
+    TrackInUse(TrackId),
+    /// The track has no send to this destination.
+    #[error("track {track} has no send to {target}")]
+    SendNotFound {
+        /// Track that should have the send.
+        track: TrackId,
+        /// Destination bus.
+        target: TrackId,
+    },
+    /// The track already has a send to this destination.
+    #[error("track {track} already has a send to {target}")]
+    DuplicateSend {
+        /// Track with the send.
+        track: TrackId,
+        /// Destination bus.
+        target: TrackId,
+    },
+    /// No insert with this id on the track.
+    #[error("insert {0} not found")]
+    InsertNotFound(InsertId),
+    /// The effect has no parameter with this index.
+    #[error("effect has no parameter {index}")]
+    UnknownParam {
+        /// Rejected index.
+        index: usize,
+    },
     /// There is nothing to undo.
     #[error("nothing to undo")]
     NothingToUndo,
