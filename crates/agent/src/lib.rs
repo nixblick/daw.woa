@@ -22,7 +22,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use woa_model::{
     Clip, ClipId, Command, EffectKind, Insert, InsertId, ModelError, Send as SendRoute, Session,
-    TrackId, TrackKind, store,
+    TrackId, TrackKind, VOICE_CHAIN, store,
 };
 
 pub mod audio;
@@ -93,6 +93,22 @@ pub enum AgentEffectKind {
     Compressor,
     /// Peak limiter: ceiling_db (-24..0), release_ms (5..1000).
     Limiter,
+    /// Noise gate: threshold_db (-80..0), range_db (0..80), attack_ms (0.1..50), hold_ms (0..500),
+    /// release_ms (5..2000).
+    Gate,
+    /// De-esser: frequency_hz, threshold_db, ratio, max_reduction_db (see the parameter table).
+    DeEsser,
+    /// Reverb: decay_s, predelay_ms, damping_pct, mix_pct.
+    Reverb,
+    /// Delay, free or tempo-synced (`sync` = note value index): time_ms, sync, feedback_pct,
+    /// tone_hz, pingpong, mix_pct.
+    Delay,
+    /// Chorus: rate_hz, depth_ms, delay_ms, mix_pct.
+    Chorus,
+    /// Saturation: drive_db, shape (0 soft, 1 tube, 2 hard), output_db, mix_pct.
+    Saturation,
+    /// Noise suppression (RNNoise, 48 kHz only): amount_pct.
+    Denoise,
 }
 
 impl From<AgentEffectKind> for EffectKind {
@@ -101,8 +117,30 @@ impl From<AgentEffectKind> for EffectKind {
             AgentEffectKind::Eq => EffectKind::Eq,
             AgentEffectKind::Compressor => EffectKind::Compressor,
             AgentEffectKind::Limiter => EffectKind::Limiter,
+            AgentEffectKind::Gate => EffectKind::Gate,
+            AgentEffectKind::DeEsser => EffectKind::DeEsser,
+            AgentEffectKind::Reverb => EffectKind::Reverb,
+            AgentEffectKind::Delay => EffectKind::Delay,
+            AgentEffectKind::Chorus => EffectKind::Chorus,
+            AgentEffectKind::Saturation => EffectKind::Saturation,
+            AgentEffectKind::Denoise => EffectKind::Denoise,
         }
     }
+}
+
+/// Parameters of `insert_voice_chain`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InsertVoiceChainParams {
+    /// Track id (audio, MIDI or bus).
+    pub track: u64,
+}
+
+/// Parameters of `list_effects`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListEffectsParams {
+    /// Only this effect kind; omit for all.
+    #[serde(default)]
+    pub kind: Option<AgentEffectKind>,
 }
 
 /// Parameters of `insert_effect`.
@@ -115,6 +153,9 @@ pub struct InsertEffectParams {
     /// Position in the chain, 0 = first. Default: at the end.
     #[serde(default)]
     pub index: Option<usize>,
+    /// Optional preset name (see `list_effects`); `params` are applied on top of it.
+    #[serde(default)]
+    pub preset: Option<String>,
     /// Optional start values by parameter name; unnamed parameters keep their defaults.
     #[serde(default)]
     pub params: std::collections::BTreeMap<String, f64>,
@@ -1364,7 +1405,7 @@ impl WoaAgent {
     }
 
     #[tool(
-        description = "Insert an effect into the insert chain of a track or bus (before the fader). Kinds and parameters: eq (highpass_hz 0..1000, 0 = off; bell_hz 40..16000; bell_db -18..18; bell_q 0.1..10), compressor (threshold_db -60..0; ratio 1..20; attack_ms 0.1..200; release_ms 5..2000; makeup_db 0..24), limiter (ceiling_db -24..0; release_ms 5..1000). Optional `params` sets start values by name. Returns the insert id for set_param."
+        description = "Insert an effect into the insert chain of a track or bus (before the fader). Kinds: eq, compressor, limiter, gate, de_esser, reverb, delay, chorus, saturation, denoise. `list_effects` returns every parameter with name, range and default, and the presets of each kind. Optional `preset` starts from a named preset; optional `params` sets values by name on top. Returns the insert id for set_param."
     )]
     async fn insert_effect(
         &self,
@@ -1373,7 +1414,10 @@ impl WoaAgent {
         self.agent_step(|s| {
             let kind: EffectKind = p.kind.into();
             let id = s.new_insert_id();
-            let mut insert = Insert::new(id, kind);
+            let mut insert = match &p.preset {
+                Some(name) => Insert::with_preset(id, kind, name)?,
+                None => Insert::new(id, kind),
+            };
             for (name, value) in &p.params {
                 let index = kind
                     .param_index(name)
@@ -1386,6 +1430,61 @@ impl WoaAgent {
                 index: p.index,
             })?;
             Ok(serde_json::json!({ "insert": id.0 }))
+        })
+    }
+
+    #[tool(
+        description = "List the built-in effects: for each kind its parameters (name, unit, min, max, default, choices) and its presets. Optional `kind` limits the list."
+    )]
+    async fn list_effects(
+        &self,
+        Parameters(p): Parameters<ListEffectsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let only: Option<EffectKind> = p.kind.map(Into::into);
+        let effects: Vec<serde_json::Value> = EffectKind::ALL
+            .iter()
+            .filter(|k| only.is_none_or(|o| o == **k))
+            .map(|k| {
+                let params: Vec<serde_json::Value> = k
+                    .params()
+                    .iter()
+                    .map(|s| {
+                        serde_json::json!({
+                            "name": s.name, "unit": s.unit, "min": s.min, "max": s.max,
+                            "default": s.default, "choices": s.choices,
+                        })
+                    })
+                    .collect();
+                let presets: Vec<&str> = k.presets().iter().map(|pr| pr.name).collect();
+                serde_json::json!({
+                    "kind": serde_json::to_value(k).unwrap_or_default(),
+                    "label": k.label(), "params": params, "presets": presets,
+                })
+            })
+            .collect();
+        Ok(ok_json(serde_json::json!({ "effects": effects })))
+    }
+
+    #[tool(
+        description = "Insert the template 'Sprachkette' (voice chain) at the end of the insert chain of a track: highpass EQ, gate, EQ, compressor, de-esser. One undo step. Returns the five insert ids in order."
+    )]
+    async fn insert_voice_chain(
+        &self,
+        Parameters(p): Parameters<InsertVoiceChainParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            let mut ids = Vec::new();
+            for (kind, values) in VOICE_CHAIN {
+                let id = s.new_insert_id();
+                let insert = Insert::with_values(id, kind, values)?;
+                s.apply(Command::AddInsert {
+                    track: TrackId(p.track),
+                    insert,
+                    index: None,
+                })?;
+                ids.push(id.0);
+            }
+            Ok(serde_json::json!({ "inserts": ids }))
         })
     }
 

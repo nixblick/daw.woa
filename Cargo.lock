@@ -281,6 +281,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anymap3"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb5dfbc6d8d2675589ccbe4d0fd61df2419075625f8c1a62325e718e2b0049f9"
+
+[[package]]
 name = "arboard"
 version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -308,6 +314,12 @@ checksum = "380962b3d93b99642e50b9febf72c071e97e8b32d86eae9cf4ef582bb960ae6e"
 dependencies = [
  "rustversion",
 ]
+
+[[package]]
+name = "array-init"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d62b7694a562cdf5a74227903507c56ab2cc8bdd1f781ed5cb4cf9c9f810bfc"
 
 [[package]]
 name = "arrayref"
@@ -1304,6 +1316,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
+name = "easyfft"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "767e39eef2ad8a3b6f1d733be3ec70364d21d437d06d4f18ea76ce08df20b75f"
+dependencies = [
+ "array-init",
+ "generic_singleton",
+ "num-complex",
+ "realfft",
+ "rustfft",
+]
+
+[[package]]
 name = "ecolor"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1815,6 +1840,16 @@ checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
  "typenum",
  "version_check",
+]
+
+[[package]]
+name = "generic_singleton"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab6e923c8e978e57cf63e2e200ca967d1d20f0ea2662b28f6d4e11c44aa6ab16"
+dependencies = [
+ "anymap3",
+ "parking_lot",
 ]
 
 [[package]]
@@ -2765,6 +2800,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nnnoiseless"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "805d5964d1e7a0006a7fdced7dae75084d66d18b35f1dfe81bd76929b1f8da0c"
+dependencies = [
+ "easyfft",
+ "once_cell",
+]
+
+[[package]]
 name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2792,6 +2837,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
 dependencies = [
  "num-traits",
+ "serde",
 ]
 
 [[package]]
@@ -2809,6 +2855,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "num-integer"
+version = "0.1.47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ce2d95d4b3734dc35aa2f45e1aa22cd416814592a4f9d9205e11affd5b8e10b"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
@@ -3510,6 +3565,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa"
 
 [[package]]
+name = "primal-check"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc0d895b311e3af9902528fbb8f928688abbd95872819320517cc24ca6b2bd08"
+dependencies = [
+ "num-integer",
+]
+
+[[package]]
 name = "proc-macro-crate"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3684,6 +3748,15 @@ checksum = "c4ed38b89c2c77ff968c524145ad65fb010f38af5c7a224b53b81d47ac2daa81"
 dependencies = [
  "bytemuck",
  "font-types",
+]
+
+[[package]]
+name = "realfft"
+version = "3.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "538895ccf2006b473aafbe8d72770e21038961ab67aae34f3c577485fc703a7d"
+dependencies = [
+ "rustfft",
 ]
 
 [[package]]
@@ -3877,6 +3950,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
 dependencies = [
  "semver",
+]
+
+[[package]]
+name = "rustfft"
+version = "6.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21db5f9893e91f41798c88680037dba611ca6674703c1a18601b01a72c8adb89"
+dependencies = [
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "primal-check",
+ "strength_reduce",
+ "transpose",
 ]
 
 [[package]]
@@ -4299,6 +4386,12 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "strength_reduce"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe895eb47f22e2ddd4dabc02bce419d2e643c8e3b585c78158b349195bc24d82"
 
 [[package]]
 name = "strict-num"
@@ -4853,6 +4946,16 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
+]
+
+[[package]]
+name = "transpose"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ad61aed86bc3faea4300c7aee358b4c6d0c8d6ccc36524c96e4c92ccf26e77e"
+dependencies = [
+ "num-integer",
+ "strength_reduce",
 ]
 
 [[package]]
@@ -5848,7 +5951,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "woa"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "eframe",
  "tracing",
@@ -5860,7 +5963,7 @@ dependencies = [
 
 [[package]]
 name = "woa-agent"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "hound",
  "rmcp",
@@ -5878,17 +5981,18 @@ dependencies = [
 
 [[package]]
 name = "woa-dsp"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "assert_no_alloc",
  "hound",
+ "nnnoiseless",
  "rtrb",
  "rustysynth",
 ]
 
 [[package]]
 name = "woa-engine"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "arc-swap",
  "assert_no_alloc",
@@ -5907,11 +6011,11 @@ dependencies = [
 
 [[package]]
 name = "woa-guests"
-version = "0.11.0"
+version = "0.12.0"
 
 [[package]]
 name = "woa-gui"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "assert_no_alloc",
  "eframe",
@@ -5935,7 +6039,7 @@ dependencies = [
 
 [[package]]
 name = "woa-headless"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -5956,7 +6060,7 @@ dependencies = [
 
 [[package]]
 name = "woa-io"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "assert_no_alloc",
  "midir",
@@ -5970,11 +6074,11 @@ dependencies = [
 
 [[package]]
 name = "woa-library"
-version = "0.11.0"
+version = "0.12.0"
 
 [[package]]
 name = "woa-model"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "insta",
  "proptest",
@@ -5986,11 +6090,11 @@ dependencies = [
 
 [[package]]
 name = "woa-plugins"
-version = "0.11.0"
+version = "0.12.0"
 
 [[package]]
 name = "woa-radio"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "assert_no_alloc",
  "basedrop",
@@ -6006,11 +6110,11 @@ dependencies = [
 
 [[package]]
 name = "woa-remote"
-version = "0.11.0"
+version = "0.12.0"
 
 [[package]]
 name = "woa-stream"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "hound",
  "mp3lame-encoder",
@@ -6024,7 +6128,7 @@ dependencies = [
 
 [[package]]
 name = "woa-streamd"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "tracing",
  "woa-radio",
@@ -6034,7 +6138,7 @@ dependencies = [
 
 [[package]]
 name = "woa-telemetry"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "base64",
  "serde",
@@ -6049,7 +6153,7 @@ dependencies = [
 
 [[package]]
 name = "woa-updater"
-version = "0.11.0"
+version = "0.12.0"
 
 [[package]]
 name = "writeable"

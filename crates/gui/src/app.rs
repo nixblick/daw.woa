@@ -3845,7 +3845,30 @@ impl WoaApp {
             egui::CollapsingHeader::new(small("Regler"))
                 .id_salt(("fx", ins.id.0))
                 .show(ui, |ui| {
+                    ui.menu_button(small("Preset ▾"), |ui| {
+                        for pr in ins.kind.presets() {
+                            if ui.button(pr.name).clicked() {
+                                self.fx_drag = None;
+                                self.state.apply_insert_preset(id, ins.id, pr.name);
+                                ui.close();
+                            }
+                        }
+                    });
                     for (i, spec) in ins.kind.params().iter().enumerate() {
+                        if !spec.choices.is_empty() {
+                            let cur = ins.params.get(i).copied().unwrap_or(spec.default);
+                            let idx = (cur.round().max(0.0) as usize).min(spec.choices.len() - 1);
+                            egui::ComboBox::from_id_salt(("fxc", ins.id.0, i))
+                                .selected_text(format!("{} {}", spec.label, spec.choices[idx]))
+                                .show_ui(ui, |ui| {
+                                    for (n, name) in spec.choices.iter().enumerate() {
+                                        if ui.selectable_label(n == idx, *name).clicked() {
+                                            self.state.set_insert_param(id, ins.id, i, n as f64);
+                                        }
+                                    }
+                                });
+                            continue;
+                        }
                         let mut v = match self.fx_drag {
                             Some((f, p, v)) if f == ins.id && p == i => v,
                             _ => ins.params.get(i).copied().unwrap_or(spec.default),
@@ -3877,15 +3900,20 @@ impl WoaApp {
         }
         let _ = kind;
         ui.menu_button("+ Effekt", |ui| {
-            for k in [
-                woa_model::EffectKind::Eq,
-                woa_model::EffectKind::Compressor,
-                woa_model::EffectKind::Limiter,
-            ] {
+            for k in woa_model::EffectKind::ALL {
                 if ui.button(k.label()).clicked() {
                     self.state.add_insert(id, k);
                     ui.close();
                 }
+            }
+            ui.separator();
+            if ui
+                .button("Vorlage Sprachkette")
+                .on_hover_text("Hochpass, Gate, EQ, Kompressor, De-Esser in einem Schritt")
+                .clicked()
+            {
+                self.state.add_voice_chain(id);
+                ui.close();
             }
         });
     }

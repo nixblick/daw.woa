@@ -65,6 +65,54 @@ impl Biquad {
         )
     }
 
+    /// Tiefen-Kuhschwanz (RBJ, Steilheit 1): `gain_db` unterhalb von `freq`.
+    pub fn low_shelf(freq: f64, gain_db: f64, rate: f64) -> Self {
+        let a = 10f64.powf(gain_db / 40.0);
+        let w = std::f64::consts::TAU * freq / rate;
+        let (s, c) = w.sin_cos();
+        let t = 2.0 * a.sqrt() * (s / std::f64::consts::SQRT_2);
+        Self::new(
+            [
+                a * ((a + 1.0) - (a - 1.0) * c + t),
+                2.0 * a * ((a - 1.0) - (a + 1.0) * c),
+                a * ((a + 1.0) - (a - 1.0) * c - t),
+            ],
+            (a + 1.0) + (a - 1.0) * c + t,
+            [
+                -2.0 * ((a - 1.0) + (a + 1.0) * c),
+                (a + 1.0) + (a - 1.0) * c - t,
+            ],
+        )
+    }
+
+    /// Höhen-Kuhschwanz (RBJ, Steilheit 1): `gain_db` oberhalb von `freq`.
+    pub fn high_shelf(freq: f64, gain_db: f64, rate: f64) -> Self {
+        let a = 10f64.powf(gain_db / 40.0);
+        let w = std::f64::consts::TAU * freq / rate;
+        let (s, c) = w.sin_cos();
+        let t = 2.0 * a.sqrt() * (s / std::f64::consts::SQRT_2);
+        Self::new(
+            [
+                a * ((a + 1.0) + (a - 1.0) * c + t),
+                -2.0 * a * ((a - 1.0) + (a + 1.0) * c),
+                a * ((a + 1.0) + (a - 1.0) * c - t),
+            ],
+            (a + 1.0) - (a - 1.0) * c + t,
+            [
+                2.0 * ((a - 1.0) - (a + 1.0) * c),
+                (a + 1.0) - (a - 1.0) * c - t,
+            ],
+        )
+    }
+
+    /// Bandpass mit 0 dB in der Mitte (RBJ).
+    pub fn bandpass(freq: f64, q: f64, rate: f64) -> Self {
+        let w = std::f64::consts::TAU * freq / rate;
+        let (s, c) = w.sin_cos();
+        let alpha = s / (2.0 * q);
+        Self::new([alpha, 0.0, -alpha], 1.0 + alpha, [-2.0 * c, 1.0 - alpha])
+    }
+
     /// Höhen-Shelf des K-Filters (BS.1770), für beliebige Raten.
     pub fn k_shelf(rate: f64) -> Self {
         let (f0, g, q) = (
@@ -236,7 +284,7 @@ impl Limiter {
     }
 }
 
-/// Mikrofon-Gate: offen über der Schwelle, mit Haltezeit, schließt um `range_db`.
+/// Gate: offen über der Schwelle, mit Haltezeit, schließt um `range_db`.
 #[derive(Debug, Clone, Copy)]
 pub struct Gate {
     threshold: f32,
@@ -251,18 +299,45 @@ pub struct Gate {
 }
 
 impl Gate {
+    /// Mikrofon-Vorgaben: Anstieg 1 ms, Halten 100 ms, Rückstellung 150 ms.
     pub fn new(threshold_db: f64, range_db: f64, rate: f32) -> Self {
-        Self {
-            threshold: db_to_gain(threshold_db),
-            floor: db_to_gain(-range_db.abs()),
-            hold: (0.1 * rate) as u32,
+        let mut g = Self {
+            threshold: 0.0,
+            floor: 0.0,
+            hold: 0,
             held: 0,
             env: 0.0,
-            env_coef: coef(0.005, rate),
-            attack: coef(0.001, rate),
-            release: coef(0.15, rate),
+            env_coef: 0.0,
+            attack: 0.0,
+            release: 0.0,
             gain: db_to_gain(-range_db.abs()),
-        }
+        };
+        g.set(threshold_db, range_db, 0.001, 0.1, 0.15, rate);
+        g
+    }
+
+    /// Stellt Schwelle, Absenkung (`range_db`) und Zeiten (Sekunden) ein. Echtzeitsicher; der
+    /// laufende Zustand bleibt erhalten.
+    pub fn set(
+        &mut self,
+        threshold_db: f64,
+        range_db: f64,
+        attack_s: f32,
+        hold_s: f32,
+        release_s: f32,
+        rate: f32,
+    ) {
+        self.threshold = db_to_gain(threshold_db);
+        self.floor = db_to_gain(-range_db.abs());
+        self.hold = (hold_s.max(0.0) * rate) as u32;
+        self.env_coef = coef(0.005, rate);
+        self.attack = coef(attack_s.max(1e-5), rate);
+        self.release = coef(release_s.max(1e-4), rate);
+    }
+
+    /// Aktuelle Absenkung in dB (0 = offen), für Anzeigen.
+    pub fn reduction_db(&self) -> f32 {
+        -lin_to_db(self.gain)
     }
 
     pub fn is_open(&self) -> bool {
