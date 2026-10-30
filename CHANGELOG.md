@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.2 — 2026-10-30
+
+- Konzept: Lücken im Sendestudio aufgenommen – Cue-Punkte je Titel (Cue-In/-Out, Ramp, Hook, Fade-Out), Vorhören (PFL) auf eigenem Ausgang, Stundenuhr mit AutoDJ-Rotation und festen Zeit-Events, Voice-Tracking. Eingeplant in M7 (Bibliothek in SQLite, Cue-Punkte, PFL) und M9 (Automation, Voice-Tracking, Gäste).
+
+## 0.7.1 — 2026-10-30
+
+- MIDI-Import: Noten ohne „Aus“ zählen gegen die Obergrenze mit. Eine präparierte Datei nur aus Note-Ons konnte die Grenze umgehen und den Speicher füllen; das Auflösen ist jetzt FIFO mit `VecDeque` statt `remove(0)` (Fund der Sicherheitsprüfung).
+
 ## 0.7.0 — 2026-10-30
 
 Paket 12 aus M4 (#5): MIDI aufnehmen und als Noten speichern.

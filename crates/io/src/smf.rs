@@ -6,6 +6,8 @@
 //! Velocity 0 als Note aus und Controller (CC). Zeiten werden in Beats (Viertel)
 //! umgerechnet; Tempo-Wechsel ändern Beats nicht, das erste Tempo wird gemeldet.
 
+use std::collections::VecDeque;
+
 use woa_model::{MidiCc, MidiData, MidiNote, midi::MAX_MIDI_EVENTS};
 
 /// Auflösung beim Schreiben (Ticks je Viertel).
@@ -138,8 +140,10 @@ pub fn read_smf(bytes: &[u8]) -> Result<SmfImport, SmfError> {
         };
         let mut tick = 0u64;
         let mut status: Option<u8> = None;
-        // Offene Noten je (Kanal, Tonhöhe): Start-Tick und Velocity, FIFO.
-        let mut open: Vec<Vec<(u64, u8)>> = vec![Vec::new(); 16 * 128];
+        // Offene Noten je (Kanal, Tonhöhe): Start-Tick und Velocity, FIFO. Offene zählen gegen
+        // die Obergrenze mit, sonst sammelt eine Datei nur aus Note-Ons beliebig viel an.
+        let mut open: Vec<VecDeque<(u64, u8)>> = vec![VecDeque::new(); 16 * 128];
+        let mut pending = 0usize;
         while !t.done() {
             tick += u64::from(t.vlq()?);
             let first = t.u8()?;
@@ -194,10 +198,16 @@ pub fn read_smf(bytes: &[u8]) -> Result<SmfImport, SmfError> {
                     let ch = usize::from(st & 0x0F);
                     let slot = ch * 128 + usize::from(a);
                     match st & 0xF0 {
-                        0x90 if b > 0 => open[slot].push((tick, b)),
+                        0x90 if b > 0 => {
+                            if notes.len() + pending >= MAX_MIDI_EVENTS {
+                                return err("too many notes");
+                            }
+                            open[slot].push_back((tick, b));
+                            pending += 1;
+                        }
                         0x80 | 0x90 => {
-                            if !open[slot].is_empty() {
-                                let (start, vel) = open[slot].remove(0);
+                            if let Some((start, vel)) = open[slot].pop_front() {
+                                pending -= 1;
                                 push_note(&mut notes, start, tick, a, vel, ppq)?;
                             }
                         }
@@ -350,6 +360,19 @@ pub fn write_smf(midi: &MidiData, tempo_bpm: f64, name: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unterminated_note_ons_hit_the_cap() {
+        // Nur Note-Ons ohne Note-Off, eins mehr als erlaubt: Fehler statt unbegrenzt sammeln.
+        let mut track = vec![0x00, 0x90, 0x3C, 0x40];
+        for _ in 0..MAX_MIDI_EVENTS {
+            track.extend_from_slice(&[0x00, 0x3C, 0x40]);
+        }
+        let mut f = b"MThd\0\0\0\x06\0\0\0\x01\0\x60MTrk".to_vec();
+        f.extend_from_slice(&(track.len() as u32).to_be_bytes());
+        f.extend_from_slice(&track);
+        assert!(read_smf(&f).is_err());
+    }
 
     #[test]
     fn vlq_examples_from_the_spec() {

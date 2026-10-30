@@ -54,6 +54,10 @@ Layouts sind frei anpassbar, als eigene Presets speicherbar und per Tastenkürze
 - Mitschnitt der ganzen Sendung als WAV/FLAC
 - Sendeplan mit Zeitachse, Restzeit pro Titel und bis zum nächsten festen Punkt
 - Fallback: fällt Mikro, Playlist oder Oberfläche aus, spielt automatisch eine Notfall-Playlist
+- Cue-Punkte je Titel: Cue-In, Cue-Out, Ramp (Intro-Countdown für die Moderation), Hook, Fade-Out-Marker; Crossfade und Restzeit richten sich danach
+- Vorhören (PFL) auf eigenem Ausgang: Kopfhörer auf Kanal 3/4, während Kanal 1/2 sendet
+- Stundenuhr und AutoDJ: Rotation nach Kategorien (z. B. Hit, Neu, Jingle, Moderation), feste Zeit-Events (Nachrichten, Werbung, Stundenjingle), Sperrfristen gegen Wiederholung
+- Voice-Tracking: Moderation vorab einsprechen, zwischen zwei Titeln mit Blick auf Outro und Intro einpassen
 - Jingle- und Spot-Vorlagen (z. B. 10, 20, 30 s) mit Bett-Musik, Sprecherspur und Radio-Sprachkette; Export direkt in die Cart-Wall
 
 ### Party: Abspielmodus
@@ -212,9 +216,9 @@ Alle Meilensteine werden umgesetzt. Jeder endet mit einem prüfbaren Abnahmekrit
 | M4 MIDI & Eingabe | USB-Keyboard, MIDI-Aufnahme, Piano-Roll, MIDI-Learn für Controller | Yamaha-Keyboard spielt und nimmt auf, Controller steuert Mixer und Cart-Wall |
 | M5 Mixer & Effekte | Busse, Sends, Sidechain, Automation, alle eingebauten Effekte, Analyse-Fenster | ganzer Jingle inklusive Sprachkette im Produzent-Layout |
 | M6 Arrangement & Aufnahme | Timeline-Editor, Schnitt, Fades, Audio-Aufnahme mit Latenzkompensation, Comping, Time-Stretch | ganzer Song von Aufnahme bis Export |
-| M7 Bibliothek & Formate | Bibliothek mit Analyse, alle Import-/Exportformate, Stems, DAWproject | 1.000 Titel importiert und lautheitsangeglichen |
+| M7 Bibliothek & Formate | Bibliothek in SQLite (`crates/library`) mit Analyse, Cue-Punkte je Titel, Vorhören (PFL) auf eigenem Ausgang, alle Import-/Exportformate, Stems, DAWproject | 1.000 Titel importiert und lautheitsangeglichen |
 | M8 Plugins | CLAP-Hosting mit Plugin-GUIs, Absturzschutz für Plugins | Surge XT und Vital laufen stabil im Projekt |
-| M9 Gäste & Party | WebRTC-Gäste-Schalte mit Mix-Minus, Party-Layout, Web-Fernbedienung | Sendung mit zwei zugeschalteten Gästen; Party-Abend per Handy gesteuert |
+| M9 Gäste, Automation & Party | Stundenuhr und AutoDJ-Rotation, Voice-Tracking-Editor, WebRTC-Gäste-Schalte (`crates/guests`) mit Mix-Minus, Party-Layout, Web-Fernbedienung | Sendung mit zwei zugeschalteten Gästen; Party-Abend per Handy gesteuert |
 | M10 Release | MSI und AppImage/Flatpak, Auto-Updater, Datenschutzerklärung, Doku, Download auf wironair.de | Installation auf frischem Windows und Linux, Update von Version zu Version |
 | M11 Ausbau | VST3, macOS (wenn testbar), weitere Instrumente, Feinschliff aus Telemetrie und Feedback | laufend |
 
