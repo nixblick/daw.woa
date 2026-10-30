@@ -49,6 +49,11 @@ pub struct GuiConfig {
     /// Ausgang für das Vorhören (PFL, Paket 15). Vorgabe: aus.
     #[serde(skip_serializing_if = "PflOutput::is_off")]
     pub pfl_output: PflOutput,
+    /// Beim Start höchstens einmal am Tag nach einem neuen Release suchen. Vorgabe: an.
+    pub auto_update: bool,
+    /// Unix-Sekunden der letzten erfolgreichen Update-Suche.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_update_check: Option<u64>,
 }
 
 /// Wohin das Vorhören (PFL) geht. Nie auf Kanal 1/2 der Sendung.
@@ -119,6 +124,8 @@ impl Default for GuiConfig {
             controller_input: None,
             controller_maps: std::collections::BTreeMap::new(),
             pfl_output: PflOutput::Aus,
+            auto_update: true,
+            last_update_check: None,
         }
     }
 }

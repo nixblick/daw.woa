@@ -26,6 +26,7 @@ woa-radio = { version = "0.34", path = "../radio" }
 woa-remote = { version = "0.34", path = "../remote" }
 woa-stream = { version = "0.34", path = "../stream" }
 woa-telemetry = { version = "0.34", path = "../telemetry" }
+woa-updater = { version = "0.34", path = "../updater" }
 
 [dev-dependencies]
 assert_no_alloc = "1.1.2"
