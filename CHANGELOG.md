@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.34.9 — 2026-10-31
+
+Silvestersendung Teil 2, Paket 4 von 4 (#134): Wunschtitel-Ordner. Damit ist #134 vollständig.
+
+- **Wunschtitel:** Neue Karte „WUNSCHTITEL“ unter den Decks. Ein beobachteter Ordner (Vorgabe: `Wunschtitel` im Datenordner der Sendung, „Ordner wählen …“ für einen anderen, gespeichert in `config.json` als `wish_folder`). Neue Audiodateien stehen innerhalb einer Sekunde oben in der Liste, neue fett mit „neu“; eine Datei, die noch kopiert wird, ist gesperrt („wird kopiert …“).
+- **Ein Klick:** „In die Playlist“ reiht den Titel nach dem laufenden ein, „A“, „B“, „C“ lädt ihn auf das Deck. Kein Spotify, nur Dateien; nichts wird verschoben oder gelöscht.
+- Ein Faden liest den Ordner jede Sekunde (`read_dir`, keine neue Abhängigkeit, kaum Last auf dem alten Laptop). Tests offline (`crates/gui/src/wishes.rs`). Abnahme: `docs/abnahme.md`, „Silvester Teil 2, Paket 4“.
+
 ## 0.34.8 — 2026-10-31
 
 Silvestersendung Teil 2, Paket 3 von 4 (#134): Telefon mit Rückweg.
