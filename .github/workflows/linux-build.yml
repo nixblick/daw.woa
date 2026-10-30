@@ -1,0 +1,91 @@
+name: Linux-Bau
+# Von Hand starten (Actions → Linux-Bau → Run workflow) oder per `gh workflow run linux-build.yml`.
+# Ergebnis als Artefakte am Lauf: WOA-<version>-x86_64.AppImage und woa-<version>.flatpak.
+# Beide Pakete sind unsigniert. Jeder Lauf prüft sich selbst: `--version`, Metainfo und Startmenü-Eintrag
+# gültig, Offline-Render ohne Audiogerät (nie Ton).
+on:
+  workflow_dispatch:
+  # Prüft Änderungen an den Paketen schon im PR.
+  pull_request:
+    paths:
+      - packaging/linux/**
+      - .github/workflows/linux-build.yml
+      - apps/woa/**
+
+jobs:
+  appimage:
+    # 22.04: ältere glibc, damit das AppImage auch auf älteren Systemen startet.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev desktop-file-utils appstream
+      - run: cargo build --release -p woa -p woa-headless -p woa-streamd
+      - run: desktop-file-validate packaging/linux/de.wironair.woa.desktop
+      - name: Metainfo prüfen
+        run: |
+          packaging/linux/render-metainfo.sh "$RUNNER_TEMP/de.wironair.woa.metainfo.xml"
+          appstreamcli validate --no-net "$RUNNER_TEMP/de.wironair.woa.metainfo.xml"
+      - name: AppImage bauen
+        run: packaging/linux/build-appimage.sh dist
+      - name: AppImage prüfen (ohne Fenster, ohne Ton)
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          set -euo pipefail
+          img="$(ls dist/WOA-*-x86_64.AppImage)"
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          test "$("$img" --version)" = "woa $version"
+          WOA_APP=woa-headless "$img" new "$RUNNER_TEMP/probe.woa"
+          WOA_APP=woa-headless "$img" render "$RUNNER_TEMP/probe.woa" "$RUNNER_TEMP/probe.wav" --seconds 2
+          test -s "$RUNNER_TEMP/probe.wav"
+          "$img" --appimage-extract >/dev/null
+          desktop-file-validate squashfs-root/usr/share/applications/de.wironair.woa.desktop
+          appstreamcli validate --no-net squashfs-root/usr/share/metainfo/de.wironair.woa.appdata.xml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: woa-appimage
+          path: dist/WOA-*-x86_64.AppImage
+          retention-days: 30
+
+  flatpak:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Werkzeuge
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder python3-pip desktop-file-utils appstream
+          # Ubuntu 24.04 sperrt Benutzer-Namensräume; bwrap (Flatpak) braucht sie.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          python3 -m venv "$RUNNER_TEMP/gen"
+          "$RUNNER_TEMP/gen/bin/pip" install aiohttp tomlkit
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 org.freedesktop.Sdk.Extension.rust-stable//25.08
+      - name: Crates als Quellen (Bau ohne Netz)
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/9d86d336a39b9af38b86f114b6ce5820fe260f91/cargo/flatpak-cargo-generator.py -o "$RUNNER_TEMP/flatpak-cargo-generator.py"
+          "$RUNNER_TEMP/gen/bin/python" "$RUNNER_TEMP/flatpak-cargo-generator.py" Cargo.lock -o packaging/linux/flatpak/cargo-sources.json
+      - name: Flatpak bauen
+        run: flatpak-builder --user --install --force-clean --disable-rofiles-fuse --repo=repo build-dir packaging/linux/flatpak/de.wironair.woa.yaml
+      - name: Flatpak prüfen (ohne Fenster, ohne Ton)
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          test "$(flatpak run de.wironair.woa --version)" = "woa $version"
+          # Die Sandbox sieht den Probe-Ordner nur mit ausdrücklicher Freigabe.
+          p="$HOME/Documents/woa-probe"
+          mkdir -p "$p"
+          flatpak run --filesystem="$p" --command=woa-headless de.wironair.woa new "$p/probe.woa"
+          flatpak run --filesystem="$p" --command=woa-headless de.wironair.woa render "$p/probe.woa" "$p/probe.wav" --seconds 2
+          test -s "$p/probe.wav"
+          d="$HOME/.local/share/flatpak/app/de.wironair.woa/current/active/files/share"
+          desktop-file-validate "$d/applications/de.wironair.woa.desktop"
+          appstreamcli validate --no-net "$d/metainfo/de.wironair.woa.metainfo.xml"
+          flatpak build-bundle repo "woa-$version.flatpak" de.wironair.woa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: woa-flatpak
+          path: woa-*.flatpak
+          retention-days: 30

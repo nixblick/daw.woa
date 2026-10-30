@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Farben aus crates/gui/src/theme.rs: BG, BORDER, ACCENT, ON_AIR -->
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="#121418"/>
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="none" stroke="#383f4e" stroke-width="4"/>
+  <g fill="#ff9838">
+    <rect x="44" y="108" width="20" height="40" rx="10"/>
+    <rect x="76" y="84" width="20" height="88" rx="10"/>
+    <rect x="108" y="56" width="20" height="144" rx="10"/>
+    <rect x="140" y="92" width="20" height="72" rx="10"/>
+    <rect x="172" y="116" width="20" height="24" rx="10"/>
+  </g>
+  <circle cx="208" cy="48" r="16" fill="#ee3844"/>
+</svg>

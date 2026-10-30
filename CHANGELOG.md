@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.34.0 — 2026-10-30
+
+Paket 39 aus M10: Linux-Pakete aus der CI, AppImage und Flatpak (Abnahme: `docs/abnahme.md`).
+
+- **Workflow `linux-build.yml`:** Von Hand oder bei Änderungen an `packaging/linux/` startbar. Job „appimage“ (Ubuntu 22.04, ältere glibc) und Job „flatpak“. Beide laden ihr Paket als Artefakt (`WOA-<version>-x86_64.AppImage`, `woa-<version>.flatpak`), unsigniert.
+- **AppImage:** `packaging/linux/build-appimage.sh` legt den AppDir an (Programme, Startmenü-Eintrag, Metainfo, Symbol), lässt `linuxdeploy` die Bibliotheken einsammeln und `appimagetool` das Paket schreiben (Ablauf nach LMMS). Beide Werkzeuge mit fester Version. Eigenes `AppRun`: ohne Zusatz startet `woa`, mit `WOA_APP=woa-headless` oder `woa-streamd` die anderen Programme.
+- **Flatpak:** `packaging/linux/flatpak/de.wironair.woa.yaml` (Laufzeit freedesktop 25.08, Rust aus der SDK-Erweiterung). Zugriffsrechte nach Mixxx: Wayland/X11, Pulse/PipeWire, Geräte (Audio, MIDI), Netz, Musik, Dokumente, Wechseldatenträger. Alle Crates kommen als Quellen aus `Cargo.lock` (`flatpak-cargo-generator`), der Bau läuft ohne Netz.
+- **Metainfo und Startmenü:** `de.wironair.woa.desktop`, `de.wironair.woa.metainfo.xml` (Version und Datum setzt `render-metainfo.sh` aus `Cargo.toml` und CHANGELOG), Symbol als SVG und PNG in den Farben der Oberfläche.
+- **`woa --version` und `--help`:** Das Programm gibt Version bzw. Aufruf aus und beendet sich, ohne Fenster. Vorher hätte `--version` versucht, einen Projektordner dieses Namens zu öffnen.
+- **Prüfungen im Lauf (ohne Ton, ohne Gerät):** `desktop-file-validate`, `appstreamcli validate`, `woa --version` stimmt mit der Version überein, Offline-Render eines neuen Projekts mit `woa-headless` (2 Sekunden Stille, Datei nicht leer) aus dem fertigen Paket; beim Flatpak im Lauf installiert und mit `flatpak run` gestartet (das Probeprojekt bekommt eine ausdrückliche Freigabe, die Sandbox sieht sonst nur ihre eigenen Ordner).
+- **Test:** Einheitstests für `--version` und für den Projektordner als erstes Argument.
+- **Review-Nachbesserung:** Lizenzdatei landet im AppImage unter `usr/share/doc/woa/LICENSE` (vorher falscher Pfad, Fehler verschluckt); verrutschte Überschrift im Eintrag 0.33.1 repariert.
+- **Herkunft:** Ablauf aus LMMS (`LinuxDeploy.cmake`, GPL-2.0-or-later), Zugriffsrechte aus Mixxx (GPL-2.0-or-later); kein Code übernommen (`docs/herkunft.md`).
+- **Nicht gebaut / nicht geprüft:** Signatur der Pakete; Veröffentlichung auf wironair.de oder Flathub; Start der Oberfläche im Paket (CI hat keinen Bildschirm); CLAP-Plugins im Flatpak (die Sandbox sieht die Plugins des Rechners nicht); Update-Prüfung (Paket 40).
+- **Offen für André:** Code-Signing-Zertifikat und Signatur der Pakete (Kosten); Ort der Veröffentlichung (wironair.de, Flathub, GitHub-Releases); ob die App-Kennung `de.wironair.woa` so bleiben soll (setzt die Domain wironair.de voraus).
+
 ## 0.33.7 — 2026-10-30
 
 Silvestersendung Teil 2, Paket 1 von 4 (#134): Ausgänge je Gerät.
@@ -40,7 +56,9 @@ Silvester-Paket (#132), Abnahme: `docs/abnahme.md`.
 
 ## 0.33.1 — 2026-10-30
 
-- **Telemetrie, die etwas sagt:** Bisher kamen fast nur leere `log.warn`-Zeilen an, alle 5 Minuten. Jetzt alle 120 Sekunden, mit Code-Ort jeder Warnung und jedes Fehlers (`log.error.app.4711`), Dauer langsamer Aktionen (`span.playlist_add`, `span.audio_load`, `span.show_load`, `span.show_render`, `span.dawproject_import` u. a. ab 20 ms), langsamen Frames (`ui.frame_slow` ab 100 ms) und Hängern der Oberfläche (`ui.hang_open` ab 2 s, auch wenn das Fenster nie mehr reagiert). Dazu alle 120 s eine Zusammenfassung: Frames, fps, Durchschnitt und Maximum der Frame-Zeit, Laufzeit, Speicher und Threads (Linux), Spuren, Clips, ungespeichert, Zoom, Player offen, Radio-Aussetzer. Zeitmessung auch für Dekodieren, ffmpeg, Export, Stems und Clip-Rendern. Weiter nur Bezeichner und Zahlen, kein Text, keine Pfade. Übersicht in `docs/telemetrie.md`.## 0.33.0 — 2026-10-30
+- **Telemetrie, die etwas sagt:** Bisher kamen fast nur leere `log.warn`-Zeilen an, alle 5 Minuten. Jetzt alle 120 Sekunden, mit Code-Ort jeder Warnung und jedes Fehlers (`log.error.app.4711`), Dauer langsamer Aktionen (`span.playlist_add`, `span.audio_load`, `span.show_load`, `span.show_render`, `span.dawproject_import` u. a. ab 20 ms), langsamen Frames (`ui.frame_slow` ab 100 ms) und Hängern der Oberfläche (`ui.hang_open` ab 2 s, auch wenn das Fenster nie mehr reagiert). Dazu alle 120 s eine Zusammenfassung: Frames, fps, Durchschnitt und Maximum der Frame-Zeit, Laufzeit, Speicher und Threads (Linux), Spuren, Clips, ungespeichert, Zoom, Player offen, Radio-Aussetzer. Zeitmessung auch für Dekodieren, ffmpeg, Export, Stems und Clip-Rendern. Weiter nur Bezeichner und Zahlen, kein Text, keine Pfade. Übersicht in `docs/telemetrie.md`.
+
+## 0.33.0 — 2026-10-30
 
 Paket 38 aus M9: Browser-Gast per WebRTC, lokal (Abnahme: `docs/abnahme.md`).
 
