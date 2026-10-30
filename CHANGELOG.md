@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.33.4 — 2026-10-30
+
+- **Windows: App beendete sich nicht, MSI-Installation brach ab** (André). Beim Schließen wartete die Telemetrie auf einen Kanal, den der globale Logger nie freigibt. Das Fenster ging zu, der Prozess lief weiter, und der Installer verlangte, die App zu beenden. Jetzt bekommt der Upload ein Ende-Signal und hat höchstens 3 s für den letzten Versand. Test: `drop_returns_while_a_layer_still_holds_a_sender`.
+- **Windows: kein schwarzes Konsolenfenster mehr** neben der App (`windows_subsystem = "windows"`).
+
 ## 0.33.3 — 2026-10-30
 
 - **Spur umbenennen hielt fest:** Das Namensfeld holte sich in jedem Bild den Fokus zurück, Enter und ein Klick daneben wirkten nicht, man kam nur per Neustart heraus (André, Windows 0.33.2). Der Fokus wird jetzt nur beim Öffnen gesetzt. Enter oder ein Klick daneben übernimmt den Namen, Esc verwirft ihn.
