@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.5 — 2026-10-30
+
+Fix #139: Kopfhörer unter Windows blieben stumm, nachdem Windows das Standard-Ausgabegerät umgeschaltet hatte.
+
+- **Ausgabe verbindet sich selbst neu.** Player, Sendeausgänge (Hauptgerät und weitere Geräte) und Vorhören laufen jetzt über `ManagedOutput` (`crates/engine/src/device.rs`). Meldet der Strom `StreamInvalidated`, `DeviceNotAvailable` oder einen Treiberfehler, oder wechselt bei „Standard“ das Standardgerät (Prüfung alle 2 s), öffnet der GUI-Takt den Strom neu auf dem aktuellen Standardgerät, nie im Audio-Thread. Wartezeiten 1, 2, 4 … höchstens 16 s. Aussetzer und Umleitungen lösen nichts aus. Die Render-Funktion (Mixer) liegt außerhalb des Stroms und überlebt das Neuöffnen; der Audio-Thread nimmt sie nur mit `try_lock` (kein Warten). Grenze: Ändert sich dabei die Abtastrate, bleibt es still (Klasse `config`).
+- **Telemetrie mit Fehlerklasse:** `audio.output.device_invalidated`, `device_not_available`, `device_busy`, `config`, `backend`, `other`; kein Freitext, kein Gerätename.
+- **Einstellungen, „Ausgabe neu verbinden“** als Rettungsknopf.
+- Tests mit simulierten Gerätefehlern (Klasse, Neuöffnen nur bei echten Fehlern, Wartezeiten, Render überlebt). Abnahme: `docs/abnahme.md`, „Kopfhörer unter Windows“.
+
 ## 0.34.4 — 2026-10-30
 
 Silvestersendung Teil 2, Paket 2 von 4 (#134): drei Decks.

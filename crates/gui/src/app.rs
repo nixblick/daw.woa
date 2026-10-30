@@ -2150,6 +2150,23 @@ impl WoaApp {
                     self.outputs_ui.open(&self.config.outputs);
                     ui.close();
                 }
+                if ui
+                    .button("Ausgabe neu verbinden")
+                    .on_hover_text(
+                        "Öffnet Player, Sendeausgänge und Vorhören neu auf dem aktuellen \
+                         Standardgerät, z. B. nach dem Einstecken der Kopfhörer",
+                    )
+                    .clicked()
+                {
+                    if let Some(p) = self.player.as_mut() {
+                        p.reconnect_output();
+                    }
+                    if let Some(r) = self.radio.as_mut() {
+                        r.reconnect_outputs();
+                    }
+                    tracing::info!("output reconnect by button");
+                    ui.close();
+                }
                 ui.separator();
                 let mut on = self.config.telemetry_enabled == Some(true);
                 if ui

@@ -9,13 +9,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use woa_engine::device::{
-    OutputConfig, OutputProbe, PairsRender, is_xrun, probe_output, start_pairs_output,
+    ManagedOutput, OutputConfig, OutputProbe, PairsRender, Reconnect, is_xrun, probe_output,
 };
 use woa_engine::pairs::{LinkStats, link};
 use woa_radio::routing::{DeviceInfo, OutputMap, Plan, SOURCES};
 use woa_radio::{Controller, Mixer};
-
-type Stream = Box<dyn std::any::Any>;
 
 /// Ein Gerät, das mitten in der Sendung ausfallen kann.
 pub struct Fault {
@@ -27,9 +25,9 @@ pub struct Fault {
 /// Was `open` geöffnet hat.
 pub struct Opened {
     /// Strom des Hauptgeräts, `None` wenn es sich nicht öffnen ließ.
-    pub _master: Option<Stream>,
+    pub _master: Option<ManagedOutput>,
     /// Ströme der weiteren Geräte (leben, solange das Feld lebt).
-    pub _followers: Vec<Stream>,
+    pub _followers: Vec<ManagedOutput>,
     /// Meldungen für die Oberfläche: fehlende Geräte, Ersatz, Fehler beim Öffnen.
     pub warnings: Vec<String>,
     pub faults: Vec<Fault>,
@@ -45,13 +43,30 @@ impl Opened {
             if !f.reported && f.flag.load(Ordering::Relaxed) {
                 f.reported = true;
                 out.push(format!(
-                    "Ausgang {} ist ausgefallen (Gerät abgezogen?). Die Quellen dort sind \
-                     stumm, bis die Ausgabe neu geöffnet wird.",
+                    "Ausgang {} ist ausgefallen (Gerät gewechselt oder abgezogen?). WOA \
+                     verbindet automatisch neu; sonst: Einstellungen, Ausgabe neu verbinden.",
                     f.label
                 ));
             }
         }
         out
+    }
+
+    /// Öffnet ausgefallene Ströme neu und folgt einem gewechselten Standardgerät. Im GUI-Takt
+    /// aufrufen, nie im Audio-Thread.
+    pub fn poll(&mut self) {
+        for out in self._master.iter_mut().chain(self._followers.iter_mut()) {
+            out.poll();
+        }
+    }
+
+    /// Rettungsknopf: alle Ströme sofort neu öffnen. `true`, wenn alle liefen.
+    pub fn reconnect_now(&mut self) -> bool {
+        let mut ok = self._master.is_some();
+        for out in self._master.iter_mut().chain(self._followers.iter_mut()) {
+            ok &= !matches!(out.reconnect_now(), Reconnect::Failed(_));
+        }
+        ok
     }
 
     /// Eine Zeile je Ring: Füllstand und Ausfälle, für die Einstellungen.
@@ -137,15 +152,16 @@ pub fn open(
                 }
             }
         });
-        let result = start_pairs_output(&config, dev.pairs, false, render, move |e| {
-            if !is_xrun(&e) {
-                failed.store(true, Ordering::Relaxed);
-            }
-        });
+        let result =
+            ManagedOutput::open("radio-extra", &config, dev.pairs, false, render, move |e| {
+                if !is_xrun(&e) {
+                    failed.store(true, Ordering::Relaxed);
+                }
+            });
         match result {
             Ok(s) => {
                 tracing::info!(device = %dev.info.name, rate = dev.info.rate, pairs = dev.pairs, "second output ready");
-                followers.push(Box::new(s) as Stream);
+                followers.push(s);
                 faults.push(Fault {
                     label: dev.info.name.clone(),
                     flag,
@@ -188,7 +204,7 @@ pub fn open(
     };
     let failed = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&failed);
-    let master = match start_pairs_output(&config, pairs, true, render, move |e| {
+    let master = match ManagedOutput::open("radio", &config, pairs, true, render, move |e| {
         // Kann im Audio-Thread laufen: Aussetzer nur zählen, geloggt wird in `tick`.
         if is_xrun(&e) {
             xruns.fetch_add(1, Ordering::Relaxed);
@@ -203,7 +219,7 @@ pub fn open(
                 flag,
                 reported: false,
             });
-            Some(Box::new(s) as Stream)
+            Some(s)
         }
         Err(e) => {
             tracing::error!(error = %e, "radio output failed");
