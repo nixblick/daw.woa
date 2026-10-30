@@ -1672,7 +1672,7 @@ impl WoaApp {
                 let d = woa_engine::decode::decode_file(p).ok()?;
                 Some(woa_io::dawproject::AudioInfo {
                     sample_rate: d.rate,
-                    channels: 2,
+                    channels: u16::try_from(d.channels).unwrap_or(2),
                     seconds: d.frames() as f64 / f64::from(d.rate.max(1)),
                 })
             })
@@ -1717,7 +1717,9 @@ impl WoaApp {
                 self.state.open(&dir);
                 // Nach dem Öffnen überschreibt `open` die Statuszeile; die Zusammenfassung
                 // ist das, was der Nutzer sehen soll.
-                self.state.status = Status::Info(format!("DAWproject: {}", rep.summary()));
+                if !matches!(self.state.status, Status::Error(_)) {
+                    self.state.status = Status::Info(format!("DAWproject: {}", rep.summary()));
+                }
             }
             Err(e) => {
                 tracing::error!(error = %e, "dawproject import failed");

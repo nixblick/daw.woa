@@ -10,10 +10,10 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use woa_model::{
-    AutoMode, AutoPoint, AutoTarget, AutomationLane, Clip, ClipId, EffectKind, FOLLOW_TEMPO_RANGE,
-    FadeCurve, Insert, InsertId, MAX_AUTOMATION_POINTS, MAX_GAIN_DB, MAX_ID, MAX_TEMPO_BPM,
-    MIN_GAIN_DB, MIN_TEMPO_BPM, MidiCc, MidiData, MidiNote, PITCH_RANGE, Project, STRETCH_RANGE,
-    Send, Track, TrackId, TrackKind, is_safe_audio_path, store,
+    AutoMode, AutoPoint, AutoTarget, AutomationLane, Clip, ClipId, FOLLOW_TEMPO_RANGE, FadeCurve,
+    Insert, InsertId, MAX_AUTOMATION_POINTS, MAX_GAIN_DB, MAX_ID, MAX_TEMPO_BPM, MIN_GAIN_DB,
+    MIN_TEMPO_BPM, MidiCc, MidiData, MidiNote, PITCH_RANGE, Project, STRETCH_RANGE, Send, Track,
+    TrackId, TrackKind, is_safe_audio_path, store,
 };
 use zip::ZipArchive;
 
@@ -1015,6 +1015,3 @@ pub fn import_to_folder(file: &Path, dir: &Path) -> Result<(Project, Report), Da
     }
     result
 }
-
-#[allow(dead_code)]
-fn _kinds(_: EffectKind) {}

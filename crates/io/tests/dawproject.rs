@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use woa_io::dawproject::export::{export, export_file, project_xml};
 use woa_io::dawproject::import::{import, import_to_folder};
+use woa_io::dawproject::xml::{self, Node};
 use woa_io::dawproject::{AudioInfo, DawError, Report, probe_wav};
 use woa_model::{
     AutoMode, AutoPoint, AutoTarget, AutomationLane, Clip, ClipId, EffectKind, Insert, InsertId,
@@ -180,12 +181,29 @@ fn stretched_clip_round_trips() {
     assert_eq!(b.follow_tempo_bpm, Some(90.0));
 }
 
+/// Rundet Kommazahlen auf 9 Stellen: pow/log10 liefern je nach Plattform (glibc, MSVC) in
+/// der letzten Stelle andere Werte, der Schnappschuss darf daran nicht hängen.
+fn round_floats(n: &mut Node) {
+    for (_, v) in &mut n.attrs {
+        if v.contains('.')
+            && let Ok(x) = v.parse::<f64>()
+        {
+            *v = format!("{x:.9}");
+        }
+    }
+    for c in &mut n.children {
+        round_floats(c);
+    }
+}
+
 #[test]
 fn project_xml_snapshot_is_stable() {
     let (dir, p, _) = exported();
     let r = resolver(dir.path().to_path_buf());
     let (bytes, _) = project_xml(&p, &r, &probe).expect("xml");
-    let text = String::from_utf8(bytes).expect("utf8");
+    let mut tree = xml::parse(&bytes).expect("parse");
+    round_floats(&mut tree);
+    let text = String::from_utf8(xml::write(&tree).expect("write")).expect("utf8");
     // Die Programmversion steigt mit jedem Release und gehört nicht in den Schnappschuss.
     let text = text.replace(
         concat!("version=\"", env!("CARGO_PKG_VERSION"), "\"/>"),

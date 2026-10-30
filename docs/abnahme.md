@@ -9,7 +9,7 @@ eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt,
 Aus M7. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
 
 1. **Als DAWproject exportieren:** Ein Projekt mit mehreren Spuren (Audio, MIDI, ein Bus mit Effekt, ein Send) öffnen, Datei, „Als DAWproject exportieren …“, Ziel wählen. Die Statuszeile nennt Spuren, Clips, Audiodateien und eventuell Hinweise zu nicht Übertragenem.
-2. **In Bitwig oder Studio One öffnen:** Die Datei dort öffnen (Bitwig: Datei, Öffnen; Studio One: Datei, Öffnen, `.dawproject`). Es sollten Spuren, Clips an ihrer Stelle, Lautstärke, Pan, Mute, Sends und die Lautstärke-Automation da sein. Unsere Effekte erscheinen dort nicht (sie sind WOA-eigen), das ist so gewollt. Cubase kann es ab Version 14 auch.
+2. **In Bitwig oder Studio One öffnen:** Die Datei dort öffnen (über den Öffnen- oder Import-Eintrag des Programms). Es sollten Spuren, Clips an ihrer Stelle, Lautstärke, Pan, Mute, Sends und die Lautstärke-Automation da sein. Unsere Effekte erscheinen dort nicht (sie sind WOA-eigen), das ist so gewollt. Cubase kann DAWproject laut Hersteller ebenfalls, die Version bitte selbst prüfen.
 3. **Fremde Datei in WOA öffnen:** In Bitwig oder Studio One ein kleines Projekt als `.dawproject` speichern, in WOA Datei, „DAWproject öffnen …“. Es entsteht ein Ordner `<Name>.woa` neben der Datei und wird geöffnet. Fremde Plugins fehlen (siehe Log), alles andere sollte stimmen.
 4. **Zurück nach WOA:** Die eigene Exportdatei aus Schritt 1 wieder öffnen: Tonhöhe, Clip-Verstärkung, Blendenform und „Tempo folgen“ der Clips sind wieder da.
 
