@@ -173,3 +173,22 @@ async fn spectrogram_png_draws_the_tone_line() {
     .await;
     assert_eq!(e.is_error, Some(true));
 }
+
+/// #83: write_png replaces a planted symlink instead of writing through it.
+#[cfg(unix)]
+#[test]
+fn write_png_does_not_follow_a_symlink() {
+    let dir = tempfile::tempdir().unwrap();
+    let victim = dir.path().join("victim.txt");
+    std::fs::write(&victim, b"keep").unwrap();
+    let out = dir.path().join("bild.png");
+    std::os::unix::fs::symlink(&victim, &out).unwrap();
+    woa_agent::audio::write_png(&out, &[0u8; 2 * 2 * 3], 2, 2).unwrap();
+    assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
+    assert!(
+        !std::fs::symlink_metadata(&out)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+}

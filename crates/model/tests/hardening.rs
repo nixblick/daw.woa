@@ -47,3 +47,50 @@ fn save_does_not_follow_planted_tmp_symlink() {
     assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
     assert!(store::load(&project_dir).is_ok());
 }
+
+/// #79: a long chain of buses loads in linear time, not one graph search per edge.
+#[test]
+fn loading_a_long_bus_chain_is_fast() {
+    let mut s = Session::new("x");
+    let mut prev: Option<TrackId> = None;
+    for n in 0..2000 {
+        let id = s.new_track_id();
+        s.apply(Command::add_track(id, format!("B{n}"), TrackKind::Bus))
+            .unwrap();
+        if let Some(p) = prev {
+            s.apply(Command::SetOutput {
+                track: p,
+                output: Some(id),
+            })
+            .unwrap();
+        }
+        prev = Some(id);
+    }
+    let json = store::to_json(s.project()).unwrap();
+    let t0 = std::time::Instant::now();
+    store::from_json(&json, std::path::Path::new("x")).unwrap();
+    assert!(t0.elapsed() < std::time::Duration::from_secs(2));
+}
+
+/// #79: a cycle planted in the file is still found by the one-pass check.
+#[test]
+fn loading_a_planted_cycle_is_rejected() {
+    let mut s = Session::new("x");
+    let a = s.new_track_id();
+    s.apply(Command::add_track(a, "A", TrackKind::Bus)).unwrap();
+    let b = s.new_track_id();
+    s.apply(Command::add_track(b, "B", TrackKind::Bus)).unwrap();
+    s.apply(Command::SetOutput {
+        track: a,
+        output: Some(b),
+    })
+    .unwrap();
+    let json = store::to_json(s.project()).unwrap();
+    let mut v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let tracks = v["project"]["tracks"].as_array_mut().unwrap();
+    let tb = tracks.iter_mut().find(|t| t["id"] == b.0).unwrap();
+    tb["output"] = serde_json::json!(a.0);
+    let hostile = serde_json::to_string(&v).unwrap();
+    let err = store::from_json(&hostile, std::path::Path::new("x")).unwrap_err();
+    assert!(matches!(err, ModelError::RoutingCycle { .. }));
+}

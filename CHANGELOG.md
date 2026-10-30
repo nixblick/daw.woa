@@ -11,6 +11,13 @@ Paket 23 aus M6: Time-Stretch, Tonhöhe und die Abnahme „ganzer Song“.
 - **Agent:** neue Werkzeuge `stretch_clip`, `set_clip_pitch` und `set_clip_follow_tempo`, beschrieben in `docs/agent.md`.
 - **Tests:** Sinus 440 Hz um 10 % gedehnt: Länge ±1 %, Frequenz bleibt (FFT-Spitze); Tonhöhe +2 Halbtöne: FFT-Spitze bei 493,9 Hz ±1 %, Länge gleich; Tempo 120 auf 100 mit Folgen: Länge und Frequenz stimmen; Undo bitgleich, 0 Halbtöne und gleiches Tempo lassen den Render bitgleich; Echtzeit unter `assert_no_alloc`. Modelltests (Undo, Redo, Fades, schlechte Werte, Format), Zustands- und Oberflächentest ohne Fenster und ohne Ton (Alt-Ziehen, ein Undo-Schritt, ohne Alt nur Kürzen), Agent über MCP. Dazu die M6-Abnahme als Test: ein ganzer Song mit geteilten, gedehnten, transponierten und überblendeten Clips und geändertem Tempo wird exportiert und wieder eingelesen (Länge, kein NaN, keine Knackser, Pegel, Frequenz).
 
+## 0.17.1 — 2026-10-30
+
+Sicherheit: zwei Funde der automatischen Prüfung behoben.
+
+- **Modell (#79):** Die Routing-Prüfung beim Laden erkennt Kreise jetzt in einem Durchgang über den ganzen Signalgraphen (O(V+E)) statt mit einer Suche je Verbindung; doppelte Sends und IDs prüfen Mengen statt Listen. Eine präparierte Projektdatei mit vielen Spuren und Sends legt das Laden nicht mehr lahm. Tests: 2000 Busse in Kette laden schnell, ein in die Datei geschmuggelter Kreis wird abgelehnt.
+- **Agent (#83):** `write_png` schreibt wie der Export in eine neu angelegte Temp-Datei und setzt sie per `rename` an den Zielnamen; ein untergeschobener Symlink wird ersetzt, nicht beschrieben. Test dazu.
+
 ## 0.17.0 — 2026-10-30
 
 Paket 22 aus M6: Aufnahme mit Latenzausgleich, Punch-in, Loop-Takes und Comping.
