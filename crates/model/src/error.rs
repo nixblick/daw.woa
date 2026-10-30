@@ -82,6 +82,9 @@ pub enum ModelError {
     /// The effect has no parameter with this name.
     #[error("effect has no parameter named {0:?}")]
     UnknownParamName(String),
+    /// A tool or command argument is missing or does not fit (message for the caller).
+    #[error("{0}")]
+    InvalidArgument(String),
     /// The effect has no sidechain input.
     #[error("insert {0} has no sidechain input")]
     SidechainNotSupported(InsertId),
