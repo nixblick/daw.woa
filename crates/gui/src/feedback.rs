@@ -49,6 +49,9 @@ pub struct GuiConfig {
     /// Ausgang für das Vorhören (PFL, Paket 15). Vorgabe: aus.
     #[serde(skip_serializing_if = "PflOutput::is_off")]
     pub pfl_output: PflOutput,
+    /// Ausgänge je Gerät: Gerät und Kanalpaar je Quelle. Vorgabe: alles auf Standardgerät, Kanal 1/2.
+    #[serde(skip_serializing_if = "woa_radio::routing::OutputMap::is_default")]
+    pub outputs: woa_radio::routing::OutputMap,
 }
 
 /// Wohin das Vorhören (PFL) geht. Nie auf Kanal 1/2 der Sendung.
@@ -119,6 +122,7 @@ impl Default for GuiConfig {
             controller_input: None,
             controller_maps: std::collections::BTreeMap::new(),
             pfl_output: PflOutput::Aus,
+            outputs: woa_radio::routing::OutputMap::default(),
         }
     }
 }
@@ -340,6 +344,27 @@ pub fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, png::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_map_is_saved_only_when_set_and_old_configs_load() {
+        use woa_radio::routing::{Route, Source};
+        let mut cfg = GuiConfig::default();
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(!json.contains("outputs"), "{json}");
+        let old: GuiConfig = serde_json::from_str(&json).unwrap();
+        assert!(old.outputs.is_default());
+        cfg.outputs.set(
+            Source::Carts,
+            Route {
+                device_id: Some("card2".into()),
+                device_name: "Karte 2".into(),
+                pair: 1,
+            },
+        );
+        let back: GuiConfig = serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(back.outputs.get(Source::Carts).pair, 1);
+        assert_eq!(back.outputs.get(Source::Playlist), Route::default());
+    }
 
     #[test]
     fn thanks_close_after_three_seconds_errors_stay() {

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.33.6 — 2026-10-30
+
+Silvestersendung Teil 2, Paket 1 von 4 (#134): Ausgänge je Gerät.
+
+- **Ausgänge (Soundkarten):** Einstellungen, „Ausgänge (Soundkarten) …“. Playlist und Cart-Wall bekommen je ein Gerät und ein Kanalpaar (1/2 bis 7/8). Mehrere Geräte laufen gleichzeitig, der Pegel wird am Pult gefahren. Gespeichert in `config.json` (`outputs`, alte Dateien laden unverändert). Ohne Zuordnung klingt alles wie bisher.
+- **Fehlendes Gerät:** Fehlt das Gerät der Playlist, läuft die Sendung auf dem Standardgerät. Fehlt das einer anderen Quelle, läuft sie mit der Playlist. Beides steht als Meldung im Radio-Fenster und in den Ausgängen; wird ein Gerät mitten in der Sendung abgezogen, steht dort „Ausgang … ist ausgefallen“.
+- **Takt:** Das Gerät der Playlist gibt den Takt vor, jedes weitere Gerät hat einen eigenen Strom und einen Ring dazwischen. Abweichende Abtastraten und Taktdrift gleicht ein nachgeführter Resampler aus (Polster etwa 50 ms), Zähler für Notfälle stehen in den Ausgängen.
+- Engine: `woa_engine::pairs` (Kanalpaare, Ring mit Resampler), `start_pairs_output`; Radio: `routing` (Plan, Router), Mixer `process_multi`.
+
 ## 0.33.5 — 2026-10-30
 
 Silvester-Paket (#132), Abnahme: `docs/abnahme.md`.

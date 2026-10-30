@@ -34,7 +34,10 @@ pub struct RadioDesk {
     radio_path: PathBuf,
     data_dir: PathBuf,
     station: Option<Station>,
-    _output: Option<Stream>,
+    /// Geöffnete Ausgabeströme (Hauptgerät und weitere Geräte).
+    outputs: crate::outputs::Opened,
+    /// Meldungen aus dem Öffnen, die in den Einstellungen stehen bleiben.
+    output_warnings: Vec<String>,
     mic: Option<Stream>,
     rate: u32,
     error: Option<String>,
@@ -186,18 +189,27 @@ impl RadioDesk {
         data_dir: PathBuf,
         buffer_frames: Option<u32>,
         pfl: &PflOutput,
+        output_map: &woa_radio::routing::OutputMap,
     ) -> Self {
         let (show, mut error) = match RadioShow::load(&radio_path) {
             Ok(s) => (s, None),
             Err(e) => (RadioShow::default(), Some(e)),
         };
+        // Ausgänge je Gerät: Das Gerät der Playlist taktet den Mixer. Vorhören auf Kanal 3/4
+        // belegt Paar 1 des Hauptgeräts.
+        let reserved: &[usize] = if matches!(pfl, PflOutput::Kanal34) {
+            &[1]
+        } else {
+            &[]
+        };
+        let plan = crate::outputs::plan(output_map, reserved);
         let config = woa_engine::device::OutputConfig {
-            device_id: None,
+            device_id: plan.devices[0].open_id.clone(),
             buffer_frames,
         };
-        let rate = woa_engine::device::output_sample_rate(&config).unwrap_or(48_000);
-        let (mut controller, mut mixer) = Controller::new(show, rate);
-        let device = woa_engine::device::output_device_name(&config);
+        let rate = plan.devices[0].info.rate;
+        let (mut controller, mixer) = Controller::new(show, rate);
+        let device = plan.devices[0].info.name.clone();
         let underruns = Arc::new(AtomicU64::new(0));
         let counter = Arc::clone(&underruns);
         // Vorhören (Paket 15): Kanal 3/4 im selben Callback oder ein eigener Strom.
@@ -254,29 +266,22 @@ impl RadioDesk {
                 }
             }
         };
-        let output: Option<Stream> = match woa_engine::device::start_output_aux(
-            &config,
-            move |l, r| mixer.process(l, r),
+        let opened = crate::outputs::open(
+            &mut controller,
+            mixer,
+            &plan,
+            buffer_frames,
             aux,
-            // Kann im Audio-Thread laufen: Aussetzer nur zählen, geloggt wird in `tick`.
-            move |e| {
-                if woa_engine::device::is_xrun(&e) {
-                    counter.fetch_add(1, Ordering::Relaxed);
-                } else {
-                    tracing::warn!(error = %e, "radio output");
-                }
-            },
-        ) {
-            Ok(s) => {
-                tracing::info!(rate, ?buffer_frames, %device, "radio output ready");
-                Some(Box::new(s))
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "radio output failed");
-                error = Some(format!("Keine Ausgabe: {e}"));
-                None
-            }
-        };
+            Arc::clone(&counter),
+        );
+        let output_warnings = opened.warnings.clone();
+        if !output_warnings.is_empty() {
+            let all = output_warnings.join("\n");
+            error = Some(match error {
+                Some(e) => format!("{e}\n{all}"),
+                None => all,
+            });
+        }
         let station = match Station::spawn(controller) {
             Ok(s) => {
                 s.measure_missing(&s.show());
@@ -292,7 +297,8 @@ impl RadioDesk {
             radio_path,
             data_dir,
             station,
-            _output: output,
+            outputs: opened,
+            output_warnings,
             mic: None,
             rate,
             error,
@@ -419,6 +425,13 @@ impl RadioDesk {
         let Some(st) = &self.station else { return };
         self.view = st.view();
         self.tick_stream();
+        for m in self.outputs.take_new_faults() {
+            tracing::warn!(message = %m, "output lost");
+            self.error = Some(match self.error.take() {
+                Some(e) => format!("{e}\n{m}"),
+                None => m,
+            });
+        }
         let total = self.underruns();
         if let Some(new) = self.xruns.due(total, Instant::now()) {
             let v = &self.view;
@@ -520,6 +533,16 @@ impl RadioDesk {
         if let Some(s) = &self.station {
             s.add_files(paths);
         }
+    }
+
+    /// Meldungen aus dem Öffnen der Ausgänge (fehlende Geräte, Ersatz).
+    pub fn output_warnings(&self) -> &[String] {
+        &self.output_warnings
+    }
+
+    /// Zustand der Ringe zu den weiteren Geräten, eine Zeile je Ring.
+    pub fn output_links(&self) -> Vec<String> {
+        self.outputs.link_lines()
     }
 
     pub fn is_on_air(&self) -> bool {
