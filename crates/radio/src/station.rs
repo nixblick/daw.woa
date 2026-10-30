@@ -97,6 +97,8 @@ pub struct View {
     pub last_event: Option<(String, f64)>,
     /// Verpasste Zeit-Events seit dem Start.
     pub events_missed: u32,
+    /// Gast-Kanäle mit Pegel und Pufferzustand (Paket 37).
+    pub guests: Vec<woa_guests::GuestView>,
 }
 
 /// Griff auf den laufenden Sende-Thread.
@@ -296,6 +298,7 @@ fn run(
             next_event: c.next_event(crate::control::wall_now()),
             last_event: c.last_event().cloned(),
             events_missed: c.events_missed(),
+            guests: c.guests_view(),
         };
         if let Ok(mut out) = view.lock() {
             *out = v;

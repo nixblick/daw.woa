@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.32.0 — 2026-10-30
+
+Paket 37 aus M9: Gast-Kanäle mit Mix-Minus, ohne Netz (Abnahme: `docs/abnahme.md`).
+
+- **Gast-Kanäle:** Neue Karte „Gäste & Mix-Minus“ im Radio-Modus. „＋ Testgast“ legt einen Gast mit eigenem Sinuston an (Gast 1: 330 Hz, Gast 2: 440 Hz, danach in 110-Hz-Schritten), „＋ Datei als Gast“ spielt eine Audiodatei in Schleife. Bis zu acht Gäste. Je Gast: Pegelanzeige, Fader (−60 bis +12 dB, geglättet), Stumm, Rückweg abhören, Entfernen und eine Zeile mit Puffer in Millisekunden und Zählern. Die Gäste liegen in der Sendung, im Mitschnitt und im Stream.
+- **Rückweg (Mix-Minus):** Je Gast die Summe aus Musik, Carts, Moderator und allen anderen Gästen, nur nicht er selbst. Die anderen Gäste werden einzeln addiert statt „Summe minus eigener Anteil“, damit von der eigenen Stimme auch kein Rundungsrest bleibt. Der Kopfhörer-Knopf (🎧) legt den Rückweg dieses Gastes auf den Abhörausgang des Sendemixers; nochmal drücken stellt den normalen Abhörmix zurück. Der Rückweg läuft durch dieselbe Lautheitsregelung und Begrenzung wie die Sendung.
+- **Jitterpuffer:** Je Gast ein Ring mit 60 ms Vorlauf (Wiedergabe beginnt erst, wenn er gefüllt ist) und einer Obergrenze von 400 ms (was darüber ankommt, wird abgewiesen; was der Leser darüber findet, wird auf den Vorlauf abgeschnitten, damit der Gast sich nicht mit wachsender Verzögerung hört). Läuft der Puffer leer, kommt Stille mit kurzer Einblendung, und der Puffer füllt sich wieder bis zum Vorlauf. Jeder Aussetzer und jeder Überlauf wird gezählt, in der Anzeige gezeigt und mit `tracing` ins Log geschrieben (Gast, Anzahl, verworfene Frames).
+- **Quellen:** Testgäste (Sinus oder Datei) schreiben in Echtzeit-Takt in den Puffer. Die spätere WebRTC-Seite schreibt über denselben `GuestFeed` (`GuestHub::add_external`); die Anbindung selbst ist Paket 38.
+- **Neuer Code:** `crates/guests` (`jitter`, `bank` im Audio-Thread, `hub` im Control-Thread, `source`), Einbau in `woa_radio::Mixer` (Gast-Summe vor der Sendebus-Verarbeitung, Rückweg am Abhörausgang) und `Controller::guests()`.
+- **Tests (ohne Ton, ohne Gerät):** Offline-Render mit zwei Sinus-Gästen (440 und 660 Hz) und Musik (880 Hz): Rückweg A enthält B und Musik, A liegt unter −90 dB (Goertzel), umgekehrt für B; mit nur einem Gast ist der Rückweg bitgleich die Musik; dasselbe durch den echten Sendemixer mit Umschalten des Abhörausgangs; Fader −20 dB und Stumm wirken in Sendung und Rückweg, Pegelanzeige folgt dem Fader; Vorlauf, Obergrenze, Abschneiden, genau ein Aussetzer je Leerlauf und Wiederanlauf erst nach Vorlauf; `assert_no_alloc` um Gast-Summe, Rückweg und den ganzen Mixer-Block; Kanal frei nach Entfernen, höchstens acht Gäste; Testquelle liefert in Echtzeit.
+- **Lint:** Die Testquelle kommt ohne `chunks_exact_mut` aus (neuere Clippy-Version in der CI).
+- **Herkunft:** Das Muster `buffer`/`max` aus dem Harbor-Eingang von Liquidsoap, nur die Idee (`docs/herkunft.md`).
+- **Nicht gebaut / nicht geprüft:** WebRTC-Anbindung, Einladungslink und Browser-Mikrofon (Paket 38); Hören im echten Kopfhörer (nur Offline-Render); Rückweg als eigener Strom je Gast zum Netz (kommt mit WebRTC, die Bank liefert ihn bereits Frame für Frame über `return_bus`).
+
 ## 0.31.0 — 2026-10-30
 
 Paket 36 aus M9: Web-Fernbedienung im WLAN (Abnahme: `docs/abnahme.md`).

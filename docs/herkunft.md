@@ -1,6 +1,6 @@
 # Herkunft: was von anderen Projekten kommt
 
-Stand 30.10.2026 (Paket 29). Gesichtet wurden die öffentlichen Repositories von Mixxx und
+Stand 30.10.2026 (Paket 37). Gesichtet wurden die öffentlichen Repositories von Mixxx und
 Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
 
 ## Mixxx (`mixxxdj/mixxx`)
@@ -89,7 +89,12 @@ Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
   einen Sonderweg je Gerät zu haben. Bei uns: Handy, OSC und große Tasten schicken dieselben
   `PartyCommand`s (`crates/remote/src/command.rs` übersetzt, `woa_radio::party::PartyState::apply` führt aus).
   **Kein Code übernommen.**
-- **Nicht gelesen:** Liquidsoap (`harbor_input.ml`) und `tracktion_engine`; das gehört zu Paket 37/38.
+- **Liquidsoap** (`savonet/liquidsoap`, GPL-2.0-or-later, Commit `cb8ba5d3276f`), `src/core/sources/harbor_input.ml`.
+  **Nur die Idee gelesen:** Ein Eingang hat einen Vorlauf (`buffer`, die Wiedergabe beginnt erst, wenn er
+  gefüllt ist) und eine Obergrenze (`max`, mehr wird nicht gepuffert; `buffer` muss kleiner als `max` sein).
+  Bei uns: `crates/guests/src/jitter.rs` (60 ms Vorlauf, 400 ms Obergrenze, Aussetzer und Überläufe gezählt
+  und geloggt). Eigener Entwurf in Rust mit `rtrb`. **Kein Code übernommen.**
+- **Nicht gelesen:** `tracktion_engine`; das gehört zu Paket 38.
 
 ## Regel
 

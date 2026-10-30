@@ -4,6 +4,28 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 37: Gast-Kanäle mit Mix-Minus (ohne Netz) (0.32.0, offen)
+
+Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+Modus „Radio“, Karte „Gäste & Mix-Minus“ rechts unter dem Processing. Zum Hören der Rückwege ein Kopfhörer am normalen Ausgang (der Abhörausgang trägt den Rückweg, solange 🎧 an ist). Töne sind Testsignale, kein Mikrofon, kein Netz.
+
+1. **Zweimal Testgast hinzufügen:** „＋ Testgast“ zweimal. Es erscheinen „Gast 1“ (tieferer Ton) und „Gast 2“, je mit Pegelanzeige, die ausschlägt, und der Pufferzeile („Puffer … ms“, kein Aussetzer).
+2. **Fader bewegen, Pegel sehen:** Den Fader von Gast 1 nach unten ziehen: die Anzeige wird kleiner, der Ton in der Sendung leiser. „M“ macht ihn stumm.
+3. **Rückweg Gast 1 im Kopfhörer:** Bei Gast 1 auf 🎧: im Kopfhörer ist nur Gast 2 zu hören (und Musik, falls sie läuft), Gast 1 nicht. Bei Gast 2 auf 🎧: umgekehrt. Nochmal 🎧: wieder der normale Abhörmix mit beiden.
+
+Selbst geprüft von Claude (ohne Ton, ohne Audiogerät, ohne Mikrofon; Offline-Render):
+- **Mix-Minus:** Zwei Sinus-Gäste (440 und 660 Hz) und Musik (880 Hz): Rückweg A enthält B und Musik mit vollem Pegel, A liegt unter −90 dB (Goertzel über 1,5 s), Rückweg B spiegelbildlich; die Sendung enthält alle drei. Mit nur einem Gast ist der Rückweg bitgleich die Musik. Dasselbe durch den echten Sendemixer: Abhörausgang auf Rückweg 1 gestellt zeigt 660 Hz, nicht 440 Hz; zurückgestellt wieder beide.
+- **Fader, Stumm, Pegel:** −20 dB am Fader senkt den Gast in der Sendung um 20 dB, Stumm auf unter −80 dB, auch im Rückweg des anderen; die Pegelanzeige folgt dem Fader.
+- **Jitterpuffer:** Stille bis 60 ms Vorlauf; Obergrenze 400 ms (Überschuss wird abgewiesen und als Überlauf gezählt; die Leseseite schneidet auf den Vorlauf zurück); leerer Puffer gibt Stille und genau einen Aussetzer, Wiederanlauf erst nach dem Vorlauf; Aussetzer und Überlauf stehen im Log und in der Anzeige.
+- **Echtzeit:** `assert_no_alloc` um Gast-Summe, Rückweg, Spitzenmeldung und den ganzen Mixer-Block.
+- **Kanäle:** Höchstens acht Gäste; ein entfernter Gast gibt den Kanal und den Rückweg-Abhörer frei; Testquelle liefert in Echtzeit.
+
+Nicht selbst geprüft: Aussehen der Karte im Fenster (gebaut und übersetzt, nicht angeklickt), Hören im echten Kopfhörer, Windows.
+
+**Offen für André:**
+- WebRTC-Gäste (Paket 38) brauchen für Gäste hinter fremden Routern vermutlich einen Relay-Dienst (TURN). Ein eigener Server kostet laufend, ein Fremddienst auch; das ist deine Entscheidung. Im selben WLAN geht es ohne.
+- Soll der Rückweg später auf einem zweiten Audiogerät (echter Kopfhörer-Ausgang) liegen statt auf dem Abhörausgang des Sendemixers?
+
 ## Paket 36: Web-Fernbedienung im WLAN (0.31.0, offen)
 
 Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

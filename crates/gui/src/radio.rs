@@ -715,6 +715,9 @@ impl RadioDesk {
             theme::card_frame().show(&mut cols[1], |ui| {
                 self.processing_rack(ui);
             });
+            theme::card_frame().show(&mut cols[1], |ui| {
+                self.guests_card(ui);
+            });
         });
     }
 
@@ -1161,6 +1164,154 @@ impl RadioDesk {
             self.view.mic_processing = mic;
             self.with(move |c| c.set_processing(bus, mic));
         }
+    }
+
+    /// Gast-Kanäle (Paket 37): Testgäste, Fader, Pegel, Rückweg (Mix-Minus) im Kopfhörer.
+    fn guests_card(&mut self, ui: &mut egui::Ui) {
+        let guests = self.view.guests.clone();
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("GÄSTE & MIX-MINUS")
+                    .size(11.5)
+                    .strong()
+                    .color(theme::DIM),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let full = guests.len() >= woa_guests::MAX_GUESTS;
+                let file = ui
+                    .add_enabled(!full, egui::Button::new("＋ Datei als Gast"))
+                    .on_hover_text(
+                        "Eine Audiodatei in Schleife als Testgast (kein Netz, kein Mikrofon)",
+                    );
+                if file.clicked()
+                    && let Some(p) = rfd::FileDialog::new()
+                        .add_filter(
+                            woa_engine::decode::FILTER_NAME,
+                            &woa_engine::decode::dialog_extensions(),
+                        )
+                        .pick_file()
+                {
+                    self.add_guest(woa_guests::TestSignal::File(p));
+                }
+                let sine = ui
+                    .add_enabled(!full, egui::Button::new("＋ Testgast"))
+                    .on_hover_text("Ein Sinuston als Gast, jeder Gast mit eigener Tonhöhe");
+                if sine.clicked() {
+                    let freq = 330.0 + 110.0 * guests.len() as f32;
+                    self.add_guest(woa_guests::TestSignal::Sine { freq });
+                }
+            });
+        });
+        ui.add_space(4.0);
+        theme::lcd_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            if guests.is_empty() {
+                ui.label(
+                    egui::RichText::new(
+                        "Kein Gast. Jeder Gast bekommt einen Kanal und einen Rückweg ohne die eigene Stimme.",
+                    )
+                    .small()
+                    .color(theme::DIM),
+                );
+            }
+            for g in &guests {
+                self.guest_row(ui, g);
+                ui.add_space(2.0);
+            }
+        });
+    }
+
+    fn add_guest(&mut self, signal: woa_guests::TestSignal) {
+        self.with(move |c| {
+            if let Err(e) = c.guests().add_test_guest(signal) {
+                tracing::warn!(error = %e, "guest not added");
+            }
+        });
+    }
+
+    fn guest_row(&mut self, ui: &mut egui::Ui, g: &woa_guests::GuestView) {
+        let slot = g.slot;
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(&g.name)
+                    .strong()
+                    .color(theme::TEXT_BRIGHT),
+            )
+            .on_hover_text(&g.source);
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(90.0, 12.0), egui::Sense::hover());
+            theme::led_meter(ui.painter(), rect, g.peak);
+            let mut db = g.gain_db;
+            if ui
+                .add(
+                    egui::Slider::new(&mut db, -60.0..=12.0)
+                        .suffix(" dB")
+                        .fixed_decimals(0),
+                )
+                .changed()
+            {
+                if let Some(x) = self.view.guests.iter_mut().find(|x| x.slot == slot) {
+                    x.gain_db = db;
+                }
+                self.with(move |c| c.guests().set_gain_db(slot, db));
+            }
+            let mute = egui::Button::new(egui::RichText::new("M").strong().color(if g.muted {
+                theme::ON_AIR
+            } else {
+                theme::DIM
+            }));
+            if ui.add(mute).on_hover_text("Gast stumm").clicked() {
+                let on = !g.muted;
+                if let Some(x) = self.view.guests.iter_mut().find(|x| x.slot == slot) {
+                    x.muted = on;
+                }
+                self.with(move |c| c.guests().set_mute(slot, on));
+            }
+            let ret = egui::Button::new(egui::RichText::new("🎧").color(if g.monitored {
+                theme::CUE_CYAN
+            } else {
+                theme::DIM
+            }));
+            if ui
+                .add(ret)
+                .on_hover_text(
+                    "Rückweg dieses Gastes abhören: Musik, Moderator und alle anderen Gäste, \
+                     nur nicht er selbst. Der Abhörausgang trägt dann diesen Rückweg.",
+                )
+                .clicked()
+            {
+                let to = (!g.monitored).then_some(slot);
+                self.with(move |c| c.guests().set_monitor(to));
+            }
+            if ui
+                .small_button("✕")
+                .on_hover_text("Gast entfernen")
+                .clicked()
+            {
+                self.with(move |c| c.guests().remove(slot));
+            }
+        });
+        let mut line = format!("{} · Puffer {:.0} ms", g.source, g.buffered_ms);
+        if g.prebuffering {
+            line.push_str(" · füllt");
+        }
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(line)
+                    .small()
+                    .monospace()
+                    .color(theme::DIM),
+            );
+            if g.underruns > 0 || g.overflows > 0 {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Aussetzer {} · Überlauf {}",
+                        g.underruns, g.overflows
+                    ))
+                    .small()
+                    .color(theme::ON_AIR),
+                );
+            }
+        });
     }
 
     fn on_air_row(&mut self, ui: &mut egui::Ui) {
