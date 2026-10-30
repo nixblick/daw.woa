@@ -63,6 +63,7 @@ pub struct StemRender {
 }
 
 /// Rendert Mixdown und Stems über `seconds` in einem Durchgang.
+#[tracing::instrument(level = "info", skip_all, name = "render_stems")]
 pub fn render_stems(
     project: &Project,
     rate: u32,

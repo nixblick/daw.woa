@@ -18,6 +18,17 @@ pub const SLOW_MS: u64 = 100;
 pub const HANG_MS: u64 = 2000;
 /// Langsame Frames werden gesammelt und höchstens so oft gemeldet.
 pub const REPORT_EVERY: Duration = Duration::from_secs(1);
+/// So oft geht eine Zusammenfassung raus (Frames, Speicher, Laufzeit), passend zum Upload.
+pub const SUMMARY_EVERY: Duration = Duration::from_secs(120);
+
+/// Frame-Statistik seit der letzten Zusammenfassung.
+#[derive(Default)]
+struct Stats {
+    frames: u64,
+    total_ms: u64,
+    max_ms: u64,
+    slow: u64,
+}
 
 struct Inner {
     /// Start des laufenden Frames in ms seit `epoch`, 0 = kein Frame läuft.
@@ -25,6 +36,8 @@ struct Inner {
     epoch: Instant,
     /// Längster langsamer Frame seit der letzten Meldung und Zeit dieser Meldung.
     slow: Mutex<(u64, Instant)>,
+    stats: Mutex<(Stats, Instant)>,
+    started: Instant,
 }
 
 /// Misst die Frames eines Fensters; einmal je App anlegen.
@@ -37,6 +50,8 @@ impl FrameWatch {
             busy_since: AtomicU64::new(0),
             epoch: Instant::now(),
             slow: Mutex::new((0, Instant::now())),
+            stats: Mutex::new((Stats::default(), Instant::now())),
+            started: Instant::now(),
         });
         let w = inner.clone();
         let _ = std::thread::Builder::new()
@@ -54,12 +69,68 @@ impl FrameWatch {
             start: Instant::now(),
         }
     }
+
+    /// Schickt die Zusammenfassung, wenn [`SUMMARY_EVERY`] um ist; `true` heißt, die App
+    /// soll jetzt ihre eigenen Kennzahlen dazulegen (siehe [`metric`]).
+    pub fn summary_due(&self) -> bool {
+        let Ok(mut st) = self.0.stats.lock() else {
+            return false;
+        };
+        if st.1.elapsed() < SUMMARY_EVERY {
+            return false;
+        }
+        let (s, since) = std::mem::replace(&mut *st, (Stats::default(), Instant::now()));
+        drop(st);
+        let secs = since.elapsed().as_secs().max(1);
+        metric("ui.frames", s.frames);
+        metric("ui.fps", s.frames / secs);
+        metric(
+            "ui.frame_avg_ms",
+            s.total_ms.checked_div(s.frames).unwrap_or(0),
+        );
+        metric("ui.frame_max_ms", s.max_ms);
+        metric("ui.frames_slow", s.slow);
+        metric("app.uptime_s", self.0.started.elapsed().as_secs());
+        if let Some(mb) = rss_mb() {
+            metric("proc.rss_mb", mb);
+        }
+        if let Some(n) = thread_count() {
+            metric("proc.threads", n);
+        }
+        true
+    }
+}
+
+/// Eine Kennzahl als Upload-Ereignis (`art`, Zahl), Stufe info.
+pub fn metric(art: &'static str, wert: u64) {
+    tracing::info!(art, wert, "metric");
+}
+
+/// Belegter Arbeitsspeicher in MB (Linux über `/proc`, sonst `None`).
+fn rss_mb() -> Option<u64> {
+    let s = std::fs::read_to_string("/proc/self/statm").ok()?;
+    let pages: u64 = s.split_whitespace().nth(1)?.parse().ok()?;
+    Some(pages * 4096 / (1024 * 1024))
+}
+
+/// Anzahl Threads des Prozesses (Linux über `/proc`, sonst `None`).
+fn thread_count() -> Option<u64> {
+    let s = std::fs::read_to_string("/proc/self/status").ok()?;
+    s.lines()
+        .find_map(|l| l.strip_prefix("Threads:"))
+        .and_then(|v| v.trim().parse().ok())
 }
 
 impl Inner {
     fn end(&self, took: Duration) {
         self.busy_since.store(0, Ordering::Relaxed);
         let ms = took.as_millis() as u64;
+        if let Ok(mut st) = self.stats.lock() {
+            st.0.frames += 1;
+            st.0.total_ms += ms;
+            st.0.max_ms = st.0.max_ms.max(ms);
+            st.0.slow += u64::from(ms >= SLOW_MS);
+        }
         let Ok(mut slow) = self.slow.lock() else {
             return;
         };
@@ -129,6 +200,14 @@ mod tests {
         drop(w.frame());
         std::thread::sleep(Duration::from_millis(30));
         assert_eq!(w.0.busy_since.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn summary_waits_for_its_period() {
+        let w = FrameWatch::new();
+        drop(w.frame());
+        assert!(!w.summary_due());
+        assert_eq!(w.0.stats.lock().unwrap().0.frames, 1);
     }
 
     #[test]

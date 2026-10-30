@@ -192,6 +192,7 @@ pub fn export_stereo(
 
 /// Schreibt Stereo nach `path` mit den Einstellungen in `spec`. Scheitert der Export,
 /// bleibt keine halbe Datei zurück (erst kodieren, dann die Datei anlegen).
+#[tracing::instrument(level = "info", skip_all, name = "export")]
 pub fn export_with(
     path: &Path,
     spec: &ExportSpec,

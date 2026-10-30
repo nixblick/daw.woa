@@ -89,13 +89,14 @@ Screenshot nur PNG bis 3 MB. Antwort 201/200 `{"ok":true,"issue":n}`; 429/502/50
 
 ## Was ab 0.32.x zusätzlich gesendet wird (30.10.2026)
 
-Alle 30 Sekunden statt alle 5 Minuten, damit Hänger zeitnah sichtbar sind. Weiter nur Bezeichner und Zahlen:
+Alle 120 Sekunden statt alle 5 Minuten (André 30.10.). Weiter nur Bezeichner und Zahlen:
 
 | `art` | `wert` | Woher |
 |---|---|---|
 | `log.warn.<datei>.<zeile>`, `log.error.<datei>.<zeile>` | 0 | jede Warnung/jeder Fehler ohne eigenes `art`; der Code-Ort statt der Nachricht |
-| `span.<name>` | Dauer in ms | jede Aktion mit `#[tracing::instrument]`, die 20 ms oder länger dauert (z. B. `span.playlist_add`, `span.audio_load`, `span.show_load`, `span.dawproject_import`) |
+| `span.<name>` | Dauer in ms | jede Aktion mit `#[tracing::instrument]`, die 20 ms oder länger dauert (z. B. `span.playlist_add`, `span.audio_load`, `span.show_load`, `span.dawproject_import`, `span.decode_file`, `span.ffmpeg_decode`, `span.export`, `span.render_stems`, `span.render_clips`, `span.load_wav`) |
 | `ui.frame_slow` | längster Frame in ms | Oberfläche ruckelt (Frame ≥ 100 ms), höchstens einmal je Sekunde |
+| Zusammenfassung alle 120 s | Zahl | `ui.frames`, `ui.fps`, `ui.frame_avg_ms`, `ui.frame_max_ms`, `ui.frames_slow`, `app.uptime_s`, `proc.rss_mb` und `proc.threads` (nur Linux), `project.tracks`, `project.clips`, `project.dirty`, `ui.zoom_pct`, `player.open`, `radio.underruns_total` |
 | `ui.hang_open` | Dauer in ms | ein Frame hängt seit 2 s, danach alle 10 s erneut, auch wenn das Fenster nie mehr reagiert |
 
 Auswertung auf dem Server: Datenbank `woa_stats`, Tabelle `log_lines` (Spalte `ms` = `wert`).

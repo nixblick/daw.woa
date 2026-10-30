@@ -167,8 +167,8 @@ impl Default for UploadConfig {
             app_version: env!("CARGO_PKG_VERSION").to_string(),
             os: std::env::consts::OS.to_string(),
             batch_size: 100,
-            // In der Entwicklung zeitnah sehen, was auf den Rechnern passiert (André 30.10.).
-            interval: Duration::from_secs(30),
+            // Zeitnah genug für die Entwicklung, ohne die Leitung zu fluten (André 30.10.: 120 s).
+            interval: Duration::from_secs(120),
             max_buffer: 2000,
             queue_capacity: 1024,
             timeout: Duration::from_secs(15),

@@ -4573,6 +4573,25 @@ impl WoaApp {
     }
 }
 
+impl WoaApp {
+    /// App-Kennzahlen zur Telemetrie-Zusammenfassung (alle 120 s, nur Zahlen).
+    fn report_metrics(&mut self) {
+        use woa_telemetry::metric;
+        let p = self.state.project();
+        metric("project.tracks", p.tracks.len() as u64);
+        metric(
+            "project.clips",
+            p.tracks.iter().map(|t| t.clips.len() as u64).sum(),
+        );
+        metric("project.dirty", u64::from(self.state.session().is_dirty()));
+        metric("ui.zoom_pct", (self.zoom * 100.0) as u64);
+        metric("player.open", u64::from(self.player.is_some()));
+        if let Some(r) = &self.radio {
+            metric("radio.underruns_total", r.underruns());
+        }
+    }
+}
+
 impl eframe::App for WoaApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.repaint_debug(ctx);
@@ -4690,6 +4709,9 @@ impl eframe::App for WoaApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let _frame_time = self.frame_watch.frame();
+        if self.frame_watch.summary_due() {
+            self.report_metrics();
+        }
         let ctx = ui.ctx().clone();
         self.photo(&ctx);
         if !self.themed {
