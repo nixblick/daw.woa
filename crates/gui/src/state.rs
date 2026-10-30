@@ -664,6 +664,72 @@ impl AppState {
         ok
     }
 
+    /// Copies clips of the project for the clipboard (sorted by start).
+    pub fn copy_clips(&self, ids: &[ClipId]) -> Vec<(TrackId, Clip)> {
+        let mut out: Vec<(TrackId, Clip)> = ids
+            .iter()
+            .filter_map(|&id| self.project().clip(id).map(|(t, c)| (t.id, c.clone())))
+            .collect();
+        out.sort_by(|a, b| a.1.start_beats.total_cmp(&b.1.start_beats));
+        out
+    }
+
+    /// Pastes copies of `items` so the earliest one starts at `at_beats`, one undo step.
+    /// Every copy gets a fresh id. With `target` all clips land on that track if their kind
+    /// fits (audio on audio, MIDI on MIDI); otherwise each goes back to its own track and
+    /// clips whose track is gone are skipped. Returns the new ids (empty: nothing pasted).
+    pub fn paste_clips(
+        &mut self,
+        items: &[(TrackId, Clip)],
+        at_beats: f64,
+        target: Option<TrackId>,
+    ) -> Vec<ClipId> {
+        let Some(first) = items.iter().map(|(_, c)| c.start_beats).reduce(f64::min) else {
+            return Vec::new();
+        };
+        let delta = at_beats.max(0.0) - first;
+        self.session.begin_group("Einfügen");
+        let mut created = Vec::new();
+        let mut ok = true;
+        for (orig, clip) in items {
+            let wants_midi = clip.midi.is_some();
+            let fits = |p: &Project, t: TrackId| {
+                p.track(t).is_some_and(|t| match t.kind {
+                    TrackKind::Midi => wants_midi,
+                    TrackKind::Audio => !wants_midi,
+                    TrackKind::Bus => false,
+                })
+            };
+            let dest = target
+                .filter(|t| fits(self.project(), *t))
+                .or_else(|| fits(self.project(), *orig).then_some(*orig));
+            let Some(dest) = dest else { continue };
+            let id = self.session.new_clip_id();
+            let mut copy = clip.clone();
+            copy.id = id;
+            copy.start_beats = (clip.start_beats + delta).max(0.0);
+            ok &= self.apply(Command::AddClip {
+                track: dest,
+                clip: copy,
+                index: None,
+            });
+            created.push(id);
+        }
+        let closed = self.session.end_group();
+        self.report("Einfügen", closed);
+        if ok { created } else { Vec::new() }
+    }
+
+    /// Duplicates clips directly behind the selection (Strg+D), one undo step.
+    pub fn duplicate_clips(&mut self, ids: &[ClipId]) -> Vec<ClipId> {
+        let items = self.copy_clips(ids);
+        let Some(first) = items.first().map(|(_, c)| c.start_beats) else {
+            return Vec::new();
+        };
+        let end = items.iter().map(|(_, c)| c.end_beats()).fold(0.0, f64::max);
+        self.paste_clips(&items, end.max(first), None)
+    }
+
     /// Moves several clips on their tracks by `delta_beats`, one undo step.
     /// Nothing moves if one of them would start before 0.
     pub fn shift_clips(&mut self, clips: &[ClipId], delta_beats: f64) -> bool {

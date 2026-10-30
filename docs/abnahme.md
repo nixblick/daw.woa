@@ -4,6 +4,24 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 20: Timeline-Editor (0.15.0, offen)
+
+Aus M6. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Zwei WAVs reinziehen:** Im Produzent-Modus zwei Audiodateien aus dem Dateimanager auf eine Spur ziehen. Die erste landet an der Zeigerstelle auf dieser Spur (eingerastet), die zweite auf einer neuen Spur an derselben Stelle. Wellenformen erscheinen im Clip.
+2. **Raster:** Oben rechts „Raster“ auf „Takt“ stellen, einen Clip verschieben: er springt in ganzen Takten. Auf „Aus“ geht es stufenlos.
+3. **Verschieben und kürzen:** Clip an der Mitte ziehen (auch auf eine andere Spur); an den Rändern ziehen kürzt, der Ton bleibt dabei an seiner Stelle.
+4. **Kopieren:** Clip anklicken, Strg+C, Abspielkopf im Lineal setzen, Strg+V. Strg+D verdoppelt direkt hinter dem Clip. Strg+X schneidet aus.
+5. **Lineal:** Schalter „Takte/Sekunden“ neben dem Raster; Strg+Mausrad zoomt, die Beschriftung wird dichter oder lichter.
+6. **Strg+Z / Strg+Y:** jeder Schritt oben lässt sich zurücknehmen und wiederholen.
+7. **Speichern, neu öffnen:** Strg+S, Anwendung schließen, Projekt wieder öffnen: alle Clips liegen wie zuvor.
+
+Selbst geprüft von Claude: Modelltests der Befehle (Verschieben, Trimmen am Anfang und Ende, Spurwechsel, Kopieren, Einfügen, Verdoppeln, Spurart wird beachtet) mit Undo und Redo; Rundlauf Speichern und Laden (Projekt gleich, Lage gleich); Oberflächentest ohne Fenster und ohne Ton, der mit echten Zeiger- und Tastenereignissen durch `WoaApp` läuft (zwei Dateien ablegen, Clip ziehen, Rand ziehen, Strg+Z, Strg+Y, Strg+D, Speichern, neu öffnen); Offline-Render mit Impuls in der Datei: Verschieben um 4 Beats versetzt den Impuls um genau 96 000 Samples, Kürzen am Anfang lässt ihn auf dem Sample stehen, Undo stellt ihn wieder her; Lineal-Teilung und Raster als Tabellentests.
+
+Nicht selbst geprüft: das Aussehen und die Griffigkeit im echten Fenster (Ziehen mit der Maus, Ablegen aus dem Dateimanager des Desktops, Strg+C/V über die Zwischenablage des Systems sind mit simulierten Ereignissen getestet, nicht von Hand), Klang (kein Ton auf dem Notebook).
+
+Noch nicht drin (Paket 21 bis 23): Teilen mit Kurvenwahl, Crossfades, Normalisieren, Aufnahme mit Latenzausgleich und Comping, Time-Stretch.
+
 ## Paket 19: Analyse-Fenster (0.14.0, offen)
 
 Aus M5. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
