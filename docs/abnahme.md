@@ -4,6 +4,23 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 19: Analyse-Fenster (0.14.0, offen)
+
+Aus M5. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Analyse öffnen:** Im unteren Dock auf „📊 Analyse“. Ein Fenster mit Lautheitsanzeige, Spektrum, Spektrogramm, Scope und Korrelationsleiste erscheint. Noch ohne Wiedergabe stehen die Werte auf `--.-`.
+2. **Abspielen:** Leertaste mit einem Clip. Momentan, Kurzzeit und Integriert laufen, das Spektrum tanzt, das Spektrogramm wandert nach rechts, True Peak wird rot über −1 dBTP.
+3. **Quelle wechseln:** Oben „Quelle“ von Master auf eine Spur; die Messung beginnt neu. „Zurücksetzen“ leert die integrierte Lautheit und die Halte-Marken.
+4. **Scope bei breitem Pan:** Zwei Spuren, eine hart links, eine hart rechts: der Scope breitet sich in die Breite, die Korrelation fällt Richtung 0. Eine Mono-Spur zeigt eine senkrechte Linie und +1.
+5. **Fenster schließen:** Das Kreuz oben rechts; danach ist die Messung aus.
+6. **Agent:** `analyze` (jetzt mit True Peak, Spektrum, Korrelation, `track`) und `spectrogram_png`.
+
+Selbst geprüft von Claude: Gemessen statt gehört. EBU-Referenzsignale: 1 kHz bei −23 und −33 dBFS ergibt −23 und −33 LUFS (momentan, kurzzeitig, integriert, Maximum, je ±0,1), ein Kanal allein ist 3 LU leiser, absolutes und relatives Gate wirken, auch bei 44,1 kHz und in krummen Stücken. True Peak: Sinus mit 45° Phase bei fs/4 liegt nach Überabtastung innerhalb 0,25 dB bei 0 dBTP, 997 Hz mit 0,5 gibt −6,02 dBTP. Spektrum: Sinus auf den Bins 10, 93, 512 und 1500 trifft den Bin mit 0 dB (±0,1), halbe Amplitude −6,02 dB, Stille und kurze Eingabe sind sicher; Oktavband und Log-Bänder zeigen den Ton an der richtigen Stelle. Korrelation +1 bei Mono, −1 bei Gegenphase, etwa 0 bei Rauschen. Spektrogramm als Text-Snapshot (`insta`) für drei Töne und als PNG über den Agenten (hellste Zeile stimmt auf die Logachse). Abgriffe lassen das Signal bitgleich, folgen dem Pan jeder Spur, bleiben leer wenn aus, und jeder Process-Aufruf läuft unter `assert_no_alloc`. Die Rechenlogik des Fensters (Quelle, Zurücksetzen, Ratenwechsel) ist als Test abgedeckt. Agent über MCP einschließlich Fehlerfällen.
+
+Nicht selbst geprüft: echter Klang und echte Musik (kein Ton auf dem Notebook), die Bedienung im echten Fenster (Layout, Lesbarkeit, Flüssigkeit der Anzeigen sind gebaut und kompiliert, nicht angeklickt), die Belastung bei sehr vielen Spuren.
+
+Noch nicht drin: Loudness-Range (LRA), Anzeige im Radio-Modus, Fenstergröße und Quelle über den Neustart merken, Spektrogramm als Datei aus der Oberfläche speichern (nur über den Agenten), Referenzkurve zum Vergleichen.
+
 ## Paket 17: Alle eingebauten Effekte (0.12.0, offen)
 
 Aus M5. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

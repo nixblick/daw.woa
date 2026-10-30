@@ -71,6 +71,12 @@ pub struct WoaApp {
     studio_dock: StudioDockTab,
     /// Piano-Roll als schwebendes Fenster statt im unteren Dock?
     piano_roll_floating: bool,
+    /// Analyse-Fenster (Paket 19) offen?
+    analysis_open: bool,
+    /// Rechnung und Zustand des Analyse-Fensters; entsteht beim ersten Öffnen.
+    analysis: Option<crate::analysis::AnalysisView>,
+    /// Abholpuffer für den Abgriff (links, rechts), wiederverwendet.
+    analysis_buf: (Vec<f32>, Vec<f32>),
     /// Last title sent to the viewport.
     last_title: String,
     /// Laufende Aufnahmen, je Zielspur eine (leer = keine Aufnahme).
@@ -352,6 +358,9 @@ impl WoaApp {
             loop_end_bar: 5,
             studio_dock: StudioDockTab::Mixer,
             piano_roll_floating: std::env::var_os("WOA_PIANOROLL").is_some(),
+            analysis_open: false,
+            analysis: None,
+            analysis_buf: (Vec::new(), Vec::new()),
             last_title: String::new(),
             data_dir: woa_radio::data_dir(),
             radio: None,
@@ -3168,6 +3177,7 @@ impl eframe::App for WoaApp {
         }
         self.stop_at_audio_end();
         self.drain_live_peaks();
+        self.analysis_frame();
         let busy = self.recording() || self.player.as_ref().is_some_and(Player::is_playing);
         // Radio: 5 Bilder/s, solange ein Titel läuft (Uhr, Pegel), sonst 2/s. Vorher 10/s
         // dauerhaft, 34 % CPU in Ruhe (Paket 8).
@@ -3276,6 +3286,7 @@ impl eframe::App for WoaApp {
             )
             .show(ui, |ui| self.tracks(ui));
         self.piano_roll_window(&ctx);
+        self.analysis_window(&ctx);
         self.controller_window(&ctx);
         self.feedback_window(&ctx);
         self.telemetry_window(&ctx);
@@ -3283,6 +3294,59 @@ impl eframe::App for WoaApp {
 }
 
 impl WoaApp {
+    /// Holt je Bild die Samples des Abgriffs fürs Analyse-Fenster. Ist es zu, sind alle
+    /// Abgriffe aus.
+    fn analysis_frame(&mut self) {
+        let Some(player) = self.player.as_mut() else {
+            return;
+        };
+        if !self.analysis_open {
+            player.set_tap_source(None);
+            return;
+        }
+        let rate = player.sample_rate();
+        let view = self
+            .analysis
+            .get_or_insert_with(|| crate::analysis::AnalysisView::new(rate));
+        view.set_rate(rate);
+        player.set_tap_source(Some(view.source()));
+        let (l, r) = &mut self.analysis_buf;
+        l.clear();
+        r.clear();
+        view.add_lost(player.drain_tap(l, r));
+        if l.is_empty() {
+            view.idle();
+        } else {
+            view.feed(l, r);
+        }
+    }
+
+    /// Das schwebende Analyse-Fenster.
+    fn analysis_window(&mut self, ctx: &egui::Context) {
+        if !self.analysis_open {
+            return;
+        }
+        let tracks: Vec<(TrackId, String)> = self
+            .state
+            .project()
+            .tracks
+            .iter()
+            .map(|t| (t.id, t.name.clone()))
+            .collect();
+        let playing = self.player.as_ref().is_some_and(Player::is_playing);
+        let mut open = true;
+        if let Some(view) = self.analysis.as_mut() {
+            egui::Window::new("Analyse")
+                .open(&mut open)
+                .default_size([760.0, 520.0])
+                .min_size([420.0, 340.0])
+                .resizable(true)
+                .frame(theme::card_frame())
+                .show(ctx, |ui| view.ui(ui, &tracks, playing));
+        }
+        self.analysis_open = open;
+    }
+
     /// Unteres Ableton-Style Studio-Dock: Umschaltbar zwischen Studio-Mixer-Konsole und
     /// angedockter Piano-Roll (oder eingeklappt für maximale Zeitleisten-Höhe).
     fn studio_dock_panel(&mut self, ui: &mut egui::Ui) {
@@ -3356,6 +3420,27 @@ impl WoaApp {
                     } else {
                         StudioDockTab::PianoRoll
                     };
+                }
+
+                let an_btn =
+                    egui::Button::new(egui::RichText::new("📊 Analyse").small().strong().color(
+                        if self.analysis_open {
+                            theme::WELL
+                        } else {
+                            theme::OK_GREEN
+                        },
+                    ))
+                    .fill(if self.analysis_open {
+                        theme::OK_GREEN
+                    } else {
+                        theme::WELL
+                    });
+                if ui
+                    .add(an_btn)
+                    .on_hover_text("Lautheit, True Peak, Spektrum, Spektrogramm und Stereo-Scope")
+                    .clicked()
+                {
+                    self.analysis_open = !self.analysis_open;
                 }
 
                 if self.studio_dock == StudioDockTab::PianoRoll {

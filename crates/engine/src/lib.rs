@@ -37,11 +37,12 @@ pub mod midi_clip;
 pub mod project;
 #[cfg(feature = "device")]
 pub mod record;
+pub mod tap;
 pub mod transport;
 
 pub use project::{
     ProjectGraph, TrackNodes, audibility, build_project_graph, build_project_graph_mode,
-    render_project, track_gains,
+    build_project_graph_taps, render_project, track_gains,
 };
 pub use transport::{LoopRange, TransportHandle, beats_to_samples, samples_to_beats};
 use transport::{Shared, Transport};

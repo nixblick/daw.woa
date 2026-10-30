@@ -46,14 +46,15 @@ Claude Desktop: derselbe Befehl als `command`/`args` in `claude_desktop_config.j
 | `set_fades` | `clip`, `fade_in_beats`, `fade_out_beats` | Ein- und Ausblenden |
 | `repeat_clip` | `clip`, `times` (1..256) | `times` Kopien direkt hintereinander (Loops), liefert die neuen IDs |
 | `remove_clip` | `clip` | Clip entfernen (die Datei bleibt im Ordner) |
-| `analyze` | – | rendert offline (48 kHz bis zum Ende des letzten Clips): integrierte LUFS, Sample-Peak in dBFS, Clipping, Länge, Peak je Audio-Spur allein; ändert nichts |
+| `analyze` | `track` (optional) | rendert offline (48 kHz bis zum Ende des letzten Clips): integrierte LUFS, höchste momentane und kurzzeitige Lautheit, Sample-Peak und True Peak, Clipping, Länge, Spektrum (Spitze in Hz, Oktavbänder), Stereo (Korrelation, Balance, Seiten zu Mitte) und Hinweise; ohne `track` zusätzlich Peak je Audio-Spur, mit `track` nur diese Spur; ändert nichts |
+| `spectrogram_png` | `path` (`.png`, relativ im Projektordner), `width` (16..4096, 800), `height` (16..2048, 400), `track` (optional) | Spektrogramm mit Logachse von 20 Hz bis zur halben Abtastrate als PNG |
 | `export` | `path` (`.wav`/`.flac`/`.mp3`, nur relativ im Projektordner; absolut oder `..` wird abgelehnt), `target_lufs` (optional) | Mixdown wie in der GUI; mit `target_lufs` angeglichen, Spitzen bleiben unter −1 dBFS; liefert LUFS und Peak der geschriebenen Daten |
 | `undo` / `redo` | – | letzten Schritt zurück / wieder her |
 | `save` | – | atomar in den Projektordner schreiben |
 
 Klang entsteht offline im Control-Bereich (`woa_dsp::generate`, nie im Audio-Thread) und liegt als
 Datei im Projekt; die GUI spielt ihn wie jede Aufnahme. Gemessen wird nach ITU-R BS.1770
-(`woa_engine::loudness`); True Peak (Überabtastung) misst `analyze` nicht, nur den Sample-Peak.
+(`woa_engine::loudness`); True Peak misst `analyze` mit vierfacher Überabtastung (`woa_dsp::analysis`).
 
 ## Regeln
 

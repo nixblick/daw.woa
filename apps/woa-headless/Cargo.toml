@@ -8,17 +8,17 @@ repository.workspace = true
 
 [dependencies]
 clap = { version = "4.6.7", features = ["derive", "env"] }
-woa-agent = { path = "../../crates/agent", version = "0.12" }
-woa-dsp = { path = "../../crates/dsp", version = "0.12" }
-woa-engine = { path = "../../crates/engine", version = "0.12" }
+woa-agent = { path = "../../crates/agent", version = "0.14" }
+woa-dsp = { path = "../../crates/dsp", version = "0.14" }
+woa-engine = { path = "../../crates/engine", version = "0.14" }
 hound = "3.5.1"
 rtrb = "0.4.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-woa-model = { path = "../../crates/model", version = "0.12" }
-woa-radio = { path = "../../crates/radio", version = "0.12" }
-woa-stream = { path = "../../crates/stream", version = "0.12" }
-woa-telemetry = { path = "../../crates/telemetry", version = "0.12" }
+woa-model = { path = "../../crates/model", version = "0.14" }
+woa-radio = { path = "../../crates/radio", version = "0.14" }
+woa-stream = { path = "../../crates/stream", version = "0.14" }
+woa-telemetry = { path = "../../crates/telemetry", version = "0.14" }
 
 [features]
 # Echte Audio-Ausgabe (cpal). Unter Linux braucht der Bau alsa-lib-devel.

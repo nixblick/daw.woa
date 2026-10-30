@@ -74,6 +74,7 @@ fn setup(project: &Project) -> (Engine, AudioProcessor, ProjectGraph) {
             builder: woa_engine::GraphBuilder::new(),
             tracks,
             bus_meters: Default::default(),
+            taps: Default::default(),
         },
     )
 }

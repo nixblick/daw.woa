@@ -50,6 +50,7 @@ fn rig(project: &Project) -> Rig {
             builder: woa_engine::GraphBuilder::new(),
             tracks,
             bus_meters,
+            taps: Default::default(),
         },
     }
 }
