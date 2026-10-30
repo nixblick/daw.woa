@@ -37,6 +37,7 @@ use crate::controls::{
 use crate::feedback::{FeedbackDialog, GuiConfig, Mode, Phase, encode_png};
 use crate::radio::RadioDesk;
 use crate::state::{AppState, Status};
+use crate::timeline::{Clipboard, Snap, TimeUnit, ruler_ticks};
 use woa_io::controller::{Layout, Target};
 
 /// The desktop window.
@@ -123,6 +124,12 @@ pub struct WoaApp {
     trim: Option<(ClipId, bool, f64)>,
     /// Zoom der Zeitleiste in Pixel je Beat.
     zoom: f32,
+    /// Raster beim Verschieben und Kürzen (Paket 20).
+    snap: Snap,
+    /// Beschriftung des Lineals: Takte oder Sekunden.
+    time_unit: TimeUnit,
+    /// Zwischenablage für Strg+C / Strg+X / Strg+V.
+    clipboard: Clipboard,
     /// Zeitleisten-Flächen je Spur (dieses und letztes Bild), für das Ziehen auf andere Spuren.
     track_rects: Vec<(TrackId, egui::Rect)>,
     prev_track_rects: Vec<(TrackId, egui::Rect)>,
@@ -338,14 +345,28 @@ impl Surface for AppSurface<'_> {
 impl WoaApp {
     /// Builds the app; `recovery_dir` receives autosaves of unsaved projects.
     pub fn new(config: GuiConfig, recovery_dir: PathBuf) -> Self {
+        Self::build(config, recovery_dir, true)
+    }
+
+    /// Wie [`WoaApp::new`], aber ohne Audiogerät: nichts wird abgespielt. Für Oberflächentests
+    /// ohne Ton (Paket 20).
+    pub fn without_audio(config: GuiConfig, recovery_dir: PathBuf) -> Self {
+        Self::build(config, recovery_dir, false)
+    }
+
+    fn build(config: GuiConfig, recovery_dir: PathBuf, open_audio: bool) -> Self {
         let mut state = AppState::new(recovery_dir, Instant::now());
-        let player = match Player::open() {
-            Ok(p) => Some(p),
-            Err(e) => {
-                tracing::error!(error = %e, "no playback device");
-                state.status = Status::Error(format!("Keine Wiedergabe: {e}"));
-                None
+        let player = if open_audio {
+            match Player::open() {
+                Ok(p) => Some(p),
+                Err(e) => {
+                    tracing::error!(error = %e, "no playback device");
+                    state.status = Status::Error(format!("Keine Wiedergabe: {e}"));
+                    None
+                }
             }
+        } else {
+            None
         };
         let sink = player
             .as_ref()
@@ -390,6 +411,9 @@ impl WoaApp {
             latency_extra_ms: 0.0,
             trim: None,
             zoom: PX_PER_BEAT,
+            snap: Snap::default(),
+            time_unit: TimeUnit::default(),
+            clipboard: Clipboard::default(),
             track_rects: Vec::new(),
             prev_track_rects: Vec::new(),
             track_levels: std::collections::HashMap::new(),
@@ -418,6 +442,26 @@ impl WoaApp {
             radio: None,
             frames: (0, Instant::now()),
         }
+    }
+
+    /// Projektzustand (für Tests und Werkzeuge).
+    pub fn state(&self) -> &AppState {
+        &self.state
+    }
+
+    /// Projektzustand zum Ändern (für Tests).
+    pub fn state_mut(&mut self) -> &mut AppState {
+        &mut self.state
+    }
+
+    /// Fläche der Zeitleiste je Spur im zuletzt gezeichneten Bild (Bildschirmpunkte).
+    pub fn track_rects(&self) -> &[(TrackId, egui::Rect)] {
+        &self.track_rects
+    }
+
+    /// Pixel je Beat der Zeitleiste.
+    pub fn zoom(&self) -> f32 {
+        self.zoom
     }
 
     /// Sets the data folder (radio.json, recordings). Default: the WOA data folder.
@@ -1417,6 +1461,30 @@ impl WoaApp {
                     self.zoom = (self.zoom / 1.5).clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
                 }
                 ui.label(egui::RichText::new("Zoom").small().color(theme::DIM));
+                ui.separator();
+                egui::ComboBox::from_id_salt("snap")
+                    .selected_text(self.snap.label())
+                    .width(64.0)
+                    .show_ui(ui, |ui| {
+                        for s in Snap::ALL {
+                            ui.selectable_value(&mut self.snap, s, s.label());
+                        }
+                    })
+                    .response
+                    .on_hover_text("Raster beim Verschieben und Kürzen von Clips");
+                ui.label(egui::RichText::new("Raster").small().color(theme::DIM));
+                let secs = self.time_unit == TimeUnit::Seconds;
+                if ui
+                    .selectable_label(secs, if secs { "Sekunden" } else { "Takte" })
+                    .on_hover_text("Lineal: Takte oder Sekunden")
+                    .clicked()
+                {
+                    self.time_unit = if secs {
+                        TimeUnit::Bars
+                    } else {
+                        TimeUnit::Seconds
+                    };
+                }
             });
         });
     }
@@ -1527,6 +1595,28 @@ impl WoaApp {
             self.toggle_record();
         }
         if !ctx.egui_wants_keyboard_input() {
+            let (copy, cut, paste, dup) = ctx.input_mut(|i| {
+                let has =
+                    |i: &egui::InputState, f: fn(&egui::Event) -> bool| i.events.iter().any(f);
+                (
+                    has(i, |e| matches!(e, egui::Event::Copy)),
+                    has(i, |e| matches!(e, egui::Event::Cut)),
+                    has(i, |e| matches!(e, egui::Event::Paste(_))),
+                    i.consume_key(egui::Modifiers::COMMAND, egui::Key::D),
+                )
+            });
+            if copy || cut {
+                self.copy_selected();
+            }
+            if cut {
+                self.delete_selected();
+            }
+            if paste {
+                self.paste_at_playhead();
+            }
+            if dup {
+                self.duplicate_selected();
+            }
             let (space, home, del, split, export) = ctx.input_mut(|i| {
                 let n = egui::Modifiers::NONE;
                 (
@@ -1892,15 +1982,9 @@ impl WoaApp {
             rect.bottom() - 1.0,
             egui::Stroke::new(1.0, theme::BORDER),
         );
-        let every = if px < 4.0 {
-            16
-        } else if px < 8.0 {
-            8
-        } else {
-            4
-        };
-        for beat in (0..=(end as usize + 16)).step_by(every) {
-            let x = rect.left() + beat as f32 * px;
+        let tempo = self.state.project().tempo_bpm;
+        for tick in ruler_ticks(self.time_unit, tempo, px, end + 16.0) {
+            let x = rect.left() + tick.beat as f32 * px;
             painter.vline(
                 x,
                 rect.top() + 4.0..=rect.bottom(),
@@ -1909,22 +1993,22 @@ impl WoaApp {
             painter.text(
                 egui::pos2(x + 4.0, rect.top() + 3.0),
                 egui::Align2::LEFT_TOP,
-                format!("{}", beat / 4 + 1),
+                &tick.label,
                 egui::FontId::monospace(11.0),
                 theme::DIM,
             );
-            if px >= 12.0 && every == 4 {
-                for sub in 1..4 {
-                    let sx = x + sub as f32 * px;
-                    painter.vline(
-                        sx,
-                        rect.bottom() - 4.0..=rect.bottom(),
-                        egui::Stroke::new(1.0, theme::GRID),
-                    );
-                }
+        }
+        if px >= 12.0 {
+            // Schläge als feine Striche am unteren Rand.
+            for beat in 0..=(end as usize + 16) {
+                let x = rect.left() + beat as f32 * px;
+                painter.vline(
+                    x,
+                    rect.bottom() - 4.0..=rect.bottom(),
+                    egui::Stroke::new(1.0, theme::GRID),
+                );
             }
         }
-        let tempo = self.state.project().tempo_bpm;
         if self.loop_enabled && self.loop_end_bar > self.loop_start_bar {
             let l0 = ((self.loop_start_bar - 1) * 4) as f32 * px;
             let l1 = ((self.loop_end_bar - 1) * 4) as f32 * px;
@@ -2029,7 +2113,18 @@ impl WoaApp {
         else {
             return;
         };
-        let decoded = match woa_engine::decode::decode_file(&path) {
+        let tempo = self.state.project().tempo_bpm;
+        let at = self
+            .player
+            .as_ref()
+            .map_or(0.0, |p| p.position_beats(tempo));
+        self.import_audio_file(&path, self.selected_track, at);
+    }
+
+    /// Kopiert eine Audiodatei ins Projekt und legt sie als Clip bei `at` auf `track`
+    /// (`None`: neue Spur). Dialog und Ziehen-und-Ablegen nutzen denselben Weg.
+    fn import_audio_file(&mut self, path: &std::path::Path, track: Option<TrackId>, at: f64) {
+        let decoded = match woa_engine::decode::decode_file(path) {
             Ok(d) => d,
             Err(e) => {
                 tracing::error!(error = %e, path = %path.display(), "audio import decode failed");
@@ -2072,21 +2167,13 @@ impl WoaApp {
             n += 1;
         }
         if dst != path
-            && let Err(e) = std::fs::copy(&path, &dst)
+            && let Err(e) = std::fs::copy(path, &dst)
         {
             tracing::error!(error = %e, "copying imported audio failed");
             self.state.status = Status::Error(format!("Audio-Import: {e}"));
             return;
         }
-        let tempo = self.state.project().tempo_bpm;
-        let at = self
-            .player
-            .as_ref()
-            .map_or(0.0, |p| p.position_beats(tempo));
-        if let Some(clip) = self
-            .state
-            .add_take(self.selected_track, &dst, at, secs, 0.0)
-        {
+        if let Some(clip) = self.state.add_take(track, &dst, at, secs, 0.0) {
             self.selected_clip = Some(clip);
             self.selected_track = self.state.project().clip(clip).map(|(t, _)| t.id);
             self.state.status = Status::Info(format!("Audio importiert ({secs:.1} s)"));
@@ -2880,7 +2967,7 @@ impl WoaApp {
             if cresp.drag_stopped()
                 && let Some((id, d)) = self.clip_drag.take()
             {
-                let snapped = ((c.start_beats + d) * 4.0).round() / 4.0;
+                let snapped = self.snap.apply(c.start_beats + d);
                 if self.selected_clips.len() > 1 && self.selected_clips.contains(&id) {
                     let ids = self.selected_clips.clone();
                     self.state.shift_clips(&ids, snapped - c.start_beats);
@@ -2903,9 +2990,9 @@ impl WoaApp {
             }
             cresp.on_hover_text(
                 if c.midi.is_some() {
-                    "Doppelklick: Piano-Roll · Ziehen: verschieben (auch auf andere Spur) · Ränder ziehen: kürzen · S: am Kopf schneiden · Entf: löschen"
+                    "Doppelklick: Piano-Roll · Ziehen: verschieben (auch auf andere Spur) · Ränder ziehen: kürzen · S: am Kopf schneiden · Strg+C/X/V: kopieren, ausschneiden, einfügen · Strg+D: verdoppeln · Entf: löschen"
                 } else {
-                    "Ziehen: verschieben (auch auf andere Spur) · Ränder ziehen: kürzen · S: am Kopf schneiden · Entf: löschen"
+                    "Ziehen: verschieben (auch auf andere Spur) · Ränder ziehen: kürzen · S: am Kopf schneiden · Strg+C/X/V: kopieren, ausschneiden, einfügen · Strg+D: verdoppeln · Entf: löschen"
                 },
             );
             // Griffe an beiden Rändern zum Kürzen.
@@ -2935,7 +3022,7 @@ impl WoaApp {
                 if hresp.drag_stopped()
                     && let Some((id, l, d)) = self.trim.take()
                 {
-                    let d = (d * 4.0).round() / 4.0;
+                    let d = self.snap_trim(c, l, d);
                     if l {
                         self.state.trim_clip(
                             id,
@@ -2998,7 +3085,7 @@ impl WoaApp {
             theme::status_pill(ui, "CLIP-INSPEKTOR", theme::DIM, false);
             ui.label(
                 egui::RichText::new(
-                    "Clip anklicken zum Bearbeiten  ·  Doppelklick in MIDI-Spur: neuer MIDI-Clip  ·  S: Schneiden am Kopf  ·  Strg+Mausrad: Zoom",
+                    "Clip anklicken zum Bearbeiten  ·  Doppelklick in MIDI-Spur: neuer MIDI-Clip  ·  S: Schneiden am Kopf  ·  Strg+C/V/D: Kopieren, Einfügen, Verdoppeln  ·  Audio-Datei hineinziehen  ·  Strg+Mausrad: Zoom",
                 )
                 .small()
                 .color(theme::DIM),
@@ -3070,6 +3157,12 @@ impl WoaApp {
             if ui.button("✂ Schneiden (S)").clicked() {
                 self.split_at_playhead();
             }
+            if ui.button("⧉ Duplizieren (Strg+D)").clicked() {
+                self.duplicate_selected();
+            }
+            if ui.button("Kopieren").on_hover_text("Strg+C").clicked() {
+                self.copy_selected();
+            }
             let n = self.selected_clips.len().max(1);
             let label = if n > 1 {
                 format!("🗑 {n} Clips löschen (Entf)")
@@ -3080,6 +3173,108 @@ impl WoaApp {
                 self.delete_selected();
             }
         });
+    }
+
+    /// Rastet einen gezogenen Clip-Rand ein: die neue Kante liegt auf dem Raster.
+    fn snap_trim(&self, c: &woa_model::Clip, left: bool, d: f64) -> f64 {
+        let snapped = if left {
+            self.snap.apply(c.start_beats + d) - c.start_beats
+        } else {
+            self.snap.apply(c.end_beats() + d) - c.end_beats()
+        };
+        if left {
+            snapped.clamp(-c.offset_beats, c.length_beats - 0.25)
+        } else {
+            snapped.max(0.25 - c.length_beats)
+        }
+    }
+
+    /// Ids der markierten Clips (Mehrfachauswahl oder der eine gewählte).
+    fn selection_ids(&self) -> Vec<ClipId> {
+        let mut ids = self.selected_clips.clone();
+        if let Some(c) = self.selected_clip
+            && !ids.contains(&c)
+        {
+            ids.push(c);
+        }
+        ids
+    }
+
+    /// Strg+C: markierte Clips in die Zwischenablage.
+    fn copy_selected(&mut self) {
+        let items = self.state.copy_clips(&self.selection_ids());
+        if items.is_empty() {
+            return;
+        }
+        self.state.status = Status::Info(format!("{} Clip(s) kopiert", items.len()));
+        self.clipboard = Clipboard { items };
+    }
+
+    /// Strg+V: Zwischenablage am Abspielkopf einfügen, auf die gewählte Spur, wenn sie passt.
+    fn paste_at_playhead(&mut self) {
+        if self.clipboard.is_empty() {
+            return;
+        }
+        let tempo = self.state.project().tempo_bpm;
+        let at = self
+            .player
+            .as_ref()
+            .map_or(0.0, |p| p.position_beats(tempo));
+        let items = self.clipboard.items.clone();
+        let ids = self
+            .state
+            .paste_clips(&items, self.snap.apply(at), self.selected_track);
+        self.select_new(ids);
+    }
+
+    /// Strg+D: markierte Clips direkt hinter sich verdoppeln.
+    fn duplicate_selected(&mut self) {
+        let ids = self.state.duplicate_clips(&self.selection_ids());
+        self.select_new(ids);
+    }
+
+    fn select_new(&mut self, ids: Vec<ClipId>) {
+        if let Some(&last) = ids.last() {
+            self.selected_clip = Some(last);
+            self.selected_track = self.state.project().clip(last).map(|(t, _)| t.id);
+            self.selected_clips = ids;
+        }
+    }
+
+    /// Audiodateien, die aufs Fenster gezogen wurden, als Clips ablegen: die erste auf die
+    /// Spur unter dem Zeiger bei der Zeigerposition, jede weitere auf eine neue Spur
+    /// an derselben Stelle.
+    fn drop_files(&mut self, ctx: &egui::Context) {
+        let files: Vec<PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .filter_map(|f| f.path.clone())
+                .collect()
+        });
+        if files.is_empty() {
+            return;
+        }
+        let pos = ctx.pointer_latest_pos();
+        let hit = pos.and_then(|p| self.track_rects.iter().find(|(_, r)| r.contains(p)));
+        let (track, at) = match (pos, hit) {
+            (Some(p), Some((t, r))) => (
+                Some(*t),
+                self.snap.apply(f64::from((p.x - r.left()) / self.zoom)),
+            ),
+            _ => {
+                let tempo = self.state.project().tempo_bpm;
+                (
+                    self.selected_track,
+                    self.player
+                        .as_ref()
+                        .map_or(0.0, |p| p.position_beats(tempo)),
+                )
+            }
+        };
+        for (n, f) in files.iter().enumerate() {
+            self.import_audio_file(f, if n == 0 { track } else { None }, at);
+        }
     }
 
     fn delete_selected(&mut self) {
@@ -3332,6 +3527,9 @@ impl eframe::App for WoaApp {
             self.shortcuts(ctx);
         }
         self.take_screenshot(ctx);
+        if self.config.mode == Mode::Produzent {
+            self.drop_files(ctx);
+        }
         self.feedback.poll();
         self.state.tick_autosave(Instant::now());
         let title = self.state.title();

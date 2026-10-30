@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.15.0 — 2026-10-30
+
+Paket 20 aus M6: Timeline-Editor.
+
+- **Oberfläche:** Die Arrangement-Ansicht hatte schon Lineal, Wellenformen, Zoom, Verschieben, Kürzen und Löschen; neu sind Raster, Kopieren und Einfügen, Verdoppeln, das Hineinziehen von Audiodateien und ein Lineal in Sekunden. Das Raster (Aus, Takt, 1/4, 1/8, 1/16) gilt für Verschieben, Kürzen und Einfügen. Strg+C, Strg+X und Strg+V kopieren, schneiden aus und fügen am Abspielkopf ein (auf die gewählte Spur, wenn der Spurtyp passt), Strg+D verdoppelt direkt hinter der Auswahl. Audiodateien lassen sich aufs Fenster ziehen: die erste landet auf der Spur unter dem Zeiger an der Zeigerposition, jede weitere auf einer neuen Spur an derselben Stelle. Der Schalter „Takte/Sekunden“ stellt die Lineal-Beschriftung um; die Teilung folgt dem Zoom.
+- **Zustand:** `AppState::copy_clips`, `paste_clips` und `duplicate_clips`, jeweils ein Undo-Schritt, neue Ids, Spurart wird geprüft. `WoaApp::without_audio` baut die Oberfläche ohne Audiogerät für Tests.
+- **Tests:** Modelltests für Verschieben, Trimmen, Spurwechsel, Kopieren, Einfügen und Verdoppeln mit Undo und Redo; Rundlauf Speichern und Laden; Oberflächentest ohne Fenster und ohne Ton (zwei Dateien ablegen, Clip ziehen, Rand ziehen, Strg+Z, Strg+Y, Strg+D, Speichern, neu öffnen); Offline-Render mit Impuls: Verschieben versetzt um genau die Beats in Samples, Kürzen am Anfang lässt das Audio an derselben Stelle, Undo stellt das Sample wieder her. Teilung des Lineals und Raster als Tabellentests.
+
 ## 0.14.0 — 2026-10-30
 
 Paket 19 aus M5: Analyse-Fenster.

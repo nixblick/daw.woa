@@ -16,6 +16,7 @@ pub mod radio;
 mod sources;
 pub mod state;
 mod theme;
+pub mod timeline;
 mod xrun;
 
 pub use app::WoaApp;
