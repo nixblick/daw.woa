@@ -102,6 +102,10 @@ pub struct View {
     /// Die Decks A bis C.
     pub decks: Vec<DeckView>,
     pub mic_open: bool,
+    /// Telefon auf Sendung.
+    pub phone_on: bool,
+    /// Spitze des Telefon-Eingangs seit der letzten Ansicht (0..1).
+    pub phone_peak: f32,
     pub recording: Option<PathBuf>,
     pub messages: Vec<String>,
     /// Wird gerade gemessen.
@@ -362,6 +366,8 @@ fn run(
             carts_playing: st.carts.load(Ordering::Acquire),
             decks: (0..crate::DECKS).map(|k| deck_view(&c, k)).collect(),
             mic_open: st.mic_open.load(Ordering::Acquire),
+            phone_on: st.phone_on.load(Ordering::Acquire),
+            phone_peak: st.take_phone_peak(),
             recording: c.recording_file().map(|p| p.to_path_buf()),
             messages: messages.clone(),
             measuring: measuring.load(Ordering::Relaxed),

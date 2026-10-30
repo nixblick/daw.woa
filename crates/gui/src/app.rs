@@ -215,6 +215,8 @@ pub struct WoaApp {
     gr_shown: std::collections::HashMap<woa_model::InsertId, f32>,
     /// Fenster „Ausgänge“ (Gerät und Kanalpaar je Quelle).
     outputs_ui: crate::outputs_ui::OutputsUi,
+    /// Fenster „Telefon“ (Eingang für den Anrufer).
+    phone_ui: crate::phone::PhoneUi,
 }
 
 /// Ein Controller-Wert, der erst nach einer Ruhepause als ein Undo-Schritt ins Projekt geht
@@ -432,6 +434,7 @@ impl WoaApp {
             auto_ed: crate::automation::EditorState::default(),
             gr_shown: std::collections::HashMap::new(),
             outputs_ui: crate::outputs_ui::OutputsUi::default(),
+            phone_ui: crate::phone::PhoneUi::default(),
             midi,
             midi_seen: (0, None),
             piano_roll: None,
@@ -584,6 +587,24 @@ impl WoaApp {
             if self.config.mode.uses_desk() {
                 self.ensure_radio();
             }
+        }
+    }
+
+    /// Fenster „Telefon“: Der gewählte Eingang wird gespeichert und sofort geöffnet.
+    fn phone_window(&mut self, ctx: &egui::Context) {
+        let status: Vec<String> = self
+            .radio
+            .as_ref()
+            .map(|r| r.phone_lines())
+            .unwrap_or_default();
+        let Some(choice) = self.phone_ui.show(ctx, &status) else {
+            return;
+        };
+        tracing::info!("phone input applied");
+        self.config.phone = choice.clone();
+        self.save_config();
+        if let Some(r) = self.radio.as_mut() {
+            r.set_phone_config(choice);
         }
     }
 
@@ -793,6 +814,9 @@ impl WoaApp {
                 &self.config.pfl_output,
                 &self.config.outputs,
             ));
+            if let Some(r) = self.radio.as_mut() {
+                r.set_phone_config(self.config.phone.clone());
+            }
         }
     }
 
@@ -2152,6 +2176,10 @@ impl WoaApp {
                 self.pfl_menu(ui);
                 if ui.button("Ausgänge (Soundkarten) …").clicked() {
                     self.outputs_ui.open(&self.config.outputs);
+                    ui.close();
+                }
+                if ui.button("Telefon (Eingang für den Anrufer) …").clicked() {
+                    self.phone_ui.open(&self.config.phone);
                     ui.close();
                 }
                 if ui
@@ -4846,6 +4874,7 @@ impl eframe::App for WoaApp {
             self.controller_window(&ctx);
             self.feedback_window(&ctx);
             self.outputs_window(&ctx);
+            self.phone_window(&ctx);
             self.telemetry_window(&ctx);
             return;
         }
@@ -4914,6 +4943,7 @@ impl eframe::App for WoaApp {
         self.controller_window(&ctx);
         self.feedback_window(&ctx);
         self.outputs_window(&ctx);
+        self.phone_window(&ctx);
         self.telemetry_window(&ctx);
     }
 }

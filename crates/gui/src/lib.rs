@@ -17,6 +17,7 @@ pub mod library;
 mod outputs;
 mod outputs_ui;
 pub mod party;
+mod phone;
 pub mod pianoroll;
 pub mod player;
 pub mod radio;
@@ -31,4 +32,5 @@ mod xrun;
 
 pub use app::WoaApp;
 pub use feedback::{GuiConfig, Mode, PflOutput};
+pub use phone::PhoneInput;
 pub use state::AppState;

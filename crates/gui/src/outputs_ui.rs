@@ -26,6 +26,16 @@ pub fn pair_label(pair: u8) -> String {
     )
 }
 
+/// Was „nicht zugeordnet“ bedeutet: die Quellen laufen mit der Playlist, der Rückweg zum
+/// Anrufer gibt es dann nicht.
+fn follow_label(s: Source) -> &'static str {
+    if s == Source::PhoneReturn {
+        "Kein Rückweg"
+    } else {
+        "Wie Playlist"
+    }
+}
+
 impl OutputsUi {
     /// Öffnet das Fenster mit der gespeicherten Zuordnung und liest die Geräte neu.
     pub fn open(&mut self, saved: &OutputMap) {
@@ -147,7 +157,7 @@ impl OutputsUi {
             .as_ref()
             .is_none_or(|id| self.devices.iter().any(|d| d.id == *id));
         let shown = match (&route.device_id, known) {
-            _ if *follow => "Wie Playlist".to_string(),
+            _ if *follow => follow_label(s).to_string(),
             (None, _) => "Standardgerät".to_string(),
             (Some(_), true) => route.device_label(),
             (Some(_), false) => format!("{} (fehlt)", route.device_label()),
@@ -156,7 +166,8 @@ impl OutputsUi {
             .width(280.0)
             .selected_text(shown)
             .show_ui(ui, |ui| {
-                if s != Source::Playlist && ui.selectable_label(*follow, "Wie Playlist").clicked() {
+                if s != Source::Playlist && ui.selectable_label(*follow, follow_label(s)).clicked()
+                {
                     *follow = true;
                 }
                 if ui
