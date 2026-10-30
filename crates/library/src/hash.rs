@@ -61,15 +61,15 @@ impl Hasher {
             self.word(u64::from_le_bytes(self.tail));
             self.tail_len = 0;
         }
-        let mut chunks = rest.chunks_exact(8);
-        for c in &mut chunks {
+        while rest.len() >= 8 {
+            let (head, r) = rest.split_at(8);
             let mut w = [0u8; 8];
-            w.copy_from_slice(c);
+            w.copy_from_slice(head);
             self.word(u64::from_le_bytes(w));
+            rest = r;
         }
-        let r = chunks.remainder();
-        self.tail[..r.len()].copy_from_slice(r);
-        self.tail_len = r.len();
+        self.tail[..rest.len()].copy_from_slice(rest);
+        self.tail_len = rest.len();
     }
 
     /// 32 Hex-Zeichen.
