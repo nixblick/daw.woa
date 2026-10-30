@@ -252,6 +252,9 @@ pub struct Track {
     /// Automation curves, at most one per target (Paket 18).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub automation: Vec<crate::automation::AutomationLane>,
+    /// Take folders made by loop recording (Paket 22).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub take_folders: Vec<crate::takes::TakeFolder>,
 }
 
 /// A send from a track to a bus.
@@ -298,6 +301,7 @@ impl Track {
             sends: Vec::new(),
             inserts: Vec::new(),
             automation: Vec::new(),
+            take_folders: Vec::new(),
         }
     }
 }
@@ -349,6 +353,7 @@ impl Project {
             t.id.0 == raw
                 || t.clips.iter().any(|c| c.id.0 == raw)
                 || t.inserts.iter().any(|i| i.id.0 == raw)
+                || t.take_folders.iter().any(|f| f.id == raw)
         })
     }
 
@@ -385,6 +390,15 @@ impl Project {
             }
             for i in &t.inserts {
                 check_id(i.id.0)?;
+            }
+            for (n, f) in t.take_folders.iter().enumerate() {
+                check_id(f.id)?;
+                f.check()?;
+                if t.take_folders[..n].iter().any(|o| o.id == f.id)
+                    || self.tracks.iter().any(|o| o.id.0 == f.id)
+                {
+                    return Err(ModelError::DuplicateId(f.id));
+                }
             }
         }
         Ok(())

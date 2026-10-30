@@ -487,6 +487,152 @@ impl AppState {
         ok.then_some(id)
     }
 
+    /// Puts a finished recording on `track` (or a new audio track) as one undo step
+    /// (Paket 22): one clip, or a take folder with one take per loop round. Latency and
+    /// punch range are already part of `plan` ([`woa_model::plan_recording`]). Returns the
+    /// (first) clip.
+    pub fn add_recording(
+        &mut self,
+        track: Option<TrackId>,
+        file: &Path,
+        plan: &woa_model::RecordPlan,
+    ) -> Option<ClipId> {
+        let woa_model::RecordPlan::Folder {
+            start_beats,
+            length_beats,
+            offsets,
+        } = plan
+        else {
+            let woa_model::RecordPlan::Single(p) = plan else {
+                return None;
+            };
+            return self.add_take_exact(track, file, p.start_beats, p.length_beats, p.offset_beats);
+        };
+        let name = file.file_name()?.to_string_lossy().into_owned();
+        let audio = format!("{TAKES_DIR}/{name}");
+        let takes: Vec<woa_model::TakeEntry> = offsets
+            .iter()
+            .enumerate()
+            .map(|(k, o)| woa_model::TakeEntry {
+                name: format!("Take {}", k + 1),
+                audio: audio.clone(),
+                offset_beats: *o,
+            })
+            .collect();
+        let target = track.filter(|t| {
+            self.project()
+                .track(*t)
+                .is_some_and(|t| t.kind == TrackKind::Audio)
+        });
+        self.session.begin_group("Aufnahme");
+        let track = match target {
+            Some(t) => Some(t),
+            None => self.add_track(),
+        };
+        let folder = track.map(|t| {
+            let n = self.project().track(t).map_or(0, |t| t.take_folders.len()) + 1;
+            (
+                t,
+                self.session.add_take_folder(
+                    t,
+                    &format!("Loop {n}"),
+                    *start_beats,
+                    *length_beats,
+                    takes,
+                ),
+            )
+        });
+        let closed = self.session.end_group();
+        self.report("Aufnahme", closed);
+        let (t, id) = folder?;
+        let id = match id {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::warn!(error = %e, "take folder failed");
+                self.status = Status::Error(format!("Aufnahme: {e}"));
+                return None;
+            }
+        };
+        self.project()
+            .track(t)?
+            .take_folders
+            .iter()
+            .find(|f| f.id == id)?
+            .clip_ids
+            .first()
+            .copied()
+    }
+
+    /// Sets which take plays between `start` and `end` of a take folder (one undo step).
+    pub fn comp_range(
+        &mut self,
+        track: TrackId,
+        folder: u64,
+        start_beats: f64,
+        end_beats: f64,
+        take: usize,
+    ) -> bool {
+        let Some(f) = self
+            .project()
+            .track(track)
+            .and_then(|t| t.take_folders.iter().find(|f| f.id == folder))
+        else {
+            return false;
+        };
+        let comp = f.comp_with(start_beats, end_beats, take);
+        if comp == f.comp {
+            return false;
+        }
+        let r = self.session.set_comp(track, folder, comp);
+        self.report("Comping", r)
+    }
+
+    /// Removes a take folder with the clips of its comp (one undo step).
+    pub fn remove_take_folder(&mut self, track: TrackId, folder: u64) -> bool {
+        self.apply(Command::SetTakeFolder {
+            track,
+            folder_id: folder,
+            folder: None,
+            clips: Vec::new(),
+        })
+    }
+
+    /// Puts a recorded or imported take with exact placement (beats), one undo step.
+    fn add_take_exact(
+        &mut self,
+        track: Option<TrackId>,
+        file: &Path,
+        start_beats: f64,
+        length_beats: f64,
+        offset_beats: f64,
+    ) -> Option<ClipId> {
+        let name = file.file_stem()?.to_string_lossy().into_owned();
+        let audio = format!("{TAKES_DIR}/{}", file.file_name()?.to_string_lossy());
+        let target = track.filter(|t| {
+            self.project()
+                .track(*t)
+                .is_some_and(|t| t.kind == TrackKind::Audio)
+        });
+        self.session.begin_group("Aufnahme");
+        let track = match target {
+            Some(t) => Some(t),
+            None => self.add_track(),
+        };
+        let id = self.session.new_clip_id();
+        let ok = track.is_some_and(|track| {
+            let mut clip = Clip::new(id, name, start_beats.max(0.0), length_beats, Some(audio));
+            clip.offset_beats = offset_beats;
+            self.apply(Command::AddClip {
+                track,
+                clip,
+                index: None,
+            })
+        });
+        let closed = self.session.end_group();
+        self.report("Aufnahme", closed);
+        ok.then_some(id)
+    }
+
     /// Puts recorded or imported notes as a MIDI clip on `track` (or on a new MIDI
     /// track) as one undo step (Paket 12).
     pub fn add_midi_clip(

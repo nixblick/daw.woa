@@ -134,6 +134,67 @@ impl Session {
         Ok(())
     }
 
+    /// Adds a take folder with `takes` on an audio track (one undo step). The comp starts
+    /// as the newest take over the whole folder. Returns the folder id.
+    pub fn add_take_folder(
+        &mut self,
+        track: TrackId,
+        name: &str,
+        start_beats: f64,
+        length_beats: f64,
+        takes: Vec<crate::takes::TakeEntry>,
+    ) -> Result<u64> {
+        let id = self.project.alloc_id();
+        let mut folder = crate::takes::TakeFolder {
+            id,
+            name: name.to_string(),
+            start_beats,
+            length_beats,
+            takes,
+            comp: Vec::new(),
+            clip_ids: Vec::new(),
+        };
+        folder.comp = folder.whole(folder.takes.len().saturating_sub(1));
+        folder.check()?;
+        let clips = folder.comp_clips(|| ClipId(self.project.alloc_id()));
+        folder.clip_ids = clips.iter().map(|c| c.id).collect();
+        self.apply(Command::SetTakeFolder {
+            track,
+            folder_id: id,
+            folder: Some(folder),
+            clips,
+        })?;
+        Ok(id)
+    }
+
+    /// Replaces the comp of a take folder and rebuilds its clips (one undo step).
+    pub fn set_comp(
+        &mut self,
+        track: TrackId,
+        folder_id: u64,
+        comp: Vec<crate::takes::CompSegment>,
+    ) -> Result<()> {
+        let mut folder = self
+            .project
+            .track(track)
+            .ok_or(ModelError::TrackNotFound(track))?
+            .take_folders
+            .iter()
+            .find(|f| f.id == folder_id)
+            .cloned()
+            .ok_or_else(|| ModelError::InvalidArgument("take folder not found".into()))?;
+        folder.comp = comp;
+        folder.check()?;
+        let clips = folder.comp_clips(|| ClipId(self.project.alloc_id()));
+        folder.clip_ids = clips.iter().map(|c| c.id).collect();
+        self.apply(Command::SetTakeFolder {
+            track,
+            folder_id,
+            folder: Some(folder),
+            clips,
+        })
+    }
+
     /// Opens an undo group: all commands until the matching [`Session::end_group`]
     /// become one undo step labelled `label`. Groups nest; inner labels are ignored.
     pub fn begin_group(&mut self, label: impl Into<String>) {

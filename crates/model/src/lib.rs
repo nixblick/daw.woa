@@ -39,6 +39,7 @@ pub mod midi;
 mod project;
 mod session;
 pub mod store;
+pub mod takes;
 
 pub use automation::{
     AutoMode, AutoPoint, AutoRange, AutoTarget, AutomationLane, MAX_AUTOMATION_POINTS,
@@ -57,3 +58,7 @@ pub use project::{
 };
 pub use session::Session;
 pub use store::{FORMAT_VERSION, ProjectFile, required_version};
+pub use takes::{
+    ClipPlan, CompSegment, MAX_COMP_SEGMENTS, MAX_TAKES, RecordInput, RecordPlan, TakeEntry,
+    TakeFolder, beats_for_samples, plan_recording,
+};
