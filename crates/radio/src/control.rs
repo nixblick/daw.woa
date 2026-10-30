@@ -555,12 +555,38 @@ impl Controller {
         }
         if let Some(Some(buf)) = self.carts.get(slot) {
             let buf = buf.clone();
+            let cues = self
+                .show
+                .carts
+                .get(slot)
+                .and_then(Option::as_ref)
+                .map(|c| c.cues)
+                .unwrap_or_default();
+            let f = cues.frames(self.rate, buf.frames());
             self.send(Cmd::Cart {
                 slot,
                 buf,
                 gain: 1.0,
+                start: f.start,
+                end: f.end,
             });
         }
+    }
+
+    /// Setzt Start und Ende von Cart `slot`; gilt ab dem nächsten Start des Carts.
+    pub fn set_cart_cues(&mut self, slot: usize, cues: Cues) -> Result<(), String> {
+        let secs = self
+            .carts
+            .get(slot)
+            .and_then(Option::as_ref)
+            .map(|b| b.frames() as f64 / f64::from(self.rate));
+        cues.validate(secs)?;
+        self.show.set_cart_cues(slot, cues)
+    }
+
+    /// Legt die Taste von Cart `slot` fest (`None` = keine).
+    pub fn set_cart_key(&mut self, slot: usize, key: Option<&str>) -> Result<(), String> {
+        self.show.set_cart_key(slot, key)
     }
 
     // ---- Mikro -----------------------------------------------------------------------
@@ -917,13 +943,25 @@ impl Controller {
         self.pfl_play(path, 0.0)
     }
 
-    /// Hört Cart `slot` vor.
+    /// Hört Cart `slot` ab `from` Sekunden vor (Cart-Schnitt).
+    pub fn pfl_cart_at(&mut self, slot: usize, from: f64) -> Result<(), String> {
+        let path = match self.show.carts.get(slot) {
+            Some(Some(c)) => c.path.clone(),
+            _ => return Err(format!("Cart {} ist frei", slot + 1)),
+        };
+        self.pfl_play(&path, from)
+    }
+
+    /// Hört Cart `slot` vor, ab seinem Cue-In.
     pub fn pfl_cart(&mut self, slot: usize) -> Result<(), String> {
         let path = match self.show.carts.get(slot) {
             Some(Some(c)) => c.path.clone(),
             _ => return Err(format!("Cart {} ist frei", slot + 1)),
         };
-        self.pfl_play(&path, 0.0)
+        let from = self.show.carts[slot]
+            .as_ref()
+            .map_or(0.0, |c| c.cues.start());
+        self.pfl_play(&path, from)
     }
 
     /// Hält das Vorhören an.

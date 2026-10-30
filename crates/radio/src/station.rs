@@ -72,6 +72,12 @@ pub struct View {
     /// Mikro-Gate offen.
     pub mic_gate_open: bool,
     pub carts: Vec<Option<String>>,
+    /// Taste je Cart (Name wie `egui::Key::name`), `None` = keine.
+    pub cart_keys: Vec<Option<String>>,
+    /// Datei je Cart.
+    pub cart_paths: Vec<Option<std::path::PathBuf>>,
+    /// Start und Ende je Cart.
+    pub cart_cues: Vec<crate::Cues>,
     pub carts_playing: u32,
     pub mic_open: bool,
     pub recording: Option<PathBuf>,
@@ -282,6 +288,26 @@ fn run(
                         .carts
                         .get(i)
                         .and_then(|x| x.as_ref().map(|e| e.label.clone()))
+                })
+                .collect(),
+            cart_keys: (0..CARTS).map(|i| c.show().cart_key(i)).collect(),
+            cart_paths: (0..CARTS)
+                .map(|i| {
+                    c.show()
+                        .carts
+                        .get(i)
+                        .and_then(Option::as_ref)
+                        .map(|e| e.path.clone())
+                })
+                .collect(),
+            cart_cues: (0..CARTS)
+                .map(|i| {
+                    c.show()
+                        .carts
+                        .get(i)
+                        .and_then(Option::as_ref)
+                        .map(|e| e.cues)
+                        .unwrap_or_default()
                 })
                 .collect(),
             carts_playing: st.carts.load(Ordering::Acquire),
