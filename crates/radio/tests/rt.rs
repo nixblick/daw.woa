@@ -370,3 +370,88 @@ fn level_faders_scale_music_and_carts_smoothly() {
         l[BLOCK - 1]
     );
 }
+
+#[test]
+fn cue_points_shape_the_offline_render() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut paths = Vec::new();
+    for (i, secs) in [8.0, 6.0].into_iter().enumerate() {
+        let p = tmp.path().join(format!("c{i}.wav"));
+        write_tone(&p, secs, 440.0, 0.2);
+        paths.push(p);
+    }
+    let mut show = show_of(&paths, 3.0);
+    // Titel 1: 1 s bis 7 s, Fade-Out ab 6 s (1 s Überblendung); Titel 2 ab 2 s.
+    show.playlist[0].cues = woa_radio::Cues {
+        cue_in: Some(1.0),
+        cue_out: Some(7.0),
+        fade_out: Some(6.0),
+        ramp: Some(3.0),
+        ..Default::default()
+    };
+    show.playlist[1].cues = woa_radio::Cues {
+        cue_in: Some(2.0),
+        ..Default::default()
+    };
+    let out = render(&show, SR).unwrap();
+    // 6 s + 4 s - 1 s = 9 s.
+    assert_eq!(out.left.len(), 9 * SR as usize);
+    // Die Vorhersage der Restzeit stimmt mit dem Render überein.
+    let mut measured = show.clone();
+    measured.playlist[0].seconds = Some(8.0);
+    measured.playlist[1].seconds = Some(6.0);
+    assert!((measured.total_seconds_from(0) - 9.0).abs() < 1e-6);
+}
+
+#[test]
+fn pfl_never_reaches_the_broadcast() {
+    let tmp = tempfile::tempdir().unwrap();
+    let p = tmp.path().join("pfl.wav");
+    write_tone(&p, 2.0, 440.0, 0.5);
+    let show = show_of(std::slice::from_ref(&p), 0.0);
+    let (mut c, mut m) = Controller::new(show, SR);
+    let (h, mut pfl) = woa_radio::pfl::channel(SR);
+    c.set_pfl(Some(h));
+    c.pfl_title(0, false).unwrap();
+    let (mut l, mut r) = (vec![0.0f32; BLOCK], vec![0.0f32; BLOCK]);
+    let (mut hl, mut hr) = (vec![0.0f32; BLOCK], vec![0.0f32; BLOCK]);
+    let mut heard = 0.0f32;
+    for _ in 0..20 {
+        block(&mut c, &mut m, &mut l, &mut r);
+        assert_no_alloc(|| pfl.process(&mut hl, &mut hr));
+        assert!(
+            l.iter().chain(r.iter()).all(|v| *v == 0.0),
+            "broadcast silent"
+        );
+        heard = hl.iter().fold(heard, |a, v| a.max(v.abs()));
+    }
+    assert!(heard > 0.4, "headphones hear the title: {heard}");
+    assert!(c.pfl_playing());
+    c.pfl_stop();
+    assert_no_alloc(|| pfl.process(&mut hl, &mut hr));
+    assert!(!c.pfl_playing());
+    assert!(c.pfl_cart(0).is_err());
+}
+
+#[test]
+fn cue_edits_undo_and_redo() {
+    let tmp = tempfile::tempdir().unwrap();
+    let p = tmp.path().join("u.wav");
+    write_tone(&p, 4.0, 440.0, 0.2);
+    let (mut c, _m) = Controller::new(show_of(std::slice::from_ref(&p), 0.0), SR);
+    let cues = woa_radio::Cues {
+        hook: Some(2.0),
+        ..Default::default()
+    };
+    c.set_cues(0, cues).unwrap();
+    let bad = woa_radio::Cues {
+        cue_in: Some(9.0),
+        cue_out: Some(1.0),
+        ..Default::default()
+    };
+    assert!(c.set_cues(0, bad).is_err());
+    assert!(c.undo_cues());
+    assert!(c.show().playlist[0].cues.is_empty());
+    assert!(c.redo_cues());
+    assert_eq!(c.show().playlist[0].cues, cues);
+}

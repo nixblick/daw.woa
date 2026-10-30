@@ -33,6 +33,8 @@ pub struct ViewEntry {
     pub seconds: Option<f64>,
     pub lufs: Option<f64>,
     pub gain_db: f64,
+    /// Cue-Punkte (Paket 15).
+    pub cues: crate::cues::Cues,
 }
 
 /// Schnappschuss für die Oberfläche.
@@ -71,6 +73,15 @@ pub struct View {
     pub revision: u64,
     /// Zuletzt geladener Titel und Dauer des Dekodierens in Millisekunden.
     pub last_load: Option<(PathBuf, u64)>,
+    /// Sekunden bis zum Ramp-Punkt (Intro-Ende) des laufenden Titels.
+    pub ramp_remaining: Option<f64>,
+    /// Kopfhörer-Ausgang für das Vorhören eingehängt.
+    pub pfl_available: bool,
+    /// Vorhören läuft.
+    pub pfl_playing: bool,
+    /// Cue-Bearbeitungen lassen sich zurücknehmen / wiederholen.
+    pub cues_undo: bool,
+    pub cues_redo: bool,
 }
 
 /// Griff auf den laufenden Sende-Thread.
@@ -224,6 +235,7 @@ fn run(
                     seconds: e.seconds,
                     lufs: e.lufs,
                     gain_db: e.gain_db(target),
+                    cues: e.cues,
                 })
                 .collect(),
             current: c.current_index(),
@@ -257,6 +269,11 @@ fn run(
             last_load: c
                 .last_load()
                 .map(|(p, d)| (p.clone(), d.as_millis() as u64)),
+            ramp_remaining: c.ramp_remaining(),
+            pfl_available: c.has_pfl(),
+            pfl_playing: c.pfl_playing(),
+            cues_undo: c.can_undo_cues(),
+            cues_redo: c.can_redo_cues(),
         };
         if let Ok(mut out) = view.lock() {
             *out = v;

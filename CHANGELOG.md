@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0 — 2026-10-30
+
+Paket 15: Cue-Punkte und Vorhören (PFL), aus M7 nach M4 vorgezogen (André, 30.10.2026).
+
+- **Cue-Punkte je Titel:** Cue-In, Cue-Out, Ramp (Intro-Ende), Hook und Fade-Out-Marker, in Sekunden in `radio.json`. Der Mixer spielt von Cue-In bis Cue-Out; mit Fade-Out-Marker dauert die Überblendung von dort bis Cue-Out, sonst gilt die eingestellte Überblendung. Restzeit, Gesamtlänge und Offline-Render rechnen genauso.
+- **Cue-Editor:** Rechtsklick auf einen Titel → „Cue-Punkte …“. Wellenform mit allen Markern, Klick setzt den gewählten, Zahlenfelder für den Feinschliff, Prüfung vor dem Übernehmen. „Übernehmen“ ist ein Rückgängig-Schritt (eigener Verlauf für Cue-Punkte, Rückgängig/Wiederholen im Editor).
+- **Ramp-Countdown:** Im Sende-Deck läuft neben der Restzeit „RAMP n“ bis zum Intro-Ende herunter.
+- **Vorhören (PFL):** Einstellungen → „Vorhören (PFL)“: aus, Kanal 3/4 des Sendegeräts oder ein zweites Gerät, gespeichert in `config.json`. Titel (ab Cue-In oder ab Hook), Carts und jeder Marker im Editor lassen sich vorhören. Der PFL-Spieler ist ein eigener Spieler mit eigener `rtrb`-Queue ohne Weg in Mixer, Mitschnitt oder Sende-Ring; im Audio-Thread ohne Allokation und Sperre, 5 ms Ein- und Ausblenden gegen Knacken.
+- **Agent:** neues Werkzeug `set_cue_points` (prüft die Werte, gibt die alten zurück); `run_order` zeigt Cue-Punkte und gespielte Länge.
+- Engine: `start_output_aux` schreibt einen zweiten Stereo-Callback auf Kanal 3/4 desselben Geräts.
+
 ## 0.9.1 — 2026-10-30
 
 - Neues Studio- und Sende-Design (von Gemini gebaut, von André übernommen: „gefällt mir ganz gut“): Tiefenstaffelung und Hardware-Rahmen, Status-Pillen, 20-Segment-LED-Meter; Radio-Ansicht in Modulen (Sende-Deck mit Master-Uhr, Playlist mit LUFS, Cart-Wall im Drumpad-Stil, Processing-Rack).

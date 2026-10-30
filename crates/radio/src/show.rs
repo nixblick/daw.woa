@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::CARTS;
 use crate::audio::{Measured, file_stamp};
+use crate::cues::Cues;
 use crate::level::{TARGET_LUFS, auto_gain_db};
 
 /// Aktuelle Formatversion von `radio.json`.
@@ -29,6 +30,9 @@ pub struct PlaylistEntry {
     /// Dateistand (Größe, Änderungszeit) zur Zeit der Messung.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stamp: Option<String>,
+    /// Cue-Punkte (Paket 15).
+    #[serde(default, skip_serializing_if = "Cues::is_empty")]
+    pub cues: Cues,
     /// Laufzeit-Kennung (nicht gespeichert), vom Controller vergeben.
     #[serde(skip)]
     pub uid: u32,
@@ -42,6 +46,7 @@ impl PlaylistEntry {
             peak_db: None,
             seconds: None,
             stamp: None,
+            cues: Cues::default(),
             uid: 0,
         }
     }
@@ -62,6 +67,11 @@ impl PlaylistEntry {
         self.peak_db = m.peak_db;
         self.seconds = Some(m.seconds);
         self.stamp = file_stamp(&self.path);
+    }
+
+    /// Gespielte Länge (Cue-In bis Cue-Out), falls gemessen.
+    pub fn play_seconds(&self) -> Option<f64> {
+        self.seconds.map(|s| self.cues.play_seconds(s))
     }
 
     /// Auto-Gain dieses Titels in dB.
@@ -246,8 +256,8 @@ impl RadioShow {
         r
     }
 
-    /// Effektive Überblendung zwischen zwei Titeln (Sekunden): höchstens die halbe Länge
-    /// jedes der beiden. Genau so rechnet auch der Mixer.
+    /// Effektive Überblendung zwischen zwei Titeln (Sekunden), aus ihren gespielten
+    /// Längen: höchstens die halbe Länge jedes der beiden. Genau so rechnet der Mixer.
     pub fn crossfade_between(&self, a_seconds: f64, b_seconds: f64) -> f64 {
         self.crossfade_seconds
             .min(a_seconds / 2.0)
@@ -255,21 +265,39 @@ impl RadioShow {
             .max(0.0)
     }
 
-    /// Gesamtlänge der Playlist ab Titel `from` (Sekunden): Summe minus Überblendungen.
+    /// Überblendung von Eintrag `a` nach `b`: mit Fade-Out-Marker von dort bis Cue-Out
+    /// (höchstens die halbe Länge von `b`), sonst [`Self::crossfade_between`].
     /// Ungemessene Titel zählen 0.
+    pub fn crossfade_entries(&self, a: &PlaylistEntry, b: &PlaylistEntry) -> f64 {
+        let (Some(la), Some(lb)) = (a.play_seconds(), b.play_seconds()) else {
+            return 0.0;
+        };
+        match a.seconds.and_then(|s| a.cues.fade_seconds(s)) {
+            Some(f) => f.min(la).min(lb / 2.0).max(0.0),
+            None => self.crossfade_between(la, lb),
+        }
+    }
+
+    /// Gesamtlänge der Playlist ab Titel `from` (Sekunden): gespielte Längen minus
+    /// Überblendungen. Ungemessene Titel zählen 0.
     pub fn total_seconds_from(&self, from: usize) -> f64 {
-        let lens: Vec<f64> = self
-            .playlist
-            .iter()
-            .skip(from)
-            .map(|e| e.seconds.unwrap_or(0.0))
-            .collect();
-        let sum: f64 = lens.iter().sum();
-        let fades: f64 = lens
+        let rest = self.playlist.get(from..).unwrap_or(&[]);
+        let sum: f64 = rest.iter().map(|e| e.play_seconds().unwrap_or(0.0)).sum();
+        let fades: f64 = rest
             .windows(2)
-            .map(|w| self.crossfade_between(w[0], w[1]))
+            .map(|w| self.crossfade_entries(&w[0], &w[1]))
             .sum();
         sum - fades
+    }
+
+    /// Setzt die Cue-Punkte von Titel `index` (geprüft). Gibt die alten zurück.
+    pub fn set_cues(&mut self, index: usize, cues: Cues) -> Result<Cues, String> {
+        let e = self
+            .playlist
+            .get_mut(index)
+            .ok_or_else(|| format!("Titel {} gibt es nicht", index + 1))?;
+        cues.validate(e.seconds)?;
+        Ok(std::mem::replace(&mut e.cues, cues))
     }
 
     /// Verschiebt einen Titel von `from` nach `to`.
@@ -349,5 +377,44 @@ mod tests {
         assert!(show.move_entry(2, 0));
         assert_eq!(show.playlist[0].seconds, Some(4.0));
         assert!(!show.move_entry(5, 0));
+    }
+
+    #[test]
+    fn cues_shorten_and_set_the_crossfade() {
+        let mut show = RadioShow::default();
+        for s in [10.0, 20.0] {
+            let mut e = PlaylistEntry::new("x.wav");
+            e.seconds = Some(s);
+            show.playlist.push(e);
+        }
+        let old = show
+            .set_cues(
+                0,
+                Cues {
+                    cue_in: Some(1.0),
+                    cue_out: Some(9.0),
+                    fade_out: Some(8.0),
+                    ..Cues::default()
+                },
+            )
+            .unwrap();
+        assert!(old.is_empty());
+        // 8 s + 20 s - 1 s Überblendung ab Fade-Out-Marker.
+        assert!((show.total_seconds_from(0) - 27.0).abs() < 1e-9);
+        assert!(
+            show.set_cues(
+                1,
+                Cues {
+                    cue_in: Some(30.0),
+                    ..Cues::default()
+                }
+            )
+            .is_err()
+        );
+        assert!(show.set_cues(5, Cues::default()).is_err());
+        // Roundtrip über JSON, Version bleibt 1.
+        let text = serde_json::to_string(&show).unwrap();
+        assert!(text.contains("cue_in"));
+        assert_eq!(RadioShow::from_json(&text).unwrap(), show);
     }
 }

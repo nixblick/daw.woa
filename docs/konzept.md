@@ -213,10 +213,10 @@ Alle Meilensteine werden umgesetzt. Jeder endet mit einem prüfbaren Abnahmekrit
 | M1 Engine | Audio-Graph, Transport, Geräteauswahl, Sampler, Synth, SoundFont-Player, Offline-Render | Golden-Render stimmt, keine Underruns bei 128 Samples |
 | M2 Agent | MCP-Server mit allen Projekt-, Kompositions- und Analyse-Tools | Claude baut allein einen 8-Takt-Loop mit -14 LUFS |
 | M3 Radio | Playlist-Player, Crossfade, Cart-Wall, Mikro mit Ducking, Encoder, Shoutcast/Icecast, Mitschnitt, Notfall-Playlist, Radio-Layout | 8 Stunden Testsendung ohne Abbruch |
-| M4 MIDI & Eingabe | USB-Keyboard, MIDI-Aufnahme, Piano-Roll, MIDI-Learn für Controller | Yamaha-Keyboard spielt und nimmt auf, Controller steuert Mixer und Cart-Wall |
+| M4 MIDI & Eingabe | USB-Keyboard, MIDI-Aufnahme, Piano-Roll, MIDI-Learn für Controller; danach vorgezogen aus M7: Cue-Punkte je Titel und Vorhören (PFL) auf eigenem Ausgang (Paket 15, André 30.10.2026) | Yamaha-Keyboard spielt und nimmt auf, Controller steuert Mixer und Cart-Wall |
 | M5 Mixer & Effekte | Busse, Sends, Sidechain, Automation, alle eingebauten Effekte, Analyse-Fenster | ganzer Jingle inklusive Sprachkette im Produzent-Layout |
 | M6 Arrangement & Aufnahme | Timeline-Editor, Schnitt, Fades, Audio-Aufnahme mit Latenzkompensation, Comping, Time-Stretch | ganzer Song von Aufnahme bis Export |
-| M7 Bibliothek & Formate | Bibliothek in SQLite (`crates/library`) mit Analyse, Cue-Punkte je Titel, Vorhören (PFL) auf eigenem Ausgang, alle Import-/Exportformate, Stems, DAWproject | 1.000 Titel importiert und lautheitsangeglichen |
+| M7 Bibliothek & Formate | Bibliothek in SQLite (`crates/library`) mit Analyse (Cue-Punkte und PFL schon nach M4 vorgezogen, hier nur noch automatische Cue-Punkte aus der Analyse), alle Import-/Exportformate, Stems, DAWproject | 1.000 Titel importiert und lautheitsangeglichen |
 | M8 Plugins | CLAP-Hosting mit Plugin-GUIs, Absturzschutz für Plugins | Surge XT und Vital laufen stabil im Projekt |
 | M9 Gäste, Automation & Party | Stundenuhr und AutoDJ-Rotation, Voice-Tracking-Editor, WebRTC-Gäste-Schalte (`crates/guests`) mit Mix-Minus, Party-Layout, Web-Fernbedienung | Sendung mit zwei zugeschalteten Gästen; Party-Abend per Handy gesteuert |
 | M10 Release | MSI und AppImage/Flatpak, Auto-Updater, Datenschutzerklärung, Doku, Download auf wironair.de | Installation auf frischem Windows und Linux, Update von Version zu Version |

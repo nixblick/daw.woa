@@ -334,6 +334,32 @@ pub struct BuildPlaylistParams {
     pub radio_json: Option<String>,
 }
 
+/// Parameters of `set_cue_points`. All times in seconds from the start of the file.
+/// A point left out is cleared (the whole set is replaced).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetCuePointsParams {
+    /// Title position in the playlist, starting at 1.
+    pub position: usize,
+    /// Cue-In: the title starts here on air.
+    #[serde(default)]
+    pub cue_in: Option<f64>,
+    /// Cue-Out: the title ends here on air; the remaining time counts to this point.
+    #[serde(default)]
+    pub cue_out: Option<f64>,
+    /// Ramp: end of the intro; the radio layout counts down to it for the presenter.
+    #[serde(default)]
+    pub ramp: Option<f64>,
+    /// Hook: the catchy part, for previewing (PFL from hook).
+    #[serde(default)]
+    pub hook: Option<f64>,
+    /// Fade-Out marker: the crossfade to the next title starts here and lasts until Cue-Out.
+    #[serde(default)]
+    pub fade_out: Option<f64>,
+    /// Same rules as `build_playlist`. Default: radio.json in the WOA data folder.
+    #[serde(default)]
+    pub radio_json: Option<String>,
+}
+
 /// Parameters of `run_order`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RunOrderParams {
@@ -385,6 +411,21 @@ pub struct WoaAgent {
 /// Rate for radio measurements; LUFS does not depend on it.
 const RADIO_RATE: u32 = 48_000;
 
+/// Sets the cue points of title `position` (from 1) in `radio` and saves it.
+fn set_cues_in(
+    radio: &Path,
+    position: usize,
+    cues: woa_radio::Cues,
+) -> Result<(woa_radio::RadioShow, woa_radio::Cues), String> {
+    let mut show = woa_radio::RadioShow::load(radio)?;
+    let i = position
+        .checked_sub(1)
+        .ok_or_else(|| "position beginnt bei 1".to_string())?;
+    let before = show.set_cues(i, cues)?;
+    show.save(radio)?;
+    Ok((show, before))
+}
+
 fn run_order_json(show: &woa_radio::RadioShow, radio: &Path) -> serde_json::Value {
     let titles: Vec<_> = show
         .playlist
@@ -398,6 +439,8 @@ fn run_order_json(show: &woa_radio::RadioShow, radio: &Path) -> serde_json::Valu
                 "seconds": e.seconds,
                 "lufs": e.lufs,
                 "gain_db": e.gain_db(show.target_lufs),
+                "cues": e.cues,
+                "play_seconds": e.play_seconds(),
             })
         })
         .collect();
@@ -1338,6 +1381,42 @@ impl WoaAgent {
         match r {
             Ok(show) => Ok(ok_json(run_order_json(&show, &radio))),
             Err(e) => Ok(fail(e)),
+        }
+    }
+
+    #[tool(
+        description = "Radio mode: set the cue points of one playlist title in radio.json (Cue-In, Cue-Out, Ramp, Hook, Fade-Out, seconds from file start). Replaces the title's whole set; omitted points are cleared, so call with no points to clear all. Checked: 0 <= Cue-In < Cue-Out <= length, the others between. Returns the previous points (call again with them to undo) and the new run order; a running WOA picks the file up within 2 s."
+    )]
+    async fn set_cue_points(
+        &self,
+        Parameters(p): Parameters<SetCuePointsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let (radio, created) = match p.radio_json.as_deref() {
+            None => (woa_radio::default_radio_path(), Vec::new()),
+            Some(g) => match self.resolve_out(g) {
+                Ok(x) => x,
+                Err(e) => return Ok(fail(e)),
+            },
+        };
+        let cues = woa_radio::Cues {
+            cue_in: p.cue_in,
+            cue_out: p.cue_out,
+            ramp: p.ramp,
+            hook: p.hook,
+            fade_out: p.fade_out,
+        };
+        match set_cues_in(&radio, p.position, cues) {
+            Ok((show, before)) => {
+                let mut v = run_order_json(&show, &radio);
+                if let Some(o) = v.as_object_mut() {
+                    o.insert("previous".into(), serde_json::json!(before));
+                }
+                Ok(ok_json(v))
+            }
+            Err(e) => {
+                remove_created(&created);
+                Ok(fail(e))
+            }
         }
     }
 

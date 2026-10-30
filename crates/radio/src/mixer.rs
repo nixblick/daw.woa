@@ -12,6 +12,7 @@ use basedrop::{Owned, Shared};
 
 use crate::CARTS;
 use crate::audio::Stereo;
+use crate::cues::CueFrames;
 use crate::dynamics::{BusProcessor, MicChain};
 use crate::level::{Smoother, crossfade};
 
@@ -59,6 +60,8 @@ pub enum Cmd {
         uid: u32,
         buf: Shared<Stereo>,
         gain: f32,
+        /// Cue-Punkte in Frames (Paket 15).
+        cues: CueFrames,
     },
     /// Bereitgelegten Titel verwerfen.
     ClearNext,
@@ -200,23 +203,40 @@ struct Deck {
     uid: u32,
     buf: Shared<Stereo>,
     pos: usize,
+    /// Cue-In (Frames).
+    start: usize,
+    /// Cue-Out, bei „Weiter“ vorgezogen.
     end: usize,
+    /// Überblendlänge aus dem Fade-Out-Marker.
+    fade: Option<usize>,
+    /// „Weiter“ wurde gedrückt: die Restlänge ist die Überblendung.
+    skipped: bool,
     gain: f32,
     /// Ausblenden über die letzten so vielen Frames (0 = keins), bei „Weiter“ ohne Nachfolger.
     tail: usize,
 }
 
 impl Deck {
-    fn new(uid: u32, buf: Shared<Stereo>, gain: f32) -> Self {
-        let end = buf.frames();
+    fn new(uid: u32, buf: Shared<Stereo>, gain: f32, cues: CueFrames) -> Self {
+        let total = buf.frames();
+        let end = cues.end.min(total);
+        let start = cues.start.min(end);
         Self {
             uid,
             buf,
-            pos: 0,
+            pos: start,
+            start,
             end,
+            fade: cues.fade,
+            skipped: false,
             gain,
             tail: 0,
         }
+    }
+
+    /// Gespielte Länge (Cue-In bis Cue-Out).
+    fn len(&self) -> usize {
+        self.end - self.start
     }
 
     fn remaining(&self) -> usize {
@@ -322,7 +342,12 @@ impl Mixer {
     fn drain(&mut self) {
         while let Ok(cmd) = self.cmds.pop() {
             match cmd {
-                Cmd::Queue { uid, buf, gain } => self.next = Some(Deck::new(uid, buf, gain)),
+                Cmd::Queue {
+                    uid,
+                    buf,
+                    gain,
+                    cues,
+                } => self.next = Some(Deck::new(uid, buf, gain, cues)),
                 Cmd::ClearNext => self.next = None,
                 Cmd::Play => {
                     self.playing = true;
@@ -377,7 +402,7 @@ impl Mixer {
         if !self.playing || self.outgoing.is_some() {
             return;
         }
-        let next_len = self.next.as_ref().map(|n| n.buf.frames());
+        let next_len = self.next.as_ref().map(Deck::len);
         if let Some(c) = self.current.as_mut() {
             let mut xf = self.xf_frames.min(c.remaining());
             if let Some(n) = next_len {
@@ -386,18 +411,21 @@ impl Mixer {
                 c.tail = xf;
             }
             c.end = c.pos + xf;
+            c.skipped = true;
         }
     }
 
     /// Überblendlänge zwischen `cur` und dem nächsten Titel.
     fn xf_for(&self, cur: &Deck, next: &Deck) -> usize {
-        if cur.end < cur.buf.frames() {
+        if cur.skipped {
             // Vorgezogenes Ende („Weiter“): die Restlänge ist die Überblendung.
             return cur.remaining();
         }
-        self.xf_frames
-            .min(cur.buf.frames() / 2)
-            .min(next.buf.frames() / 2)
+        match cur.fade {
+            // Fade-Out-Marker: Überblendung von dort bis Cue-Out (wie `crossfade_entries`).
+            Some(f) => f.min(cur.len()).min(next.len() / 2),
+            None => self.xf_frames.min(cur.len() / 2).min(next.len() / 2),
+        }
     }
 
     fn transitions(&mut self) {

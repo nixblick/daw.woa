@@ -10,13 +10,17 @@ use std::time::{Instant, SystemTime};
 use eframe::egui;
 use woa_io::controller::{Bus, Target};
 use woa_radio::mixer::LevelBus;
-use woa_radio::station::{Station, View};
+use woa_radio::station::{Station, View, ViewEntry};
 use woa_radio::{CARTS, Controller, RadioShow};
 use woa_stream::StreamStatus;
 use woa_stream::link::{Feeder, is_alive, link_path};
 
+use crate::cue_editor::{CueAction, CueEditor};
+use crate::feedback::PflOutput;
 use crate::theme;
 use crate::xrun::XrunLog;
+
+const NO_PFL: &str = "Kein Kopfhörer-Ausgang: Einstellungen → Vorhören (PFL)";
 
 type Stream = Box<dyn std::any::Any>;
 
@@ -64,6 +68,12 @@ pub struct RadioDesk {
     levels_db: [f64; 3],
     /// „MIDI lernen“ per Rechtsklick gewählt; die App holt es ab.
     pub learn: Option<Target>,
+    /// Offener Cue-Editor (Paket 15).
+    cue_editor: Option<CueEditor>,
+    /// Zuletzt in den Editor übernommene Cue-Punkte je Titel (erkennt Undo/Redo).
+    cue_seen: std::collections::HashMap<usize, woa_radio::Cues>,
+    /// Eigener Strom für das Vorhören auf einem zweiten Gerät.
+    _pfl_output: Option<Stream>,
 }
 
 fn level_bus(b: Bus) -> LevelBus {
@@ -148,7 +158,12 @@ impl RadioDesk {
     /// Lädt `radio.json` und öffnet die Ausgabe. Geht das Gerät nicht, bleibt die
     /// Playlist bearbeitbar und die Meldung steht oben.
     /// `buffer_frames`: Puffergröße der Ausgabe (`None` = Treiber).
-    pub fn open(radio_path: PathBuf, data_dir: PathBuf, buffer_frames: Option<u32>) -> Self {
+    pub fn open(
+        radio_path: PathBuf,
+        data_dir: PathBuf,
+        buffer_frames: Option<u32>,
+        pfl: &PflOutput,
+    ) -> Self {
         let (show, mut error) = match RadioShow::load(&radio_path) {
             Ok(s) => (s, None),
             Err(e) => (RadioShow::default(), Some(e)),
@@ -158,13 +173,68 @@ impl RadioDesk {
             buffer_frames,
         };
         let rate = woa_engine::device::output_sample_rate(&config).unwrap_or(48_000);
-        let (controller, mut mixer) = Controller::new(show, rate);
+        let (mut controller, mut mixer) = Controller::new(show, rate);
         let device = woa_engine::device::output_device_name(&config);
         let underruns = Arc::new(AtomicU64::new(0));
         let counter = Arc::clone(&underruns);
-        let output: Option<Stream> = match woa_engine::device::start_stereo_output(
+        // Vorhören (Paket 15): Kanal 3/4 im selben Callback oder ein eigener Strom.
+        // Der PFL-Spieler hat keinen Weg in den Mixer, den Mitschnitt oder den Sende-Ring.
+        let (aux, pfl_output) = match pfl {
+            PflOutput::Aus => (None, None),
+            PflOutput::Kanal34 => match woa_engine::device::output_channels(&config) {
+                Ok(n) if n >= 4 => {
+                    let (h, mut player) = woa_radio::pfl::channel(rate);
+                    controller.set_pfl(Some(h));
+                    tracing::info!(channels = n, "pfl on channels 3/4");
+                    let f: woa_engine::device::AuxRender =
+                        Box::new(move |l, r| player.process(l, r));
+                    (Some(f), None)
+                }
+                Ok(n) => {
+                    tracing::warn!(channels = n, "pfl: device has too few channels");
+                    error = Some(format!(
+                        "Vorhören aus: Das Gerät hat nur {n} Kanäle, Kanal 3/4 gibt es nicht"
+                    ));
+                    (None, None)
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "pfl: channel count");
+                    (None, None)
+                }
+            },
+            PflOutput::Geraet(id) => {
+                let cfg = woa_engine::device::OutputConfig {
+                    device_id: Some(id.clone()),
+                    buffer_frames: None,
+                };
+                let prate = woa_engine::device::output_sample_rate(&cfg).unwrap_or(48_000);
+                let (h, mut player) = woa_radio::pfl::channel(prate);
+                match woa_engine::device::start_stereo_output(
+                    &cfg,
+                    move |l, r| player.process(l, r),
+                    |e| {
+                        if !woa_engine::device::is_xrun(&e) {
+                            tracing::warn!(error = %e, "pfl output");
+                        }
+                    },
+                ) {
+                    Ok(st) => {
+                        tracing::info!(device = %id, rate = prate, "pfl on second device");
+                        controller.set_pfl(Some(h));
+                        (None, Some(Box::new(st) as Stream))
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, device = %id, "pfl output failed");
+                        error = Some(format!("Vorhören aus: Kopfhörer-Gerät geht nicht ({e})"));
+                        (None, None)
+                    }
+                }
+            }
+        };
+        let output: Option<Stream> = match woa_engine::device::start_output_aux(
             &config,
             move |l, r| mixer.process(l, r),
+            aux,
             // Kann im Audio-Thread laufen: Aussetzer nur zählen, geloggt wird in `tick`.
             move |e| {
                 if woa_engine::device::is_xrun(&e) {
@@ -220,6 +290,9 @@ impl RadioDesk {
             device,
             levels_db: [0.0; 3],
             learn: None,
+            cue_editor: None,
+            cue_seen: std::collections::HashMap::new(),
+            _pfl_output: pfl_output,
         }
         .reattach()
     }
@@ -721,7 +794,20 @@ impl RadioDesk {
                                 .monospace()
                                 .color(clock_col),
                         )
-                        .on_hover_text("Restzeit des laufenden Titels");
+                        .on_hover_text("Restzeit des laufenden Titels (bis Cue-Out)");
+                        if let Some(r) = v.ramp_remaining {
+                            ui.add_space(8.0);
+                            ui.label(
+                                egui::RichText::new(format!("RAMP {:.0}", r.ceil()))
+                                    .size(28.0)
+                                    .strong()
+                                    .monospace()
+                                    .color(theme::ACCENT),
+                            )
+                            .on_hover_text(
+                                "Sekunden bis zum Intro-Ende (Ramp): bis dahin sprechen",
+                            );
+                        }
 
                         ui.add_space(10.0);
                         ui.vertical(|ui| {
@@ -1214,7 +1300,7 @@ impl RadioDesk {
                         let lufs_badge = e
                             .lufs
                             .map(|l| format!("{l:.1} LUFS ({:+.1} dB)", e.gain_db));
-                        if ui
+                        let title_resp = ui
                             .add(
                                 egui::Label::new(
                                     egui::RichText::new(&e.title)
@@ -1230,11 +1316,11 @@ impl RadioDesk {
                                 e.lufs
                                     .map(|l| format!("{l:.1} LUFS, Auto-Gain {:+.1} dB", e.gain_db))
                                     .unwrap_or_else(|| "noch nicht gemessen".into())
-                            ))
-                            .double_clicked()
-                        {
+                            ));
+                        if title_resp.double_clicked() {
                             self.with(move |c| c.set_cue(i));
                         }
+                        title_resp.context_menu(|ui| self.title_menu(ui, i, e, v));
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui.small_button("x").on_hover_text("Entfernen").clicked() {
@@ -1254,7 +1340,9 @@ impl RadioDesk {
                             }
                             ui.label(
                                 egui::RichText::new(
-                                    e.seconds.map(clock).unwrap_or_else(|| "--:--".into()),
+                                    e.seconds
+                                        .map(|s| clock(e.cues.play_seconds(s)))
+                                        .unwrap_or_else(|| "--:--".into()),
                                 )
                                 .monospace()
                                 .strong()
@@ -1394,6 +1482,19 @@ impl RadioDesk {
                         if let Some(t) = crate::controls::learn_menu(ui, Target::Cart(slot), None) {
                             self.learn = Some(t);
                         }
+                        if label.is_some()
+                            && ui
+                                .add_enabled(v.pfl_available, egui::Button::new("Vorhören"))
+                                .on_disabled_hover_text(NO_PFL)
+                                .clicked()
+                        {
+                            self.with(move |c| {
+                                if let Err(e) = c.pfl_cart(slot) {
+                                    c.report(e);
+                                }
+                            });
+                            ui.close();
+                        }
                         if label.is_some() && ui.button("Leeren").clicked() {
                             self.with(move |c| {
                                 let _ = c.assign_cart(slot, None);
@@ -1406,6 +1507,106 @@ impl RadioDesk {
                     }
                 }
             });
+    }
+
+    /// Rechtsklick auf einen Titel: Cue-Punkte, Vorhören (Paket 15).
+    fn title_menu(&mut self, ui: &mut egui::Ui, i: usize, e: &ViewEntry, v: &View) {
+        if ui.button("Cue-Punkte …").clicked() {
+            self.cue_editor = Some(CueEditor::open(
+                i,
+                e.path.clone(),
+                e.title.clone(),
+                e.seconds,
+                e.cues,
+            ));
+            ui.close();
+        }
+        for (label, hook) in [("Vorhören", false), ("Vorhören ab Hook", true)] {
+            if hook && e.cues.hook.is_none() {
+                continue;
+            }
+            if ui
+                .add_enabled(v.pfl_available, egui::Button::new(label))
+                .on_disabled_hover_text(NO_PFL)
+                .clicked()
+            {
+                self.with(move |c| {
+                    if let Err(e) = c.pfl_title(i, hook) {
+                        c.report(e);
+                    }
+                });
+                ui.close();
+            }
+        }
+        if v.pfl_playing && ui.button("Vorhören anhalten").clicked() {
+            self.with(Controller::pfl_stop);
+            ui.close();
+        }
+    }
+
+    /// Öffnet den Cue-Editor für Titel `i` (falls es ihn gibt).
+    pub fn open_cue_editor(&mut self, i: usize) {
+        if let Some(e) = self.view.playlist.get(i) {
+            self.cue_editor = Some(CueEditor::open(
+                i,
+                e.path.clone(),
+                e.title.clone(),
+                e.seconds,
+                e.cues,
+            ));
+        }
+    }
+
+    /// Zeichnet den Cue-Editor, falls offen, und reicht seine Aufträge weiter.
+    pub fn cue_window(&mut self, ctx: &egui::Context) {
+        let Some(ed) = self.cue_editor.as_mut() else {
+            return;
+        };
+        let v = &self.view;
+        // Titel verschoben oder entfernt: Editor schließen statt falschen Titel zu ändern.
+        if v.playlist.get(ed.index).map(|e| &e.path) != Some(&ed.path) {
+            self.cue_editor = None;
+            return;
+        }
+        let mut open = true;
+        let actions = ed.ui(
+            ctx,
+            &mut open,
+            (v.pfl_available, v.pfl_playing),
+            (v.cues_undo, v.cues_redo),
+        );
+        if !open {
+            self.cue_editor = None;
+        }
+        for a in actions {
+            match a {
+                CueAction::Apply(i, cues) => self.with(move |c| {
+                    if let Err(e) = c.set_cues(i, cues) {
+                        c.report(e);
+                    }
+                }),
+                CueAction::Preview(i, from) => self.with(move |c| {
+                    if let Err(e) = c.pfl_title_at(i, from) {
+                        c.report(e);
+                    }
+                }),
+                CueAction::StopPreview => self.with(Controller::pfl_stop),
+                CueAction::Undo => self.with(|c| {
+                    c.undo_cues();
+                }),
+                CueAction::Redo => self.with(|c| {
+                    c.redo_cues();
+                }),
+            }
+        }
+        // Nach Undo/Redo zeigt der Editor die Punkte aus der Playlist.
+        if let Some(ed) = self.cue_editor.as_mut()
+            && let Some(e) = self.view.playlist.get(ed.index)
+            && self.cue_seen.get(&ed.index) != Some(&e.cues)
+        {
+            ed.draft = e.cues;
+            self.cue_seen.insert(ed.index, e.cues);
+        }
     }
 
     fn assign_cart(&self, slot: usize) {
