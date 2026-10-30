@@ -22,6 +22,24 @@ Selbst geprüft von Claude (ohne Ton, offline durch den echten Mixer, ohne Allok
 
 Nicht selbst geprüft: Aussehen der Decks, Ziehen von Dateien und Rechtsklick-Menüs (kein Bildschirm), echtes Gerät und Pult unter Windows.
 
+## Silvester Teil 2, Paket 3: Telefon mit Rückweg (0.34.6, offen, #134)
+
+Start wie immer, Modus „Radio“. Das Handy hängt über den Adapter am Pult; sein Signal kommt in einen Eingang einer Soundkarte, der Rückweg zum Handy geht aus Karte 1 zurück ins Pult.
+
+1. **Eingang wählen:** Einstellungen, „Telefon (Eingang für den Anrufer) …“: Soundkarte und Kanalpaar des Handys wählen, „Übernehmen“. Fehlt die Karte, steht das in Klartext im Fenster, die Sendung läuft weiter.
+2. **Rückweg wählen:** Einstellungen, „Ausgänge (Soundkarten) …“, Zeile „Telefon-Rückweg“: Karte 1 und ein Kanalpaar, das sonst nichts trägt (Pult-Kanal, der zum Handy zurückführt). „Übernehmen“. Auf dem Paar der Playlist oder einer anderen Quelle lehnt WOA ab und sagt es.
+3. **Pegel:** Anrufen und sprechen. Der Pegelbalken neben dem Knopf „Telefon“ bewegt sich, auch wenn das Telefon nicht auf Sendung ist. Auf Sendung ist der Anrufer dann noch nicht zu hören.
+4. **Auf Sendung:** „Telefon“ drücken: Der Knopf wird rot und heißt „Telefon auf Sendung“. Der Anrufer ist im Programm zu hören, die Musik geht runter wie beim Mikro. Nochmal drücken: Anrufer weg, Musik wieder oben.
+5. **Rückweg:** Der Anrufer hört die Sendung (Musik, Moderator), aber nicht sich selbst und kein Echo. Das gilt mit und ohne „Telefon auf Sendung“.
+6. **Fehler:** Stecker der Karte ziehen: rote Meldung mit Namen der Karte, die Sendung läuft weiter. Anstecken, im Telefon-Fenster „Übernehmen“.
+7. **Neu starten:** Programm schließen und öffnen: Eingang und Rückweg sind noch eingestellt.
+
+Die Laptop-Last bleibt klein: Der Eingang läuft über eine Taktverbindung mit leichtem Umrechner (Hermite), etwa 50 ms Polster; bei 44,1 gegen 48 kHz zwischen zwei Karten und beim Auseinanderlaufen der Takte wird so ohne Knackser ausgeglichen. Ein Aussetzer des Eingangs steht im Telefon-Fenster.
+
+Selbst geprüft von Claude (ohne Ton, offline durch den echten Mixer und Router, ohne Allokation im Audio-Pfad): Rückweg trägt das Programm und nie den Anrufer; ohne Anrufer-Signal oder ohne Telefon ist der Rückweg genau das Programm; Anrufer nicht auf Sendung wird gemessen, liegt aber weder im Programm noch im Rückweg; Anrufer von einer Karte mit 44,1 kHz kommt an; ohne gewählten Rückweg erreicht nichts das Rückweg-Paar; „Telefon auf Sendung“ senkt die Musik ab; die Zuordnung lehnt ein Paar ab, das schon eine andere Quelle trägt.
+
+Nicht selbst geprüft: Aussehen von Knopf, Pegel und Fenstern, echte Karten, das Handy am Pult (Pegelanpassung, ob das Pult den Rückweg ohne Echo führt), Latenz auf dem alten Laptop, Aussetzer bei langer Laufzeit.
+
 ## Transportknöpfe: Zurück, Spulen, Stumm, Wiederholen, Zufall (offen, #137)
 
 Wunsch von André bei der Abnahme von Party-Modus und Fernbedienung (30.10.2026): normale Knöpfe in der App und am Handy, dazu Wiederholen und Zufall wie bei Apple Music. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`, Modus „Party“, Playlist mit mindestens drei Titeln laden (Knopf „Ordner laden …“), Fernbedienung an, Handy per QR-Code als DJ anmelden („DJ-PIN zeigen“, Adresse mit der DJ-PIN öffnen). Zum Prüfen leise stellen oder Kopfhörer nehmen.

@@ -141,7 +141,7 @@ fn deck_on_its_own_pair_is_absent_from_the_main_pair() {
     let (mut c, m, file) = setup(tmp.path());
     // Deck B auf Ziel 1 (anderes Kanalpaar), alles andere im Hauptausgang.
     c.set_routes(Routes {
-        dest: [0, 0, 0, 1, 0],
+        dest: [0, 0, 0, 1, 0, 0],
     });
     let mut router = Router::new(m, 2, vec![(0, 0), (1, 1)], vec![]);
     c.deck_load(1, file, Cues::default()).unwrap();

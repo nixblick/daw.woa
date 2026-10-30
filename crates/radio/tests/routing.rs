@@ -100,7 +100,7 @@ fn carts_on_their_own_pair_are_absent_from_the_main_pair() {
     // Cart-Wall auf Paar 1 desselben Geräts.
     let (mut cb, mb) = setup(&b);
     cb.set_routes(Routes {
-        dest: [0, 1, 0, 0, 0],
+        dest: [0, 1, 0, 0, 0, 0],
     });
     let mut router = Router::new(mb, 2, vec![(0, 0), (1, 1)], vec![]);
     let mut pairs = vec![PairBuf::new(4096), PairBuf::new(4096)];
@@ -144,7 +144,7 @@ fn carts_on_a_second_device_arrive_through_the_ring_and_not_on_the_main_pair() {
     let tmp = tempfile::tempdir().unwrap();
     let (mut c, m) = setup(tmp.path());
     c.set_routes(Routes {
-        dest: [0, 1, 0, 0, 0],
+        dest: [0, 1, 0, 0, 0, 0],
     });
     // Zweites Gerät mit 44,1 kHz: eigener Takt, der Ring gleicht aus.
     let (tx, mut rx, stats) = link(SR, 44_100);
@@ -180,7 +180,7 @@ fn a_route_to_a_missing_destination_keeps_the_cart_in_the_main_output() {
     let tmp = tempfile::tempdir().unwrap();
     let (mut c, m) = setup(tmp.path());
     c.set_routes(Routes {
-        dest: [0, 7, 0, 0, 0],
+        dest: [0, 7, 0, 0, 0, 0],
     });
     let mut router = Router::new(m, 1, vec![(0, 0)], vec![]);
     let mut pairs = vec![PairBuf::new(4096)];

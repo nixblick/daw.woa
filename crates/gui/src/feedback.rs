@@ -52,6 +52,9 @@ pub struct GuiConfig {
     /// Ausgänge je Gerät: Gerät und Kanalpaar je Quelle. Vorgabe: alles auf Standardgerät, Kanal 1/2.
     #[serde(skip_serializing_if = "woa_radio::routing::OutputMap::is_default")]
     pub outputs: woa_radio::routing::OutputMap,
+    /// Telefon-Eingang (Anrufer): Gerät und Kanalpaar. Vorgabe: keiner.
+    #[serde(skip_serializing_if = "crate::phone::PhoneInput::is_default")]
+    pub phone: crate::phone::PhoneInput,
     /// Beim Start höchstens einmal am Tag nach einem neuen Release suchen. Vorgabe: an.
     pub auto_update: bool,
     /// Unix-Sekunden der letzten erfolgreichen Update-Suche.
@@ -128,6 +131,7 @@ impl Default for GuiConfig {
             controller_maps: std::collections::BTreeMap::new(),
             pfl_output: PflOutput::Aus,
             outputs: woa_radio::routing::OutputMap::default(),
+            phone: crate::phone::PhoneInput::default(),
             auto_update: true,
             last_update_check: None,
         }

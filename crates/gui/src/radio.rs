@@ -39,6 +39,13 @@ pub struct RadioDesk {
     /// Meldungen aus dem Öffnen, die in den Einstellungen stehen bleiben.
     output_warnings: Vec<String>,
     mic: Option<Stream>,
+    /// Telefon-Eingang (Anrufer): Strom, gewählte Einstellung, Meldung, Zähler, Pegel.
+    phone: Option<Stream>,
+    phone_cfg: crate::phone::PhoneInput,
+    phone_error: Option<String>,
+    phone_stats: Option<Arc<woa_engine::pairs::LinkStats>>,
+    phone_lost: Arc<std::sync::atomic::AtomicBool>,
+    phone_level: f32,
     rate: u32,
     error: Option<String>,
     view: View,
@@ -300,6 +307,12 @@ impl RadioDesk {
             outputs: opened,
             output_warnings,
             mic: None,
+            phone: None,
+            phone_cfg: crate::phone::PhoneInput::default(),
+            phone_error: None,
+            phone_stats: None,
+            phone_lost: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            phone_level: 0.0,
             rate,
             error,
             view: View::default(),
@@ -443,6 +456,17 @@ impl RadioDesk {
         }
         let Some(st) = &self.station else { return };
         self.view = st.view();
+        self.phone_level = self.view.phone_peak.max(self.phone_level * 0.9);
+        if self.phone_lost.swap(false, Ordering::Relaxed) {
+            self.phone = None;
+            self.phone_stats = None;
+            self.with(|c| c.set_phone_input(None));
+            self.phone_error = Some(format!(
+                "Der Telefon-Eingang {} ist ausgefallen (abgezogen?). Bitte anstecken und im \
+                 Telefon-Fenster „Übernehmen“ drücken.",
+                self.phone_cfg.label()
+            ));
+        }
         self.tick_stream();
         for m in self.outputs.take_new_faults() {
             tracing::warn!(message = %m, "output lost");
@@ -686,6 +710,82 @@ impl RadioDesk {
         let open = !self.view.mic_open;
         self.view.mic_open = open;
         self.with(move |c| c.set_mic_open(open));
+    }
+
+    /// Neue Einstellung für den Telefon-Eingang: schließt den alten und öffnet den neuen.
+    /// Ein fehlendes Gerät gibt eine klare Meldung, die Sendung läuft weiter.
+    pub fn set_phone_config(&mut self, cfg: crate::phone::PhoneInput) {
+        self.phone = None;
+        self.phone_stats = None;
+        self.phone_error = None;
+        self.phone_cfg = cfg;
+        self.with(|c| c.set_phone_input(None));
+        self.open_phone();
+    }
+
+    fn open_phone(&mut self) {
+        let Some(config) = self.phone_cfg.input_config() else {
+            return;
+        };
+        let lost = Arc::clone(&self.phone_lost);
+        match woa_engine::record::start_pair_input(&config, self.rate, move |e| {
+            tracing::warn!(error = %e, "phone input");
+            lost.store(true, Ordering::Relaxed);
+        }) {
+            Ok((stream, rx, stats, rate)) => {
+                tracing::info!(rate, device = %self.phone_cfg.label(), "phone input open");
+                self.phone = Some(Box::new(stream));
+                self.phone_stats = Some(stats);
+                self.with(move |c| c.set_phone_input(Some(rx)));
+            }
+            Err(e) => {
+                self.phone_error = Some(format!(
+                    "Telefon-Eingang {} lässt sich nicht öffnen oder fehlt ({e}). Die Sendung \
+                     läuft weiter. Bitte anstecken und im Telefon-Fenster „Übernehmen“ drücken.",
+                    self.phone_cfg.label()
+                ));
+            }
+        }
+    }
+
+    /// „Telefon auf Sendung“: der Anrufer liegt auf der Sendung, die Musik geht runter.
+    fn toggle_phone(&mut self) {
+        let on = !self.view.phone_on;
+        if on && self.phone.is_none() {
+            if self.phone_cfg.device_id.is_none() {
+                self.phone_error = Some(
+                    "Kein Telefon-Eingang gewählt. Einstellungen, Telefon …, dort Gerät und \
+                     Kanalpaar wählen."
+                        .into(),
+                );
+                return;
+            }
+            self.phone_error = None;
+            self.open_phone();
+            if self.phone.is_none() {
+                return;
+            }
+        }
+        self.view.phone_on = on;
+        self.with(move |c| c.set_phone_on(on));
+    }
+
+    /// Zeilen fürs Telefon-Fenster: Meldung, Zähler der Taktverbindung.
+    pub fn phone_lines(&self) -> Vec<String> {
+        let mut v = Vec::new();
+        if let Some(e) = &self.phone_error {
+            v.push(e.clone());
+        }
+        if let Some(s) = &self.phone_stats {
+            v.push(format!(
+                "Eingang läuft. Aussetzer: {} (Ring leer {}, übersprungen {}, verworfen {})",
+                s.faults(),
+                s.underruns.load(Ordering::Relaxed),
+                s.skipped.load(Ordering::Relaxed),
+                s.dropped.load(Ordering::Relaxed),
+            ));
+        }
+        v
     }
 
     fn toggle_recording(&mut self) {
@@ -1225,6 +1325,45 @@ impl RadioDesk {
                 self.toggle_mic();
             }
             self.learn_menu(&r, Target::Mic);
+
+            let ph = v.phone_on;
+            let phone = egui::Button::new(
+                big(if ph {
+                    "📞 Telefon auf Sendung"
+                } else {
+                    "📞 Telefon"
+                })
+                .color(if ph {
+                    egui::Color32::WHITE
+                } else {
+                    theme::TEXT_BRIGHT
+                }),
+            )
+            .fill(if ph { theme::ON_AIR } else { theme::SURFACE })
+            .stroke(egui::Stroke::new(
+                1.0,
+                if ph {
+                    theme::mix(theme::ON_AIR, egui::Color32::WHITE, 0.35)
+                } else {
+                    theme::BORDER
+                },
+            ))
+            .min_size(egui::vec2(176.0, 38.0));
+            if ui
+                .add(phone)
+                .on_hover_text(
+                    "Anrufer auf die Sendung legen. Der Pegel rechts zeigt ihn auch vorher; \
+                     den Rückweg zum Anrufer wählst du unter Ausgänge.",
+                )
+                .clicked()
+            {
+                self.toggle_phone();
+            }
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(70.0, 12.0), egui::Sense::hover());
+            theme::led_meter(ui.painter(), rect, self.phone_level);
+            if let Some(e) = &self.phone_error {
+                ui.colored_label(theme::ON_AIR, e);
+            }
 
             let rec_on = v.recording.is_some();
             let rec = if rec_on {
