@@ -630,7 +630,7 @@ fn saturation_adds_harmonics_with_drive() {
         &tone,
     );
     let dc = tube[n / 2..].iter().sum::<f32>() / (n / 2) as f32;
-    assert!(dc.abs() < 0.05, "dc {dc}");
+    assert!(dc.abs() < 0.01, "dc {dc}");
     for shape in [0.0, 1.0, 2.0] {
         let hot = run_mono(
             FxKind::Saturation,
@@ -638,7 +638,9 @@ fn saturation_adds_harmonics_with_drive() {
             &sine(200.0, 1.0, 9600),
         );
         let peak = hot.iter().fold(0.0f32, |m, s| m.max(s.abs()));
-        assert!(peak <= 1.0001, "shape {shape} overshoots: {peak}");
+        // Weich und hart nie über Vollaussteuerung; die Röhre klingelt am Gleichstromfilter um bis zu 10 %.
+        let limit = if shape == 1.0 { 1.12 } else { 1.0001 };
+        assert!(peak <= limit, "shape {shape} overshoots: {peak}");
     }
 }
 
@@ -695,6 +697,60 @@ fn denoise_delay_is_fixed_and_the_dry_path_matches_it() {
     let out = run_mono_ctx(FxKind::Denoise, &p, &impulse, offline());
     let lat = woa_dsp::effects::denoise::LATENCY;
     assert_eq!(echo_positions(&out, 1e-6), vec![100 + lat]);
+    {
+        // Tonstoß: Kantenlage von Eingang und Ausgang vergleichen.
+        let n = 48_000;
+        let mut burst = vec![0.0f32; n];
+        let tone = sine(250.0, 0.2, 24_000);
+        burst[12_000..36_000].copy_from_slice(&tone);
+        let full = run_mono_ctx(FxKind::Denoise, &DENOISE, &burst, offline());
+        let env = |x: &[f32], at: usize| x[at..at + 96].iter().fold(0.0f32, |m, s| m.max(s.abs()));
+        let rise_in = (0..n - 96).find(|i| env(&burst, *i) > 0.1).unwrap();
+        let rise_out = (0..n - 96).find(|i| env(&full, *i) > 0.1).unwrap();
+        let fall_in = (20_000..n - 96).find(|i| env(&burst, *i) < 0.02).unwrap();
+        let fall_out = (20_000..n - 96).find(|i| env(&full, *i) < 0.02).unwrap();
+        // Der nasse Anteil kommt wirklich um LATENCY verspätet (Kanten eines Tonstoßes).
+        let want = lat as i64;
+        assert!(
+            (rise_out as i64 - rise_in as i64 - want).abs() < 120,
+            "rise lag {}",
+            rise_out as i64 - rise_in as i64
+        );
+        assert!(
+            (fall_out as i64 - fall_in as i64 - want).abs() < 200,
+            "fall lag {}",
+            fall_out as i64 - fall_in as i64
+        );
+    }
+    // Nass- und Trockenanteil liegen auf demselben Sample: Ein 250-Hz-Ton (Periode 192 Samples)
+    // mit Stärke 50 % behält seinen Pegel. Läge der nasse Anteil einen Block (480 Samples = 180°)
+    // daneben, löschte er den trockenen fast aus.
+    let n = 48_000;
+    let mixed = add(&sine(250.0, 0.1, n), &noise(0.005, n, 17));
+    let half = run_mono_ctx(
+        FxKind::Denoise,
+        &with(&DENOISE, &[(0, 50.0)]),
+        &mixed,
+        offline(),
+    );
+    let full = run_mono_ctx(FxKind::Denoise, &DENOISE, &mixed, offline());
+    let lvl = |x: &[f32]| db(amp_at(&x[n / 2..], 250.0) / amp_at(&mixed[n / 2..], 250.0));
+    assert!(lvl(&full).abs() < 1.5, "full: {} dB", lvl(&full));
+    assert!(
+        lvl(&half).abs() < 1.5,
+        "50 %: {} dB (wet path not aligned with dry?)",
+        lvl(&half)
+    );
+    // Zweite Quelle für die Ausrichtung: Phase des Tons im Ausgang gegen die Eingabe um LATENCY.
+    let shifted = &mixed[..n - lat];
+    let corr: f32 = full[lat..].iter().zip(shifted).map(|(a, b)| a * b).sum();
+    let energy: f32 = shifted.iter().map(|b| b * b).sum();
+    assert!(
+        corr / energy > 0.8,
+        "output is not the input delayed by {lat}: {}",
+        corr / energy
+    );
+
     // Andere Abtastrate als 48 kHz: Durchgang ohne Wirkung.
     let mut n = FxNode::with_context(FxKind::Denoise, &DENOISE, false, offline());
     n.prepare(44_100.0);

@@ -80,18 +80,23 @@ impl Saturator {
         self.drive.set_target(db_lin(p[0]));
         self.out.set_target(db_lin(p[2]));
         self.mix.set_target(p[3] / 100.0);
-        self.norm = 1.0 / curve(self.shape, db_lin(p[0])).abs().max(1e-3);
+        let d = db_lin(p[0]);
+        let peak = curve(self.shape, d).abs().max(curve(self.shape, -d).abs());
+        self.norm = 1.0 / peak.max(1e-3);
     }
 
     #[inline]
     fn channel(&mut self, c: usize, x: f32, drive: f32, out: f32) -> f32 {
         let y = curve(self.shape, x * drive) * self.norm;
-        // Gleichspannung (Röhrenkennlinie) mit Hochpass bei etwa 10 Hz entfernen.
+        if self.shape != Shape::Tube {
+            // Weich und hart sind punktsymmetrisch: kein Gleichanteil, kein Filter nötig.
+            return y * out;
+        }
+        // Gleichspannung der Röhrenkennlinie mit Hochpass bei etwa 10 Hz entfernen.
         let h = y - self.x1[c] + self.dc_r * self.y1[c];
         self.x1[c] = y;
         self.y1[c] = if h.abs() < 1e-20 { 0.0 } else { h };
-        // Das Hochpass-Klingeln hinter starkem, einseitigem Übersteuern bleibt unter Vollaussteuerung.
-        h.clamp(-1.0, 1.0) * out
+        h * out
     }
 
     /// Ein Sample-Paar; bei `stereo = false` zählt nur `l`.

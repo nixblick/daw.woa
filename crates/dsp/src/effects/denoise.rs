@@ -6,7 +6,7 @@
 //! Audio-Thread tauscht Blöcke nur über lock-freie Warteschlangen (`rtrb`) aus. Beim Export
 //! (`offline`) wird im Aufrufer-Thread gerechnet, ohne Arbeits-Thread, mit demselben Ergebnis.
 //!
-//! Die Verzögerung beträgt in beiden Betriebsarten genau [`LATENCY`] Samples (20 ms). Der
+//! Die Verzögerung beträgt in beiden Betriebsarten genau [`LATENCY`] Samples (30 ms). Der
 //! trockene Anteil wird um denselben Betrag verzögert, so dass `amount_pct` < 100 keine
 //! Kammfilter-Färbung erzeugt. Kommt der Arbeits-Thread einmal nicht rechtzeitig, bleibt der
 //! Block still und `underruns` zählt es.
@@ -18,8 +18,9 @@ use std::time::Duration;
 use nnnoiseless::{DenoiseState, FRAME_SIZE};
 use rtrb::{Consumer, Producer, RingBuffer};
 
-/// Verzögerung in Samples (ein Block Sammeln plus ein Block Rechenverzug des Netzes).
-pub const LATENCY: usize = 2 * FRAME_SIZE;
+/// Verzögerung in Samples: ein Block Sammeln, ein Block Rechenverzug, ein Block Verzug im Netz
+/// selbst (RNNoise gibt ein Ergebnis um einen Block verspätet aus; gemessen, siehe Test).
+pub const LATENCY: usize = 3 * FRAME_SIZE;
 
 /// Einzige unterstützte Abtastrate.
 pub const SAMPLE_RATE: f32 = 48_000.0;
