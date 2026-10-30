@@ -549,6 +549,26 @@ impl RadioDesk {
         }
     }
 
+    /// Wirkung eines Party-Befehls auf die Sendung (Paket 35). Das Vollbild macht die App.
+    pub fn party_effect(&mut self, e: woa_radio::party::Effect) {
+        use woa_radio::party::Effect;
+        match e {
+            Effect::StartOrNext => self.with(|c| c.start_or_next()),
+            Effect::Stop => self.with(|c| c.stop()),
+            Effect::MusicLevel(db) => self.set_level(Bus::Music, db),
+            Effect::InsertNext(path) => self.with(move |c| {
+                // Hinter den laufenden Titel, sonst hinter den Titel, der als Nächstes startet.
+                let at = match c.current_index() {
+                    Some(i) => i + 1,
+                    None if c.show().playlist.is_empty() => 0,
+                    None => c.cue_index() + 1,
+                };
+                c.add(&[path], Some(at));
+            }),
+            Effect::Fullscreen(_) => {}
+        }
+    }
+
     /// LED-Zustand eines Ziels.
     pub fn lit(&self, t: &Target) -> bool {
         match t {

@@ -4,6 +4,30 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 35: Party-Layout (0.30.0, offen)
+
+Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Modus Party:** Oben rechts „Party“ wählen. Große Anzeige, vier große Tasten, rechts die Wunschliste.
+2. **Musikordner laden, Play:** „Ordner laden …“, einen Ordner mit Musik wählen, dann „Play“ (oder Leertaste). Titel, Interpret und große Restzeit laufen, darunter steht der nächste Titel.
+3. **Weiter:** „Weiter“ drücken (oder N): Der nächste Titel wird überblendet, die Anzeige springt um.
+4. **Vollbild an/aus:** „Vollbild an“ (oder F), dann wieder aus.
+5. **Wunschliste (optional):** „+ Wunsch aus Datei“ zweimal mit derselben Datei: ein Eintrag mit „×2“. „Als Nächstes“ reiht ihn hinter dem laufenden Titel ein.
+
+Selbst geprüft von Claude (ohne Ton, ohne Audiogerät, ohne Mikrofon; Controller und Mixer in Blöcken mit erzeugten Sinus-Dateien):
+- **Layout ohne Fenster:** Textschnappschuss von Titel, Interpret, Restzeit, Fortschritt, nächstem Titel, Tasten, Pegel, Vollbild und Wünschen, auch vor dem Start (Taste heißt „Play“) und bei leerer Playlist.
+- **Tasten:** Jeder Befehl löst den erwarteten Effekt aus und steht im Befehlsprotokoll; Lauter/Leiser stoppen an den Grenzen; das Protokoll ist auf 200 Zeilen begrenzt.
+- **Wunschliste:** sortiert nach Stimmen, dann Eingang; Doppelte (anderer Pfad, andere Schreibweise) zählen als Stimme.
+- **Restzeit:** Die angezeigte Restzeit weicht bei 1, 5 und 12,5 s nicht mehr als 1,5 s von „Länge des Offline-Renders minus gespielte Zeit“ ab, der Fortschritt nicht mehr als 8 Prozentpunkte.
+- **Weiter und Wunsch:** „Weiter“ blendet in einer Sekunde zum Wunsch-Titel über, der hinter dem laufenden Titel eingereiht war; der nächste Titel danach stimmt.
+
+Nicht selbst geprüft: Aussehen und Bedienung des Fensters (Tasten, Vollbild und Dateidialoge sind gebaut und übersetzt, nicht angeklickt), Windows, echte Musik und Tonqualität.
+
+**Offen für André:**
+- Die Lautheit gleicht der Sendemixer schon an (Ziel-Lautheit der Sendung); ein eigener Wert für Party ist nicht eingestellt. Soll Party anders zielen als Radio?
+- Wünsche kommen erst mit der Handy-Seite (Paket 36) von den Gästen; bis dahin trägt nur man selbst per Datei ein.
+- Eine Taste am Controller für den Party-Modus ist nicht gebaut.
+
 ## Paket 34: Abnahme M8: Surge XT und Vital stabil (0.29.0, offen)
 
 Aus M8, schließt den Meilenstein. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

@@ -167,6 +167,8 @@ pub struct WoaApp {
     themed: bool,
     /// Fotomodus (`WOA_SCREENSHOT=datei.png`): Zielpfad und gezählte Bilder.
     photo: Option<(PathBuf, u32)>,
+    /// Party-Layout (Paket 35).
+    party: crate::party::PartyView,
     /// Datenordner (radio.json, Mitschnitte).
     data_dir: PathBuf,
     /// Bibliotheks-Fenster (Paket 24).
@@ -438,6 +440,7 @@ impl WoaApp {
             fade_handle: None,
             gain_preview: None,
             themed: false,
+            party: crate::party::PartyView::default(),
             photo: std::env::var_os("WOA_SCREENSHOT").map(|p| (PathBuf::from(p), 0)),
             selected_clips: Vec::new(),
             export_lufs: Some(-16.0),
@@ -528,7 +531,7 @@ impl WoaApp {
             return;
         }
         self.config.mode = mode;
-        if mode == Mode::Radio {
+        if mode.uses_desk() {
             if let Some(p) = self.player.as_mut()
                 && p.is_playing()
             {
@@ -614,7 +617,7 @@ impl WoaApp {
             let mode = match l {
                 Layout::Produzent => Mode::Produzent,
                 Layout::Radio => Mode::Radio,
-                Layout::Toggle if self.config.mode == Mode::Radio => Mode::Produzent,
+                Layout::Toggle if self.config.mode != Mode::Produzent => Mode::Produzent,
                 Layout::Toggle => Mode::Radio,
             };
             self.set_mode(mode);
@@ -788,7 +791,7 @@ impl WoaApp {
                 self.save_config();
                 if self.radio.as_ref().is_some_and(|r| !r.is_on_air()) {
                     self.radio = None;
-                    if self.config.mode == Mode::Radio {
+                    if self.config.mode.uses_desk() {
                         self.ensure_radio();
                     }
                 }
@@ -968,6 +971,29 @@ impl WoaApp {
                         .clicked()
                     {
                         mode = Mode::Radio;
+                    }
+
+                    let party_active = mode == Mode::Party;
+                    let party_btn =
+                        egui::Button::new(egui::RichText::new("🎉 Party").strong().color(
+                            if party_active {
+                                theme::WELL
+                            } else {
+                                theme::DIM
+                            },
+                        ))
+                        .fill(if party_active {
+                            theme::ACCENT
+                        } else {
+                            theme::WELL
+                        })
+                        .stroke(egui::Stroke::NONE);
+                    if ui
+                        .add(party_btn)
+                        .on_hover_text("Abspielmodus: große Anzeige, Wunschliste, Vollbild")
+                        .clicked()
+                    {
+                        mode = Mode::Party;
                     }
 
                     let prod_active = mode == Mode::Produzent;
@@ -4084,7 +4110,7 @@ impl WoaApp {
             r.preview_stop();
         }
         if let Some((path, pos)) = out.drop {
-            if self.config.mode == Mode::Radio {
+            if self.config.mode.uses_desk() {
                 let done = self
                     .radio
                     .as_mut()
@@ -4548,12 +4574,12 @@ impl eframe::App for WoaApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.repaint_debug(ctx);
         self.drain_midi_takes();
-        if self.config.mode == Mode::Radio {
+        if self.config.mode.uses_desk() {
             self.ensure_radio();
         }
         // Im Radio-Modus spielt nur der Sendemixer; der Player-Strom ruht (#51).
         if let Some(p) = self.player.as_mut() {
-            p.set_suspended(self.config.mode == Mode::Radio);
+            p.set_suspended(self.config.mode.uses_desk());
         }
         let player_active = self.player.as_ref().is_some_and(Player::is_active);
         if let Some(r) = self.radio.as_mut() {
@@ -4585,7 +4611,12 @@ impl eframe::App for WoaApp {
         }
         self.clock_editor.tick_save();
         self.event_editor.tick_save();
-        if self.config.mode == Mode::Radio {
+        if self.config.mode == Mode::Party {
+            let cmds = crate::party::PartyView::shortcuts(ctx);
+            if let Some(r) = self.radio.as_mut() {
+                self.party.run(cmds, r, ctx);
+            }
+        } else if self.config.mode == Mode::Radio {
             if let Some(r) = self.radio.as_mut() {
                 r.shortcuts(ctx);
             }
@@ -4643,7 +4674,7 @@ impl eframe::App for WoaApp {
         } else if midi_on {
             // Aktivitätslampe: 5 Bilder/s, solange ein Gerät verbunden ist.
             200
-        } else if self.config.mode == Mode::Radio && radio_playing {
+        } else if self.config.mode.uses_desk() && radio_playing {
             200
         } else {
             500
@@ -4665,6 +4696,20 @@ impl eframe::App for WoaApp {
                     .inner_margin(egui::Margin::symmetric(12, 5)),
             )
             .show(ui, |ui| self.menu(ui, &ctx));
+        if self.config.mode == Mode::Party
+            && let Some(radio) = self.radio.as_mut()
+        {
+            let mut cmds = Vec::new();
+            egui::CentralPanel::default()
+                .frame(
+                    egui::Frame::new()
+                        .fill(theme::BG)
+                        .inner_margin(egui::Margin::symmetric(14, 12)),
+                )
+                .show(ui, |ui| cmds = self.party.ui(ui, radio));
+            self.party.run(cmds, radio, &ctx);
+            return;
+        }
         if self.config.mode == Mode::Radio
             && let Some(radio) = self.radio.as_mut()
         {

@@ -22,3 +22,21 @@ fn mode_is_saved_and_defaults_to_producer() {
     );
     assert_eq!(GuiConfig::load(&p).mode, Mode::Radio);
 }
+
+#[test]
+fn party_mode_is_saved_and_uses_the_broadcast_desk() {
+    let tmp = tempfile::tempdir().unwrap();
+    let p = tmp.path().join("config.json");
+    let c = GuiConfig {
+        mode: Mode::Party,
+        ..GuiConfig::default()
+    };
+    c.save(&p).unwrap();
+    assert!(
+        std::fs::read_to_string(&p)
+            .unwrap()
+            .contains(r#""mode": "party""#)
+    );
+    assert_eq!(GuiConfig::load(&p).mode, Mode::Party);
+    assert!(Mode::Party.uses_desk() && Mode::Radio.uses_desk() && !Mode::Produzent.uses_desk());
+}
