@@ -4,6 +4,23 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 24: Bibliothek in SQLite mit Suche und Tags (0.19.0, offen)
+
+Aus M7. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Bibliothek öffnen, Ordner wählen:** Oben in der Menüleiste „Bibliothek“ anklicken. Im Fenster „Ordner importieren …“, einen Ordner mit Musik wählen (Art vorher: Musik, Sample oder Jingle). Ein Fortschritt „n von m“ läuft, die Liste füllt sich; die App bleibt bedienbar. Danach steht oben „… neu“. Denselben Ordner nochmal importieren: „… schon vorhanden“, nichts doppelt.
+2. **Suchen:** Im Suchfeld tippen, schon ab dem ersten Buchstaben (auch Teile von Wörtern, auch Ordnernamen): die Liste zeigt nur Treffer. Groß-/Kleinschreibung und Akzente sind egal.
+3. **Tag vergeben und filtern:** Titel anklicken, unten „neuer Tag“ eintippen, Enter oder „+ Tag“. Oben im Filter „Alle Tags“ den Tag wählen: nur diese Titel bleiben. Tippt man den Tag ins Suchfeld, findet die Suche ihn auch. Das ✕ am Tag nimmt ihn wieder weg.
+4. **Titel in die Playlist ziehen:** In den Radio-Modus wechseln (Bibliothek bleibt offen), einen Titel mit der Maus auf die Sende-Playlist ziehen und loslassen: er steht am Ende. Auf ein Cart-Pad ziehen belegt das Pad. Im Produzenten-Layout auf eine Spur ziehen legt den Titel als Clip dort ab, wo der Zeiger loslässt.
+5. **Vorhören:** Titel anklicken, „▶ Vorhören“ (nur im Radio-Modus mit eingestelltem Kopfhörer-Ausgang unter Einstellungen → Vorhören): läuft im Kopfhörer, nie auf Sendung. „■“ hält an.
+6. **Neu starten:** App schließen und öffnen, Bibliothek öffnen: die Titel und Tags sind noch da.
+
+Selbst geprüft von Claude (ohne Ton): 1 000 erzeugte Sinus-Dateien in 10 Ordnern plus eine Textdatei und eine kaputte WAV werden im Hintergrund importiert (1 000 neu, 1 nicht lesbar, Zeit im Testlauf unter 2 s); Suche nach „titel 0042“ findet genau einen Treffer mit richtiger Dauer, „album_3“ genau die 100 Titel des Ordners; zweiter Import: 1 000 Doppelte, 0 neu, Zählung bleibt 1 000. Kopie unter anderem Namen wird am Inhalt erkannt, verschobene Datei zieht den Eintrag nach, geänderte aktualisiert ihn. Suche mit Präfixen, Akzenten, Groß-/Kleinschreibung und feindlichem Text (Anführungszeichen, `OR`, `NEAR(`, `'; DROP TABLE`), Tags (Normalform, Grenzen, Filter, Suchindex, Entfernen), Art, Rücksetzen einer Transaktion, Migration einer Schema-1-Datenbank, Ablehnen einer neueren, Symlink-Schleife, Abbruch, fehlender Ordner. Fenster-Zustand (Import, Suche, Tag, Filter, Fehlerfall) und Zeichnen mit Treffern ohne Fenster. Alles im Hintergrund-Thread bzw. Control-Thread, nichts im Audio-Thread; Vorhören nutzt den vorhandenen PFL-Weg unverändert.
+
+Nicht selbst geprüft: das Ziehen mit der Maus im echten Fenster (Zeigerereignisse nicht simuliert; die Ablage-Logik auf Playlist und Cart-Pads ist nur durch Übersetzen und Lesen geprüft), das Vorhören im Kopfhörer (kein Ton auf dem Notebook), Aussehen und Griffigkeit des Fensters, Geschwindigkeit mit echten MP3-Dateien (die Tests nutzen kurze WAVs; echte Titel brauchen länger, weil jede Datei zur Dauerbestimmung dekodiert wird).
+
+Noch nicht drin (Paket 25 und folgende): BPM, Tonart, Lautheit, automatische Cue-Punkte; Titel aus der Bibliothek entfernen; Vorhören im Produzenten-Layout ohne Radio-Modus.
+
 ## Paket 23: Time-Stretch, Tonhöhe, Abnahme ganzer Song (0.18.0, offen)
 
 Aus M6, letztes Paket. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
