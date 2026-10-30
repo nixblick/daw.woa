@@ -50,7 +50,9 @@ pub struct WoaApp {
     config_path: Option<PathBuf>,
     feedback: FeedbackDialog,
     /// Track being renamed and its edit buffer.
-    rename: Option<(TrackId, String)>,
+    /// Spur, Eingabe, und ob der Fokus schon gesetzt wurde (nur einmal, sonst kommt man
+    /// aus dem Feld nicht mehr heraus, André 30.10.).
+    rename: Option<(TrackId, String, bool)>,
     /// Gain being dragged (committed as one undo step on release).
     gain_drag: Option<(TrackId, f64)>,
     /// Laufende Änderung eines Effekt-Reglers (Effekt, Regler, Wert), ein Undo-Schritt am Ende.
@@ -2798,7 +2800,7 @@ impl WoaApp {
         let r = resp.response.rect;
         resp.response.context_menu(|ui| {
             if ui.button("✏ Spur umbenennen").clicked() {
-                self.rename = Some((id, name.to_string()));
+                self.rename = Some((id, name.to_string(), false));
                 ui.close();
             }
             if is_midi {
@@ -4337,10 +4339,13 @@ impl WoaApp {
 
     fn track_name(&mut self, ui: &mut egui::Ui, id: TrackId, name: &str) {
         match &mut self.rename {
-            Some((rid, buf)) if *rid == id => {
+            Some((rid, buf, focused)) if *rid == id => {
                 let r = ui.add(egui::TextEdit::singleline(buf).desired_width(130.0));
-                r.request_focus();
-                if r.lost_focus() {
+                if !*focused {
+                    r.request_focus();
+                    *focused = true;
+                }
+                if r.lost_focus() || r.clicked_elsewhere() {
                     let new = buf.clone();
                     self.rename = None;
                     if !ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -4358,7 +4363,7 @@ impl WoaApp {
                     )
                     .on_hover_text("Doppelklick zum Umbenennen");
                 if r.double_clicked() {
-                    self.rename = Some((id, name.to_string()));
+                    self.rename = Some((id, name.to_string(), false));
                 }
             }
         }
