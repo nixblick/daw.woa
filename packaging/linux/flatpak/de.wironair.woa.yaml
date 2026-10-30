@@ -1,0 +1,47 @@
+# Flatpak-Manifest für WOA. Gebaut von .github/workflows/linux-build.yml.
+# Vorher: python3 flatpak-cargo-generator.py Cargo.lock -o packaging/linux/flatpak/cargo-sources.json
+# (flatpak-builder-tools, MIT) – damit der Bau ohne Netz läuft: alle Crates kommen als Quellen.
+# finish-args nach dem Muster von Mixxx (packaging/flatpak/org.mixxx.Mixxx.yaml, GPL-2.0-or-later).
+app-id: de.wironair.woa
+runtime: org.freedesktop.Platform
+runtime-version: "25.08"
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: woa
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  # Audio-Geräte, MIDI und Grafik (wie Mixxx)
+  - --device=all
+  # Stream zum Sender, Telemetrie, Fernbedienung und Gäste im WLAN
+  - --share=network
+  - --share=ipc
+  - --filesystem=xdg-run/pipewire-0
+  - --filesystem=xdg-music
+  - --filesystem=xdg-documents
+  - --filesystem=/media
+  - --filesystem=/run/media
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/woa/cargo
+    CARGO_NET_OFFLINE: "true"
+modules:
+  - name: woa
+    buildsystem: simple
+    build-commands:
+      - cargo --offline build --release --locked -p woa -p woa-headless -p woa-streamd
+      - install -Dm755 target/release/woa /app/bin/woa
+      - install -Dm755 target/release/woa-headless /app/bin/woa-headless
+      - install -Dm755 target/release/woa-streamd /app/bin/woa-streamd
+      - install -Dm644 packaging/linux/de.wironair.woa.desktop /app/share/applications/de.wironair.woa.desktop
+      - install -Dm644 packaging/linux/icons/de.wironair.woa.png /app/share/icons/hicolor/256x256/apps/de.wironair.woa.png
+      - install -Dm644 packaging/linux/icons/de.wironair.woa.svg /app/share/icons/hicolor/scalable/apps/de.wironair.woa.svg
+      - packaging/linux/render-metainfo.sh /app/share/metainfo/de.wironair.woa.metainfo.xml
+    sources:
+      - type: dir
+        path: ../../..
+        skip: [.git, target, dist]
+      - cargo-sources.json

@@ -15,6 +15,11 @@ fn main() -> ExitCode {
     if let Some(code) = woa_plugins::child::dispatch() {
         return ExitCode::from(u8::try_from(code).unwrap_or(1));
     }
+    // `woa --version` (Pakete prüfen sich damit, ohne Fenster): Version ausgeben und beenden.
+    if let Some(text) = info_text(std::env::args_os().nth(1).as_deref()) {
+        println!("{text}");
+        return ExitCode::SUCCESS;
+    }
     let config_dir = woa_radio::config_dir();
     let data_dir = woa_radio::data_dir();
 
@@ -97,4 +102,34 @@ fn event_loop_hook() -> Option<eframe::EventLoopBuilderHook> {
 #[cfg(not(target_os = "linux"))]
 fn event_loop_hook() -> Option<eframe::EventLoopBuilderHook> {
     None
+}
+
+/// Text für `--version` und `--help`; bei jedem anderen ersten Argument (ein Projektordner) `None`.
+fn info_text(arg: Option<&std::ffi::OsStr>) -> Option<String> {
+    let v = env!("CARGO_PKG_VERSION");
+    match arg?.to_str()? {
+        "--version" | "-V" => Some(format!("woa {v}")),
+        "--help" | "-h" => Some(format!(
+            "woa {v}: Radio-DAW\nAufruf: woa [PROJEKTORDNER]\n  --version  Version ausgeben"
+        )),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::info_text;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn version_flag_prints_package_version() {
+        let t = info_text(Some(OsStr::new("--version"))).unwrap_or_default();
+        assert_eq!(t, format!("woa {}", env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn project_path_is_not_info() {
+        assert!(info_text(Some(OsStr::new("jingle.woa"))).is_none());
+        assert!(info_text(None).is_none());
+    }
 }

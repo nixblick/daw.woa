@@ -15,18 +15,18 @@ rtrb = "0.4.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tracing = "0.1.44"
-woa-dsp = { version = "0.33", path = "../dsp" }
-woa-io = { version = "0.33", path = "../io" }
-woa-engine = { version = "0.33", path = "../engine", features = ["device"] }
-woa-guests = { version = "0.33", path = "../guests" }
-woa-plugins = { version = "0.33", path = "../plugins" }
-woa-library = { version = "0.33", path = "../library" }
-woa-model = { version = "0.33", path = "../model" }
-woa-radio = { version = "0.33", path = "../radio" }
-woa-remote = { version = "0.33", path = "../remote" }
-woa-stream = { version = "0.33", path = "../stream" }
-woa-telemetry = { version = "0.33", path = "../telemetry" }
-woa-updater = { version = "0.33", path = "../updater" }
+woa-dsp = { version = "0.34", path = "../dsp" }
+woa-io = { version = "0.34", path = "../io" }
+woa-engine = { version = "0.34", path = "../engine", features = ["device"] }
+woa-guests = { version = "0.34", path = "../guests" }
+woa-plugins = { version = "0.34", path = "../plugins" }
+woa-library = { version = "0.34", path = "../library" }
+woa-model = { version = "0.34", path = "../model" }
+woa-radio = { version = "0.34", path = "../radio" }
+woa-remote = { version = "0.34", path = "../remote" }
+woa-stream = { version = "0.34", path = "../stream" }
+woa-telemetry = { version = "0.34", path = "../telemetry" }
+woa-updater = { version = "0.34", path = "../updater" }
 
 [dev-dependencies]
 assert_no_alloc = "1.1.2"

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.33.8 — 2026-10-30
+## 0.34.2 — 2026-10-30
 
 Transportknöpfe (#137), Abnahme: `docs/abnahme.md`.
 
@@ -8,6 +8,31 @@ Transportknöpfe (#137), Abnahme: `docs/abnahme.md`.
 - **Echtes Pause:** „Pause“ blendet aus und merkt sich die Stelle, „Play“ macht dort weiter (Sprung per `Seek`), auch wenn die Ausblendung noch läuft. „Stopp“ vergisst die Stelle. Der Zustand „PAUSE“ mit gemerkter Restzeit steht in App und Handy (`paused` im Schnappschuss).
 - **Wiederholen wie bei Apple Music:** Ein Knopf, jeder Klick schaltet weiter: aus, 🔁 Playlist, 🔂 Titel, aus. „Titel“ beginnt den Titel am Ende neu, „Weiter“ springt trotzdem zum nächsten. „Playlist“ beginnt nach dem letzten Titel von vorn. **Zufall** ist ein eigener Umschalter (jeder Titel einmal je Runde, mit „Playlist“ endlos). Ist eine Funktion an, ist der Knopf orange, in der App und am Handy gleich (Zustand im Schnappschuss: `repeat`, `shuffle`, `muted`).
 - **Mixer:** neues Kommando `Seek` (Sprung im laufenden Titel, begrenzt auf Cue-In bis Cue-Out) und ein Titelwechsel-Zähler im Status, damit auch derselbe Titel als neu begonnen erkannt wird. Tasten in der Party-Ansicht: P/Pfeil links, M, R, S.
+
+## 0.34.1 — 2026-10-30
+
+Paket 40 aus M10: Release-Workflow für beide Plattformen (Abnahme: `docs/abnahme.md`, Ablauf: `docs/release.md`).
+
+- **`release.yml` auf Tag `v*`:** Erst „pruefen“ (Tag = Cargo-Version = oberster, nicht leerer CHANGELOG-Eintrag, fester MSI-UpgradeCode, Tag liegt in `main`), dann Windows- und Linux-Bau nebeneinander (`windows-build.yml`, `linux-build.yml` sind jetzt auch aufrufbar), dann ein Release als **Entwurf** mit MSI, ZIP, AppImage, Flatpak, `latest.json`, ggf. `.minisig` und neu **`SHA256SUMS`**. Veröffentlichen macht das Update sichtbar. Vorher hing der Versionsvergleich an einem Dateinamen; jetzt prüft ihn `packaging/release-check.sh` (getestet mit `packaging/test-release-check.sh`, 19 Fälle).
+- **Probelauf ohne Tag:** `workflow_dispatch` (und Änderungen an `release.yml` im PR) laufen bis zum fertigen Ordner, legen aber kein Release an; der Ordner hängt als Artefakt `release-probe` am Lauf.
+- **MSI-Upgrade-Probe im Windows-Bau:** `packaging/windows/test-upgrade.ps1` installiert eine 0.0.1 aus denselben Programmen, dann das neue MSI darüber (genau ein Eintrag, neue Version, alle Dateien), prüft die Downgrade-Sperre (Abbruch mit 1603) und die Deinstallation. Ohne Start der App. Das Test-MSI liegt im Temp-Ordner und gerät nicht ins Release-Artefakt.
+- Neu: `docs/release.md`. Offen für André (im PR): Codesigning-Zertifikat, Signatur der Linux-Pakete, Download-Seite und Datenschutzerklärung auf wironair.de.
+
+## 0.34.0 — 2026-10-30
+
+Paket 39 aus M10: Linux-Pakete aus der CI, AppImage und Flatpak (Abnahme: `docs/abnahme.md`).
+
+- **Workflow `linux-build.yml`:** Von Hand oder bei Änderungen an `packaging/linux/` startbar. Job „appimage“ (Ubuntu 22.04, ältere glibc) und Job „flatpak“. Beide laden ihr Paket als Artefakt (`WOA-<version>-x86_64.AppImage`, `woa-<version>.flatpak`), unsigniert.
+- **AppImage:** `packaging/linux/build-appimage.sh` legt den AppDir an (Programme, Startmenü-Eintrag, Metainfo, Symbol), lässt `linuxdeploy` die Bibliotheken einsammeln und `appimagetool` das Paket schreiben (Ablauf nach LMMS). Beide Werkzeuge mit fester Version. Eigenes `AppRun`: ohne Zusatz startet `woa`, mit `WOA_APP=woa-headless` oder `woa-streamd` die anderen Programme.
+- **Flatpak:** `packaging/linux/flatpak/de.wironair.woa.yaml` (Laufzeit freedesktop 25.08, Rust aus der SDK-Erweiterung). Zugriffsrechte nach Mixxx: Wayland/X11, Pulse/PipeWire, Geräte (Audio, MIDI), Netz, Musik, Dokumente, Wechseldatenträger. Alle Crates kommen als Quellen aus `Cargo.lock` (`flatpak-cargo-generator`), der Bau läuft ohne Netz.
+- **Metainfo und Startmenü:** `de.wironair.woa.desktop`, `de.wironair.woa.metainfo.xml` (Version und Datum setzt `render-metainfo.sh` aus `Cargo.toml` und CHANGELOG), Symbol als SVG und PNG in den Farben der Oberfläche.
+- **`woa --version` und `--help`:** Das Programm gibt Version bzw. Aufruf aus und beendet sich, ohne Fenster. Vorher hätte `--version` versucht, einen Projektordner dieses Namens zu öffnen.
+- **Prüfungen im Lauf (ohne Ton, ohne Gerät):** `desktop-file-validate`, `appstreamcli validate`, `woa --version` stimmt mit der Version überein, Offline-Render eines neuen Projekts mit `woa-headless` (2 Sekunden Stille, Datei nicht leer) aus dem fertigen Paket; beim Flatpak im Lauf installiert und mit `flatpak run` gestartet (das Probeprojekt bekommt eine ausdrückliche Freigabe, die Sandbox sieht sonst nur ihre eigenen Ordner).
+- **Test:** Einheitstests für `--version` und für den Projektordner als erstes Argument.
+- **Review-Nachbesserung:** Lizenzdatei landet im AppImage unter `usr/share/doc/woa/LICENSE` (vorher falscher Pfad, Fehler verschluckt); verrutschte Überschrift im Eintrag 0.33.1 repariert.
+- **Herkunft:** Ablauf aus LMMS (`LinuxDeploy.cmake`, GPL-2.0-or-later), Zugriffsrechte aus Mixxx (GPL-2.0-or-later); kein Code übernommen (`docs/herkunft.md`).
+- **Nicht gebaut / nicht geprüft:** Signatur der Pakete; Veröffentlichung auf wironair.de oder Flathub; Start der Oberfläche im Paket (CI hat keinen Bildschirm); CLAP-Plugins im Flatpak (die Sandbox sieht die Plugins des Rechners nicht); Update-Prüfung (Paket 40).
+- **Offen für André:** Code-Signing-Zertifikat und Signatur der Pakete (Kosten); Ort der Veröffentlichung (wironair.de, Flathub, GitHub-Releases); ob die App-Kennung `de.wironair.woa` so bleiben soll (setzt die Domain wironair.de voraus).
 
 ## 0.33.7 — 2026-10-30
 
@@ -49,7 +74,9 @@ Silvester-Paket (#132), Abnahme: `docs/abnahme.md`.
 
 ## 0.33.1 — 2026-10-30
 
-- **Telemetrie, die etwas sagt:** Bisher kamen fast nur leere `log.warn`-Zeilen an, alle 5 Minuten. Jetzt alle 120 Sekunden, mit Code-Ort jeder Warnung und jedes Fehlers (`log.error.app.4711`), Dauer langsamer Aktionen (`span.playlist_add`, `span.audio_load`, `span.show_load`, `span.show_render`, `span.dawproject_import` u. a. ab 20 ms), langsamen Frames (`ui.frame_slow` ab 100 ms) und Hängern der Oberfläche (`ui.hang_open` ab 2 s, auch wenn das Fenster nie mehr reagiert). Dazu alle 120 s eine Zusammenfassung: Frames, fps, Durchschnitt und Maximum der Frame-Zeit, Laufzeit, Speicher und Threads (Linux), Spuren, Clips, ungespeichert, Zoom, Player offen, Radio-Aussetzer. Zeitmessung auch für Dekodieren, ffmpeg, Export, Stems und Clip-Rendern. Weiter nur Bezeichner und Zahlen, kein Text, keine Pfade. Übersicht in `docs/telemetrie.md`.## 0.33.0 — 2026-10-30
+- **Telemetrie, die etwas sagt:** Bisher kamen fast nur leere `log.warn`-Zeilen an, alle 5 Minuten. Jetzt alle 120 Sekunden, mit Code-Ort jeder Warnung und jedes Fehlers (`log.error.app.4711`), Dauer langsamer Aktionen (`span.playlist_add`, `span.audio_load`, `span.show_load`, `span.show_render`, `span.dawproject_import` u. a. ab 20 ms), langsamen Frames (`ui.frame_slow` ab 100 ms) und Hängern der Oberfläche (`ui.hang_open` ab 2 s, auch wenn das Fenster nie mehr reagiert). Dazu alle 120 s eine Zusammenfassung: Frames, fps, Durchschnitt und Maximum der Frame-Zeit, Laufzeit, Speicher und Threads (Linux), Spuren, Clips, ungespeichert, Zoom, Player offen, Radio-Aussetzer. Zeitmessung auch für Dekodieren, ffmpeg, Export, Stems und Clip-Rendern. Weiter nur Bezeichner und Zahlen, kein Text, keine Pfade. Übersicht in `docs/telemetrie.md`.
+
+## 0.33.0 — 2026-10-30
 
 Paket 38 aus M9: Browser-Gast per WebRTC, lokal (Abnahme: `docs/abnahme.md`).
 
