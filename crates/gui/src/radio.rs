@@ -794,7 +794,25 @@ impl RadioDesk {
 
                     let urgent = v.running && v.remaining_title < 10.0;
                     let clock_col = if urgent { theme::ON_AIR } else { theme::ACCENT };
+                    let progress = if total_title_secs > 0.1 {
+                        ((total_title_secs - v.remaining_title) / total_title_secs).clamp(0.0, 1.0)
+                            as f32
+                    } else if v.running {
+                        0.5
+                    } else {
+                        0.0
+                    };
                     ui.horizontal(|ui| {
+                        let (pie_rect, pie_resp) =
+                            ui.allocate_exact_size(egui::vec2(38.0, 44.0), egui::Sense::hover());
+                        pie_resp.on_hover_text("Kreis-Fortschritt des laufenden Titels");
+                        theme::progress_pie(
+                            ui.painter(),
+                            pie_rect.center(),
+                            15.5,
+                            progress,
+                            clock_col,
+                        );
                         ui.label(
                             egui::RichText::new(clock(v.remaining_title))
                                 .size(54.0)
@@ -836,14 +854,6 @@ impl RadioDesk {
                     });
 
                     // Visueller Restzeit-Balken im LCD
-                    let progress = if total_title_secs > 0.1 {
-                        ((total_title_secs - v.remaining_title) / total_title_secs).clamp(0.0, 1.0)
-                            as f32
-                    } else if v.running {
-                        0.5
-                    } else {
-                        0.0
-                    };
                     let (bar_rect, _) = ui.allocate_exact_size(
                         egui::vec2(ui.available_width(), 6.0),
                         egui::Sense::hover(),
@@ -1003,6 +1013,8 @@ impl RadioDesk {
                 self.view.duck_db = duck;
                 self.with(move |c| c.set_duck(duck));
             }
+            ui.add_space(4.0);
+            Self::draw_transition_curves(ui, xf as f32, duck as f32, v.mic_open);
         });
         for b in Bus::ALL {
             let mut db = self.level_db(b);
@@ -1028,6 +1040,133 @@ impl RadioDesk {
 
         ui.add_space(4.0);
         self.processing_row(ui);
+    }
+
+    /// Live-Kurven-Monitor (Ableton Live 12 / Studio One-Stil) für Crossfade-Blende und
+    /// Mikrofon-Ducking direkt im Broadcast-Processing-Rack.
+    fn draw_transition_curves(ui: &mut egui::Ui, xf_secs: f32, duck_db: f32, mic_open: bool) {
+        let total_w = ui.available_width().max(120.0);
+        let h = 48.0f32;
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(total_w, h), egui::Sense::hover());
+        resp.on_hover_text(
+            "Links: Equal-Power-Crossfade-Kurve (Titel A → Titel B)  ·  Rechts: Musik-Ducking-Hüllkurve bei offenem Mikrofon",
+        );
+        let gap = 8.0f32;
+        let half_w = ((total_w - gap) * 0.5).max(50.0);
+        let left_r = egui::Rect::from_min_size(rect.min, egui::vec2(half_w, h));
+        let right_r = egui::Rect::from_min_size(
+            egui::pos2(rect.left() + half_w + gap, rect.top()),
+            egui::vec2(half_w, h),
+        );
+        let painter = ui.painter();
+
+        for sub in [left_r, right_r] {
+            painter.rect_filled(sub, 3.5, theme::BG);
+            painter.rect_stroke(
+                sub,
+                3.5,
+                egui::Stroke::new(1.0, theme::mix(theme::BORDER, theme::WELL, 0.35)),
+                egui::StrokeKind::Inside,
+            );
+            // Dezente -6 dB / 50%-Rasterlinie
+            painter.hline(
+                (sub.left() + 3.0)..=(sub.right() - 3.0),
+                sub.center().y + 3.0,
+                egui::Stroke::new(1.0, theme::mix(theme::GRID, theme::WELL, 0.5)),
+            );
+        }
+
+        // 1. Links: Equal-Power Crossfade-X-Kurve
+        let plot_l = left_r.shrink2(egui::vec2(6.0, 6.0));
+        let span_frac = (xf_secs / 10.0).clamp(0.06, 1.0);
+        let x_mid = plot_l.center().x;
+        let x_half = (plot_l.width() * 0.46) * span_frac;
+        let x0 = x_mid - x_half;
+        let x1 = x_mid + x_half;
+        let y_top = plot_l.top() + 10.0;
+        let y_bot = plot_l.bottom();
+        let steps = 16usize;
+        let mut out_pts = Vec::with_capacity(steps + 3);
+        let mut in_pts = Vec::with_capacity(steps + 3);
+        out_pts.push(egui::pos2(plot_l.left(), y_top));
+        in_pts.push(egui::pos2(plot_l.left(), y_bot));
+        for i in 0..=steps {
+            let t = i as f32 / steps as f32;
+            let x = x0 + t * (x1 - x0);
+            // Equal-power cos/sin Hüllkurven
+            let g_out = (t * std::f32::consts::FRAC_PI_2).cos();
+            let g_in = (t * std::f32::consts::FRAC_PI_2).sin();
+            out_pts.push(egui::pos2(x, y_bot - g_out * (y_bot - y_top)));
+            in_pts.push(egui::pos2(x, y_bot - g_in * (y_bot - y_top)));
+        }
+        out_pts.push(egui::pos2(plot_l.right(), y_bot));
+        in_pts.push(egui::pos2(plot_l.right(), y_top));
+
+        painter.add(egui::Shape::line(
+            out_pts,
+            egui::Stroke::new(1.6, theme::ACCENT),
+        ));
+        painter.add(egui::Shape::line(
+            in_pts,
+            egui::Stroke::new(1.6, theme::CUE_CYAN),
+        ));
+        // Schnittpunkt-Knoten (-3 dB Equal-Power-Kreuzung)
+        let cross_y = y_bot - std::f32::consts::FRAC_1_SQRT_2 * (y_bot - y_top);
+        painter.circle_filled(egui::pos2(x_mid, cross_y), 2.6, egui::Color32::WHITE);
+        painter.text(
+            egui::pos2(left_r.left() + 6.0, left_r.top() + 3.0),
+            egui::Align2::LEFT_TOP,
+            format!("X-FADE {xf_secs:.1} s"),
+            egui::FontId::monospace(9.0),
+            theme::DIM,
+        );
+
+        // 2. Rechts: Musik-Ducking-Badewannen-Kurve
+        let plot_r = right_r.shrink2(egui::vec2(6.0, 6.0));
+        let dip_frac = ((-duck_db) / 30.0).clamp(0.0, 1.0);
+        let ry_top = plot_r.top() + 10.0;
+        let ry_bot = plot_r.bottom();
+        let ry_dip = ry_top + dip_frac * (ry_bot - ry_top);
+        let rx0 = plot_r.left();
+        let rx1 = rx0 + plot_r.width() * 0.22;
+        let rx2 = rx0 + plot_r.width() * 0.34;
+        let rx3 = rx0 + plot_r.width() * 0.68;
+        let rx4 = rx0 + plot_r.width() * 0.82;
+        let rx5 = plot_r.right();
+
+        if mic_open {
+            let gate_rect = egui::Rect::from_min_max(
+                egui::pos2(rx1, right_r.top() + 2.0),
+                egui::pos2(rx4, right_r.bottom() - 2.0),
+            );
+            painter.rect_filled(gate_rect, 2.0, theme::ON_AIR.gamma_multiply(0.18));
+        }
+        let duck_col = if mic_open {
+            theme::ON_AIR
+        } else {
+            theme::OK_GREEN
+        };
+        let duck_pts = vec![
+            egui::pos2(rx0, ry_top),
+            egui::pos2(rx1, ry_top),
+            egui::pos2(rx2, ry_dip),
+            egui::pos2(rx3, ry_dip),
+            egui::pos2(rx4, ry_top),
+            egui::pos2(rx5, ry_top),
+        ];
+        painter.add(egui::Shape::line(
+            duck_pts,
+            egui::Stroke::new(1.7, duck_col),
+        ));
+        painter.circle_filled(egui::pos2(rx2, ry_dip), 2.4, duck_col);
+        painter.circle_filled(egui::pos2(rx3, ry_dip), 2.4, duck_col);
+        painter.text(
+            egui::pos2(right_r.left() + 6.0, right_r.top() + 3.0),
+            egui::Align2::LEFT_TOP,
+            format!("DUCK {duck_db:.0} dB"),
+            egui::FontId::monospace(9.0),
+            if mic_open { theme::ON_AIR } else { theme::DIM },
+        );
     }
 
     /// Sendebus- und Mikro-Processing: Schalter und digitale Messanzeige.
@@ -1453,20 +1592,22 @@ impl RadioDesk {
                     }
                     self.cart_rects[slot] = r.rect;
 
-                    // Hardware-Pad-Optik: LED oben rechts + Farb-Streifen unten
+                    // Hardware-Pad-Optik: Fortschritts-Torte / LED oben rechts + Farb-Streifen unten
                     let pad_rect = r.rect;
-                    let led_col = if playing {
-                        theme::WELL
+                    let badge_pos = egui::pos2(pad_rect.right() - 11.0, pad_rect.top() + 11.0);
+                    if playing {
+                        let phase =
+                            ((ui.input(|i| i.time) * 0.65).fract() as f32).clamp(0.15, 0.95);
+                        theme::progress_pie(ui.painter(), badge_pos, 6.5, phase, theme::ACCENT);
                     } else if label.is_some() {
-                        pad_color
+                        ui.painter().circle_filled(badge_pos, 3.8, pad_color);
                     } else {
-                        theme::mix(theme::DIM, theme::WELL, 0.6)
-                    };
-                    ui.painter().circle_filled(
-                        egui::pos2(pad_rect.right() - 9.0, pad_rect.top() + 9.0),
-                        3.5,
-                        led_col,
-                    );
+                        ui.painter().circle_filled(
+                            badge_pos,
+                            3.2,
+                            theme::mix(theme::DIM, theme::WELL, 0.6),
+                        );
+                    }
                     if label.is_some() {
                         let bottom_bar = egui::Rect::from_min_max(
                             egui::pos2(pad_rect.left() + 3.0, pad_rect.bottom() - 4.0),

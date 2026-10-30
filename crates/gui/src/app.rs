@@ -2020,17 +2020,23 @@ impl WoaApp {
         egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 5.0;
             ui.horizontal(|ui| {
-                let (corner_rect, _) =
-                    ui.allocate_exact_size(egui::vec2(HEADER_W, 24.0), egui::Sense::hover());
+                let (corner_rect, corner_resp) = ui
+                    .allocate_exact_size(egui::vec2(HEADER_W, 24.0), egui::Sense::click_and_drag());
                 ui.painter()
                     .rect_filled(corner_rect, 4.0, theme::PANEL_HEADER);
                 ui.painter().text(
                     corner_rect.left_center() + egui::vec2(10.0, 0.0),
                     egui::Align2::LEFT_CENTER,
-                    format!("SPUREN ({})  ·  KANALZUG", tracks.len()),
+                    format!("SPUREN ({})", tracks.len()),
                     egui::FontId::proportional(11.0),
                     theme::DIM,
                 );
+                // Kompakte Projekt-Minimap (Podium Free / Serato-Stil) rechts im Eck-Kopf
+                let map_rect = egui::Rect::from_min_max(
+                    egui::pos2(corner_rect.right() - 122.0, corner_rect.top() + 3.0),
+                    egui::pos2(corner_rect.right() - 6.0, corner_rect.bottom() - 3.0),
+                );
+                self.draw_timeline_minimap(ui, map_rect, &corner_resp);
                 self.ruler(ui);
             });
             for (i, (id, name, gain, pan, mute, solo)) in tracks.into_iter().enumerate() {
@@ -2120,6 +2126,60 @@ impl WoaApp {
                 );
             }
         });
+    }
+
+    /// Zeichnet eine kompakte Projekt-Minimap (Podium Free / Serato-Stil) mit allen Clips
+    /// und dem Abspielkopf; Klick oder Ziehen springt direkt zur Stelle im Projekt.
+    fn draw_timeline_minimap(
+        &mut self,
+        ui: &mut egui::Ui,
+        rect: egui::Rect,
+        corner_resp: &egui::Response,
+    ) {
+        let painter = ui.painter();
+        painter.rect_filled(rect, 3.0, theme::WELL);
+        painter.rect_stroke(
+            rect,
+            3.0,
+            egui::Stroke::new(1.0, theme::mix(theme::BORDER, theme::WELL, 0.35)),
+            egui::StrokeKind::Inside,
+        );
+        let inner = rect.shrink2(egui::vec2(2.0, 2.0));
+        let end = (self.timeline_end() + 16.0).max(64.0) as f32;
+        let tempo = self.state.project().tempo_bpm;
+        let n_tracks = self.state.project().tracks.len().max(1);
+        let row_h = (inner.height() / n_tracks as f32).clamp(1.8, 5.0);
+
+        for (i, t) in self.state.project().tracks.iter().enumerate() {
+            let col = theme::track_color(i);
+            let y0 = inner.top() + (i as f32 * row_h).min(inner.height() - row_h);
+            for c in &t.clips {
+                let x0 = inner.left() + (c.start_beats as f32 / end) * inner.width();
+                let x1 = inner.left() + (c.end_beats() as f32 / end) * inner.width();
+                let cr = egui::Rect::from_min_max(
+                    egui::pos2(x0.clamp(inner.left(), inner.right()), y0),
+                    egui::pos2(
+                        x1.max(x0 + 1.5).clamp(inner.left(), inner.right()),
+                        (y0 + row_h - 0.5).max(y0 + 1.2),
+                    ),
+                );
+                painter.rect_filled(cr, 1.0, col);
+            }
+        }
+        if let Some(p) = &self.player {
+            let beat = p.position_beats(tempo) as f32;
+            let px =
+                (inner.left() + (beat / end) * inner.width()).clamp(inner.left(), inner.right());
+            painter.vline(px, rect.y_range(), egui::Stroke::new(1.5, theme::ACCENT));
+        }
+        if (corner_resp.clicked() || corner_resp.dragged())
+            && let Some(pos) = corner_resp.interact_pointer_pos()
+            && rect.contains(pos)
+            && let Some(p) = self.player.as_mut()
+        {
+            let frac = ((pos.x - inner.left()) / inner.width()).clamp(0.0, 1.0);
+            p.seek_beats(f64::from(frac * end), tempo);
+        }
     }
 
     /// Lineal über der Zeitleiste: Taktnummern, Klick setzt den Kopf.
@@ -2460,11 +2520,14 @@ impl WoaApp {
         solo: bool,
     ) {
         let color = theme::track_color(index);
-        let is_midi = self
+        let track_kind = self
             .state
             .project()
             .track(id)
-            .is_some_and(|t| t.kind == woa_model::TrackKind::Midi);
+            .map_or(woa_model::TrackKind::Audio, |t| t.kind);
+        let is_midi = track_kind == woa_model::TrackKind::Midi;
+        let has_source = self.track_source.contains_key(&id);
+        let (icon_glyph, icon_tip) = theme::track_icon(track_kind, name, has_source);
         let armed = if self.armed.is_empty() {
             self.selected_track == Some(id)
         } else {
@@ -2507,7 +2570,7 @@ impl WoaApp {
                 ui.set_width(HEADER_W - 20.0);
                 ui.set_max_width(HEADER_W - 20.0);
                 ui.set_height(ROW_H - 10.0);
-                ui.spacing_mut().item_spacing = egui::vec2(5.0, 5.0);
+                ui.spacing_mut().item_spacing = egui::vec2(4.0, 5.0);
                 ui.horizontal(|ui| {
                     let (dot, arm) =
                         ui.allocate_exact_size(egui::vec2(20.0, 22.0), egui::Sense::click());
@@ -2544,6 +2607,25 @@ impl WoaApp {
                     {
                         self.armed.insert(id);
                     }
+                    // GarageBand-inspiriertes Spur-Piktogramm-Badge
+                    let (ic_rect, ic_resp) =
+                        ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+                    ui.painter()
+                        .rect_filled(ic_rect, 3.5, theme::mix(color, theme::WELL, 0.78));
+                    ui.painter().rect_stroke(
+                        ic_rect,
+                        3.5,
+                        egui::Stroke::new(1.0, theme::mix(color, theme::BORDER, 0.45)),
+                        egui::StrokeKind::Inside,
+                    );
+                    ui.painter().text(
+                        ic_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        icon_glyph,
+                        egui::FontId::proportional(11.5),
+                        theme::TEXT_BRIGHT,
+                    );
+                    ic_resp.on_hover_text(icon_tip);
                     self.track_name(ui, id, name);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 3.0;
@@ -2647,7 +2729,7 @@ impl WoaApp {
                         }
                     }
                 });
-                self.track_source_row(ui, id, pan);
+                self.track_source_row(ui, id, pan, color);
             })
         };
         let r = resp.response.rect;
@@ -2692,7 +2774,7 @@ impl WoaApp {
     }
 
     /// Quellenwahl, Mithören und Stereo-Panorama einer Spur.
-    fn track_source_row(&mut self, ui: &mut egui::Ui, id: TrackId, pan: f64) {
+    fn track_source_row(&mut self, ui: &mut egui::Ui, id: TrackId, pan: f64, color: egui::Color32) {
         let busy = self.recording();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 5.0;
@@ -2706,7 +2788,7 @@ impl WoaApp {
                             .small()
                             .color(theme::DIM),
                     )
-                    .width(108.0)
+                    .width(106.0)
                     .truncate()
                     .show_ui(ui, |ui| {
                         let list = self.sources().to_vec();
@@ -2760,30 +2842,12 @@ impl WoaApp {
                 Some((d, v)) if d == id => v,
                 _ => pan,
             };
-            let mut p_pct = (p * 100.0).round();
-            let pr = ui
-                .add(
-                    egui::DragValue::new(&mut p_pct)
-                        .range(-100.0..=100.0)
-                        .speed(1.0)
-                        .fixed_decimals(0)
-                        .custom_formatter(|v, _| {
-                            let iv = v.round() as i32;
-                            if iv == 0 {
-                                "Pan C".to_string()
-                            } else if iv < 0 {
-                                format!("L{}", -iv)
-                            } else {
-                                format!("R{iv}")
-                            }
-                        }),
-                )
-                .on_hover_text("Stereo-Panorama links/rechts (Doppelklick: Mitte)");
+            let pr = theme::pan_knob(ui, &mut p, color)
+                .on_hover_text("Stereo-Panorama links/rechts (Ziehen · Doppelklick: Mitte)");
             if pr.double_clicked() {
                 self.pan_drag = None;
                 self.state.set_pan(id, 0.0);
             } else {
-                p = (p_pct / 100.0).clamp(-1.0, 1.0);
                 if pr.changed() {
                     self.pan_drag = Some((id, p));
                 }
@@ -2854,11 +2918,20 @@ fn draw_live_take(
     );
     let mid = (r.top() + 16.0 + r.bottom()) / 2.0;
     let half = (r.bottom() - r.top() - 16.0) / 2.0 - 2.0;
-    let stroke = egui::Stroke::new(1.0, theme::mix(theme::ON_AIR, egui::Color32::WHITE, 0.45));
+    painter.hline(
+        r.x_range(),
+        mid,
+        egui::Stroke::new(1.0, theme::mix(theme::ON_AIR, theme::WELL, 0.45)),
+    );
+    let outer_stroke = egui::Stroke::new(1.0, theme::mix(theme::ON_AIR, theme::WELL, 0.22));
+    let core_stroke = egui::Stroke::new(1.0, theme::mix(theme::ON_AIR, egui::Color32::WHITE, 0.35));
+    let rim_stroke = egui::Stroke::new(1.1, theme::mix(theme::ON_AIR, egui::Color32::WHITE, 0.78));
     // Nur sichtbare Spalten zeichnen.
     let clip = painter.clip_rect();
     let mut x = r.left().max(clip.left().floor());
     let stop = r.right().min(clip.right());
+    let mut top_pts = Vec::new();
+    let mut bot_pts = Vec::new();
     while x < stop {
         let b0 = f64::from((x - r.left()) / px);
         let i0 = (b0 * ppb) as usize;
@@ -2868,8 +2941,16 @@ fn draw_live_take(
         let i1 = (((b0 + f64::from(1.0 / px)) * ppb) as usize).clamp(i0 + 1, peaks.len());
         let v = peaks[i0..i1].iter().fold(0.0f32, |m, s| m.max(*s));
         let h = v.min(1.0) * half;
-        painter.vline(x, (mid - h)..=(mid + h), stroke);
+        painter.vline(x, (mid - h)..=(mid + h), outer_stroke);
+        let hc = h * 0.58;
+        painter.vline(x, (mid - hc)..=(mid + hc), core_stroke);
+        top_pts.push(egui::pos2(x, mid - h));
+        bot_pts.push(egui::pos2(x, mid + h));
         x += 1.0;
+    }
+    if top_pts.len() >= 2 {
+        painter.add(egui::Shape::line(top_pts, rim_stroke));
+        painter.add(egui::Shape::line(bot_pts, rim_stroke));
     }
 }
 
@@ -3231,11 +3312,25 @@ impl WoaApp {
             if let (Some(ppb), Some(peaks)) = (ppb, peaks) {
                 let mid = (r.top() + 16.0 + r.bottom()) / 2.0;
                 let half = (r.bottom() - r.top() - 16.0) / 2.0 - 2.0;
-                let fill_stroke =
-                    egui::Stroke::new(1.0, theme::mix(base, egui::Color32::WHITE, 0.25));
-                let peak_col = theme::mix(base, egui::Color32::WHITE, 0.65);
-                let mut x = r.left();
-                while x < r.right() {
+                // Dezente Nulllinie (0 dB / Zero-Crossing)
+                painter.hline(
+                    r.x_range(),
+                    mid,
+                    egui::Stroke::new(1.0, theme::mix(base, theme::WELL, 0.45)),
+                );
+                // Dual-Tone-Wellenform (Serato / MPC-Stil): gedämpfter Transienten-Körper,
+                // kräftiger innerer RMS-Kern und leuchtende Ober-/Unterkanten-Kontur.
+                let outer_stroke = egui::Stroke::new(1.0, theme::mix(base, theme::WELL, 0.25));
+                let core_stroke =
+                    egui::Stroke::new(1.0, theme::mix(base, egui::Color32::WHITE, 0.35));
+                let rim_stroke =
+                    egui::Stroke::new(1.15, theme::mix(base, egui::Color32::WHITE, 0.78));
+                let vis = ui.clip_rect();
+                let mut x = r.left().max(vis.left().floor());
+                let stop = r.right().min(vis.right());
+                let mut top_pts = Vec::new();
+                let mut bot_pts = Vec::new();
+                while x < stop {
                     // Position im Ton in Takt-Einheiten des Projekttempos; Dehnung und
                     // Tempo-Folgen strecken die Zeitachse des Clips (Paket 23).
                     let b0 = offset * tempo / c.source_bpm(tempo)
@@ -3251,12 +3346,16 @@ impl WoaApp {
                     let local = f64::from((x - r.left()) / px);
                     let env = fade_gain(&cv, local) as f32 * gain_lin;
                     let h = (v * env).min(1.0) * half;
-                    painter.vline(x, (mid - h)..=(mid + h), fill_stroke);
-                    if h > 1.0 {
-                        painter.circle_filled(egui::pos2(x, mid - h), 0.7, peak_col);
-                        painter.circle_filled(egui::pos2(x, mid + h), 0.7, peak_col);
-                    }
+                    painter.vline(x, (mid - h)..=(mid + h), outer_stroke);
+                    let hc = h * 0.58;
+                    painter.vline(x, (mid - hc)..=(mid + hc), core_stroke);
+                    top_pts.push(egui::pos2(x, mid - h));
+                    bot_pts.push(egui::pos2(x, mid + h));
                     x += 1.0;
+                }
+                if top_pts.len() >= 2 {
+                    painter.add(egui::Shape::line(top_pts, rim_stroke));
+                    painter.add(egui::Shape::line(bot_pts, rim_stroke));
                 }
             }
             // MIDI-Noten-Vorschau (Mini-Piano-Roll direkt im Clip wie in Ableton)
@@ -4099,7 +4198,7 @@ impl WoaApp {
     fn track_name(&mut self, ui: &mut egui::Ui, id: TrackId, name: &str) {
         match &mut self.rename {
             Some((rid, buf)) if *rid == id => {
-                let r = ui.add(egui::TextEdit::singleline(buf).desired_width(130.0));
+                let r = ui.add(egui::TextEdit::singleline(buf).desired_width(106.0));
                 r.request_focus();
                 if r.lost_focus() {
                     let new = buf.clone();
@@ -4112,7 +4211,7 @@ impl WoaApp {
             _ => {
                 let r = ui
                     .add_sized(
-                        [130.0, 22.0],
+                        [106.0, 22.0],
                         egui::Button::new(egui::RichText::new(name).strong())
                             .frame(false)
                             .truncate(),
@@ -4809,7 +4908,10 @@ impl WoaApp {
                                 ui.set_width(118.0);
                                 ui.vertical(|ui| {
                                     ui.spacing_mut().item_spacing.y = 4.0;
-                                    // Farbiger Kanal-Kopfstreifen
+                                    // Farbiger Kanal-Kopfstreifen mit Spur-Piktogramm
+                                    let has_source = self.track_source.contains_key(&id);
+                                    let (icon_glyph, icon_tip) =
+                                        theme::track_icon(kind, &name, has_source);
                                     let (bar_rect, bar_resp) = ui.allocate_exact_size(
                                         egui::vec2(118.0, 18.0),
                                         egui::Sense::click(),
@@ -4818,11 +4920,11 @@ impl WoaApp {
                                     ui.painter().text(
                                         bar_rect.center(),
                                         egui::Align2::CENTER_CENTER,
-                                        &name,
+                                        format!("{icon_glyph} {name}"),
                                         egui::FontId::proportional(11.5),
                                         theme::WELL,
                                     );
-                                    if bar_resp.clicked() {
+                                    if bar_resp.on_hover_text(icon_tip).clicked() {
                                         self.selected_track = Some(id);
                                     }
 
@@ -4898,34 +5000,38 @@ impl WoaApp {
                                         }
                                     });
 
-                                    // Vertikale LED-Pegelanzeige + Gain- & Pan-Steuerung
+                                    // Vertikale LED-Pegelanzeige + dB-Spitzenwert + Gain- & Arc-Pan-Steuerung
                                     ui.horizontal(|ui| {
                                         let (m_rect, _) = ui.allocate_exact_size(
-                                            egui::vec2(14.0, 78.0),
+                                            egui::vec2(16.0, 82.0),
                                             egui::Sense::hover(),
                                         );
                                         theme::led_meter_vertical(ui.painter(), m_rect, level);
 
                                         ui.vertical(|ui| {
-                                            ui.spacing_mut().item_spacing.y = 4.0;
-                                            ui.label(
-                                                egui::RichText::new(
-                                                    if kind == woa_model::TrackKind::Midi {
-                                                        "MIDI-SYNTH"
-                                                    } else if kind == woa_model::TrackKind::Bus {
-                                                        "BUS"
+                                            ui.spacing_mut().item_spacing.y = 3.5;
+                                            ui.horizontal(|ui| {
+                                                ui.spacing_mut().item_spacing.x = 4.0;
+                                                theme::db_readout_badge(ui, level);
+                                                ui.label(
+                                                    egui::RichText::new(
+                                                        if kind == woa_model::TrackKind::Midi {
+                                                            "MIDI"
+                                                        } else if kind == woa_model::TrackKind::Bus {
+                                                            "BUS"
+                                                        } else {
+                                                            "AUDIO"
+                                                        },
+                                                    )
+                                                    .size(9.0)
+                                                    .monospace()
+                                                    .color(if kind == woa_model::TrackKind::Midi {
+                                                        theme::CUE_CYAN
                                                     } else {
-                                                        "AUDIO-KANAL"
-                                                    },
-                                                )
-                                                .size(9.5)
-                                                .monospace()
-                                                .color(if kind == woa_model::TrackKind::Midi {
-                                                    theme::CUE_CYAN
-                                                } else {
-                                                    theme::DIM
-                                                }),
-                                            );
+                                                        theme::DIM
+                                                    }),
+                                                );
+                                            });
                                             let mut g = match self.gain_drag {
                                                 Some((d, v)) if d == id => v,
                                                 _ => self.shown_gain(id, gain),
@@ -4958,30 +5064,12 @@ impl WoaApp {
                                                 Some((d, v)) if d == id => v,
                                                 _ => pan,
                                             };
-                                            let mut p_pct = (p * 100.0).round();
-                                            let pr = ui
-                                                .add(
-                                                    egui::DragValue::new(&mut p_pct)
-                                                        .range(-100.0..=100.0)
-                                                        .speed(1.0)
-                                                        .fixed_decimals(0)
-                                                        .custom_formatter(|v, _| {
-                                                            let iv = v.round() as i32;
-                                                            if iv == 0 {
-                                                                "Pan Mitte".to_string()
-                                                            } else if iv < 0 {
-                                                                format!("Pan L{}", -iv)
-                                                            } else {
-                                                                format!("Pan R{iv}")
-                                                            }
-                                                        }),
-                                                )
-                                                .on_hover_text("Panorama (Doppelklick: Mitte)");
+                                            let pr = theme::pan_knob(ui, &mut p, color)
+                                                .on_hover_text("Panorama-Arc-Regler (Ziehen · Doppelklick: Mitte)");
                                             if pr.double_clicked() {
                                                 self.pan_drag = None;
                                                 self.state.set_pan(id, 0.0);
                                             } else {
-                                                p = (p_pct / 100.0).clamp(-1.0, 1.0);
                                                 if pr.changed() {
                                                     self.pan_drag = Some((id, p));
                                                 }
