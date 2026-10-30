@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.1 — 2026-10-30
+
+Sicherheit: zwei Funde der automatischen Prüfung behoben.
+
+- **Modell (#79):** Die Routing-Prüfung beim Laden erkennt Kreise jetzt in einem Durchgang über den ganzen Signalgraphen (O(V+E)) statt mit einer Suche je Verbindung; doppelte Sends und IDs prüfen Mengen statt Listen. Eine präparierte Projektdatei mit vielen Spuren und Sends legt das Laden nicht mehr lahm. Tests: 2000 Busse in Kette laden schnell, ein in die Datei geschmuggelter Kreis wird abgelehnt.
+- **Agent (#83):** `write_png` schreibt wie der Export in eine neu angelegte Temp-Datei und setzt sie per `rename` an den Zielnamen; ein untergeschobener Symlink wird ersetzt, nicht beschrieben. Test dazu.
+
 ## 0.17.0 — 2026-10-30
 
 Paket 22 aus M6: Aufnahme mit Latenzausgleich, Punch-in, Loop-Takes und Comping.
