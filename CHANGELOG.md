@@ -1,6 +1,10 @@
 # Changelog
 
 <<<<<<< HEAD
+## 0.6.3 — 2026-10-30
+
+- Konzept: Lücken im Sendestudio aufgenommen – Cue-Punkte je Titel (Cue-In/-Out, Ramp, Hook, Fade-Out), Vorhören (PFL) auf eigenem Ausgang, Stundenuhr mit AutoDJ-Rotation und festen Zeit-Events, Voice-Tracking. Eingeplant in M7 (Bibliothek in SQLite, Cue-Punkte, PFL) und M9 (Automation, Voice-Tracking, Gäste).
+
 ## 0.6.2 — 2026-10-30
 
 - CLAUDE.md: Lokal laufen nur clippy und die Tests der geänderten Crates, die volle Testsuite nur in der CI (Pflicht auf main). André: „ja, mach beides“.
