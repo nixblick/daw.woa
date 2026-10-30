@@ -31,6 +31,7 @@
 //! No function in this crate panics on bad input; all failures are [`ModelError`].
 
 mod command;
+pub mod effect;
 mod error;
 mod history;
 pub mod midi;
@@ -39,12 +40,13 @@ mod session;
 pub mod store;
 
 pub use command::Command;
+pub use effect::{EffectKind, Insert, InsertId, ParamSpec};
 pub use error::{ModelError, Result};
 pub use history::{History, HistoryEntry};
 pub use midi::{CC_SUSTAIN, Edited, MIN_NOTE_BEATS, MidiCc, MidiData, MidiNote, grid_beats};
 pub use project::{
-    Clip, ClipId, DEFAULT_TEMPO_BPM, MAX_GAIN_DB, MAX_ID, MAX_TEMPO_BPM, MIN_GAIN_DB,
-    MIN_TEMPO_BPM, Project, ProjectMeta, Track, TrackId, TrackKind, is_safe_audio_path,
+    Clip, ClipId, DEFAULT_TEMPO_BPM, MAX_GAIN_DB, MAX_ID, MAX_SEND_DB, MAX_TEMPO_BPM, MIN_GAIN_DB,
+    MIN_TEMPO_BPM, Project, ProjectMeta, Send, Track, TrackId, TrackKind, is_safe_audio_path,
 };
 pub use session::Session;
 pub use store::{FORMAT_VERSION, ProjectFile};

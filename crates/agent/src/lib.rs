@@ -20,7 +20,10 @@ use rmcp::model::{CallToolResult, ContentBlock, ServerCapabilities, ServerConfig
 use rmcp::{ErrorData as McpError, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use woa_model::{Clip, ClipId, Command, ModelError, Session, TrackId, TrackKind, store};
+use woa_model::{
+    Clip, ClipId, Command, EffectKind, Insert, InsertId, ModelError, Send as SendRoute, Session,
+    TrackId, TrackKind, store,
+};
 
 pub mod audio;
 
@@ -76,6 +79,119 @@ impl From<AgentTrackKind> for TrackKind {
             AgentTrackKind::Bus => TrackKind::Bus,
         }
     }
+}
+
+/// Effect kind as seen by the agent.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentEffectKind {
+    /// Highpass plus one bell band: highpass_hz (0 = off, up to 1000), bell_hz (40..16000),
+    /// bell_db (-18..18), bell_q (0.1..10).
+    Eq,
+    /// Compressor: threshold_db (-60..0), ratio (1..20), attack_ms (0.1..200),
+    /// release_ms (5..2000), makeup_db (0..24).
+    Compressor,
+    /// Peak limiter: ceiling_db (-24..0), release_ms (5..1000).
+    Limiter,
+}
+
+impl From<AgentEffectKind> for EffectKind {
+    fn from(k: AgentEffectKind) -> Self {
+        match k {
+            AgentEffectKind::Eq => EffectKind::Eq,
+            AgentEffectKind::Compressor => EffectKind::Compressor,
+            AgentEffectKind::Limiter => EffectKind::Limiter,
+        }
+    }
+}
+
+/// Parameters of `insert_effect`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InsertEffectParams {
+    /// Track id (audio, MIDI or bus).
+    pub track: u64,
+    /// Effect kind.
+    pub kind: AgentEffectKind,
+    /// Position in the chain, 0 = first. Default: at the end.
+    #[serde(default)]
+    pub index: Option<usize>,
+    /// Optional start values by parameter name; unnamed parameters keep their defaults.
+    #[serde(default)]
+    pub params: std::collections::BTreeMap<String, f64>,
+}
+
+/// Parameters of `set_param`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetParamParams {
+    /// Insert id (from `insert_effect` or `project_info`).
+    pub insert: u64,
+    /// Parameter name, e.g. `bell_db` (see `insert_effect` for the lists).
+    pub param: String,
+    /// New value within the parameter's range.
+    pub value: f64,
+}
+
+/// Parameters of `set_insert_bypass`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetInsertBypassParams {
+    /// Insert id.
+    pub insert: u64,
+    /// True bypasses the effect.
+    pub bypass: bool,
+}
+
+/// Parameters of `remove_insert`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RemoveInsertParams {
+    /// Insert id.
+    pub insert: u64,
+}
+
+/// Parameters of `set_output`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetOutputParams {
+    /// Track id (audio, MIDI or bus).
+    pub track: u64,
+    /// Destination bus id; omit or null for the master.
+    #[serde(default)]
+    pub output: Option<u64>,
+}
+
+/// Parameters of `set_send`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetSendParams {
+    /// Source track id.
+    pub track: u64,
+    /// Destination bus id.
+    pub target: u64,
+    /// Send level in dB, -96 (off) to 12.
+    pub level_db: f64,
+    /// True taps before the fader (mute and solo still apply); default after it.
+    #[serde(default)]
+    pub pre_fader: bool,
+}
+
+/// Parameters of `remove_send`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RemoveSendParams {
+    /// Source track id.
+    pub track: u64,
+    /// Destination bus id.
+    pub target: u64,
+}
+
+/// Finds the track that holds `insert`, and the effect kind.
+fn find_insert(s: &Session, insert: InsertId) -> Result<(TrackId, EffectKind), ModelError> {
+    s.project()
+        .tracks
+        .iter()
+        .find_map(|t| {
+            t.inserts
+                .iter()
+                .find(|i| i.id == insert)
+                .map(|i| (t.id, i.kind))
+        })
+        .ok_or(ModelError::InsertNotFound(insert))
 }
 
 /// Parameters of `add_track`.
@@ -1234,14 +1350,159 @@ impl WoaAgent {
         })
     }
 
-    #[tool(description = "Remove a track with all its clips.")]
+    #[tool(
+        description = "Remove a track with all its clips. Sends and outputs that pointed at it are cut in the same undo step."
+    )]
     async fn remove_track(
         &self,
         Parameters(p): Parameters<TrackParams>,
     ) -> Result<CallToolResult, McpError> {
         self.agent_step(|s| {
-            s.apply(Command::RemoveTrack {
+            s.remove_track_routed(TrackId(p.track))?;
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(
+        description = "Insert an effect into the insert chain of a track or bus (before the fader). Kinds and parameters: eq (highpass_hz 0..1000, 0 = off; bell_hz 40..16000; bell_db -18..18; bell_q 0.1..10), compressor (threshold_db -60..0; ratio 1..20; attack_ms 0.1..200; release_ms 5..2000; makeup_db 0..24), limiter (ceiling_db -24..0; release_ms 5..1000). Optional `params` sets start values by name. Returns the insert id for set_param."
+    )]
+    async fn insert_effect(
+        &self,
+        Parameters(p): Parameters<InsertEffectParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            let kind: EffectKind = p.kind.into();
+            let id = s.new_insert_id();
+            let mut insert = Insert::new(id, kind);
+            for (name, value) in &p.params {
+                let index = kind
+                    .param_index(name)
+                    .ok_or_else(|| ModelError::UnknownParamName(name.clone()))?;
+                insert.params[index] = *value;
+            }
+            s.apply(Command::AddInsert {
                 track: TrackId(p.track),
+                insert,
+                index: p.index,
+            })?;
+            Ok(serde_json::json!({ "insert": id.0 }))
+        })
+    }
+
+    #[tool(
+        description = "Set one parameter of an insert effect by name (for example bell_db, threshold_db). The value must lie within the range listed at insert_effect; otherwise nothing changes."
+    )]
+    async fn set_param(
+        &self,
+        Parameters(p): Parameters<SetParamParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            let (track, kind) = find_insert(s, InsertId(p.insert))?;
+            let param = kind
+                .param_index(&p.param)
+                .ok_or_else(|| ModelError::UnknownParamName(p.param.clone()))?;
+            s.apply(Command::SetInsertParam {
+                track,
+                insert: InsertId(p.insert),
+                param,
+                value: p.value,
+            })?;
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(description = "Bypass or re-enable an insert effect (smoothly, without a click).")]
+    async fn set_insert_bypass(
+        &self,
+        Parameters(p): Parameters<SetInsertBypassParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            let (track, _) = find_insert(s, InsertId(p.insert))?;
+            s.apply(Command::SetInsertBypass {
+                track,
+                insert: InsertId(p.insert),
+                bypass: p.bypass,
+            })?;
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(description = "Remove an insert effect from its chain.")]
+    async fn remove_insert(
+        &self,
+        Parameters(p): Parameters<RemoveInsertParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            let (track, _) = find_insert(s, InsertId(p.insert))?;
+            s.apply(Command::RemoveInsert {
+                track,
+                insert: InsertId(p.insert),
+            })?;
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(
+        description = "Route a track or bus to a bus (output = bus id) or back to the master (output omitted). A route that would form a loop is rejected."
+    )]
+    async fn set_output(
+        &self,
+        Parameters(p): Parameters<SetOutputParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            s.apply(Command::SetOutput {
+                track: TrackId(p.track),
+                output: p.output.map(TrackId),
+            })?;
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(
+        description = "Set the send of a track to a bus (created if missing, otherwise changed). level_db -96..12; pre_fader taps before the fader. A send that would form a loop is rejected."
+    )]
+    async fn set_send(
+        &self,
+        Parameters(p): Parameters<SetSendParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            let track = TrackId(p.track);
+            let target = TrackId(p.target);
+            let exists = s
+                .project()
+                .track(track)
+                .is_some_and(|t| t.sends.iter().any(|x| x.target == target));
+            if exists {
+                s.apply(Command::SetSend {
+                    track,
+                    target,
+                    level_db: p.level_db,
+                    pre_fader: p.pre_fader,
+                })?;
+            } else {
+                s.apply(Command::AddSend {
+                    track,
+                    send: SendRoute {
+                        target,
+                        level_db: p.level_db,
+                        pre_fader: p.pre_fader,
+                    },
+                    index: None,
+                })?;
+            }
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(description = "Remove the send of a track to a bus.")]
+    async fn remove_send(
+        &self,
+        Parameters(p): Parameters<RemoveSendParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            s.apply(Command::RemoveSend {
+                track: TrackId(p.track),
+                target: TrackId(p.target),
             })?;
             Ok(serde_json::json!({ "ok": true }))
         })

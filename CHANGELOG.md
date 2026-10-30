@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.0 — 2026-10-30
+
+Paket 16 aus M5: Mixer mit Bussen, Sends und Inserts.
+
+- **Oberfläche:** Im Mixer-Dock hat jeder Zug Ausgangswahl, Sends (Pegel, vor/nach Fader) und eine Effektkette mit Bypass und Reglern; „+ Bus“ legt Gruppenspuren an, Bus-Züge haben Pegelanzeige. Der Player baut den Graphen neu, wenn sich Routing oder Effektkette ändern, und schickt Reglerwerte geglättet. Spuren löschen trennt Sends und Ausgänge im selben Undo-Schritt.
+
+- **Modell:** Bus-Spuren sind jetzt verschaltbar. Jede Spur hat einen Ausgang (Master oder Bus), Sends (vor oder nach dem Fader) und eine Insert-Kette. Alles sind Commands mit genauem Gegenstück (Rückgängig/Wiederholen); ein Bus auf sich selbst oder im Kreis wird abgelehnt. Projektformat 2, Dateien der Version 1 laden unverändert.
+- **Engine:** Der Graph kennt Stereo-Nodes (zwei Ein-, zwei Ausgänge). Daraus baut `build_project_graph` das Mischpult: Insert-Kette je Spur, Ausgang auf Master oder Bus, Sends vor oder nach dem Fader, Bus-Züge mit Inserts, Fader, Balance und Pegelmesser. Solo einer Spur hält die Busse hörbar, die sie speist. Änderungen an Reglern, Sends und Effekt-Parametern gehen geglättet ohne neuen Graphen. Der Golden-Render des alten Mixes bleibt bit-gleich innerhalb 1e-5, ein neuer Golden-Render (`mixer_bus_send_05s.wav`) hält Bus, Send und Effekte fest.
+- **Agent:** Werkzeugliste in `docs/agent.md` ergänzt. Neue Werkzeuge `insert_effect`, `set_param`, `set_insert_bypass`, `remove_insert`, `set_output`, `set_send`, `remove_send`; `remove_track` trennt Sends und Ausgänge im selben Undo-Schritt.
+- **DSP:** Neues Modul `fx` mit EQ (Hochpass und Glocke, Überblendung beim Umstellen), Kompressor und Limiter als Mono- und Stereo-Node (verkoppelt) samt geglättetem Bypass. Biquad-EQ, Kompressor, Limiter und Gate liegen jetzt in `woa-dsp` (vorher `woa-radio`); der Radio-Bus nutzt sie von dort.
+
 ## 0.10.0 — 2026-10-30
 
 Paket 15: Cue-Punkte und Vorhören (PFL), aus M7 nach M4 vorgezogen (André, 30.10.2026).

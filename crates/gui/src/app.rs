@@ -51,6 +51,12 @@ pub struct WoaApp {
     rename: Option<(TrackId, String)>,
     /// Gain being dragged (committed as one undo step on release).
     gain_drag: Option<(TrackId, f64)>,
+    /// Laufende Änderung eines Effekt-Reglers (Effekt, Regler, Wert), ein Undo-Schritt am Ende.
+    fx_drag: Option<(woa_model::InsertId, usize, f64)>,
+    /// Laufende Änderung eines Send-Pegels (Spur, Ziel, dB).
+    send_drag: Option<(TrackId, TrackId, f64)>,
+    /// Eingabefeld "+ Bus".
+    new_bus_name: String,
     /// Stereo-Panorama beim Ziehen (wird beim Loslassen als ein Undo-Schritt übernommen).
     pan_drag: Option<(TrackId, f64)>,
     /// Tempo beim Ziehen (wird beim Loslassen als ein Undo-Schritt übernommen).
@@ -336,6 +342,9 @@ impl WoaApp {
             feedback: FeedbackDialog::default(),
             rename: None,
             gain_drag: None,
+            fx_drag: None,
+            send_drag: None,
+            new_bus_name: String::new(),
             pan_drag: None,
             tempo_drag: None,
             loop_enabled: false,
@@ -3280,7 +3289,7 @@ impl WoaApp {
         let is_open = self.studio_dock != StudioDockTab::Closed;
         let panel = egui::Panel::bottom("studio_dock")
             .resizable(is_open)
-            .default_size(if is_open { 235.0 } else { 32.0 })
+            .default_size(if is_open { 330.0 } else { 32.0 })
             .size_range(if is_open { 175.0..=440.0 } else { 32.0..=32.0 })
             .frame(
                 egui::Frame::new()
@@ -3573,6 +3582,8 @@ impl WoaApp {
                                                 egui::RichText::new(
                                                     if kind == woa_model::TrackKind::Midi {
                                                         "MIDI-SYNTH"
+                                                    } else if kind == woa_model::TrackKind::Bus {
+                                                        "BUS"
                                                     } else {
                                                         "AUDIO-KANAL"
                                                     },
@@ -3653,11 +3664,230 @@ impl WoaApp {
                                             }
                                         });
                                     });
+                                    self.strip_routing(ui, id, kind);
                                 });
                             });
                     }
+                    self.add_bus_box(ui);
                 });
             });
+    }
+
+    /// "+ Bus": Name eintragen, Knopf legt die Gruppenspur an.
+    fn add_bus_box(&mut self, ui: &mut egui::Ui) {
+        egui::Frame::new()
+            .fill(theme::PANEL_HEADER)
+            .stroke(egui::Stroke::new(1.0, theme::BORDER))
+            .corner_radius(5)
+            .inner_margin(egui::Margin::symmetric(8, 6))
+            .show(ui, |ui| {
+                ui.set_width(118.0);
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new("NEUER BUS")
+                            .size(9.5)
+                            .monospace()
+                            .color(theme::DIM),
+                    );
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.new_bus_name)
+                            .hint_text("Hall")
+                            .desired_width(100.0),
+                    );
+                    if ui
+                        .add(egui::Button::new("+ Bus").fill(theme::SURFACE))
+                        .on_hover_text("Gruppenspur für Sends und Gruppen anlegen")
+                        .clicked()
+                    {
+                        let name = std::mem::take(&mut self.new_bus_name);
+                        self.state.add_bus(&name);
+                    }
+                });
+            });
+    }
+
+    /// Ausgang, Sends und Effektkette eines Mischpult-Zugs.
+    fn strip_routing(&mut self, ui: &mut egui::Ui, id: TrackId, kind: woa_model::TrackKind) {
+        let Some(track) = self.state.project().track(id) else {
+            return;
+        };
+        let output = track.output;
+        let sends = track.sends.clone();
+        let inserts = track.inserts.clone();
+        let buses: Vec<(TrackId, String)> = self
+            .state
+            .project()
+            .tracks
+            .iter()
+            .filter(|b| b.kind == woa_model::TrackKind::Bus && b.id != id)
+            .map(|b| (b.id, b.name.clone()))
+            .collect();
+        let bus_name = |t: TrackId| {
+            buses
+                .iter()
+                .find(|(b, _)| *b == t)
+                .map_or_else(|| "?".to_string(), |(_, n)| n.clone())
+        };
+        let small = |s: &str| {
+            egui::RichText::new(s.to_owned())
+                .size(9.5)
+                .monospace()
+                .color(theme::DIM)
+        };
+
+        ui.separator();
+        // Ausgang
+        let current = output.map_or_else(|| "Master".to_string(), bus_name);
+        egui::ComboBox::from_id_salt(("out", id.0))
+            .selected_text(format!("→ {current}"))
+            .width(100.0)
+            .show_ui(ui, |ui| {
+                if ui.selectable_label(output.is_none(), "Master").clicked() {
+                    self.state.set_output(id, None);
+                }
+                for (b, n) in &buses {
+                    if ui.selectable_label(output == Some(*b), n).clicked() {
+                        self.state.set_output(id, Some(*b));
+                    }
+                }
+            });
+
+        // Sends
+        if !buses.is_empty() {
+            ui.label(small("SENDS"));
+        }
+        for s in &sends {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 3.0;
+                let mut db = match self.send_drag {
+                    Some((t, d, v)) if t == id && d == s.target => v,
+                    _ => s.level_db,
+                };
+                let r = ui
+                    .add(
+                        egui::DragValue::new(&mut db)
+                            .range(woa_model::MIN_GAIN_DB..=woa_model::MAX_SEND_DB)
+                            .speed(0.2)
+                            .fixed_decimals(1)
+                            .prefix(format!("{} ", bus_name(s.target)))
+                            .suffix(" dB"),
+                    )
+                    .on_hover_text("Send-Pegel (Doppelklick: 0 dB)");
+                if r.double_clicked() {
+                    self.send_drag = None;
+                    self.state.set_send(id, s.target, 0.0, s.pre_fader);
+                } else {
+                    if r.changed() {
+                        self.send_drag = Some((id, s.target, db));
+                    }
+                    if r.drag_stopped() || (r.changed() && !r.dragged()) {
+                        self.send_drag = None;
+                        self.state.set_send(id, s.target, db, s.pre_fader);
+                    }
+                }
+                let tap = if s.pre_fader { "PRE" } else { "POST" };
+                if ui
+                    .small_button(tap)
+                    .on_hover_text("Vor (PRE) oder nach (POST) dem Fader abgreifen")
+                    .clicked()
+                {
+                    self.state.set_send(id, s.target, s.level_db, !s.pre_fader);
+                }
+                if ui
+                    .small_button("✕")
+                    .on_hover_text("Send entfernen")
+                    .clicked()
+                {
+                    self.state.remove_send(id, s.target);
+                }
+            });
+        }
+        let free: Vec<_> = buses
+            .iter()
+            .filter(|(b, _)| !sends.iter().any(|s| s.target == *b))
+            .collect();
+        if !free.is_empty() {
+            ui.menu_button("+ Send", |ui| {
+                for (b, n) in free {
+                    if ui.button(n).clicked() {
+                        self.state.set_send(id, *b, -12.0, false);
+                        ui.close();
+                    }
+                }
+            });
+        }
+
+        // Effektkette
+        ui.label(small("EFFEKTE"));
+        for ins in &inserts {
+            let header = ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 3.0;
+                let on = !ins.bypass;
+                let b = egui::Button::new(
+                    egui::RichText::new(ins.kind.label())
+                        .size(10.5)
+                        .color(if on { theme::WELL } else { theme::DIM }),
+                )
+                .fill(if on { theme::CUE_CYAN } else { theme::SURFACE })
+                .min_size(egui::vec2(70.0, 18.0));
+                if ui.add(b).on_hover_text("Ein/Aus (Bypass)").clicked() {
+                    self.state.toggle_insert_bypass(id, ins.id);
+                }
+                if ui
+                    .small_button("✕")
+                    .on_hover_text("Effekt entfernen")
+                    .clicked()
+                {
+                    self.state.remove_insert(id, ins.id);
+                }
+            });
+            let _ = header;
+            egui::CollapsingHeader::new(small("Regler"))
+                .id_salt(("fx", ins.id.0))
+                .show(ui, |ui| {
+                    for (i, spec) in ins.kind.params().iter().enumerate() {
+                        let mut v = match self.fx_drag {
+                            Some((f, p, v)) if f == ins.id && p == i => v,
+                            _ => ins.params.get(i).copied().unwrap_or(spec.default),
+                        };
+                        let r = ui
+                            .add(
+                                egui::DragValue::new(&mut v)
+                                    .range(spec.min..=spec.max)
+                                    .speed((spec.max - spec.min) / 400.0)
+                                    .max_decimals(2)
+                                    .prefix(format!("{} ", spec.label))
+                                    .suffix(format!(" {}", spec.unit)),
+                            )
+                            .on_hover_text("Doppelklick: Vorgabe");
+                        if r.double_clicked() {
+                            self.fx_drag = None;
+                            self.state.set_insert_param(id, ins.id, i, spec.default);
+                        } else {
+                            if r.changed() {
+                                self.fx_drag = Some((ins.id, i, v));
+                            }
+                            if r.drag_stopped() || (r.changed() && !r.dragged()) {
+                                self.fx_drag = None;
+                                self.state.set_insert_param(id, ins.id, i, v);
+                            }
+                        }
+                    }
+                });
+        }
+        let _ = kind;
+        ui.menu_button("+ Effekt", |ui| {
+            for k in [
+                woa_model::EffectKind::Eq,
+                woa_model::EffectKind::Compressor,
+                woa_model::EffectKind::Limiter,
+            ] {
+                if ui.button(k.label()).clicked() {
+                    self.state.add_insert(id, k);
+                    ui.close();
+                }
+            }
+        });
     }
 
     /// Angedockte Piano-Roll im unteren Studio-Dock.

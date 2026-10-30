@@ -11,6 +11,8 @@
 //! Note-Events über [`instrument::note_queue`] (`rtrb`).
 
 pub mod clock;
+pub mod dynamics;
+pub mod fx;
 pub mod generate;
 pub mod instrument;
 pub mod sampler;
@@ -32,6 +34,25 @@ pub trait Node: Send {
     fn set_param(&mut self, param: u32, value: f32);
     /// Rechnet einen Block. Darf nicht allokieren.
     fn process(&mut self, buffers: ProcessBuffers<'_>);
+}
+
+/// Puffer eines Stereo-Process-Aufrufs; alle vier Slices sind gleich lang.
+pub struct StereoBuffers<'a> {
+    pub in_left: &'a [f32],
+    pub in_right: &'a [f32],
+    pub out_left: &'a mut [f32],
+    pub out_right: &'a mut [f32],
+}
+
+/// Ein Stereo-Knoten im Audio-Graphen (zwei Ein-, zwei Ausgänge), z. B. ein verkoppelter
+/// Kompressor oder eine Panorama-Stufe. Gleiche Echtzeitregeln wie [`Node`].
+pub trait StereoNode: Send {
+    /// Wird im Control-Thread vor dem ersten `process` aufgerufen.
+    fn prepare(&mut self, sample_rate: f32);
+    /// Setzt einen Parameter; Wertsprünge werden intern geglättet. Echtzeitsicher.
+    fn set_param(&mut self, param: u32, value: f32);
+    /// Rechnet einen Block. Darf nicht allokieren.
+    fn process(&mut self, buffers: StereoBuffers<'_>);
 }
 
 /// Lineare Rampe gegen Zipper-Noise: Ein neues Ziel wird über eine feste

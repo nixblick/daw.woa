@@ -24,8 +24,9 @@ use crate::error::{ModelError, Result};
 use crate::project::Project;
 
 /// Current version of `project.json`. Bump on every incompatible change and add a
-/// migration in [`load`].
-pub const FORMAT_VERSION: u32 = 1;
+/// migration in [`from_json`]. Version 2 (Paket 16) adds `output`, `sends` and `inserts`
+/// to tracks; version 1 files load unchanged because all three default to empty.
+pub const FORMAT_VERSION: u32 = 2;
 /// File name of the project inside the folder.
 pub const PROJECT_FILE: &str = "project.json";
 /// File name of the autosave inside the folder.
@@ -71,8 +72,10 @@ pub fn from_json(json: &str, path: &Path) -> Result<Project> {
             supported: FORMAT_VERSION,
         });
     }
-    let file: ProjectFile = serde_json::from_str(json).map_err(json_err)?;
+    let mut file: ProjectFile = serde_json::from_str(json).map_err(json_err)?;
+    file.project.migrate();
     file.project.check_ids()?;
+    file.project.check_routing()?;
     Ok(file.project)
 }
 

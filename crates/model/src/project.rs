@@ -5,6 +5,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::effect::{Insert, InsertId};
 use crate::error::{ModelError, Result};
 
 /// Tempo of a new project.
@@ -17,6 +18,8 @@ pub const MAX_TEMPO_BPM: f64 = 400.0;
 pub const MIN_GAIN_DB: f64 = -96.0;
 /// Highest accepted track gain (dB).
 pub const MAX_GAIN_DB: f64 = 24.0;
+/// Highest accepted send level (dB). The lowest is [`MIN_GAIN_DB`] (= off).
+pub const MAX_SEND_DB: f64 = 12.0;
 
 /// Stable id of a track. Ids are never reused within a project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -179,6 +182,43 @@ pub struct Track {
     pub solo: bool,
     /// Clips in insertion order.
     pub clips: Vec<Clip>,
+    /// Destination bus of the track's signal; `None`: the master.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<TrackId>,
+    /// Sends to buses (Paket 16).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sends: Vec<Send>,
+    /// Effect chain, first insert first (Paket 16).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inserts: Vec<Insert>,
+}
+
+/// A send from a track to a bus.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Send {
+    /// Destination bus.
+    pub target: TrackId,
+    /// Level in dB, [`MIN_GAIN_DB`]..=[`MAX_SEND_DB`]; [`MIN_GAIN_DB`] means off.
+    pub level_db: f64,
+    /// Tapped before the fader (mute and solo still apply), otherwise after it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub pre_fader: bool,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+impl Send {
+    /// Linear factor of the send level; the lowest value is silence.
+    pub fn linear(&self) -> f64 {
+        if self.level_db <= MIN_GAIN_DB {
+            0.0
+        } else {
+            10f64.powf(self.level_db / 20.0)
+        }
+    }
 }
 
 impl Track {
@@ -193,6 +233,9 @@ impl Track {
             mute: false,
             solo: false,
             clips: Vec::new(),
+            output: None,
+            sends: Vec::new(),
+            inserts: Vec::new(),
         }
     }
 }
@@ -240,9 +283,11 @@ impl Project {
 
     /// True if `raw` is used by any track or clip.
     pub fn id_in_use(&self, raw: u64) -> bool {
-        self.tracks
-            .iter()
-            .any(|t| t.id.0 == raw || t.clips.iter().any(|c| c.id.0 == raw))
+        self.tracks.iter().any(|t| {
+            t.id.0 == raw
+                || t.clips.iter().any(|c| c.id.0 == raw)
+                || t.inserts.iter().any(|i| i.id.0 == raw)
+        })
     }
 
     pub(crate) fn track_mut(&mut self, id: TrackId) -> Option<&mut Track> {
@@ -276,8 +321,99 @@ impl Project {
                     m.check()?;
                 }
             }
+            for i in &t.inserts {
+                check_id(i.id.0)?;
+            }
         }
         Ok(())
+    }
+
+    /// Brings a file of an older format version up to date (Paket 16: missing effect
+    /// parameters get their defaults).
+    pub(crate) fn migrate(&mut self) {
+        for t in &mut self.tracks {
+            for i in &mut t.inserts {
+                i.pad();
+            }
+        }
+    }
+
+    /// Checks outputs, sends and inserts of all tracks: destinations exist and are buses,
+    /// no track feeds itself, no cycles, ids unique, values in range.
+    pub(crate) fn check_routing(&self) -> Result<()> {
+        let mut seen: Vec<u64> = Vec::new();
+        for t in &self.tracks {
+            for r in t.output.iter().chain(t.sends.iter().map(|s| &s.target)) {
+                self.check_destination(t.id, *r)?;
+            }
+            for (i, s) in t.sends.iter().enumerate() {
+                check_send_level(s.level_db)?;
+                if t.sends[..i].iter().any(|o| o.target == s.target) {
+                    return Err(ModelError::DuplicateSend {
+                        track: t.id,
+                        target: s.target,
+                    });
+                }
+            }
+            for i in &t.inserts {
+                i.check()?;
+                if seen.contains(&i.id.0) || self.tracks.iter().any(|o| o.id.0 == i.id.0) {
+                    return Err(ModelError::DuplicateId(i.id.0));
+                }
+                seen.push(i.id.0);
+            }
+        }
+        // Cycle search: every connection must not lead back to its source.
+        for t in &self.tracks {
+            for to in t.output.iter().chain(t.sends.iter().map(|s| &s.target)) {
+                if self.reaches(*to, t.id) {
+                    return Err(ModelError::RoutingCycle {
+                        from: t.id,
+                        to: *to,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The destination exists, is a bus and is not the source itself.
+    pub(crate) fn check_destination(&self, from: TrackId, to: TrackId) -> Result<()> {
+        let dest = self.track(to).ok_or(ModelError::TrackNotFound(to))?;
+        if dest.kind != TrackKind::Bus {
+            return Err(ModelError::NotABus(to));
+        }
+        if from == to {
+            return Err(ModelError::RoutingCycle { from, to });
+        }
+        Ok(())
+    }
+
+    /// True if `goal` can be reached from `start` over outputs and sends (or is `start`).
+    pub fn reaches(&self, start: TrackId, goal: TrackId) -> bool {
+        let mut stack = vec![start];
+        let mut visited: Vec<TrackId> = Vec::new();
+        while let Some(id) = stack.pop() {
+            if id == goal {
+                return true;
+            }
+            if visited.contains(&id) {
+                continue;
+            }
+            visited.push(id);
+            if let Some(t) = self.track(id) {
+                stack.extend(t.output);
+                stack.extend(t.sends.iter().map(|s| s.target));
+            }
+        }
+        false
+    }
+
+    /// Looks up an insert and its track.
+    pub fn insert(&self, id: InsertId) -> Option<(&Track, &Insert)> {
+        self.tracks
+            .iter()
+            .find_map(|t| t.inserts.iter().find(|i| i.id == id).map(|i| (t, i)))
     }
 
     /// Keeps `next_id` above every id that was inserted from outside.
@@ -285,6 +421,18 @@ impl Project {
         if raw >= self.next_id {
             self.next_id = raw.saturating_add(1);
         }
+    }
+}
+
+/// Errors if a send level is not finite or outside `MIN_GAIN_DB..=MAX_SEND_DB`.
+pub(crate) fn check_send_level(v: f64) -> Result<()> {
+    if v.is_finite() && (MIN_GAIN_DB..=MAX_SEND_DB).contains(&v) {
+        Ok(())
+    } else {
+        Err(ModelError::InvalidValue {
+            field: "level_db",
+            value: v,
+        })
     }
 }
 

@@ -4,6 +4,23 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 16: Mixer mit Bussen, Sends und Inserts (0.11.0, offen)
+
+Aus M5. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Mixer öffnen:** Produzent-Layout, unten im Studio-Dock den Reiter „Mixer“. Jede Spur hat jetzt Ausgang, Sends und Effekte unter dem Pegelregler; rechts steht „NEUER BUS“.
+2. **Bus anlegen:** Name „Hall“ eintippen, „+ Bus“. Es erscheint ein Zug „BUS“ mit eigenem Pegel, Pan und Pegelanzeige.
+3. **Send hochziehen:** Bei Spur 1 „+ Send“ → Hall, dann den Wert ziehen (Doppelklick: 0 dB). „POST“/„PRE“ schaltet um, ob vor oder nach dem Fader abgegriffen wird; „✕“ entfernt den Send.
+4. **EQ einfügen:** Bei Spur 1 „+ Effekt“ → „EQ“. Der Knopf schaltet den Effekt ein/aus (Bypass, ohne Knacken), „Regler“ klappt Hochpass und Glocke auf. Dasselbe geht mit Kompressor und Limiter, auch auf dem Bus.
+5. **Strg+Z** nimmt den EQ zurück, „Wiederholen“ bringt ihn wieder; ebenso jeder Send, Ausgang und Reglerzug (je ein Schritt).
+6. **Ausgang:** Bei Spur 1 „→ Master“ auf „→ Hall“ stellen. Ein Bus lässt sich nicht auf sich selbst oder im Kreis schalten (Meldung in der Statusleiste).
+7. **Speichern, neu öffnen:** Bus, Sends, Effekte samt Reglern und Bypass sind noch da. Alte Projekte (Format 1) öffnen unverändert.
+8. **Agent:** `insert_effect`, `set_param`, `set_insert_bypass`, `remove_insert`, `set_output`, `set_send`, `remove_send`; jeder Aufruf ist ein Undo-Schritt „Agent“.
+
+Selbst geprüft von Claude: Modell mit Undo/Redo je Routing-Befehl, Kreiserkennung (Bus auf sich selbst, Bus im Kreis, Send im Kreis), Löschen eines angeschlossenen Busses samt Rückgängig, Projektdatei-Rundlauf, Insta-Schnappschuss des Formats 2 und Laden einer Datei im Format 1. Engine: Offline-Render mit Bus, Send (vor/nach Fader), Inserts auf Spur und Bus gegen die neue Referenzdatei `tests/golden/mixer_bus_send_05s.wav` (Abweichung unter 1e-5); der alte Referenz-Mix bleibt unverändert; Solo hält den gespeisten Bus hörbar; Live-Änderung von Send und Bypass ohne Sprung; jeder Block unter `assert_no_alloc`; Zyklus im Graphen wird abgelehnt. DSP: EQ, Kompressor, Limiter, Bypass-Überblendung und Stereo-Kopplung als Tests, EQ/Kompressor/Limiter von `radio` nach `dsp` verschoben (Radio-Tests unverändert grün). Agent-Werkzeuge über MCP einschließlich Fehlerfällen; Bedienlogik der Oberfläche als Test (Bus, Send, EQ, Rückgängig, Löschen). Nicht selbst geprüft: echter Klang (kein Ton auf dem Notebook, nur Offline-Render und Messwerte), die Bedienung im echten Fenster (Layout und Abstände der neuen Zugteile sind nur gebaut und kompiliert, nicht angeklickt), das Aussehen mit sehr vielen Spuren.
+
+Noch nicht drin: Hall-Effekt (Paket 17), Sidechain, Reihenfolge der Effekte per Ziehen (neu eingefügte Effekte kommen ans Ende der Kette), Send-Pegel auf dem MIDI-Controller, Pegelanzeige hinter dem Fader für normale Spuren (die Anzeige zeigt wie bisher den Pegel vor dem Fader).
+
 ## Paket 15: Cue-Punkte und Vorhören (0.10.0, offen)
 
 Aus M7 nach M4 vorgezogen (André, 30.10.2026: „ja, cue-punkte und pfl nach m4 vorziehen“).

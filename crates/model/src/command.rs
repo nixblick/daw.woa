@@ -2,10 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::effect::{Insert, InsertId};
 use crate::error::{ModelError, Result};
 use crate::project::{
-    Clip, ClipId, MAX_GAIN_DB, MAX_TEMPO_BPM, MIN_GAIN_DB, MIN_TEMPO_BPM, Project, Track, TrackId,
-    TrackKind,
+    Clip, ClipId, MAX_GAIN_DB, MAX_TEMPO_BPM, MIN_GAIN_DB, MIN_TEMPO_BPM, Project, Send, Track,
+    TrackId, TrackKind, check_send_level,
 };
 
 /// One change to a project.
@@ -120,6 +121,76 @@ pub enum Command {
         /// New content; sorted on apply.
         midi: crate::midi::MidiData,
     },
+    /// Routes the track's signal to a bus (`Some`) or the master (`None`).
+    SetOutput {
+        /// Track to route.
+        track: TrackId,
+        /// Destination bus; it must be a bus and must not lead back to `track`.
+        output: Option<TrackId>,
+    },
+    /// Adds a send to a bus (one send per destination).
+    AddSend {
+        /// Source track.
+        track: TrackId,
+        /// The send.
+        send: Send,
+        /// Position in the send list (`None`: at the end).
+        index: Option<usize>,
+    },
+    /// Removes the send to `target`.
+    RemoveSend {
+        /// Source track.
+        track: TrackId,
+        /// Destination bus of the send.
+        target: TrackId,
+    },
+    /// Changes level and tap point of the send to `target`.
+    SetSend {
+        /// Source track.
+        track: TrackId,
+        /// Destination bus of the send.
+        target: TrackId,
+        /// Level in dB, `MIN_GAIN_DB..=MAX_SEND_DB`.
+        level_db: f64,
+        /// Tap before the fader.
+        pre_fader: bool,
+    },
+    /// Inserts an effect into the chain of a track.
+    AddInsert {
+        /// Target track.
+        track: TrackId,
+        /// The effect; its id must be unused.
+        insert: Insert,
+        /// Position in the chain (`None`: at the end).
+        index: Option<usize>,
+    },
+    /// Removes an effect from the chain.
+    RemoveInsert {
+        /// Track holding the effect.
+        track: TrackId,
+        /// Effect to remove.
+        insert: InsertId,
+    },
+    /// Sets one parameter of an effect.
+    SetInsertParam {
+        /// Track holding the effect.
+        track: TrackId,
+        /// The effect.
+        insert: InsertId,
+        /// Index of the parameter, see `EffectKind::params`.
+        param: usize,
+        /// New value inside the parameter's range.
+        value: f64,
+    },
+    /// Bypasses an effect or switches it back on.
+    SetInsertBypass {
+        /// Track holding the effect.
+        track: TrackId,
+        /// The effect.
+        insert: InsertId,
+        /// New state.
+        bypass: bool,
+    },
 }
 
 impl Command {
@@ -147,6 +218,14 @@ impl Command {
             Command::MoveClip { .. } => "Move clip",
             Command::EditClip { .. } => "Edit clip",
             Command::SetNotes { .. } => "Edit notes",
+            Command::SetOutput { .. } => "Set output",
+            Command::AddSend { .. } => "Add send",
+            Command::RemoveSend { .. } => "Remove send",
+            Command::SetSend { .. } => "Set send",
+            Command::AddInsert { .. } => "Add effect",
+            Command::RemoveInsert { .. } => "Remove effect",
+            Command::SetInsertParam { .. } => "Set effect parameter",
+            Command::SetInsertBypass { .. } => "Bypass effect",
         }
     }
 
@@ -174,7 +253,37 @@ impl Command {
                         return Err(ModelError::DuplicateId(c.id.0));
                     }
                 }
+                for r in track
+                    .output
+                    .iter()
+                    .chain(track.sends.iter().map(|s| &s.target))
+                {
+                    project.check_destination(track.id, *r)?;
+                }
+                for (i, s) in track.sends.iter().enumerate() {
+                    check_send_level(s.level_db)?;
+                    if track.sends[..i].iter().any(|o| o.target == s.target) {
+                        return Err(ModelError::DuplicateSend {
+                            track: track.id,
+                            target: s.target,
+                        });
+                    }
+                }
+                for (i, ins) in track.inserts.iter().enumerate() {
+                    ins.check()?;
+                    crate::project::check_id(ins.id.0)?;
+                    if ins.id.0 == track.id.0
+                        || project.id_in_use(ins.id.0)
+                        || track.clips.iter().any(|c| c.id.0 == ins.id.0)
+                        || track.inserts[..i].iter().any(|o| o.id == ins.id)
+                    {
+                        return Err(ModelError::DuplicateId(ins.id.0));
+                    }
+                }
                 let id = track.id;
+                for ins in &track.inserts {
+                    project.bump_next_id(ins.id.0);
+                }
                 project.bump_next_id(id.0);
                 for c in &track.clips {
                     project.bump_next_id(c.id.0);
@@ -189,6 +298,13 @@ impl Command {
                 let at = project
                     .track_index(track)
                     .ok_or(ModelError::TrackNotFound(track))?;
+                if project
+                    .tracks
+                    .iter()
+                    .any(|t| t.output == Some(track) || t.sends.iter().any(|s| s.target == track))
+                {
+                    return Err(ModelError::TrackInUse(track));
+                }
                 let removed = project.tracks.remove(at);
                 Ok(Command::AddTrack {
                     track: removed,
@@ -298,6 +414,159 @@ impl Command {
                 midi.sort();
                 let old = std::mem::replace(old, midi);
                 Ok(Command::SetNotes { clip, midi: old })
+            }
+            Command::SetOutput { track, output } => {
+                find(project, track)?;
+                if let Some(to) = output {
+                    project.check_destination(track, to)?;
+                    if project.reaches(to, track) {
+                        return Err(ModelError::RoutingCycle { from: track, to });
+                    }
+                }
+                let t = find(project, track)?;
+                let old = std::mem::replace(&mut t.output, output);
+                Ok(Command::SetOutput { track, output: old })
+            }
+            Command::AddSend { track, send, index } => {
+                check_send_level(send.level_db)?;
+                let t = project
+                    .track(track)
+                    .ok_or(ModelError::TrackNotFound(track))?;
+                if t.sends.iter().any(|s| s.target == send.target) {
+                    return Err(ModelError::DuplicateSend {
+                        track,
+                        target: send.target,
+                    });
+                }
+                project.check_destination(track, send.target)?;
+                if project.reaches(send.target, track) {
+                    return Err(ModelError::RoutingCycle {
+                        from: track,
+                        to: send.target,
+                    });
+                }
+                let target = send.target;
+                let t = find(project, track)?;
+                let at = index
+                    .filter(|&i| i <= t.sends.len())
+                    .unwrap_or(t.sends.len());
+                t.sends.insert(at, send);
+                Ok(Command::RemoveSend { track, target })
+            }
+            Command::RemoveSend { track, target } => {
+                let t = find(project, track)?;
+                let at = t
+                    .sends
+                    .iter()
+                    .position(|s| s.target == target)
+                    .ok_or(ModelError::SendNotFound { track, target })?;
+                let removed = t.sends.remove(at);
+                Ok(Command::AddSend {
+                    track,
+                    send: removed,
+                    index: Some(at),
+                })
+            }
+            Command::SetSend {
+                track,
+                target,
+                level_db,
+                pre_fader,
+            } => {
+                check_send_level(level_db)?;
+                let t = find(project, track)?;
+                let s = t
+                    .sends
+                    .iter_mut()
+                    .find(|s| s.target == target)
+                    .ok_or(ModelError::SendNotFound { track, target })?;
+                let old_level = std::mem::replace(&mut s.level_db, level_db);
+                let old_pre = std::mem::replace(&mut s.pre_fader, pre_fader);
+                Ok(Command::SetSend {
+                    track,
+                    target,
+                    level_db: old_level,
+                    pre_fader: old_pre,
+                })
+            }
+            Command::AddInsert {
+                track,
+                insert,
+                index,
+            } => {
+                insert.check()?;
+                crate::project::check_id(insert.id.0)?;
+                if project.track(track).is_none() {
+                    return Err(ModelError::TrackNotFound(track));
+                }
+                if project.id_in_use(insert.id.0) {
+                    return Err(ModelError::DuplicateId(insert.id.0));
+                }
+                project.bump_next_id(insert.id.0);
+                let id = insert.id;
+                let t = find(project, track)?;
+                let at = index
+                    .filter(|&i| i <= t.inserts.len())
+                    .unwrap_or(t.inserts.len());
+                t.inserts.insert(at, insert);
+                Ok(Command::RemoveInsert { track, insert: id })
+            }
+            Command::RemoveInsert { track, insert } => {
+                let t = find(project, track)?;
+                let at = t
+                    .inserts
+                    .iter()
+                    .position(|i| i.id == insert)
+                    .ok_or(ModelError::InsertNotFound(insert))?;
+                let removed = t.inserts.remove(at);
+                Ok(Command::AddInsert {
+                    track,
+                    insert: removed,
+                    index: Some(at),
+                })
+            }
+            Command::SetInsertParam {
+                track,
+                insert,
+                param,
+                value,
+            } => {
+                let t = find(project, track)?;
+                let ins = t
+                    .inserts
+                    .iter_mut()
+                    .find(|i| i.id == insert)
+                    .ok_or(ModelError::InsertNotFound(insert))?;
+                ins.kind.check_value(param, value)?;
+                let slot = ins
+                    .params
+                    .get_mut(param)
+                    .ok_or(ModelError::UnknownParam { index: param })?;
+                let old = std::mem::replace(slot, value);
+                Ok(Command::SetInsertParam {
+                    track,
+                    insert,
+                    param,
+                    value: old,
+                })
+            }
+            Command::SetInsertBypass {
+                track,
+                insert,
+                bypass,
+            } => {
+                let t = find(project, track)?;
+                let ins = t
+                    .inserts
+                    .iter_mut()
+                    .find(|i| i.id == insert)
+                    .ok_or(ModelError::InsertNotFound(insert))?;
+                let old = std::mem::replace(&mut ins.bypass, bypass);
+                Ok(Command::SetInsertBypass {
+                    track,
+                    insert,
+                    bypass: old,
+                })
             }
             Command::MoveClip {
                 clip,
