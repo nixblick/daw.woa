@@ -141,6 +141,8 @@ pub struct Controller {
     events_missed: u32,
     /// Vorhör-Rendering eines Voice-Tracks läuft im Hintergrund (Paket 30).
     preview: Option<std::sync::mpsc::Receiver<Result<Stereo, String>>>,
+    /// Gast-Kanäle (Paket 37).
+    guests: woa_guests::GuestHub,
 }
 
 /// Ein Zeit-Event in der Playlist.
@@ -163,7 +165,8 @@ impl Controller {
     pub fn new(show: RadioShow, rate: u32) -> (Controller, Mixer) {
         let (producer, consumer) = rtrb::RingBuffer::new(QUEUE);
         let status = Arc::new(Status::default());
-        let mixer = Mixer::new(consumer, Arc::clone(&status), rate);
+        let (guests, bank) = woa_guests::channel(rate);
+        let mixer = Mixer::new(consumer, Arc::clone(&status), rate, bank);
         let mut c = Controller {
             collector: Collector::new(),
             cmds: producer,
@@ -187,6 +190,7 @@ impl Controller {
             last_event: None,
             events_missed: 0,
             preview: None,
+            guests,
         };
         c.replace_show(show);
         (c, mixer)
@@ -574,6 +578,18 @@ impl Controller {
         self.send(Cmd::MicMonitor(on));
     }
 
+    // ---- Gäste (Paket 37) ------------------------------------------------------------
+
+    /// Gast-Kanäle: anlegen, Fader, Rückweg im Kopfhörer.
+    pub fn guests(&mut self) -> &mut woa_guests::GuestHub {
+        &mut self.guests
+    }
+
+    /// Anzeige der Gäste (holt die Pegelspitzen ab).
+    pub fn guests_view(&self) -> Vec<woa_guests::GuestView> {
+        self.guests.view()
+    }
+
     // ---- Sendung (woa-streamd) -------------------------------------------------------
 
     /// Hängt den Sende-Ring ein (Sendeausgang Stereo verschachtelt in Mixer-Rate) oder aus.
@@ -646,6 +662,9 @@ impl Controller {
 
     fn pump_queue(&mut self) {
         self.collector.collect();
+        if let Some(m) = self.guests.poll() {
+            self.message = Some(m);
+        }
         if let Some(r) = self.recording.as_mut()
             && let Err(e) = r.drain()
         {

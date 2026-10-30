@@ -1,9 +1,15 @@
 [package]
 name = "woa-guests"
-description = "WOA: WebRTC-Gäste-Schalte"
+description = "WOA: Gast-Kanäle mit Mix-Minus (Jitterpuffer, Rückwege, Testquellen)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
+rtrb = "0.4.1"
+tracing = "0.1.44"
+woa-engine = { version = "0.32", path = "../engine" }
+
+[dev-dependencies]
+assert_no_alloc = "1.1.2"

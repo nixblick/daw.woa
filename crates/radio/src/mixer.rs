@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use basedrop::{Owned, Shared};
+use woa_guests::GuestBank;
 
 use crate::CARTS;
 use crate::audio::Stereo;
@@ -356,11 +357,18 @@ pub struct Mixer {
     mic_chain_on: bool,
     /// Pegel Musik, Carts, Mikro (geglättet).
     levels: [Smoother; 3],
+    /// Gast-Kanäle mit Mix-Minus (Paket 37).
+    guests: GuestBank,
 }
 
 impl Mixer {
     /// Legt den Mixer an (im Control-Thread, danach in den Audio-Thread verschieben).
-    pub fn new(cmds: rtrb::Consumer<Cmd>, status: Arc<Status>, rate: u32) -> Self {
+    pub fn new(
+        cmds: rtrb::Consumer<Cmd>,
+        status: Arc<Status>,
+        rate: u32,
+        guests: GuestBank,
+    ) -> Self {
         let r = rate.max(1) as f32;
         Self {
             cmds,
@@ -395,6 +403,7 @@ impl Mixer {
             mic_chain: MicChain::new(rate),
             mic_chain_on: true,
             levels: std::array::from_fn(|_| Smoother::new(1.0, LEVEL_TAU, r)),
+            guests,
         }
     }
 
@@ -605,6 +614,7 @@ impl Mixer {
         self.drain();
         let n = left.len().min(right.len());
         self.trim_mic_backlog();
+        self.guests.begin_block();
         let mut peak = 0.0f32;
         let mut mic_peak = 0.0f32;
         let mut reduction = 0.0f32;
@@ -711,16 +721,28 @@ impl Mixer {
             ir *= mg;
             mic_peak = mic_peak.max(il.abs()).max(ir.abs());
 
-            let mut sl = ml * duck + cl + il;
-            let mut sr = mr * duck + cr + ir;
+            // Basis ohne Gäste: Musik, Carts, Moderator. Daraus entstehen die Rückwege.
+            let (bl, br) = (ml * duck + cl + il, mr * duck + cr + ir);
+            let (gl, gr) = self.guests.frame();
+            let mut sl = bl + gl;
+            let mut sr = br + gr;
             // Abhören ohne Mikro: derselbe Weg ohne `il`/`ir`, mit demselben Faktor.
             let (mut ql, mut qr) = (sl - il, sr - ir);
+            // Rückweg eines Gastes im Kopfhörer: Basis plus alle anderen Gäste (Mix-Minus).
+            let mut ret = self
+                .guests
+                .monitor()
+                .map(|g| self.guests.return_bus(g, (bl, br)));
             if self.bus_on {
                 let g = self.bus.gain(sl, sr);
                 sl = self.bus.clip(sl * g);
                 sr = self.bus.clip(sr * g);
                 ql = self.bus.clip(ql * g);
                 qr = self.bus.clip(qr * g);
+                if let Some((rl, rr)) = ret.as_mut() {
+                    *rl = self.bus.clip(*rl * g);
+                    *rr = self.bus.clip(*rr * g);
+                }
                 let m = self.bus.meter();
                 reduction = reduction.max(m.comp_db + m.limit_db);
             }
@@ -740,12 +762,17 @@ impl Mixer {
                     self.status.stream_dropped.fetch_add(2, Ordering::Relaxed);
                 }
             }
-            let (ol, or) = if self.mic_monitor { (sl, sr) } else { (ql, qr) };
+            let (ol, or) = match ret {
+                Some(r) => r,
+                None if self.mic_monitor => (sl, sr),
+                None => (ql, qr),
+            };
             left[i] = ol;
             right[i] = or;
             peak = peak.max(sl.abs()).max(sr.abs());
             self.clock += 1;
         }
+        self.guests.end_block();
         self.publish(peak, mic_peak, reduction);
     }
 
