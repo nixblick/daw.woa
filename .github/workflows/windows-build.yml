@@ -1,0 +1,28 @@
+name: Windows-Bau
+# Von Hand starten (Actions → Windows-Bau → Run workflow) oder per `gh workflow run windows-build.yml`.
+# Ergebnis: ein ZIP mit woa.exe, woa-headless.exe, woa-streamd.exe als Artefakt am Lauf.
+# Unsigniert; Windows SmartScreen fragt beim ersten Start nach („Weitere Informationen“ → „Trotzdem ausführen“).
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p woa -p woa-headless -p woa-streamd
+      - name: Paket packen
+        shell: pwsh
+        run: |
+          $v = (cargo metadata --format-version 1 --no-deps | ConvertFrom-Json).packages | Where-Object name -eq 'woa' | Select-Object -ExpandProperty version
+          New-Item -ItemType Directory -Force woa-windows | Out-Null
+          Copy-Item target/release/woa.exe, target/release/woa-headless.exe, target/release/woa-streamd.exe, LICENSE, README.md, CHANGELOG.md woa-windows/
+          Compress-Archive -Path woa-windows/* -DestinationPath "woa-$v-windows-x64.zip"
+          "WOA_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - uses: actions/upload-artifact@v4
+        with:
+          name: woa-${{ env.WOA_VERSION }}-windows-x64
+          path: woa-*-windows-x64.zip
+          retention-days: 30

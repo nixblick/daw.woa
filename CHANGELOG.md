@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.26.2 — 2026-10-30
+
+- **CI:** Neuer Workflow „Windows-Bau“ (`.github/workflows/windows-build.yml`), von Hand zu starten. Baut `woa.exe`, `woa-headless.exe` und `woa-streamd.exe` im Release-Profil und legt sie als ZIP an den Lauf (30 Tage). Unsigniert; Installer (MSI) kommt mit M10.
+
 ## 0.26.1 — 2026-10-30
 
 Sicherheit (#101): Der DAWproject-Import begrenzt jede Audiodatei beim Lesen auf das Restbudget der Gesamtgrenze, nicht nur auf die Grenze je Datei. Eine präparierte Datei mit gefälschten ZIP-Größen kann die Platte nicht mehr vollschreiben. Test dazu.
