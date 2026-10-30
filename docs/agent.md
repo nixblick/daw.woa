@@ -27,7 +27,14 @@ Claude Desktop: derselbe Befehl als `command`/`args` in `claude_desktop_config.j
 | `set_mute` | `track`, `mute` | stumm schalten |
 | `set_tempo` | `bpm` | Projekttempo |
 | `set_solo` | `track`, `solo` | Solo; ist eine Spur auf Solo, klingen nur Solo-Spuren |
-| `remove_track` | `track` | Spur samt Clips entfernen |
+| `remove_track` | `track` | Spur samt Clips entfernen; Sends und Ausgänge darauf werden im selben Schritt getrennt |
+| `insert_effect` | `track`, `kind` (`eq`/`compressor`/`limiter`), `index`, `params` (Name → Wert) | Effekt in die Insert-Kette einer Spur oder eines Busses (vor dem Fader), liefert `insert`-ID |
+| `set_param` | `insert`, `param` (z. B. `bell_db`, `threshold_db`), `value` | Effekt-Regler setzen, Wert wird gegen den Bereich geprüft |
+| `set_insert_bypass` | `insert`, `bypass` | Effekt knackfrei ein- oder ausschalten |
+| `remove_insert` | `insert` | Effekt entfernen |
+| `set_output` | `track`, `output` (Bus-ID, leer = Master) | Ausgang einer Spur; Schleifen werden abgelehnt |
+| `set_send` | `track`, `target` (Bus), `level_db` (-96..12), `pre_fader` | Send anlegen oder ändern; Schleifen werden abgelehnt |
+| `remove_send` | `track`, `target` | Send entfernen |
 | `add_clip` | `track`, `name`, `start_beats`, `length_beats` | Platzhalter-Clip ohne Klang, liefert `clip`-ID |
 | `generate_notes` | `track`, `length_beats`, `notes` (`beat`, `pitch` MIDI, `length_beats`, `velocity`), `waveform` (`sine`/`saw`/`square`), `start_beats`, `name` | rendert die Noten mit dem eingebauten Synth als WAV nach `aufnahmen/agent-<id>.wav` und legt einen Audio-Clip an |
 | `generate_drums` | `track`, `kick`, `snare`, `hihat` (je Zeichen ein 16tel: `x` Schlag, `o` leise, `.` Pause), `start_beats`, `name` | synthetische Drums (Kick: Sinus-Sweep, Snare: Ton + Rauschen, Hi-Hat: gefiltertes Rauschen) als Audio-Clip; Länge = längstes Muster |
