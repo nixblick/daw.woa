@@ -4,6 +4,24 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 22: Aufnahme mit Latenzausgleich, Punch-in, Loop-Takes, Comping (0.17.0, offen)
+
+Aus M6. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Spur scharf schalten:** Auf der Audio-Spur den roten Punkt links anklicken, Eingang wählen. Mit Aufnahme-Taste starten und stoppen: der neue Clip liegt an der Stelle des Abspielkopfes beim Start, nicht dahinter. Ein Klatschen oder Klick sitzt auf dem Raster, wo du ihn gespielt hast (die Latenz des Geräts ist abgezogen).
+2. **Punch-in:** „Punch“ einschalten, Takt von und bis eintragen (Standard 2 bis 4). Aufnehmen: vom Take bleibt nur der Teil zwischen den beiden Takten, der Rest fehlt.
+3. **3 Loop-Takes:** Schleife über vier Takte setzen und einschalten, aufnehmen und drei Runden lang spielen, dann stoppen. Auf der Spur erscheint ein Take-Ordner „Loop 1 · 3 Takes“, eine Runde je Take; eine angefangene vierte Runde wird verworfen.
+4. **Aufklappen:** Auf den Pfeil im Ordner klicken: eine Zeile je Take mit Wellenform. Der Streifen darüber zeigt, welcher Take wo spielt (zuerst überall der neueste).
+5. **Abschnitte wählen:** In der Zeile eines Takes einen Bereich ziehen (rastet am Raster ein) oder einmal klicken (wählt den Takt): dieser Take spielt dort. Der Streifen und die Spur ändern sich sofort. Strg+Z nimmt jeden Schritt einzeln zurück.
+6. **Abspielen:** Leertaste: der Comp spielt die gewählten Teile hintereinander, ohne Lücke an den Grenzen. Papierkorb am Ordner löscht Ordner samt Comp (Strg+Z holt ihn zurück).
+7. **Speichern, neu öffnen:** Strg+S, schließen, öffnen: Ordner, Takes und Auswahl stehen wie zuvor.
+
+Selbst geprüft von Claude (ohne Ton und ohne Mikrofon): Fake-Eingang mit künstlicher Latenz (20 ms): der Impuls liegt nach dem Ausgleich auf dem Sample, wo er gespielt wurde, ohne Ausgleich genau die Latenz zu spät; Punch behält nur den Impuls im Bereich, auf dem Sample genau; Runden am Null-Ausgang gezählt (Schleifenüberläufe) gleich Zahl der Takes; Comp-Render (Teile aus Take 1 und 3, Mitte aus Take 2, Lücke bleibt still, Undo stellt den Render zurück); Modell-Befehl `SetTakeFolder` mit Undo und Redo, Prüfung schlechter Eingaben (Take außerhalb, Pfad mit `..`, Bereich außerhalb) ändert nichts; Projektformat 3 nur mit Take-Ordner, Rundlauf; Zustandstests der Oberfläche (Aufnahme mit Latenz und Punch, Ordner, Comping, Undo); alles unter `assert_no_alloc`, wo die Engine läuft.
+
+Nicht selbst geprüft: echte Aufnahme am Gerät (kein Mikrofon auf dem Notebook); die Latenz des Geräts selbst (die vom Treiber gemeldete Zeit plus der einstellbare Zuschlag, nicht am Kabel gemessen); Aussehen und Griffigkeit der Take-Zeilen im echten Fenster.
+
+Noch nicht drin: Messung der Gerätelatenz per Kabelschleife (braucht Andrés Hardware am Schreibtisch), Ausschnitt-Ziehen über mehrere Spuren, Überblendung an den Comp-Grenzen (sie liegen stumpf aneinander).
+
 ## Paket 21: Schnitt und Fades (0.16.0, offen)
 
 Aus M6. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
@@ -20,7 +38,7 @@ Selbst geprüft von Claude: Nulltest (geteilter und wieder zusammengesetzter Cli
 
 Nicht selbst geprüft: Klang (kein Ton auf dem Notebook, nur Messung im Offline-Render), Aussehen und Griffigkeit der Fade-Griffe im echten Fenster (mit simulierten Zeigerereignissen getestet, nicht von Hand).
 
-Noch nicht drin (Paket 22 und 23): Aufnahme mit Latenzausgleich und Comping, Time-Stretch.
+Noch nicht drin (Paket 23): Time-Stretch.
 
 ## Paket 20: Timeline-Editor (0.15.0, offen)
 

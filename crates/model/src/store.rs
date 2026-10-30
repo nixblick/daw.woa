@@ -37,6 +37,7 @@ pub const FORMAT_VERSION: u32 = 3;
 pub fn required_version(project: &Project) -> u32 {
     let v3 = project.tracks.iter().any(|t| {
         !t.automation.is_empty()
+            || !t.take_folders.is_empty()
             || t.inserts.iter().any(|i| i.sidechain.is_some())
             || t.clips.iter().any(|c| {
                 c.gain_db != 0.0 || !c.fade_in_curve.is_linear() || !c.fade_out_curve.is_linear()
