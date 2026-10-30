@@ -21,4 +21,4 @@ woa-model = { version = "0.26", path = "../model" }
 [dev-dependencies]
 assert_no_alloc = "1.1.2"
 tempfile = "3.27.0"
-woa-plugins = { path = ".", features = ["test-plugin"] }
+woa-plugins = { version = "0.26", path = ".", features = ["test-plugin"] }

@@ -91,7 +91,7 @@ impl Catalog {
             cat.add_file(&file);
         }
         cat.plugins
-            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            .sort_by_key(|p| p.name.to_lowercase());
         tracing::info!(
             plugins = cat.plugins.len(),
             problems = cat.problems.len(),
