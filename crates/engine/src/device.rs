@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
+use crate::pairs::{PairBuf, interleave_pairs};
 use crate::{AudioProcessor, TransportHandle};
 
 /// Größter Block, den der Callback in einem Stück rechnet.
@@ -98,7 +99,10 @@ impl std::fmt::Display for DeviceError {
             ),
             Self::Backend(e) => write!(f, "audio backend: {e}"),
             Self::TooFewChannels(n) => {
-                write!(f, "device has {n} channels, channels 3/4 need at least 4")
+                write!(
+                    f,
+                    "device has only {n} channels, too few for the chosen channel pairs"
+                )
             }
         }
     }
@@ -363,6 +367,97 @@ pub fn start_output_aux(
                         None => None,
                     };
                     interleave(frame_chunk, channels, (l, r), side);
+                }
+            },
+            on_error,
+            None,
+        )?;
+        stream.play()?;
+        Ok(stream)
+    })
+}
+
+/// Was ein Ausgabegerät beim Öffnen anbietet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutputProbe {
+    /// Stabile Kennung des Geräts (auch beim Standardgerät die echte).
+    pub id: String,
+    /// Anzeigename.
+    pub name: String,
+    /// Abtastrate, mit der [`start_pairs_output`] öffnet.
+    pub rate: u32,
+    /// Kanäle, mit denen es öffnet.
+    pub channels: u16,
+}
+
+/// Prüft ein Gerät, ohne es zu öffnen: Kennung, Name, Rate, Kanäle. Fehlt es, ein Fehler.
+pub fn probe_output(config: &OutputConfig) -> Result<OutputProbe, DeviceError> {
+    crate::device::on_audio_thread(move || -> Result<OutputProbe, DeviceError> {
+        let device = pick_device(config)?;
+        let supported = device.default_output_config()?;
+        let id = device.id().map(|i| i.to_string()).unwrap_or_default();
+        let name = device
+            .description()
+            .map(|d| d.name().to_string())
+            .unwrap_or_else(|_| id.clone());
+        Ok(OutputProbe {
+            id,
+            name,
+            rate: supported.sample_rate(),
+            channels: supported.channels(),
+        })
+    })
+}
+
+/// Callback für [`start_pairs_output`]: bekommt die Paar-Puffer (schon auf Stille) und die
+/// Zahl der Frames dieses Blocks und füllt sie. Läuft im Audio-Thread.
+pub type PairsRender = Box<dyn FnMut(&mut [PairBuf], usize) + Send>;
+
+/// Öffnet ein Gerät mit `pairs` Stereo-Paaren (Paar 0 = Kanal 1/2, Paar 1 = Kanal 3/4 …).
+/// Jedes Gerät bekommt seinen eigenen Strom; mehrere Geräte laufen gleichzeitig, jedes mit
+/// eigenem Takt (Ausgleich: [`crate::pairs::link`]). `master`: Dieses Gerät meldet seine
+/// Latenz für den Latenzausgleich der Aufnahme. Hat das Gerät weniger als `2 * pairs`
+/// Kanäle (bei `pairs == 1` genügt ein Kanal), kommt [`DeviceError::TooFewChannels`].
+/// Unter Windows keine feste Puffergröße (WASAPI geteilt), siehe [`start_output_aux`].
+pub fn start_pairs_output(
+    config: &OutputConfig,
+    pairs: usize,
+    master: bool,
+    mut render: PairsRender,
+    on_error: impl FnMut(cpal::Error) + Send + 'static,
+) -> Result<cpal::Stream, DeviceError> {
+    let pairs = pairs.max(1);
+    crate::device::on_audio_thread(move || -> Result<cpal::Stream, DeviceError> {
+        let device = pick_device(config)?;
+        let supported = device.default_output_config()?;
+        if supported.sample_format() != cpal::SampleFormat::F32 {
+            return Err(DeviceError::UnsupportedFormat);
+        }
+        let mut stream_config = supported.config();
+        if let Some(frames) = config.buffer_frames.filter(|_| !cfg!(windows)) {
+            check_buffer_size(frames, supported.buffer_size())?;
+            stream_config.buffer_size = cpal::BufferSize::Fixed(frames);
+        }
+        let channels = usize::from(stream_config.channels).max(1);
+        if pairs > 1 && channels < 2 * pairs {
+            return Err(DeviceError::TooFewChannels(stream_config.channels));
+        }
+        let mut bufs: Vec<PairBuf> = (0..pairs).map(|_| PairBuf::new(SCRATCH_FRAMES)).collect();
+        let stream = device.build_output_stream(
+            stream_config,
+            move |data: &mut [f32], info: &cpal::OutputCallbackInfo| {
+                if master {
+                    let ts = info.timestamp();
+                    let d = ts.playback.duration_since(ts.callback);
+                    OUTPUT_LATENCY_US.store(d.as_micros() as u64, Ordering::Relaxed);
+                }
+                for chunk in data.chunks_mut(SCRATCH_FRAMES * channels) {
+                    let frames = chunk.len() / channels;
+                    for b in bufs.iter_mut() {
+                        b.clear(frames);
+                    }
+                    render(&mut bufs, frames);
+                    interleave_pairs(chunk, channels, &bufs, frames);
                 }
             },
             on_error,

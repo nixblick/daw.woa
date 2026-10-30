@@ -882,6 +882,11 @@ impl Controller {
         self.send(Cmd::MicMonitor(on));
     }
 
+    /// Ziele der Quellen (Ausgänge je Gerät, [`crate::routing::Plan`]).
+    pub fn set_routes(&mut self, routes: crate::routing::Routes) {
+        self.send(Cmd::SetRoutes(routes));
+    }
+
     // ---- Gäste (Paket 37) ------------------------------------------------------------
 
     /// Gast-Kanäle: anlegen, Fader, Rückweg im Kopfhörer.

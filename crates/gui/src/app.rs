@@ -212,6 +212,8 @@ pub struct WoaApp {
     auto_ed: crate::automation::EditorState,
     /// Angezeigte Absenkung der dynamischen Effekte (fällt langsam ab).
     gr_shown: std::collections::HashMap<woa_model::InsertId, f32>,
+    /// Fenster „Ausgänge“ (Gerät und Kanalpaar je Quelle).
+    outputs_ui: crate::outputs_ui::OutputsUi,
 }
 
 /// Ein Controller-Wert, der erst nach einer Ruhepause als ein Undo-Schritt ins Projekt geht
@@ -428,6 +430,7 @@ impl WoaApp {
             auto_rec: std::collections::HashMap::new(),
             auto_ed: crate::automation::EditorState::default(),
             gr_shown: std::collections::HashMap::new(),
+            outputs_ui: crate::outputs_ui::OutputsUi::default(),
             midi,
             midi_seen: (0, None),
             piano_roll: None,
@@ -557,6 +560,29 @@ impl WoaApp {
             && let Err(e) = self.config.save(p)
         {
             tracing::warn!(error = %e, "config not saved");
+        }
+    }
+
+    /// Fenster „Ausgänge“: übernommene Zuordnung wird gespeichert; die Radio-Ausgabe öffnet
+    /// neu, sobald nichts läuft (sonst beim nächsten Öffnen).
+    fn outputs_window(&mut self, ctx: &egui::Context) {
+        let status = self.radio.as_ref().map(|r| {
+            let mut lines = r.output_warnings().to_vec();
+            lines.extend(r.output_links());
+            (lines, r.is_on_air())
+        });
+        let (lines, on_air) = status.unwrap_or_default();
+        let Some(map) = self.outputs_ui.show(ctx, &lines, on_air) else {
+            return;
+        };
+        tracing::info!("output map applied");
+        self.config.outputs = map;
+        self.save_config();
+        if self.radio.as_ref().is_some_and(|r| !r.is_on_air()) {
+            self.radio = None;
+            if self.config.mode.uses_desk() {
+                self.ensure_radio();
+            }
         }
     }
 
@@ -764,6 +790,7 @@ impl WoaApp {
                 self.data_dir.clone(),
                 self.config.radio_buffer(),
                 &self.config.pfl_output,
+                &self.config.outputs,
             ));
         }
     }
@@ -2119,6 +2146,10 @@ impl WoaApp {
                     ui.close();
                 }
                 self.pfl_menu(ui);
+                if ui.button("Ausgänge (Soundkarten) …").clicked() {
+                    self.outputs_ui.open(&self.config.outputs);
+                    ui.close();
+                }
                 ui.separator();
                 let mut on = self.config.telemetry_enabled == Some(true);
                 if ui
@@ -4783,6 +4814,7 @@ impl eframe::App for WoaApp {
             self.export_window(&ctx);
             self.controller_window(&ctx);
             self.feedback_window(&ctx);
+            self.outputs_window(&ctx);
             self.telemetry_window(&ctx);
             return;
         }
@@ -4850,6 +4882,7 @@ impl eframe::App for WoaApp {
         self.export_window(&ctx);
         self.controller_window(&ctx);
         self.feedback_window(&ctx);
+        self.outputs_window(&ctx);
         self.telemetry_window(&ctx);
     }
 }

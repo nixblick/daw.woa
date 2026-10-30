@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.33.7 — 2026-10-30
+## 0.33.8 — 2026-10-30
 
 Transportknöpfe (#137), Abnahme: `docs/abnahme.md`.
 
@@ -8,6 +8,15 @@ Transportknöpfe (#137), Abnahme: `docs/abnahme.md`.
 - **Echtes Pause:** „Pause“ blendet aus und merkt sich die Stelle, „Play“ macht dort weiter (Sprung per `Seek`), auch wenn die Ausblendung noch läuft. „Stopp“ vergisst die Stelle. Der Zustand „PAUSE“ mit gemerkter Restzeit steht in App und Handy (`paused` im Schnappschuss).
 - **Wiederholen wie bei Apple Music:** Ein Knopf, jeder Klick schaltet weiter: aus, 🔁 Playlist, 🔂 Titel, aus. „Titel“ beginnt den Titel am Ende neu, „Weiter“ springt trotzdem zum nächsten. „Playlist“ beginnt nach dem letzten Titel von vorn. **Zufall** ist ein eigener Umschalter (jeder Titel einmal je Runde, mit „Playlist“ endlos). Ist eine Funktion an, ist der Knopf orange, in der App und am Handy gleich (Zustand im Schnappschuss: `repeat`, `shuffle`, `muted`).
 - **Mixer:** neues Kommando `Seek` (Sprung im laufenden Titel, begrenzt auf Cue-In bis Cue-Out) und ein Titelwechsel-Zähler im Status, damit auch derselbe Titel als neu begonnen erkannt wird. Tasten in der Party-Ansicht: P/Pfeil links, M, R, S.
+
+## 0.33.7 — 2026-10-30
+
+Silvestersendung Teil 2, Paket 1 von 4 (#134): Ausgänge je Gerät.
+
+- **Ausgänge (Soundkarten):** Einstellungen, „Ausgänge (Soundkarten) …“. Playlist und Cart-Wall bekommen je ein Gerät und ein Kanalpaar (1/2 bis 7/8). Mehrere Geräte laufen gleichzeitig, der Pegel wird am Pult gefahren. Gespeichert in `config.json` (`outputs`, alte Dateien laden unverändert). Ohne Zuordnung klingt alles wie bisher.
+- **Fehlendes Gerät:** Fehlt das Gerät der Playlist, läuft die Sendung auf dem Standardgerät. Fehlt das einer anderen Quelle, läuft sie mit der Playlist. Beides steht als Meldung im Radio-Fenster und in den Ausgängen; wird ein Gerät mitten in der Sendung abgezogen, steht dort „Ausgang … ist ausgefallen“.
+- **Takt:** Das Gerät der Playlist gibt den Takt vor, jedes weitere Gerät hat einen eigenen Strom und einen Ring dazwischen. Abweichende Abtastraten und Taktdrift gleicht ein nachgeführter Resampler aus (Polster etwa 50 ms), Zähler für Notfälle stehen in den Ausgängen.
+- Engine: `woa_engine::pairs` (Kanalpaare, Ring mit Resampler), `start_pairs_output`; Radio: `routing` (Plan, Router), Mixer `process_multi`.
 
 ## 0.33.6 — 2026-10-30
 

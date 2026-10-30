@@ -125,6 +125,8 @@ pub enum Cmd {
     SetTarget(f64),
     /// Pegel eines Zweigs (linear, 1.0 = unverändert), geglättet.
     SetLevel { bus: LevelBus, gain: f32 },
+    /// Ziele der Quellen (Ausgänge je Gerät); Ziel 0 ist der Hauptausgang.
+    SetRoutes(crate::routing::Routes),
 }
 
 /// Lock-frei lesbarer Zustand des Mixers.
@@ -370,6 +372,8 @@ pub struct Mixer {
     levels: [Smoother; 3],
     /// Gast-Kanäle mit Mix-Minus (Paket 37).
     guests: GuestBank,
+    /// Wohin die Cart-Wall geht (0 = in den Hauptausgang).
+    routes: crate::routing::Routes,
 }
 
 impl Mixer {
@@ -415,6 +419,7 @@ impl Mixer {
             mic_chain_on: true,
             levels: std::array::from_fn(|_| Smoother::new(1.0, LEVEL_TAU, r)),
             guests,
+            routes: crate::routing::Routes::default(),
         }
     }
 
@@ -507,6 +512,7 @@ impl Mixer {
                     self.mic_chain_on = mic;
                 }
                 Cmd::SetTarget(t) => self.bus.set_target(t),
+                Cmd::SetRoutes(r) => self.routes = r,
                 Cmd::SetLevel { bus, gain } => {
                     self.levels[bus.index()].set_target(gain.clamp(0.0, 4.0));
                 }
@@ -649,8 +655,32 @@ impl Mixer {
     /// Rechnet einen Block. `left`/`right` bekommen den Abhörmix (Sendung, Mikro nur mit
     /// [`Cmd::MicMonitor`]); der Mitschnitt bekommt immer die volle Sendung.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.run(left, right, &mut []);
+    }
+
+    /// Wie [`Mixer::process`], aber mit getrennten Ausgängen: `outs[0]` ist der Hauptausgang
+    /// (der Abhörmix wie bei `process`), `outs[d]` das Ziel `d` aus [`crate::routing::Routes`].
+    /// Eine Quelle mit Ziel `d > 0` fehlt im Hauptausgang und liegt vor dem Sendebus (nach den
+    /// Reglern der Oberfläche) auf `outs[d]`; Mitschnitt und Sendung bekommen weiter alles.
+    /// Gibt es nur `outs[0]`, ist das `process`. Rechnet `frames` Frames.
+    pub fn process_multi(&mut self, outs: &mut [crate::PairBuf], frames: usize) {
+        let Some((main, rest)) = outs.split_first_mut() else {
+            return;
+        };
+        let n = frames.min(main.l.len()).min(main.r.len());
+        self.run(&mut main.l[..n], &mut main.r[..n], rest);
+    }
+
+    fn run(&mut self, left: &mut [f32], right: &mut [f32], extra: &mut [crate::PairBuf]) {
         self.drain();
         let n = left.len().min(right.len());
+        for e in extra.iter_mut() {
+            e.clear(n);
+        }
+        let cart_dest = match self.routes.dest[crate::routing::Source::Carts.index()] as usize {
+            d if d >= 1 && d <= extra.len() => Some(d - 1),
+            _ => None,
+        };
         self.trim_mic_backlog();
         self.guests.begin_block();
         let mut peak = 0.0f32;
@@ -719,6 +749,8 @@ impl Mixer {
                 }
             }
 
+            let (cart_l, cart_r) = (cl, cr);
+
             // Voice-Track: Stimme auf den Carts-Zweig, Musik wird abgesenkt.
             let mut vduck = 1.0f32;
             if let Some(v) = self.voice.as_mut() {
@@ -754,6 +786,7 @@ impl Mixer {
             let mg = self.mic_gain.tick() * li.tick();
             let duck = self.duck.tick() * lm * vduck;
             cl *= lc;
+            let (cart_l, cart_r) = (cart_l * lc, cart_r * lc);
             cr *= lc;
             il *= mg;
             ir *= mg;
@@ -767,12 +800,14 @@ impl Mixer {
             // Abhören ohne Mikro: derselbe Weg ohne `il`/`ir`, mit demselben Faktor.
             let (mut ql, mut qr) = (sl - il, sr - ir);
             // Rückweg eines Gastes im Kopfhörer: Basis plus alle anderen Gäste (Mix-Minus).
+            let mut gain_out = 1.0f32;
             let mut ret = self
                 .guests
                 .monitor()
                 .map(|g| self.guests.return_bus(g, (bl, br)));
             if self.bus_on {
                 let g = self.bus.gain(sl, sr);
+                gain_out = g;
                 sl = self.bus.clip(sl * g);
                 sr = self.bus.clip(sr * g);
                 ql = self.bus.clip(ql * g);
@@ -811,8 +846,20 @@ impl Mixer {
                 None if self.mic_monitor => (sl, sr),
                 None => (ql, qr),
             };
-            left[i] = ol;
-            right[i] = or;
+            match cart_dest {
+                Some(d) => {
+                    // Getrennt: vor dem Sendebus auf das eigene Ziel, im Hauptausgang fehlt das
+                    // Stück, das der Hauptausgang mit demselben Faktor geführt hätte.
+                    extra[d].l[i] = cart_l;
+                    extra[d].r[i] = cart_r;
+                    left[i] = ol - cart_l * gain_out;
+                    right[i] = or - cart_r * gain_out;
+                }
+                None => {
+                    left[i] = ol;
+                    right[i] = or;
+                }
+            }
             peak = peak.max(sl.abs()).max(sr.abs());
             self.clock += 1;
         }
