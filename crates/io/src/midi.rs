@@ -18,6 +18,9 @@ use woa_dsp::instrument::{NoteEvent, NoteEventKind};
 /// Abstand der Geräteabfrage (Hotplug).
 pub const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
+/// Rückruf zum Wecken der Oberfläche.
+type Waker = Arc<std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>>;
+
 /// Wohin die Events gehen; `None` = keine scharfe MIDI-Spur, Events werden verworfen.
 pub type EventSink = Arc<Mutex<Option<Producer<NoteEvent>>>>;
 
@@ -44,13 +47,42 @@ fn data_len(status: u8) -> usize {
     }
 }
 
+/// Übersetzt eine rohe Nachricht in ein [`NoteEvent`] (nur, was das Instrument versteht).
+pub fn note_event((status, a, b): (u8, u8, u8)) -> Option<NoteEvent> {
+    let channel = status & 0x0F;
+    let kind = match status & 0xF0 {
+        0x80 => NoteEventKind::NoteOff { note: a },
+        0x90 if b == 0 => NoteEventKind::NoteOff { note: a },
+        0x90 => NoteEventKind::NoteOn {
+            note: a,
+            velocity: b,
+        },
+        0xB0 => match a {
+            64 => NoteEventKind::Sustain { on: b >= 64 },
+            120 | 123 => NoteEventKind::AllNotesOff,
+            _ => return None,
+        },
+        0xC0 => NoteEventKind::ProgramChange { program: a },
+        0xE0 => NoteEventKind::PitchBend {
+            value: ((i16::from(b) << 7) | i16::from(a)) - 8192,
+        },
+        _ => return None,
+    };
+    Some(NoteEvent {
+        offset: 0,
+        channel,
+        kind,
+    })
+}
+
 impl MidiParser {
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Ein Byte; liefert ein Event, sobald eine Nachricht vollständig ist.
-    pub fn feed(&mut self, byte: u8) -> Option<NoteEvent> {
+    /// Ein Byte; liefert die rohe Nachricht (Status, Daten 1, Daten 2), sobald sie
+    /// vollständig ist. Bei Nachrichten mit einem Datenbyte ist Daten 2 = 0.
+    pub fn feed_raw(&mut self, byte: u8) -> Option<(u8, u8, u8)> {
         if byte >= 0xF8 {
             return None; // Echtzeit
         }
@@ -76,31 +108,17 @@ impl MidiParser {
             return None;
         }
         self.have = 0;
-        let channel = status & 0x0F;
-        let (a, b) = (self.data[0], self.data[1]);
-        let kind = match status & 0xF0 {
-            0x80 => NoteEventKind::NoteOff { note: a },
-            0x90 if b == 0 => NoteEventKind::NoteOff { note: a },
-            0x90 => NoteEventKind::NoteOn {
-                note: a,
-                velocity: b,
-            },
-            0xB0 => match a {
-                64 => NoteEventKind::Sustain { on: b >= 64 },
-                120 | 123 => NoteEventKind::AllNotesOff,
-                _ => return None,
-            },
-            0xC0 => NoteEventKind::ProgramChange { program: a },
-            0xE0 => NoteEventKind::PitchBend {
-                value: ((i16::from(b) << 7) | i16::from(a)) - 8192,
-            },
-            _ => return None,
+        let b = if data_len(status) == 2 {
+            self.data[1]
+        } else {
+            0
         };
-        Some(NoteEvent {
-            offset: 0,
-            channel,
-            kind,
-        })
+        Some((status, self.data[0], b))
+    }
+
+    /// Ein Byte; liefert ein Event, sobald eine Nachricht vollständig ist.
+    pub fn feed(&mut self, byte: u8) -> Option<NoteEvent> {
+        self.feed_raw(byte).and_then(note_event)
     }
 
     /// Alle Bytes einer Nachricht (oder eines Stroms).
@@ -120,6 +138,10 @@ pub struct MidiCounters {
     pub events: AtomicU64,
     /// Verworfen, weil die Queue voll war.
     pub dropped: AtomicU64,
+    /// Controller-Nachrichten (Paket 14), die in die Controller-Queue gingen.
+    pub controls: AtomicU64,
+    /// Controller-Nachrichten verworfen, weil die Queue voll war.
+    pub controls_dropped: AtomicU64,
 }
 
 /// Name ohne die ALSA-Nummern am Ende ("Gerät:Port 20:0" -> "Gerät:Port"), damit ein
@@ -164,6 +186,10 @@ pub struct MidiIn {
     wanted: Option<String>,
     conn: Option<(String, MidiInputConnection<()>)>,
     sink: EventSink,
+    /// Controller-Queue (Paket 14); `None` darin = keine Controller-Auswertung.
+    controls: crate::controller::ControlSink,
+    /// Weckt die Oberfläche, wenn Controller-Meldungen ankamen (gesetzt von der App).
+    waker: Waker,
     tap: crate::record::RecordTap,
     counters: Arc<MidiCounters>,
     last_poll: Option<Instant>,
@@ -178,12 +204,26 @@ impl MidiIn {
             wanted: None,
             conn: None,
             sink,
+            controls: crate::controller::control_sink(),
+            waker: Arc::new(std::sync::OnceLock::new()),
             tap: crate::record::record_tap(),
             counters: Arc::new(MidiCounters::default()),
             last_poll: None,
             ports: Vec::new(),
             last_error: None,
         }
+    }
+
+    /// Eingang, dessen Nachrichten (auch) als Controller-Meldungen in `controls` gehen.
+    pub fn with_controls(mut self, controls: crate::controller::ControlSink) -> Self {
+        self.controls = controls;
+        self
+    }
+
+    /// Wird nach jeder Nachricht mit Controller-Meldungen im MIDI-Thread gerufen, damit
+    /// die Oberfläche sofort ein Bild rechnet (Pad → Cart ohne Wartezeit). Nur einmal setzbar.
+    pub fn set_waker(&self, wake: Box<dyn Fn() + Send + Sync>) {
+        let _ = self.waker.set(wake);
     }
 
     /// Abzweig für die MIDI-Aufnahme (Paket 12), siehe [`crate::record::MidiTake`].
@@ -294,6 +334,8 @@ impl MidiIn {
             return;
         };
         let sink = Arc::clone(&self.sink);
+        let controls = Arc::clone(&self.controls);
+        let waker = Arc::clone(&self.waker);
         let tap = Arc::clone(&self.tap);
         let counters = Arc::clone(&self.counters);
         let mut parser = MidiParser::new();
@@ -304,7 +346,25 @@ impl MidiIn {
                 return;
             };
             let mut tap = tap.lock().ok();
-            parser.feed_all(bytes, |ev| {
+            let mut controls = controls.lock().ok();
+            let mut woke = false;
+            for &byte in bytes {
+                let Some(raw) = parser.feed_raw(byte) else {
+                    continue;
+                };
+                if let Some(p) = controls.as_deref_mut().and_then(Option::as_mut)
+                    && let Some(msg) = crate::controller::CtrlMsg::from_raw(raw)
+                {
+                    if p.push(msg).is_ok() {
+                        woke = true;
+                        counters.controls.fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        counters.controls_dropped.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+                let Some(ev) = note_event(raw) else {
+                    continue;
+                };
                 counters.events.fetch_add(1, Ordering::Relaxed);
                 if let Some(t) = tap.as_deref_mut() {
                     crate::record::tap_event(t, at, ev);
@@ -313,7 +373,10 @@ impl MidiIn {
                 if !pushed {
                     counters.dropped.fetch_add(1, Ordering::Relaxed);
                 }
-            });
+            }
+            if woke && let Some(w) = waker.get() {
+                w();
+            }
         };
         match input.connect(&port, "woa-in", callback, ()) {
             Ok(c) => {

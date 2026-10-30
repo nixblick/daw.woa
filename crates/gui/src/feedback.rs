@@ -39,6 +39,12 @@ pub struct GuiConfig {
     /// Gewählter MIDI-Eingang (Portname), `None` = aus.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub midi_input: Option<String>,
+    /// Gewählter Controller (Paket 14), `None` = aus.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub controller_input: Option<String>,
+    /// MIDI-Learn-Zuordnung je Controller (Gerätename ohne ALSA-Nummern).
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub controller_maps: std::collections::BTreeMap<String, Vec<woa_io::controller::Mapping>>,
 }
 
 impl GuiConfig {
@@ -79,6 +85,8 @@ impl Default for GuiConfig {
             stream: woa_stream::StreamConfig::default(),
             radio_buffer_frames: None,
             midi_input: None,
+            controller_input: None,
+            controller_maps: std::collections::BTreeMap::new(),
         }
     }
 }

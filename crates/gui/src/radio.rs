@@ -8,6 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime};
 
 use eframe::egui;
+use woa_io::controller::{Bus, Target};
+use woa_radio::mixer::LevelBus;
 use woa_radio::station::{Station, View};
 use woa_radio::{CARTS, Controller, RadioShow};
 use woa_stream::StreamStatus;
@@ -58,6 +60,26 @@ pub struct RadioDesk {
     xruns: XrunLog,
     buffer_frames: Option<u32>,
     device: String,
+    /// Pegel Musik, Carts, Mikro in dB (Paket 14); nicht gespeichert, Start bei 0 dB.
+    levels_db: [f64; 3],
+    /// „MIDI lernen“ per Rechtsklick gewählt; die App holt es ab.
+    pub learn: Option<Target>,
+}
+
+fn level_bus(b: Bus) -> LevelBus {
+    match b {
+        Bus::Music => LevelBus::Music,
+        Bus::Carts => LevelBus::Carts,
+        Bus::Mic => LevelBus::Mic,
+    }
+}
+
+fn bus_index(b: Bus) -> usize {
+    match b {
+        Bus::Music => 0,
+        Bus::Carts => 1,
+        Bus::Mic => 2,
+    }
 }
 
 /// Pfad zu `woa-streamd` neben der laufenden App.
@@ -196,6 +218,8 @@ impl RadioDesk {
             xruns: XrunLog::new(Instant::now()),
             buffer_frames,
             device,
+            levels_db: [0.0; 3],
+            learn: None,
         }
         .reattach()
     }
@@ -394,6 +418,54 @@ impl RadioDesk {
         }
     }
 
+    /// Pegel eines Zweigs (dB).
+    pub fn level_db(&self, b: Bus) -> f64 {
+        self.levels_db[bus_index(b)]
+    }
+
+    /// Pegel eines Zweigs setzen (Fader am Controller oder Regler im Fenster).
+    pub fn set_level(&mut self, b: Bus, db: f64) {
+        let db = db.clamp(
+            woa_radio::mixer::LEVEL_MIN_DB,
+            woa_radio::mixer::LEVEL_MAX_DB,
+        );
+        if self.levels_db[bus_index(b)] == db {
+            return;
+        }
+        self.levels_db[bus_index(b)] = db;
+        let bus = level_bus(b);
+        self.with(move |c| c.set_level(bus, db));
+    }
+
+    /// Taster/Pad vom Controller.
+    pub fn press(&mut self, t: Target) {
+        match t {
+            Target::Mic => self.toggle_mic(),
+            Target::StartNext => self.with(|c| c.start_or_next()),
+            Target::Stop => self.with(|c| c.stop()),
+            Target::Cart(slot) if slot < CARTS => self.with(move |c| c.trigger_cart(slot)),
+            _ => {}
+        }
+    }
+
+    /// LED-Zustand eines Ziels.
+    pub fn lit(&self, t: &Target) -> bool {
+        match t {
+            Target::Mic => self.view.mic_open,
+            Target::StartNext => self.view.running,
+            Target::Cart(slot) => *slot < 32 && self.view.carts_playing & (1 << slot) != 0,
+            _ => false,
+        }
+    }
+
+    fn learn_menu(&mut self, r: &egui::Response, t: Target) {
+        r.context_menu(|ui| {
+            if let Some(t) = crate::controls::learn_menu(ui, t, None) {
+                self.learn = Some(t);
+            }
+        });
+    }
+
     fn toggle_mic(&mut self) {
         if self.mic.is_none() {
             let (producer, consumer) = rtrb::RingBuffer::new(self.rate as usize);
@@ -562,19 +634,18 @@ impl RadioDesk {
         ui.horizontal_wrapped(|ui| {
             let big = |t: &str| egui::RichText::new(t).size(17.0);
             let go = if v.running { "▶ Weiter" } else { "▶ Start" };
-            if ui
+            let r = ui
                 .add(egui::Button::new(big(go)).min_size(egui::vec2(100.0, 40.0)))
-                .on_hover_text("Leertaste")
-                .clicked()
-            {
+                .on_hover_text("Leertaste");
+            if r.clicked() {
                 self.with(|c| c.start_or_next());
             }
-            if ui
-                .add(egui::Button::new(big("■ Stopp")).min_size(egui::vec2(90.0, 40.0)))
-                .clicked()
-            {
+            self.learn_menu(&r, Target::StartNext);
+            let r = ui.add(egui::Button::new(big("■ Stopp")).min_size(egui::vec2(90.0, 40.0)));
+            if r.clicked() {
                 self.with(|c| c.stop());
             }
+            self.learn_menu(&r, Target::Stop);
             let mic = egui::Button::new(big("Mikro (M)").color(if v.mic_open {
                 theme::BG
             } else {
@@ -586,9 +657,11 @@ impl RadioDesk {
                 theme::SURFACE
             })
             .min_size(egui::vec2(90.0, 40.0));
-            if ui.add(mic).on_hover_text("Taste M").clicked() {
+            let r = ui.add(mic).on_hover_text("Taste M");
+            if r.clicked() {
                 self.toggle_mic();
             }
+            self.learn_menu(&r, Target::Mic);
             let rec = if v.recording.is_some() {
                 "Mitschnitt läuft"
             } else {
@@ -644,6 +717,27 @@ impl RadioDesk {
         {
             self.view.duck_db = duck;
             self.with(move |c| c.set_duck(duck));
+        }
+        for b in Bus::ALL {
+            let mut db = self.level_db(b);
+            let r = ui
+                .add(
+                    egui::Slider::new(
+                        &mut db,
+                        woa_radio::mixer::LEVEL_MIN_DB..=woa_radio::mixer::LEVEL_MAX_DB,
+                    )
+                    .suffix(" dB")
+                    .fixed_decimals(1)
+                    .text(format!("Pegel {}", b.label())),
+                )
+                .on_hover_text("Rechtsklick: MIDI lernen. Ganz links = aus.");
+            if r.changed() {
+                self.set_level(b, db);
+            }
+            if r.double_clicked() {
+                self.set_level(b, 0.0);
+            }
+            self.learn_menu(&r, Target::Level(b));
         }
         self.processing_row(ui);
     }
@@ -891,6 +985,9 @@ impl RadioDesk {
                         if ui.button("Belegen …").clicked() {
                             self.assign_cart(slot);
                             ui.close();
+                        }
+                        if let Some(t) = crate::controls::learn_menu(ui, Target::Cart(slot), None) {
+                            self.learn = Some(t);
                         }
                         if label.is_some() && ui.button("Leeren").clicked() {
                             self.with(move |c| {
