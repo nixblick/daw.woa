@@ -1,15 +1,23 @@
 [package]
 name = "woa-guests"
-description = "WOA: Gast-Kanäle mit Mix-Minus (Jitterpuffer, Rückwege, Testquellen)"
+description = "WOA: Gast-Kanäle mit Mix-Minus und Browser-Gäste per WebRTC (Jitterpuffer, Rückwege, Warteraum)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
+getrandom = "0.4.3"
+opus = "0.4.0"
 rtrb = "0.4.1"
+# DTLS mit aws-lc-rs (rust-crypto zieht crypto-bigint 0.5 mit RUSTSEC-2026-0387). Sans-IO, ein Thread treibt alle Gäste.
+str0m = { version = "0.24.1", default-features = false, features = ["aws-lc-rs"] }
+httparse = "1.10.1"
+rcgen = "0.14.10"
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+serde_json = "1.0.154"
 tracing = "0.1.44"
-woa-engine = { version = "0.32", path = "../engine" }
+woa-engine = { version = "0.33", path = "../engine" }
 
 [dev-dependencies]
 assert_no_alloc = "1.1.2"

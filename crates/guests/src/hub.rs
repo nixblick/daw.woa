@@ -7,10 +7,24 @@ use std::sync::atomic::Ordering;
 use crate::MAX_GUESTS;
 use crate::bank::{GuestBank, GuestCmd};
 use crate::jitter::{GuestFeed, SlotStats, pair};
+use crate::ret::{ReturnRx, pair as ret_pair};
 use crate::source::{TestSignal, TestSource};
 
 /// Befehle im Flug zur Bank.
 const QUEUE: usize = 64;
+
+/// Ein Gast aus dem Netz: Kanal, Schreibseite des Jitterpuffers und Leseseite des Rückwegs.
+pub struct NetGuest {
+    pub slot: usize,
+    pub feed: GuestFeed,
+    pub ret: ReturnRx,
+}
+
+impl std::fmt::Debug for NetGuest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NetGuest(slot {})", self.slot)
+    }
+}
 
 /// Ein Gast in der Anzeige.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -29,6 +43,8 @@ pub struct GuestView {
     pub overflows: u64,
     /// Sein Rückweg liegt im Kopfhörer.
     pub monitored: bool,
+    /// Verbindungswerte, wenn der Gast aus dem Browser kommt (Paket 38).
+    pub net: Option<crate::web::NetView>,
 }
 
 struct Guest {
@@ -48,9 +64,13 @@ pub struct GuestHub {
     stats: Vec<Arc<SlotStats>>,
     /// Freie Feeds; belegt = `None`.
     feeds: Vec<Option<GuestFeed>>,
+    /// Freie Rückweg-Leser; belegt = `None`.
+    returns: Vec<Option<ReturnRx>>,
     guests: Vec<Option<Guest>>,
     monitor: Option<usize>,
     next_number: usize,
+    /// Zugang für Browser-Gäste (Paket 38), wenn eingeschaltet.
+    pub(crate) web: Option<crate::web::WebGuests>,
 }
 
 /// Legt Hub und Bank für `rate` an. Die Bank gehört in den Audio-Thread.
@@ -58,13 +78,16 @@ pub fn channel(rate: u32) -> (GuestHub, GuestBank) {
     let (producer, consumer) = rtrb::RingBuffer::new(QUEUE);
     let mut stats = Vec::with_capacity(MAX_GUESTS);
     let mut feeds = Vec::with_capacity(MAX_GUESTS);
+    let mut returns = Vec::with_capacity(MAX_GUESTS);
     let mut readers = Vec::with_capacity(MAX_GUESTS);
     for _ in 0..MAX_GUESTS {
         let st = Arc::new(SlotStats::default());
         let (feed, reader) = pair(rate, Arc::clone(&st));
         stats.push(Arc::clone(&st));
         feeds.push(Some(feed));
-        readers.push((reader, st));
+        let (ret_tx, ret_rx) = ret_pair(rate);
+        returns.push(Some(ret_rx));
+        readers.push((reader, st, ret_tx));
     }
     // Es sind genau MAX_GUESTS Leser; `new` scheitert nur bei anderer Zahl.
     let bank = GuestBank::new(consumer, readers, rate)
@@ -74,9 +97,11 @@ pub fn channel(rate: u32) -> (GuestHub, GuestBank) {
         rate,
         stats,
         feeds,
+        returns,
         guests: (0..MAX_GUESTS).map(|_| None).collect(),
         monitor: None,
         next_number: 1,
+        web: None,
     };
     (hub, bank)
 }
@@ -115,8 +140,15 @@ impl GuestHub {
     /// schreibt selbst in den zurückgegebenen [`GuestFeed`]. Nach [`Self::remove`] gibt er den
     /// Feed mit [`Self::return_feed`] zurück, sonst bleibt der Kanal zu.
     pub fn add_external(&mut self, label: &str) -> Result<(usize, GuestFeed), String> {
+        self.add_named(label, None)
+    }
+
+    fn add_named(&mut self, label: &str, name: Option<&str>) -> Result<(usize, GuestFeed), String> {
         let (slot, feed) = self.claim()?;
-        let name = format!("Gast {}", self.next_number);
+        let name = match name.map(str::trim).filter(|n| !n.is_empty()) {
+            Some(n) => n.chars().take(24).collect::<String>(),
+            None => format!("Gast {}", self.next_number),
+        };
         self.next_number += 1;
         tracing::info!(slot, name = %name, source = label, "guest added");
         self.guests[slot] = Some(Guest {
@@ -129,6 +161,36 @@ impl GuestHub {
             seen_overflows: 0,
         });
         Ok((slot, feed))
+    }
+
+    /// Fügt einen Gast aus dem Netz hinzu (Browser per WebRTC): Kanal, Feed und Rückweg. Der
+    /// Rückweg (Mix-Minus ohne den Gast) läuft sofort. Nach dem Abbau gibt der Aufrufer beides
+    /// mit [`Self::return_network`] zurück.
+    pub fn add_network(&mut self, label: &str, name: &str) -> Result<NetGuest, String> {
+        if self.returns.iter().all(Option::is_none) {
+            return Err("Kein Rückweg frei".into());
+        }
+        let (slot, feed) = self.add_named(label, Some(name))?;
+        let Some(ret) = self.returns.get_mut(slot).and_then(Option::take) else {
+            // Der Rückweg des Kanals ist noch bei einem alten Gast: Kanal sofort wieder frei.
+            self.remove(slot);
+            self.feeds[slot] = Some(feed);
+            return Err("Rückweg dieses Kanals noch belegt".into());
+        };
+        self.send(GuestCmd::Return { slot, on: true });
+        Ok(NetGuest { slot, feed, ret })
+    }
+
+    /// Gibt Feed und Rückweg eines abgebauten Netz-Gastes zurück; der Kanal wird wieder frei.
+    pub fn return_network(&mut self, g: NetGuest) {
+        let NetGuest { slot, feed, ret } = g;
+        self.return_feed(slot, feed);
+        if self.guests.get(slot).is_some_and(Option::is_none)
+            && let Some(r) = self.returns.get_mut(slot)
+            && r.is_none()
+        {
+            *r = Some(ret);
+        }
     }
 
     /// Gibt den Feed eines entfernten externen Gastes zurück, der Kanal wird wieder frei.
@@ -173,6 +235,8 @@ impl GuestHub {
         let Some(g) = self.guests.get_mut(slot).and_then(Option::take) else {
             return;
         };
+        // Ein Browser-Gast wird dabei auch im Netz getrennt.
+        self.web_hangup_slot(slot);
         if self.monitor == Some(slot) {
             self.set_monitor(None);
         }
@@ -220,6 +284,7 @@ impl GuestHub {
     /// Schreibt neue Aussetzer und Überläufe ins Log und gibt die letzte Meldung (für die
     /// Anzeige) zurück. Aufruf im Control-Takt.
     pub fn poll(&mut self) -> Option<String> {
+        self.web_tick();
         let mut last = None;
         for (slot, g) in self.guests.iter_mut().enumerate() {
             let Some(g) = g else { continue };
@@ -264,6 +329,7 @@ impl GuestHub {
                     underruns: st.underruns.load(Ordering::Relaxed),
                     overflows: st.overflows.load(Ordering::Relaxed),
                     monitored: self.monitor == Some(slot),
+                    net: self.net_view(slot),
                 })
             })
             .collect()

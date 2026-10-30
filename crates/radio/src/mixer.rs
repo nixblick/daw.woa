@@ -743,8 +743,14 @@ impl Mixer {
                     *rl = self.bus.clip(*rl * g);
                     *rr = self.bus.clip(*rr * g);
                 }
+                // Rückwege ins Netz: dieselbe Summenbearbeitung wie die Sendung.
+                let bus = &self.bus;
+                self.guests
+                    .send_returns((bl, br), |l, r| (bus.clip(l * g), bus.clip(r * g)));
                 let m = self.bus.meter();
                 reduction = reduction.max(m.comp_db + m.limit_db);
+            } else {
+                self.guests.send_returns((bl, br), |l, r| (l, r));
             }
             if let Some(p) = self.rec.as_mut() {
                 if p.slots() >= 2 {

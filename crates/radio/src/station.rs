@@ -99,6 +99,8 @@ pub struct View {
     pub events_missed: u32,
     /// Gast-Kanäle mit Pegel und Pufferzustand (Paket 37).
     pub guests: Vec<woa_guests::GuestView>,
+    /// Einladungen und Warteraum der Browser-Gäste (Paket 38).
+    pub web: woa_guests::WebView,
 }
 
 /// Griff auf den laufenden Sende-Thread.
@@ -299,6 +301,7 @@ fn run(
             last_event: c.last_event().cloned(),
             events_missed: c.events_missed(),
             guests: c.guests_view(),
+            web: c.guests_web_view(),
         };
         if let Ok(mut out) = view.lock() {
             *out = v;

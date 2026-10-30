@@ -4,6 +4,30 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 38: Browser-Gast per WebRTC (lokal) (0.33.0, offen)
+
+Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+Modus „Radio“, Karte „Gäste & Mix-Minus“, darunter „BROWSER-GÄSTE“. Das Handy muss im selben WLAN sein wie der Rechner. Dabei Kopfhörer aufsetzen (am Handy und am Rechner), sonst hört sich der Gast über den Lautsprecher selbst.
+
+1. **Gast einladen, Link ans Handy:** „Browser-Zugang einschalten“, dann „＋ Einladung“. QR-Code mit der Handy-Kamera scannen (oder „Link kopieren“ und per Nachrichten-App schicken). Das Handy zeigt eine Zertifikatswarnung („Erweitert“, „Weiter“): Das ist erwartet, das Zertifikat ist selbst ausgestellt. Namen eintragen, „Beitreten“, Mikrofon erlauben.
+2. **In WOA annehmen:** Unter „BROWSER-GÄSTE“ steht „<Name> wartet“. „Annehmen“ drücken: Es erscheint ein Gast-Kanal mit Pegel, die Zeile zeigt „Browser · RTT … ms · Verlust … %“, das Handy zeigt „Du bist auf Sendung geschaltet“.
+3. **Sprechen mit Kopfhörern:** Am Handy sprechen: Der Pegel des Gastes schlägt aus, die Stimme ist in der Sendung. Im Handy ist die Sendung (Musik, Moderator) zu hören, die eigene Stimme nicht.
+4. **Auflegen:** „Auflegen“ am Handy (oder „Entfernen“ in WOA): Der Kanal verschwindet, das Handy zeigt „beendet“. Dieselbe Einladung lässt sich nicht noch einmal benutzen; „Browser-Zugang“ aus: Die Ports sind zu.
+
+Selbst geprüft von Claude (ohne Ton, ohne Audiogerät, ohne echtes Mikrofon; Loopback und kopfloser Browser mit falschem Mikrofon):
+- **Zwei Teilnehmer im selben Prozess:** Gast-Sinus 440 Hz kommt am Pult mit −14 bis −8 dB an (Frequenz und Pegel gemessen), der Rückweg-Sinus 880 Hz beim Gast ebenso, der eigene Ton des Gastes liegt im Rückweg unter −60 dB; über 100 Pakete in jede Richtung. Danach Auflegen, Kanal frei, wiederbenutzbar.
+- **Ganzer Weg über HTTPS:** Einladung, Beitritt, Warteraum, Annehmen, Gespräch über fünf Sekunden mit Messung, Auflegen, Ablehnen, kaputtes Angebot, Einladung nur einmal benutzbar, Ausschalten schließt Port.
+- **Echter Browser, falsches Mikrofon:** Kopfloser Chromium mit `--use-fake-device-for-media-stream` und `--mute-audio` gegen den Server auf der LAN-Adresse: Seite wartet im Warteraum, wird angenommen, verbindet (RTT 14 ms, 0 Promille Verlust), der Browser zählt eintreffende Rückweg-Pakete, WOA legt auf und die Seite zeigt „ende“.
+- **Grenzen:** Namen bereinigt, Anfragen und Köpfe begrenzt, höchstens 16 Einladungen und 8 Wartende, Wartende ohne Lebenszeichen fliegen raus, hängende Verbindung gibt den Kanal nach 20 Sekunden frei.
+- **Echtzeit:** `assert_no_alloc` um Gast-Summe und Rückweg-Schreiben.
+
+Nicht selbst geprüft: ein echtes Handy, echte Kopfhörer und WLAN (nur Chromium am Notebook über die LAN-Adresse); das Aussehen der Karte im Fenster (gebaut, nicht angeklickt); Windows und die Windows-Firewall.
+
+**Offen für André:**
+- Gäste von außerhalb des Netzes brauchen einen Relay-Dienst (TURN). Ein eigener Server oder ein Fremddienst kostet laufend; das ist deine Entscheidung. Ohne TURN geht es nur im selben Netz.
+- Ein echtes Zertifikat (und damit eine Domain) würde die Zertifikatswarnung am Handy beseitigen; bis dahin muss der Gast einmal „Weiter“ tippen.
+- Firewall: UDP 47600 und TCP 47601 müssen am Rechner im Heimnetz erreichbar sein (Windows fragt beim ersten Start).
+
 ## Paket 37: Gast-Kanäle mit Mix-Minus (ohne Netz) (0.32.0, offen)
 
 Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

@@ -94,7 +94,13 @@ Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
   gefüllt ist) und eine Obergrenze (`max`, mehr wird nicht gepuffert; `buffer` muss kleiner als `max` sein).
   Bei uns: `crates/guests/src/jitter.rs` (60 ms Vorlauf, 400 ms Obergrenze, Aussetzer und Überläufe gezählt
   und geloggt). Eigener Entwurf in Rust mit `rtrb`. **Kein Code übernommen.**
-- **Nicht gelesen:** `tracktion_engine`; das gehört zu Paket 38.
+- **Nicht gelesen:** `tracktion_engine`; für Paket 38 nicht gebraucht.
+
+## Browser-Gast (Paket 38)
+
+- **str0m** (`algesten/str0m`, MIT OR Apache-2.0, Version 0.24.1), `examples/chat.rs`. **Nur das Muster gelesen und nachgebaut:** Eine Schleife mit `poll_output` (Timeout, Transmit, Event) und `handle_input` (Datagramm oder Zeitablauf), Angebot und Antwort über `sdp_api`, Medien über `writer(mid)`. Eigener Entwurf in `crates/guests/src/net.rs` (ein Thread für alle Gäste, Rückweg über `rtrb`). **Kein Code übernommen.** Als Bibliothek eingebunden mit der Lizenz MIT OR Apache-2.0; Opus (`opus` 0.4, MIT/Apache-2.0, Codec BSD-3-Clause) und `rustls`/`rcgen` ebenso.
+- **Liquidsoap** (`savonet/liquidsoap`, GPL-2.0-or-later), Harbor-Eingang: die Idee eines Eingangs mit Vorlauf und Obergrenze, schon in Paket 37 genutzt; der Gast-Eingang aus dem Netz schreibt in denselben Jitterpuffer. Kein Code übernommen.
+- **Nicht gelesen:** Mixxx, Ardour, Tracktion Engine (für dieses Paket nicht nötig).
 
 ## Regel
 

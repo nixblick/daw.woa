@@ -49,6 +49,8 @@ pub struct RadioDesk {
     rate: u32,
     error: Option<String>,
     view: View,
+    /// QR-Code der zuletzt gezeigten Einladung (Paket 38).
+    invite_qr: Option<(String, woa_remote::qr::QrMatrix)>,
     saved_revision: u64,
     saved_at: Instant,
     known_mtime: Option<SystemTime>,
@@ -280,6 +282,7 @@ impl RadioDesk {
             rate,
             error,
             view: View::default(),
+            invite_qr: None,
             saved_revision: 0,
             saved_at: Instant::now(),
             known_mtime,
@@ -1219,6 +1222,149 @@ impl RadioDesk {
                 ui.add_space(2.0);
             }
         });
+        ui.add_space(6.0);
+        self.web_guests(ui);
+    }
+
+    /// Browser-Gäste (Paket 38): Zugang an/aus, Einladungen mit QR-Code, Warteraum.
+    fn web_guests(&mut self, ui: &mut egui::Ui) {
+        let web = self.view.web.clone();
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("BROWSER-GÄSTE")
+                    .size(11.5)
+                    .strong()
+                    .color(theme::DIM),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if web.running {
+                    if ui
+                        .button("Ausschalten")
+                        .on_hover_text("Trennt alle Browser-Gäste und schließt die Ports")
+                        .clicked()
+                    {
+                        self.with(|c| c.guests_web_set(false, None));
+                    }
+                    let full = self.view.guests.len() >= woa_guests::MAX_GUESTS;
+                    if ui
+                        .add_enabled(!full, egui::Button::new("＋ Einladung"))
+                        .on_hover_text("Ein Link für ein Handy im selben WLAN, einmal benutzbar")
+                        .clicked()
+                    {
+                        self.with(|c| {
+                            if c.guests().web_invite().is_none() {
+                                tracing::warn!("invite not created");
+                            }
+                        });
+                    }
+                } else if ui
+                    .button("Browser-Zugang einschalten")
+                    .on_hover_text(
+                        "Öffnet zwei Ports im WLAN (HTTPS und UDP). Gäste brauchen nur einen Browser.",
+                    )
+                    .clicked()
+                {
+                    let ip = woa_remote::lan_ip();
+                    self.with(move |c| c.guests_web_set(true, ip));
+                }
+            });
+        });
+        ui.add_space(4.0);
+        theme::lcd_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            if !web.running {
+                ui.label(
+                    egui::RichText::new(
+                        "Aus. Einschalten, Einladung erzeugen, Link ans Handy schicken: Der Gast \
+                         spricht über den Browser, ohne App.",
+                    )
+                    .small()
+                    .color(theme::DIM),
+                );
+                return;
+            }
+            for w in &web.waiting {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{} wartet seit {} s", w.name, w.waited_s))
+                            .strong()
+                            .color(theme::ACCENT),
+                    )
+                    .on_hover_text(&w.peer);
+                    let ticket = w.ticket.clone();
+                    if ui
+                        .button(egui::RichText::new("Annehmen").color(theme::OK_GREEN))
+                        .clicked()
+                    {
+                        self.with(move |c| {
+                            if let Err(e) = c.guests().web_accept(&ticket) {
+                                tracing::warn!(error = %e, "guest not accepted");
+                            }
+                        });
+                    }
+                    let ticket = w.ticket.clone();
+                    if ui.button("Ablehnen").clicked() {
+                        self.with(move |c| c.guests().web_reject(&ticket));
+                    }
+                });
+            }
+            for (link, inv) in &web.invites {
+                if self.invite_qr.as_ref().map(|(l, _)| l) != Some(link) {
+                    self.invite_qr = woa_remote::qr::qr(link).map(|m| (link.clone(), m));
+                }
+                ui.horizontal(|ui| {
+                    if let Some((l, m)) = &self.invite_qr
+                        && l == link
+                    {
+                        crate::remote::draw_qr(ui, m, 150.0);
+                    }
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Einladung, noch {} min gültig",
+                                inv.left_s.div_ceil(60)
+                            ))
+                            .strong(),
+                        );
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(link)
+                                    .small()
+                                    .monospace()
+                                    .color(theme::CUE_CYAN),
+                            )
+                            .wrap()
+                            .selectable(true),
+                        );
+                        ui.horizontal(|ui| {
+                            if ui.small_button("Link kopieren").clicked() {
+                                ui.ctx().copy_text(link.clone());
+                            }
+                            if ui.small_button("Zurückziehen").clicked() {
+                                let token = inv.token.clone();
+                                self.with(move |c| c.guests().web_revoke(&token));
+                            }
+                        });
+                        ui.label(
+                            egui::RichText::new(
+                                "Das Handy zeigt eine Zertifikatswarnung (selbst ausgestellt): \
+                                 „Erweitert“, dann „Weiter“.",
+                            )
+                            .small()
+                            .color(theme::DIM),
+                        );
+                    });
+                });
+                ui.add_space(4.0);
+            }
+            if web.invites.is_empty() && web.waiting.is_empty() {
+                ui.label(
+                    egui::RichText::new("Bereit. „＋ Einladung“ erzeugt einen Link mit QR-Code.")
+                        .small()
+                        .color(theme::DIM),
+                );
+            }
+        });
     }
 
     fn add_guest(&mut self, signal: woa_guests::TestSignal) {
@@ -1293,6 +1439,17 @@ impl RadioDesk {
         let mut line = format!("{} · Puffer {:.0} ms", g.source, g.buffered_ms);
         if g.prebuffering {
             line.push_str(" · füllt");
+        }
+        if let Some(n) = &g.net {
+            if n.connected {
+                line.push_str(&format!(
+                    " · RTT {} ms · Verlust {:.1} %",
+                    n.rtt_ms,
+                    n.loss_permille as f32 / 10.0
+                ));
+            } else {
+                line.push_str(" · verbindet …");
+            }
         }
         ui.horizontal(|ui| {
             ui.label(

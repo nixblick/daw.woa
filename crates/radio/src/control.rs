@@ -590,6 +590,34 @@ impl Controller {
         self.guests.view()
     }
 
+    /// Schaltet den Zugang für Browser-Gäste ein oder aus (Paket 38). `ip` ist die LAN-Adresse
+    /// dieses Rechners; ohne sie gibt es keinen Link, den ein Handy erreicht.
+    pub fn guests_web_set(&mut self, on: bool, ip: Option<std::net::IpAddr>) {
+        if !on {
+            self.guests.web_stop();
+            return;
+        }
+        let Some(ip) = ip else {
+            self.message = Some("Browser-Gäste: kein Netzwerk gefunden (WLAN verbunden?)".into());
+            return;
+        };
+        let cfg = woa_guests::WebConfig {
+            ip,
+            udp_port: woa_guests::web::PREFERRED_UDP_PORT,
+            https_port: woa_guests::web::PREFERRED_HTTPS_PORT,
+            engine_rate: self.rate,
+        };
+        if let Err(e) = self.guests.web_start(&cfg) {
+            tracing::warn!(error = %e, "guest web start failed");
+            self.message = Some(format!("Browser-Gäste: {e}"));
+        }
+    }
+
+    /// Einladungen und Warteraum der Browser-Gäste.
+    pub fn guests_web_view(&self) -> woa_guests::WebView {
+        self.guests.web_view()
+    }
+
     // ---- Sendung (woa-streamd) -------------------------------------------------------
 
     /// Hängt den Sende-Ring ein (Sendeausgang Stereo verschachtelt in Mixer-Rate) oder aus.
