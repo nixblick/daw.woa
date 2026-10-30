@@ -232,7 +232,11 @@ pub fn fmt_level(v: Option<f64>) -> String {
 fn readout(ui: &mut egui::Ui, label: &str, value: String, unit: &str, color: Color32) {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
-        ui.label(egui::RichText::new(label).size(10.0).color(theme::DIM));
+        ui.label(
+            egui::RichText::new(label)
+                .size(10.0)
+                .color(theme::text_dim()),
+        );
         ui.label(
             egui::RichText::new(value)
                 .size(20.0)
@@ -240,7 +244,11 @@ fn readout(ui: &mut egui::Ui, label: &str, value: String, unit: &str, color: Col
                 .strong()
                 .color(color),
         );
-        ui.label(egui::RichText::new(unit).size(10.0).color(theme::DIM));
+        ui.label(
+            egui::RichText::new(unit)
+                .size(10.0)
+                .color(theme::text_dim()),
+        );
     });
 }
 
@@ -254,7 +262,11 @@ impl AnalysisView {
     /// gerade etwas läuft.
     pub fn ui(&mut self, ui: &mut egui::Ui, tracks: &[(TrackId, String)], playing: bool) {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("QUELLE").size(10.0).color(theme::DIM));
+            ui.label(
+                egui::RichText::new("QUELLE")
+                    .size(10.0)
+                    .color(theme::text_dim()),
+            );
             let name = self
                 .source
                 .and_then(|id| tracks.iter().find(|t| t.0 == id))
@@ -271,7 +283,7 @@ impl AnalysisView {
                 });
             self.set_source(pick);
             if ui
-                .add(egui::Button::new("Zurücksetzen").fill(theme::SURFACE))
+                .add(egui::Button::new("Zurücksetzen").fill(theme::surface()))
                 .on_hover_text("Integrierte Lautheit, Spitzen und Halte-Marken neu beginnen")
                 .clicked()
             {
@@ -283,14 +295,14 @@ impl AnalysisView {
                         "Wiedergabe starten (Leertaste), dann laufen die Anzeigen.",
                     )
                     .small()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
                 );
             }
             if self.lost > 0 {
                 ui.label(
                     egui::RichText::new(format!("{} Frames verpasst", self.lost))
                         .small()
-                        .color(theme::ON_AIR),
+                        .color(theme::on_air()),
                 );
             }
         });
@@ -316,7 +328,7 @@ impl AnalysisView {
     }
 
     fn readouts(&self, ui: &mut egui::Ui) {
-        theme::lcd_frame().show(ui, |ui| {
+        theme::lcd_show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 22.0;
                 readout(
@@ -324,21 +336,21 @@ impl AnalysisView {
                     "MOMENTAN",
                     fmt_level(self.momentary()),
                     "LUFS",
-                    theme::ACCENT,
+                    theme::accent(),
                 );
                 readout(
                     ui,
                     "KURZZEIT",
                     fmt_level(self.short_term()),
                     "LUFS",
-                    theme::ACCENT,
+                    theme::accent(),
                 );
                 readout(
                     ui,
                     "INTEGRIERT",
                     fmt_level(self.integrated()),
                     "LUFS",
-                    theme::ACCENT,
+                    theme::accent(),
                 );
                 let tp = self.true_peak_dbtp();
                 let hot = tp.is_some_and(|v| v > -1.0);
@@ -347,7 +359,7 @@ impl AnalysisView {
                     "TRUE PEAK",
                     fmt_level(tp),
                     "dBTP",
-                    if hot { theme::ON_AIR } else { theme::OK_GREEN },
+                    if hot { theme::on_air() } else { theme::ok() },
                 );
                 let c = self.correlation();
                 readout(
@@ -364,21 +376,21 @@ impl AnalysisView {
     fn draw_spectrum(&self, ui: &mut egui::Ui, size: egui::Vec2) {
         let (resp, painter) = ui.allocate_painter(size, Sense::hover());
         let r = resp.rect;
-        painter.rect_filled(r, 4.0, theme::WELL);
+        painter.rect_filled(r, 4.0, theme::well());
         let plot = r.shrink2(vec2(30.0, 8.0));
         let db_y = |db: f32| plot.bottom() - (db - MIN_DB) / -MIN_DB * plot.height();
         for db in [-80.0f32, -60.0, -40.0, -20.0, 0.0] {
             let y = db_y(db);
             painter.line_segment(
                 [Pos2::new(plot.left(), y), Pos2::new(plot.right(), y)],
-                Stroke::new(1.0, theme::GRID),
+                Stroke::new(1.0, theme::grid()),
             );
             painter.text(
                 Pos2::new(r.left() + 4.0, y),
                 Align2::LEFT_CENTER,
                 format!("{db:.0}"),
                 FontId::monospace(9.0),
-                theme::DIM,
+                theme::text_dim(),
             );
         }
         for (f, label) in [
@@ -392,14 +404,14 @@ impl AnalysisView {
             let x = plot.left() + x_of(f, plot.width(), self.rate);
             painter.line_segment(
                 [Pos2::new(x, plot.top()), Pos2::new(x, plot.bottom())],
-                Stroke::new(1.0, theme::GRID),
+                Stroke::new(1.0, theme::grid()),
             );
             painter.text(
                 Pos2::new(x + 2.0, plot.bottom() - 2.0),
                 Align2::LEFT_BOTTOM,
                 label,
                 FontId::monospace(9.0),
-                theme::DIM,
+                theme::text_dim(),
             );
         }
         let bw = plot.width() / BARS as f32;
@@ -411,13 +423,13 @@ impl AnalysisView {
                     Pos2::new(x, db_y(b.max(MIN_DB))),
                     Pos2::new(x + bw.max(1.0) - 0.5, plot.bottom()),
                 );
-                painter.rect_filled(bar, 0.0, theme::mix(theme::CUE_CYAN, theme::ACCENT, frac));
+                painter.rect_filled(bar, 0.0, theme::mix(theme::cue(), theme::accent(), frac));
             }
             if h > MIN_DB {
                 let y = db_y(h);
                 painter.line_segment(
                     [Pos2::new(x, y), Pos2::new(x + bw.max(1.0), y)],
-                    Stroke::new(1.0, theme::TEXT_BRIGHT),
+                    Stroke::new(1.0, theme::text()),
                 );
             }
         }
@@ -426,7 +438,7 @@ impl AnalysisView {
     fn draw_spectrogram(&mut self, ui: &mut egui::Ui, size: egui::Vec2) {
         let (resp, painter) = ui.allocate_painter(size, Sense::hover());
         let r = resp.rect;
-        painter.rect_filled(r, 4.0, theme::WELL);
+        painter.rect_filled(r, 4.0, theme::well());
         if self.texture_dirty || self.texture.is_none() {
             let img = self.spectrogram_image();
             match &mut self.texture {
@@ -458,7 +470,7 @@ impl AnalysisView {
                     Align2::LEFT_CENTER,
                     label,
                     FontId::monospace(9.0),
-                    theme::TEXT_BRIGHT,
+                    theme::text(),
                 );
             }
         }
@@ -467,10 +479,10 @@ impl AnalysisView {
     fn draw_scope(&self, ui: &mut egui::Ui, side: f32) {
         let (resp, painter) = ui.allocate_painter(vec2(side, side), Sense::hover());
         let r = resp.rect;
-        painter.rect_filled(r, 4.0, theme::WELL);
+        painter.rect_filled(r, 4.0, theme::well());
         let c = r.center();
         let k = side * 0.46;
-        let axis = Stroke::new(1.0, theme::GRID);
+        let axis = Stroke::new(1.0, theme::grid());
         painter.line_segment(
             [
                 Pos2::new(c.x, r.top() + 4.0),
@@ -499,21 +511,21 @@ impl AnalysisView {
             Align2::LEFT_TOP,
             "L",
             font.clone(),
-            theme::DIM,
+            theme::text_dim(),
         );
         painter.text(
             Pos2::new(r.right() - 6.0, r.top() + 6.0),
             Align2::RIGHT_TOP,
             "R",
             font.clone(),
-            theme::DIM,
+            theme::text_dim(),
         );
         painter.text(
             Pos2::new(c.x + 4.0, r.top() + 6.0),
             Align2::LEFT_TOP,
             "M",
             font,
-            theme::DIM,
+            theme::text_dim(),
         );
         let n = self.scope.len().max(1);
         for (i, (x, y)) in self.scope().enumerate() {
@@ -530,18 +542,18 @@ impl AnalysisView {
     fn draw_correlation(&self, ui: &mut egui::Ui, side: f32) {
         let (resp, painter) = ui.allocate_painter(vec2(side, 34.0), Sense::hover());
         let r = resp.rect;
-        painter.rect_filled(r, 4.0, theme::WELL);
+        painter.rect_filled(r, 4.0, theme::well());
         let bar = Rect::from_min_max(
             Pos2::new(r.left() + 8.0, r.top() + 6.0),
             Pos2::new(r.right() - 8.0, r.top() + 18.0),
         );
-        painter.rect_filled(bar, 2.0, theme::PANEL_HEADER);
+        painter.rect_filled(bar, 2.0, theme::panel_header());
         painter.line_segment(
             [
                 Pos2::new(bar.center().x, bar.top()),
                 Pos2::new(bar.center().x, bar.bottom()),
             ],
-            Stroke::new(1.0, theme::BORDER),
+            Stroke::new(1.0, theme::border()),
         );
         let c = self.correlation();
         if let Some(v) = c {
@@ -558,31 +570,31 @@ impl AnalysisView {
             Align2::LEFT_BOTTOM,
             "−1",
             font.clone(),
-            theme::DIM,
+            theme::text_dim(),
         );
         painter.text(
             Pos2::new(bar.center().x, r.bottom() - 3.0),
             Align2::CENTER_BOTTOM,
             "0",
             font.clone(),
-            theme::DIM,
+            theme::text_dim(),
         );
         painter.text(
             Pos2::new(bar.right(), r.bottom() - 3.0),
             Align2::RIGHT_BOTTOM,
             "+1",
             font,
-            theme::DIM,
+            theme::text_dim(),
         );
     }
 }
 
 fn corr_colour(c: Option<f64>) -> Color32 {
     match c {
-        None => theme::DIM,
-        Some(v) if v < 0.0 => theme::ON_AIR,
-        Some(v) if v < 0.3 => theme::ACCENT,
-        Some(_) => theme::OK_GREEN,
+        None => theme::text_dim(),
+        Some(v) if v < 0.0 => theme::on_air(),
+        Some(v) if v < 0.3 => theme::accent(),
+        Some(_) => theme::ok(),
     }
 }
 

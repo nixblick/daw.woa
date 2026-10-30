@@ -189,7 +189,11 @@ impl ExportDialog {
     }
 
     fn body(&mut self, ui: &mut egui::Ui) -> Option<ExportRequest> {
-        ui.label(egui::RichText::new("FORMAT").small().color(theme::DIM));
+        ui.label(
+            egui::RichText::new("FORMAT")
+                .small()
+                .color(theme::text_dim()),
+        );
         ui.horizontal_wrapped(|ui| {
             for f in ExportFormat::ALL {
                 let ok = self.available(f);
@@ -207,7 +211,7 @@ impl ExportDialog {
             }
         });
         if let Probe::Missing(why) = &self.probe {
-            ui.label(egui::RichText::new(why).small().color(theme::DIM));
+            ui.label(egui::RichText::new(why).small().color(theme::text_dim()));
         }
         ui.add_space(6.0);
         let depths = self.format.depths();
@@ -232,7 +236,7 @@ impl ExportDialog {
                     ui.label(
                         egui::RichText::new("FLAC kennt kein Float")
                             .small()
-                            .color(theme::DIM),
+                            .color(theme::text_dim()),
                     );
                 }
             });
@@ -272,7 +276,7 @@ impl ExportDialog {
                     "Stumme Spuren fehlen. Spuren, die in einen Bus laufen, stecken auch im Bus-Stem.",
                 )
                 .small()
-                .color(theme::DIM),
+                .color(theme::text_dim()),
             );
         }
         ui.add_space(8.0);
@@ -284,8 +288,8 @@ impl ExportDialog {
                 "Datei wählen und exportieren …"
             };
             let go = ui.add(
-                egui::Button::new(egui::RichText::new(label).color(theme::BG).strong())
-                    .fill(theme::ACCENT),
+                egui::Button::new(egui::RichText::new(label).color(theme::bg()).strong())
+                    .fill(theme::accent()),
             );
             if go.clicked() {
                 match self.request() {

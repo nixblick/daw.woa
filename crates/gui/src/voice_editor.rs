@@ -242,7 +242,7 @@ impl VoiceEditor {
         let (rect, resp) =
             ui.allocate_exact_size(egui::vec2(width, 230.0), egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 4.0, theme::WELL);
+        painter.rect_filled(rect, 4.0, theme::well());
         let x_of = |t: f64| rect.left() + ((t - from) / span) as f32 * rect.width();
         let lane_h = 64.0;
         let a_lane = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), lane_h));
@@ -262,7 +262,7 @@ impl VoiceEditor {
             painter.rect_stroke(
                 r,
                 2.0,
-                egui::Stroke::new(1.0, theme::GRID),
+                egui::Stroke::new(1.0, theme::grid()),
                 egui::StrokeKind::Inside,
             );
             painter.text(
@@ -270,7 +270,7 @@ impl VoiceEditor {
                 egui::Align2::LEFT_TOP,
                 name,
                 egui::FontId::proportional(10.0),
-                theme::DIM,
+                theme::text_dim(),
             );
         }
         // Sekundenraster, 0 = Beginn der Überblendung.
@@ -282,7 +282,7 @@ impl VoiceEditor {
                 [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
                 egui::Stroke::new(
                     if zero { 1.5 } else { 0.5 },
-                    if zero { theme::ACCENT } else { theme::GRID },
+                    if zero { theme::accent() } else { theme::grid() },
                 ),
             );
             if (t as i64) % 5 == 0 {
@@ -291,7 +291,7 @@ impl VoiceEditor {
                     egui::Align2::LEFT_BOTTOM,
                     format!("{t:.0}"),
                     egui::FontId::proportional(9.0),
-                    theme::DIM,
+                    theme::text_dim(),
                 );
             }
             t += 1.0;
@@ -301,7 +301,7 @@ impl VoiceEditor {
         painter.rect_filled(
             egui::Rect::from_x_y_ranges(x_of(0.0)..=x_of(xf), a_lane.y_range()),
             0.0,
-            theme::mix(theme::ACCENT, theme::WELL, 0.82),
+            theme::mix(theme::accent(), theme::well(), 0.82),
         );
         if let Some(w) = &self.waves {
             let a_end = self
@@ -314,24 +314,17 @@ impl VoiceEditor {
                 &w[0],
                 |p| p - a_end + xf,
                 &x_of,
-                theme::CUE_CYAN,
+                theme::cue(),
             );
             let b_start = self.input.b_cues.start();
-            Self::lane(
-                &painter,
-                a_lane,
-                &w[2],
-                |p| p - b_start,
-                &x_of,
-                theme::OK_GREEN,
-            );
+            Self::lane(&painter, a_lane, &w[2], |p| p - b_start, &x_of, theme::ok());
             Self::lane(
                 &painter,
                 v_lane,
                 &w[1],
                 |p| p + self.draft.offset,
                 &x_of,
-                theme::ACCENT,
+                theme::accent(),
             );
         } else if self.loading.is_some() {
             painter.text(
@@ -339,7 +332,7 @@ impl VoiceEditor {
                 egui::Align2::CENTER_CENTER,
                 "Wellenformen werden gelesen …",
                 egui::FontId::proportional(13.0),
-                theme::DIM,
+                theme::text_dim(),
             );
         }
         // Ramp-Punkt von B.
@@ -347,14 +340,14 @@ impl VoiceEditor {
             let x = x_of(r);
             painter.line_segment(
                 [egui::pos2(x, a_lane.top()), egui::pos2(x, a_lane.bottom())],
-                egui::Stroke::new(1.5, theme::OK_GREEN),
+                egui::Stroke::new(1.5, theme::ok()),
             );
             painter.text(
                 egui::pos2(x + 3.0, a_lane.bottom() - 2.0),
                 egui::Align2::LEFT_BOTTOM,
                 "Ramp B",
                 egui::FontId::proportional(10.0),
-                theme::OK_GREEN,
+                theme::ok(),
             );
         }
         // Stimmenband und Ziehen.
@@ -366,7 +359,7 @@ impl VoiceEditor {
         painter.rect_stroke(
             band,
             2.0,
-            egui::Stroke::new(1.5, theme::ACCENT),
+            egui::Stroke::new(1.5, theme::accent()),
             egui::StrokeKind::Inside,
         );
         if resp.dragged()
@@ -390,7 +383,7 @@ impl VoiceEditor {
             .collect();
         painter.add(egui::Shape::line(
             pts,
-            egui::Stroke::new(2.0, theme::ON_AIR),
+            egui::Stroke::new(2.0, theme::on_air()),
         ));
 
         ui.add_space(4.0);
@@ -449,17 +442,17 @@ impl VoiceEditor {
                 self.input.a_title, self.input.b_title, xf, vlen
             ))
             .small()
-            .color(theme::DIM),
+            .color(theme::text_dim()),
         );
         if self.input.check {
             ui.colored_label(
-                theme::ON_AIR,
+                theme::on_air(),
                 "prüfen: ein Nachbar hat sich geändert. Der Voice-Track geht erst nach \
                  „Prüfung bestätigen“ auf Sendung.",
             );
         }
         if let Some(e) = &self.error {
-            ui.colored_label(theme::ON_AIR, e);
+            ui.colored_label(theme::on_air(), e);
         }
         ui.separator();
         let index = self.input.index;

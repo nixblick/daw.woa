@@ -261,7 +261,7 @@ impl EventEditor {
 
     fn body(&mut self, ui: &mut egui::Ui, view: Option<&View>) {
         if let Some(e) = self.error.clone() {
-            ui.colored_label(theme::ON_AIR, &e);
+            ui.colored_label(theme::on_air(), &e);
             if ui.button("Neu laden").clicked() {
                 self.error = None;
                 self.loaded = false;
@@ -277,7 +277,7 @@ impl EventEditor {
                  Wochentage: * oder z. B. Mo-Fr.",
             )
             .small()
-            .color(theme::DIM),
+            .color(theme::text_dim()),
         );
         ui.horizontal(|ui| {
             if ui
@@ -298,20 +298,20 @@ impl EventEditor {
                             crate::radio::clock(*secs),
                             if *hard { "hart" } else { "weich" }
                         ))
-                        .color(theme::ACCENT),
+                        .color(theme::accent()),
                     );
                 }
                 if let Some((name, dev)) = &v.last_event {
                     ui.label(
                         egui::RichText::new(format!("Zuletzt: {name} {dev:+.1} s"))
-                            .color(theme::DIM),
+                            .color(theme::text_dim()),
                     );
                 }
             }
         });
         ui.separator();
         if self.table.events.is_empty() {
-            ui.label(egui::RichText::new("Noch keine Events").color(theme::DIM));
+            ui.label(egui::RichText::new("Noch keine Events").color(theme::text_dim()));
         }
         let ids: Vec<u32> = self.table.events.iter().map(|e| e.id).collect();
         let mut remove = None;
@@ -320,7 +320,7 @@ impl EventEditor {
                 remove = Some(id);
             }
             if let Some(msg) = self.bad.get(&id) {
-                ui.colored_label(theme::ON_AIR, msg);
+                ui.colored_label(theme::on_air(), msg);
             }
         }
         if let Some(id) = remove {
@@ -396,7 +396,7 @@ impl EventEditor {
         ui.label(
             egui::RichText::new(e.path.to_string_lossy())
                 .small()
-                .color(theme::DIM),
+                .color(theme::text_dim()),
         );
         if on != e.enabled {
             self.set_enabled(id, on);

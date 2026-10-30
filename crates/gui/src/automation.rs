@@ -180,7 +180,7 @@ pub fn show(
 ) {
     let targets = targets_of(state.project(), track);
     if targets.is_empty() {
-        ui.label(egui::RichText::new("Spur wählen").color(theme::DIM));
+        ui.label(egui::RichText::new("Spur wählen").color(theme::text_dim()));
         return;
     }
     let target = ed
@@ -207,7 +207,11 @@ pub fn show(
     let mut new_mode = lane.mode;
     let mut clear = false;
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("AUTOMATION").small().color(theme::DIM));
+        ui.label(
+            egui::RichText::new("AUTOMATION")
+                .small()
+                .color(theme::text_dim()),
+        );
         egui::ComboBox::from_id_salt("auto_target")
             .selected_text(name.clone())
             .width(180.0)
@@ -235,11 +239,15 @@ pub fn show(
             if ui
                 .add(
                     egui::Button::new(egui::RichText::new(m.label()).small().color(if on {
-                        theme::WELL
+                        theme::well()
                     } else {
-                        theme::TEXT_BRIGHT
+                        theme::text()
                     }))
-                    .fill(if on { theme::ACCENT } else { theme::SURFACE }),
+                    .fill(if on {
+                        theme::accent()
+                    } else {
+                        theme::surface()
+                    }),
                 )
                 .on_hover_text(hover)
                 .clicked()
@@ -258,7 +266,7 @@ pub fn show(
                 egui::RichText::new(format!("am Kopf: {v:.2} {}", range.unit))
                     .monospace()
                     .small()
-                    .color(theme::CUE_CYAN),
+                    .color(theme::cue()),
             );
         }
     });
@@ -277,7 +285,7 @@ pub fn show(
                  Beim Stopp wird die Fahrt eine Kurve (ein Rückgängig-Schritt).",
             )
             .small()
-            .color(theme::ACCENT),
+            .color(theme::accent()),
         );
     }
 
@@ -287,7 +295,7 @@ pub fn show(
     );
     let (resp, painter) = ui.allocate_painter(size, egui::Sense::click_and_drag());
     let rect = resp.rect;
-    painter.rect_filled(rect, 2.0, theme::WELL);
+    painter.rect_filled(rect, 2.0, theme::well());
     let beats = view_beats(&lane.points, playhead);
     let to_x = |b: f64| rect.left() + (b / beats) as f32 * rect.width();
     let to_y = |v: f64| rect.bottom() - range.to_norm(v) as f32 * rect.height();
@@ -306,7 +314,7 @@ pub fn show(
                 egui::pos2(to_x(b as f64), rect.top()),
                 egui::pos2(to_x(b as f64), rect.bottom()),
             ],
-            egui::Stroke::new(1.0, theme::GRID),
+            egui::Stroke::new(1.0, theme::grid()),
         );
     }
     // Punkte mit der Lage des laufenden Ziehens.
@@ -317,9 +325,9 @@ pub fn show(
         pts[i] = p;
     }
     let color = if lane.mode == AutoMode::Read {
-        theme::ACCENT
+        theme::accent()
     } else {
-        theme::DIM
+        theme::text_dim()
     };
     if let (Some(first), Some(last)) = (pts.first(), pts.last()) {
         let mut line: Vec<egui::Pos2> = vec![egui::pos2(rect.left(), to_y(first.value))];
@@ -340,14 +348,14 @@ pub fn show(
             egui::pos2(to_x(playhead), rect.top()),
             egui::pos2(to_x(playhead), rect.bottom()),
         ],
-        egui::Stroke::new(1.0, theme::CUE_CYAN),
+        egui::Stroke::new(1.0, theme::cue()),
     );
     painter.text(
         rect.left_top() + egui::vec2(4.0, 2.0),
         egui::Align2::LEFT_TOP,
         format!("{:.1} … {:.1} {}", range.max, range.min, range.unit),
         egui::FontId::monospace(9.5),
-        theme::DIM,
+        theme::text_dim(),
     );
 
     // Bedienung
@@ -407,10 +415,10 @@ pub fn show(
 /// Gain-Reduction-Anzeige: ein schmaler Balken, 0 bis 24 dB von rechts nach links.
 pub fn reduction_bar(ui: &mut egui::Ui, db: f32) {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(46.0, 8.0), egui::Sense::hover());
-    ui.painter().rect_filled(rect, 1.0, theme::WELL);
+    ui.painter().rect_filled(rect, 1.0, theme::well());
     let w = (db / 24.0).clamp(0.0, 1.0) * rect.width();
     let bar = egui::Rect::from_min_size(rect.right_top() - egui::vec2(w, 0.0), egui::vec2(w, 8.0));
-    ui.painter().rect_filled(bar, 1.0, theme::ACCENT);
+    ui.painter().rect_filled(bar, 1.0, theme::accent());
     resp.on_hover_text(format!("Absenkung {db:.1} dB"));
 }
 

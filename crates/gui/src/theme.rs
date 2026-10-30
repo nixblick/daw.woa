@@ -1,49 +1,530 @@
-//! Aussehen: dunkles Broadcast- & Studio-Thema (Ableton / mAirList-inspiriert).
+//! Aussehen: Themen Hell und Dunkel, Modusfarbe je Layout (Produzent, Radio, Party).
+//!
+//! Gestaltungsvorgabe ist `docs/design/woa-design-system/` (`tokens.json`). Die Werte stehen hier
+//! als Palette je Kombination aus Thema und Modus (sechs Stück); ein Test liest `tokens.json` und
+//! prüft, dass beides übereinstimmt. Alle Farben holt der Code über die Funktionen `accent()`,
+//! `well()` usw.; sie liefern die Farbe der gerade aktiven Palette ([`apply`] stellt sie ein).
+//! Die Oberfläche läuft in einem Thread, die Umschaltung ist ein einzelner atomarer Wert.
+// Der Token-Satz ist vollständig, auch wo noch nicht jeder Token verdrahtet ist.
+#![allow(dead_code)]
+
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use eframe::egui;
 use egui::{
     Color32, CornerRadius, FontId, Frame, Margin, Rect, Stroke, StrokeKind, TextStyle, vec2,
 };
+use serde::{Deserialize, Serialize};
 
-/// Akzent (Wiedergabe, Kopf, Auswahl, LCD-Zahlen).
-pub const ACCENT: Color32 = Color32::from_rgb(255, 152, 56);
-/// Aufnahme, „On Air“, Übersteuerung.
-pub const ON_AIR: Color32 = Color32::from_rgb(238, 56, 68);
-/// positives Signal, Start, Gate offen, Stream verbunden.
-pub const OK_GREEN: Color32 = Color32::from_rgb(56, 208, 112);
-/// Cue-Punkt, MIDI-Akzent, Info-Badge.
-pub const CUE_CYAN: Color32 = Color32::from_rgb(68, 186, 255);
-/// Tiefste Vertiefung (LCD-Displays, Meter-Schächte, leere Zeitleiste).
-pub const WELL: Color32 = Color32::from_rgb(12, 14, 18);
-/// Tiefster Hintergrund (Zeitleiste, Hauptfläche).
-pub const BG: Color32 = Color32::from_rgb(18, 20, 26);
-/// Leisten, Karten und Spurköpfe.
-pub const PANEL: Color32 = Color32::from_rgb(27, 30, 38);
-/// Kopfzeile von Studio-Modulen.
-pub const PANEL_HEADER: Color32 = Color32::from_rgb(34, 38, 48);
-/// Knöpfe, Pads und bedienbare Felder.
-pub const SURFACE: Color32 = Color32::from_rgb(41, 46, 58);
-/// Rahmen- und Bevel-Linien für Module und Taster.
-pub const BORDER: Color32 = Color32::from_rgb(56, 63, 78);
-/// Rasterlinien in der Zeitleiste.
-pub const GRID: Color32 = Color32::from_rgb(44, 49, 61);
-/// Helle Hauptschrift.
-pub const TEXT_BRIGHT: Color32 = Color32::from_rgb(236, 240, 248);
-/// Gedämpfte Schrift.
-pub const DIM: Color32 = Color32::from_rgb(138, 148, 166);
+/// Farbthema, eine Einstellung des Nutzers (Vorgabe: Dunkel).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    Hell,
+    #[default]
+    Dunkel,
+}
 
-const TRACK_COLORS: [Color32; 6] = [
-    Color32::from_rgb(74, 164, 255),
-    Color32::from_rgb(76, 212, 138),
-    Color32::from_rgb(192, 122, 255),
-    Color32::from_rgb(255, 192, 68),
-    Color32::from_rgb(64, 214, 232),
-    Color32::from_rgb(255, 112, 158),
+impl Theme {
+    pub fn label(self) -> &'static str {
+        match self {
+            Theme::Hell => "Hell",
+            Theme::Dunkel => "Dunkel",
+        }
+    }
+}
+
+/// Modus des aktiven Layouts; bestimmt die Modusfarbe (`accent`, `accent_2`, `lcd_ink`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Mode {
+    #[default]
+    Studio,
+    Radio,
+    Party,
+}
+
+impl From<crate::feedback::Mode> for Mode {
+    fn from(m: crate::feedback::Mode) -> Self {
+        match m {
+            crate::feedback::Mode::Produzent => Mode::Studio,
+            crate::feedback::Mode::Radio => Mode::Radio,
+            crate::feedback::Mode::Party => Mode::Party,
+        }
+    }
+}
+
+// Abstände und Radien aus `tokens.json` (space-*, radius-*), in Punkten.
+pub const SPACE_1: f32 = 2.0;
+pub const SPACE_2: f32 = 4.0;
+pub const SPACE_3: f32 = 8.0;
+pub const SPACE_4: f32 = 12.0;
+pub const SPACE_5: f32 = 16.0;
+pub const SPACE_6: f32 = 24.0;
+pub const SPACE_7: f32 = 40.0;
+pub const RADIUS_XS: u8 = 1;
+pub const RADIUS_SM: u8 = 3;
+pub const RADIUS_MD: u8 = 4;
+pub const RADIUS_LG: u8 = 6;
+pub const RADIUS_XL: u8 = 8;
+pub const RADIUS_PARTY: u8 = 14;
+
+/// Alle Farben einer Kombination aus Thema und Modus (Namen wie in `tokens.json`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Palette {
+    pub bg: Color32,
+    pub well: Color32,
+    pub panel: Color32,
+    pub panel_header: Color32,
+    pub surface: Color32,
+    pub surface_hover: Color32,
+    pub border: Color32,
+    pub border_strong: Color32,
+    pub grid: Color32,
+    pub lcd_bg: Color32,
+    pub led_off: Color32,
+    pub text: Color32,
+    pub text_dim: Color32,
+    pub lcd_text: Color32,
+    pub lcd_ink: Color32,
+    pub accent: Color32,
+    pub accent_strong: Color32,
+    pub accent_soft: Color32,
+    pub on_accent: Color32,
+    pub accent_2: Color32,
+    pub on_accent_2: Color32,
+    pub on_air: Color32,
+    pub on_air_fill: Color32,
+    pub ok: Color32,
+    pub cue: Color32,
+    pub warn: Color32,
+    pub led_green: Color32,
+    pub led_yellow: Color32,
+    pub led_red: Color32,
+    pub vu_face: Color32,
+    pub vu_ink: Color32,
+    pub focus: Color32,
+    pub mode_studio: Color32,
+    pub mode_radio: Color32,
+    pub mode_party: Color32,
+    /// Spurfarben 1 bis 6.
+    pub track: [Color32; 6],
+}
+
+impl Palette {
+    /// Alle Tokens mit ihrem Namen aus `tokens.json` (Spurfarben als `track-1` bis `track-6`).
+    pub fn named(&self) -> Vec<(String, Color32)> {
+        let mut v: Vec<(String, Color32)> = [
+            ("bg", self.bg),
+            ("well", self.well),
+            ("panel", self.panel),
+            ("panel-header", self.panel_header),
+            ("surface", self.surface),
+            ("surface-hover", self.surface_hover),
+            ("border", self.border),
+            ("border-strong", self.border_strong),
+            ("grid", self.grid),
+            ("lcd-bg", self.lcd_bg),
+            ("led-off", self.led_off),
+            ("text", self.text),
+            ("text-dim", self.text_dim),
+            ("lcd-text", self.lcd_text),
+            ("lcd-ink", self.lcd_ink),
+            ("accent", self.accent),
+            ("accent-strong", self.accent_strong),
+            ("accent-soft", self.accent_soft),
+            ("on-accent", self.on_accent),
+            ("accent-2", self.accent_2),
+            ("on-accent-2", self.on_accent_2),
+            ("on-air", self.on_air),
+            ("on-air-fill", self.on_air_fill),
+            ("ok", self.ok),
+            ("cue", self.cue),
+            ("warn", self.warn),
+            ("led-green", self.led_green),
+            ("led-yellow", self.led_yellow),
+            ("led-red", self.led_red),
+            ("vu-face", self.vu_face),
+            ("vu-ink", self.vu_ink),
+            ("focus", self.focus),
+            ("mode-studio", self.mode_studio),
+            ("mode-radio", self.mode_radio),
+            ("mode-party", self.mode_party),
+        ]
+        .into_iter()
+        .map(|(n, c)| (n.to_string(), c))
+        .collect();
+        for (i, c) in self.track.iter().enumerate() {
+            v.push((format!("track-{}", i + 1), *c));
+        }
+        v
+    }
+}
+
+const fn c(rgb: u32) -> Color32 {
+    Color32::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
+}
+
+/// Reihenfolge wie `color.themes` in `tokens.json`: Studio, Radio, Party, dann dieselben hell.
+pub static PALETTES: [Palette; 6] = [
+    // studio
+    Palette {
+        bg: c(0x12141a),
+        well: c(0x0c0e12),
+        panel: c(0x1b1e26),
+        panel_header: c(0x222630),
+        surface: c(0x292e3a),
+        surface_hover: c(0x343a48),
+        border: c(0x383f4e),
+        border_strong: c(0x6a7488),
+        grid: c(0x2c313d),
+        lcd_bg: c(0x0a0c10),
+        led_off: c(0x1c2028),
+        text: c(0xecf0f8),
+        text_dim: c(0x8a94a6),
+        lcd_text: c(0xd8e0ec),
+        lcd_ink: c(0xff9838),
+        accent: c(0xff9838),
+        accent_strong: c(0xffb46a),
+        accent_soft: c(0x4a3018),
+        on_accent: c(0x1a0e04),
+        accent_2: c(0x5ec8ff),
+        on_accent_2: c(0x04131c),
+        on_air: c(0xee3844),
+        on_air_fill: c(0xc41d2a),
+        ok: c(0x38d070),
+        cue: c(0x44baff),
+        warn: c(0xf5c630),
+        led_green: c(0x38d070),
+        led_yellow: c(0xf5c630),
+        led_red: c(0xee3844),
+        vu_face: c(0xf2e2bb),
+        vu_ink: c(0x2a1d0e),
+        focus: c(0x9fd8ff),
+        mode_studio: c(0xff9838),
+        mode_radio: c(0xff4650),
+        mode_party: c(0xff3da6),
+        track: [
+            c(0x4aa4ff),
+            c(0x4cd48a),
+            c(0xc07aff),
+            c(0xffc044),
+            c(0x40d6e8),
+            c(0xff709e),
+        ],
+    },
+    // radio
+    Palette {
+        bg: c(0x14171c),
+        well: c(0x0d1014),
+        panel: c(0x1e232a),
+        panel_header: c(0x262c34),
+        surface: c(0x2f363f),
+        surface_hover: c(0x3a424c),
+        border: c(0x3e4652),
+        border_strong: c(0x6e7886),
+        grid: c(0x2f353e),
+        lcd_bg: c(0x0b0d10),
+        led_off: c(0x1d2228),
+        text: c(0xedf1f6),
+        text_dim: c(0x8f99a8),
+        lcd_text: c(0xd8e0ec),
+        lcd_ink: c(0xff4650),
+        accent: c(0xff4650),
+        accent_strong: c(0xff747c),
+        accent_soft: c(0x4a1c22),
+        on_accent: c(0x1a0507),
+        accent_2: c(0xffc83a),
+        on_accent_2: c(0x1a1300),
+        on_air: c(0xee3844),
+        on_air_fill: c(0xc41d2a),
+        ok: c(0x38d070),
+        cue: c(0x44baff),
+        warn: c(0xf5c630),
+        led_green: c(0x38d070),
+        led_yellow: c(0xf5c630),
+        led_red: c(0xee3844),
+        vu_face: c(0xf2e2bb),
+        vu_ink: c(0x2a1d0e),
+        focus: c(0x9fd8ff),
+        mode_studio: c(0xff9838),
+        mode_radio: c(0xff4650),
+        mode_party: c(0xff3da6),
+        track: [
+            c(0x4aa4ff),
+            c(0x4cd48a),
+            c(0xc07aff),
+            c(0xffc044),
+            c(0x40d6e8),
+            c(0xff709e),
+        ],
+    },
+    // party
+    Palette {
+        bg: c(0x0e0c14),
+        well: c(0x09080d),
+        panel: c(0x18151f),
+        panel_header: c(0x211c2a),
+        surface: c(0x2a2435),
+        surface_hover: c(0x352d43),
+        border: c(0x3b3348),
+        border_strong: c(0x76698a),
+        grid: c(0x2a2433),
+        lcd_bg: c(0x08070c),
+        led_off: c(0x1c1824),
+        text: c(0xf3eefa),
+        text_dim: c(0x9c92ae),
+        lcd_text: c(0xe4dcf0),
+        lcd_ink: c(0xff3da6),
+        accent: c(0xff3da6),
+        accent_strong: c(0xff6fbe),
+        accent_soft: c(0x4a1636),
+        on_accent: c(0x1a0410),
+        accent_2: c(0xc6ff3a),
+        on_accent_2: c(0x0e1400),
+        on_air: c(0xee3844),
+        on_air_fill: c(0xc41d2a),
+        ok: c(0x38d070),
+        cue: c(0x44baff),
+        warn: c(0xf5c630),
+        led_green: c(0x38d070),
+        led_yellow: c(0xf5c630),
+        led_red: c(0xee3844),
+        vu_face: c(0xf2e2bb),
+        vu_ink: c(0x2a1d0e),
+        focus: c(0x9fd8ff),
+        mode_studio: c(0xff9838),
+        mode_radio: c(0xff4650),
+        mode_party: c(0xff3da6),
+        track: [
+            c(0x4aa4ff),
+            c(0x4cd48a),
+            c(0xc07aff),
+            c(0xffc044),
+            c(0x40d6e8),
+            c(0xff709e),
+        ],
+    },
+    // studio-hell
+    Palette {
+        bg: c(0xeef0f4),
+        well: c(0xe1e5eb),
+        panel: c(0xffffff),
+        panel_header: c(0xe6e9ef),
+        surface: c(0xdde1e8),
+        surface_hover: c(0xd0d5de),
+        border: c(0xc4cad4),
+        border_strong: c(0x7d8696),
+        grid: c(0xd5dae2),
+        lcd_bg: c(0x0a0c10),
+        led_off: c(0x1c2028),
+        text: c(0x161a22),
+        text_dim: c(0x545d6c),
+        lcd_text: c(0xd8e0ec),
+        lcd_ink: c(0xff9838),
+        accent: c(0xa84e00),
+        accent_strong: c(0x8e4200),
+        accent_soft: c(0xfbe3cc),
+        on_accent: c(0xffffff),
+        accent_2: c(0x0a679c),
+        on_accent_2: c(0xffffff),
+        on_air: c(0xc8202e),
+        on_air_fill: c(0xc41d2a),
+        ok: c(0x137a3c),
+        cue: c(0x0b6aa8),
+        warn: c(0x8a6400),
+        led_green: c(0x38d070),
+        led_yellow: c(0xf5c630),
+        led_red: c(0xee3844),
+        vu_face: c(0xf2e2bb),
+        vu_ink: c(0x2a1d0e),
+        focus: c(0x0b5d94),
+        mode_studio: c(0xa84e00),
+        mode_radio: c(0xc41b2d),
+        mode_party: c(0xb5146d),
+        track: [
+            c(0x1d64b8),
+            c(0x17804a),
+            c(0x7a3bc4),
+            c(0x8d6200),
+            c(0x0d7c8a),
+            c(0xb8245a),
+        ],
+    },
+    // radio-hell
+    Palette {
+        bg: c(0xeef0f3),
+        well: c(0xe0e4e9),
+        panel: c(0xffffff),
+        panel_header: c(0xe5e8ed),
+        surface: c(0xdbdfe5),
+        surface_hover: c(0xced3db),
+        border: c(0xc3c9d2),
+        border_strong: c(0x7b8594),
+        grid: c(0xd4d9e0),
+        lcd_bg: c(0x0b0d10),
+        led_off: c(0x1d2228),
+        text: c(0x161a21),
+        text_dim: c(0x535c6a),
+        lcd_text: c(0xd8e0ec),
+        lcd_ink: c(0xff4650),
+        accent: c(0xc41b2d),
+        accent_strong: c(0x9c1221),
+        accent_soft: c(0xf9d6da),
+        on_accent: c(0xffffff),
+        accent_2: c(0x7d5900),
+        on_accent_2: c(0xffffff),
+        on_air: c(0xc8202e),
+        on_air_fill: c(0xc41d2a),
+        ok: c(0x137a3c),
+        cue: c(0x0b6aa8),
+        warn: c(0x8a6400),
+        led_green: c(0x38d070),
+        led_yellow: c(0xf5c630),
+        led_red: c(0xee3844),
+        vu_face: c(0xf2e2bb),
+        vu_ink: c(0x2a1d0e),
+        focus: c(0x0b5d94),
+        mode_studio: c(0xa84e00),
+        mode_radio: c(0xc41b2d),
+        mode_party: c(0xb5146d),
+        track: [
+            c(0x1d64b8),
+            c(0x17804a),
+            c(0x7a3bc4),
+            c(0x8d6200),
+            c(0x0d7c8a),
+            c(0xb8245a),
+        ],
+    },
+    // party-hell
+    Palette {
+        bg: c(0xf2eff5),
+        well: c(0xe7e2ec),
+        panel: c(0xffffff),
+        panel_header: c(0xece7f1),
+        surface: c(0xe4dee9),
+        surface_hover: c(0xd9d1e0),
+        border: c(0xcdc4d6),
+        border_strong: c(0x86799a),
+        grid: c(0xddd6e4),
+        lcd_bg: c(0x08070c),
+        led_off: c(0x1c1824),
+        text: c(0x1b1624),
+        text_dim: c(0x5c536b),
+        lcd_text: c(0xe4dcf0),
+        lcd_ink: c(0xff3da6),
+        accent: c(0xb5146d),
+        accent_strong: c(0x900f56),
+        accent_soft: c(0xf8d3e8),
+        on_accent: c(0xffffff),
+        accent_2: c(0x3f6600),
+        on_accent_2: c(0xffffff),
+        on_air: c(0xc8202e),
+        on_air_fill: c(0xc41d2a),
+        ok: c(0x137a3c),
+        cue: c(0x0b6aa8),
+        warn: c(0x8a6400),
+        led_green: c(0x38d070),
+        led_yellow: c(0xf5c630),
+        led_red: c(0xee3844),
+        vu_face: c(0xf2e2bb),
+        vu_ink: c(0x2a1d0e),
+        focus: c(0x0b5d94),
+        mode_studio: c(0xa84e00),
+        mode_radio: c(0xc41b2d),
+        mode_party: c(0xb5146d),
+        track: [
+            c(0x1d64b8),
+            c(0x17804a),
+            c(0x7a3bc4),
+            c(0x8d6200),
+            c(0x0d7c8a),
+            c(0xb8245a),
+        ],
+    },
 ];
+
+/// Index der aktiven Palette in [`PALETTES`].
+static CURRENT: AtomicUsize = AtomicUsize::new(0);
+
+/// Index in [`PALETTES`] für Thema und Modus.
+pub fn palette_index(theme: Theme, mode: Mode) -> usize {
+    let base = match mode {
+        Mode::Studio => 0,
+        Mode::Radio => 1,
+        Mode::Party => 2,
+    };
+    base + if theme == Theme::Hell { 3 } else { 0 }
+}
+
+/// Palette für Thema und Modus.
+pub fn palette_for(theme: Theme, mode: Mode) -> &'static Palette {
+    &PALETTES[palette_index(theme, mode)]
+}
+
+/// Die gerade aktive Palette.
+pub fn pal() -> &'static Palette {
+    &PALETTES[CURRENT.load(Ordering::Relaxed).min(PALETTES.len() - 1)]
+}
+
+/// Läuft gerade ein dunkles Thema?
+pub fn is_dark() -> bool {
+    CURRENT.load(Ordering::Relaxed) < 3
+}
+
+macro_rules! getters {
+    ($($name:ident),* $(,)?) => {
+        $(
+            #[doc = concat!("Token `", stringify!($name), "` der aktiven Palette.")]
+            pub fn $name() -> Color32 {
+                pal().$name
+            }
+        )*
+    };
+}
+
+getters!(
+    bg,
+    well,
+    panel,
+    panel_header,
+    surface,
+    surface_hover,
+    border,
+    border_strong,
+    grid,
+    lcd_bg,
+    led_off,
+    text,
+    text_dim,
+    lcd_text,
+    lcd_ink,
+    accent,
+    accent_strong,
+    accent_soft,
+    on_accent,
+    accent_2,
+    on_accent_2,
+    on_air,
+    on_air_fill,
+    ok,
+    cue,
+    warn,
+    led_green,
+    led_yellow,
+    led_red,
+    vu_face,
+    vu_ink,
+    focus,
+    mode_studio,
+    mode_radio,
+    mode_party
+);
 
 /// Farbe der Spur Nummer `i` (wiederholt sich nach sechs).
 pub fn track_color(i: usize) -> Color32 {
-    TRACK_COLORS[i % TRACK_COLORS.len()]
+    let t = &pal().track;
+    t[i % t.len()]
 }
 
 /// Mischt `c` mit `with` (0 = c, 1 = with).
@@ -52,41 +533,65 @@ pub fn mix(c: Color32, with: Color32, t: f32) -> Color32 {
     Color32::from_rgb(m(c.r(), with.r()), m(c.g(), with.g()), m(c.b(), with.b()))
 }
 
+/// Hebt `c` hervor (Glanzlicht, Spitzen, Umriss): im dunklen Thema Richtung Weiß, im hellen
+/// Richtung Schwarz, damit es sich auf hellen Flächen noch abhebt.
+pub fn emphasize(c: Color32, t: f32) -> Color32 {
+    if is_dark() {
+        mix(c, Color32::WHITE, t)
+    } else {
+        mix(c, Color32::BLACK, t * 0.6)
+    }
+}
+
 /// Eingefasster Studio-Modul-Rahmen (Karte mit 1px-Bevel).
 pub fn card_frame() -> Frame {
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER))
-        .corner_radius(CornerRadius::same(6))
-        .inner_margin(Margin::symmetric(12, 10))
+        .fill(panel())
+        .stroke(Stroke::new(1.0, border()))
+        .corner_radius(CornerRadius::same(RADIUS_LG))
+        .inner_margin(Margin::symmetric(SPACE_4 as i8, 10))
 }
 
-/// Tiefschwarzes LCD-/Display-Panel für Uhren, Zähler und Messwerte.
+/// LCD-/Display-Panel für Uhren, Zähler und Messwerte. Bleibt in beiden Themen dunkel
+/// (echte Hardware); Ziffern darin in `lcd_ink()`, Schrift in `lcd_text()`.
 pub fn lcd_frame() -> Frame {
     Frame::new()
-        .fill(WELL)
-        .stroke(Stroke::new(1.0, BORDER))
+        .fill(lcd_bg())
+        .stroke(Stroke::new(1.0, border()))
         .corner_radius(CornerRadius::same(5))
         .inner_margin(Margin::symmetric(12, 8))
 }
 
 /// Zeichnet ein kompaktes, beleuchtetes Status-Badge (LED-Pille).
 pub fn status_pill(ui: &mut egui::Ui, label: &str, color: Color32, active: bool) {
-    let fill = if active { mix(color, WELL, 0.72) } else { WELL };
-    let stroke_col = if active {
-        mix(color, Color32::WHITE, 0.15)
+    let dark = is_dark();
+    let fill = if active {
+        mix(color, well(), if dark { 0.72 } else { 0.80 })
     } else {
-        BORDER
+        well()
+    };
+    let stroke_col = if active {
+        if dark {
+            mix(color, Color32::WHITE, 0.15)
+        } else {
+            color
+        }
+    } else {
+        border()
     };
     let text_col = if active {
-        mix(color, Color32::WHITE, 0.35)
+        if dark {
+            mix(color, Color32::WHITE, 0.35)
+        } else {
+            mix(color, Color32::BLACK, 0.2)
+        }
     } else {
-        DIM
+        text_dim()
     };
     Frame::new()
         .fill(fill)
         .stroke(Stroke::new(1.0, stroke_col))
-        .corner_radius(CornerRadius::same(4))
+        .corner_radius(CornerRadius::same(RADIUS_MD))
         .inner_margin(Margin::symmetric(7, 2))
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 5.0;
@@ -95,7 +600,11 @@ pub fn status_pill(ui: &mut egui::Ui, label: &str, color: Color32, active: bool)
                 ui.painter().circle_filled(
                     dot.center(),
                     3.2,
-                    if active { color } else { mix(DIM, WELL, 0.5) },
+                    if active {
+                        color
+                    } else {
+                        mix(text_dim(), well(), 0.5)
+                    },
                 );
                 ui.label(
                     egui::RichText::new(label)
@@ -108,13 +617,24 @@ pub fn status_pill(ui: &mut egui::Ui, label: &str, color: Color32, active: bool)
         });
 }
 
+/// Farbe eines LED-Segments bei `seg_db` (Grün → Gelb → Rot), auf `lcd_bg`.
+fn led_color(seg_db: f32) -> Color32 {
+    if seg_db > -3.0 {
+        led_red()
+    } else if seg_db > -12.0 {
+        led_yellow()
+    } else {
+        led_green()
+    }
+}
+
 /// Zeichnet eine mehrgliedrige Studio-LED-Pegelanzeige (-60..0 dB, Grün → Gelb → Rot).
 pub fn led_meter(painter: &egui::Painter, rect: Rect, level: f32) {
-    painter.rect_filled(rect, 3.0, WELL);
+    painter.rect_filled(rect, 3.0, lcd_bg());
     painter.rect_stroke(
         rect,
         3.0,
-        Stroke::new(1.0, mix(BORDER, WELL, 0.35)),
+        Stroke::new(1.0, mix(border(), lcd_bg(), 0.35)),
         StrokeKind::Inside,
     );
     let inner = rect.shrink2(vec2(2.0, 2.0));
@@ -130,18 +650,11 @@ pub fn led_meter(painter: &egui::Painter, rect: Rect, level: f32) {
 
     for i in 0..segments {
         let seg_frac = (i + 1) as f32 / segments as f32;
-        let seg_db = seg_frac * 60.0 - 60.0;
-        let base_col = if seg_db > -3.0 {
-            ON_AIR
-        } else if seg_db > -12.0 {
-            Color32::from_rgb(245, 198, 48)
-        } else {
-            OK_GREEN
-        };
+        let base_col = led_color(seg_frac * 60.0 - 60.0);
         let col = if i < lit_count && frac > 0.005 {
             base_col
         } else {
-            mix(base_col, WELL, 0.86)
+            mix(base_col, lcd_bg(), 0.86)
         };
         let x0 = inner.left() + i as f32 * (seg_w + gap);
         let seg_rect =
@@ -152,11 +665,11 @@ pub fn led_meter(painter: &egui::Painter, rect: Rect, level: f32) {
 
 /// Zeichnet eine vertikale Studio-LED-Pegelanzeige (von unten nach oben, -60..0 dB) für den Mixer.
 pub fn led_meter_vertical(painter: &egui::Painter, rect: Rect, level: f32) {
-    painter.rect_filled(rect, 3.0, WELL);
+    painter.rect_filled(rect, 3.0, lcd_bg());
     painter.rect_stroke(
         rect,
         3.0,
-        Stroke::new(1.0, mix(BORDER, WELL, 0.35)),
+        Stroke::new(1.0, mix(border(), lcd_bg(), 0.35)),
         StrokeKind::Inside,
     );
     let inner = rect.shrink2(vec2(2.0, 2.0));
@@ -172,18 +685,11 @@ pub fn led_meter_vertical(painter: &egui::Painter, rect: Rect, level: f32) {
 
     for i in 0..segments {
         let seg_frac = (i + 1) as f32 / segments as f32;
-        let seg_db = seg_frac * 60.0 - 60.0;
-        let base_col = if seg_db > -3.0 {
-            ON_AIR
-        } else if seg_db > -12.0 {
-            Color32::from_rgb(245, 198, 48)
-        } else {
-            OK_GREEN
-        };
+        let base_col = led_color(seg_frac * 60.0 - 60.0);
         let col = if i < lit_count && frac > 0.005 {
             base_col
         } else {
-            mix(base_col, WELL, 0.86)
+            mix(base_col, lcd_bg(), 0.86)
         };
         let y0 = inner.bottom() - (i as f32 + 1.0) * seg_h - i as f32 * gap;
         let seg_rect =
@@ -192,76 +698,258 @@ pub fn led_meter_vertical(painter: &egui::Painter, rect: Rect, level: f32) {
     }
 }
 
-/// Setzt Farben, Abstände und Schriftgrößen.
-pub fn apply(ctx: &egui::Context) {
-    // Helles Thema nur zur Probe (`WOA_THEME=hell`): Fenster und Piano-Roll folgen ihm,
-    // die Zeitleiste bleibt dunkel.
-    if std::env::var("WOA_THEME").is_ok_and(|t| t == "hell" || t == "light") {
-        ctx.set_theme(egui::Theme::Light);
-        return;
-    }
-    ctx.set_theme(egui::Theme::Dark);
-    ctx.style_mut_of(egui::Theme::Dark, |s| {
-        let v = &mut s.visuals;
-        v.override_text_color = Some(TEXT_BRIGHT);
-        v.panel_fill = PANEL;
-        v.window_fill = PANEL;
-        v.extreme_bg_color = WELL;
-        v.faint_bg_color = SURFACE;
-        v.selection.bg_fill = mix(ACCENT, BG, 0.40);
-        v.selection.stroke = Stroke::new(1.0, ACCENT);
-        v.hyperlink_color = ACCENT;
-        v.window_corner_radius = CornerRadius::same(8);
-        v.window_stroke = Stroke::new(1.0, BORDER);
-        v.menu_corner_radius = CornerRadius::same(6);
-        let r = CornerRadius::same(4);
-        for (w, fill, stroke) in [
-            (
-                &mut v.widgets.noninteractive,
-                PANEL,
-                Stroke::new(1.0, BORDER),
-            ),
-            (&mut v.widgets.inactive, SURFACE, Stroke::new(1.0, BORDER)),
-            (
-                &mut v.widgets.hovered,
-                mix(SURFACE, Color32::WHITE, 0.10),
-                Stroke::new(1.0, mix(BORDER, ACCENT, 0.55)),
-            ),
-            (
-                &mut v.widgets.active,
-                mix(SURFACE, ACCENT, 0.28),
-                Stroke::new(1.0, ACCENT),
-            ),
-            (
-                &mut v.widgets.open,
-                mix(SURFACE, Color32::WHITE, 0.07),
-                Stroke::new(1.0, mix(BORDER, ACCENT, 0.4)),
-            ),
-        ] {
-            w.corner_radius = r;
-            w.weak_bg_fill = fill;
-            w.bg_fill = fill;
-            w.bg_stroke = stroke;
-        }
-        v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, TEXT_BRIGHT);
-        v.widgets.inactive.fg_stroke = Stroke::new(1.0, TEXT_BRIGHT);
-        v.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::WHITE);
-        v.widgets.active.fg_stroke = Stroke::new(1.0, Color32::WHITE);
+/// Probe für Fotomodus und Tests: `WOA_THEME=hell` oder `dunkel` schlägt die Einstellung.
+pub fn env_override() -> Option<Theme> {
+    static V: std::sync::OnceLock<Option<Theme>> = std::sync::OnceLock::new();
+    *V.get_or_init(|| match std::env::var("WOA_THEME").as_deref() {
+        Ok("hell" | "light") => Some(Theme::Hell),
+        Ok("dunkel" | "dark") => Some(Theme::Dunkel),
+        _ => None,
+    })
+}
 
-        s.spacing.item_spacing = vec2(8.0, 6.0);
-        s.spacing.button_padding = vec2(10.0, 5.0);
-        s.spacing.interact_size.y = 26.0;
-        s.spacing.slider_width = 110.0;
-        s.visuals.slider_trailing_fill = true;
-        s.text_styles
-            .insert(TextStyle::Body, FontId::proportional(13.5));
-        s.text_styles
-            .insert(TextStyle::Button, FontId::proportional(13.5));
-        s.text_styles
-            .insert(TextStyle::Monospace, FontId::monospace(13.5));
-        s.text_styles
-            .insert(TextStyle::Small, FontId::proportional(11.0));
-        s.text_styles
-            .insert(TextStyle::Heading, FontId::proportional(16.0));
+/// Rahmt ein LCD-/Display-Feld: wie [`lcd_frame`], und der Inhalt läuft auch im hellen Thema mit
+/// der dunklen Palette des Modus (Stil und Farbfunktionen), weil LCDs wie echte Hardware immer
+/// dunkel bleiben.
+pub fn lcd_show<R>(
+    ui: &mut egui::Ui,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    lcd_frame().show(ui, |ui| {
+        if is_dark() {
+            return add_contents(ui);
+        }
+        let saved = CURRENT.load(Ordering::Relaxed);
+        // Hell → gleicher Modus dunkel (Index − 3).
+        CURRENT.store(saved.saturating_sub(3), Ordering::Relaxed);
+        let style = ui.ctx().style_of(egui::Theme::Dark);
+        ui.set_style(style);
+        let r = add_contents(ui);
+        CURRENT.store(saved, Ordering::Relaxed);
+        r
+    })
+}
+
+/// Stellt Thema und Modus ein und setzt Farben, Abstände und Schriftgrößen von egui.
+/// Beide egui-Themen bekommen den Stil zum Modus (das dunkle auch im hellen Thema, für LCD-Felder);
+/// aktiv ist das gewählte. Nur bei Änderung von Thema oder Modus nötig.
+pub fn apply(ctx: &egui::Context, theme: Theme, mode: Mode) {
+    CURRENT.store(palette_index(theme, mode), Ordering::Relaxed);
+    for (t, egui_theme) in [
+        (Theme::Dunkel, egui::Theme::Dark),
+        (Theme::Hell, egui::Theme::Light),
+    ] {
+        let p = palette_for(t, mode);
+        ctx.style_mut_of(egui_theme, |s| style_for(s, p, t == Theme::Dunkel));
+    }
+    ctx.set_theme(if theme == Theme::Dunkel {
+        egui::Theme::Dark
+    } else {
+        egui::Theme::Light
     });
+}
+
+fn style_for(s: &mut egui::Style, p: &Palette, dark: bool) {
+    let v = &mut s.visuals;
+    v.override_text_color = Some(p.text);
+    v.panel_fill = p.panel;
+    v.window_fill = p.panel;
+    v.extreme_bg_color = p.well;
+    v.faint_bg_color = p.surface;
+    v.code_bg_color = p.well;
+    v.error_fg_color = p.on_air;
+    v.warn_fg_color = p.warn;
+    v.selection.bg_fill = if dark {
+        mix(p.accent, p.bg, 0.40)
+    } else {
+        p.accent_soft
+    };
+    v.selection.stroke = Stroke::new(1.0, p.accent);
+    v.hyperlink_color = p.accent;
+    v.window_corner_radius = CornerRadius::same(RADIUS_XL);
+    v.window_stroke = Stroke::new(1.0, p.border);
+    v.menu_corner_radius = CornerRadius::same(RADIUS_LG);
+    let r = CornerRadius::same(RADIUS_MD);
+    let (open_fill, active_fill) = if dark {
+        (
+            mix(p.surface, Color32::WHITE, 0.07),
+            mix(p.surface, p.accent, 0.28),
+        )
+    } else {
+        (p.surface_hover, p.accent_soft)
+    };
+    for (w, fill, stroke) in [
+        (
+            &mut v.widgets.noninteractive,
+            p.panel,
+            Stroke::new(1.0, p.border),
+        ),
+        (
+            &mut v.widgets.inactive,
+            p.surface,
+            Stroke::new(1.0, p.border_strong),
+        ),
+        (
+            &mut v.widgets.hovered,
+            p.surface_hover,
+            Stroke::new(1.0, mix(p.border_strong, p.accent, 0.55)),
+        ),
+        (
+            &mut v.widgets.active,
+            active_fill,
+            Stroke::new(1.0, p.accent),
+        ),
+        (
+            &mut v.widgets.open,
+            open_fill,
+            Stroke::new(1.0, mix(p.border_strong, p.accent, 0.4)),
+        ),
+    ] {
+        w.corner_radius = r;
+        w.weak_bg_fill = fill;
+        w.bg_fill = fill;
+        w.bg_stroke = stroke;
+    }
+    v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, p.text);
+    v.widgets.inactive.fg_stroke = Stroke::new(1.0, p.text);
+    let strong = if dark { Color32::WHITE } else { p.text };
+    v.widgets.hovered.fg_stroke = Stroke::new(1.0, strong);
+    v.widgets.active.fg_stroke = Stroke::new(1.0, strong);
+    v.slider_trailing_fill = true;
+
+    s.spacing.item_spacing = vec2(SPACE_3, 6.0);
+    s.spacing.button_padding = vec2(10.0, 5.0);
+    s.spacing.interact_size.y = 26.0;
+    s.spacing.slider_width = 110.0;
+    s.text_styles
+        .insert(TextStyle::Body, FontId::proportional(13.5));
+    s.text_styles
+        .insert(TextStyle::Button, FontId::proportional(13.5));
+    s.text_styles
+        .insert(TextStyle::Monospace, FontId::monospace(13.5));
+    s.text_styles
+        .insert(TextStyle::Small, FontId::proportional(11.0));
+    s.text_styles
+        .insert(TextStyle::Heading, FontId::proportional(16.0));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TOKENS: &str = include_str!("../../../docs/design/woa-design-system/tokens.json");
+
+    fn hex(s: &str) -> Color32 {
+        let h = s.trim_start_matches('#');
+        let v = u32::from_str_radix(h, 16).expect("hex color");
+        Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
+    }
+
+    fn px(s: &str) -> f32 {
+        s.trim_end_matches("px").parse().expect("px value")
+    }
+
+    #[test]
+    fn palettes_match_tokens_json() {
+        let json: serde_json::Value = serde_json::from_str(TOKENS).expect("tokens.json");
+        let ids: Vec<&str> = json["color"]["themes"]
+            .as_array()
+            .expect("themes")
+            .iter()
+            .map(|t| t["id"].as_str().expect("id"))
+            .collect();
+        assert_eq!(ids.len(), PALETTES.len());
+        let tokens = json["color"]["tokens"].as_array().expect("tokens");
+        for (idx, id) in ids.iter().enumerate() {
+            let named = PALETTES[idx].named();
+            assert_eq!(
+                named.len(),
+                tokens.len(),
+                "Zahl der Tokens in {id}: tokens.json und theme.rs weichen ab"
+            );
+            for t in tokens {
+                let name = t["name"].as_str().expect("name");
+                let want = hex(t["value"][id].as_str().expect("value"));
+                let got = named
+                    .iter()
+                    .find(|(n, _)| n == name)
+                    .unwrap_or_else(|| panic!("Token {name} fehlt in theme.rs"))
+                    .1;
+                assert_eq!(got, want, "Token {name} in {id}");
+            }
+        }
+    }
+
+    #[test]
+    fn palette_order_follows_theme_ids() {
+        let json: serde_json::Value = serde_json::from_str(TOKENS).expect("tokens.json");
+        let ids: Vec<&str> = json["color"]["themes"]
+            .as_array()
+            .expect("themes")
+            .iter()
+            .map(|t| t["id"].as_str().expect("id"))
+            .collect();
+        for (theme, suffix) in [(Theme::Dunkel, ""), (Theme::Hell, "-hell")] {
+            for (mode, name) in [
+                (Mode::Studio, "studio"),
+                (Mode::Radio, "radio"),
+                (Mode::Party, "party"),
+            ] {
+                assert_eq!(ids[palette_index(theme, mode)], format!("{name}{suffix}"));
+            }
+        }
+    }
+
+    #[test]
+    fn spacing_and_radius_match_tokens_json() {
+        let json: serde_json::Value = serde_json::from_str(TOKENS).expect("tokens.json");
+        let val = |group: &str, name: &str| -> f32 {
+            let t = json[group]["tokens"]
+                .as_array()
+                .expect("group")
+                .iter()
+                .find(|t| t["name"] == name)
+                .unwrap_or_else(|| panic!("{name} fehlt"));
+            px(t["value"].as_str().expect("value"))
+        };
+        for (name, got) in [
+            ("space-1", SPACE_1),
+            ("space-2", SPACE_2),
+            ("space-3", SPACE_3),
+            ("space-4", SPACE_4),
+            ("space-5", SPACE_5),
+            ("space-6", SPACE_6),
+            ("space-7", SPACE_7),
+        ] {
+            assert_eq!(val("spacing", name), got, "{name}");
+        }
+        for (name, got) in [
+            ("radius-xs", RADIUS_XS),
+            ("radius-sm", RADIUS_SM),
+            ("radius-md", RADIUS_MD),
+            ("radius-lg", RADIUS_LG),
+            ("radius-xl", RADIUS_XL),
+            ("radius-party", RADIUS_PARTY),
+        ] {
+            assert_eq!(val("radius", name), f32::from(got), "{name}");
+        }
+    }
+
+    #[test]
+    fn theme_serializes_lowercase_and_defaults_to_dark() {
+        assert_eq!(Theme::default(), Theme::Dunkel);
+        assert_eq!(serde_json::to_string(&Theme::Hell).unwrap(), "\"hell\"");
+        assert_eq!(
+            serde_json::from_str::<Theme>("\"dunkel\"").unwrap(),
+            Theme::Dunkel
+        );
+    }
+
+    #[test]
+    fn mode_color_follows_layout() {
+        let studio = palette_for(Theme::Dunkel, Mode::Studio);
+        let radio = palette_for(Theme::Dunkel, Mode::Radio);
+        assert_ne!(studio.accent, radio.accent);
+        assert_eq!(studio.lcd_bg, palette_for(Theme::Hell, Mode::Studio).lcd_bg);
+    }
 }

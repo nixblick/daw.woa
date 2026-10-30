@@ -126,13 +126,13 @@ impl RemoteView {
                     egui::RichText::new("FERNBEDIENUNG")
                         .size(11.5)
                         .strong()
-                        .color(theme::DIM),
+                        .color(theme::text_dim()),
                 );
                 if let Some(r) = &self.remote {
                     theme::status_pill(
                         ui,
                         &format!("an · {} verbunden", r.clients()),
-                        theme::OK_GREEN,
+                        theme::ok(),
                         true,
                     );
                 }
@@ -145,7 +145,7 @@ impl RemoteView {
             }
             if let Some(e) = &self.error {
                 ui.add_space(4.0);
-                ui.label(egui::RichText::new(e).color(theme::ON_AIR));
+                ui.label(egui::RichText::new(e).color(theme::on_air()));
             }
         });
     }
@@ -153,7 +153,7 @@ impl RemoteView {
     fn ui_off(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.label(
             egui::RichText::new("Handys im WLAN zeigen die Party und wünschen Titel.")
-                .color(theme::DIM),
+                .color(theme::text_dim()),
         );
         ui.checkbox(
             &mut self.osc_on,
@@ -163,9 +163,9 @@ impl RemoteView {
             egui::RichText::new("Fernbedienung an")
                 .size(18.0)
                 .strong()
-                .color(theme::WELL),
+                .color(theme::well()),
         )
-        .fill(theme::OK_GREEN)
+        .fill(theme::ok())
         .min_size(egui::vec2(ui.available_width(), 48.0));
         if ui.add(btn).clicked() {
             self.start(ctx);
@@ -189,23 +189,19 @@ impl RemoteView {
             }
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("Gäste scannen den Code").strong());
-                ui.label(
-                    egui::RichText::new(&plain)
-                        .monospace()
-                        .color(theme::CUE_CYAN),
-                );
+                ui.label(egui::RichText::new(&plain).monospace().color(theme::cue()));
                 ui.label(
                     egui::RichText::new(format!("Gast-PIN {pin}"))
                         .size(22.0)
                         .monospace()
                         .strong()
-                        .color(theme::ACCENT),
+                        .color(theme::accent()),
                 );
                 if let Some(o) = osc {
                     ui.label(
                         egui::RichText::new(format!("OSC an {o}"))
                             .small()
-                            .color(theme::ON_AIR),
+                            .color(theme::on_air()),
                     );
                 }
             });
@@ -217,19 +213,19 @@ impl RemoteView {
                     .size(22.0)
                     .monospace()
                     .strong()
-                    .color(theme::ACCENT),
+                    .color(theme::accent()),
             );
             ui.label(
                 egui::RichText::new("Nur für dich: wer die DJ-PIN kennt, steuert die Party.")
                     .small()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
             );
             ui.add(
                 egui::Label::new(
                     egui::RichText::new(&dj_url)
                         .small()
                         .monospace()
-                        .color(theme::DIM),
+                        .color(theme::text_dim()),
                 )
                 .truncate(),
             );
