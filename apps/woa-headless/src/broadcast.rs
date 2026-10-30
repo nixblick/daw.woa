@@ -115,6 +115,41 @@ fn run_clock(
     }
 }
 
+/// Logzeile der Oberfläche auf stderr: Unix-Zeit (zum Abgleich mit dem Systemjournal),
+/// Prozess-ID (erste und neu gestartete Oberfläche unterscheiden) und Sekunden seit Start.
+fn ui_log(start: Instant, msg: &str) {
+    let unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64());
+    eprintln!(
+        "ui-log unix={unix:.3} pid={} t={:.3} {msg}",
+        std::process::id(),
+        start.elapsed().as_secs_f64()
+    );
+}
+
+/// Seitenfehler und Auslagerung des Prozesses (nur Linux), um ein Stocken des ganzen
+/// Prozesses (Speicherdruck) von einem langsamen Mixer zu unterscheiden.
+fn memory_note() -> String {
+    let majflt = std::fs::read_to_string("/proc/self/stat")
+        .ok()
+        .and_then(|s| {
+            // Feld 12 (majflt), gezählt nach dem Programmnamen in Klammern.
+            let rest = s.rsplit_once(')')?.1;
+            rest.split_whitespace().nth(9).map(str::to_owned)
+        })
+        .unwrap_or_else(|| "?".into());
+    let swap = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("VmSwap:"))
+                .map(|l| l.trim_start_matches("VmSwap:").trim().to_owned())
+        })
+        .unwrap_or_else(|| "?".into());
+    format!("Speicher: majflt={majflt} VmSwap={swap}")
+}
+
 /// Kindprozess: Sendemixer im Takt, Null-Ausgabe, Sendemix an `link`.
 ///
 /// Zwei Threads wie in der Oberfläche: Der Takt-Thread rechnet nur den Mixer
@@ -151,6 +186,7 @@ pub fn cmd_broadcast_ui(radio: &Path, link: &Path, rate: u32, seconds: f64) -> R
     let mut counts = UiCounts::default();
     let mut next_report = start + Duration::from_secs(5);
     let mut title = String::new();
+    let mut last_turn = Instant::now();
     loop {
         c.pump();
         if c.finished() {
@@ -158,16 +194,18 @@ pub fn cmd_broadcast_ui(radio: &Path, link: &Path, rate: u32, seconds: f64) -> R
             c.set_cue(0);
             c.start();
             if let Some((p, d)) = c.last_load() {
-                eprintln!(
-                    "ui-log t={:.3} playlist neu, {} in {} ms dekodiert",
-                    start.elapsed().as_secs_f64(),
-                    p.display(),
-                    d.as_millis()
+                ui_log(
+                    start,
+                    &format!(
+                        "playlist neu, {} in {} ms dekodiert",
+                        p.display(),
+                        d.as_millis()
+                    ),
                 );
             }
         }
         if let Some(m) = c.take_message() {
-            eprintln!("ui-log t={:.3} {m}", start.elapsed().as_secs_f64());
+            ui_log(start, &m);
         }
         if let Some(i) = c.current_index()
             && let Some(e) = c.show().playlist.get(i)
@@ -178,12 +216,28 @@ pub fn cmd_broadcast_ui(radio: &Path, link: &Path, rate: u32, seconds: f64) -> R
                 title = t;
             }
         }
+        let mut any_late = false;
         while let Ok(x) = late_rx.pop() {
-            eprintln!(
-                "ui-log t={:.3} block zu spät um {:.1} ms (Sendezeit {:.3} s)",
-                start.elapsed().as_secs_f64(),
-                x.micros as f64 / 1000.0,
-                x.frame as f64 / f64::from(rate)
+            any_late = true;
+            ui_log(
+                start,
+                &format!(
+                    "block zu spät um {:.1} ms (Sendezeit {:.3} s)",
+                    x.micros as f64 / 1000.0,
+                    x.frame as f64 / f64::from(rate)
+                ),
+            );
+        }
+        if any_late {
+            ui_log(start, &memory_note());
+        }
+        let now = Instant::now();
+        let gap = now - last_turn;
+        last_turn = now;
+        if gap > Duration::from_millis(100) {
+            ui_log(
+                start,
+                &format!("Steuer-Thread stand {} ms still", gap.as_millis()),
             );
         }
         counts.frames = clock.frames.load(Ordering::Acquire);
