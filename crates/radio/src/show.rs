@@ -9,10 +9,10 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::CARTS;
 use crate::audio::{Measured, file_stamp};
 use crate::cues::Cues;
 use crate::level::{TARGET_LUFS, auto_gain_db};
+use crate::{CARTS, DECKS};
 
 /// Aktuelle Formatversion von `radio.json`.
 pub const VERSION: u32 = 1;
@@ -119,6 +119,11 @@ impl CartEntry {
     }
 }
 
+/// Buchstabe eines Decks: 0 = A.
+pub fn deck_name(deck: usize) -> char {
+    (b'A' + (deck.min(25)) as u8) as char
+}
+
 /// Kein Cart auf dieser Taste: Wert in [`RadioShow::cart_keys`].
 pub const NO_KEY: &str = "-";
 
@@ -126,6 +131,10 @@ pub const NO_KEY: &str = "-";
 pub fn default_cart_key(slot: usize) -> Option<&'static str> {
     const KEYS: [&str; 10] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
     KEYS.get(slot).copied()
+}
+
+fn decks_empty(v: &[Option<CartEntry>]) -> bool {
+    v.iter().all(Option::is_none)
 }
 
 fn all_empty(v: &[String]) -> bool {
@@ -173,6 +182,9 @@ pub struct RadioShow {
     /// [`NO_KEY`] = keine. Genau [`CARTS`] Felder.
     #[serde(default, skip_serializing_if = "all_empty")]
     pub cart_keys: Vec<String>,
+    /// Genau [`DECKS`] Decks (A, B, C), `null` = leer. Nur Cue-In und Cue-Out zählen.
+    #[serde(default, skip_serializing_if = "decks_empty")]
+    pub decks: Vec<Option<CartEntry>>,
 }
 
 impl Default for RadioShow {
@@ -187,6 +199,7 @@ impl Default for RadioShow {
             playlist: Vec::new(),
             carts: vec![None; CARTS],
             cart_keys: vec![String::new(); CARTS],
+            decks: vec![None; DECKS],
         }
     }
 }
@@ -210,6 +223,12 @@ impl RadioShow {
         }
         self.target_lufs = self.target_lufs.clamp(-40.0, -5.0);
         self.carts.resize(CARTS, None);
+        self.decks.resize(DECKS, None);
+        for e in self.decks.iter_mut().flatten() {
+            if e.cues.validate(None).is_err() {
+                e.cues = Cues::default();
+            }
+        }
         self.cart_keys.resize(CARTS, String::new());
         for e in self.carts.iter_mut().flatten() {
             if e.cues.validate(None).is_err() {
@@ -280,6 +299,23 @@ impl RadioShow {
                 Ok(())
             }
             _ => Err(format!("Cart {} ist frei", slot + 1)),
+        }
+    }
+
+    /// Setzt Cue-In und Cue-Out von Deck `deck`.
+    pub fn set_deck_cues(&mut self, deck: usize, cues: Cues) -> Result<(), String> {
+        let c = Cues {
+            cue_in: cues.cue_in,
+            cue_out: cues.cue_out,
+            ..Cues::default()
+        };
+        c.validate(None)?;
+        match self.decks.get_mut(deck) {
+            Some(Some(e)) => {
+                e.cues = c;
+                Ok(())
+            }
+            _ => Err(format!("Deck {} ist leer", deck_name(deck))),
         }
     }
 

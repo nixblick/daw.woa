@@ -41,6 +41,8 @@ pub use woa_engine::pairs::PairBuf;
 
 /// Felder der Cart-Wall (4×4).
 pub const CARTS: usize = 16;
+/// Zahl der Decks (A, B, C).
+pub const DECKS: usize = 3;
 /// Name der Datei im Datenordner.
 pub const RADIO_FILE: &str = "radio.json";
 /// Unterordner im Datenordner für Mitschnitte.

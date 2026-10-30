@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.4 — 2026-10-30
+
+Silvestersendung Teil 2, Paket 2 von 4 (#134): drei Decks.
+
+- **Decks A, B, C** im Radio-Fenster über der Cart-Wall: große Restzeit (rot unter 10 s), Start/Stopp, Cue (zurück an den Anfang) und Vorhören je Deck. Stopp blendet kurz aus und hält die Stelle, Start läuft von dort weiter; am Ende steht das Deck wieder am Anfang. Mehrere Decks laufen gleichzeitig, auch neben Playlist und Carts. Ohne Ausgänge-Zuordnung erscheinen sie im Hauptausgang.
+- **Laden:** Datei aus dem Explorer oder aus der Bibliothek auf das Deck ziehen, Rechtsklick auf den Decktitel, „Datei laden …“, oder Rechtsklick auf einen Playlist-Titel, „Auf Deck laden“ (mit dessen Cue-In und Cue-Out). Die Decks bleiben in `radio.json` erhalten (`decks`, alte Dateien laden unverändert).
+- **Schnitt und Vorhören:** Rechtsklick auf den Decktitel, „Start und Ende schneiden …“ wie bei den Carts; „Vorhören“ läuft über den Kopfhörer-Ausgang, nie auf Sendung.
+- **Ausgänge:** Jedes Deck bekommt ein eigenes Gerät und Kanalpaar (Einstellungen, „Ausgänge (Soundkarten) …“). Neu: „Wie Playlist“ ist die Vorgabe für alle Quellen außer der Playlist. Bisher lief eine nicht eingestellte Cart-Wall auf dem Windows-Standardgerät, jetzt mit der Playlist.
+
 ## 0.34.3 — 2026-10-30
 
 Ein Knopf für Play und Pause (Refs #137).

@@ -164,6 +164,8 @@ pub struct Controller {
     cue: Option<u32>,
     running: bool,
     carts: Vec<Option<Shared<Stereo>>>,
+    /// Dekodierte Titel der Decks A bis C.
+    decks: Vec<Option<Shared<Stereo>>>,
     recording: Option<Recording>,
     message: Option<String>,
     /// Titel, die sich nicht laden ließen (werden übersprungen).
@@ -230,6 +232,7 @@ impl Controller {
             cue: None,
             running: false,
             carts: vec![None; CARTS],
+            decks: vec![None; crate::DECKS],
             recording: None,
             message: None,
             failed: Vec::new(),
@@ -277,7 +280,13 @@ impl Controller {
             };
         }
         let carts_changed = show.carts != self.show.carts;
+        let decks_changed = show.decks != self.show.decks;
         self.show = show;
+        if decks_changed {
+            for deck in 0..crate::DECKS {
+                self.load_deck(deck);
+            }
+        }
         if carts_changed {
             self.carts = vec![None; CARTS];
             for slot in 0..CARTS {
@@ -786,6 +795,147 @@ impl Controller {
             self.send(Cmd::ClearNext);
             self.pending = None;
         }
+    }
+
+    // ---- Decks A, B, C ---------------------------------------------------------------
+
+    /// Lädt den Titel von Deck `deck` aus `show.decks` und legt ihn in den Mixer.
+    fn load_deck(&mut self, deck: usize) {
+        let Some(Some(e)) = self.show.decks.get(deck) else {
+            self.decks[deck] = None;
+            self.send(Cmd::DeckEject(deck));
+            return;
+        };
+        let (path, cues) = (e.path.clone(), e.cues);
+        match load_stereo(&path, self.rate) {
+            Ok(s) => {
+                let buf = Shared::new(&self.collector.handle(), s);
+                self.decks[deck] = Some(buf.clone());
+                let f = cues.frames(self.rate, buf.frames());
+                self.send(Cmd::DeckLoad {
+                    deck,
+                    buf,
+                    gain: 1.0,
+                    start: f.start,
+                    end: f.end,
+                });
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "deck load failed");
+                self.show.decks[deck] = None;
+                self.decks[deck] = None;
+                self.send(Cmd::DeckEject(deck));
+                self.message = Some(err);
+            }
+        }
+    }
+
+    /// Legt eine Datei auf Deck `deck` (steht danach am Cue-In). Ein laufendes Deck wird
+    /// ersetzt.
+    pub fn deck_load(&mut self, deck: usize, path: PathBuf, cues: Cues) -> Result<(), String> {
+        if deck >= crate::DECKS {
+            return Err(format!("Deck {} gibt es nicht", deck + 1));
+        }
+        let mut entry = CartEntry::new(path);
+        entry.cues = Cues {
+            cue_in: cues.cue_in,
+            cue_out: cues.cue_out,
+            ..Cues::default()
+        };
+        self.show.decks[deck] = Some(entry);
+        self.load_deck(deck);
+        if self.show.decks[deck].is_none() {
+            return Err(self
+                .message
+                .take()
+                .unwrap_or_else(|| "Deck: Laden fehlgeschlagen".into()));
+        }
+        Ok(())
+    }
+
+    /// Legt Playlist-Titel `index` auf Deck `deck` (mit seinen Cue-Punkten).
+    pub fn deck_load_title(&mut self, deck: usize, index: usize) -> Result<(), String> {
+        let (path, cues) = self
+            .show
+            .playlist
+            .get(index)
+            .map(|e| (e.path.clone(), e.cues))
+            .ok_or_else(|| format!("Titel {} gibt es nicht", index + 1))?;
+        self.deck_load(deck, path, cues)
+    }
+
+    /// Deck starten.
+    pub fn deck_play(&mut self, deck: usize) {
+        if self.decks.get(deck).is_some_and(Option::is_some) {
+            self.send(Cmd::DeckPlay(deck));
+        }
+    }
+
+    /// Deck anhalten (die Stelle bleibt).
+    pub fn deck_stop(&mut self, deck: usize) {
+        self.send(Cmd::DeckStop(deck));
+    }
+
+    /// Deck anhalten und an den Anfang stellen.
+    pub fn deck_cue(&mut self, deck: usize) {
+        self.send(Cmd::DeckCue(deck));
+    }
+
+    /// Deck leeren.
+    pub fn deck_eject(&mut self, deck: usize) {
+        if let Some(e) = self.show.decks.get_mut(deck) {
+            *e = None;
+        }
+        if let Some(d) = self.decks.get_mut(deck) {
+            *d = None;
+        }
+        self.send(Cmd::DeckEject(deck));
+    }
+
+    /// Setzt Cue-In und Cue-Out von Deck `deck`; gilt gleich (ein stehendes Deck springt an
+    /// den neuen Anfang).
+    pub fn set_deck_cues(&mut self, deck: usize, cues: Cues) -> Result<(), String> {
+        let secs = self
+            .decks
+            .get(deck)
+            .and_then(Option::as_ref)
+            .map(|b| b.frames() as f64 / f64::from(self.rate));
+        cues.validate(secs)?;
+        self.show.set_deck_cues(deck, cues)?;
+        let (rate, frames) = (
+            self.rate,
+            self.decks[deck].as_ref().map_or(0, |b| b.frames()),
+        );
+        let f = self.show.decks[deck]
+            .as_ref()
+            .map(|e| e.cues.frames(rate, frames))
+            .unwrap_or_else(|| Cues::default().frames(rate, frames));
+        self.send(Cmd::DeckCues {
+            deck,
+            start: f.start,
+            end: f.end,
+        });
+        Ok(())
+    }
+
+    /// Hört Deck `deck` ab `from` Sekunden vor.
+    pub fn pfl_deck_at(&mut self, deck: usize, from: f64) -> Result<(), String> {
+        let path = match self.show.decks.get(deck) {
+            Some(Some(c)) => c.path.clone(),
+            _ => return Err(format!("Deck {} ist leer", crate::show::deck_name(deck))),
+        };
+        self.pfl_play(&path, from)
+    }
+
+    /// Hört Deck `deck` vor, ab seinem Cue-In.
+    pub fn pfl_deck(&mut self, deck: usize) -> Result<(), String> {
+        let from = self
+            .show
+            .decks
+            .get(deck)
+            .and_then(Option::as_ref)
+            .map_or(0.0, |c| c.cues.start());
+        self.pfl_deck_at(deck, from)
     }
 
     // ---- Carts -----------------------------------------------------------------------

@@ -83,16 +83,24 @@ impl OutputsUi {
                         for s in Source::ALL {
                             ui.label(s.label());
                             let mut route = self.draft.get(s);
-                            self.device_combo(ui, s, &mut route);
-                            egui::ComboBox::from_id_salt(("pair", s))
-                                .selected_text(pair_label(route.pair))
-                                .show_ui(ui, |ui| {
-                                    for p in 0..PAIRS {
-                                        ui.selectable_value(&mut route.pair, p, pair_label(p));
-                                    }
-                                });
+                            let mut follow =
+                                s != Source::Playlist && self.draft.explicit(s).is_none();
+                            self.device_combo(ui, s, &mut route, &mut follow);
+                            ui.add_enabled_ui(!follow, |ui| {
+                                egui::ComboBox::from_id_salt(("pair", s))
+                                    .selected_text(pair_label(route.pair))
+                                    .show_ui(ui, |ui| {
+                                        for p in 0..PAIRS {
+                                            ui.selectable_value(&mut route.pair, p, pair_label(p));
+                                        }
+                                    });
+                            });
                             ui.end_row();
-                            self.draft.set(s, route);
+                            if follow {
+                                self.draft.clear(s);
+                            } else {
+                                self.draft.set(s, route);
+                            }
                         }
                     });
                 if let Some(e) = &self.list_error {
@@ -133,12 +141,13 @@ impl OutputsUi {
         applied
     }
 
-    fn device_combo(&self, ui: &mut egui::Ui, s: Source, route: &mut Route) {
+    fn device_combo(&self, ui: &mut egui::Ui, s: Source, route: &mut Route, follow: &mut bool) {
         let known = route
             .device_id
             .as_ref()
             .is_none_or(|id| self.devices.iter().any(|d| d.id == *id));
         let shown = match (&route.device_id, known) {
+            _ if *follow => "Wie Playlist".to_string(),
             (None, _) => "Standardgerät".to_string(),
             (Some(_), true) => route.device_label(),
             (Some(_), false) => format!("{} (fehlt)", route.device_label()),
@@ -147,16 +156,21 @@ impl OutputsUi {
             .width(280.0)
             .selected_text(shown)
             .show_ui(ui, |ui| {
+                if s != Source::Playlist && ui.selectable_label(*follow, "Wie Playlist").clicked() {
+                    *follow = true;
+                }
                 if ui
-                    .selectable_label(route.device_id.is_none(), "Standardgerät")
+                    .selectable_label(!*follow && route.device_id.is_none(), "Standardgerät")
                     .clicked()
                 {
+                    *follow = false;
                     route.device_id = None;
                     route.device_name.clear();
                 }
                 for d in &self.devices {
-                    let on = route.device_id.as_deref() == Some(d.id.as_str());
+                    let on = !*follow && route.device_id.as_deref() == Some(d.id.as_str());
                     if ui.selectable_label(on, &d.name).clicked() {
+                        *follow = false;
                         route.device_id = Some(d.id.clone());
                         route.device_name = d.name.clone();
                     }

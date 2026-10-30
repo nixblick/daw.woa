@@ -67,6 +67,8 @@ pub struct RadioDesk {
     /// Fläche der Playlist und der Cart-Pads im letzten Bild (Ziel für Ziehen aus der Bibliothek).
     playlist_rect: egui::Rect,
     cart_rects: Vec<egui::Rect>,
+    /// Flächen der Decks A bis C (Ziel für gezogene Dateien).
+    deck_rects: [egui::Rect; woa_radio::DECKS],
     /// Cart, das die nächste gedrückte Taste als neue Taste bekommt.
     key_capture: Option<usize>,
     /// Ortszeit für die Uhrzeit-Anzeige (von der Stundenuhr).
@@ -322,6 +324,7 @@ impl RadioDesk {
             learn: None,
             playlist_rect: egui::Rect::NOTHING,
             cart_rects: Vec::new(),
+            deck_rects: [egui::Rect::NOTHING; woa_radio::DECKS],
             key_capture: None,
             zone: Zone::CENTRAL_EUROPE,
             cue_editor: None,
@@ -767,10 +770,16 @@ impl RadioDesk {
                 .filter_map(|f| f.path.clone())
                 .collect()
         });
-        if !dropped.is_empty()
-            && let Some(s) = &self.station
-        {
-            s.add_files(dropped);
+        if !dropped.is_empty() {
+            let pos = ctx.input(|i| i.pointer.latest_pos());
+            let deck = pos.and_then(|p| self.deck_rects.iter().position(|r| r.contains(p)));
+            if let Some(k) = deck {
+                if let Some(path) = dropped.into_iter().next() {
+                    self.deck_load_file(k, path);
+                }
+            } else if let Some(s) = &self.station {
+                s.add_files(dropped);
+            }
         }
     }
 
@@ -811,6 +820,9 @@ impl RadioDesk {
                 })
                 .response
                 .rect;
+            theme::card_frame().show(&mut cols[1], |ui| {
+                self.deck_card(ui, &v);
+            });
             theme::card_frame().show(&mut cols[1], |ui| {
                 self.cart_wall(ui, &v);
             });
@@ -2213,6 +2225,21 @@ impl RadioDesk {
                 ui.close();
             }
         }
+        if e.voice.is_none() {
+            ui.menu_button("Auf Deck laden", |ui| {
+                for k in 0..woa_radio::DECKS {
+                    let label = format!("Deck {}", woa_radio::show::deck_name(k));
+                    if ui.button(label).clicked() {
+                        self.with(move |c| {
+                            if let Err(e) = c.deck_load_title(k, i) {
+                                c.report(e);
+                            }
+                        });
+                        ui.close();
+                    }
+                }
+            });
+        }
         if v.pfl_playing && ui.button("Vorhören anhalten").clicked() {
             self.with(Controller::pfl_stop);
             ui.close();
@@ -2345,7 +2372,9 @@ impl RadioDesk {
         };
         let v = &self.view;
         // Titel verschoben oder entfernt: Editor schließen statt falschen Titel zu ändern.
-        let gone = if ed.cart {
+        let gone = if ed.deck {
+            v.decks.get(ed.index).is_none_or(|d| d.title.is_none())
+        } else if ed.cart {
             v.carts.get(ed.index).is_none_or(Option::is_none)
         } else {
             v.playlist.get(ed.index).map(|e| &e.path) != Some(&ed.path)
@@ -2362,13 +2391,16 @@ impl RadioDesk {
             (v.cues_undo && !ed.cart, v.cues_redo && !ed.cart),
         );
         let cart = ed.cart;
+        let deck = ed.deck;
         if !open {
             self.cue_editor = None;
         }
         for a in actions {
             match a {
                 CueAction::Apply(i, cues) => self.with(move |c| {
-                    let r = if cart {
+                    let r = if deck {
+                        c.set_deck_cues(i, cues)
+                    } else if cart {
                         c.set_cart_cues(i, cues)
                     } else {
                         c.set_cues(i, cues)
@@ -2378,7 +2410,9 @@ impl RadioDesk {
                     }
                 }),
                 CueAction::Preview(i, from) => self.with(move |c| {
-                    let r = if cart {
+                    let r = if deck {
+                        c.pfl_deck_at(i, from)
+                    } else if cart {
                         c.pfl_cart_at(i, from)
                     } else {
                         c.pfl_title_at(i, from)
@@ -2427,6 +2461,10 @@ impl RadioDesk {
     /// Eine aus der Bibliothek gezogene Datei bei `pos` ablegen: auf einem Cart-Pad wird sie
     /// dem Pad zugewiesen, auf der Playlist hinten angehängt. Gibt zurück, ob etwas geschah.
     pub fn drop_library_path(&mut self, path: PathBuf, pos: egui::Pos2) -> bool {
+        if let Some(k) = self.deck_rects.iter().position(|r| r.contains(pos)) {
+            self.deck_load_file(k, path);
+            return true;
+        }
         if let Some(slot) = self.cart_rects.iter().position(|r| r.contains(pos)) {
             self.with(move |c| {
                 if let Err(e) = c.assign_cart(slot, Some(path)) {
@@ -2442,6 +2480,188 @@ impl RadioDesk {
             return true;
         }
         false
+    }
+
+    /// Legt eine Datei auf Deck `k` (steht danach am Cue-In).
+    fn deck_load_file(&self, k: usize, path: PathBuf) {
+        self.with(move |c| {
+            if let Err(e) = c.deck_load(k, path, woa_radio::Cues::default()) {
+                c.report(e);
+            }
+        });
+    }
+
+    fn pick_deck_file(&self, k: usize) {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter(
+                woa_engine::decode::FILTER_NAME,
+                &woa_engine::decode::dialog_extensions(),
+            )
+            .pick_file()
+        {
+            self.deck_load_file(k, path);
+        }
+    }
+
+    /// Öffnet den Schnitt (Start und Ende) für Deck `k`.
+    fn open_deck_cue_editor(&mut self, k: usize) {
+        if let Some(d) = self.view.decks.get(k)
+            && let (Some(path), Some(title)) = (d.path.clone(), d.title.clone())
+        {
+            let mut ed = CueEditor::open(k, path, title, None, d.cues);
+            ed.cart = true;
+            ed.deck = true;
+            self.cue_editor = Some(ed);
+        }
+    }
+
+    /// Die drei Decks: große Restzeit, Start und Stopp, Laden per Ziehen oder Menü.
+    fn deck_card(&mut self, ui: &mut egui::Ui, v: &View) {
+        ui.label(
+            egui::RichText::new("DECKS A · B · C")
+                .size(11.5)
+                .strong()
+                .color(theme::DIM),
+        );
+        ui.add_space(4.0);
+        for k in 0..woa_radio::DECKS {
+            let d = v.decks.get(k).cloned().unwrap_or_default();
+            let name = woa_radio::show::deck_name(k);
+            let loaded = d.title.is_some();
+            let urgent = d.playing && d.remaining < 10.0;
+            let fill = if d.playing {
+                theme::mix(theme::ACCENT, theme::SURFACE, 0.2)
+            } else {
+                theme::WELL
+            };
+            let frame = egui::Frame::new()
+                .fill(fill)
+                .stroke(egui::Stroke::new(
+                    if d.playing { 2.0 } else { 1.0 },
+                    if d.playing {
+                        theme::ACCENT
+                    } else {
+                        theme::BORDER
+                    },
+                ))
+                .corner_radius(5)
+                .inner_margin(egui::Margin::symmetric(8, 5));
+            let mut title_r: Option<egui::Response> = None;
+            let out = frame.show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(name.to_string())
+                            .size(26.0)
+                            .strong()
+                            .color(theme::TEXT_BRIGHT),
+                    );
+                    ui.vertical(|ui| {
+                        ui.set_min_width(110.0);
+                        ui.label(
+                            egui::RichText::new(if loaded {
+                                clock(d.remaining)
+                            } else {
+                                "--:--".into()
+                            })
+                            .size(30.0)
+                            .monospace()
+                            .strong()
+                            .color(if urgent {
+                                theme::ON_AIR
+                            } else {
+                                theme::TEXT_BRIGHT
+                            }),
+                        );
+                        let frac = if d.length > 0.0 {
+                            (1.0 - d.remaining / d.length).clamp(0.0, 1.0) as f32
+                        } else {
+                            0.0
+                        };
+                        ui.add(egui::ProgressBar::new(frac).desired_height(4.0));
+                    });
+                    ui.vertical(|ui| {
+                        title_r = Some(
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(
+                                        d.title
+                                            .clone()
+                                            .unwrap_or_else(|| "leer: Datei hierher ziehen".into()),
+                                    )
+                                    .small()
+                                    .color(if loaded {
+                                        theme::TEXT_BRIGHT
+                                    } else {
+                                        theme::DIM
+                                    }),
+                                )
+                                .sense(egui::Sense::click()),
+                            ),
+                        );
+                        ui.horizontal(|ui| {
+                            let go = if d.playing { "Stopp" } else { "Start" };
+                            if ui
+                                .add_enabled(
+                                    loaded,
+                                    egui::Button::new(egui::RichText::new(go).strong())
+                                        .min_size(egui::vec2(70.0, 30.0)),
+                                )
+                                .clicked()
+                            {
+                                if d.playing {
+                                    self.with(move |c| c.deck_stop(k));
+                                } else {
+                                    self.with(move |c| c.deck_play(k));
+                                }
+                            }
+                            if ui
+                                .add_enabled(
+                                    loaded,
+                                    egui::Button::new("Cue").min_size(egui::vec2(46.0, 30.0)),
+                                )
+                                .on_hover_text("Zurück an den Anfang")
+                                .clicked()
+                            {
+                                self.with(move |c| c.deck_cue(k));
+                            }
+                            if ui
+                                .add_enabled(
+                                    loaded && v.pfl_available,
+                                    egui::Button::new("Vorhören").min_size(egui::vec2(70.0, 30.0)),
+                                )
+                                .on_disabled_hover_text(NO_PFL)
+                                .clicked()
+                            {
+                                self.with(move |c| {
+                                    if let Err(e) = c.pfl_deck(k) {
+                                        c.report(e);
+                                    }
+                                });
+                            }
+                        });
+                    });
+                });
+            });
+            self.deck_rects[k] = out.response.rect;
+            let Some(r) = title_r else {
+                continue;
+            };
+            r.context_menu(|ui| {
+                if ui.button("Datei laden …").clicked() {
+                    self.pick_deck_file(k);
+                    ui.close();
+                }
+                if loaded && ui.button("Start und Ende schneiden …").clicked() {
+                    self.open_deck_cue_editor(k);
+                    ui.close();
+                }
+                if loaded && ui.button("Leeren").clicked() {
+                    self.with(move |c| c.deck_eject(k));
+                    ui.close();
+                }
+            });
+            ui.add_space(4.0);
+        }
     }
 
     fn assign_cart(&self, slot: usize) {

@@ -11,15 +11,21 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use basedrop::{Owned, Shared};
 use woa_guests::GuestBank;
 
-use crate::CARTS;
 use crate::audio::Stereo;
 use crate::cues::CueFrames;
 use crate::dynamics::{BusProcessor, MicChain};
 use crate::level::{Smoother, crossfade};
 use crate::voicetrack::{EDGE_SECONDS, VoiceFrames, duck_gain, edge_gain};
+use crate::{CARTS, DECKS};
 
 /// Kennung „kein Titel“.
 pub const NONE: u32 = u32::MAX;
+/// Deck ohne Titel.
+pub const DECK_EMPTY: u32 = 0;
+/// Deck mit Titel, steht.
+pub const DECK_READY: u32 = 1;
+/// Deck spielt.
+pub const DECK_PLAYING: u32 = 2;
 /// Ausblenden bei Stopp (Sekunden).
 const STOP_SECONDS: f32 = 0.03;
 /// Glättung des Ducking (Sekunden, Zeitkonstante).
@@ -127,6 +133,28 @@ pub enum Cmd {
     SetLevel { bus: LevelBus, gain: f32 },
     /// Ziele der Quellen (Ausgänge je Gerät); Ziel 0 ist der Hauptausgang.
     SetRoutes(crate::routing::Routes),
+    /// Titel auf ein Deck legen (Cue-In bis Cue-Out in Frames); das Deck steht dann am Anfang.
+    DeckLoad {
+        deck: usize,
+        buf: Shared<Stereo>,
+        gain: f32,
+        start: usize,
+        end: usize,
+    },
+    /// Cue-In und Cue-Out eines geladenen Decks ändern (ein stehendes Deck springt an den Anfang).
+    DeckCues {
+        deck: usize,
+        start: usize,
+        end: usize,
+    },
+    /// Deck starten (am Ende: von vorn).
+    DeckPlay(usize),
+    /// Deck kurz ausblenden und anhalten; die Stelle bleibt.
+    DeckStop(usize),
+    /// Deck anhalten und an den Anfang (Cue-In) stellen.
+    DeckCue(usize),
+    /// Deck leeren.
+    DeckEject(usize),
 }
 
 /// Lock-frei lesbarer Zustand des Mixers.
@@ -143,6 +171,12 @@ pub struct Status {
     pub playing: AtomicBool,
     /// Bit je laufendem Cart.
     pub carts: AtomicU32,
+    /// Zustand je Deck: [`DECK_EMPTY`], [`DECK_READY`] oder [`DECK_PLAYING`].
+    pub deck_state: [AtomicU32; DECKS],
+    /// Stelle im Deck (Frames).
+    pub deck_pos: [AtomicU64; DECKS],
+    /// Ende im Deck (Frames, Cue-Out).
+    pub deck_end: [AtomicU64; DECKS],
     pub mic_open: AtomicBool,
     /// Ein Voice-Track läuft (Stimme oder Absenkung davor und danach).
     pub voice: AtomicBool,
@@ -180,6 +214,9 @@ impl Default for Status {
             plays: AtomicU32::new(0),
             playing: AtomicBool::new(false),
             carts: AtomicU32::new(0),
+            deck_state: std::array::from_fn(|_| AtomicU32::new(DECK_EMPTY)),
+            deck_pos: std::array::from_fn(|_| AtomicU64::new(0)),
+            deck_end: std::array::from_fn(|_| AtomicU64::new(0)),
             mic_open: AtomicBool::new(false),
             voice: AtomicBool::new(false),
             clock: AtomicU64::new(0),
@@ -306,6 +343,18 @@ impl Deck {
     }
 }
 
+/// Ein Deck (A, B, C): ein Titel, der auf Knopfdruck startet und anhält.
+struct DeckPlay {
+    buf: Shared<Stereo>,
+    pos: usize,
+    start: usize,
+    end: usize,
+    gain: f32,
+    playing: bool,
+    /// Restliche Frames der Ausblendung beim Anhalten.
+    stopping: Option<usize>,
+}
+
 struct Voice {
     buf: Shared<Stereo>,
     pos: usize,
@@ -352,6 +401,7 @@ pub struct Mixer {
     stop_len: usize,
     stopping: Option<usize>,
     carts: [Option<Voice>; CARTS],
+    decks: [Option<DeckPlay>; DECKS],
     voice_pending: Option<VoicePending>,
     voice: Option<VoicePlay>,
     mic: Option<Owned<rtrb::Consumer<f32>>>,
@@ -401,6 +451,7 @@ impl Mixer {
             stop_len: (STOP_SECONDS * r).max(1.0) as usize,
             stopping: None,
             carts: std::array::from_fn(|_| None),
+            decks: std::array::from_fn(|_| None),
             voice_pending: None,
             voice: None,
             mic: None,
@@ -503,6 +554,65 @@ impl Mixer {
                 Cmd::CartStop(slot) => {
                     if let Some(v) = self.carts.get_mut(slot) {
                         *v = None;
+                    }
+                }
+                Cmd::DeckLoad {
+                    deck,
+                    buf,
+                    gain,
+                    start,
+                    end,
+                } => {
+                    if let Some(slot) = self.decks.get_mut(deck) {
+                        let end = end.min(buf.frames());
+                        let start = start.min(end);
+                        *slot = Some(DeckPlay {
+                            buf,
+                            pos: start,
+                            start,
+                            end,
+                            gain,
+                            playing: false,
+                            stopping: None,
+                        });
+                    }
+                }
+                Cmd::DeckCues { deck, start, end } => {
+                    if let Some(Some(d)) = self.decks.get_mut(deck) {
+                        d.end = end.min(d.buf.frames());
+                        d.start = start.min(d.end);
+                        if !d.playing {
+                            d.pos = d.start;
+                        }
+                    }
+                }
+                Cmd::DeckPlay(deck) => {
+                    if let Some(Some(d)) = self.decks.get_mut(deck) {
+                        if d.pos >= d.end {
+                            d.pos = d.start;
+                        }
+                        d.stopping = None;
+                        d.playing = d.pos < d.end;
+                    }
+                }
+                Cmd::DeckStop(deck) => {
+                    if let Some(Some(d)) = self.decks.get_mut(deck)
+                        && d.playing
+                        && d.stopping.is_none()
+                    {
+                        d.stopping = Some(self.stop_len);
+                    }
+                }
+                Cmd::DeckCue(deck) => {
+                    if let Some(Some(d)) = self.decks.get_mut(deck) {
+                        d.playing = false;
+                        d.stopping = None;
+                        d.pos = d.start;
+                    }
+                }
+                Cmd::DeckEject(deck) => {
+                    if let Some(slot) = self.decks.get_mut(deck) {
+                        *slot = None;
                     }
                 }
                 Cmd::Record(p) => self.rec = p,
@@ -677,10 +787,13 @@ impl Mixer {
         for e in extra.iter_mut() {
             e.clear(n);
         }
-        let cart_dest = match self.routes.dest[crate::routing::Source::Carts.index()] as usize {
-            d if d >= 1 && d <= extra.len() => Some(d - 1),
-            _ => None,
-        };
+        // Ziel je Quelle: Carts, Deck A, B, C (Ziel 0 = Hauptausgang, bleibt `None`).
+        let dests: [Option<usize>; 1 + DECKS] = std::array::from_fn(|k| {
+            match self.routes.dest[crate::routing::Source::Carts.index() + k] as usize {
+                d if (1..=extra.len()).contains(&d) => Some(d - 1),
+                _ => None,
+            }
+        });
         self.trim_mic_backlog();
         self.guests.begin_block();
         let mut peak = 0.0f32;
@@ -751,6 +864,36 @@ impl Mixer {
 
             let (cart_l, cart_r) = (cl, cr);
 
+            // Decks.
+            let mut deck_out = [(0.0f32, 0.0f32); DECKS];
+            for (slot, out) in self.decks.iter_mut().zip(deck_out.iter_mut()) {
+                if let Some(d) = slot
+                    && d.playing
+                {
+                    if d.pos < d.end {
+                        let mut g = d.gain;
+                        if let Some(n) = d.stopping {
+                            g *= n as f32 / self.stop_len as f32;
+                            if n <= 1 {
+                                d.playing = false;
+                                d.stopping = None;
+                            } else {
+                                d.stopping = Some(n - 1);
+                            }
+                        }
+                        *out = (d.buf.left[d.pos] * g, d.buf.right[d.pos] * g);
+                        d.pos += 1;
+                    }
+                    if d.pos >= d.end {
+                        d.playing = false;
+                        d.stopping = None;
+                    }
+                }
+            }
+            let (dl, dr) = deck_out
+                .iter()
+                .fold((0.0f32, 0.0f32), |a, b| (a.0 + b.0, a.1 + b.1));
+
             // Voice-Track: Stimme auf den Carts-Zweig, Musik wird abgesenkt.
             let mut vduck = 1.0f32;
             if let Some(v) = self.voice.as_mut() {
@@ -793,7 +936,7 @@ impl Mixer {
             mic_peak = mic_peak.max(il.abs()).max(ir.abs());
 
             // Basis ohne Gäste: Musik, Carts, Moderator. Daraus entstehen die Rückwege.
-            let (bl, br) = (ml * duck + cl + il, mr * duck + cr + ir);
+            let (bl, br) = (ml * duck + cl + il + dl, mr * duck + cr + ir + dr);
             let (gl, gr) = self.guests.frame();
             let mut sl = bl + gl;
             let mut sr = br + gr;
@@ -846,18 +989,17 @@ impl Mixer {
                 None if self.mic_monitor => (sl, sr),
                 None => (ql, qr),
             };
-            match cart_dest {
-                Some(d) => {
-                    // Getrennt: vor dem Sendebus auf das eigene Ziel, im Hauptausgang fehlt das
-                    // Stück, das der Hauptausgang mit demselben Faktor geführt hätte.
-                    extra[d].l[i] = cart_l;
-                    extra[d].r[i] = cart_r;
-                    left[i] = ol - cart_l * gain_out;
-                    right[i] = or - cart_r * gain_out;
-                }
-                None => {
-                    left[i] = ol;
-                    right[i] = or;
+            left[i] = ol;
+            right[i] = or;
+            // Getrennte Quellen: vor dem Sendebus auf das eigene Ziel; im Hauptausgang fehlt das
+            // Stück, das der Hauptausgang mit demselben Faktor geführt hätte.
+            let srcs = [(cart_l, cart_r), deck_out[0], deck_out[1], deck_out[2]];
+            for (dest, (xl, xr)) in dests.iter().zip(srcs) {
+                if let Some(d) = *dest {
+                    extra[d].l[i] += xl;
+                    extra[d].r[i] += xr;
+                    left[i] -= xl * gain_out;
+                    right[i] -= xr * gain_out;
                 }
             }
             peak = peak.max(sl.abs()).max(sr.abs());
@@ -901,6 +1043,19 @@ impl Mixer {
             }
         }
         s.carts.store(mask, Ordering::Release);
+        for (k, d) in self.decks.iter().enumerate() {
+            let (state, pos, end) = match d {
+                None => (DECK_EMPTY, 0, 0),
+                Some(d) => (
+                    if d.playing { DECK_PLAYING } else { DECK_READY },
+                    d.pos as u64,
+                    d.end as u64,
+                ),
+            };
+            s.deck_state[k].store(state, Ordering::Release);
+            s.deck_pos[k].store(pos, Ordering::Release);
+            s.deck_end[k].store(end, Ordering::Release);
+        }
         s.mic_open.store(self.mic_open, Ordering::Release);
         s.voice.store(self.voice.is_some(), Ordering::Release);
         s.clock.store(self.clock, Ordering::Release);
