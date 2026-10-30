@@ -40,7 +40,9 @@ mod session;
 pub mod store;
 
 pub use command::Command;
-pub use effect::{EffectKind, Insert, InsertId, ParamSpec};
+pub use effect::{
+    DELAY_SYNC_CHOICES, EffectKind, Insert, InsertId, ParamSpec, Preset, VOICE_CHAIN,
+};
 pub use error::{ModelError, Result};
 pub use history::{History, HistoryEntry};
 pub use midi::{CC_SUSTAIN, Edited, MIN_NOTE_BEATS, MidiCc, MidiData, MidiNote, grid_beats};

@@ -1,70 +1,159 @@
-//! Insert-Effekte des Mischpults (Paket 16): EQ (Hochpass und Glocke), Kompressor, Limiter.
+//! Insert-Effekte des Mischpults (Paket 16 und 17): voller EQ, Kompressor, Limiter, Gate,
+//! De-Esser, Reverb, Delay, Chorus, Sättigung, Rauschunterdrückung.
 //!
 //! Ein [`Fx`] rechnet ein oder zwei Kanäle; [`FxNode`] hängt ihn mono, [`FxStereoNode`] stereo
-//! in den Graphen. Bei zwei Kanälen sind Kompressor und Limiter verkoppelt (gemeinsame
-//! Pegelmessung), damit das Stereobild nicht wandert.
+//! in den Graphen. Bei zwei Kanälen sind Kompressor, Limiter, Gate und De-Esser verkoppelt
+//! (gemeinsame Pegelmessung), damit das Stereobild nicht wandert.
 //!
 //! Parameter-IDs sind die Indizes der Parametertabelle im Modell (`EffectKind::params`);
-//! [`BYPASS`] schaltet den Effekt geglättet aus und ein. Echtzeit: Alles wird in
-//! [`Fx::new`]/`prepare` angelegt, `process` und `set_param` allokieren nicht.
+//! [`BYPASS`] schaltet den Effekt geglättet aus und ein; ist er ausgeschaltet und eingeschwungen,
+//! läuft das Eingangssignal bit-genau durch. Echtzeit: Alles wird in [`Fx::new`]/`prepare`
+//! angelegt, `process` und `set_param` allokieren nicht.
 
-use crate::dynamics::{Biquad, Compressor, Limiter, db_to_gain};
+use crate::dynamics::{Biquad, Compressor, Gate, Limiter, db_to_gain};
+use crate::effects::chorus::Chorus;
+use crate::effects::deesser::DeEsser;
+use crate::effects::delay::DelayFx;
+use crate::effects::denoise::Denoiser;
+use crate::effects::reverb::Reverb;
+use crate::effects::saturation::Saturator;
 use crate::{DEFAULT_RAMP_SECONDS, Node, ProcessBuffers, Smoother, StereoBuffers, StereoNode};
 
 /// Parameter-ID für Bypass (`0.0` = aktiv, `1.0` = umgangen).
 pub const BYPASS: u32 = 100;
 
 /// Höchste Zahl Parameter eines Effekts.
-pub const MAX_PARAMS: usize = 5;
+pub const MAX_PARAMS: usize = 12;
 
 /// Effektart; die Reihenfolge der Parameter entspricht dem Modell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FxKind {
-    /// highpass_hz, bell_hz, bell_db, bell_q
+    /// highpass_hz, bell_hz, bell_db, bell_q, low_shelf_hz, low_shelf_db, high_shelf_hz,
+    /// high_shelf_db, bell2_hz, bell2_db, bell2_q
     Eq,
     /// threshold_db, ratio, attack_ms, release_ms, makeup_db
     Compressor,
     /// ceiling_db, release_ms
     Limiter,
+    /// threshold_db, range_db, attack_ms, hold_ms, release_ms
+    Gate,
+    /// freq_hz, threshold_db, ratio, max_cut_db
+    DeEsser,
+    /// decay_s, predelay_ms, damping_pct, mix_pct
+    Reverb,
+    /// time_ms, sync, feedback_pct, tone_hz, pingpong, mix_pct
+    Delay,
+    /// rate_hz, depth_ms, delay_ms, mix_pct
+    Chorus,
+    /// drive_db, shape, output_db, mix_pct
+    Saturation,
+    /// amount_pct
+    Denoise,
 }
 
-/// Hochpass plus Glocke eines Kanals.
+/// Umgebung, in der ein Effekt läuft.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FxContext {
+    /// Projekttempo für das synchronisierte Delay.
+    pub tempo_bpm: f32,
+    /// Export ohne Echtzeit: Die Rauschunterdrückung rechnet dann im Aufrufer-Thread.
+    pub offline: bool,
+}
+
+impl Default for FxContext {
+    fn default() -> Self {
+        Self {
+            tempo_bpm: 120.0,
+            offline: false,
+        }
+    }
+}
+
+/// Alle Filter des EQs eines Kanals.
 #[derive(Debug, Clone, Copy)]
 struct EqChain {
     hp: Biquad,
+    low: Biquad,
     bell: Biquad,
+    bell2: Biquad,
+    high: Biquad,
 }
+
+/// Unterhalb dieses Betrags (dB) gilt ein Band als flach und wird zum Durchgang.
+const FLAT_DB: f32 = 0.005;
 
 impl EqChain {
     fn design(p: &[f32; MAX_PARAMS], rate: f32) -> Self {
         let rate = f64::from(rate.max(8000.0));
+        let top = rate * 0.45;
         let hp = if p[0] >= 10.0 {
             Biquad::highpass(
-                f64::from(p[0]).min(rate * 0.45),
+                f64::from(p[0]).min(top),
                 std::f64::consts::FRAC_1_SQRT_2,
                 rate,
             )
         } else {
             Biquad::identity()
         };
-        let bell = Biquad::peaking(
-            f64::from(p[1]).clamp(20.0, rate * 0.45),
-            f64::from(p[3]).max(0.05),
-            f64::from(p[2]),
-            rate,
-        );
-        Self { hp, bell }
+        let band = |hz: f32, db: f32, q: f32| {
+            if db.abs() < FLAT_DB {
+                Biquad::identity()
+            } else {
+                Biquad::peaking(
+                    f64::from(hz).clamp(20.0, top),
+                    f64::from(q).max(0.05),
+                    f64::from(db),
+                    rate,
+                )
+            }
+        };
+        let low = if p[5].abs() < FLAT_DB {
+            Biquad::identity()
+        } else {
+            Biquad::low_shelf(f64::from(p[4]).clamp(20.0, top), f64::from(p[5]), rate)
+        };
+        let high = if p[7].abs() < FLAT_DB {
+            Biquad::identity()
+        } else {
+            Biquad::high_shelf(f64::from(p[6]).clamp(20.0, top), f64::from(p[7]), rate)
+        };
+        Self {
+            hp,
+            low,
+            bell: band(p[1], p[2], p[3]),
+            bell2: band(p[8], p[9], p[10]),
+            high,
+        }
     }
 
     fn retune(&mut self, other: &EqChain) {
         self.hp.retune(&other.hp);
+        self.low.retune(&other.low);
         self.bell.retune(&other.bell);
+        self.bell2.retune(&other.bell2);
+        self.high.retune(&other.high);
     }
 
     #[inline]
     fn run(&mut self, x: f32) -> f32 {
-        self.bell.run(self.hp.run(x))
+        let x = self.hp.run(x);
+        let x = self.low.run(x);
+        let x = self.bell.run(x);
+        let x = self.bell2.run(x);
+        self.high.run(x)
     }
+}
+
+/// Zustand der Effekte mit eigenen Puffern.
+#[derive(Debug, Clone)]
+enum Extra {
+    None,
+    DeEsser(DeEsser),
+    Reverb(Box<Reverb>),
+    Delay(Box<DelayFx>),
+    Chorus(Box<Chorus>),
+    Saturation(Saturator),
+    Denoise(Box<Denoiser>),
 }
 
 /// Ein Effekt für einen oder zwei Kanäle.
@@ -73,6 +162,8 @@ pub struct Fx {
     kind: FxKind,
     p: [f32; MAX_PARAMS],
     rate: f32,
+    ctx: FxContext,
+    channels: usize,
     /// 1 = Effekt wirkt, 0 = umgangen.
     wet: Smoother,
     dirty: bool,
@@ -83,11 +174,24 @@ pub struct Fx {
     comp: Compressor,
     makeup: Smoother,
     lim: Limiter,
+    gate: Gate,
+    extra: Extra,
 }
 
 impl Fx {
     /// Legt den Effekt mit den Modellwerten `params` an (fehlende Werte bleiben 0).
     pub fn new(kind: FxKind, params: &[f64], bypass: bool) -> Self {
+        Self::with_context(kind, params, bypass, FxContext::default(), 2)
+    }
+
+    /// Wie [`Fx::new`], mit Umgebung und Kanalzahl (1 = Spur-Insert, 2 = Bus-Insert).
+    pub fn with_context(
+        kind: FxKind,
+        params: &[f64],
+        bypass: bool,
+        ctx: FxContext,
+        channels: usize,
+    ) -> Self {
         let mut p = [0.0f32; MAX_PARAMS];
         for (d, s) in p.iter_mut().zip(params) {
             *d = *s as f32;
@@ -98,6 +202,8 @@ impl Fx {
             kind,
             p,
             rate,
+            ctx,
+            channels: channels.clamp(1, 2),
             wet: Smoother::new(if bypass { 0.0 } else { 1.0 }, DEFAULT_RAMP_SECONDS),
             dirty: false,
             eq: [eq; 2],
@@ -107,12 +213,15 @@ impl Fx {
             comp: Compressor::new(-18.0, 2.0, 0.01, 0.12, rate),
             makeup: Smoother::new(1.0, DEFAULT_RAMP_SECONDS),
             lim: Limiter::new(-1.0, 0.05, rate),
+            gate: Gate::new(-45.0, 40.0, rate),
+            extra: Extra::None,
         };
         fx.prepare(rate);
         fx
     }
 
-    /// Rechnet alle ratenabhängigen Größen aus den Parametern neu (Control-Thread).
+    /// Rechnet alle ratenabhängigen Größen aus den Parametern neu (Control-Thread; darf
+    /// allokieren und Threads starten).
     pub fn prepare(&mut self, rate: f32) {
         self.rate = rate.max(1.0);
         self.wet.prepare(self.rate);
@@ -123,17 +232,45 @@ impl Fx {
         self.eq_old = [eq; 2];
         self.fade_left = 0;
         let p = self.p;
+        let (rate, tempo) = (self.rate, self.ctx.tempo_bpm);
+        self.extra = Extra::None;
         match self.kind {
             FxKind::Eq => {}
             FxKind::Compressor => {
-                self.comp = Compressor::new(p[0], p[1], p[2] / 1000.0, p[3] / 1000.0, self.rate);
+                self.comp = Compressor::new(p[0], p[1], p[2] / 1000.0, p[3] / 1000.0, rate);
                 self.makeup.reset(db_to_gain(f64::from(p[4])));
             }
             FxKind::Limiter => {
-                self.lim = Limiter::new(f64::from(p[0]), p[1] / 1000.0, self.rate);
+                self.lim = Limiter::new(f64::from(p[0]), p[1] / 1000.0, rate);
+            }
+            FxKind::Gate => {
+                self.gate = Gate::new(f64::from(p[0]), f64::from(p[1]), rate);
+                self.set_gate();
+            }
+            FxKind::DeEsser => self.extra = Extra::DeEsser(DeEsser::new(&p, rate)),
+            FxKind::Reverb => self.extra = Extra::Reverb(Box::new(Reverb::new(&p, rate))),
+            FxKind::Delay => self.extra = Extra::Delay(Box::new(DelayFx::new(&p, rate, tempo))),
+            FxKind::Chorus => self.extra = Extra::Chorus(Box::new(Chorus::new(&p, rate))),
+            FxKind::Saturation => self.extra = Extra::Saturation(Saturator::new(&p, rate)),
+            FxKind::Denoise => {
+                let mut d = Denoiser::new(self.channels, self.ctx.offline, p[0]);
+                d.prepare(rate);
+                self.extra = Extra::Denoise(Box::new(d));
             }
         }
         self.dirty = false;
+    }
+
+    fn set_gate(&mut self) {
+        let p = self.p;
+        self.gate.set(
+            f64::from(p[0]),
+            f64::from(p[1]),
+            p[2] / 1000.0,
+            p[3] / 1000.0,
+            p[4] / 1000.0,
+            self.rate,
+        );
     }
 
     /// Setzt einen Parameter (Index wie im Modell) oder [`BYPASS`]. Echtzeitsicher.
@@ -156,10 +293,11 @@ impl Fx {
         }
         self.dirty = false;
         let p = self.p;
+        let (rate, tempo) = (self.rate, self.ctx.tempo_bpm);
         match self.kind {
             FxKind::Eq => {
                 self.eq_old = self.eq;
-                let new = EqChain::design(&p, self.rate);
+                let new = EqChain::design(&p, rate);
                 for c in &mut self.eq {
                     c.retune(&new);
                 }
@@ -167,10 +305,36 @@ impl Fx {
             }
             FxKind::Compressor => {
                 self.comp
-                    .set(p[0], p[1], p[2] / 1000.0, p[3] / 1000.0, self.rate);
+                    .set(p[0], p[1], p[2] / 1000.0, p[3] / 1000.0, rate);
                 self.makeup.set_target(db_to_gain(f64::from(p[4])));
             }
-            FxKind::Limiter => self.lim.set(f64::from(p[0]), p[1] / 1000.0, self.rate),
+            FxKind::Limiter => self.lim.set(f64::from(p[0]), p[1] / 1000.0, rate),
+            FxKind::Gate => self.set_gate(),
+            _ => match &mut self.extra {
+                Extra::None => {}
+                Extra::DeEsser(e) => e.set(&p, rate),
+                Extra::Reverb(e) => e.set(&p, rate),
+                Extra::Delay(e) => e.set(&p, rate, tempo),
+                Extra::Chorus(e) => e.set(&p, rate),
+                Extra::Saturation(e) => e.set(&p),
+                Extra::Denoise(e) => e.set_amount(p[0]),
+            },
+        }
+    }
+
+    /// Zahl der Blöcke, die der Arbeits-Thread der Rauschunterdrückung nicht rechtzeitig lieferte.
+    pub fn underruns(&self) -> u32 {
+        match &self.extra {
+            Extra::Denoise(d) => d.underruns(),
+            _ => 0,
+        }
+    }
+
+    /// Verzögerung des Effekts in Samples (für einen Latenzausgleich).
+    pub fn latency_samples(&self) -> usize {
+        match &self.extra {
+            Extra::Denoise(d) if d.is_active() => crate::effects::denoise::LATENCY,
+            _ => 0,
         }
     }
 
@@ -217,6 +381,24 @@ impl Fx {
                 let c = self.lim.ceiling();
                 (l.clamp(-c, c), r.clamp(-c, c))
             }
+            FxKind::Gate => {
+                let peak = if stereo {
+                    l.abs().max(r.abs())
+                } else {
+                    l.abs()
+                };
+                let g = self.gate.gain(peak);
+                (l * g, r * g)
+            }
+            _ => match &mut self.extra {
+                Extra::None => (l, r),
+                Extra::DeEsser(e) => e.step(l, r, stereo),
+                Extra::Reverb(e) => e.step(l, r, stereo),
+                Extra::Delay(e) => e.step(l, r, stereo),
+                Extra::Chorus(e) => e.step(l, r, stereo),
+                Extra::Saturation(e) => e.step(l, r, stereo),
+                Extra::Denoise(e) => e.step(l, r, stereo),
+            },
         }
     }
 
@@ -248,12 +430,14 @@ impl Fx {
         }
     }
 
-    /// Absenkung des Kompressors oder Limiters in dB (für Anzeigen), sonst 0.
+    /// Absenkung von Kompressor, Limiter, Gate oder De-Esser in dB (für Anzeigen), sonst 0.
     pub fn reduction_db(&self) -> f32 {
-        match self.kind {
-            FxKind::Compressor => self.comp.reduction_db(),
-            FxKind::Limiter => self.lim.reduction_db(),
-            FxKind::Eq => 0.0,
+        match (self.kind, &self.extra) {
+            (FxKind::Compressor, _) => self.comp.reduction_db(),
+            (FxKind::Limiter, _) => self.lim.reduction_db(),
+            (FxKind::Gate, _) => self.gate.reduction_db(),
+            (_, Extra::DeEsser(d)) => d.reduction_db(),
+            _ => 0.0,
         }
     }
 }
@@ -263,8 +447,29 @@ impl Fx {
 pub struct FxNode(Fx);
 
 impl FxNode {
+    /// Blöcke, die der Arbeits-Thread der Rauschunterdrückung nicht rechtzeitig lieferte.
+    pub fn underruns(&self) -> u32 {
+        self.0.underruns()
+    }
+
     pub fn new(kind: FxKind, params: &[f64], bypass: bool) -> Self {
-        Self(Fx::new(kind, params, bypass))
+        Self(Fx::with_context(
+            kind,
+            params,
+            bypass,
+            FxContext::default(),
+            1,
+        ))
+    }
+
+    /// Mit Projekttempo und Betriebsart.
+    pub fn with_context(kind: FxKind, params: &[f64], bypass: bool, ctx: FxContext) -> Self {
+        Self(Fx::with_context(kind, params, bypass, ctx, 1))
+    }
+
+    /// Verzögerung in Samples.
+    pub fn latency_samples(&self) -> usize {
+        self.0.latency_samples()
     }
 }
 
@@ -288,7 +493,23 @@ pub struct FxStereoNode(Fx);
 
 impl FxStereoNode {
     pub fn new(kind: FxKind, params: &[f64], bypass: bool) -> Self {
-        Self(Fx::new(kind, params, bypass))
+        Self(Fx::with_context(
+            kind,
+            params,
+            bypass,
+            FxContext::default(),
+            2,
+        ))
+    }
+
+    /// Mit Projekttempo und Betriebsart.
+    pub fn with_context(kind: FxKind, params: &[f64], bypass: bool, ctx: FxContext) -> Self {
+        Self(Fx::with_context(kind, params, bypass, ctx, 2))
+    }
+
+    /// Verzögerung in Samples.
+    pub fn latency_samples(&self) -> usize {
+        self.0.latency_samples()
     }
 }
 

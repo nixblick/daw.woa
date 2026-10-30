@@ -28,7 +28,9 @@ Claude Desktop: derselbe Befehl als `command`/`args` in `claude_desktop_config.j
 | `set_tempo` | `bpm` | Projekttempo |
 | `set_solo` | `track`, `solo` | Solo; ist eine Spur auf Solo, klingen nur Solo-Spuren |
 | `remove_track` | `track` | Spur samt Clips entfernen; Sends und Ausgänge darauf werden im selben Schritt getrennt |
-| `insert_effect` | `track`, `kind` (`eq`/`compressor`/`limiter`), `index`, `params` (Name → Wert) | Effekt in die Insert-Kette einer Spur oder eines Busses (vor dem Fader), liefert `insert`-ID |
+| `list_effects` | `kind` (optional) | alle Effekte mit Reglern (Name, Einheit, Bereich, Vorgabe, Auswahlstufen) und Voreinstellungen |
+| `insert_effect` | `track`, `kind` (`eq`/`compressor`/`limiter`/`gate`/`de_esser`/`reverb`/`delay`/`chorus`/`saturation`/`denoise`), `index`, `preset`, `params` (Name → Wert, über dem Preset) | Effekt in die Insert-Kette einer Spur oder eines Busses (vor dem Fader), liefert `insert`-ID |
+| `insert_voice_chain` | `track` | Vorlage „Sprachkette“ (Hochpass-EQ, Gate, EQ, Kompressor, De-Esser) ans Ende der Kette, ein Undo-Schritt, liefert die fünf `inserts` |
 | `set_param` | `insert`, `param` (z. B. `bell_db`, `threshold_db`), `value` | Effekt-Regler setzen, Wert wird gegen den Bereich geprüft |
 | `set_insert_bypass` | `insert`, `bypass` | Effekt knackfrei ein- oder ausschalten |
 | `remove_insert` | `insert` | Effekt entfernen |

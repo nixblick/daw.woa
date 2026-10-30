@@ -285,6 +285,59 @@ impl AppState {
         })
     }
 
+    /// Sets all parameters of an effect to a preset (one undo step); `false` if nothing changed.
+    pub fn apply_insert_preset(&mut self, track: TrackId, insert: InsertId, preset: &str) -> bool {
+        let Some((kind, current)) = self
+            .project()
+            .track(track)
+            .and_then(|t| t.inserts.iter().find(|i| i.id == insert))
+            .map(|i| (i.kind, i.params.clone()))
+        else {
+            return false;
+        };
+        let Some(values) = kind.preset_values(preset) else {
+            return false;
+        };
+        let changes: Vec<(usize, f64)> = values
+            .iter()
+            .enumerate()
+            .filter(|(i, v)| current.get(*i) != Some(*v))
+            .map(|(i, v)| (i, *v))
+            .collect();
+        if changes.is_empty() {
+            return false;
+        }
+        let result = self.session.group("Effekt-Preset", |s| {
+            for (param, value) in changes {
+                s.apply(Command::SetInsertParam {
+                    track,
+                    insert,
+                    param,
+                    value,
+                })?;
+            }
+            Ok(())
+        });
+        self.report("Effekt-Preset", result)
+    }
+
+    /// Appends the template "Sprachkette" (highpass, gate, EQ, compressor, de-esser) to the
+    /// chain of a track as one undo step.
+    pub fn add_voice_chain(&mut self, track: TrackId) -> bool {
+        let result = self.session.group("Vorlage Sprachkette", |s| {
+            for (kind, values) in woa_model::VOICE_CHAIN {
+                let id = s.new_insert_id();
+                s.apply(Command::AddInsert {
+                    track,
+                    insert: Insert::with_values(id, kind, values)?,
+                    index: None,
+                })?;
+            }
+            Ok(())
+        });
+        self.report("Vorlage Sprachkette", result)
+    }
+
     /// Sets the project tempo in BPM (20..=400) as one undo step.
     pub fn set_tempo(&mut self, bpm: f64) -> bool {
         if (self.project().tempo_bpm - bpm).abs() < 1e-6 {
@@ -926,6 +979,50 @@ mod tests {
         assert!(s.project().clip(a).is_some() && s.project().clip(b).is_some());
         s.undo();
         assert_eq!(s.project().clip(a).unwrap().1.start_beats, 0.0);
+    }
+
+    #[test]
+    fn effect_presets_and_voice_chain_are_single_undo_steps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        let t = s.add_track().unwrap();
+        // Jede Art lässt sich einfügen; jede Voreinstellung setzt gültige Werte.
+        for kind in EffectKind::ALL {
+            let id = s.add_insert(t, kind).unwrap();
+            for pr in kind.presets() {
+                s.apply_insert_preset(t, id, pr.name);
+                let ins = s
+                    .project()
+                    .track(t)
+                    .unwrap()
+                    .inserts
+                    .last()
+                    .unwrap()
+                    .clone();
+                assert_eq!(ins.params, kind.preset_values(pr.name).unwrap(), "{kind:?}");
+            }
+        }
+        let before = s.project().track(t).unwrap().inserts.len();
+        assert!(
+            !s.apply_insert_preset(t, InsertId(9999), "x"),
+            "unknown insert"
+        );
+        // Preset in einem Schritt zurück.
+        let id = s.project().track(t).unwrap().inserts[0].id;
+        let first = EffectKind::Eq.presets()[0].name;
+        let last = EffectKind::Eq.presets().last().unwrap().name;
+        s.apply_insert_preset(t, id, first);
+        let snapshot = s.project().track(t).unwrap().inserts[0].params.clone();
+        if first != last {
+            assert!(s.apply_insert_preset(t, id, last));
+            s.undo();
+            assert_eq!(s.project().track(t).unwrap().inserts[0].params, snapshot);
+        }
+        // Sprachkette: fünf Effekte, ein Undo.
+        assert!(s.add_voice_chain(t));
+        assert_eq!(s.project().track(t).unwrap().inserts.len(), before + 5);
+        s.undo();
+        assert_eq!(s.project().track(t).unwrap().inserts.len(), before);
     }
 
     #[test]

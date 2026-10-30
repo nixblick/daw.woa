@@ -17,7 +17,7 @@ use rtrb::Consumer;
 use woa_dsp::instrument::NoteEvent;
 
 use crate::midi_clip::midi_track_source;
-use crate::project::{ProjectGraph, build_project_graph};
+use crate::project::{ProjectGraph, build_project_graph_mode};
 use crate::transport::{TransportHandle, beats_to_samples};
 use crate::{Engine, EngineError};
 
@@ -103,8 +103,21 @@ pub fn clip_graph_live(
     transport: &TransportHandle,
     rate: f32,
     load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
+    meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
+    live: Option<(TrackId, Consumer<NoteEvent>)>,
+) -> ProjectGraph {
+    clip_graph_mode(project, transport, rate, load, meters, live, false)
+}
+
+/// Wie [`clip_graph_live`]; mit `offline` (Export) rechnen die Effekte ohne eigene Threads.
+pub fn clip_graph_mode(
+    project: &Project,
+    transport: &TransportHandle,
+    rate: f32,
+    load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
     mut meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
     live: Option<(TrackId, Consumer<NoteEvent>)>,
+    offline: bool,
 ) -> ProjectGraph {
     let mut live = live;
     let mut source = |t: &woa_model::Track| -> Option<Box<dyn Node>> {
@@ -139,7 +152,7 @@ pub fn clip_graph_live(
         }
         Some(Box::new(player))
     };
-    build_project_graph(project, &mut source)
+    build_project_graph_mode(project, &mut source, offline)
 }
 
 /// Ende des letzten Clips in Sekunden.
@@ -162,7 +175,15 @@ pub fn render_clips(
 ) -> Result<(Vec<f32>, Vec<f32>), EngineError> {
     const BLOCK: usize = 512;
     let (mut engine, mut processor) = Engine::new(16);
-    let graph = clip_graph(project, &engine.transport(), rate as f32, load, None);
+    let graph = clip_graph_mode(
+        project,
+        &engine.transport(),
+        rate as f32,
+        load,
+        None,
+        None,
+        true,
+    );
     engine.set_graph(graph.builder, rate as f32, BLOCK)?;
     engine.set_tempo(project.tempo_bpm)?;
     engine.play()?;

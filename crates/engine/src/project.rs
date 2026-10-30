@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 
-use woa_dsp::fx::{BYPASS, FxKind, FxNode, FxStereoNode};
+use woa_dsp::fx::{BYPASS, FxContext, FxKind, FxNode, FxStereoNode};
 use woa_dsp::{DEFAULT_RAMP_SECONDS, Gain, Node, Smoother, StereoBuffers, StereoNode, gain_params};
 use woa_model::{EffectKind, InsertId, Project, Track, TrackId, TrackKind};
 
@@ -262,6 +262,13 @@ fn fx_kind(kind: EffectKind) -> FxKind {
         EffectKind::Eq => FxKind::Eq,
         EffectKind::Compressor => FxKind::Compressor,
         EffectKind::Limiter => FxKind::Limiter,
+        EffectKind::Gate => FxKind::Gate,
+        EffectKind::DeEsser => FxKind::DeEsser,
+        EffectKind::Reverb => FxKind::Reverb,
+        EffectKind::Delay => FxKind::Delay,
+        EffectKind::Chorus => FxKind::Chorus,
+        EffectKind::Saturation => FxKind::Saturation,
+        EffectKind::Denoise => FxKind::Denoise,
     }
 }
 
@@ -281,6 +288,20 @@ pub fn build_project_graph(
     project: &Project,
     source: &mut dyn FnMut(&Track) -> Option<Box<dyn Node>>,
 ) -> ProjectGraph {
+    build_project_graph_mode(project, source, false)
+}
+
+/// Wie [`build_project_graph`]. Mit `offline` (Export, Tests) rechnet die Rauschunterdrückung im
+/// Aufrufer-Thread statt in ihrem Arbeits-Thread; das Ergebnis ist dasselbe.
+pub fn build_project_graph_mode(
+    project: &Project,
+    source: &mut dyn FnMut(&Track) -> Option<Box<dyn Node>>,
+    offline: bool,
+) -> ProjectGraph {
+    let ctx = FxContext {
+        tempo_bpm: project.tempo_bpm as f32,
+        offline,
+    };
     let mut b = GraphBuilder::new();
     let sum_l = b.add_node(Gain::new(1.0));
     let sum_r = b.add_node(Gain::new(1.0));
@@ -306,10 +327,11 @@ pub fn build_project_graph(
         let mut prev = head;
         let mut inserts = Vec::new();
         for ins in &t.inserts {
-            let n = b.add_stereo(Box::new(FxStereoNode::new(
+            let n = b.add_stereo(Box::new(FxStereoNode::with_context(
                 fx_kind(ins.kind),
                 &ins.params,
                 ins.bypass,
+                ctx,
             )));
             b.connect_ch(prev, 0, n, 0);
             b.connect_ch(prev, 1, n, 1);
@@ -387,10 +409,11 @@ pub fn build_project_graph(
         let mut tail = src;
         let mut inserts = Vec::new();
         for ins in &t.inserts {
-            let n = b.add_boxed(Box::new(FxNode::new(
+            let n = b.add_boxed(Box::new(FxNode::with_context(
                 fx_kind(ins.kind),
                 &ins.params,
                 ins.bypass,
+                ctx,
             )));
             b.connect(tail, n);
             inserts.push((ins.id, n));
@@ -462,7 +485,7 @@ pub fn render_project(
 ) -> Result<(Vec<f32>, Vec<f32>), EngineError> {
     let block = block.max(1);
     let (mut engine, mut processor) = Engine::new(16);
-    let graph = build_project_graph(project, source);
+    let graph = build_project_graph_mode(project, source, true);
     engine.set_graph(graph.builder, sample_rate, block)?;
     engine.set_tempo(project.tempo_bpm)?;
     engine.play()?;

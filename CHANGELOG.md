@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.0 — 2026-10-30
+
+Paket 17 aus M5: Alle eingebauten Effekte.
+
+- **Neue Effekte:** Gate, De-Esser, Hall, Echo (frei oder tempo-synchron, mit Ping-Pong), Chorus, Sättigung (weich, Röhre, hart) und Rauschunterdrückung (RNNoise über `nnnoiseless`, BSD-3, nur bei 48 kHz, 30 ms Verzögerung). Der EQ hat jetzt Tiefen- und Höhenregal und eine zweite Glocke; die neuen Bänder stehen flach, alte Projekte klingen unverändert.
+- **Oberfläche:** „+ Effekt“ bietet alle zehn Arten und die Vorlage „Sprachkette“ (Hochpass-EQ, Gate, EQ, Kompressor, De-Esser) als einen Undo-Schritt. Jeder Effekt hat Voreinstellungen („Preset ▾“, ein Undo-Schritt) und Auswahllisten für Notenwert, Ping-Pong und Kennlinie.
+- **Modell:** `EffectKind` mit zehn Arten, Auswahl-Regler (nur ganze Werte), Voreinstellungen je Effekt, Vorlage `VOICE_CHAIN`; `Insert::with_values` und `Insert::with_preset`. Projektformat bleibt 2, alte Dateien füllen neue Regler mit Vorgaben auf.
+- **Engine:** Der Graph gibt Effekten das Projekttempo (synchrones Echo) und rechnet im Export (`render_project`, `render_clips`) die Rauschunterdrückung ohne Arbeits-Thread, mit demselben Ergebnis wie live. Live rechnet ein eigener Thread, damit der Audio-Thread nie allokiert; zählt Aussetzer statt zu warten.
+- **Agent:** neue Werkzeuge `list_effects` und `insert_voice_chain`; `insert_effect` nimmt alle Arten und ein `preset`.
+- **Fehler beim Messen behoben:** Die Allpässe des Halls hatten Verstärkung über 1 (Hall rund 11 dB zu laut); die Sättigung wurde bei der Röhrenkennlinie falsch normiert und konnte über Vollaussteuerung gehen.
+- **Tests:** Messungen mit erzeugten Signalen für jeden Effekt, bitgenauer Bypass, `assert_no_alloc` um jeden Process-Aufruf, Golden-File `effects_p17_chain.wav`, Sprachkette im Graphen.
+
 ## 0.11.0 — 2026-10-30
 
 Paket 16 aus M5: Mixer mit Bussen, Sends und Inserts.

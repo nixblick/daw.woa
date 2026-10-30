@@ -12,6 +12,7 @@
 
 pub mod clock;
 pub mod dynamics;
+pub mod effects;
 pub mod fx;
 pub mod generate;
 pub mod instrument;
