@@ -127,10 +127,9 @@ impl Pattern {
         let in_hour = i64::from(self.minute.min(59)) * 60 + i64::from(self.second.min(59));
         if self.is_hourly() {
             // Jede wirkliche Stunde, auch die doppelte im Herbst.
-            let mut h = from.div_euclid(3600) - 1;
-            for _ in 0..(8 * 24 + 4) {
+            let first = from.div_euclid(3600) - 1;
+            for h in first..first + (8 * 24 + 4) {
                 let hs = h * 3600;
-                h += 1;
                 let off = i64::from(zone.offset_min(hs)) * 60;
                 let local_in_hour = (hs + off).rem_euclid(3600);
                 let cand = hs + (in_hour - local_in_hour).rem_euclid(3600);

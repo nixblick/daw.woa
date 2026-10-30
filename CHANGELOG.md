@@ -12,6 +12,7 @@ Paket 29 aus M9: Feste Zeit-Events und pünktliche volle Stunde.
 - **Oberfläche:** Knopf „Zeit-Events“ (Liste, Muster, hart/weich, Datei, Entfernen); unter der Uhr „NÄCHSTES EVENT … in mm:ss“ und „ZULETZT … ±x,x s“.
 - **Tests:** eine Stunde durch den echten Mixer (hart nach 0,12 s, mitten in Überblendung, weich nach dem Titel, keine Lücke, ohne Speicher im Audio-Thread), eine Woche mit simulierter Uhr über Mitternacht und Zeitumstellung, Mixxx-Randfälle, Planer, Editor, Fenster ohne Display.
 - **Herkunft und Lizenz:** `docs/herkunft.md`.
+- **CI:** Clippy-Hinweis (`explicit_counter_loop`) der neueren Toolchain in der Mustersuche behoben.
 - **Nicht gebaut:** Nachrichtenquelle (externer Dienst); Events spielen eine lokale Datei.
 
 ## 0.23.0 — 2026-10-30
