@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.16.0 — 2026-10-30
+
+Paket 21 aus M6: Schnitt und Fades.
+
+- **Modell:** Jeder Clip hat jetzt eine Kurve für Ein- und Ausblendung (Linear, Gleiche Leistung, S-Kurve) und eine Clip-Lautstärke in dB. Neue Befehle `SetClipFadeCurves` und `SetClipGain`, je ein Undo-Schritt; ungültige Werte werden abgelehnt. Projektformat 3 wird nur geschrieben, wenn ein Clip Gain oder eine andere Kurve als linear hat; alle anderen Projekte bleiben Format 2, ältere Dateien laden unverändert.
+- **Engine:** Die Blenden folgen der gewählten Kurve, die Clip-Lautstärke wirkt vor der Spur. Überlappen sich zwei Clips auf einer Spur, blendet die Engine automatisch über (Gleiche Leistung über die Länge der Überlappung, wenn sie länger ist als die eigenen Blenden); der Offline-Render nutzt dieselbe Regel. Schneiden gibt bei Positionen auf ganzen Samples bitgleiches Audio; bei krummen Tempi kann ein Sample Versatz bleiben (getestet).
+- **Oberfläche:** Der Griff am oberen Clip-Rand zieht die Ein- und Ausblendung (ein Undo-Schritt je Ziehen), die Blende wird mit ihrer Kurve gezeichnet. In der Clip-Leiste: Kurvenwahl je Seite, Clip-Lautstärke und „Normalisieren“ (Spitze des Clip-Teils auf −1 dBFS). Überlappungen zeigen die automatische Überblendung. Die Wellenform ist mit der Clip-Lautstärke skaliert.
+- **Agent:** neue Werkzeuge `split_clip`, `set_fade_curves` und `set_clip_gain`, beschrieben in `docs/agent.md`.
+- **Tests:** Nulltest nach dem Schneiden (zusammengesetzt gleich Original), Schneiden bei krummem Tempo, Mitte löschen; Kurventabellen und Monotonie; Überblendung gemessen (RMS bleibt bei Gleicher Leistung, bei linear sinkt sie); Klick-Erkennung; Clip-Gain; alles unter `assert_no_alloc`. Modell, Zustand, Agent über MCP und ein Oberflächentest ohne Fenster und ohne Ton (Blende ziehen, Strg+Z).
+
 ## 0.15.0 — 2026-10-30
 
 Paket 20 aus M6: Timeline-Editor.

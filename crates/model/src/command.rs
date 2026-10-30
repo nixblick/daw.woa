@@ -6,8 +6,8 @@ use crate::automation::{AutoMode, AutoPoint, AutoTarget, AutomationLane};
 use crate::effect::{Insert, InsertId};
 use crate::error::{ModelError, Result};
 use crate::project::{
-    Clip, ClipId, MAX_GAIN_DB, MAX_TEMPO_BPM, MIN_GAIN_DB, MIN_TEMPO_BPM, Project, Send, Track,
-    TrackId, TrackKind, check_send_level,
+    Clip, ClipId, FadeCurve, MAX_GAIN_DB, MAX_TEMPO_BPM, MIN_GAIN_DB, MIN_TEMPO_BPM, Project, Send,
+    Track, TrackId, TrackKind, check_send_level,
 };
 
 /// One change to a project.
@@ -100,6 +100,22 @@ pub enum Command {
         fade_in_beats: f64,
         /// New fade-out in beats (>= 0); fade-in + fade-out <= length.
         fade_out_beats: f64,
+    },
+    /// Sets the shape of both fades of a clip (Paket 21).
+    SetClipFadeCurves {
+        /// Clip to change.
+        clip: ClipId,
+        /// Shape of the fade-in.
+        fade_in: FadeCurve,
+        /// Shape of the fade-out.
+        fade_out: FadeCurve,
+    },
+    /// Sets the gain of a clip in dB (Paket 21), within the track gain range.
+    SetClipGain {
+        /// Clip to change.
+        clip: ClipId,
+        /// New gain in dB.
+        gain_db: f64,
     },
     /// Moves a clip to another start position and/or another track.
     MoveClip {
@@ -239,6 +255,8 @@ impl Command {
             Command::RemoveClip { .. } => "Remove clip",
             Command::MoveClip { .. } => "Move clip",
             Command::EditClip { .. } => "Edit clip",
+            Command::SetClipFadeCurves { .. } => "Set fade curves",
+            Command::SetClipGain { .. } => "Set clip gain",
             Command::SetNotes { .. } => "Edit notes",
             Command::SetOutput { .. } => "Set output",
             Command::AddSend { .. } => "Add send",
@@ -440,6 +458,29 @@ impl Command {
                     fade_in_beats: old.fade_in_beats,
                     fade_out_beats: old.fade_out_beats,
                 })
+            }
+            Command::SetClipFadeCurves {
+                clip,
+                fade_in,
+                fade_out,
+            } => {
+                let (ti, ci) = locate_clip(project, clip)?;
+                let c = &mut project.tracks[ti].clips[ci];
+                let old = Command::SetClipFadeCurves {
+                    clip,
+                    fade_in: c.fade_in_curve,
+                    fade_out: c.fade_out_curve,
+                };
+                c.fade_in_curve = fade_in;
+                c.fade_out_curve = fade_out;
+                Ok(old)
+            }
+            Command::SetClipGain { clip, gain_db } => {
+                check_gain(gain_db)?;
+                let (ti, ci) = locate_clip(project, clip)?;
+                let c = &mut project.tracks[ti].clips[ci];
+                let old = std::mem::replace(&mut c.gain_db, gain_db);
+                Ok(Command::SetClipGain { clip, gain_db: old })
             }
             Command::SetNotes { clip, mut midi } => {
                 midi.check()?;

@@ -32,13 +32,16 @@ use crate::project::Project;
 /// know version 3 refuses such a file instead of silently dropping the curves on re-save.
 pub const FORMAT_VERSION: u32 = 3;
 
-/// The lowest format version that can hold `project`: 3 with automation or a sidechain,
-/// otherwise 2.
+/// The lowest format version that can hold `project`: 3 with automation, a sidechain, a
+/// clip gain or a fade curve, otherwise 2.
 pub fn required_version(project: &Project) -> u32 {
-    let v3 = project
-        .tracks
-        .iter()
-        .any(|t| !t.automation.is_empty() || t.inserts.iter().any(|i| i.sidechain.is_some()));
+    let v3 = project.tracks.iter().any(|t| {
+        !t.automation.is_empty()
+            || t.inserts.iter().any(|i| i.sidechain.is_some())
+            || t.clips.iter().any(|c| {
+                c.gain_db != 0.0 || !c.fade_in_curve.is_linear() || !c.fade_out_curve.is_linear()
+            })
+    });
     if v3 { 3 } else { 2 }
 }
 /// File name of the project inside the folder.

@@ -51,8 +51,9 @@ pub use error::{ModelError, Result};
 pub use history::{History, HistoryEntry};
 pub use midi::{CC_SUSTAIN, Edited, MIN_NOTE_BEATS, MidiCc, MidiData, MidiNote, grid_beats};
 pub use project::{
-    Clip, ClipId, DEFAULT_TEMPO_BPM, MAX_GAIN_DB, MAX_ID, MAX_SEND_DB, MAX_TEMPO_BPM, MIN_GAIN_DB,
-    MIN_TEMPO_BPM, Project, ProjectMeta, Send, Track, TrackId, TrackKind, is_safe_audio_path,
+    Clip, ClipId, DEFAULT_TEMPO_BPM, FadeCurve, MAX_GAIN_DB, MAX_ID, MAX_SEND_DB, MAX_TEMPO_BPM,
+    MIN_GAIN_DB, MIN_TEMPO_BPM, Project, ProjectMeta, Send, Track, TrackId, TrackKind,
+    is_safe_audio_path,
 };
 pub use session::Session;
 pub use store::{FORMAT_VERSION, ProjectFile, required_version};

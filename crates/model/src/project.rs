@@ -89,6 +89,60 @@ pub struct Clip {
     /// Notes of a MIDI clip (Paket 12). `None`: audio or placeholder clip.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub midi: Option<crate::midi::MidiData>,
+    /// Shape of the fade-in (Paket 21).
+    #[serde(default, skip_serializing_if = "FadeCurve::is_linear")]
+    pub fade_in_curve: FadeCurve,
+    /// Shape of the fade-out (Paket 21).
+    #[serde(default, skip_serializing_if = "FadeCurve::is_linear")]
+    pub fade_out_curve: FadeCurve,
+    /// Clip gain in dB, applied before the track fader (Paket 21).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub gain_db: f64,
+}
+
+/// Shape of a fade. `gain(t)` runs from 0 (start of the fade) to 1 (end); a fade-out
+/// uses `gain(1 - t)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FadeCurve {
+    /// Straight line.
+    #[default]
+    Linear,
+    /// Equal power: `sin(t * pi / 2)`. Two clips fading against each other keep their
+    /// summed power constant (for uncorrelated material).
+    EqualPower,
+    /// S-curve (raised cosine): soft start and end, the two sides sum to exactly 1.
+    SCurve,
+}
+
+impl FadeCurve {
+    /// All curves in menu order.
+    pub const ALL: [FadeCurve; 3] = [FadeCurve::Linear, FadeCurve::EqualPower, FadeCurve::SCurve];
+
+    /// Gain at position `t` (0..=1) of the fade. Values outside are clamped.
+    /// Real-time safe: pure arithmetic, no allocation.
+    pub fn gain(self, t: f32) -> f32 {
+        let t = t.clamp(0.0, 1.0);
+        match self {
+            FadeCurve::Linear => t,
+            FadeCurve::EqualPower => (t * std::f32::consts::FRAC_PI_2).sin(),
+            FadeCurve::SCurve => 0.5 - 0.5 * (t * std::f32::consts::PI).cos(),
+        }
+    }
+
+    /// True for the default curve (not written to the file).
+    pub fn is_linear(&self) -> bool {
+        *self == FadeCurve::Linear
+    }
+
+    /// Display name (German).
+    pub fn label(self) -> &'static str {
+        match self {
+            FadeCurve::Linear => "Linear",
+            FadeCurve::EqualPower => "Gleiche Leistung",
+            FadeCurve::SCurve => "S-Kurve",
+        }
+    }
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -115,6 +169,9 @@ impl Clip {
             fade_in_beats: 0.0,
             fade_out_beats: 0.0,
             midi: None,
+            fade_in_curve: FadeCurve::Linear,
+            fade_out_curve: FadeCurve::Linear,
+            gain_db: 0.0,
         }
     }
 

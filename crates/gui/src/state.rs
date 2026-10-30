@@ -4,9 +4,10 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crate::timeline::normalize_gain_db;
 use woa_model::{
-    AutoMode, AutoPoint, AutoTarget, Clip, ClipId, Command, EffectKind, Insert, InsertId,
-    ModelError, Project, Send, Session, TrackId, TrackKind,
+    AutoMode, AutoPoint, AutoTarget, Clip, ClipId, Command, EffectKind, FadeCurve, Insert,
+    InsertId, ModelError, Project, Send, Session, TrackId, TrackKind,
 };
 
 /// Subfolder for recorded takes, inside the project or recovery folder.
@@ -474,6 +475,9 @@ impl AppState {
                     fade_in_beats: 0.0,
                     fade_out_beats: 0.0,
                     midi: None,
+                    fade_in_curve: woa_model::FadeCurve::Linear,
+                    fade_out_curve: woa_model::FadeCurve::Linear,
+                    gain_db: 0.0,
                 },
                 index: None,
             })
@@ -609,6 +613,47 @@ impl AppState {
             fade_in_beats: fade_in,
             fade_out_beats: fade_out,
         })
+    }
+
+    /// Sets the shape of both fades of a clip (Paket 21), one undo step.
+    pub fn set_fade_curves(
+        &mut self,
+        clip: ClipId,
+        fade_in: FadeCurve,
+        fade_out: FadeCurve,
+    ) -> bool {
+        let Some((_, c)) = self.project().clip(clip) else {
+            return false;
+        };
+        if c.fade_in_curve == fade_in && c.fade_out_curve == fade_out {
+            return false;
+        }
+        self.apply(Command::SetClipFadeCurves {
+            clip,
+            fade_in,
+            fade_out,
+        })
+    }
+
+    /// Sets the gain of a clip in dB (Paket 21), clamped to the gain range, one undo step.
+    pub fn set_clip_gain(&mut self, clip: ClipId, gain_db: f64) -> bool {
+        let Some((_, c)) = self.project().clip(clip) else {
+            return false;
+        };
+        let gain_db = gain_db.clamp(woa_model::MIN_GAIN_DB, woa_model::MAX_GAIN_DB);
+        if gain_db == c.gain_db {
+            return false;
+        }
+        self.apply(Command::SetClipGain { clip, gain_db })
+    }
+
+    /// Sets the clip gain so that the loudest sample (`peak`, linear, measured with the
+    /// current gain NOT applied) reaches `target_db` dBFS. `false` for silence.
+    pub fn normalize_clip(&mut self, clip: ClipId, peak: f32, target_db: f64) -> bool {
+        match normalize_gain_db(peak, target_db) {
+            Some(g) => self.set_clip_gain(clip, g),
+            None => false,
+        }
     }
 
     /// Splits a clip at `at_beats` (timeline) into two clips, one undo step.

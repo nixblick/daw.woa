@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use woa_dsp::{Node, ProcessBuffers};
 
-use woa_model::{Clip, Project, TrackId, TrackKind};
+use woa_model::{Clip, FadeCurve, Project, TrackId, TrackKind};
 
 use rtrb::Consumer;
 use woa_dsp::instrument::NoteEvent;
@@ -34,6 +34,12 @@ pub struct PlacedClip {
     pub fade_in: u64,
     /// Fade-out-Länge in Samples.
     pub fade_out: u64,
+    /// Form des Fade-in.
+    pub fade_in_curve: FadeCurve,
+    /// Form des Fade-out.
+    pub fade_out_curve: FadeCurve,
+    /// Clip-Gain als Faktor (1.0 = unverändert).
+    pub gain: f32,
 }
 
 impl PlacedClip {
@@ -44,21 +50,60 @@ impl PlacedClip {
             samples,
             fade_in: 0,
             fade_out: 0,
+            fade_in_curve: FadeCurve::Linear,
+            fade_out_curve: FadeCurve::Linear,
+            gain: 1.0,
         }
     }
 
-    /// Lineare Hüllkurve an Stelle `i` des Clips.
-    fn envelope(&self, i: u64) -> f32 {
+    /// Ende auf der Zeitachse (Samples, exklusiv).
+    pub fn end(&self) -> u64 {
+        self.start + self.samples.len() as u64
+    }
+
+    /// Hüllkurve (Fades, ohne Gain) an Stelle `i` des Clips. Echtzeitsicher.
+    pub fn envelope(&self, i: u64) -> f32 {
         let len = self.samples.len() as u64;
         let mut g = 1.0f32;
         if self.fade_in > 0 && i < self.fade_in {
-            g = g.min(i as f32 / self.fade_in as f32);
+            g = g.min(self.fade_in_curve.gain(i as f32 / self.fade_in as f32));
         }
         let left = len.saturating_sub(i);
         if self.fade_out > 0 && left < self.fade_out {
-            g = g.min(left as f32 / self.fade_out as f32);
+            g = g.min(self.fade_out_curve.gain(left as f32 / self.fade_out as f32));
         }
         g
+    }
+}
+
+/// Dezibel in einen linearen Faktor.
+fn db_to_gain(db: f64) -> f32 {
+    10f64.powf(db / 20.0) as f32
+}
+
+/// Automatische Überblendung (Paket 21): Überlappen sich zwei Clips einer Spur, blendet der
+/// frühere über die Überlappung aus und der spätere ein, mit gleicher Leistung. Eigene,
+/// längere Fades bleiben unberührt. Liegt der spätere Clip ganz im früheren, gibt es keine
+/// Überblendung (er liegt dann einfach darüber). Läuft beim Bau des Graphen, nie im
+/// Audio-Thread.
+pub fn apply_crossfades(clips: &mut [PlacedClip]) {
+    let mut order: Vec<usize> = (0..clips.len()).collect();
+    order.sort_by_key(|&i| clips[i].start);
+    for w in order.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let (a_end, b_start, b_end) = (clips[a].end(), clips[b].start, clips[b].end());
+        if b_start >= a_end || b_end <= a_end {
+            continue;
+        }
+        let overlap = a_end - b_start;
+        if overlap > clips[a].fade_out {
+            clips[a].fade_out = overlap;
+            clips[a].fade_out_curve = FadeCurve::EqualPower;
+        }
+        if overlap > clips[b].fade_in {
+            clips[b].fade_in = overlap;
+            clips[b].fade_in_curve = FadeCurve::EqualPower;
+        }
     }
 }
 
@@ -66,8 +111,10 @@ impl PlacedClip {
 /// Fades werden in Samples umgerechnet.
 pub fn place_clip(clip: &Clip, file: &Arc<[f32]>, tempo_bpm: f64, rate: f32) -> PlacedClip {
     let to = |b: f64| beats_to_samples(b.max(0.0), tempo_bpm, rate);
+    // Beide Grenzen einzeln gerundet: zwei Teile eines geteilten Clips schließen so ohne
+    // Lücke und ohne Doppelung an derselben Dateistelle an.
     let from = (to(clip.offset_beats) as usize).min(file.len());
-    let until = (from + to(clip.length_beats) as usize).min(file.len());
+    let until = (to(clip.offset_beats + clip.length_beats) as usize).clamp(from, file.len());
     let samples: Arc<[f32]> = if from == 0 && until == file.len() {
         Arc::clone(file)
     } else {
@@ -78,6 +125,9 @@ pub fn place_clip(clip: &Clip, file: &Arc<[f32]>, tempo_bpm: f64, rate: f32) -> 
         samples,
         fade_in: to(clip.fade_in_beats),
         fade_out: to(clip.fade_out_beats),
+        fade_in_curve: clip.fade_in_curve,
+        fade_out_curve: clip.fade_out_curve,
+        gain: db_to_gain(clip.gain_db),
     }
 }
 
@@ -165,7 +215,7 @@ fn clip_graph_inner(
         if t.kind != TrackKind::Audio {
             return None;
         }
-        let clips = t
+        let mut clips: Vec<PlacedClip> = t
             .clips
             .iter()
             .filter_map(|c| {
@@ -173,6 +223,7 @@ fn clip_graph_inner(
                 Some(place_clip(c, &file, project.tempo_bpm, rate))
             })
             .collect();
+        apply_crossfades(&mut clips);
         let mut player = ClipPlayer::new(clips, transport.clone());
         if let Some(m) = meters.as_deref_mut() {
             player = player.with_meter(Arc::clone(m.entry(t.id).or_default()));
@@ -299,7 +350,7 @@ impl Node for ClipPlayer {
         let pos = self.transport.position();
         let len = out.len() as u64;
         for clip in &self.clips {
-            let end = clip.start + clip.samples.len() as u64;
+            let end = clip.end();
             if end <= pos || clip.start >= pos + len {
                 continue;
             }
@@ -309,16 +360,19 @@ impl Node for ClipPlayer {
             let src_off = (from - clip.start) as usize;
             let n = (to - from) as usize;
             let faded = clip.fade_in > 0 || clip.fade_out > 0;
+            let g = clip.gain;
             for (k, (o, s)) in out[out_off..out_off + n]
                 .iter_mut()
                 .zip(&clip.samples[src_off..src_off + n])
                 .enumerate()
             {
-                *o += if faded {
+                let v = if faded {
                     *s * clip.envelope((src_off + k) as u64)
                 } else {
                     *s
                 };
+                // Gain 1.0 lässt das Signal bitgleich.
+                *o += if g == 1.0 { v } else { v * g };
             }
         }
         if let Some(m) = &self.meter {

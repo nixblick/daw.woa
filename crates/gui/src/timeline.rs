@@ -168,6 +168,65 @@ impl Clipboard {
     }
 }
 
+/// Automatische Überblendung je Clip (Paket 21), als (Einblendung, Ausblendung) in Beats.
+/// Dieselbe Regel wie in der Engine (`woa_engine::clip::apply_crossfades`): Überlappt ein
+/// späterer Audio-Clip das Ende eines früheren und endet danach, blendet der frühere über die
+/// Überlappung aus und der spätere ein. Nur Clips einer Spur übergeben.
+pub fn crossfade_overlaps(
+    clips: &[Clip],
+) -> std::collections::HashMap<woa_model::ClipId, (f64, f64)> {
+    let mut out = std::collections::HashMap::new();
+    let mut audio: Vec<&Clip> = clips.iter().filter(|c| c.audio.is_some()).collect();
+    audio.sort_by(|a, b| a.start_beats.total_cmp(&b.start_beats));
+    for w in audio.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let overlap = a.end_beats() - b.start_beats;
+        if overlap <= 1e-9 || b.end_beats() <= a.end_beats() + 1e-9 {
+            continue;
+        }
+        out.entry(a.id).or_insert((0.0, 0.0)).1 = overlap;
+        out.entry(b.id).or_insert((0.0, 0.0)).0 = overlap;
+    }
+    out
+}
+
+/// Punkte einer Fade-Kurve für die Anzeige: `n + 1` Paare (x, Höhe) mit x und Höhe in 0..1,
+/// von links nach rechts. Beim Einblenden steigt die Höhe, beim Ausblenden fällt sie.
+pub fn fade_points(curve: woa_model::FadeCurve, fade_out: bool, n: usize) -> Vec<(f32, f32)> {
+    let n = n.max(1);
+    (0..=n)
+        .map(|k| {
+            let x = k as f32 / n as f32;
+            let g = if fade_out {
+                curve.gain(1.0 - x)
+            } else {
+                curve.gain(x)
+            };
+            (x, g)
+        })
+        .collect()
+}
+
+/// Zielpegel beim Normalisieren eines Clips (dBFS, etwas Luft für Inter-Sample-Spitzen).
+pub const NORMALIZE_TARGET_DB: f64 = -1.0;
+
+/// Clip-Gain in dB, damit eine Spitze von `peak` (linear) auf `target_db` kommt.
+/// `None` bei Stille oder unsinnigem Wert.
+pub fn normalize_gain_db(peak: f32, target_db: f64) -> Option<f64> {
+    if !(peak.is_finite() && peak > 1e-6) {
+        return None;
+    }
+    Some(target_db - 20.0 * f64::from(peak).log10())
+}
+
+/// Größte Spitze eines Clip-Ausschnitts aus den Wellenform-Punkten (je Block ein Maximum,
+/// `ppb` Punkte je Beat). Block-genau und damit eher zu hoch als zu niedrig geschätzt.
+pub fn region_peak(peaks: &[f32], ppb: f64, offset_beats: f64, length_beats: f64) -> f32 {
+    let a = ((offset_beats * ppb).floor().max(0.0) as usize).min(peaks.len());
+    let b = (((offset_beats + length_beats) * ppb).ceil().max(0.0) as usize).clamp(a, peaks.len());
+    peaks[a..b].iter().fold(0.0f32, |m, s| m.max(s.abs()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +265,58 @@ mod tests {
         let slow = ruler_ticks(TimeUnit::Seconds, 60.0, 40.0, 8.0);
         assert_eq!(slow[1].beat, 2.0);
         assert_eq!(slow[1].label, "0:02");
+    }
+
+    fn audio_clip(id: u64, start: f64, len: f64) -> Clip {
+        Clip::new(woa_model::ClipId(id), "c", start, len, Some("a.wav".into()))
+    }
+
+    #[test]
+    fn crossfade_overlap_matches_the_engine_rule() {
+        let a = audio_clip(1, 0.0, 4.0);
+        let b = audio_clip(2, 3.0, 4.0);
+        let m = crossfade_overlaps(&[b.clone(), a.clone()]);
+        assert_eq!(m.get(&a.id), Some(&(0.0, 1.0)), "earlier clip fades out");
+        assert_eq!(m.get(&b.id), Some(&(1.0, 0.0)), "later clip fades in");
+        // Aneinander ohne Überlappung, ganz enthalten und MIDI: keine Überblendung.
+        assert!(crossfade_overlaps(&[a.clone(), audio_clip(3, 4.0, 2.0)]).is_empty());
+        assert!(crossfade_overlaps(&[a.clone(), audio_clip(4, 1.0, 2.0)]).is_empty());
+        let mut midi = audio_clip(5, 3.0, 4.0);
+        midi.audio = None;
+        assert!(crossfade_overlaps(&[a, midi]).is_empty());
+    }
+
+    #[test]
+    fn fade_points_run_from_zero_to_one() {
+        use woa_model::FadeCurve;
+        for c in FadeCurve::ALL {
+            let up = fade_points(c, false, 8);
+            assert_eq!((up[0], up[8]), ((0.0, 0.0), (1.0, 1.0)), "{c:?}");
+            let down = fade_points(c, true, 8);
+            assert_eq!((down[0].1, down[8].1), (1.0, 0.0), "{c:?}");
+        }
+    }
+
+    #[test]
+    fn normalize_math() {
+        let g = normalize_gain_db(0.5, -1.0).expect("gain");
+        assert!((g - 5.0206).abs() < 1e-3);
+        assert!(normalize_gain_db(0.0, -1.0).is_none());
+        assert!(normalize_gain_db(f32::NAN, -1.0).is_none());
+        // Spitze 1.0 -> -1 dB: das Signal wird leiser.
+        assert!((normalize_gain_db(1.0, -1.0).expect("g") + 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn region_peak_covers_the_clip_part_only() {
+        // 4 Punkte je Beat; Spitze 0.9 liegt in Beat 2, 0.3 in Beat 0.
+        let mut peaks = vec![0.1f32; 16];
+        peaks[0] = 0.3;
+        peaks[9] = 0.9;
+        assert!((region_peak(&peaks, 4.0, 0.0, 1.0) - 0.3).abs() < 1e-6);
+        assert!((region_peak(&peaks, 4.0, 2.0, 1.0) - 0.9).abs() < 1e-6);
+        assert!((region_peak(&peaks, 4.0, 3.0, 1.0) - 0.1).abs() < 1e-6);
+        assert_eq!(region_peak(&peaks, 4.0, 50.0, 1.0), 0.0, "beyond the end");
     }
 
     #[test]

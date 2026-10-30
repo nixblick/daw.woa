@@ -112,6 +112,10 @@ pub struct WoaApp {
     clip_drag: Option<(ClipId, f64)>,
     /// Fades being edited (committed as one undo step when editing ends).
     fade_edit: Option<(ClipId, f64, f64)>,
+    /// Fades being dragged at the clip corners (Paket 21): (clip, fade-in, fade-out) in beats.
+    fade_handle: Option<(ClipId, f64, f64)>,
+    /// Clip gain being dragged in the inspector: (clip, dB), committed when the drag ends.
+    gain_preview: Option<(ClipId, f64)>,
     /// Weitere markierte Clips (Strg/Umschalt+Klick), inklusive `selected_clip`.
     selected_clips: Vec<ClipId>,
     /// Export-Lautheit in LUFS, `None` = unverändert.
@@ -403,6 +407,8 @@ impl WoaApp {
             selected_clip: None,
             clip_drag: None,
             fade_edit: None,
+            fade_handle: None,
+            gain_preview: None,
             themed: false,
             photo: std::env::var_os("WOA_SCREENSHOT").map(|p| (PathBuf::from(p), 0)),
             selected_clips: Vec::new(),
@@ -2774,6 +2780,7 @@ impl WoaApp {
             painter.vline(x, rect.y_range(), egui::Stroke::new(1.0, theme::GRID));
         }
         let ppb = self.player.as_ref().map(|p| p.peaks_per_beat(tempo));
+        let auto_xf = crate::timeline::crossfade_overlaps(&clips);
         for c in &clips {
             let drag = match self.clip_drag {
                 Some((id, d))
@@ -2801,6 +2808,23 @@ impl WoaApp {
             let x0 = rect.left() + start as f32 * px;
             let x1 = x0 + (len as f32 * px).max(2.0);
             let r = egui::Rect::from_x_y_ranges(x0..=x1, rect.top() + 3.0..=rect.bottom() - 3.0);
+            // Anzeige-Kopie mit gezogenen und automatischen Fades (Überblendung).
+            let mut cv = c.clone();
+            cv.length_beats = len;
+            if let Some((id, a, b)) = self.fade_handle
+                && id == c.id
+            {
+                (cv.fade_in_beats, cv.fade_out_beats) = (a, b);
+            }
+            if let Some(&(ai, ao)) = auto_xf.get(&c.id) {
+                if ai > cv.fade_in_beats {
+                    (cv.fade_in_beats, cv.fade_in_curve) = (ai, woa_model::FadeCurve::EqualPower);
+                }
+                if ao > cv.fade_out_beats {
+                    (cv.fade_out_beats, cv.fade_out_curve) = (ao, woa_model::FadeCurve::EqualPower);
+                }
+            }
+            let gain_lin = 10f32.powf(c.gain_db as f32 / 20.0);
             let cresp = ui.interact(
                 r,
                 ui.id().with(("clip", c.id.0)),
@@ -2859,7 +2883,7 @@ impl WoaApp {
                         .get(i0.min(peaks.len())..i1.min(peaks.len()))
                         .map_or(0.0, |w| w.iter().fold(0.0f32, |m, s| m.max(*s)));
                     let local = f64::from((x - r.left()) / px);
-                    let env = fade_gain(c, local) as f32;
+                    let env = fade_gain(&cv, local) as f32 * gain_lin;
                     let h = (v * env).min(1.0) * half;
                     painter.vline(x, (mid - h)..=(mid + h), fill_stroke);
                     if h > 1.0 {
@@ -2903,26 +2927,96 @@ impl WoaApp {
             // Fades als abgedunkelte Dreiecke + helle Hüllkurven-Diagonale.
             let shade = egui::Color32::from_black_alpha(135);
             let fade_line = egui::Stroke::new(1.5, theme::mix(base, egui::Color32::WHITE, 0.7));
-            if c.fade_in_beats > 0.0 {
-                let fx = (r.left() + c.fade_in_beats as f32 * px).min(r.right());
-                painter.add(egui::Shape::convex_polygon(
-                    vec![r.left_top(), egui::pos2(fx, r.top()), r.left_bottom()],
-                    shade,
-                    egui::Stroke::NONE,
-                ));
-                painter.line_segment([r.left_bottom(), egui::pos2(fx, r.top() + 16.0)], fade_line);
-            }
-            if c.fade_out_beats > 0.0 {
-                let fx = (r.right() - c.fade_out_beats as f32 * px).max(r.left());
-                painter.add(egui::Shape::convex_polygon(
-                    vec![egui::pos2(fx, r.top()), r.right_top(), r.right_bottom()],
-                    shade,
-                    egui::Stroke::NONE,
-                ));
-                painter.line_segment(
-                    [egui::pos2(fx, r.top() + 16.0), r.right_bottom()],
-                    fade_line,
-                );
+            if c.audio.is_some() {
+                let body_top = r.top() + 16.0;
+                let h = r.bottom() - body_top;
+                for (fade, curve, out) in [
+                    (cv.fade_in_beats, cv.fade_in_curve, false),
+                    (cv.fade_out_beats, cv.fade_out_curve, true),
+                ] {
+                    if fade <= 0.0 {
+                        continue;
+                    }
+                    let w = (fade as f32 * px).min(r.width());
+                    let x_start = if out { r.right() - w } else { r.left() };
+                    let pts = crate::timeline::fade_points(curve, out, 16);
+                    let at = |(x, g): (f32, f32)| egui::pos2(x_start + x * w, r.bottom() - g * h);
+                    for pair in pts.windows(2) {
+                        let (p, q) = (at(pair[0]), at(pair[1]));
+                        let seg = egui::Rect::from_min_max(
+                            egui::pos2(p.x, r.top()),
+                            egui::pos2(q.x, (p.y + q.y) / 2.0),
+                        );
+                        painter.rect_filled(seg, 0.0, shade);
+                    }
+                    painter.add(egui::Shape::line(
+                        pts.iter().map(|&p| at(p)).collect(),
+                        fade_line,
+                    ));
+                }
+                // Griffe an den oberen Ecken: ziehen ändert die Fade-Länge.
+                let selected_audio = selected;
+                for out in [false, true] {
+                    let fade = if out {
+                        cv.fade_out_beats
+                    } else {
+                        cv.fade_in_beats
+                    };
+                    let edge = (fade as f32 * px).clamp(10.0, (r.width() - 10.0).max(10.0));
+                    let hx = if out {
+                        r.right() - edge
+                    } else {
+                        r.left() + edge
+                    };
+                    let hp = egui::pos2(hx, body_top);
+                    let hresp = ui
+                        .interact(
+                            egui::Rect::from_center_size(hp, egui::vec2(14.0, 14.0)),
+                            ui.id().with(("fade", c.id.0, out)),
+                            egui::Sense::drag(),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::ResizeHorizontal)
+                        .on_hover_text(if out {
+                            "Fade-out ziehen"
+                        } else {
+                            "Fade-in ziehen"
+                        });
+                    let hot = hresp.hovered() || hresp.dragged();
+                    if hot || selected_audio {
+                        painter.circle_filled(
+                            hp,
+                            if hot { 5.5 } else { 4.0 },
+                            if hot {
+                                theme::ACCENT
+                            } else {
+                                egui::Color32::WHITE
+                            },
+                        );
+                    }
+                    if hresp.drag_started() {
+                        self.selected_clip = Some(c.id);
+                        self.selected_clips = vec![c.id];
+                    }
+                    if hresp.dragged() {
+                        let (mut fi, mut fo) = self
+                            .fade_handle
+                            .filter(|(id, _, _)| *id == c.id)
+                            .map_or((c.fade_in_beats, c.fade_out_beats), |(_, a, b)| (a, b));
+                        let d = f64::from(hresp.drag_delta().x / px);
+                        if out {
+                            fo = (fo - d).clamp(0.0, (len - fi).max(0.0));
+                        } else {
+                            fi = (fi + d).clamp(0.0, (len - fo).max(0.0));
+                        }
+                        self.fade_handle = Some((c.id, fi, fo));
+                    }
+                    if hresp.drag_stopped()
+                        && let Some((id, fi, fo)) = self.fade_handle.take()
+                    {
+                        let round = |v: f64| (v * 100.0).round() / 100.0;
+                        self.state.set_fades(id, round(fi), round(fo));
+                    }
+                }
             }
             if selected {
                 painter.rect_stroke(
@@ -3082,14 +3176,16 @@ impl WoaApp {
     /// Bearbeitungszeile für den gewählten Clip: Fades, Schneiden, Löschen, Piano-Roll.
     fn clip_bar(&mut self, ui: &mut egui::Ui) {
         let Some(id) = self.selected_clip else {
-            theme::status_pill(ui, "CLIP-INSPEKTOR", theme::DIM, false);
-            ui.label(
-                egui::RichText::new(
-                    "Clip anklicken zum Bearbeiten  ·  Doppelklick in MIDI-Spur: neuer MIDI-Clip  ·  S: Schneiden am Kopf  ·  Strg+C/V/D: Kopieren, Einfügen, Verdoppeln  ·  Audio-Datei hineinziehen  ·  Strg+Mausrad: Zoom",
-                )
-                .small()
-                .color(theme::DIM),
-            );
+            ui.horizontal(|ui| {
+                theme::status_pill(ui, "CLIP-INSPEKTOR", theme::DIM, false);
+                ui.label(
+                    egui::RichText::new(
+                        "Clip anklicken zum Bearbeiten  ·  Doppelklick in MIDI-Spur: neuer MIDI-Clip  ·  S: Schneiden am Kopf  ·  Strg+C/V/D: Kopieren, Einfügen, Verdoppeln  ·  Audio-Datei hineinziehen  ·  Strg+Mausrad: Zoom",
+                    )
+                    .small()
+                    .color(theme::DIM),
+                );
+            });
             return;
         };
         let Some((_, c)) = self.state.project().clip(id) else {
@@ -3173,6 +3269,114 @@ impl WoaApp {
                 self.delete_selected();
             }
         });
+        if c.audio.is_some() {
+            self.clip_shape_bar(ui, &c);
+        }
+    }
+
+    /// Zweite Zeile des Clip-Inspektors (Paket 21): Fade-Kurven, Clip-Gain, Normalisieren.
+    fn clip_shape_bar(&mut self, ui: &mut egui::Ui, c: &woa_model::Clip) {
+        use woa_model::FadeCurve;
+        let id = c.id;
+        ui.horizontal(|ui| {
+            let (mut cin, mut cout) = (c.fade_in_curve, c.fade_out_curve);
+            for (label, cur, salt) in [
+                ("Einblend-Kurve", &mut cin, 0u8),
+                ("Ausblend-Kurve", &mut cout, 1u8),
+            ] {
+                egui::ComboBox::from_id_salt(("fade_curve", id.0, salt))
+                    .selected_text(format!("{label}: {}", cur.label()))
+                    .show_ui(ui, |ui| {
+                        for k in FadeCurve::ALL {
+                            ui.selectable_value(cur, k, k.label());
+                        }
+                    });
+            }
+            if (cin, cout) != (c.fade_in_curve, c.fade_out_curve) {
+                self.state.set_fade_curves(id, cin, cout);
+            }
+            ui.separator();
+            let mut g = match self.gain_preview {
+                Some((pid, pg)) if pid == id => pg,
+                _ => c.gain_db,
+            };
+            let r = ui.add(
+                egui::DragValue::new(&mut g)
+                    .range(woa_model::MIN_GAIN_DB..=woa_model::MAX_GAIN_DB)
+                    .speed(0.1)
+                    .fixed_decimals(1)
+                    .prefix("Clip-Gain ")
+                    .suffix(" dB"),
+            );
+            if r.double_clicked() {
+                g = 0.0;
+            }
+            if r.dragged() || r.has_focus() {
+                if g != c.gain_db {
+                    self.gain_preview = Some((id, g));
+                }
+            } else {
+                self.gain_preview = None;
+                if g != c.gain_db {
+                    self.state.set_clip_gain(id, g);
+                }
+            }
+            if ui
+                .button("Normalisieren")
+                .on_hover_text(
+                    "Clip-Gain so setzen, dass die lauteste Stelle des Clips bei -1 dBFS liegt",
+                )
+                .clicked()
+            {
+                self.normalize_selected(c);
+            }
+            ui.label(
+                egui::RichText::new(
+                    "Überlappende Clips blenden automatisch über (gleiche Leistung).",
+                )
+                .small()
+                .color(theme::DIM),
+            );
+        });
+    }
+
+    /// Setzt den Gain des Clips so, dass seine Spitze bei -1 dBFS liegt.
+    fn normalize_selected(&mut self, c: &woa_model::Clip) {
+        let tempo = self.state.project().tempo_bpm;
+        let file = c
+            .audio
+            .as_deref()
+            .and_then(|rel| self.state.resolve_audio(rel));
+        let peak = match (file, self.player.as_mut()) {
+            (Some(file), Some(p)) => p.peaks(&file).map(|pk| {
+                crate::timeline::region_peak(
+                    &pk,
+                    p.peaks_per_beat(tempo),
+                    c.offset_beats,
+                    c.length_beats,
+                )
+            }),
+            // Ohne Wiedergabe-Engine (Tests): Datei direkt lesen, sample-genau.
+            (Some(file), None) => woa_engine::clip::load_wav_mono(&file, 48_000)
+                .ok()
+                .map(|s| {
+                    let per_beat = 48_000.0 * 60.0 / tempo;
+                    let a = ((c.offset_beats * per_beat) as usize).min(s.len());
+                    let b = (((c.offset_beats + c.length_beats) * per_beat).ceil() as usize)
+                        .clamp(a, s.len());
+                    s[a..b].iter().fold(0.0f32, |m, v| m.max(v.abs()))
+                }),
+            _ => None,
+        };
+        let done = peak.is_some_and(|pk| {
+            self.state
+                .normalize_clip(c.id, pk, crate::timeline::NORMALIZE_TARGET_DB)
+        });
+        if !done {
+            self.state.status = Status::Info(
+                "Normalisieren nicht möglich (Stille oder keine Wiedergabe-Engine)".into(),
+            );
+        }
     }
 
     /// Rastet einen gezogenen Clip-Rand ein: die neue Kante liegt auf dem Raster.
@@ -3624,7 +3828,7 @@ impl eframe::App for WoaApp {
                     .fill(theme::mix(theme::PANEL, theme::BG, 0.5))
                     .inner_margin(egui::Margin::symmetric(12, 5)),
             )
-            .show(ui, |ui| ui.horizontal(|ui| self.clip_bar(ui)));
+            .show(ui, |ui| ui.vertical(|ui| self.clip_bar(ui)));
         egui::Panel::bottom("status")
             .frame(
                 egui::Frame::new()
@@ -4571,10 +4775,15 @@ const TELEMETRY_HINT: &str = "Fehlercodes anonym an den WOA-Server senden? Gesen
 fn fade_gain(c: &woa_model::Clip, local: f64) -> f64 {
     let mut g = 1.0f64;
     if c.fade_in_beats > 0.0 {
-        g = g.min(local / c.fade_in_beats);
+        g = g.min(f64::from(
+            c.fade_in_curve.gain((local / c.fade_in_beats) as f32),
+        ));
     }
     if c.fade_out_beats > 0.0 {
-        g = g.min((c.length_beats - local) / c.fade_out_beats);
+        g = g.min(f64::from(
+            c.fade_out_curve
+                .gain(((c.length_beats - local) / c.fade_out_beats) as f32),
+        ));
     }
     g.clamp(0.0, 1.0)
 }

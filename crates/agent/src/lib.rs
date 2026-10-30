@@ -21,8 +21,8 @@ use rmcp::{ErrorData as McpError, ServerHandler, ServiceExt, tool, tool_handler,
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use woa_model::{
-    AutoMode, AutoPoint, AutoTarget, Clip, ClipId, Command, EffectKind, Insert, InsertId,
-    ModelError, Send as SendRoute, Session, TrackId, TrackKind, VOICE_CHAIN, store,
+    AutoMode, AutoPoint, AutoTarget, Clip, ClipId, Command, EffectKind, FadeCurve, Insert,
+    InsertId, ModelError, Send as SendRoute, Session, TrackId, TrackKind, VOICE_CHAIN, store,
 };
 
 pub mod audio;
@@ -578,6 +578,37 @@ pub struct SetFadesParams {
     pub fade_in_beats: f64,
     /// Fade-out in beats.
     pub fade_out_beats: f64,
+}
+
+/// Parameters of `split_clip`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SplitClipParams {
+    /// Clip id.
+    pub clip: u64,
+    /// Cut position on the timeline in beats; must lie inside the clip.
+    pub at_beats: f64,
+}
+
+/// Parameters of `set_fade_curves`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetFadeCurvesParams {
+    /// Clip id.
+    pub clip: u64,
+    /// Shape of the fade-in: `linear`, `equal_power` or `s_curve`; default unchanged.
+    #[serde(default)]
+    pub fade_in: Option<String>,
+    /// Shape of the fade-out: `linear`, `equal_power` or `s_curve`; default unchanged.
+    #[serde(default)]
+    pub fade_out: Option<String>,
+}
+
+/// Parameters of `set_clip_gain`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetClipGainParams {
+    /// Clip id.
+    pub clip: u64,
+    /// Clip gain in dB (-96..24), before the track fader.
+    pub gain_db: f64,
 }
 
 /// Parameters of `repeat_clip`.
@@ -1238,6 +1269,9 @@ impl WoaAgent {
                     fade_in_beats: 0.0,
                     fade_out_beats: 0.0,
                     midi: None,
+                    fade_in_curve: woa_model::FadeCurve::Linear,
+                    fade_out_curve: woa_model::FadeCurve::Linear,
+                    gain_db: 0.0,
                 },
                 index: None,
             })?;
@@ -1500,6 +1534,102 @@ impl WoaAgent {
                 offset_beats: c.offset_beats,
                 fade_in_beats: p.fade_in_beats,
                 fade_out_beats: p.fade_out_beats,
+            })?;
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(
+        description = "Split a clip at a timeline position (beats, inside the clip) into two clips that play identically to the original. Returns the id of the right part."
+    )]
+    async fn split_clip(
+        &self,
+        Parameters(p): Parameters<SplitClipParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            let (track, c) = match s.project().clip(ClipId(p.clip)) {
+                Some((t, c)) => (t.id, c.clone()),
+                None => return Err(ModelError::ClipNotFound(ClipId(p.clip))),
+            };
+            let left = p.at_beats - c.start_beats;
+            let right = c.end_beats() - p.at_beats;
+            if !(left >= 1e-3 && right >= 1e-3) {
+                return Err(ModelError::InvalidArgument(format!(
+                    "at_beats {} liegt nicht im Clip ({}..{})",
+                    p.at_beats,
+                    c.start_beats,
+                    c.end_beats()
+                )));
+            }
+            let index = s
+                .project()
+                .track(track)
+                .and_then(|t| t.clips.iter().position(|x| x.id == c.id))
+                .map(|i| i + 1);
+            let id = s.new_clip_id();
+            let mut part = c.clone();
+            part.id = id;
+            part.start_beats = p.at_beats;
+            part.length_beats = right;
+            part.offset_beats = c.offset_beats + left;
+            part.fade_in_beats = 0.0;
+            part.fade_out_beats = c.fade_out_beats.min(right);
+            s.apply(Command::EditClip {
+                clip: c.id,
+                length_beats: left,
+                offset_beats: c.offset_beats,
+                fade_in_beats: c.fade_in_beats.min(left),
+                fade_out_beats: 0.0,
+            })?;
+            s.apply(Command::AddClip {
+                track,
+                clip: part,
+                index,
+            })?;
+            Ok(serde_json::json!({ "clip": id.0 }))
+        })
+    }
+
+    #[tool(
+        description = "Set the shape of a clip's fades: linear, equal_power or s_curve (omit one to keep it). Overlapping audio clips cross-fade automatically with equal power."
+    )]
+    async fn set_fade_curves(
+        &self,
+        Parameters(p): Parameters<SetFadeCurvesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        fn parse(v: Option<&str>, keep: FadeCurve) -> Result<FadeCurve, ModelError> {
+            match v {
+                None => Ok(keep),
+                Some("linear") => Ok(FadeCurve::Linear),
+                Some("equal_power") => Ok(FadeCurve::EqualPower),
+                Some("s_curve") => Ok(FadeCurve::SCurve),
+                Some(other) => Err(ModelError::InvalidArgument(format!(
+                    "unbekannte Kurve {other:?} (linear, equal_power, s_curve)"
+                ))),
+            }
+        }
+        self.agent_step(|s| {
+            let c = Self::clip_of(s, p.clip)?;
+            let fade_in = parse(p.fade_in.as_deref(), c.fade_in_curve)?;
+            let fade_out = parse(p.fade_out.as_deref(), c.fade_out_curve)?;
+            s.apply(Command::SetClipFadeCurves {
+                clip: c.id,
+                fade_in,
+                fade_out,
+            })?;
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(description = "Set the gain of a clip in dB (-96..24), applied before the track fader.")]
+    async fn set_clip_gain(
+        &self,
+        Parameters(p): Parameters<SetClipGainParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            s.apply(Command::SetClipGain {
+                clip: ClipId(p.clip),
+                gain_db: p.gain_db,
             })?;
             Ok(serde_json::json!({ "ok": true }))
         })

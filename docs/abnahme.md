@@ -4,6 +4,24 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 21: Schnitt und Fades (0.16.0, offen)
+
+Aus M6. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Teilen:** Clip anklicken, Abspielkopf ins Lineal setzen, in der Clip-Leiste „Schneiden (S)“ (oder Taste S). Der Clip wird an der Stelle zu zwei Clips; beim Abspielen hört man keine Naht. Strg+Z macht es rückgängig.
+2. **Mitte löschen:** Zweimal schneiden, den mittleren Teil anklicken und Entf drücken. Die Lücke bleibt, die Ränder sind unverändert.
+3. **Fade ziehen:** Den Griff am oberen Clip-Rand nach innen ziehen: die Ein- oder Ausblendung wächst und wird in der Wellenform gezeichnet. In der Clip-Leiste Kurve wählen (Linear, Gleiche Leistung, S-Kurve), die Zeichnung ändert sich mit.
+4. **Überlappen:** Einen Clip ein Stück über den Nachbarn auf derselben Spur schieben. Die Überlappung zeigt die automatische Überblendung (Gleiche Leistung), beim Abspielen gibt es keinen Pegeleinbruch und keinen Klick.
+5. **Normalisieren und Clip-Lautstärke:** Clip wählen, „Normalisieren“: die Welle wächst, bis die Spitze bei −1 dBFS liegt. Mit dem dB-Regler lässt sich der Wert von Hand ändern; Strg+Z stellt zurück.
+6. **Export prüfen:** Projekt exportieren (Strg+E, WAV), Datei in einem Editor oder Player öffnen: Schnitte und Überblendungen klingen wie in der Vorschau, kein Knacken an den Schnittstellen.
+7. **Speichern, neu öffnen:** Strg+S, schließen, wieder öffnen: Kurven, Blenden und Clip-Lautstärken stehen wie zuvor.
+
+Selbst geprüft von Claude: Nulltest (geteilter und wieder zusammengesetzter Clip ist bitgleich mit dem Original bei Positionen auf ganzen Samples; bei krummen Tempi höchstens ein Sample Versatz, mit Sprungerkennung geprüft); Tabellentests der drei Kurven (Werte, Monotonie, Summe bzw. Leistung 1); RMS bei Überblendung (Gleiche Leistung hält den Pegel, linear sinkt er in der Mitte); Klick-Erkennung an Blenden und Überblendung; Clip-Gain gegen die dB-Rechnung; Echtzeit-Test mit `assert_no_alloc`; Modell-Befehle mit Undo und Redo, Prüfung der Grenzen, Projektformat 2 bleibt ohne neue Felder, Rundlauf Speichern und Laden; Agent-Werkzeuge über MCP; Oberflächentest ohne Fenster und ohne Ton (Fade-Griff ziehen, Strg+Z); Schneiden, Mitte löschen, Kurven, Clip-Lautstärke, Normalisieren und Rundlauf Speichern und Laden als Zustandstests (`AppState`, ohne Zeiger- und Tastenereignisse). Alle Graphen (Wiedergabe, Analyse, Export) entstehen über `clip_graph_inner`, dort greifen Kurven, Clip-Lautstärke und Überblendung.
+
+Nicht selbst geprüft: Klang (kein Ton auf dem Notebook, nur Messung im Offline-Render), Aussehen und Griffigkeit der Fade-Griffe im echten Fenster (mit simulierten Zeigerereignissen getestet, nicht von Hand).
+
+Noch nicht drin (Paket 22 und 23): Aufnahme mit Latenzausgleich und Comping, Time-Stretch.
+
 ## Paket 20: Timeline-Editor (0.15.0, offen)
 
 Aus M6. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
