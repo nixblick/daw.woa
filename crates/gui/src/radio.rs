@@ -484,6 +484,13 @@ impl RadioDesk {
         &self.view
     }
 
+    /// Reicht die Tabelle der Zeit-Events an den Sende-Thread (gleiche Tabelle: keine Wirkung).
+    pub fn push_events(&self, table: woa_radio::events::EventTable) {
+        if let Some(s) = &self.station {
+            s.with(move |c| c.set_events(table));
+        }
+    }
+
     /// Hängt Dateien hinten an die Playlist (AutoDJ); vorhandene Einträge bleiben stehen.
     pub fn append_files(&self, paths: Vec<PathBuf>) {
         if let Some(s) = &self.station {
@@ -847,6 +854,34 @@ impl RadioDesk {
                         });
                     });
 
+                    if let Some((name, secs, hard)) = &v.next_event {
+                        let near = *hard && *secs < 30.0;
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "NÄCHSTES EVENT  {name}  in {}  ({})",
+                                clock(*secs),
+                                if *hard { "hart" } else { "weich" }
+                            ))
+                            .size(12.0)
+                            .monospace()
+                            .color(if near {
+                                theme::ON_AIR
+                            } else {
+                                theme::DIM
+                            }),
+                        )
+                        .on_hover_text("Zeit-Events: Fenster „Zeit-Events“");
+                    }
+                    if let Some((name, dev)) = &v.last_event {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "ZULETZT  {name}  {dev:+.1} s gegen die Zeit"
+                            ))
+                            .size(11.0)
+                            .monospace()
+                            .color(theme::DIM),
+                        );
+                    }
                     // Visueller Restzeit-Balken im LCD
                     let progress = if total_title_secs > 0.1 {
                         ((total_title_secs - v.remaining_title) / total_title_secs).clamp(0.0, 1.0)

@@ -19,6 +19,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use woa_engine::localtime::Zone;
+
 use crate::{Error, Library, MAX_RESULTS, Query, Result, Track, normalize_tag};
 
 /// Formatversion von `stundenuhr.json`.
@@ -99,9 +101,14 @@ pub struct Schedule {
     /// Sperrfrist für denselben Interpreten, Minuten.
     #[serde(default = "default_artist_lock")]
     pub artist_lockout_min: u32,
-    /// Ortszeit gegenüber UTC in Minuten (Mitteleuropa Winter 60, Sommer 120).
+    /// Ortszeit gegenüber UTC in Minuten im Winter (Mitteleuropa 60). Mit `auto_dst` kommt
+    /// im Sommer eine Stunde dazu; ohne den Schalter gilt der Wert das ganze Jahr.
     #[serde(default = "default_offset")]
     pub utc_offset_min: i32,
+    /// EU-Sommerzeit automatisch dazurechnen (letzter Sonntag im März bis Oktober). Dateien
+    /// aus Paket 28 haben den Schalter nicht und behalten ihren festen Versatz.
+    #[serde(default)]
+    pub auto_dst: bool,
     /// Der AutoDJ hält so viele Titel im Voraus bereit.
     #[serde(default = "default_lookahead")]
     pub lookahead: usize,
@@ -123,6 +130,7 @@ impl Default for Schedule {
             track_lockout_min: default_track_lock(),
             artist_lockout_min: default_artist_lock(),
             utc_offset_min: default_offset(),
+            auto_dst: true,
             lookahead: default_lookahead(),
             seed: 0,
             autodj: false,
@@ -140,6 +148,14 @@ fn check_name(what: &str, s: &str) -> Result<()> {
 }
 
 impl Schedule {
+    /// Die Zone der Stundenuhr.
+    pub fn zone(&self) -> Zone {
+        Zone {
+            base_min: self.utc_offset_min,
+            eu_dst: self.auto_dst,
+        }
+    }
+
     /// Eine Beispiel-Uhr, damit der Editor nicht leer beginnt.
     pub fn with_example() -> Self {
         let mut s = Self::default();
@@ -284,21 +300,24 @@ pub struct LocalHour {
     pub key: i64,
 }
 
-/// Wochentag, Stunde und Stundenschlüssel für `unix` bei `offset_min` gegenüber UTC.
-pub fn local_hour(unix: i64, offset_min: i32) -> LocalHour {
-    let t = unix + i64::from(offset_min) * 60;
-    let days = t.div_euclid(86_400);
+/// Wochentag, Stunde und Stundenschlüssel für `unix` in Zone `zone`.
+pub fn local_hour(unix: i64, zone: Zone) -> LocalHour {
+    let l = zone.local(unix);
     LocalHour {
-        // 1. Januar 1970 war ein Donnerstag.
-        weekday: (days + 3).rem_euclid(7) as u8,
-        hour: (t.rem_euclid(86_400) / 3600) as u8,
-        key: t.div_euclid(3600),
+        weekday: l.weekday,
+        hour: l.hour,
+        key: l.hour_key,
     }
 }
 
-/// Beginn der Ortsstunde `key` als Unix-Sekunden.
-pub fn hour_start(key: i64, offset_min: i32) -> i64 {
-    key * 3600 - i64::from(offset_min) * 60
+/// Beginn der Ortsstunde `key` als Unix-Sekunden (in der doppelten Stunde im Herbst der
+/// erste Durchlauf; in der übersprungenen Stunde im Frühjahr der Moment der Umstellung).
+pub fn hour_start(key: i64, zone: Zone) -> i64 {
+    let day = key.div_euclid(24);
+    let sod = key.rem_euclid(24) * 3600;
+    zone.to_unix(day, sod)
+        .or_else(|| zone.gap_end(day, sod))
+        .unwrap_or(key * 3600 - i64::from(zone.base_min) * 60)
 }
 
 /// Interpret aus dem Titel nach dem Muster „Interpret - Titel“; ohne Trenner leer
@@ -469,6 +488,7 @@ fn choose(
     vt: i64,
     lock: &Lockouts,
     strict: bool,
+    fit: Option<f64>,
     st: &mut AutoDjState,
 ) -> Option<usize> {
     let free: Vec<usize> = (0..cands.len())
@@ -488,6 +508,20 @@ fn choose(
         }
         return (0..cands.len()).min_by_key(|&i| (hist.track.get(&cands[i].id).copied(), i));
     }
+    // Vor einem harten Zeit-Event: nur die drei Titel, die am besten in die Lücke passen.
+    let free: Vec<usize> = match fit {
+        Some(gap) => {
+            let mut by_fit = free;
+            by_fit.sort_by(|&a, &b| {
+                (cands[a].seconds - gap)
+                    .abs()
+                    .total_cmp(&(cands[b].seconds - gap).abs())
+            });
+            by_fit.truncate(3);
+            by_fit
+        }
+        None => free,
+    };
     let weights: Vec<f64> = free
         .iter()
         .map(|&i| {
@@ -522,6 +556,38 @@ pub fn plan(
     ahead: &[Ahead],
     n: usize,
 ) -> Result<Vec<Pick>> {
+    plan_until(lib, sched, st, start, ahead, n, None)
+}
+
+/// Ein hartes Zeit-Event, auf das der AutoDJ rückwärts plant (Paket 29).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Deadline {
+    /// Zeit des Events (Unix-Sekunden).
+    pub at: i64,
+    /// Überblendung zwischen zwei Titeln in Sekunden: jeder Titel schiebt die Uhr um seine
+    /// Länge minus diese Zeit weiter (sonst läuft die Rechnung je Titel um ein paar Sekunden
+    /// davon).
+    pub overlap_s: i64,
+}
+
+/// Lücke vor einem harten Event, ab der der AutoDJ nach der Länge wählt (Sekunden).
+pub const FIT_WINDOW_S: i64 = 480;
+
+/// Wie [`plan`], aber mit einem harten Zeit-Event: Liegt die Zeit des nächsten Titels
+/// höchstens [`FIT_WINDOW_S`] davor, wählt der AutoDJ unter den drei am besten passenden
+/// Titeln, damit das Event pünktlich kommt und wenig abgeschnitten wird. Das Abschneiden
+/// selbst macht der Mixer; die Planung verkleinert nur, was er abschneiden muss. Jede Wahl
+/// nennt im Log die Lücke und was abgeschnitten wird.
+pub fn plan_until(
+    lib: &Library,
+    sched: &Schedule,
+    st: &mut AutoDjState,
+    start: i64,
+    ahead: &[Ahead],
+    n: usize,
+    deadline: Option<Deadline>,
+) -> Result<Vec<Pick>> {
+    let overlap = deadline.map_or(0, |d| d.overlap_s.max(0));
     let lock = Lockouts {
         track_s: i64::from(sched.track_lockout_min) * 60,
         artist_s: i64::from(sched.artist_lockout_min) * 60,
@@ -533,17 +599,17 @@ pub fn plan(
     let mut vt = start;
     for a in ahead {
         hist.mark(a.track_id, &a.artist, vt);
-        vt += (a.seconds.ceil() as i64).max(1);
+        vt += ((a.seconds.ceil() as i64) - overlap).max(1);
     }
     let mut cache: HashMap<String, Vec<Cand>> = HashMap::new();
     let mut out = Vec::new();
     for _ in 0..n {
-        let lh = local_hour(vt, sched.utc_offset_min);
+        let lh = local_hour(vt, sched.zone());
         if st.hour_key != Some(lh.key) {
             // Neue Stunde, oder erster Aufruf nach dem Start: dann zählen die in dieser Stunde
             // schon gespielten Titel, damit die Folge der Slots nach einem Neustart weitergeht.
             st.count = if st.hour_key.is_none() {
-                let from = hour_start(lh.key, sched.utc_offset_min);
+                let from = hour_start(lh.key, sched.zone());
                 lib.plays_between(from, vt)?
             } else {
                 0
@@ -578,7 +644,11 @@ pub fn plan(
                 cache.insert(tag.clone(), load_category(lib, &tag)?);
             }
             let cands = &cache[&tag];
-            if let Some(i) = choose(cands, &hist, vt, &lock, tier != Tier::Emergency, st) {
+            let gap = deadline
+                .map(|d| d.at - vt)
+                .filter(|g| (1..=FIT_WINDOW_S).contains(g))
+                .map(|g| (g + overlap) as f64);
+            if let Some(i) = choose(cands, &hist, vt, &lock, tier != Tier::Emergency, gap, st) {
                 chosen = Some((tier, tag, i));
                 break;
             }
@@ -612,8 +682,30 @@ pub fn plan(
             "autodj pick: {}",
             pick.describe()
         );
+        if let Some(d) = deadline
+            && vt < d.at
+        {
+            let end = vt + pick.seconds.ceil() as i64 - overlap;
+            if end > d.at {
+                tracing::info!(
+                    gap_s = d.at - vt,
+                    cut_s = end - d.at,
+                    "autodj: hard event {} s ahead, the pick runs {} s past it (the mixer cuts it)",
+                    d.at - vt,
+                    end - d.at
+                );
+            } else {
+                tracing::info!(
+                    gap_s = d.at - vt,
+                    short_s = d.at - end,
+                    "autodj: hard event {} s ahead, the pick ends {} s before it",
+                    d.at - vt,
+                    d.at - end
+                );
+            }
+        }
         hist.mark(Some(pick.track_id), &pick.artist, vt);
-        vt += (pick.seconds.ceil() as i64).max(1);
+        vt += ((pick.seconds.ceil() as i64) - overlap).max(1);
         out.push(pick);
     }
     Ok(out)
@@ -687,6 +779,7 @@ mod tests {
     fn schedule(seed: u64) -> Schedule {
         let mut s = Schedule::with_example();
         s.utc_offset_min = 0;
+        s.auto_dst = false;
         s.seed = seed;
         s.clocks[0].slots[0].fallback = "neu".into();
         for h in 0..WEEK_HOURS {
@@ -741,7 +834,7 @@ mod tests {
                 );
             }
             // Kategorienfolge: je Stunde die Slots der Uhr der Reihe nach.
-            let key = local_hour(p.at, 0).key;
+            let key = local_hour(p.at, Zone::fixed(0)).key;
             let k = hour_count.entry(key).or_insert(0);
             assert_eq!(p.slot, *k % 4, "{}", p.describe());
             assert_eq!(p.wanted, ["hit", "hit", "neu", "jingle"][p.slot]);
@@ -751,6 +844,44 @@ mod tests {
             *k += 1;
         }
         assert_eq!(hour_count.len(), 24);
+    }
+
+    #[test]
+    fn planning_backward_to_a_hard_event_keeps_the_cut_small() {
+        // Für viele Startwerte: Mit Frist ragt der Titel über die Zeit hinaus höchstens
+        // um das, was ein Titel sinnvoll abweichen kann; ohne Frist ist das Ergebnis Zufall.
+        let mut worst_with = 0;
+        let mut worst_without = 0;
+        for seed in 0..40u64 {
+            let lib = Library::open_in_memory().unwrap();
+            fill(&lib);
+            let s = schedule(seed);
+            let d = Deadline {
+                at: MONDAY + 600,
+                overlap_s: 3,
+            };
+            for (deadline, worst) in [(Some(d), &mut worst_with), (None, &mut worst_without)] {
+                let mut st = AutoDjState::new(seed);
+                let picks = plan_until(&lib, &s, &mut st, MONDAY, &[], 5, deadline).unwrap();
+                let mut vt = MONDAY;
+                let mut over = 0;
+                for p in &picks {
+                    let end = vt + p.seconds.ceil() as i64 - 3;
+                    if vt < d.at && end >= d.at {
+                        over = end - d.at;
+                        break;
+                    }
+                    vt = end;
+                }
+                *worst = (*worst).max(over);
+            }
+        }
+        // Titel dauern 150-230 s: ohne Planung ragt der Titel bis fast eine ganze Länge über.
+        assert!(worst_with <= 100, "with planning: {worst_with} s");
+        assert!(
+            worst_with < worst_without,
+            "{worst_with} vs {worst_without}"
+        );
     }
 
     #[test]
@@ -846,7 +977,7 @@ mod tests {
         // Die Slot-Folge der laufenden Stunde geht weiter (Zähler aus der Historie).
         let in_hour = played
             .iter()
-            .filter(|p| local_hour(p.at, 0).key == local_hour(end, 0).key)
+            .filter(|p| local_hour(p.at, Zone::fixed(0)).key == local_hour(end, Zone::fixed(0)).key)
             .count();
         assert_eq!(next[0].slot, in_hour % 4);
     }
@@ -883,13 +1014,16 @@ mod tests {
 
     #[test]
     fn local_hour_and_week() {
-        let l = local_hour(MONDAY + 3 * 3600 + 5, 0);
+        let l = local_hour(MONDAY + 3 * 3600 + 5, Zone::fixed(0));
         assert_eq!((l.weekday, l.hour), (0, 3));
-        let l = local_hour(MONDAY + 23 * 3600, 60);
+        let l = local_hour(MONDAY + 23 * 3600, Zone::fixed(60));
         assert_eq!((l.weekday, l.hour), (1, 0));
-        let l = local_hour(MONDAY - 1, 0);
+        let l = local_hour(MONDAY - 1, Zone::fixed(0));
         assert_eq!((l.weekday, l.hour), (6, 23));
-        assert_eq!(hour_start(local_hour(MONDAY, 60).key, 60), MONDAY);
+        assert_eq!(
+            hour_start(local_hour(MONDAY, Zone::fixed(60)).key, Zone::fixed(60)),
+            MONDAY
+        );
     }
 
     #[test]

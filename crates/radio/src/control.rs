@@ -4,6 +4,7 @@
 //! bereit, schreibt den Mitschnitt aus dem Ring in eine WAV-Datei und gibt verworfene
 //! Puffer über den `basedrop`-Collector frei ([`Controller::pump`] regelmäßig aufrufen).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -12,6 +13,7 @@ use basedrop::{Collector, Owned, Shared};
 
 use crate::audio::{Stereo, load_stereo, measure};
 use crate::cues::{CueEdit, CueHistory, Cues};
+use crate::events::{Action, EventClock, EventTable, MissedWhy};
 use crate::level::db_to_gain;
 use crate::mixer::{Cmd, Mixer, NONE, Status};
 use crate::pfl::{PflCmd, PflHandle};
@@ -22,6 +24,8 @@ use crate::{CARTS, RECORDINGS_DIR};
 const QUEUE: usize = 256;
 /// Sekunden Mitschnitt-Puffer zwischen Audio- und Control-Thread.
 const RECORD_QUEUE_SECONDS: usize = 8;
+/// So lang zählt ein noch ungemessener Titel bei der Planung eines harten Events.
+const UNMEASURED_SECONDS: f64 = 180.0;
 /// Eine Mitschnitt-Datei je so vielen Sekunden (WAV-Grenze 4 GiB).
 pub const RECORD_FILE_SECONDS: u64 = 3600;
 
@@ -125,6 +129,26 @@ pub struct Controller {
     cue_history: CueHistory,
     /// Vorhören (PFL), falls ein Kopfhörer-Ausgang eingehängt ist.
     pfl: Option<PflHandle>,
+    /// Feste Zeit-Events (Paket 29).
+    events: EventClock,
+    /// Vorab geladene Event-Dateien (nach Event-Kennung).
+    event_files: HashMap<u32, Shared<Stereo>>,
+    /// Playlist-Einträge, die Zeit-Events sind (nach uid).
+    event_runs: HashMap<u32, EventRun>,
+    /// Letztes gespieltes Event und seine Abweichung in Sekunden (positiv: zu spät).
+    last_event: Option<(String, f64)>,
+    /// Verpasste Events seit dem Start.
+    events_missed: u32,
+}
+
+/// Ein Zeit-Event in der Playlist.
+#[derive(Debug, Clone)]
+struct EventRun {
+    id: u32,
+    name: String,
+    at: i64,
+    hard: bool,
+    started: bool,
 }
 
 impl Controller {
@@ -155,6 +179,11 @@ impl Controller {
             last_load: None,
             cue_history: CueHistory::default(),
             pfl: None,
+            events: EventClock::default(),
+            event_files: HashMap::new(),
+            event_runs: HashMap::new(),
+            last_event: None,
+            events_missed: 0,
         };
         c.replace_show(show);
         (c, mixer)
@@ -398,19 +427,27 @@ impl Controller {
             return false;
         };
         let (uid, path) = (e.uid, e.path.clone());
+        let event = self.event_runs.get(&uid).cloned();
         let t0 = std::time::Instant::now();
-        let loaded = load_stereo(&path, self.rate);
+        let loaded: Result<Shared<Stereo>, String> =
+            match event.as_ref().and_then(|r| self.event_files.get(&r.id)) {
+                // Zeit-Event: schon geladen und gemessen.
+                Some(buf) => Ok(buf.clone()),
+                None => load_stereo(&path, self.rate).map(|s| {
+                    let m = measure(&s, self.rate);
+                    if let Some(e) = self.show.playlist.get_mut(index)
+                        && !e.is_measured()
+                    {
+                        e.set_measured(m);
+                    }
+                    Shared::new(&self.collector.handle(), s)
+                }),
+            };
         let took = t0.elapsed();
         tracing::debug!(file = %path.display(), ms = took.as_millis() as u64, "track decoded");
         self.last_load = Some((path.clone(), took));
         match loaded {
-            Ok(s) => {
-                let m = measure(&s, self.rate);
-                if let Some(e) = self.show.playlist.get_mut(index)
-                    && !e.is_measured()
-                {
-                    e.set_measured(m);
-                }
+            Ok(buf) => {
                 let gain = self
                     .show
                     .playlist
@@ -422,13 +459,24 @@ impl Controller {
                     .get(index)
                     .map(|e| e.cues)
                     .unwrap_or_default()
-                    .frames(self.rate, s.frames());
-                let buf = Shared::new(&self.collector.handle(), s);
+                    .frames(self.rate, buf.frames());
+                // Übergang vom laufenden Titel (Mixxx-Logik aus Intro/Outro, `transition.rs`).
+                let lead = index
+                    .checked_sub(1)
+                    .filter(|&p| self.current_index() == Some(p))
+                    .and_then(|p| {
+                        let (a, b) = (self.show.playlist.get(p)?, self.show.playlist.get(index)?);
+                        (a.seconds.is_some() && b.seconds.is_some())
+                            .then(|| self.show.crossfade_entries(a, b))
+                    })
+                    .map(|s| (s * f64::from(self.rate)) as usize);
                 self.send(Cmd::Queue {
                     uid,
                     buf,
                     gain: db_to_gain(gain),
                     cues,
+                    lead,
+                    hold: event.is_some_and(|r| r.hard),
                 });
                 self.pending = Some(uid);
                 true
@@ -576,6 +624,17 @@ impl Controller {
     /// Regelmäßig aufrufen (alle paar Millisekunden): nächsten Titel bereitlegen,
     /// Mitschnitt schreiben, alte Puffer freigeben.
     pub fn pump(&mut self) {
+        self.pump_at(wall_now());
+    }
+
+    /// Wie [`Self::pump`] mit vorgegebener Uhrzeit (Unix-Sekunden). Die Tests treiben so die
+    /// Zeit-Events mit einer simulierten Uhr.
+    pub fn pump_at(&mut self, now: f64) {
+        self.pump_queue();
+        self.event_tick(now);
+    }
+
+    fn pump_queue(&mut self) {
         self.collector.collect();
         if let Some(r) = self.recording.as_mut()
             && let Err(e) = r.drain()
@@ -682,7 +741,14 @@ impl Controller {
     }
 
     fn cues_changed(&mut self, uid: u32) {
-        if self.pending == Some(uid) {
+        // Der bereitgelegte Titel selbst oder sein Vorgänger (Übergang hängt an beiden).
+        let prev_of_pending = self
+            .pending
+            .and_then(|p| self.index_of(p))
+            .and_then(|i| i.checked_sub(1))
+            .and_then(|i| self.show.playlist.get(i))
+            .is_some_and(|e| e.uid == uid);
+        if self.pending == Some(uid) || prev_of_pending {
             self.requeue();
         }
     }
@@ -849,4 +915,217 @@ pub fn render(show: &RadioShow, rate: u32) -> Result<Stereo, String> {
         tracing::warn!(message = %m, "radio render");
     }
     Ok(out)
+}
+
+/// Aktuelle Unix-Zeit in Sekunden.
+pub fn wall_now() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64())
+}
+
+// ---- Feste Zeit-Events (Paket 29) ----------------------------------------------------
+
+impl Controller {
+    /// Setzt die Event-Tabelle (gleiche Tabelle: nichts ändert sich).
+    pub fn set_events(&mut self, table: EventTable) {
+        if *self.events.table() != table {
+            tracing::info!(events = table.events.len(), "event table set");
+            self.events.set_table(table);
+        }
+    }
+
+    pub fn events(&self) -> &EventTable {
+        self.events.table()
+    }
+
+    /// Nächstes Event: Name, Sekunden bis dahin, hart.
+    pub fn next_event(&self, now: f64) -> Option<(String, f64, bool)> {
+        let u = self.events.upcoming()?;
+        let name = self.events.table().get(u.id)?.name.clone();
+        Some((name, u.at as f64 - now, u.hard))
+    }
+
+    /// Letztes gespieltes Event mit Abweichung (Sekunden, positiv = zu spät).
+    pub fn last_event(&self) -> Option<&(String, f64)> {
+        self.last_event.as_ref()
+    }
+
+    pub fn events_missed(&self) -> u32 {
+        self.events_missed
+    }
+
+    fn event_uid(&self, id: u32, at: i64) -> Option<u32> {
+        self.event_runs
+            .iter()
+            .find(|(_, r)| r.id == id && r.at == at)
+            .map(|(u, _)| *u)
+    }
+
+    /// Fügt das Event als Playlist-Eintrag bei `at_index` ein.
+    fn insert_event(&mut self, id: u32, at: i64, hard: bool, at_index: usize) -> Option<u32> {
+        let ev = self.events.table().get(id)?.clone();
+        let buf = self.event_files.get(&id)?.clone();
+        let mut e = PlaylistEntry::new(ev.path.clone());
+        e.uid = self.next_uid;
+        self.next_uid += 1;
+        let m = measure(&buf, self.rate);
+        e.set_measured(m);
+        let uid = e.uid;
+        let at_index = at_index.min(self.show.playlist.len());
+        self.show.playlist.insert(at_index, e);
+        self.event_runs.insert(
+            uid,
+            EventRun {
+                id,
+                name: ev.name,
+                at,
+                hard,
+                started: false,
+            },
+        );
+        Some(uid)
+    }
+
+    /// Stelle in der Playlist, vor die ein hartes Event um `at` gehört: vor den ersten Titel,
+    /// der erst nach `at - 1 s` beginnen würde. So läuft davor ein Titel bis zur Zeit und
+    /// wird abgeblendet, statt dass das Event zu früh kommt.
+    fn hard_index(&self, now: f64, at: i64) -> usize {
+        let Some(cur) = self.current_index() else {
+            return self.cue_index();
+        };
+        let target = at as f64 - 1.0 - now;
+        let mut end = self.remaining_title();
+        let mut k = cur + 1;
+        while let (Some(a), Some(b)) = (self.show.playlist.get(k - 1), self.show.playlist.get(k)) {
+            let start = end - self.show.crossfade_entries(a, b);
+            if start >= target {
+                return k;
+            }
+            end = start + b.play_seconds().unwrap_or(UNMEASURED_SECONDS);
+            k += 1;
+        }
+        k.min(self.show.playlist.len())
+    }
+
+    fn event_tick(&mut self, now: f64) {
+        let cur = self.status.current.load(Ordering::Acquire);
+        let on_air = self.running && cur != NONE;
+        // Gestartete Events: Abweichung festhalten, Erledigtes vergessen.
+        let started: Vec<u32> = self
+            .event_runs
+            .iter()
+            .filter(|(u, r)| !r.started && **u == cur)
+            .map(|(u, _)| *u)
+            .collect();
+        for u in started {
+            if let Some(r) = self.event_runs.get_mut(&u) {
+                r.started = true;
+                let dev = now - r.at as f64;
+                tracing::info!(event = %r.name, hard = r.hard, deviation_s = dev, "time event started");
+                self.last_event = Some((r.name.clone(), dev));
+            }
+        }
+        self.event_runs.retain(|u, r| !r.started || *u == cur);
+        let mut keep: Vec<u32> = self.event_runs.values().map(|r| r.id).collect();
+        keep.extend(self.events.waiting_ids());
+        self.event_files.retain(|id, _| keep.contains(id));
+
+        for a in self.events.tick(now, on_air) {
+            match a {
+                Action::Predecode { id, at, hard } => self.event_predecode(id, at, hard, now),
+                Action::Fire {
+                    id,
+                    at,
+                    hard,
+                    in_secs,
+                } => self.event_fire(id, at, hard, in_secs),
+                Action::Missed { id, at, why } => {
+                    let name = self
+                        .events
+                        .table()
+                        .get(id)
+                        .map_or_else(|| id.to_string(), |e| e.name.clone());
+                    self.events_missed += 1;
+                    let why = match why {
+                        MissedWhy::NotOnAir => "Sendung lief nicht".to_string(),
+                        MissedWhy::TooLate(s) => format!("{s:.0} s zu spät erkannt"),
+                    };
+                    tracing::warn!(event = %name, at, %why, "time event missed");
+                    self.message = Some(format!("Event „{name}“ verpasst: {why}"));
+                }
+            }
+        }
+    }
+
+    fn event_predecode(&mut self, id: u32, at: i64, hard: bool, now: f64) {
+        let Some(ev) = self.events.table().get(id).cloned() else {
+            return;
+        };
+        if !self.event_files.contains_key(&id) {
+            match load_stereo(&ev.path, self.rate) {
+                Ok(s) => {
+                    let sh = Shared::new(&self.collector.handle(), s);
+                    self.event_files.insert(id, sh);
+                }
+                Err(err) => {
+                    tracing::warn!(event = %ev.name, error = %err, "event file load failed");
+                    self.message = Some(format!("Event „{}“: {err}", ev.name));
+                    self.events_missed += 1;
+                    return;
+                }
+            }
+        }
+        if hard && self.event_uid(id, at).is_none() {
+            let idx = self.hard_index(now, at);
+            self.insert_event(id, at, true, idx);
+            if self
+                .pending
+                .and_then(|p| self.index_of(p))
+                .is_some_and(|i| i >= idx)
+            {
+                self.requeue();
+            }
+            tracing::info!(event = %ev.name, index = idx, "hard event planned");
+        }
+    }
+
+    fn event_fire(&mut self, id: u32, at: i64, hard: bool, in_secs: f64) {
+        if !self.event_files.contains_key(&id) {
+            // Datei ließ sich nicht laden (schon gemeldet).
+            return;
+        }
+        let Some(cur) = self.current_index() else {
+            return;
+        };
+        let uid = match self.event_uid(id, at) {
+            Some(u) => u,
+            None => match self.insert_event(id, at, hard, cur + 1) {
+                Some(u) => u,
+                None => return,
+            },
+        };
+        // Das Event muss das nächste sein: gleich hinter den laufenden Titel.
+        if let Some(i) = self.index_of(uid)
+            && i != cur + 1
+        {
+            let e = self.show.playlist.remove(i);
+            let to = (cur + 1).min(self.show.playlist.len());
+            self.show.playlist.insert(to, e);
+        }
+        if self.pending != Some(uid) {
+            self.send(Cmd::ClearNext);
+            self.pending = None;
+            self.pump_queue();
+        }
+        if hard {
+            let cut = (self.remaining_title() - in_secs).max(0.0);
+            let frame =
+                self.status.clock.load(Ordering::Acquire) + (in_secs * f64::from(self.rate)) as u64;
+            self.send(Cmd::StartAt(frame));
+            tracing::info!(id, in_secs, cut_s = cut, "hard event armed");
+        } else {
+            tracing::info!(id, "soft event queued after the running title");
+        }
+    }
 }

@@ -10,6 +10,7 @@ pub mod clock_editor;
 pub mod controls;
 pub mod covers;
 pub mod cue_editor;
+pub mod event_editor;
 pub mod export_dialog;
 pub mod feedback;
 pub mod library;
