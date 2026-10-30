@@ -1,0 +1,92 @@
+{
+  "v": 3,
+  "assetGroups": {
+    "Logos": {
+      "files": {
+        "woa-favicon-dark.svg": {
+          "blob": "c2bb850f82c65d91b003fff0a3242262",
+          "name": "woa-favicon-dark.svg",
+          "size": 676,
+          "type": "image/svg+xml"
+        },
+        "woa-favicon-light.svg": {
+          "blob": "46dfc1734953cdaa7c135ef341e8b471",
+          "name": "woa-favicon-light.svg",
+          "size": 676,
+          "type": "image/svg+xml"
+        },
+        "woa-icon-dark.svg": {
+          "blob": "b50095737b53d43badec4dce25ed5409",
+          "name": "woa-icon-dark.svg",
+          "size": 2180,
+          "type": "image/svg+xml"
+        },
+        "woa-icon-light.svg": {
+          "blob": "2844271f108f4b71ee013a1dddcd6828",
+          "name": "woa-icon-light.svg",
+          "size": 2180,
+          "type": "image/svg+xml"
+        },
+        "woa-mark-dark.svg": {
+          "blob": "05fa0134a76bdf4abe3ed55fe81045ef",
+          "name": "woa-mark-dark.svg",
+          "size": 2075,
+          "type": "image/svg+xml"
+        },
+        "woa-mark-light.svg": {
+          "blob": "8c6a5b7dfc7dbe6dba504bf72c79eb42",
+          "name": "woa-mark-light.svg",
+          "size": 2075,
+          "type": "image/svg+xml"
+        },
+        "woa-wordmark-dark.svg": {
+          "blob": "2bc44f55eaa8b9443aae561030b824f7",
+          "name": "woa-wordmark-dark.svg",
+          "size": 11102,
+          "type": "image/svg+xml"
+        },
+        "woa-wordmark-light.svg": {
+          "blob": "4a121edd4b1c8be057247a1bb830305f",
+          "name": "woa-wordmark-light.svg",
+          "size": 11102,
+          "type": "image/svg+xml"
+        }
+      },
+      "name": "Logos",
+      "order": [
+        "woa-wordmark-dark.svg",
+        "woa-wordmark-light.svg",
+        "woa-icon-dark.svg",
+        "woa-icon-light.svg",
+        "woa-mark-dark.svg",
+        "woa-mark-light.svg",
+        "woa-favicon-dark.svg",
+        "woa-favicon-light.svg"
+      ],
+      "tile": "l"
+    }
+  },
+  "blobs": {},
+  "createdOnFiles": {
+    "at": "2026-10-30T21:31:45Z",
+    "v": 1
+  },
+  "docs": {
+    "readme": "project/README.md",
+    "sections": []
+  },
+  "groups": [
+    "Logos"
+  ],
+  "lastChange": {
+    "at": "2026-10-30T21:50:57Z",
+    "by": "André",
+    "via": "Cowork",
+    "note": "Kanalzug ohne Drehregler, Wortmarke mit voller Tagline-Breite, ON AIR mit schwarzem Rahmen, TopBar ohne Glow, Pegelansicht Analog/Modern/Aus"
+  },
+  "layout": "files",
+  "libraries": [],
+  "namespace": "WOA",
+  "sections": {},
+  "title": "WOA"
+}

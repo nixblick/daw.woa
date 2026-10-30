@@ -1,0 +1,485 @@
+/* WOA — generated from tokens.json */
+:root, [data-theme="studio"] {
+  --bg: #12141a; /* Fensterhintergrund und Hauptfläche hinter den Modulen (theme.rs BG). */
+  --well: #0c0e12; /* Vertiefungen: leere Zeitleiste, Pegelschächte, Eingabefelder (theme.rs WELL). */
+  --panel: #1b1e26; /* Modul-Karten, Leisten, Spurköpfe (theme.rs PANEL). */
+  --panel-header: #222630; /* Kopfzeile eines Moduls mit `panel-label`-Beschriftung (theme.rs PANEL_HEADER). */
+  --surface: #292e3a; /* Hardware-Tasten, Pads, Drehregler-Körper, bedienbare Felder (theme.rs SURFACE). */
+  --surface-hover: #343a48; /* Hover-Zustand von `surface`. */
+  --border: #383f4e; /* 1-px-Bevel um Karten und Module (theme.rs BORDER). Dekorativ, unter 3:1 – nie allein als Bedienkante. */
+  --border-strong: #6a7488; /* Kontur bedienbarer Elemente (Tasten, Fader-Schacht, Eingabefelder): ≥3:1 auf `panel` und `bg`. */
+  --grid: #2c313d; /* Rasterlinien in Zeitleiste, Piano-Roll, Beatgrid (theme.rs GRID). */
+  --lcd-bg: #0a0c10; /* Hintergrund aller LCD-Displays, Uhren und LED-Ketten – bleibt auch im hellen Thema dunkel (echte Hardware). */
+  --led-off: #1c2028; /* Unbeleuchtetes LED-Segment auf `lcd-bg`. */
+  --text: #ecf0f8; /* Haupttext auf `bg`, `panel`, `panel-header`, `surface` (theme.rs TEXT_BRIGHT). */
+  --text-dim: #8a94a6; /* Nebentext, Einheiten, Spaltenköpfe auf `bg` und `panel` (theme.rs DIM). */
+  --lcd-text: #d8e0ec; /* Neutrale Schrift im LCD auf `lcd-bg` (Titelname, Einheiten). */
+  --lcd-ink: #ff9838; /* Leuchtziffern im LCD auf `lcd-bg`: Restzeit, Uhr, BPM, Timecode. Immer die Modusfarbe. */
+  --accent: #ff9838; /* Modusfarbe: Playhead, aktiver Modus, gedrückte/aktive Taste, Auswahl-Kontur. Als Text ≥4.5:1 auf `panel` und `bg`. Studio = Röhren-Amber (theme.rs ACCENT), Radio = Studio-Uhr-Rot, Party = Club-Magenta. */
+  --accent-strong: #ffb46a; /* Hover/gedrückt auf Akzentflächen, heller Glanz der obersten LED. */
+  --accent-soft: #4a3018; /* Auswahlfläche, Hintergrund aktiver Pillen, beleuchtete Taste (Grundschimmer). Text darauf: `text`. */
+  --on-accent: #1a0e04; /* Text/Icon auf gefülltem `accent`. */
+  --accent-2: #5ec8ff; /* Zweitfarbe je Modus: Studio = MIDI/Info-Cyan, Radio = Tasten-Gelb (Cart, Vorbereitung), Party = Beat/BPM-Lime. Als Marke ≥3:1 auf `panel`. */
+  --on-accent-2: #04131c; /* Text auf gefülltem `accent-2`. */
+  --on-air-fill: #c41d2a; /* Gefüllte Rot-Flächen mit weißer Schrift: ON-AIR-Lampe an, Mitschnitt-/REC-Taste gedrückt. Weiß darauf 5.9:1. */
+  --on-air: #ee3844; /* Auf Sendung, Aufnahme, offenes Mikro, Clipping, Restzeit < 10 s (theme.rs ON_AIR). Immer mit Wort/Symbol. */
+  --ok: #38d070; /* Läuft, verbunden, Gate offen (theme.rs OK_GREEN). Immer mit Wort/Symbol, nie nur Grün gegen Rot. */
+  --cue: #44baff; /* Cue/PFL-Vorhören, nächster Titel, MIDI (theme.rs CUE_CYAN). */
+  --warn: #f5c630; /* Warnung, Pegel −12…−3 dB, Restzeit < 30 s. */
+  --led-green: #38d070; /* LED-Kette −60…−12 dB, auf `lcd-bg`. */
+  --led-yellow: #f5c630; /* LED-Kette −12…−3 dB, auf `lcd-bg`. */
+  --led-red: #ee3844; /* LED-Kette über −3 dB, Peak-Hold, Clip, auf `lcd-bg`. */
+  --vu-face: #f2e2bb; /* Skalenblatt des analogen VU-Meters (Studio), hinterleuchtet. */
+  --vu-ink: #2a1d0e; /* Skala, Zeiger und Beschriftung auf `vu-face` (≥4.5:1). */
+  --focus: #9fd8ff; /* Tastatur-Fokusring, 2 px, solide; ≥3:1 auf allen Flächen. */
+  --mode-studio: #ff9838; /* Kennfarbe Produzent im Modus-Umschalter – in allen Modi gleich. */
+  --mode-radio: #ff4650; /* Kennfarbe Radio im Modus-Umschalter. */
+  --mode-party: #ff3da6; /* Kennfarbe Party im Modus-Umschalter. */
+  --track-1: #4aa4ff; /* Spurfarbe 1 (theme.rs TRACK_COLORS) für Spurstreifen, Clip-Titel, Cart-Pad-Balken. */
+  --track-2: #4cd48a; /* Spurfarbe 2 (theme.rs TRACK_COLORS) für Spurstreifen, Clip-Titel, Cart-Pad-Balken. */
+  --track-3: #c07aff; /* Spurfarbe 3 (theme.rs TRACK_COLORS) für Spurstreifen, Clip-Titel, Cart-Pad-Balken. */
+  --track-4: #ffc044; /* Spurfarbe 4 (theme.rs TRACK_COLORS) für Spurstreifen, Clip-Titel, Cart-Pad-Balken. */
+  --track-5: #40d6e8; /* Spurfarbe 5 (theme.rs TRACK_COLORS) für Spurstreifen, Clip-Titel, Cart-Pad-Balken. */
+  --track-6: #ff709e; /* Spurfarbe 6 (theme.rs TRACK_COLORS) für Spurstreifen, Clip-Titel, Cart-Pad-Balken. */
+  --shadow-key: inset 0 1px 0 rgba(255,255,255,0.07), 0 2px 0 rgba(0,0,0,0.55), 0 3px 6px rgba(0,0,0,0.35); /* Erhabene Hardware-Taste (Kappe mit Lichtkante oben, Schatten unten). */
+  --shadow-key-pressed: inset 0 2px 4px rgba(0,0,0,0.6); /* Gedrückte/eingerastete Taste. */
+  --shadow-well: inset 0 1px 3px rgba(0,0,0,0.7); /* Eingelassene Schächte: LCD, Fader-Schacht, Meter. */
+  --shadow-card: 0 1px 0 rgba(255,255,255,0.03), 0 4px 14px rgba(0,0,0,0.35); /* Modul-Karte über `bg`. */
+  --glow-accent: 0 0 14px rgba(255,152,56,0.55); /* Beleuchtete Taste/aktive LED in Modusfarbe. */
+  --glow-on-air: 0 0 18px rgba(238,56,68,0.7), 0 0 4px rgba(238,56,68,0.9); /* ON-AIR-Lampe und REC-Taste im aktiven Zustand. */
+}
+[data-theme="radio"] {
+  --bg: #14171c;
+  --well: #0d1014;
+  --panel: #1e232a;
+  --panel-header: #262c34;
+  --surface: #2f363f;
+  --surface-hover: #3a424c;
+  --border: #3e4652;
+  --border-strong: #6e7886;
+  --grid: #2f353e;
+  --lcd-bg: #0b0d10;
+  --led-off: #1d2228;
+  --text: #edf1f6;
+  --text-dim: #8f99a8;
+  --lcd-text: #d8e0ec;
+  --lcd-ink: #ff4650;
+  --accent: #ff4650;
+  --accent-strong: #ff747c;
+  --accent-soft: #4a1c22;
+  --on-accent: #1a0507;
+  --accent-2: #ffc83a;
+  --on-accent-2: #1a1300;
+  --on-air: #ee3844;
+  --ok: #38d070;
+  --cue: #44baff;
+  --warn: #f5c630;
+  --led-green: #38d070;
+  --led-yellow: #f5c630;
+  --led-red: #ee3844;
+  --vu-face: #f2e2bb;
+  --vu-ink: #2a1d0e;
+  --focus: #9fd8ff;
+  --mode-studio: #ff9838;
+  --mode-radio: #ff4650;
+  --mode-party: #ff3da6;
+  --track-1: #4aa4ff;
+  --track-2: #4cd48a;
+  --track-3: #c07aff;
+  --track-4: #ffc044;
+  --track-5: #40d6e8;
+  --track-6: #ff709e;
+  --shadow-key: inset 0 1px 0 rgba(255,255,255,0.07), 0 2px 0 rgba(0,0,0,0.55), 0 3px 6px rgba(0,0,0,0.35);
+  --shadow-key-pressed: inset 0 2px 4px rgba(0,0,0,0.6);
+  --shadow-card: 0 1px 0 rgba(255,255,255,0.03), 0 4px 14px rgba(0,0,0,0.35);
+  --glow-accent: 0 0 14px rgba(255,70,80,0.6);
+}
+[data-theme="party"] {
+  --bg: #0e0c14;
+  --well: #09080d;
+  --panel: #18151f;
+  --panel-header: #211c2a;
+  --surface: #2a2435;
+  --surface-hover: #352d43;
+  --border: #3b3348;
+  --border-strong: #76698a;
+  --grid: #2a2433;
+  --lcd-bg: #08070c;
+  --led-off: #1c1824;
+  --text: #f3eefa;
+  --text-dim: #9c92ae;
+  --lcd-text: #e4dcf0;
+  --lcd-ink: #ff3da6;
+  --accent: #ff3da6;
+  --accent-strong: #ff6fbe;
+  --accent-soft: #4a1636;
+  --on-accent: #1a0410;
+  --accent-2: #c6ff3a;
+  --on-accent-2: #0e1400;
+  --on-air: #ee3844;
+  --ok: #38d070;
+  --cue: #44baff;
+  --warn: #f5c630;
+  --led-green: #38d070;
+  --led-yellow: #f5c630;
+  --led-red: #ee3844;
+  --vu-face: #f2e2bb;
+  --vu-ink: #2a1d0e;
+  --focus: #9fd8ff;
+  --mode-studio: #ff9838;
+  --mode-radio: #ff4650;
+  --mode-party: #ff3da6;
+  --track-1: #4aa4ff;
+  --track-2: #4cd48a;
+  --track-3: #c07aff;
+  --track-4: #ffc044;
+  --track-5: #40d6e8;
+  --track-6: #ff709e;
+  --shadow-key: inset 0 1px 0 rgba(255,255,255,0.07), 0 2px 0 rgba(0,0,0,0.55), 0 3px 6px rgba(0,0,0,0.35);
+  --shadow-key-pressed: inset 0 2px 4px rgba(0,0,0,0.6);
+  --shadow-card: 0 1px 0 rgba(255,255,255,0.03), 0 4px 14px rgba(0,0,0,0.35);
+  --glow-accent: 0 0 18px rgba(255,61,166,0.65);
+}
+[data-theme="studio-hell"] {
+  --bg: #eef0f4;
+  --well: #e1e5eb;
+  --panel: #ffffff;
+  --panel-header: #e6e9ef;
+  --surface: #dde1e8;
+  --surface-hover: #d0d5de;
+  --border: #c4cad4;
+  --border-strong: #7d8696;
+  --grid: #d5dae2;
+  --lcd-bg: #0a0c10;
+  --led-off: #1c2028;
+  --text: #161a22;
+  --text-dim: #545d6c;
+  --lcd-text: #d8e0ec;
+  --lcd-ink: #ff9838;
+  --accent: #a84e00;
+  --accent-strong: #8e4200;
+  --accent-soft: #fbe3cc;
+  --on-accent: #ffffff;
+  --accent-2: #0a679c;
+  --on-accent-2: #ffffff;
+  --on-air: #c8202e;
+  --ok: #137a3c;
+  --cue: #0b6aa8;
+  --warn: #8a6400;
+  --led-green: #38d070;
+  --led-yellow: #f5c630;
+  --led-red: #ee3844;
+  --vu-face: #f2e2bb;
+  --vu-ink: #2a1d0e;
+  --focus: #0b5d94;
+  --mode-studio: #a84e00;
+  --mode-radio: #c41b2d;
+  --mode-party: #b5146d;
+  --track-1: #1d64b8;
+  --track-2: #17804a;
+  --track-3: #7a3bc4;
+  --track-4: #8d6200;
+  --track-5: #0d7c8a;
+  --track-6: #b8245a;
+  --shadow-key: inset 0 1px 0 rgba(255,255,255,0.8), 0 2px 0 rgba(20,30,50,0.18), 0 3px 6px rgba(20,30,50,0.12);
+  --shadow-key-pressed: inset 0 2px 4px rgba(20,30,50,0.25);
+  --shadow-card: 0 1px 2px rgba(20,30,50,0.08), 0 4px 14px rgba(20,30,50,0.08);
+  --glow-accent: 0 0 10px rgba(180,84,0,0.35);
+}
+[data-theme="radio-hell"] {
+  --bg: #eef0f3;
+  --well: #e0e4e9;
+  --panel: #ffffff;
+  --panel-header: #e5e8ed;
+  --surface: #dbdfe5;
+  --surface-hover: #ced3db;
+  --border: #c3c9d2;
+  --border-strong: #7b8594;
+  --grid: #d4d9e0;
+  --lcd-bg: #0b0d10;
+  --led-off: #1d2228;
+  --text: #161a21;
+  --text-dim: #535c6a;
+  --lcd-text: #d8e0ec;
+  --lcd-ink: #ff4650;
+  --accent: #c41b2d;
+  --accent-strong: #9c1221;
+  --accent-soft: #f9d6da;
+  --on-accent: #ffffff;
+  --accent-2: #7d5900;
+  --on-accent-2: #ffffff;
+  --on-air: #c8202e;
+  --ok: #137a3c;
+  --cue: #0b6aa8;
+  --warn: #8a6400;
+  --led-green: #38d070;
+  --led-yellow: #f5c630;
+  --led-red: #ee3844;
+  --vu-face: #f2e2bb;
+  --vu-ink: #2a1d0e;
+  --focus: #0b5d94;
+  --mode-studio: #a84e00;
+  --mode-radio: #c41b2d;
+  --mode-party: #b5146d;
+  --track-1: #1d64b8;
+  --track-2: #17804a;
+  --track-3: #7a3bc4;
+  --track-4: #8d6200;
+  --track-5: #0d7c8a;
+  --track-6: #b8245a;
+  --shadow-key: inset 0 1px 0 rgba(255,255,255,0.8), 0 2px 0 rgba(20,30,50,0.18), 0 3px 6px rgba(20,30,50,0.12);
+  --shadow-key-pressed: inset 0 2px 4px rgba(20,30,50,0.25);
+  --shadow-card: 0 1px 2px rgba(20,30,50,0.08), 0 4px 14px rgba(20,30,50,0.08);
+  --glow-accent: 0 0 10px rgba(196,27,45,0.35);
+}
+[data-theme="party-hell"] {
+  --bg: #f2eff5;
+  --well: #e7e2ec;
+  --panel: #ffffff;
+  --panel-header: #ece7f1;
+  --surface: #e4dee9;
+  --surface-hover: #d9d1e0;
+  --border: #cdc4d6;
+  --border-strong: #86799a;
+  --grid: #ddd6e4;
+  --lcd-bg: #08070c;
+  --led-off: #1c1824;
+  --text: #1b1624;
+  --text-dim: #5c536b;
+  --lcd-text: #e4dcf0;
+  --lcd-ink: #ff3da6;
+  --accent: #b5146d;
+  --accent-strong: #900f56;
+  --accent-soft: #f8d3e8;
+  --on-accent: #ffffff;
+  --accent-2: #3f6600;
+  --on-accent-2: #ffffff;
+  --on-air: #c8202e;
+  --ok: #137a3c;
+  --cue: #0b6aa8;
+  --warn: #8a6400;
+  --led-green: #38d070;
+  --led-yellow: #f5c630;
+  --led-red: #ee3844;
+  --vu-face: #f2e2bb;
+  --vu-ink: #2a1d0e;
+  --focus: #0b5d94;
+  --mode-studio: #a84e00;
+  --mode-radio: #c41b2d;
+  --mode-party: #b5146d;
+  --track-1: #1d64b8;
+  --track-2: #17804a;
+  --track-3: #7a3bc4;
+  --track-4: #8d6200;
+  --track-5: #0d7c8a;
+  --track-6: #b8245a;
+  --shadow-key: inset 0 1px 0 rgba(255,255,255,0.8), 0 2px 0 rgba(20,30,50,0.18), 0 3px 6px rgba(20,30,50,0.12);
+  --shadow-key-pressed: inset 0 2px 4px rgba(20,30,50,0.25);
+  --shadow-card: 0 1px 2px rgba(20,30,50,0.08), 0 4px 14px rgba(20,30,50,0.08);
+  --glow-accent: 0 0 10px rgba(181,20,109,0.35);
+}
+:root {
+  --space-1: 2px; /* LED-Segmentabstand, Pillen-Innenabstand vertikal. */
+  --space-2: 4px; /* Abstand Taste zu Taste in Kanalgruppen (M/S/PFL). */
+  --space-3: 8px; /* Standardabstand in Zeilen, Pad-Raster der Cart-Wall. */
+  --space-4: 12px; /* Kartenpolster horizontal (card_frame 12/10). */
+  --space-5: 16px; /* Abstand zwischen Modulen. */
+  --space-6: 24px; /* Party-Großtasten-Abstand, Bereichsränder. */
+  --space-7: 40px; /* Party-Layout-Ränder (Bedienung aus Distanz). */
+  --radius-xs: 1px; /* LED-Segmente. */
+  --radius-sm: 3px; /* Meter-Schächte, kleine Tasten, Fader-Kappe. */
+  --radius-md: 4px; /* Widgets, Pillen, Eingabefelder (theme.rs Widget-Radius). */
+  --radius-lg: 6px; /* Modul-Karten (card_frame), Cart-Pads. */
+  --radius-xl: 8px; /* Fenster, Menüs, Dialoge. */
+  --radius-party: 14px; /* Party-Großtasten und Party-Karten, Fernbedienung. */
+  --key-h: 32px; /* Höhe Standard-Hardware-Taste. */
+  --key-party-h: 88px; /* Höhe Party-Großtaste (Touch, aus Distanz). */
+  --knob-d: 44px; /* Durchmesser Drehregler. */
+  --fader-h: 180px; /* Faderweg im Kanalzug. */
+  --led-seg: 4px; /* Segmenthöhe LED-Kette (theme.rs ~4.5 px Raster). */
+  --pad: 96px; /* Kantenlänge Cart-Pad. */
+  --font-ui: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --font-label: "Barlow Condensed", "Barlow", "Arial Narrow", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, monospace;
+  --font-seg: "DSEG7 Classic", "JetBrains Mono", monospace;
+  --text-display-party: 800 64px/60px var(--font-label); /* Party: Now-Playing-Titel, über 3 m lesbar. */
+  --text-display-l: 800 40px/40px var(--font-label); /* Party-Großtasten, ON-AIR-Lampe, Bühnenanzeigen. */
+  --text-title: 700 22px/26px var(--font-label); /* Fenster- und Bereichstitel. */
+  --text-lcd-clock: 700 54px/56px var(--font-mono); /* Restzeit/Studio-Uhr in `lcd-ink` auf `lcd-bg` (54 px wie im Radio-LCD). */
+  --text-lcd-l: 500 26px/30px var(--font-mono); /* Timecode, Takt, BPM im Transport-LCD. */
+  --text-lcd-s: 500 12px/16px var(--font-mono); /* Messwerte, Längen, dB-Zahlen, Tabellenzahlen. */
+  --text-body: 400 14px/20px var(--font-ui); /* Standard-Text, Listen, Dialoge. */
+  --text-body-strong: 600 14px/20px var(--font-ui); /* Titelnamen in Listen, Hervorhebung. */
+  --text-small: 500 12px/16px var(--font-ui); /* Metadaten, Hilfetexte. */
+  --text-panel-label: 700 12px/14px var(--font-label); /* Modulkopf, Versalien, wie auf ein Pult gedruckt. */
+  --text-key-cap: 700 13px/14px var(--font-label); /* Beschriftung auf Hardware-Tasten und Pads, Versalien. */
+  --text-scale: 600 10px/12px var(--font-label); /* Skalen an Fader, Regler, Meter. */
+}
+.display-party {
+  font-family: var(--font-label);
+  font-size: 64px;
+  line-height: 60px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.display-l {
+  font-family: var(--font-label);
+  font-size: 40px;
+  line-height: 40px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+.title {
+  font-family: var(--font-label);
+  font-size: 22px;
+  line-height: 26px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.lcd-clock {
+  font-family: var(--font-mono);
+  font-size: 54px;
+  line-height: 56px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.lcd-l {
+  font-family: var(--font-mono);
+  font-size: 26px;
+  line-height: 30px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.lcd-s {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.body {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.body-strong {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.small {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.panel-label {
+  font-family: var(--font-label);
+  font-size: 12px;
+  line-height: 14px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.key-cap {
+  font-family: var(--font-label);
+  font-size: 13px;
+  line-height: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.scale {
+  font-family: var(--font-label);
+  font-size: 10px;
+  line-height: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+@font-face {
+  font-family: "Barlow";
+  src: url("fonts/Barlow-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Barlow";
+  src: url("fonts/Barlow-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Barlow";
+  src: url("fonts/Barlow-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Barlow";
+  src: url("fonts/Barlow-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  src: url("fonts/BarlowCondensed-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  src: url("fonts/BarlowCondensed-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  src: url("fonts/BarlowCondensed-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  src: url("fonts/BarlowCondensed-800.woff2") format("woff2");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "DSEG7 Classic";
+  src: url("fonts/DSEG7Classic-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}

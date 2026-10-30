@@ -1,0 +1,16 @@
+<!-- @dsCard group="Produzent" height=96 subtitle="Transport-Konsole mit Timecode-LCD" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}</style></head>
+<body>
+
+<div class="woa-transport" style="border:1px solid var(--border);border-radius:var(--radius-lg)">
+ <div class="woa-keys"><button class="woa-key woa-key--sq" aria-label="Zum Anfang" data-woa-icon="prev"></button><button class="woa-key woa-key--ok woa-key--sq is-on" aria-label="Wiedergabe" data-woa-icon="play"></button><button class="woa-key woa-key--sq" aria-label="Stopp" data-woa-icon="stop"></button><button class="woa-key woa-key--rec woa-key--sq is-lit" aria-label="Aufnahme" data-woa-icon="rec"></button><button class="woa-key woa-key--sq is-lit" aria-label="Loop" data-woa-icon="loop"></button></div>
+ <div class="woa-lcd"><span class="woa-tc">017.3.2</span><span class="woa-tc" style="color:var(--lcd-text)">00:34.6</span><span class="woa-lcd__cap">124.00 BPM · 4/4</span></div>
+ <div class="woa-meter woa-meter--h" data-ch="2" data-segs="24" data-level=".72"></div>
+ <span class="woa-pill woa-pill--rec is-active is-blink">REC</span>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>

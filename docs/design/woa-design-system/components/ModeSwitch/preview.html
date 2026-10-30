@@ -1,0 +1,14 @@
+<!-- @dsCard group="Bedienelemente" height=96 subtitle="Modus-Umschalter oben rechts" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}</style></head>
+<body>
+
+<div class="woa-col">
+ <div class="woa-modes" role="tablist" aria-label="Modus"><button class="woa-mode is-active" data-m="studio" role="tab" aria-selected="true">Produzent</button><button class="woa-mode" data-m="radio" role="tab">Radio</button><button class="woa-mode" data-m="party" role="tab">Party</button></div>
+ <div class="woa-modes" role="tablist" aria-label="Modus"><button class="woa-mode" data-m="studio" role="tab">Produzent</button><button class="woa-mode is-active" data-m="radio" role="tab" aria-selected="true">Radio</button><button class="woa-mode" data-m="party" role="tab">Party</button></div>
+</div>
+<script>WOA.init();document.querySelectorAll('.woa-modes').forEach(function(g){g.addEventListener('click',function(e){var b=e.target.closest('.woa-mode');if(!b)return;g.querySelectorAll('.woa-mode').forEach(function(x){x.classList.toggle('is-active',x===b);x.setAttribute('aria-selected',x===b)});});});</script>
+</body>
+</html>

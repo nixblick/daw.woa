@@ -1,0 +1,22 @@
+<!-- @dsCard group="Party" height=420 subtitle="DJ-Deck: Jogwheel, BPM, Wellenform, Großtasten" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}</style></head>
+<body>
+<div class="woa-deck" style="max-width:560px">
+ <div style="display:flex;justify-content:space-between;align-items:center"><span class="woa-label" style="color:var(--accent)">Deck A</span><span class="woa-pill woa-pill--ok is-active">LÄUFT</span></div>
+ <div style="display:flex;gap:20px;align-items:center">
+  <div class="woa-jog" style="--d:170px"><div class="woa-jog__mark"></div><div class="woa-jog__center"></div></div>
+  <div class="woa-col" style="flex:1;min-width:0;gap:6px">
+   <div class="woa-li__t" style="font-size:20px;line-height:24px;font-family:var(--font-label);text-transform:uppercase;font-weight:700">Midnight Drive</div>
+   <div class="woa-li__m">The Neon Coast · 3:42</div>
+   <div class="woa-lcd woa-bpm"><span class="woa-seg" data-ghost="888.8"><span>124.0</span></span><span class="woa-lcd__cap">BPM</span><span class="woa-lcd__cap" style="margin-left:auto">Key 8A</span></div>
+  </div>
+ </div>
+ <canvas class="woa-wave" data-woa-wave data-seed="4" data-played=".38" data-beats="16"></canvas>
+ <div class="woa-deck__keys"><button class="woa-bigkey is-on is-pulse" data-woa-icon="pause">Pause</button><button class="woa-bigkey woa-bigkey--alt">Cue</button><button class="woa-bigkey">Sync</button></div>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!-- @dsCard group="Entwürfe" height=720 page subtitle="Party-Fernbedienung im Handy-Browser" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}</style></head>
+<body>
+<style>body{display:flex;gap:32px;justify-content:center}</style>
+<div class="woa-phone"><div class="woa-phone__screen" data-woa-mode="party">
+ <div style="display:flex;align-items:center;gap:8px;padding:16px 18px 8px"><span data-woa-mark="28"></span><span style="font-family:var(--font-label);font-weight:800;font-size:20px">WOA Party</span><span class="woa-spacer"></span><span class="woa-pill woa-pill--ok is-active">LIVE</span></div>
+ <div style="padding:8px 18px 16px;display:flex;flex-direction:column;gap:6px">
+  <span class="woa-label" style="color:var(--accent-2)">Jetzt läuft</span>
+  <div style="font-family:var(--font-label);font-weight:800;font-size:34px;line-height:34px;text-transform:uppercase">Midnight Drive</div>
+  <div style="font-family:var(--font-label);font-weight:600;font-size:18px;color:var(--accent);text-transform:uppercase">The Neon Coast</div>
+  <div class="woa-progress" style="--p:38%;margin-top:6px"><i></i></div>
+  <div style="display:flex;justify-content:space-between" class="woa-mono woa-dim"><span>1:24</span><span>−2:18</span></div>
+ </div>
+ <div style="padding:0 18px 12px"><div class="woa-input" data-woa-icon="search"><span class="woa-dim">Song wünschen …</span></div></div>
+ <div style="padding:0 18px"><span class="woa-label">Wunschliste</span></div>
+ <div class="woa-list" style="padding:4px 8px">
+  <div class="woa-li" style="grid-template-columns:minmax(0,1fr) auto;border-left:0;padding:10px"><div style="min-width:0"><div class="woa-li__t" style="font-size:16px">Sommer in der Stadt</div><div class="woa-li__m">Kiezgold · Platz 1</div></div><span class="woa-vote is-on">♥ 12</span></div>
+  <div class="woa-li" style="grid-template-columns:minmax(0,1fr) auto;border-left:0;padding:10px"><div style="min-width:0"><div class="woa-li__t" style="font-size:16px">Tanz auf dem Dach</div><div class="woa-li__m">Die Frequenzen · Platz 2</div></div><span class="woa-vote">♥ 8</span></div>
+  <div class="woa-li" style="grid-template-columns:minmax(0,1fr) auto;border-left:0;padding:10px"><div style="min-width:0"><div class="woa-li__t" style="font-size:16px">Alles auf Anfang</div><div class="woa-li__m">Nachtzug · Platz 3</div></div><span class="woa-vote">♥ 5</span></div>
+ </div>
+ <div style="margin-top:auto;padding:16px 18px 20px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+  <button class="woa-bigkey" style="--key-party-h:64px;font-size:18px;padding:0" data-woa-icon="heart">Mag ich</button>
+  <button class="woa-bigkey woa-bigkey--alt is-on" style="--key-party-h:64px;font-size:18px;padding:0" data-woa-icon="plus">Wünschen</button>
+ </div>
+</div></div>
+<script>WOA.init();</script>
+</body>
+</html>
