@@ -3737,7 +3737,7 @@ impl WoaApp {
 
         ui.separator();
         // Ausgang
-        let current = output.map_or_else(|| "Master".to_string(), &bus_name);
+        let current = output.map_or_else(|| "Master".to_string(), bus_name);
         egui::ComboBox::from_id_salt(("out", id.0))
             .selected_text(format!("→ {current}"))
             .width(100.0)
