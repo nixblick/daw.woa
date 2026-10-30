@@ -109,6 +109,11 @@ Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
 - **flatpak-builder-tools** (`flatpak/flatpak-builder-tools`, MIT, Commit `9d86d336a39b`), `cargo/flatpak-cargo-generator.py`. Wird im CI-Lauf heruntergeladen und ausgeführt, nicht ins Repo kopiert.
 - **Nicht gelesen:** Audacity (Windows-Teil, MSI folgt in Paket 40).
 
+## Release-Workflow (Paket 40)
+
+- **Mixxx** (`mixxxdj/mixxx`, GPL-2.0-or-later, Commit `bc49961fd3e5`), `.github/workflows/release.yml`. **Nur den Aufbau gelesen:** ein Release-Workflow löst bei einem Tag aus und setzt die Bauten (Plattformen, AppImage, Flatpak) aus eigenen, wiederverwendbaren Workflows (`workflow_call`) zusammen; Prüfsummen liegen als Datei neben dem Paket. Bei uns: `release.yml` ruft `windows-build.yml` und `linux-build.yml` auf, dazu eine gemeinsame `SHA256SUMS`. **Kein Code übernommen.**
+- **Nicht gelesen:** Audacity und LMMS für diesen Teil (Windows-Signierung und Mixxx' Hochladen auf eigene Server sind bewusst nicht nachgebaut: Zertifikat und Veröffentlichung sind Andrés Entscheidung).
+
 ## Regel
 
 Quellen werden nur mit Repository, Datei und Commit genannt, nie mit Pfaden einer Maschine.

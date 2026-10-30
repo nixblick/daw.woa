@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.1 — 2026-10-30
+## 0.34.5 — 2026-10-30
 
 Fix #139: Kopfhörer unter Windows blieben stumm, nachdem Windows das Standard-Ausgabegerät umgeschaltet hatte.
 
@@ -8,6 +8,40 @@ Fix #139: Kopfhörer unter Windows blieben stumm, nachdem Windows das Standard-A
 - **Telemetrie mit Fehlerklasse:** `audio.output.device_invalidated`, `device_not_available`, `device_busy`, `config`, `backend`, `other`; kein Freitext, kein Gerätename.
 - **Einstellungen, „Ausgabe neu verbinden“** als Rettungsknopf.
 - Tests mit simulierten Gerätefehlern (Klasse, Neuöffnen nur bei echten Fehlern, Wartezeiten, Render überlebt). Abnahme: `docs/abnahme.md`, „Kopfhörer unter Windows“.
+
+## 0.34.4 — 2026-10-30
+
+Silvestersendung Teil 2, Paket 2 von 4 (#134): drei Decks.
+
+- **Decks A, B, C** im Radio-Fenster über der Cart-Wall: große Restzeit (rot unter 10 s), Start/Stopp, Cue (zurück an den Anfang) und Vorhören je Deck. Stopp blendet kurz aus und hält die Stelle, Start läuft von dort weiter; am Ende steht das Deck wieder am Anfang. Mehrere Decks laufen gleichzeitig, auch neben Playlist und Carts. Ohne Ausgänge-Zuordnung erscheinen sie im Hauptausgang.
+- **Laden:** Datei aus dem Explorer oder aus der Bibliothek auf das Deck ziehen, Rechtsklick auf den Decktitel, „Datei laden …“, oder Rechtsklick auf einen Playlist-Titel, „Auf Deck laden“ (mit dessen Cue-In und Cue-Out). Die Decks bleiben in `radio.json` erhalten (`decks`, alte Dateien laden unverändert).
+- **Schnitt und Vorhören:** Rechtsklick auf den Decktitel, „Start und Ende schneiden …“ wie bei den Carts; „Vorhören“ läuft über den Kopfhörer-Ausgang, nie auf Sendung.
+- **Ausgänge:** Jedes Deck bekommt ein eigenes Gerät und Kanalpaar (Einstellungen, „Ausgänge (Soundkarten) …“). Neu: „Wie Playlist“ ist die Vorgabe für alle Quellen außer der Playlist. Bisher lief eine nicht eingestellte Cart-Wall auf dem Windows-Standardgerät, jetzt mit der Playlist.
+
+## 0.34.3 — 2026-10-30
+
+Ein Knopf für Play und Pause (Refs #137).
+
+- **Überall genau ein Knopf:** ▶ wenn nichts läuft oder pausiert ist, ⏸ während es spielt, daneben Stopp. Party-Modus, Radio-Layout (statt „Start“/„Weiter“; die Leertaste auch) und Handy. Der Player hatte das schon.
+- **Radio-Layout:** „Weiter“ (nächster Titel) ist als ⏭ in die Reihe der Transportknöpfe gewandert.
+
+## 0.34.2 — 2026-10-30
+
+Transportknöpfe (#137), Abnahme: `docs/abnahme.md`.
+
+- **Normale Knöpfe in App und Fernbedienung:** Zurück, Play/Pause, Stopp, Weiter, Von vorn, 10 s zurück, 10 s vor, Stumm, Leiser, Lauter. Im Party-Modus in drei Reihen, am Handy (nur mit DJ-PIN) dieselben, im Radio-Modus neben „Stopp“. Alles läuft über eine Befehlsschicht (`PartyCommand` und `Effect` in `woa-radio`); die Tabelle der Befehlsnamen (`simple_command`) gilt für das Handy und für OSC (`/woa/party/<name>`). Neue Befehle sind in der Fernbedienung automatisch nur für den DJ, Anmeldung, Ratenbegrenzung und Eingabeprüfung sind unverändert.
+- **Echtes Pause:** „Pause“ blendet aus und merkt sich die Stelle, „Play“ macht dort weiter (Sprung per `Seek`), auch wenn die Ausblendung noch läuft. „Stopp“ vergisst die Stelle. Der Zustand „PAUSE“ mit gemerkter Restzeit steht in App und Handy (`paused` im Schnappschuss).
+- **Wiederholen wie bei Apple Music:** Ein Knopf, jeder Klick schaltet weiter: aus, 🔁 Playlist, 🔂 Titel, aus. „Titel“ beginnt den Titel am Ende neu, „Weiter“ springt trotzdem zum nächsten. „Playlist“ beginnt nach dem letzten Titel von vorn. **Zufall** ist ein eigener Umschalter (jeder Titel einmal je Runde, mit „Playlist“ endlos). Ist eine Funktion an, ist der Knopf orange, in der App und am Handy gleich (Zustand im Schnappschuss: `repeat`, `shuffle`, `muted`).
+- **Mixer:** neues Kommando `Seek` (Sprung im laufenden Titel, begrenzt auf Cue-In bis Cue-Out) und ein Titelwechsel-Zähler im Status, damit auch derselbe Titel als neu begonnen erkannt wird. Tasten in der Party-Ansicht: P/Pfeil links, M, R, S.
+
+## 0.34.1 — 2026-10-30
+
+Paket 40 aus M10: Release-Workflow für beide Plattformen (Abnahme: `docs/abnahme.md`, Ablauf: `docs/release.md`).
+
+- **`release.yml` auf Tag `v*`:** Erst „pruefen“ (Tag = Cargo-Version = oberster, nicht leerer CHANGELOG-Eintrag, fester MSI-UpgradeCode, Tag liegt in `main`), dann Windows- und Linux-Bau nebeneinander (`windows-build.yml`, `linux-build.yml` sind jetzt auch aufrufbar), dann ein Release als **Entwurf** mit MSI, ZIP, AppImage, Flatpak, `latest.json`, ggf. `.minisig` und neu **`SHA256SUMS`**. Veröffentlichen macht das Update sichtbar. Vorher hing der Versionsvergleich an einem Dateinamen; jetzt prüft ihn `packaging/release-check.sh` (getestet mit `packaging/test-release-check.sh`, 19 Fälle).
+- **Probelauf ohne Tag:** `workflow_dispatch` (und Änderungen an `release.yml` im PR) laufen bis zum fertigen Ordner, legen aber kein Release an; der Ordner hängt als Artefakt `release-probe` am Lauf.
+- **MSI-Upgrade-Probe im Windows-Bau:** `packaging/windows/test-upgrade.ps1` installiert eine 0.0.1 aus denselben Programmen, dann das neue MSI darüber (genau ein Eintrag, neue Version, alle Dateien), prüft die Downgrade-Sperre (Abbruch mit 1603) und die Deinstallation. Ohne Start der App. Das Test-MSI liegt im Temp-Ordner und gerät nicht ins Release-Artefakt.
+- Neu: `docs/release.md`. Offen für André (im PR): Codesigning-Zertifikat, Signatur der Linux-Pakete, Download-Seite und Datenschutzerklärung auf wironair.de.
 
 ## 0.34.0 — 2026-10-30
 

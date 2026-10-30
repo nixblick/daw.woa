@@ -17,6 +17,7 @@ pub fn snapshot(layout: &PartyLayout, state: &PartyState) -> PartySnapshot {
             remaining: n.remaining.clone(),
             progress: n.progress,
             playing: n.playing,
+            paused: n.paused,
         }),
         next: layout.next.clone(),
         wishes: state
@@ -30,6 +31,9 @@ pub fn snapshot(layout: &PartyLayout, state: &PartyState) -> PartySnapshot {
             })
             .collect(),
         level_db: layout.level_db,
+        repeat: layout.repeat,
+        shuffle: layout.shuffle,
+        muted: layout.muted,
     }
 }
 

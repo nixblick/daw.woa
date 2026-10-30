@@ -34,6 +34,9 @@ jobs:
         run: |
           dotnet tool install --global wix --version 5.0.2
           wix build packaging/windows/woa.wxs -arch x64 -d Version=$env:WOA_VERSION -d Bin=target\release -o "woa-$env:WOA_VERSION-x64.msi"
+      - name: MSI-Upgrade alt nach neu prüfen
+        shell: pwsh
+        run: ./packaging/windows/test-upgrade.ps1 -Version $env:WOA_VERSION -Bin target\release -Msi "woa-$env:WOA_VERSION-x64.msi"
       - uses: actions/upload-artifact@v4
         with:
           name: woa-${{ env.WOA_VERSION }}-windows-x64
