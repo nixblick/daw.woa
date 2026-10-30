@@ -2982,10 +2982,16 @@ impl WoaApp {
                         let half = rect.height() / 2.0 - 2.0;
                         let stroke =
                             egui::Stroke::new(1.0, theme::mix(color, egui::Color32::WHITE, 0.35));
-                        let mut x = span.left();
-                        while x < span.right() {
+                        // Only the visible columns, and stop at the end of the peaks (#88).
+                        let clip = ui.clip_rect();
+                        let mut x = span.left().max(clip.left());
+                        let right = span.right().min(clip.right());
+                        while x < right {
                             let b0 = take.offset_beats + f64::from((x - span.left()) / px);
                             let i0 = (b0 * ppb) as usize;
+                            if i0 >= peaks.len() {
+                                break;
+                            }
                             let i1 = (((b0 + f64::from(1.0 / px)) * ppb) as usize).max(i0 + 1);
                             let v = peaks
                                 .get(i0.min(peaks.len())..i1.min(peaks.len()))

@@ -18,6 +18,9 @@ use crate::project::{Clip, ClipId, is_safe_audio_path};
 pub const MAX_TAKES: usize = 64;
 /// Most comp segments in one folder.
 pub const MAX_COMP_SEGMENTS: usize = 256;
+/// Upper bound for positions and lengths in a take folder, in beats (24 h at 400 BPM fits);
+/// keeps a hostile project file from making drawing and rendering run unbounded (#88).
+pub const MAX_TAKE_BEATS: f64 = 1_000_000.0;
 
 /// One take: an audio file and where in it the folder start lies.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -78,6 +81,9 @@ impl TakeFolder {
         if !(self.length_beats.is_finite() && self.length_beats > 0.0) {
             return Err(bad("take folder length", self.length_beats));
         }
+        if self.start_beats + self.length_beats > MAX_TAKE_BEATS {
+            return Err(bad("take folder end", self.start_beats + self.length_beats));
+        }
         if self.takes.is_empty() || self.takes.len() > MAX_TAKES {
             return Err(bad("take count", self.takes.len() as f64));
         }
@@ -88,7 +94,7 @@ impl TakeFolder {
                     t.audio
                 )));
             }
-            if !(t.offset_beats.is_finite() && t.offset_beats >= 0.0) {
+            if !(t.offset_beats.is_finite() && (0.0..=MAX_TAKE_BEATS).contains(&t.offset_beats)) {
                 return Err(bad("take offset", t.offset_beats));
             }
         }
@@ -366,6 +372,12 @@ mod tests {
     fn check_rejects_bad_folders() {
         let mut f = folder();
         f.check().unwrap();
+        f.length_beats = MAX_TAKE_BEATS;
+        assert!(f.check().is_err(), "#88: end beyond the limit");
+        let mut f = folder();
+        f.takes[0].offset_beats = MAX_TAKE_BEATS * 2.0;
+        assert!(f.check().is_err(), "#88: offset beyond the limit");
+        let mut f = folder();
         f.takes[0].audio = "../x.wav".into();
         assert!(f.check().is_err());
         let mut f = folder();

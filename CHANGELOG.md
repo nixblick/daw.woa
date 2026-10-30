@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.2 — 2026-10-30
+
+Sicherheit (#88): Take-Ordner aus einer präparierten Projektdatei können die Oberfläche nicht mehr lahmlegen.
+
+- **Modell:** Ende und Versatz eines Take-Ordners sind auf `MAX_TAKE_BEATS` (1 000 000 Schläge, 24 h bei 400 BPM passen) begrenzt; größere Werte lehnt `check()` ab. Test dazu.
+- **Oberfläche:** Die Wellenform im Comping-Bereich zeichnet nur noch die sichtbaren Spalten und hört am Ende der Peaks auf.
+
 ## 0.17.1 — 2026-10-30
 
 Sicherheit: zwei Funde der automatischen Prüfung behoben.
