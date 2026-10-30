@@ -76,6 +76,21 @@ Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
   (`crates/radio/src/party.rs`), damit Fernbedienung und MIDI später dieselben Befehle schicken.
   Eigener Entwurf in Rust. **Kein Code übernommen.**
 
+## Web-Fernbedienung (Paket 36)
+
+- **Ardour** (`Ardour/ardour`, GPL-2.0-or-later laut Kopfzeile von `libs/surfaces/osc/osc.cc`, Commit
+  `a12b4e108ea6`), `libs/surfaces/osc/osc.h` und `osc.cc`. **Nur die Idee gelesen:** Jede Oberfläche
+  (Surface) bekommt beim Anmelden den Vollstand und danach nur noch Rückmeldungen, welche Gruppen sie
+  abonniert hat (Bitmaske `feedback`); Befehle haben feste OSC-Pfade. Bei uns: `crates/remote/src/snapshot.rs`
+  (Vollstand beim Verbinden, danach `delta` mit nur den geänderten Feldern) und `crates/remote/src/osc.rs`
+  (feste Pfade `/woa/party/...`, ein Pfad je Befehl). Eigener Entwurf in Rust. **Kein Code übernommen.**
+- **Mixxx** (`mixxxdj/mixxx`, GPL-2.0-or-later, Commit `bc49961fd3e5`), `src/controllers/controller.h`.
+  **Nur die Idee gelesen:** Controller sind eine Basisklasse, die benannte Steuerungen anspricht, statt
+  einen Sonderweg je Gerät zu haben. Bei uns: Handy, OSC und große Tasten schicken dieselben
+  `PartyCommand`s (`crates/remote/src/command.rs` übersetzt, `woa_radio::party::PartyState::apply` führt aus).
+  **Kein Code übernommen.**
+- **Nicht gelesen:** Liquidsoap (`harbor_input.ml`) und `tracktion_engine`; das gehört zu Paket 37/38.
+
 ## Regel
 
 Quellen werden nur mit Repository, Datei und Commit genannt, nie mit Pfaden einer Maschine.

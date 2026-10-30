@@ -4,6 +4,32 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 36: Web-Fernbedienung im WLAN (0.31.0, offen)
+
+Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+Das Handy muss im selben WLAN sein wie der Rechner.
+
+1. **Fernbedienung an:** Modus „Party“, rechts unter der Wunschliste „Fernbedienung an“. Es erscheinen ein QR-Code, die Adresse und die Gast-PIN. Mit der Handy-Kamera scannen: die Seite öffnet sich, oben steht „verbunden“ und die Anzeige des laufenden Titels.
+2. **Als Gast Wunsch einreichen:** Am Handy einen Titel suchen (Ordner vorher laden) und „Wünschen“ tippen. Er erscheint in der Wunschliste am Rechner und am Handy. Ein zweiter Wunsch gleich danach wird mit einer Wartezeit abgelehnt. Die Tasten Play, Weiter, Lauter, Leiser gibt es als Gast nicht.
+3. **Als DJ Weiter:** In WOA „DJ-PIN zeigen“, am zweiten Handy (oder im Browser, Seite neu laden) die DJ-PIN eingeben. „Weiter“ tippen: der nächste Titel wird überblendet. „Als Nächstes“ bei einem Wunsch reiht ihn ein.
+4. **Aus:** „Aus“ drücken: am Handy steht „getrennt“, und die Seite lädt nicht mehr (Port ist zu).
+
+Selbst geprüft von Claude (ohne Ton, ohne Audiogerät, ohne Mikrofon; Server und Clients gegen 127.0.0.1):
+- **Anmeldung:** Falsche PIN gibt 401; ohne Token kein Zustand, keine Suche, kein Befehl, kein WebSocket. Fünf falsche PINs sperren die Adresse mit 429 und Wartezeit, nach Ablauf geht es wieder.
+- **Rollen:** Gast bekommt bei Play, Weiter, Lauter, Leiser, Wunsch einreihen und verwerfen 403, per HTTP und per WebSocket; ausgelöst wird nichts. DJ-Befehle kommen als `PartyCommand` an und laufen durch dieselbe Schicht wie die Tasten.
+- **Wünsche:** Wunsch aus der Suche und als Freitext landet in der Befehlsschicht und in der Wunschliste; zu langer oder leerer Titel wird abgelehnt; die Handys sehen nie einen Dateipfad.
+- **Grenzen:** Wunsch je Adresse alle 10 s (zweiter Login hilft nicht), zehn Befehle je Sekunde, 64 Verbindungen, zu große Anfragen 413.
+- **Vollstand und Änderungen:** Beim Verbinden der ganze Zustand, danach nur das geänderte Feld; unveränderter Stand sendet nichts.
+- **Last:** 20 Handys gleichzeitig bekommen Vollstand und Änderung; beim Ausschalten bekommen alle Close, der Port ist danach zu (Verbindung wird verweigert) und lässt sich neu öffnen.
+- **OSC:** Aus ohne Haken; mit Haken werden nur Drücken und bekannte Pfade zu Befehlen.
+
+Nicht selbst geprüft: Aussehen und Bedienung der Seite im Handy-Browser, QR-Scan mit echter Kamera, Windows (Firewall-Abfrage), Fenster mit der neuen Karte (gebaut und übersetzt, nicht angeklickt).
+
+**Offen für André:**
+- Verschlüsselung: Die Seite läuft über http im WLAN, die PIN geht unverschlüsselt durchs Heimnetz. Für den Party-Zweck vertretbar; https bräuchte ein selbstsigniertes Zertifikat (Warnung am Handy) oder eine eigene Domain mit echtem Zertifikat (Kosten). Gebraucht wird es spätestens für Paket 38 (Mikrofon im Browser).
+- OSC hat keine Anmeldung (Protokoll bedingt). Soll der Haken in der Oberfläche bleiben?
+- Soll die DJ-PIN auch per QR-Code anzeigbar sein (bequemer, aber auf einem Party-Bildschirm für alle lesbar)?
+
 ## Paket 35: Party-Layout (0.30.0, offen)
 
 Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

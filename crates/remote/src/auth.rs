@@ -1,0 +1,388 @@
+//! Zugang: PINs, Sitzungen (Token), Rollen und Ratenbegrenzung.
+//!
+//! Bei jedem Einschalten der Fernbedienung entstehen zwei neue PINs: die Gast-PIN (steht im
+//! QR-Code) und die DJ-PIN (nur auf dem Bildschirm, zum Eintippen). „Einmal“ heißt: pro
+//! Einschalten; mehrere Gäste scannen denselben Code. Falsch geratene PINs werden je Adresse
+//! gezählt und sperren nach wenigen Fehlversuchen für eine Weile.
+//!
+//! Alle Zeiten kommen als Parameter herein, damit die Regeln ohne Warten testbar sind.
+
+use std::collections::HashMap;
+use std::net::IpAddr;
+use std::time::{Duration, Instant};
+
+/// Wer das Handy bedient.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    /// Sieht die Anzeige, darf Wünsche einreichen.
+    Guest,
+    /// Darf zusätzlich steuern (Play, Weiter, Lautstärke, Wünsche einreihen und verwerfen).
+    Dj,
+}
+
+impl Role {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Role::Guest => "guest",
+            Role::Dj => "dj",
+        }
+    }
+}
+
+/// Grenzen der Fernbedienung.
+#[derive(Debug, Clone)]
+pub struct Limits {
+    /// Gleichzeitige Verbindungen (HTTP und WebSocket zusammen).
+    pub max_connections: usize,
+    /// Falsche PINs je Adresse, bis gesperrt wird.
+    pub login_failures: u32,
+    /// So lange gilt die Sperre (und das Zählfenster).
+    pub lockout: Duration,
+    /// Mindestabstand zwischen zwei Wünschen derselben Adresse (Gast).
+    pub wish_interval: Duration,
+    /// Befehle je Sekunde und Sitzung.
+    pub commands_per_second: u32,
+    /// So viele Sitzungen bleiben gespeichert; die ältesten fliegen raus.
+    pub max_sessions: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            max_connections: 64,
+            login_failures: 5,
+            lockout: Duration::from_secs(60),
+            wish_interval: Duration::from_secs(10),
+            commands_per_second: 10,
+            max_sessions: 256,
+        }
+    }
+}
+
+/// Sechsstellige PIN aus dem Zufallsgenerator des Systems (ohne Verzerrung).
+pub fn random_pin() -> Option<String> {
+    loop {
+        let mut b = [0u8; 4];
+        getrandom::fill(&mut b).ok()?;
+        let v = u32::from_le_bytes(b);
+        // Größtes Vielfaches von 1_000_000 unterhalb von 2^32, sonst wäre 0 etwas häufiger.
+        if v < 4_294_000_000 {
+            return Some(format!("{:06}", v % 1_000_000));
+        }
+    }
+}
+
+/// 128-Bit-Token als Hex.
+pub fn random_token() -> Option<String> {
+    let mut b = [0u8; 16];
+    getrandom::fill(&mut b).ok()?;
+    Some(b.iter().map(|x| format!("{x:02x}")).collect())
+}
+
+/// Vergleich ohne frühen Ausstieg (Länge ist kein Geheimnis).
+pub fn ct_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// Fester Zeitraum, in dem höchstens `max` Dinge passieren dürfen.
+#[derive(Debug, Clone)]
+pub struct Bucket {
+    start: Instant,
+    count: u32,
+}
+
+impl Bucket {
+    pub fn new(now: Instant) -> Self {
+        Self {
+            start: now,
+            count: 0,
+        }
+    }
+
+    /// `true`, wenn noch Platz ist (und zählt mit).
+    pub fn take(&mut self, now: Instant, max: u32) -> bool {
+        if now.duration_since(self.start) >= Duration::from_secs(1) {
+            self.start = now;
+            self.count = 0;
+        }
+        if self.count >= max {
+            return false;
+        }
+        self.count += 1;
+        true
+    }
+}
+
+#[derive(Debug)]
+struct Session {
+    role: Role,
+    bucket: Bucket,
+    created: Instant,
+}
+
+/// Alles, was zum Anmelden gehört.
+#[derive(Debug)]
+pub struct Auth {
+    guest_pin: String,
+    dj_pin: String,
+    sessions: HashMap<String, Session>,
+    fails: HashMap<IpAddr, (u32, Instant)>,
+    wishes: HashMap<IpAddr, Instant>,
+    limits: Limits,
+}
+
+/// Ausgang eines Anmeldeversuchs.
+#[derive(Debug, PartialEq)]
+pub enum LoginError {
+    /// PIN falsch (401).
+    WrongPin,
+    /// Gesperrt, noch so viele Sekunden (429).
+    Locked(u64),
+    /// Kein Zufall vom System (500).
+    NoRandom,
+}
+
+impl Auth {
+    /// Neue PINs. `None`, wenn das System keinen Zufall liefert.
+    pub fn new(limits: Limits) -> Option<Self> {
+        Some(Self {
+            guest_pin: random_pin()?,
+            dj_pin: random_pin()?,
+            sessions: HashMap::new(),
+            fails: HashMap::new(),
+            wishes: HashMap::new(),
+            limits,
+        })
+    }
+
+    /// Feste PINs, nur für Tests.
+    pub fn with_pins(limits: Limits, guest: &str, dj: &str) -> Self {
+        Self {
+            guest_pin: guest.into(),
+            dj_pin: dj.into(),
+            sessions: HashMap::new(),
+            fails: HashMap::new(),
+            wishes: HashMap::new(),
+            limits,
+        }
+    }
+
+    pub fn guest_pin(&self) -> &str {
+        &self.guest_pin
+    }
+
+    pub fn dj_pin(&self) -> &str {
+        &self.dj_pin
+    }
+
+    pub fn limits(&self) -> &Limits {
+        &self.limits
+    }
+
+    /// Neue PINs; alle alten Sitzungen sind damit ungültig.
+    pub fn renew(&mut self) -> bool {
+        let (Some(g), Some(d)) = (random_pin(), random_pin()) else {
+            return false;
+        };
+        self.guest_pin = g;
+        self.dj_pin = d;
+        self.sessions.clear();
+        true
+    }
+
+    /// Meldet an. Bei Erfolg: Token und Rolle.
+    pub fn login(
+        &mut self,
+        ip: IpAddr,
+        pin: &str,
+        now: Instant,
+    ) -> Result<(String, Role), LoginError> {
+        if let Some((n, since)) = self.fails.get(&ip).copied() {
+            let age = now.duration_since(since);
+            if age >= self.limits.lockout {
+                self.fails.remove(&ip);
+            } else if n >= self.limits.login_failures {
+                let left = self.limits.lockout.saturating_sub(age).as_secs() + 1;
+                return Err(LoginError::Locked(left));
+            }
+        }
+        // Beide PINs immer vergleichen, damit die Dauer nichts verrät.
+        let is_dj = ct_eq(pin, &self.dj_pin);
+        let is_guest = ct_eq(pin, &self.guest_pin);
+        let role = if is_dj {
+            Role::Dj
+        } else if is_guest {
+            Role::Guest
+        } else {
+            let e = self.fails.entry(ip).or_insert((0, now));
+            e.0 += 1;
+            if self.fails.len() > 1024 {
+                let lockout = self.limits.lockout;
+                self.fails
+                    .retain(|_, (_, t)| now.duration_since(*t) < lockout);
+            }
+            return Err(LoginError::WrongPin);
+        };
+        self.fails.remove(&ip);
+        let token = random_token().ok_or(LoginError::NoRandom)?;
+        if self.sessions.len() >= self.limits.max_sessions
+            && let Some(oldest) = self
+                .sessions
+                .iter()
+                .min_by_key(|(_, s)| s.created)
+                .map(|(k, _)| k.clone())
+        {
+            self.sessions.remove(&oldest);
+        }
+        self.sessions.insert(
+            token.clone(),
+            Session {
+                role,
+                bucket: Bucket::new(now),
+                created: now,
+            },
+        );
+        Ok((token, role))
+    }
+
+    /// Rolle zu einem Token, wenn es gilt.
+    pub fn role_of(&self, token: &str) -> Option<Role> {
+        // Kein Hash-Zugriff mit dem Eingabewert als Zeitkanal nötig: das Token ist 128 Bit Zufall.
+        self.sessions.get(token).map(|s| s.role)
+    }
+
+    /// Zählt einen Befehl der Sitzung; `false`, wenn die Sitzung zu viele schickt.
+    pub fn command_allowed(&mut self, token: &str, now: Instant) -> bool {
+        let max = self.limits.commands_per_second;
+        match self.sessions.get_mut(token) {
+            Some(s) => s.bucket.take(now, max),
+            None => false,
+        }
+    }
+
+    /// Darf diese Adresse jetzt einen Wunsch einreichen? Zählt ihn bei Erfolg.
+    /// Bei `Err` die Wartezeit in Sekunden.
+    pub fn wish_allowed(&mut self, ip: IpAddr, now: Instant) -> Result<(), u64> {
+        if let Some(last) = self.wishes.get(&ip) {
+            let age = now.duration_since(*last);
+            if age < self.limits.wish_interval {
+                return Err(self.limits.wish_interval.saturating_sub(age).as_secs() + 1);
+            }
+        }
+        if self.wishes.len() > 1024 {
+            let iv = self.limits.wish_interval;
+            self.wishes.retain(|_, t| now.duration_since(*t) < iv);
+        }
+        self.wishes.insert(ip, now);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const IP: IpAddr = IpAddr::V4(std::net::Ipv4Addr::new(192, 0, 2, 7));
+
+    fn auth() -> Auth {
+        Auth::with_pins(Limits::default(), "111111", "222222")
+    }
+
+    #[test]
+    fn pins_are_six_digits_and_differ() {
+        for _ in 0..50 {
+            let p = random_pin().unwrap();
+            assert_eq!(p.len(), 6);
+            assert!(p.bytes().all(|b| b.is_ascii_digit()));
+        }
+        assert_ne!(random_token().unwrap(), random_token().unwrap());
+    }
+
+    #[test]
+    fn roles_follow_the_pin() {
+        let mut a = auth();
+        let now = Instant::now();
+        let (tg, rg) = a.login(IP, "111111", now).unwrap();
+        let (td, rd) = a.login(IP, "222222", now).unwrap();
+        assert_eq!((rg, rd), (Role::Guest, Role::Dj));
+        assert_eq!(a.role_of(&tg), Some(Role::Guest));
+        assert_eq!(a.role_of(&td), Some(Role::Dj));
+        assert_eq!(a.role_of("nope"), None);
+    }
+
+    #[test]
+    fn wrong_pins_lock_out_then_recover() {
+        let mut a = auth();
+        let t0 = Instant::now();
+        for _ in 0..5 {
+            assert_eq!(a.login(IP, "000000", t0), Err(LoginError::WrongPin));
+        }
+        // Gesperrt: auch die richtige PIN geht nicht.
+        assert!(matches!(
+            a.login(IP, "111111", t0),
+            Err(LoginError::Locked(_))
+        ));
+        // Eine andere Adresse ist nicht betroffen.
+        let other = IpAddr::V4(std::net::Ipv4Addr::new(192, 0, 2, 8));
+        assert!(a.login(other, "111111", t0).is_ok());
+        // Nach der Sperre geht es wieder.
+        assert!(a.login(IP, "111111", t0 + Duration::from_secs(61)).is_ok());
+    }
+
+    #[test]
+    fn wish_interval_per_address() {
+        let mut a = auth();
+        let t0 = Instant::now();
+        assert!(a.wish_allowed(IP, t0).is_ok());
+        assert!(a.wish_allowed(IP, t0 + Duration::from_secs(3)).is_err());
+        assert!(a.wish_allowed(IP, t0 + Duration::from_secs(11)).is_ok());
+    }
+
+    #[test]
+    fn command_bucket_resets_each_second() {
+        let mut a = auth();
+        let t0 = Instant::now();
+        let (t, _) = a.login(IP, "222222", t0).unwrap();
+        for _ in 0..10 {
+            assert!(a.command_allowed(&t, t0));
+        }
+        assert!(!a.command_allowed(&t, t0));
+        assert!(a.command_allowed(&t, t0 + Duration::from_millis(1100)));
+    }
+
+    #[test]
+    fn renew_drops_sessions_and_old_pins() {
+        let mut a = auth();
+        let now = Instant::now();
+        let (t, _) = a.login(IP, "222222", now).unwrap();
+        assert!(a.renew());
+        assert_eq!(a.role_of(&t), None);
+        assert_ne!(a.dj_pin(), "222222");
+    }
+
+    #[test]
+    fn oldest_session_is_evicted() {
+        let mut a = Auth::with_pins(
+            Limits {
+                max_sessions: 2,
+                ..Limits::default()
+            },
+            "111111",
+            "222222",
+        );
+        let t0 = Instant::now();
+        let (a1, _) = a.login(IP, "111111", t0).unwrap();
+        let (a2, _) = a
+            .login(IP, "111111", t0 + Duration::from_millis(1))
+            .unwrap();
+        let (a3, _) = a
+            .login(IP, "111111", t0 + Duration::from_millis(2))
+            .unwrap();
+        assert_eq!(a.role_of(&a1), None);
+        assert!(a.role_of(&a2).is_some() && a.role_of(&a3).is_some());
+    }
+}

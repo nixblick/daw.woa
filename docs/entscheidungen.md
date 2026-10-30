@@ -47,3 +47,12 @@ Bildschirm unter Linux und Windows und nach Klärung der Startzeit.
 - **Standard-SoundFont:** GeneralUser GS 2.0.3, Lizenz und Bezug in `docs/sounds/`.
 - **Feedback-Server:** Die Rolle `feedback` in bretteins.infra wird mehrinstanzfähig, Ticket an Dave
   nixblick/bretteins.infra#145. Danach rollt André die zweite Instanz nach `docs/intern/andre-handgriffe.md` (nur lokal) aus.
+
+## Web-Fernbedienung ohne axum (Paket 36, Stand 30.10.2026)
+
+`crates/remote` baut auf `std::net` und `tungstenite` 0.30 statt auf `axum`. Gründe: Es braucht nur
+vier HTTP-Pfade und einen WebSocket; ein Thread je Verbindung mit kurzem Lese-Timeout genügt für
+Dutzende Handys, und der Bau bleibt klein (der Notebook hat 7 GB RAM). `axum` hätte hyper, tower und
+einen zweiten Async-Stapel neben dem Audio-Modell gebracht. Weitere neue Abhängigkeiten: `qrcode`
+(ohne Bildfunktionen), `rosc` (OSC), `httparse`, `getrandom`; alle MIT oder Apache-2.0. `cargo deny`
+läuft in der CI. Grenzen und Rechte stehen in `crates/remote/src/auth.rs`.

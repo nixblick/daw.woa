@@ -15,6 +15,8 @@ use crate::theme;
 #[derive(Default)]
 pub struct PartyView {
     pub state: PartyState,
+    /// Fernbedienung im WLAN (Paket 36).
+    pub remote: crate::remote::RemoteView,
 }
 
 /// Alle lesbaren Audiodateien in `dir` (bis `depth` Ebenen tief), nach Pfad sortiert.
@@ -83,6 +85,19 @@ impl PartyView {
         }
     }
 
+    /// Holt Befehle der Handys ab, führt sie über dieselbe Schicht wie die Tasten aus und
+    /// veröffentlicht den Zustand. Jeden Frame aufrufen; ohne Fernbedienung kostet das nichts.
+    pub fn pump_remote(&mut self, desk: &mut RadioDesk, ctx: &egui::Context) {
+        if !self.remote.is_on() {
+            return;
+        }
+        self.state.level_db = desk.level_db(Bus::Music);
+        let cmds = self.remote.pump(&self.state, desk, ctx);
+        if !cmds.is_empty() {
+            self.run(cmds, desk, ctx);
+        }
+    }
+
     /// Zeichnet das ganze Layout; gibt die gedrückten Befehle zurück.
     pub fn ui(&mut self, ui: &mut egui::Ui, desk: &mut RadioDesk) -> Vec<PartyCommand> {
         self.state.level_db = desk.level_db(Bus::Music);
@@ -99,6 +114,8 @@ impl PartyView {
             // Rechts: Wunschliste.
             let ui = &mut cols[1];
             self.wish_card(ui, &mut cmds);
+            ui.add_space(10.0);
+            self.remote.ui(ui);
         });
         if folder {
             Self::load_folder(desk);

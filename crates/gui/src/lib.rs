@@ -18,6 +18,7 @@ pub mod party;
 pub mod pianoroll;
 pub mod player;
 pub mod radio;
+pub mod remote;
 mod sources;
 pub mod state;
 mod theme;
