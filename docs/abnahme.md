@@ -4,6 +4,24 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 23: Time-Stretch, Tonhöhe, Abnahme ganzer Song (0.18.0, offen)
+
+Aus M6, letztes Paket. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Um 10 % dehnen:** Eine Audiodatei mit einem Ton oder einer Melodie in die Timeline ziehen. Am rechten Rand des Clips mit gedrückter **Alt**-Taste ziehen, bis die Länge 10 % größer ist (in der Clip-Leiste unter „ZEIT“ steht dann etwa „Dehnung 110 %“; man kann die Zahl auch eintippen). Abspielen: der Ton ist langsamer, aber **nicht tiefer**. Ohne Alt kürzt derselbe Zug nur, wie bisher. Strg+Z holt die alte Länge zurück.
+2. **+2 Halbtöne:** In der Clip-Leiste „Tonhöhe“ auf +2,0 stellen. Der Ton wird höher, die Länge bleibt. Doppelklick auf das Feld setzt auf 0 zurück, dann klingt es wieder wie das Original.
+3. **Tempo 120 auf 100:** Beim Clip den Haken „Tempo folgen“ setzen, dann oben das Tempo von 120 auf 100 stellen. Der Ton wird gedehnt und bleibt auf dem Raster, die Tonhöhe bleibt. Ohne den Haken bliebe der Ton in seiner Geschwindigkeit (wie bisher).
+4. **Exportieren:** Strg+E, WAV. Die Datei in einem Player öffnen: Dehnung, Tonhöhe und das neue Tempo klingen wie in der Vorschau, keine Knackser an den Nahtstellen.
+5. **Ganzer Song (M6-Abnahme):** Eine Spur einspielen oder aufnehmen, an zwei Stellen schneiden (S), einen Teil dehnen, einen Teil transponieren, zwei Clips überlappen lassen, exportieren, Projekt speichern und neu öffnen: alles steht wie zuvor.
+
+Selbst geprüft von Claude: Gemessen im Offline-Render, nichts gehört. Sinus 440 Hz um 10 % gedehnt: Länge innerhalb 1 % von 4,4 Beats, Frequenz bleibt bei 440 Hz ±1 % (FFT-Spitze); weitere Verhältnisse 0,5, 0,9, 1,5 und 2 auf Länge (auf das Sample genau) und Frequenz; Pegel nach dem Dehnen innerhalb 3 %. Tonhöhe +2, −2, +7, ±12 Halbtöne: FFT-Spitze bei 440·2^(n/12) Hz ±1 %, Länge unverändert; Dehnen und Transponieren zusammen. Tempo 120 auf 100 mit Folgen: vier Beats ergeben 115 200 Samples (±1 %), Frequenz bleibt; gleiches Tempo und 0 Halbtöne lassen den Render bitgleich, Undo ebenso. Jeder Process-Aufruf läuft unter `assert_no_alloc` (das Rechnen geschieht vorher im Control-Thread). Modell: Befehle mit Undo und Redo, Grenzen (Faktor 0,25 bis 4, ±24 Halbtöne, Tempo 20 bis 400), Fades werden mit zurückgesetzt, Projektformat 2 bleibt ohne neue Felder, Rundlauf Speichern und Laden. Oberfläche ohne Fenster und ohne Ton: Alt-Ziehen am Rand dehnt (ein Undo-Schritt, Anfang bleibt, Ton nicht abgeschnitten), ohne Alt kürzt es; Schneiden eines gedehnten Clips setzt den Ton an der richtigen Stelle fort. Agent-Werkzeuge über MCP einschließlich Fehlerfällen. M6-Abnahme „ganzer Song“ als Test: geteilte, gedehnte, transponierte und überblendete Clips bei geändertem Tempo exportiert und wieder eingelesen (Länge, kein NaN, keine Knackser, Pegel, Frequenz der transponierten Strecke).
+
+Nicht selbst geprüft: Klang (kein Ton auf dem Notebook). Die Dehnung ist ein eigenes WSOLA-Verfahren: bei Sinus und einfachen Tönen messbar sauber, bei dichter Musik, Schlagzeug und Stimmen können bei starker Dehnung (über etwa ±30 %) leichte Schwebungen oder verschmierte Anschläge hörbar sein. Das hört nur André. Aussehen und Griffigkeit des Alt-Ziehens im echten Fenster (mit simulierten Zeigerereignissen getestet, nicht von Hand). Bei Tonhöhe über +12 Halbtöne kann es oberhalb von etwa 18 kHz zu leichtem Aliasing kommen (Neuabtastung ohne Tiefpass).
+
+Offene Frage an André (nicht gebaut, weil es eine Wahl ist): Wenn WSOLA bei Musik zu hörbar ist, kann stattdessen `signalsmith-stretch` eingebunden werden (MIT, bessere Qualität, aber C++-Bindung und ein Windows-CI-Check). Erst nach seinem Hörtest entscheiden.
+
+Damit ist M6 (Arrangement und Aufnahme) vollständig gebaut; Latenz-Messung per Kabel-Rückschleife bleibt, bis André zu Hause ist (Paket 22).
+
 ## Paket 22: Aufnahme mit Latenzausgleich, Punch-in, Loop-Takes, Comping (0.17.0, offen)
 
 Aus M6. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

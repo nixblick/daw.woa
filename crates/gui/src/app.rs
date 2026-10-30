@@ -140,6 +140,12 @@ pub struct WoaApp {
     latency_extra_ms: f64,
     /// Clip-Rand, der gerade gezogen wird: (Clip, linker Rand?, Versatz in Beats).
     trim: Option<(ClipId, bool, f64)>,
+    /// Stretch value (percent) being typed or dragged in the inspector.
+    stretch_edit: Option<(ClipId, f64)>,
+    /// Pitch value (semitones) being typed or dragged in the inspector.
+    pitch_edit: Option<(ClipId, f64)>,
+    /// Clip being time-stretched at an edge with Alt held (Paket 23): (clip, left edge, delta).
+    stretch_drag: Option<(ClipId, bool, f64)>,
     /// Zoom der Zeitleiste in Pixel je Beat.
     zoom: f32,
     /// Raster beim Verschieben und Kürzen (Paket 20).
@@ -430,6 +436,9 @@ impl WoaApp {
             latency_auto: true,
             latency_extra_ms: 0.0,
             trim: None,
+            stretch_edit: None,
+            pitch_edit: None,
+            stretch_drag: None,
             zoom: PX_PER_BEAT,
             snap: Snap::default(),
             time_unit: TimeUnit::default(),
@@ -3131,6 +3140,18 @@ impl WoaApp {
                     len += d;
                 }
             }
+            // Alt-Ziehen am Rand dehnt die Zeit: Länge ändert sich, der Ton wird mitgedehnt.
+            let mut view_ratio = c.time_ratio(tempo);
+            if let Some((id, left, d)) = self.stretch_drag
+                && id == c.id
+            {
+                if left {
+                    (start, len) = (start + d, len - d);
+                } else {
+                    len += d;
+                }
+                view_ratio *= len / c.length_beats;
+            }
             let start = start.max(0.0);
             let x0 = rect.left() + start as f32 * px;
             let x1 = x0 + (len as f32 * px).max(2.0);
@@ -3200,8 +3221,11 @@ impl WoaApp {
                 let peak_col = theme::mix(base, egui::Color32::WHITE, 0.65);
                 let mut x = r.left();
                 while x < r.right() {
-                    let b0 = offset + f64::from((x - r.left()) / px);
-                    let b1 = b0 + f64::from(1.0 / px);
+                    // Position im Ton in Takt-Einheiten des Projekttempos; Dehnung und
+                    // Tempo-Folgen strecken die Zeitachse des Clips (Paket 23).
+                    let b0 = offset * tempo / c.source_bpm(tempo)
+                        + f64::from((x - r.left()) / px) / view_ratio;
+                    let b1 = b0 + f64::from(1.0 / px) / view_ratio;
                     let (i0, i1) = (
                         (b0 * ppb) as usize,
                         ((b1 * ppb) as usize).max((b0 * ppb) as usize + 1),
@@ -3413,7 +3437,7 @@ impl WoaApp {
                 if c.midi.is_some() {
                     "Doppelklick: Piano-Roll · Ziehen: verschieben (auch auf andere Spur) · Ränder ziehen: kürzen · S: am Kopf schneiden · Strg+C/X/V: kopieren, ausschneiden, einfügen · Strg+D: verdoppeln · Entf: löschen"
                 } else {
-                    "Ziehen: verschieben (auch auf andere Spur) · Ränder ziehen: kürzen · S: am Kopf schneiden · Strg+C/X/V: kopieren, ausschneiden, einfügen · Strg+D: verdoppeln · Entf: löschen"
+                    "Ziehen: verschieben (auch auf andere Spur) · Ränder ziehen: kürzen, mit Alt: Zeit dehnen · S: am Kopf schneiden · Strg+C/X/V: kopieren, ausschneiden, einfügen · Strg+D: verdoppeln · Entf: löschen"
                 },
             );
             // Griffe an beiden Rändern zum Kürzen.
@@ -3426,21 +3450,59 @@ impl WoaApp {
                 if hresp.drag_started() {
                     self.selected_clip = Some(c.id);
                 }
-                if hresp.dragged() {
+                let alt_stretch = c.audio.is_some()
+                    && (self.stretch_drag.is_some_and(|(id, _, _)| id == c.id)
+                        || (hresp.drag_started() && ui.input(|i| i.modifiers.alt)));
+                if hresp.dragged() && alt_stretch {
+                    let d = self.stretch_drag.map_or(0.0, |(_, _, d)| d)
+                        + f64::from(hresp.drag_delta().x / px);
+                    // Grenzen: Faktor im erlaubten Bereich, mindestens 1/4 Beat, links nicht
+                    // vor den Anfang der Zeitachse.
+                    let (lo, hi) = woa_model::STRETCH_RANGE;
+                    let (min_len, max_len) = (
+                        (c.length_beats * lo / c.stretch).max(0.25),
+                        c.length_beats * hi / c.stretch,
+                    );
+                    let d = if left {
+                        d.clamp(c.length_beats - max_len, c.length_beats - min_len)
+                            .max(-c.start_beats)
+                    } else {
+                        d.clamp(min_len - c.length_beats, max_len - c.length_beats)
+                    };
+                    self.stretch_drag = Some((c.id, left, d));
+                } else if hresp.dragged() {
                     let d =
                         self.trim.map_or(0.0, |(_, _, d)| d) + f64::from(hresp.drag_delta().x / px);
                     // Grenzen: mindestens 1/4 Beat lang, links nicht vor den Audio-Anfang,
-                    // rechts nicht über das Audio-Ende (wenn bekannt).
+                    // rechts nicht über das Audio-Ende (wenn bekannt). Die Zeitachse des
+                    // Clips ist um `stretch` gedehnt, Versatz und Audio-Ende liegen in Quell-Beats.
                     let d = if left {
-                        d.clamp(-c.offset_beats, c.length_beats - 0.25)
+                        d.clamp(-c.offset_beats * c.stretch, c.length_beats - 0.25)
                     } else {
-                        let max =
-                            audio_beats.map_or(f64::MAX, |a| a - c.offset_beats - c.length_beats);
+                        let max = audio_beats.map_or(f64::MAX, |a| {
+                            (a * c.source_bpm(tempo) / tempo - c.offset_beats) * c.stretch
+                                - c.length_beats
+                        });
                         d.clamp(0.25 - c.length_beats, max.max(0.0))
                     };
                     self.trim = Some((c.id, left, d));
                 }
                 if hresp.drag_stopped()
+                    && let Some((id, l, d)) = self.stretch_drag.take()
+                {
+                    let edge = if l {
+                        c.start_beats + d
+                    } else {
+                        c.end_beats() + d
+                    };
+                    let edge = self.snap.apply(edge);
+                    let length = if l {
+                        c.end_beats() - edge
+                    } else {
+                        edge - c.start_beats
+                    };
+                    self.state.stretch_clip(id, length, l);
+                } else if hresp.drag_stopped()
                     && let Some((id, l, d)) = self.trim.take()
                 {
                     let d = self.snap_trim(c, l, d);
@@ -3449,7 +3511,7 @@ impl WoaApp {
                             id,
                             c.start_beats + d,
                             c.length_beats - d,
-                            c.offset_beats + d,
+                            c.offset_beats + d / c.stretch,
                         );
                     } else {
                         self.state
@@ -3665,6 +3727,89 @@ impl WoaApp {
                 .color(theme::DIM),
             );
         });
+        self.clip_time_bar(ui, c);
+    }
+
+    /// Dritte Zeile des Clip-Inspektors (Paket 23): Dehnung, Tonhöhe, Tempo folgen.
+    fn clip_time_bar(&mut self, ui: &mut egui::Ui, c: &woa_model::Clip) {
+        let id = c.id;
+        ui.horizontal(|ui| {
+            theme::status_pill(ui, "ZEIT", theme::CUE_CYAN, c.is_processed(self.state.project().tempo_bpm));
+            // Dehnung in Prozent der Länge: 110 = zehn Prozent länger, Tonhöhe bleibt.
+            let mut pct = match self.stretch_edit {
+                Some((cid, v)) if cid == id => v,
+                _ => c.stretch * 100.0,
+            };
+            let r = ui
+                .add(
+                    egui::DragValue::new(&mut pct)
+                        .range(woa_model::STRETCH_RANGE.0 * 100.0..=woa_model::STRETCH_RANGE.1 * 100.0)
+                        .speed(0.5)
+                        .fixed_decimals(1)
+                        .prefix("Dehnung ")
+                        .suffix(" %"),
+                )
+                .on_hover_text("Länge des Tons in Prozent, die Tonhöhe bleibt. Doppelklick: 100 %. Am Clip-Rand mit Alt ziehen geht auch.");
+            if r.double_clicked() {
+                pct = 100.0;
+            }
+            if r.dragged() || r.has_focus() {
+                if (pct - c.stretch * 100.0).abs() > 1e-9 {
+                    self.stretch_edit = Some((id, pct));
+                }
+            } else {
+                self.stretch_edit = None;
+                if (pct - c.stretch * 100.0).abs() > 1e-9 {
+                    self.state.set_clip_stretch(id, pct / 100.0);
+                }
+            }
+            ui.separator();
+            let mut st = match self.pitch_edit {
+                Some((cid, v)) if cid == id => v,
+                _ => c.pitch_semitones,
+            };
+            let r = ui
+                .add(
+                    egui::DragValue::new(&mut st)
+                        .range(woa_model::PITCH_RANGE.0..=woa_model::PITCH_RANGE.1)
+                        .speed(0.05)
+                        .fixed_decimals(1)
+                        .prefix("Tonhöhe ")
+                        .suffix(" Halbtöne"),
+                )
+                .on_hover_text("Tonhöhe in Halbtönen, die Länge bleibt. Doppelklick: 0.");
+            if r.double_clicked() {
+                st = 0.0;
+            }
+            if r.dragged() || r.has_focus() {
+                if st != c.pitch_semitones {
+                    self.pitch_edit = Some((id, st));
+                }
+            } else {
+                self.pitch_edit = None;
+                if st != c.pitch_semitones {
+                    self.state.set_clip_pitch(id, st);
+                }
+            }
+            ui.separator();
+            let mut follow = c.follow_tempo_bpm.is_some();
+            if ui
+                .checkbox(&mut follow, "Tempo folgen")
+                .on_hover_text(
+                    "Ändert sich das Projekt-Tempo, wird der Ton gedehnt statt verschoben: er bleibt auf dem Raster, die Tonhöhe bleibt.",
+                )
+                .changed()
+            {
+                self.state.set_clip_follow_tempo(id, follow);
+            }
+            if let Some(b) = c.follow_tempo_bpm {
+                ui.label(
+                    egui::RichText::new(format!("Ton gehört zu {b:.1} BPM"))
+                        .small()
+                        .color(theme::DIM),
+                );
+            }
+        });
     }
 
     /// Setzt den Gain des Clips so, dass seine Spitze bei -1 dBFS liegt.
@@ -3679,17 +3824,18 @@ impl WoaApp {
                 crate::timeline::region_peak(
                     &pk,
                     p.peaks_per_beat(tempo),
-                    c.offset_beats,
-                    c.length_beats,
+                    c.offset_beats * tempo / c.source_bpm(tempo),
+                    c.source_length_beats() * tempo / c.source_bpm(tempo),
                 )
             }),
             // Ohne Wiedergabe-Engine (Tests): Datei direkt lesen, sample-genau.
             (Some(file), None) => woa_engine::clip::load_wav_mono(&file, 48_000)
                 .ok()
                 .map(|s| {
-                    let per_beat = 48_000.0 * 60.0 / tempo;
+                    let per_beat = 48_000.0 * 60.0 / c.source_bpm(tempo);
                     let a = ((c.offset_beats * per_beat) as usize).min(s.len());
-                    let b = (((c.offset_beats + c.length_beats) * per_beat).ceil() as usize)
+                    let b = (((c.offset_beats + c.source_length_beats()) * per_beat).ceil()
+                        as usize)
                         .clamp(a, s.len());
                     s[a..b].iter().fold(0.0f32, |m, v| m.max(v.abs()))
                 }),
@@ -3714,7 +3860,7 @@ impl WoaApp {
             self.snap.apply(c.end_beats() + d) - c.end_beats()
         };
         if left {
-            snapped.clamp(-c.offset_beats, c.length_beats - 0.25)
+            snapped.clamp(-c.offset_beats * c.stretch, c.length_beats - 0.25)
         } else {
             snapped.max(0.25 - c.length_beats)
         }

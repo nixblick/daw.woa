@@ -478,6 +478,9 @@ impl AppState {
                     fade_in_curve: woa_model::FadeCurve::Linear,
                     fade_out_curve: woa_model::FadeCurve::Linear,
                     gain_db: 0.0,
+                    stretch: 1.0,
+                    pitch_semitones: 0.0,
+                    follow_tempo_bpm: None,
                 },
                 index: None,
             })
@@ -793,6 +796,96 @@ impl AppState {
         self.apply(Command::SetClipGain { clip, gain_db })
     }
 
+    /// Time-stretches a clip (Paket 23): the clip gets the new timeline `length` and the
+    /// stretch factor follows so that the audio shown stays the same. With `keep_end` the
+    /// right edge stays and the start moves (stretching at the left edge). One undo step.
+    /// `false` when the factor would leave [`woa_model::STRETCH_RANGE`] or nothing changes.
+    pub fn stretch_clip(&mut self, clip: ClipId, length: f64, keep_end: bool) -> bool {
+        let Some((track, c)) = self.project().clip(clip) else {
+            return false;
+        };
+        let (track, c) = (track.id, c.clone());
+        let end = c.end_beats();
+        if !(length.is_finite() && length >= 0.25) || (length - c.length_beats).abs() < 1e-9 {
+            return false;
+        }
+        let stretch = c.stretch * length / c.length_beats;
+        let (lo, hi) = woa_model::STRETCH_RANGE;
+        if !(lo..=hi).contains(&stretch) {
+            self.status = Status::Info(format!(
+                "Dehnen nur zwischen {lo}x und {hi}x möglich (jetzt {stretch:.2}x)"
+            ));
+            return false;
+        }
+        let start = if keep_end {
+            end - length
+        } else {
+            c.start_beats
+        };
+        if start < 0.0 {
+            return false;
+        }
+        let fade_in = c.fade_in_beats.min(length);
+        let fade_out = c.fade_out_beats.min(length - fade_in);
+        self.session.begin_group("Dehnen");
+        let mut ok = true;
+        if (start - c.start_beats).abs() > 1e-9 {
+            ok = self.apply(Command::MoveClip {
+                clip,
+                to_track: track,
+                start_beats: start,
+                index: None,
+            });
+        }
+        ok = ok
+            && self.apply(Command::SetClipStretch {
+                clip,
+                length_beats: length,
+                stretch,
+                fade_in_beats: fade_in,
+                fade_out_beats: fade_out,
+            });
+        let closed = self.session.end_group();
+        self.report("Dehnen", closed);
+        ok
+    }
+
+    /// Sets the stretch factor of a clip directly (the timeline length follows), one undo step.
+    pub fn set_clip_stretch(&mut self, clip: ClipId, stretch: f64) -> bool {
+        let Some((_, c)) = self.project().clip(clip) else {
+            return false;
+        };
+        let length = c.source_length_beats() * stretch;
+        self.stretch_clip(clip, length, false)
+    }
+
+    /// Sets the pitch shift of a clip in semitones (Paket 23), clamped, one undo step.
+    pub fn set_clip_pitch(&mut self, clip: ClipId, semitones: f64) -> bool {
+        let Some((_, c)) = self.project().clip(clip) else {
+            return false;
+        };
+        let (lo, hi) = woa_model::PITCH_RANGE;
+        let semitones = semitones.clamp(lo, hi);
+        if semitones == c.pitch_semitones {
+            return false;
+        }
+        self.apply(Command::SetClipPitch { clip, semitones })
+    }
+
+    /// Lets a clip follow the project tempo (`true`: remembers the current tempo as the tempo
+    /// of the audio) or stops following (Paket 23), one undo step.
+    pub fn set_clip_follow_tempo(&mut self, clip: ClipId, follow: bool) -> bool {
+        let tempo = self.project().tempo_bpm;
+        let Some((_, c)) = self.project().clip(clip) else {
+            return false;
+        };
+        if follow == c.follow_tempo_bpm.is_some() {
+            return false;
+        }
+        let bpm = follow.then_some(tempo);
+        self.apply(Command::SetClipFollowTempo { clip, bpm })
+    }
+
     /// Sets the clip gain so that the loudest sample (`peak`, linear, measured with the
     /// current gain NOT applied) reaches `target_db` dBFS. `false` for silence.
     pub fn normalize_clip(&mut self, clip: ClipId, peak: f32, target_db: f64) -> bool {
@@ -824,7 +917,7 @@ impl AppState {
         part.id = id;
         part.start_beats = at_beats;
         part.length_beats = right;
-        part.offset_beats = c.offset_beats + left;
+        part.offset_beats = c.offset_beats + left / c.stretch;
         part.fade_in_beats = 0.0;
         part.fade_out_beats = c.fade_out_beats.min(right);
         self.session.begin_group("Schneiden");
