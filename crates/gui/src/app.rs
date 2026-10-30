@@ -447,8 +447,55 @@ impl WoaApp {
                 path,
                 self.data_dir.clone(),
                 self.config.radio_buffer(),
+                &self.config.pfl_output,
             ));
         }
+    }
+
+    /// Untermenü „Vorhören (PFL)“ (Paket 15): aus, Kanal 3/4 des Sendegeräts oder ein
+    /// zweites Gerät. Gespeichert in `config.json`; die Radio-Ausgabe öffnet neu, sobald
+    /// nichts läuft (sonst ab dem nächsten Öffnen).
+    fn pfl_menu(&mut self, ui: &mut egui::Ui) {
+        ui.menu_button("Vorhören (PFL)", |ui| {
+            ui.label(
+                egui::RichText::new("Kopfhörer, nie auf Sendung")
+                    .small()
+                    .color(theme::DIM),
+            );
+            let mut choice = self.config.pfl_output.clone();
+            ui.radio_value(&mut choice, crate::PflOutput::Aus, "Aus");
+            ui.radio_value(
+                &mut choice,
+                crate::PflOutput::Kanal34,
+                "Kanal 3/4 des Sendegeräts",
+            );
+            match woa_engine::device::list_output_devices() {
+                Ok(list) => {
+                    for d in list {
+                        ui.radio_value(
+                            &mut choice,
+                            crate::PflOutput::Geraet(d.id.clone()),
+                            format!("Gerät: {}", d.name),
+                        );
+                    }
+                }
+                Err(e) => {
+                    ui.label(format!("Geräte nicht lesbar: {e}"));
+                }
+            }
+            if choice != self.config.pfl_output {
+                tracing::info!(?choice, "pfl output chosen");
+                self.config.pfl_output = choice;
+                self.save_config();
+                if self.radio.as_ref().is_some_and(|r| !r.is_on_air()) {
+                    self.radio = None;
+                    if self.config.mode == Mode::Radio {
+                        self.ensure_radio();
+                    }
+                }
+                ui.close();
+            }
+        });
     }
 
     /// Untermenü „MIDI-Eingang“: Aus oder ein Gerät; gespeichert in `config.json`.
@@ -1352,6 +1399,13 @@ impl WoaApp {
         };
         *frames += 1;
         let first = *frames == 2;
+        if first
+            && std::env::var_os("WOA_CUE_EDITOR").is_some()
+            && let Some(r) = self.radio.as_mut()
+        {
+            // Fotomodus des Cue-Editors: erster Titel der Playlist.
+            r.open_cue_editor(0);
+        }
         if first && std::env::var_os("WOA_CONTROLLER").is_some() {
             // Fotomodus der Zuordnungsliste.
             self.controls.window = true;
@@ -1486,6 +1540,7 @@ impl WoaApp {
                     self.controls.window = true;
                     ui.close();
                 }
+                self.pfl_menu(ui);
                 ui.separator();
                 let mut on = self.config.telemetry_enabled == Some(true);
                 if ui
@@ -3150,6 +3205,7 @@ impl eframe::App for WoaApp {
                         .inner_margin(egui::Margin::symmetric(14, 12)),
                 )
                 .show(ui, |ui| radio.ui(ui));
+            radio.cue_window(&ctx);
             self.controller_window(&ctx);
             self.feedback_window(&ctx);
             self.telemetry_window(&ctx);

@@ -52,8 +52,14 @@ pub enum DeviceError {
     NoOutputDevice,
     DeviceNotFound(String),
     UnsupportedFormat,
-    BufferSizeUnsupported { requested: u32, min: u32, max: u32 },
+    BufferSizeUnsupported {
+        requested: u32,
+        min: u32,
+        max: u32,
+    },
     Backend(cpal::Error),
+    /// Kanal 3/4 gewünscht, das Gerät hat weniger Kanäle.
+    TooFewChannels(u16),
 }
 
 impl std::fmt::Display for DeviceError {
@@ -71,6 +77,9 @@ impl std::fmt::Display for DeviceError {
                 "buffer size {requested} not supported (device allows {min}..={max})"
             ),
             Self::Backend(e) => write!(f, "audio backend: {e}"),
+            Self::TooFewChannels(n) => {
+                write!(f, "device has {n} channels, channels 3/4 need at least 4")
+            }
         }
     }
 }
@@ -232,7 +241,57 @@ pub fn start_output_with(
 /// [`output_sample_rate`] mit derselben `config`.
 pub fn start_stereo_output(
     config: &OutputConfig,
+    render: impl FnMut(&mut [f32], &mut [f32]) + Send + 'static,
+    on_error: impl FnMut(cpal::Error) + Send + 'static,
+) -> Result<cpal::Stream, DeviceError> {
+    start_output_aux(config, render, None, on_error)
+}
+
+/// Stereo-Callback für Kanal 3/4 (Vorhören, Paket 15).
+pub type AuxRender = Box<dyn FnMut(&mut [f32], &mut [f32]) + Send>;
+
+/// Kanäle, mit denen [`start_output_aux`] das Gerät öffnet.
+pub fn output_channels(config: &OutputConfig) -> Result<u16, DeviceError> {
+    let device = pick_device(config)?;
+    Ok(device.default_output_config()?.channels())
+}
+
+/// Schreibt einen Block in verschachtelte Geräte-Frames: `main` auf Kanal 1/2 (bei Mono
+/// gemittelt), `aux` auf Kanal 3/4, alle weiteren Kanäle still. `aux` erreicht nie
+/// Kanal 1/2.
+pub fn interleave(
+    out: &mut [f32],
+    channels: usize,
+    main: (&[f32], &[f32]),
+    aux: Option<(&[f32], &[f32])>,
+) {
+    for (i, frame) in out.chunks_mut(channels.max(1)).enumerate() {
+        let (a, b) = (
+            main.0.get(i).copied().unwrap_or(0.0),
+            main.1.get(i).copied().unwrap_or(0.0),
+        );
+        if frame.len() == 1 {
+            frame[0] = 0.5 * (a + b);
+            continue;
+        }
+        frame.fill(0.0);
+        frame[0] = a;
+        frame[1] = b;
+        if let Some((l, r)) = aux
+            && frame.len() >= 4
+        {
+            frame[2] = l.get(i).copied().unwrap_or(0.0);
+            frame[3] = r.get(i).copied().unwrap_or(0.0);
+        }
+    }
+}
+
+/// Wie [`start_stereo_output`], dazu optional `aux` auf Kanal 3/4 desselben Geräts.
+/// Mit `aux` muss das Gerät mindestens vier Kanäle haben.
+pub fn start_output_aux(
+    config: &OutputConfig,
     mut render: impl FnMut(&mut [f32], &mut [f32]) + Send + 'static,
+    mut aux: Option<AuxRender>,
     on_error: impl FnMut(cpal::Error) + Send + 'static,
 ) -> Result<cpal::Stream, DeviceError> {
     let device = pick_device(config)?;
@@ -246,8 +305,13 @@ pub fn start_stereo_output(
         stream_config.buffer_size = cpal::BufferSize::Fixed(frames);
     }
     let channels = usize::from(stream_config.channels).max(1);
+    if aux.is_some() && channels < 4 {
+        return Err(DeviceError::TooFewChannels(stream_config.channels));
+    }
     let mut left = vec![0.0f32; SCRATCH_FRAMES];
     let mut right = vec![0.0f32; SCRATCH_FRAMES];
+    let mut aux_l = vec![0.0f32; SCRATCH_FRAMES];
+    let mut aux_r = vec![0.0f32; SCRATCH_FRAMES];
 
     let stream = device.build_output_stream(
         stream_config,
@@ -260,17 +324,15 @@ pub fn start_stereo_output(
                 let l = &mut left[..frames];
                 let r = &mut right[..frames];
                 render(l, r);
-                for ((frame, &a), &b) in
-                    frame_chunk.chunks_mut(channels).zip(l.iter()).zip(r.iter())
-                {
-                    if channels == 1 {
-                        frame[0] = 0.5 * (a + b);
-                    } else {
-                        frame.fill(0.0);
-                        frame[0] = a;
-                        frame[1] = b;
+                let side = match aux.as_mut() {
+                    Some(f) => {
+                        let (al, ar) = (&mut aux_l[..frames], &mut aux_r[..frames]);
+                        f(al, ar);
+                        Some((&al[..], &ar[..]))
                     }
-                }
+                    None => None,
+                };
+                interleave(frame_chunk, channels, (l, r), side);
             }
         },
         on_error,
@@ -283,6 +345,23 @@ pub fn start_stereo_output(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aux_goes_to_channels_three_and_four_only() {
+        let main = ([0.5f32, 0.25], [-0.5f32, -0.25]);
+        let aux = ([0.9f32, 0.8], [0.7f32, 0.6]);
+        let mut out = [1.0f32; 12];
+        interleave(&mut out, 6, (&main.0, &main.1), Some((&aux.0, &aux.1)));
+        assert_eq!(
+            out,
+            [
+                0.5, -0.5, 0.9, 0.7, 0.0, 0.0, 0.25, -0.25, 0.8, 0.6, 0.0, 0.0
+            ]
+        );
+        let mut st = [1.0f32; 4];
+        interleave(&mut st, 2, (&main.0, &main.1), Some((&aux.0, &aux.1)));
+        assert_eq!(st, [0.5, -0.5, 0.25, -0.25]);
+    }
 
     #[test]
     fn buffer_size_range_is_checked() {

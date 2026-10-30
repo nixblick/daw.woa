@@ -4,6 +4,21 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 15: Cue-Punkte und Vorhören (0.10.0, offen)
+
+Aus M7 nach M4 vorgezogen (André, 30.10.2026: „ja, cue-punkte und pfl nach m4 vorziehen“).
+Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Kopfhörer wählen:** Einstellungen → „Vorhören (PFL)“ → „Kanal 3/4 des Sendegeräts“ (Interface mit vier Ausgängen) oder ein zweites Gerät, etwa den USB-Kopfhörer. Hat das Gerät keine vier Kanäle, steht oben eine Meldung und das Vorhören bleibt aus.
+2. **Cue-Punkte setzen:** Radio-Layout, Rechtsklick auf einen Titel → „Cue-Punkte …“. Oben den Marker wählen (Cue-In, Ramp, Hook, Fade-Out, Cue-Out), in die Wellenform klicken; Feinschliff in den Zahlenfeldern. „Übernehmen“. Die Dauer in der Playlist zeigt jetzt die gespielte Länge.
+3. **Vorhören:** Im Editor „Vorhören ab …“ (ab dem gewählten Marker), oder Rechtsklick auf Titel/Cart → „Vorhören“ bzw. „Vorhören ab Hook“. Der Ton kommt nur im Kopfhörer; die Lautsprecher (Kanal 1/2) und der Stream bleiben unberührt, auch wenn gerade gesendet wird.
+4. **Sendung:** Start. Der Titel beginnt bei Cue-In, oben läuft „RAMP n“ bis zum Intro-Ende herunter, die Restzeit zählt bis Cue-Out, ab dem Fade-Out-Marker blendet er in den nächsten Titel über.
+5. **Rückgängig:** Im Editor „Rückgängig“ und „Wiederholen“; nach Neustart sind die Punkte noch da (stehen in `radio.json`).
+
+Selbst geprüft von Claude: Prüfregeln der Cue-Punkte (Cue-In vor Cue-Out, alle anderen dazwischen, nichts hinter dem Titelende) als Tests; Offline-Render mit Cue-In, Cue-Out und Fade-Out-Marker ergibt genau die vorhergesagte Länge (6 s + 4 s − 1 s = 9,000 s), Vorhersage der Restzeit gleich; Undo/Redo der Cue-Bearbeitung; MCP-Werkzeug `set_cue_points` setzt, prüft, lehnt falsche Werte und Positionen ab, ohne `radio.json` zu ändern, und gibt die alten Punkte zurück. PFL gegen den echten Sendemixer: 20 Blöcke vorgehört, der Sendebus bleibt bitgenau still, der Kopfhörer hört den Titel; jeder Block von Mixer und PFL-Spieler unter `assert_no_alloc`. Kanalaufteilung als Test: PFL landet nur auf Kanal 3/4, bei einem Stereo-Gerät gar nicht. Screenshot per `WOA_SCREENSHOT` mit `WOA_CUE_EDITOR=1`: Editor mit Wellenform und fünf Markern. Nicht selbst geprüft: echter Ton im Kopfhörer und an einem Vier-Kanal-Interface (keine Wiedergabe auf dem Notebook), die Rechtsklick-Menüs im echten Fenster, die Ramp-Anzeige während einer laufenden Sendung.
+
+Noch nicht drin: Cue-Punkte automatisch aus der Analyse (kommt mit der Bibliothek in M7), Vorhören-Pegel, Scrubbing in der Wellenform, Cue-Punkte für Carts. Ein Wechsel des PFL-Ausgangs während einer Sendung gilt erst ab dem nächsten Öffnen des Radio-Layouts. Ändert der Agent Cue-Punkte, nimmt er sie mit einem zweiten Aufruf zurück (die alten Werte stehen in der Antwort); in der Oberfläche landen sie nicht im Rückgängig-Verlauf.
+
 ## Paket 14: Controller und MIDI-Learn (0.9.0, offen)
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

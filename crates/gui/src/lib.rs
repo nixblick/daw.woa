@@ -6,6 +6,7 @@
 pub mod app;
 pub mod controls;
 pub mod covers;
+pub mod cue_editor;
 pub mod feedback;
 pub mod pianoroll;
 pub mod player;
@@ -16,5 +17,5 @@ mod theme;
 mod xrun;
 
 pub use app::WoaApp;
-pub use feedback::{GuiConfig, Mode};
+pub use feedback::{GuiConfig, Mode, PflOutput};
 pub use state::AppState;

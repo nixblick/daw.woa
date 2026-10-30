@@ -45,6 +45,27 @@ pub struct GuiConfig {
     /// MIDI-Learn-Zuordnung je Controller (Gerätename ohne ALSA-Nummern).
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub controller_maps: std::collections::BTreeMap<String, Vec<woa_io::controller::Mapping>>,
+    /// Ausgang für das Vorhören (PFL, Paket 15). Vorgabe: aus.
+    #[serde(skip_serializing_if = "PflOutput::is_off")]
+    pub pfl_output: PflOutput,
+}
+
+/// Wohin das Vorhören (PFL) geht. Nie auf Kanal 1/2 der Sendung.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PflOutput {
+    #[default]
+    Aus,
+    /// Kanal 3/4 des Sendegeräts (Interface mit mindestens vier Ausgängen).
+    Kanal34,
+    /// Ein zweites Gerät (Kennung aus `list_output_devices`).
+    Geraet(String),
+}
+
+impl PflOutput {
+    pub fn is_off(&self) -> bool {
+        *self == PflOutput::Aus
+    }
 }
 
 impl GuiConfig {
@@ -87,6 +108,7 @@ impl Default for GuiConfig {
             midi_input: None,
             controller_input: None,
             controller_maps: std::collections::BTreeMap::new(),
+            pfl_output: PflOutput::Aus,
         }
     }
 }

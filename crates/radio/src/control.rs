@@ -11,8 +11,10 @@ use std::sync::atomic::Ordering;
 use basedrop::{Collector, Owned, Shared};
 
 use crate::audio::{Stereo, load_stereo, measure};
+use crate::cues::{CueEdit, CueHistory, Cues};
 use crate::level::db_to_gain;
 use crate::mixer::{Cmd, Mixer, NONE, Status};
+use crate::pfl::{PflCmd, PflHandle};
 use crate::show::{CartEntry, PlaylistEntry, RadioShow};
 use crate::{CARTS, RECORDINGS_DIR};
 
@@ -119,6 +121,10 @@ pub struct Controller {
     failed: Vec<u32>,
     /// Zuletzt geladener Titel und wie lange das Dekodieren dauerte (für das Log, #51).
     last_load: Option<(PathBuf, std::time::Duration)>,
+    /// Undo/Redo der Cue-Punkte (Paket 15).
+    cue_history: CueHistory,
+    /// Vorhören (PFL), falls ein Kopfhörer-Ausgang eingehängt ist.
+    pfl: Option<PflHandle>,
 }
 
 impl Controller {
@@ -147,6 +153,8 @@ impl Controller {
             message: None,
             failed: Vec::new(),
             last_load: None,
+            cue_history: CueHistory::default(),
+            pfl: None,
         };
         c.replace_show(show);
         (c, mixer)
@@ -213,6 +221,12 @@ impl Controller {
 
     pub fn rate(&self) -> u32 {
         self.rate
+    }
+
+    /// Meldung für die Oberfläche hinterlegen (etwa ein Fehler aus einem Auftrag).
+    pub fn report(&mut self, message: String) {
+        tracing::warn!(%message, "radio");
+        self.message = Some(message);
     }
 
     /// Letzte Meldung für die Oberfläche (einmal abholen).
@@ -402,11 +416,19 @@ impl Controller {
                     .playlist
                     .get(index)
                     .map_or(0.0, |e| e.gain_db(self.show.target_lufs));
+                let cues = self
+                    .show
+                    .playlist
+                    .get(index)
+                    .map(|e| e.cues)
+                    .unwrap_or_default()
+                    .frames(self.rate, s.frames());
                 let buf = Shared::new(&self.collector.handle(), s);
                 self.send(Cmd::Queue {
                     uid,
                     buf,
                     gain: db_to_gain(gain),
+                    cues,
                 });
                 self.pending = Some(uid);
                 true
@@ -619,16 +641,160 @@ impl Controller {
             Some(i) => {
                 let rest = self.remaining_title();
                 let after = self.show.total_seconds_from(i + 1);
-                let fade = match (
-                    self.show.playlist.get(i).and_then(|e| e.seconds),
-                    self.show.playlist.get(i + 1).and_then(|e| e.seconds),
-                ) {
-                    (Some(a), Some(b)) => self.show.crossfade_between(a, b).min(rest),
+                let fade = match (self.show.playlist.get(i), self.show.playlist.get(i + 1)) {
+                    (Some(a), Some(b)) => self.show.crossfade_entries(a, b).min(rest),
                     _ => 0.0,
                 };
                 rest + after - fade
             }
             None => self.show.total_seconds_from(self.cue_index()),
+        }
+    }
+
+    /// Sekunden bis zum Ramp-Punkt (Intro-Ende) des laufenden Titels; `None`, wenn keiner
+    /// gesetzt oder schon vorbei.
+    pub fn ramp_remaining(&self) -> Option<f64> {
+        let i = self.current_index()?;
+        let ramp = self.show.playlist.get(i)?.cues.ramp?;
+        let pos = self.status.position.load(Ordering::Acquire) as f64 / f64::from(self.rate);
+        let left = ramp - pos;
+        (left > 0.0).then_some(left)
+    }
+
+    // ---- Cue-Punkte (Paket 15) -------------------------------------------------------
+
+    /// Setzt die Cue-Punkte von Titel `index` als Undo-Schritt. Ein schon bereitgelegter
+    /// Titel wird mit den neuen Punkten neu bereitgelegt; der laufende behält seine.
+    pub fn set_cues(&mut self, index: usize, cues: Cues) -> Result<(), String> {
+        let before = self.show.set_cues(index, cues)?;
+        if before == cues {
+            return Ok(());
+        }
+        let uid = self.show.playlist[index].uid;
+        tracing::info!(index, ?cues, "cues set");
+        self.cue_history.push(CueEdit {
+            uid,
+            before,
+            after: cues,
+        });
+        self.cues_changed(uid);
+        Ok(())
+    }
+
+    fn cues_changed(&mut self, uid: u32) {
+        if self.pending == Some(uid) {
+            self.requeue();
+        }
+    }
+
+    fn apply_cue_edit(&mut self, uid: u32, cues: Cues) -> bool {
+        let Some(i) = self.index_of(uid) else {
+            return false;
+        };
+        if self.show.set_cues(i, cues).is_err() {
+            return false;
+        }
+        self.cues_changed(uid);
+        true
+    }
+
+    /// Nimmt die letzte Cue-Bearbeitung zurück.
+    pub fn undo_cues(&mut self) -> bool {
+        match self.cue_history.take_undo() {
+            Some(e) => self.apply_cue_edit(e.uid, e.before),
+            None => false,
+        }
+    }
+
+    /// Stellt die zurückgenommene Cue-Bearbeitung wieder her.
+    pub fn redo_cues(&mut self) -> bool {
+        match self.cue_history.take_redo() {
+            Some(e) => self.apply_cue_edit(e.uid, e.after),
+            None => false,
+        }
+    }
+
+    pub fn can_undo_cues(&self) -> bool {
+        self.cue_history.can_undo()
+    }
+
+    pub fn can_redo_cues(&self) -> bool {
+        self.cue_history.can_redo()
+    }
+
+    // ---- Vorhören (PFL) --------------------------------------------------------------
+
+    /// Hängt einen Kopfhörer-Ausgang ein oder aus.
+    pub fn set_pfl(&mut self, pfl: Option<PflHandle>) {
+        self.pfl = pfl;
+    }
+
+    pub fn has_pfl(&self) -> bool {
+        self.pfl.is_some()
+    }
+
+    pub fn pfl_playing(&self) -> bool {
+        self.pfl.as_ref().is_some_and(PflHandle::is_playing)
+    }
+
+    fn pfl_play(&mut self, path: &Path, from: f64) -> Result<(), String> {
+        let Some(rate) = self.pfl.as_ref().map(|h| h.rate) else {
+            return Err("Kein Kopfhörer-Ausgang für das Vorhören eingestellt".into());
+        };
+        let s = load_stereo(path, rate)?;
+        let start = ((from.max(0.0) * f64::from(rate)) as usize).min(s.frames());
+        let buf = Shared::new(&self.collector.handle(), s);
+        if let Some(h) = self.pfl.as_mut()
+            && h.cmds.push(PflCmd::Play { buf, start }).is_err()
+        {
+            return Err("Vorhören: Warteschlange voll".into());
+        }
+        tracing::info!(file = %path.display(), from, "pfl play");
+        Ok(())
+    }
+
+    /// Hört Titel `index` vor, ab Hook (falls `hook`), sonst ab Cue-In.
+    pub fn pfl_title(&mut self, index: usize, hook: bool) -> Result<(), String> {
+        let e = self
+            .show
+            .playlist
+            .get(index)
+            .ok_or_else(|| format!("Titel {} gibt es nicht", index + 1))?;
+        let from = if hook {
+            e.cues.hook.unwrap_or(e.cues.start())
+        } else {
+            e.cues.start()
+        };
+        let path = e.path.clone();
+        self.pfl_play(&path, from)
+    }
+
+    /// Hört Titel `index` ab Sekunde `from` vor (Cue-Editor).
+    pub fn pfl_title_at(&mut self, index: usize, from: f64) -> Result<(), String> {
+        let path = self
+            .show
+            .playlist
+            .get(index)
+            .map(|e| e.path.clone())
+            .ok_or_else(|| format!("Titel {} gibt es nicht", index + 1))?;
+        self.pfl_play(&path, from)
+    }
+
+    /// Hört Cart `slot` vor.
+    pub fn pfl_cart(&mut self, slot: usize) -> Result<(), String> {
+        let path = match self.show.carts.get(slot) {
+            Some(Some(c)) => c.path.clone(),
+            _ => return Err(format!("Cart {} ist frei", slot + 1)),
+        };
+        self.pfl_play(&path, 0.0)
+    }
+
+    /// Hält das Vorhören an.
+    pub fn pfl_stop(&mut self) {
+        if let Some(h) = self.pfl.as_mut()
+            && h.cmds.push(PflCmd::Stop).is_err()
+        {
+            tracing::warn!("pfl queue full");
         }
     }
 

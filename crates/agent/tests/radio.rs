@@ -161,3 +161,61 @@ async fn build_playlist_and_run_order() {
         );
     }
 }
+
+#[tokio::test]
+async fn set_cue_points_changes_run_order_and_undoes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("p.woa");
+    std::fs::create_dir_all(dir.join("musik")).unwrap();
+    tone(&dir.join("musik/a.wav"), 10, 0.2);
+    tone(&dir.join("musik/b.wav"), 8, 0.2);
+    let radio_s = "radio.json";
+    let (client, _agent, _server) = start(&dir).await;
+    ok(&call(
+        &client,
+        "build_playlist",
+        json!({"files": ["musik/a.wav", "musik/b.wav"], "radio_json": radio_s}),
+    )
+    .await);
+
+    let r = ok(&call(
+        &client,
+        "set_cue_points",
+        json!({"position": 1, "cue_in": 1.0, "cue_out": 9.0, "fade_out": 8.0, "ramp": 4.0, "hook": 5.0, "radio_json": radio_s}),
+    )
+    .await);
+    assert_eq!(r["previous"], json!({}), "{r}");
+    assert_eq!(r["titles"][0]["cues"]["ramp"], 4.0);
+    assert!((r["titles"][0]["play_seconds"].as_f64().unwrap() - 8.0).abs() < 0.01);
+    // 8 s + 8 s - 1 s Fade-Out.
+    assert!(
+        (r["total_seconds"].as_f64().unwrap() - 15.0).abs() < 0.01,
+        "{r}"
+    );
+
+    // Invalid points and positions are refused, radio.json stays as it was.
+    for bad in [
+        json!({"position": 1, "cue_in": 9.5, "cue_out": 9.0, "radio_json": radio_s}),
+        json!({"position": 2, "hook": 30.0, "radio_json": radio_s}),
+        json!({"position": 3, "radio_json": radio_s}),
+        json!({"position": 0, "radio_json": radio_s}),
+    ] {
+        let e = call(&client, "set_cue_points", bad.clone()).await;
+        assert_eq!(e.is_error, Some(true), "{bad}");
+    }
+    let o = ok(&call(&client, "run_order", json!({"radio_json": radio_s})).await);
+    assert_eq!(o["titles"][0]["cues"]["hook"], 5.0);
+
+    // Undo: no points clears the set and returns the old ones.
+    let r = ok(&call(
+        &client,
+        "set_cue_points",
+        json!({"position": 1, "radio_json": radio_s}),
+    )
+    .await);
+    assert_eq!(r["previous"]["cue_in"], 1.0);
+    assert!(
+        (r["total_seconds"].as_f64().unwrap() - 15.0).abs() < 0.01,
+        "10+8-3: {r}"
+    );
+}

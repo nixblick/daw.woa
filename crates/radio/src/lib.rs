@@ -18,13 +18,16 @@ use std::path::PathBuf;
 
 pub mod audio;
 pub mod control;
+pub mod cues;
 pub mod dynamics;
 pub mod level;
 pub mod mixer;
+pub mod pfl;
 pub mod show;
 pub mod station;
 
 pub use control::{Controller, render};
+pub use cues::Cues;
 pub use mixer::Mixer;
 pub use show::{CartEntry, PlaylistEntry, RadioShow};
 
