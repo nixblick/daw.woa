@@ -57,6 +57,9 @@ pub struct GuiConfig {
     /// Telefon-Eingang (Anrufer): Gerät und Kanalpaar. Vorgabe: keiner.
     #[serde(skip_serializing_if = "crate::phone::PhoneInput::is_default")]
     pub phone: crate::phone::PhoneInput,
+    /// Wunschordner (Wunschtitel). Vorgabe: `Wunschtitel` im Datenordner der Sendung.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wish_folder: Option<std::path::PathBuf>,
     /// Beim Start höchstens einmal am Tag nach einem neuen Release suchen. Vorgabe: an.
     pub auto_update: bool,
     /// Unix-Sekunden der letzten erfolgreichen Update-Suche.
@@ -135,6 +138,7 @@ impl Default for GuiConfig {
             pfl_output: PflOutput::Aus,
             outputs: woa_radio::routing::OutputMap::default(),
             phone: crate::phone::PhoneInput::default(),
+            wish_folder: None,
             auto_update: true,
             last_update_check: None,
         }

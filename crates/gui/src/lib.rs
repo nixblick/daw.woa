@@ -28,6 +28,7 @@ pub mod theme;
 pub mod timeline;
 pub mod update;
 pub mod voice_editor;
+mod wishes;
 mod xrun;
 
 pub use app::WoaApp;
