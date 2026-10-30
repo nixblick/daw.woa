@@ -479,6 +479,18 @@ impl RadioDesk {
         }
     }
 
+    /// Letzter Schnappschuss der Sendung (für den AutoDJ).
+    pub fn view(&self) -> &View {
+        &self.view
+    }
+
+    /// Hängt Dateien hinten an die Playlist (AutoDJ); vorhandene Einträge bleiben stehen.
+    pub fn append_files(&self, paths: Vec<PathBuf>) {
+        if let Some(s) = &self.station {
+            s.add_files(paths);
+        }
+    }
+
     pub fn is_on_air(&self) -> bool {
         self.view.running
     }

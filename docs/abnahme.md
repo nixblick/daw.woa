@@ -4,6 +4,21 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 28: Stundenuhr und AutoDJ-Rotation (0.23.0, offen)
+
+Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Titel taggen:** „Bibliothek“ öffnen, einige Titel mit den Tags `hit`, `neu` und `jingle` versehen (mindestens je ein paar Stück; für den Notfall ein paar mit `notfall`). Interpret steht im Titel als „Interpret - Titel“, sonst gilt nur die Titel-Sperre.
+2. **Stundenuhr anlegen und zuordnen:** Radio-Modus, Knopf „Stundenuhr“. Die Uhr „Standard“ (hit, hit, neu, jingle) anpassen oder eine neue anlegen, im Wochenraster die aktuelle Stunde anklicken (umrandet), oder „Gewählte Uhr für die ganze Woche“. Zeitverschiebung prüfen (Winter 60, Sommer 120).
+3. **AutoDJ an (Kopfhörer):** „AutoDJ an“ klicken. Die Playlist füllt sich hinten auf drei Titel; beim Abspielen (über den Kopfhörer, nicht auf Sendung) folgt sie der Uhr: hit, hit, neu, jingle, und kein Titel oder Interpret kommt zu früh wieder. Die Liste „Letzte Auswahlen“ nennt zu jedem Titel Slot und Kategorie.
+4. **Eigenen Titel einschieben:** Einen Titel von Hand in die Playlist ziehen oder einfügen: er bleibt stehen, der AutoDJ hängt nur hinten an. Eine Kategorie ohne Titel (z. B. `werbung`) fällt auf die Ersatzkategorie zurück.
+
+Selbst geprüft von Claude (ohne Ton, ohne Gerät): 24 Stunden mit simulierter Uhr gegen 500 erzeugte Titel: keine Sperrfrist für Titel (180 min) oder Interpret (60 min) verletzt, in jeder der 24 Stunden folgen die Slots der Uhr der Reihe nach; leere Kategorie fällt auf die Ersatzkategorie, dann auf den Notfall-Tag zurück, ist auch der leer, kommt keine Wahl und kein Absturz; gleicher Startwert gibt dieselbe Folge, ein anderer eine andere; die Historie liegt in SQLite und überlebt das Schließen und Öffnen der Datenbank (Sperren und Position in der Stunde gelten danach weiter); von Hand gesetzte Titel werden nicht gewählt und belegen ihre Zeit; Dateien mit kaputtem oder feindlichem Inhalt werden gemeldet, nie überschrieben; Editor als Zustandstest (Uhren, Slots, Wochenraster, Umbenennen nimmt die Woche mit, Speichern und Laden); der AutoDJ-Takt gegen eine nachgebildete Sendung (Auffüllen bis zur Zahl im Voraus, Historie genau einmal je Titel); jede Wahl steht im Log.
+
+Nicht selbst geprüft: das Fenster im echten Bild (Aussehen, Wochenraster, Klickverhalten), das Zusammenspiel mit dem echten Sendemixer über Stunden (nur der Takt gegen nachgebildete Sendedaten), und wie die Folge mit echter Musik klingt. Die Zeitzone ist eine Zahl in Minuten; die Sommerzeitumstellung ist nicht automatisch.
+
+Noch nicht drin (gehört zu M9, nicht zu diesem Paket): feste Zeit-Events (Nachrichten, Werbung, Stundenjingle zur vollen Stunde) und der Voice-Tracking-Editor. Gespielte Titel werden nur eingetragen, solange die Sendung läuft und der Titel in der Bibliothek steht.
+
 ## Paket 27: DAWproject Import/Export (0.22.0, offen)
 
 Aus M7. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
