@@ -1,0 +1,19 @@
+<!-- @dsCard group="Grundlagen" height=110 subtitle="Gemeinsame Kopfleiste aller Modi" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}</style></head>
+<body>
+
+<div class="woa-topbar" style="border:1px solid var(--border);border-radius:var(--radius-lg)">
+ <span class="woa-topbar__brand"><span data-woa-mark="26"></span>WOA</span>
+ <nav class="woa-menu"><a href="#">Datei</a><a href="#">Bearbeiten</a><a href="#">Einstellungen</a></nav>
+ <span class="woa-spacer"></span>
+ <span class="woa-pill is-active">MIDI</span>
+ <button class="woa-key woa-key--rec woa-key--sm is-on" data-woa-icon="rec">Mitschnitt</button>
+ <div class="woa-modes"><button class="woa-mode is-active" data-m="studio">Produzent</button><button class="woa-mode" data-m="radio">Radio</button><button class="woa-mode" data-m="party">Party</button></div>
+ <button class="woa-key woa-key--sm" data-woa-icon="feedback">Feedback</button>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>

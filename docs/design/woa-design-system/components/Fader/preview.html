@@ -1,0 +1,20 @@
+<!-- @dsCard group="Bedienelemente" height=230 subtitle="Kanalfader und Crossfader" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}</style></head>
+<body>
+
+<div class="woa-row" style="align-items:flex-end;gap:40px">
+ <div class="woa-col" style="align-items:center;gap:6px">
+  <div class="woa-fader" style="--v:.72" data-default=".75" data-out="fd1"><div class="woa-fader__scale woa-scale"><span>+6</span><span>0</span><span>−6</span><span>−12</span><span>−24</span><span>−48</span><span>−∞</span></div><div class="woa-fader__track" role="slider" aria-label="Pegel"><div class="woa-fader__cap"></div></div></div>
+  <span class="woa-strip__db" id="fd1"></span>
+ </div>
+ <div class="woa-col" style="gap:6px">
+  <span class="woa-label">Crossfader</span>
+  <div class="woa-fader woa-fader--h" data-fmt="pct" style="--v:.38" data-default=".5"><div class="woa-fader__track" role="slider" aria-label="Crossfader"><div class="woa-fader__cap"></div></div><div class="woa-fader__scale woa-scale" style="justify-content:space-between"><span>A</span><span>|</span><span>B</span></div></div>
+ </div>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>

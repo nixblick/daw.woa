@@ -1,0 +1,27 @@
+<!-- @dsCard group="Grundlagen" height=440 subtitle="Logo: Wortmarke, App-Icon, Favicon – dunkel und hell" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA Logo</title>
+<style>
+body{padding:16px}
+.lg{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.lg>div{border-radius:var(--radius-lg);border:1px solid var(--border);padding:20px;display:flex;flex-direction:column;gap:16px;background:var(--bg)}
+.lg .r{display:flex;align-items:center;gap:20px}
+.modes{display:flex;gap:12px;margin-top:12px}
+.modes>div{flex:1;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-lg);background:var(--panel);border:1px solid var(--border);font-family:var(--font-label);font-weight:800;font-size:18px;color:var(--text)}
+</style></head>
+<body>
+<div class="lg">
+ <div data-theme="studio"><img src="/_blob/2bc44f55eaa8b9443aae561030b824f7" alt="WOA – Wir on Air, Wortmarke für dunkle Flächen" style="height:96px;align-self:flex-start">
+  <div class="r"><img src="/_blob/b50095737b53d43badec4dce25ed5409" alt="App-Icon dunkel" width="96" height="96"><img src="/_blob/05fa0134a76bdf4abe3ed55fe81045ef" alt="Bildmarke dunkel" width="72" height="72"><img src="/_blob/c2bb850f82c65d91b003fff0a3242262" alt="Favicon dunkel" width="32" height="32"><span class="woa-label">Dunkel</span></div></div>
+ <div data-theme="studio-hell"><img src="/_blob/4a121edd4b1c8be057247a1bb830305f" alt="WOA – Wir on Air, Wortmarke für helle Flächen" style="height:96px;align-self:flex-start">
+  <div class="r"><img src="/_blob/2844271f108f4b71ee013a1dddcd6828" alt="App-Icon hell" width="96" height="96"><img src="/_blob/8c6a5b7dfc7dbe6dba504bf72c79eb42" alt="Bildmarke hell" width="72" height="72"><img src="/_blob/46dfc1734953cdaa7c135ef341e8b471" alt="Favicon hell" width="32" height="32"><span class="woa-label">Hell</span></div></div>
+</div>
+<div class="modes">
+ <div data-woa-mode="studio"><span data-woa-mark="34"></span>Produzent</div>
+ <div data-woa-mode="radio"><span data-woa-mark="34"></span>Radio</div>
+ <div data-woa-mode="party"><span data-woa-mark="34"></span>Party</div>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>

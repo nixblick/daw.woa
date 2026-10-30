@@ -1,0 +1,20 @@
+<!-- @dsCard group="Anzeigen" height=230 subtitle="LED-Kette −60…0 dB mit Peak-Hold" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}</style></head>
+<body>
+
+<div class="woa-row" style="align-items:flex-end;gap:28px">
+ <div class="woa-col" style="align-items:center;gap:4px"><div class="woa-meter" data-ch="2" data-segs="32" data-level=".78" style="height:180px"></div><span class="woa-scale">L R</span></div>
+ <div class="woa-col" style="align-items:center;gap:4px"><div class="woa-meter" data-ch="1" data-segs="32" data-level=".98" style="height:180px"></div><span class="woa-scale">Clip</span></div>
+ <div class="woa-col" style="align-items:center;gap:4px"><div class="woa-meter woa-meter--accent" data-ch="1" data-segs="16" data-level=".5" style="height:180px"></div><span class="woa-scale">GR</span></div>
+ <div class="woa-col" style="gap:10px">
+  <div><span class="woa-label">Mikro</span><div class="woa-meter woa-meter--h" data-ch="2" data-segs="40" data-level=".7"></div></div>
+  <div><span class="woa-label">Sendebus</span><div class="woa-meter woa-meter--h" data-ch="2" data-segs="40" data-level=".85"></div></div>
+  <div><span class="woa-label">Statisch −6 dB</span><div class="woa-meter woa-meter--h" data-ch="1" data-segs="40" data-level=".9" data-static></div></div>
+ </div>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>

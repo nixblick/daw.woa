@@ -57,6 +57,11 @@ Pfade unter `/home/<name>`, internen Repos oder Token-Listen, keine Runbooks fü
 Mitbewerber-Analysen, keine geklonten Referenz-Repos. Solches liegt lokal unter `docs/intern/`
 (gitignored). In Code und Doku heißt der Server nur „eigener Server“.
 
+## Gestaltung
+
+`docs/design/woa-design-system/README.md` ist die verbindliche Gestaltungsvorgabe für `crates/gui`:
+Tokens (`tokens.json`) sind verbindlich, die Screen-Entwürfe sind Zielbilder.
+
 ## Struktur
 
 `crates/` Bibliotheken (model, engine, dsp, io, library, plugins, radio, stream, guests, remote, agent,

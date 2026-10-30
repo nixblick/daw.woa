@@ -1,0 +1,27 @@
+<!-- @dsCard group="Bedienelemente" height=150 subtitle="Hardware-Taste, beleuchtet" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}</style></head>
+<body>
+
+<div class="woa-col">
+ <div class="woa-row">
+  <button class="woa-key"><span class="woa-key__led"></span>Bereit</button>
+  <button class="woa-key is-lit"><span class="woa-key__led"></span>Aktiv</button>
+  <button class="woa-key is-on">Gedrückt</button>
+  <button class="woa-key woa-key--alt is-lit"><span class="woa-key__led"></span>Vorhören</button>
+  <button class="woa-key woa-key--sq" aria-label="Start" data-woa-icon="play"></button>
+  <button class="woa-key woa-key--ok woa-key--sq is-on" aria-label="Läuft" data-woa-icon="play"></button>
+ </div>
+ <div class="woa-row">
+  <button class="woa-key woa-key--rec is-on" data-woa-icon="rec">Rec</button>
+  <button class="woa-key woa-key--rec is-lit" data-woa-icon="mic">Mikro offen</button>
+  <button class="woa-key woa-key--cue is-lit" data-woa-icon="phones">PFL</button>
+  <button class="woa-key woa-key--sm">Klein</button>
+  <button class="woa-key woa-key--lg" data-woa-icon="antenna">Auf Sendung</button>
+ </div>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>
