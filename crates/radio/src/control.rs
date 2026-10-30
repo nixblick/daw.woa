@@ -300,6 +300,7 @@ impl Controller {
     // ---- Playlist bearbeiten ---------------------------------------------------------
 
     /// Hängt Dateien an (oder fügt bei `at` ein). Gibt die Indizes zurück.
+    #[tracing::instrument(level = "info", skip_all, name = "playlist_add")]
     pub fn add(&mut self, paths: &[PathBuf], at: Option<usize>) -> Vec<usize> {
         let mut at = at.unwrap_or(self.show.playlist.len());
         let mut out = Vec::new();
@@ -944,6 +945,7 @@ impl Controller {
 
 /// Rendert die Playlist von `show` offline mit Crossfades und Auto-Gain (dieselben
 /// Klassen wie live). Gibt Stereo bis zum Ende des letzten Titels zurück.
+#[tracing::instrument(level = "info", skip_all, name = "show_render")]
 pub fn render(show: &RadioShow, rate: u32) -> Result<Stereo, String> {
     const BLOCK: usize = 512;
     if show.playlist.is_empty() {
@@ -1291,6 +1293,7 @@ impl Controller {
 
     /// Legt eine Sprachdatei als Voice-Track bei `at` in die Playlist (gemessen, an die jetzigen
     /// Nachbarn gebunden, Beginn der Stimme vorgeschlagen). Gibt den Index zurück.
+    #[tracing::instrument(level = "info", skip_all, name = "voice_add")]
     pub fn add_voice(&mut self, path: &Path, at: Option<usize>) -> Result<usize, String> {
         let s = load_stereo(path, self.rate)?;
         let m = measure(&s, self.rate);

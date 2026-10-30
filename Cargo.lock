@@ -6776,6 +6776,7 @@ dependencies = [
  "rtrb",
  "symphonia",
  "tempfile",
+ "tracing",
  "woa-dsp",
  "woa-model",
  "woa-plugins",

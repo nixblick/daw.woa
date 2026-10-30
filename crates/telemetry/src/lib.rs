@@ -12,6 +12,7 @@
 pub mod feedback;
 pub mod scrub;
 pub mod upload;
+pub mod watch;
 
 use std::path::{Path, PathBuf};
 
@@ -25,6 +26,7 @@ pub use feedback::{FeedbackError, FeedbackMeta, FeedbackType, submit_feedback};
 pub use upload::{
     DEFAULT_INGEST_URL, Event, Level, UploadConfig, UploadLayer, Uploader, new_install_id,
 };
+pub use watch::{FrameWatch, metric};
 
 /// Tage, die Logdateien liegen bleiben (eine Datei je Tag).
 pub const LOG_RETENTION_DAYS: usize = 30;

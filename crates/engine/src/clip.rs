@@ -374,6 +374,7 @@ pub fn project_end_seconds(project: &Project) -> f64 {
 }
 
 /// Rendert das Projekt mit seinen Audio-Clips offline (links, rechts) über `seconds`.
+#[tracing::instrument(level = "info", skip_all, name = "render_clips")]
 pub fn render_clips(
     project: &Project,
     rate: u32,
@@ -540,6 +541,7 @@ pub(crate) fn store_peak(meter: &AtomicU32, block: &[f32]) {
 
 /// Liest eine Audiodatei (alle `decode::EXTENSIONS`), mischt auf mono und rechnet linear auf
 /// `sample_rate` um. Nur außerhalb des Audio-Threads aufrufen.
+#[tracing::instrument(level = "info", skip_all, name = "load_wav")]
 pub fn load_wav_mono(path: &Path, sample_rate: u32) -> Result<Arc<[f32]>, EngineError> {
     if !(MIN_RATE..=MAX_RATE).contains(&sample_rate) {
         return Err(EngineError::InvalidConfig("sample rate out of range"));
