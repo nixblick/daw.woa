@@ -10,6 +10,7 @@
 //! [`soundfont::SoundFontPlayer`], per [`instrument::InstrumentNode`] im Graphen,
 //! Note-Events über [`instrument::note_queue`] (`rtrb`).
 
+pub mod analysis;
 pub mod automation;
 pub mod clock;
 pub mod dynamics;

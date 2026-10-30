@@ -589,6 +589,30 @@ pub struct RepeatClipParams {
     pub times: u32,
 }
 
+/// Parameters of `analyze`.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct AnalyzeParams {
+    /// Measure only this track (by id) instead of the whole mix.
+    #[serde(default)]
+    pub track: Option<u64>,
+}
+
+/// Parameters of `spectrogram_png`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SpectrogramParams {
+    /// Target file, `.png`. Relative path inside the project folder; absolute paths and `..` are rejected.
+    pub path: String,
+    /// Draw only this track (by id) instead of the whole mix.
+    #[serde(default)]
+    pub track: Option<u64>,
+    /// Image width in pixels, 16..=4096. Default 800.
+    #[serde(default)]
+    pub width: Option<u32>,
+    /// Image height in pixels, 16..=2048. Default 400.
+    #[serde(default)]
+    pub height: Option<u32>,
+}
+
 /// Parameters of `export`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ExportParams {
@@ -822,6 +846,23 @@ impl WoaAgent {
             p.to_path_buf()
         } else {
             self.dir.join(p)
+        }
+    }
+
+    /// Renders the whole project, or one track alone when `track` is given.
+    fn render_for(
+        &self,
+        project: &woa_model::Project,
+        track: Option<u64>,
+    ) -> Result<audio::Mix, String> {
+        match track {
+            None => audio::render(project, &self.dir),
+            Some(id) => {
+                if !project.tracks.iter().any(|t| t.id.0 == id) {
+                    return Err(format!("Spur {id} gibt es nicht"));
+                }
+                audio::render_track(project, &self.dir, TrackId(id))
+            }
         }
     }
 
@@ -1811,26 +1852,32 @@ impl WoaAgent {
     }
 
     #[tool(
-        description = "Render the project offline (48 kHz, up to the end of the last clip) and measure it: integrated loudness (LUFS, ITU-R BS.1770), sample peak in dBFS, clipping, length in seconds, and the peak of every audio track on its own. Changes nothing."
+        description = "Render the project offline (48 kHz, up to the end of the last clip) and measure it: integrated loudness (LUFS, ITU-R BS.1770), highest momentary and short-term loudness, sample peak and true peak (dBTP, 4x oversampled), clipping, length in seconds, the mean spectrum (peak frequency and octave-band levels in dBFS), the stereo image (correlation +1 mono .. -1 out of phase, balance, side-to-mid ratio), short notes on problems, and the peak of every audio track on its own. With `track`, measures that track alone (mixer settings kept) instead of the mix. Changes nothing."
     )]
-    async fn analyze(&self) -> Result<CallToolResult, McpError> {
+    async fn analyze(
+        &self,
+        Parameters(p): Parameters<AnalyzeParams>,
+    ) -> Result<CallToolResult, McpError> {
         let project = self.lock()?.project().clone();
-        let mix = match audio::render(&project, &self.dir) {
+        let mix = match self.render_for(&project, p.track) {
             Ok(m) => m,
             Err(e) => return Ok(fail(e)),
         };
         let mut result = audio::measure(&mix);
+        if let (Some(extra), Some(map)) =
+            (audio::analysis(&mix).as_object(), result.as_object_mut())
+        {
+            for (k, v) in extra {
+                map.insert(k.clone(), v.clone());
+            }
+        }
+        if p.track.is_some() {
+            result["track"] = serde_json::json!(p.track);
+            return Ok(ok_json(result));
+        }
         let mut tracks = Vec::new();
         for t in project.tracks.iter().filter(|t| t.kind == TrackKind::Audio) {
-            // The track alone (soloed, unmuted), mixer settings kept.
-            let mut alone = project.clone();
-            for o in &mut alone.tracks {
-                o.solo = o.id == t.id;
-                if o.id == t.id {
-                    o.mute = false;
-                }
-            }
-            let peak = audio::render(&alone, &self.dir)
+            let peak = audio::render_track(&project, &self.dir, t.id)
                 .ok()
                 .and_then(|m| audio::peak_db(&m.left, &m.right))
                 .map(|v| audio::round(v, 2));
@@ -1843,6 +1890,42 @@ impl WoaAgent {
         }
         result["tracks"] = serde_json::Value::Array(tracks);
         Ok(ok_json(result))
+    }
+
+    #[tool(
+        description = "Render the project offline and write its spectrogram as a PNG (time left to right, frequency logarithmic from 20 Hz at the bottom to the top, brighter = louder, -90..0 dBFS). `path` is a relative .png path inside the project folder. Optional `track` draws one track alone. Look at the picture to see tones, noise, cut-offs and gaps. Changes nothing in the project."
+    )]
+    async fn spectrogram_png(
+        &self,
+        Parameters(p): Parameters<SpectrogramParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if !p.path.to_lowercase().ends_with(".png") {
+            return Ok(fail("Endung muss .png sein"));
+        }
+        let (w, h) = (p.width.unwrap_or(800), p.height.unwrap_or(400));
+        if !(16..=4096).contains(&w) || !(16..=2048).contains(&h) {
+            return Ok(fail("width 16..=4096, height 16..=2048"));
+        }
+        let project = self.lock()?.project().clone();
+        let mix = match self.render_for(&project, p.track) {
+            Ok(m) => m,
+            Err(e) => return Ok(fail(e)),
+        };
+        let (out, created) = match self.resolve_out(&p.path) {
+            Ok(o) => o,
+            Err(e) => return Ok(fail(e)),
+        };
+        let rgb = audio::spectrogram_rgb(&mix, w as usize, h as usize);
+        if let Err(e) = audio::write_png(&out, &rgb, w, h) {
+            remove_created(&created);
+            return Ok(fail(e));
+        }
+        Ok(ok_json(serde_json::json!({
+            "path": out.display().to_string(),
+            "width": w,
+            "height": h,
+            "seconds": audio::round(mix.seconds, 3),
+        })))
     }
 
     #[tool(

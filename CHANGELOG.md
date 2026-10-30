@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.0 — 2026-10-30
+
+Paket 19 aus M5: Analyse-Fenster.
+
+- **Oberfläche:** Der Knopf „📊 Analyse“ im unteren Dock öffnet ein schwebendes Fenster mit Lautheit (momentan, kurzzeitig, integriert), True Peak, Spektrum mit Halte-Marken, Spektrogramm, Stereo-Scope und Korrelationsanzeige. Die Quelle ist der Master oder eine einzelne Spur; „Zurücksetzen“ beginnt die integrierte Messung neu. Ist das Fenster zu, kostet es im Audio-Thread nur einen Atomic-Lesezugriff je Block.
+- **Messung (`woa_dsp::analysis`):** Lautheit nach BS.1770/EBU R128 (K-Filter, Blöcke mit 75 % Überlappung, absolutes und relatives Gate), True Peak mit vierfacher Überabtastung, Spektrum mit Hann-Fenster und `realfft` (MIT/Apache), Oktavbänder, Spektrogramm, Korrelation, Balance und Seiten-zu-Mitte-Verhältnis. Der K-Filter der Engine liegt jetzt dort und wird von `woa_engine::loudness` nur noch weitergereicht.
+- **Engine:** Neue Abgriffe (`woa_engine::tap`) am Master, an jedem Bus und an jeder Spur: lock-freier Ring (`rtrb`), Frames bleiben als Paar zusammen, ein voller Ring zählt Verluste statt zu warten. Das Signal bleibt bitgleich.
+- **Agent:** `analyze` meldet zusätzlich True Peak, höchste momentane und kurzzeitige Lautheit, Spektrum-Spitze und Oktavbänder, Korrelation, Balance und Hinweise; mit `track` misst es eine Spur allein. Neues Werkzeug `spectrogram_png` schreibt ein Spektrogramm als PNG in den Projektordner.
+- **Tests:** EBU-Referenzsignale (1 kHz bei −23 und −33 dBFS ergibt −23 und −33 LUFS), Sinus landet auf dem richtigen Bin mit richtigem Pegel, Korrelation +1 bei Mono und −1 bei Gegenphase, Snapshot des Spektrogramms (`insta`), Abgriffe unter `assert_no_alloc`, Agent über MCP einschließlich PNG-Prüfung.
+
 ## 0.13.0 — 2026-10-30
 
 Paket 18 aus M5: Automation und Sidechain (Sidechain für Effekte auf Bussen und Live-Einfahren von Sends und Effekt-Reglern folgen später).

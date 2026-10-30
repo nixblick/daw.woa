@@ -17,7 +17,7 @@ use rtrb::Consumer;
 use woa_dsp::instrument::NoteEvent;
 
 use crate::midi_clip::midi_track_source;
-use crate::project::{ProjectGraph, build_project_graph_mode};
+use crate::project::{ProjectGraph, build_project_graph_taps};
 use crate::transport::{TransportHandle, beats_to_samples};
 use crate::{Engine, EngineError};
 
@@ -109,8 +109,34 @@ pub fn clip_graph_live(
     clip_graph_mode(project, transport, rate, load, meters, live, false)
 }
 
+/// Wie [`clip_graph_live`], dazu Abgriffe an Master und Spuren fürs Analyse-Fenster
+/// ([`ProjectGraph::taps`], Paket 19).
+pub fn clip_graph_analysis(
+    project: &Project,
+    transport: &TransportHandle,
+    rate: f32,
+    load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
+    meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
+    live: Option<(TrackId, Consumer<NoteEvent>)>,
+) -> ProjectGraph {
+    clip_graph_inner(project, transport, rate, load, meters, live, false, true)
+}
+
 /// Wie [`clip_graph_live`]; mit `offline` (Export) rechnen die Effekte ohne eigene Threads.
 pub fn clip_graph_mode(
+    project: &Project,
+    transport: &TransportHandle,
+    rate: f32,
+    load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
+    meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
+    live: Option<(TrackId, Consumer<NoteEvent>)>,
+    offline: bool,
+) -> ProjectGraph {
+    clip_graph_inner(project, transport, rate, load, meters, live, offline, false)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn clip_graph_inner(
     project: &Project,
     transport: &TransportHandle,
     rate: f32,
@@ -118,6 +144,7 @@ pub fn clip_graph_mode(
     mut meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
     live: Option<(TrackId, Consumer<NoteEvent>)>,
     offline: bool,
+    with_taps: bool,
 ) -> ProjectGraph {
     let mut live = live;
     let mut source = |t: &woa_model::Track| -> Option<Box<dyn Node>> {
@@ -152,7 +179,7 @@ pub fn clip_graph_mode(
         }
         Some(Box::new(player))
     };
-    build_project_graph_mode(project, &mut source, offline)
+    build_project_graph_taps(project, &mut source, offline, with_taps)
 }
 
 /// Ende des letzten Clips in Sekunden.

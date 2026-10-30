@@ -23,6 +23,7 @@ use woa_model::{
 };
 
 use crate::clip::store_peak;
+use crate::tap::{TapHandle, tap};
 use crate::{Engine, EngineError, GraphBuilder, NodeId};
 
 /// Parameter-IDs des Bus-Zugs ([`BusStrip`]).
@@ -177,6 +178,9 @@ pub struct ProjectGraph {
     pub tracks: HashMap<TrackId, TrackNodes>,
     /// Pegelmesser der Busse (Spitze am Bus-Ausgang, abholen mit [`crate::clip::take_peak`]).
     pub bus_meters: HashMap<TrackId, Arc<AtomicU32>>,
+    /// Abgriffe fürs Analyse-Fenster (Paket 19): `None` ist der Master, `Some` eine Spur nach
+    /// Fader und Pan (Bus: nach dem Fader). Leer, wenn der Graph ohne Abgriffe gebaut wurde.
+    pub taps: HashMap<Option<TrackId>, TapHandle>,
     /// Absenkungsmesser der dynamischen Effekte (Kompressor, Gate, Limiter, De-Esser) in dB,
     /// größter Wert seit dem Abholen als Bits eines `f32`; abholen mit [`crate::clip::take_peak`].
     pub reductions: HashMap<InsertId, Arc<AtomicU32>>,
@@ -428,6 +432,18 @@ pub fn build_project_graph_mode(
     source: &mut dyn FnMut(&Track) -> Option<Box<dyn Node>>,
     offline: bool,
 ) -> ProjectGraph {
+    build_project_graph_taps(project, source, offline, false)
+}
+
+/// Wie [`build_project_graph_mode`]. Mit `with_taps` hängt der Graph an Master und jede Spur
+/// einen Abgriff ([`ProjectGraph::taps`]); sie ändern das Signal nicht und sind ausgeschaltet,
+/// bis die Oberfläche sie einschaltet.
+pub fn build_project_graph_taps(
+    project: &Project,
+    source: &mut dyn FnMut(&Track) -> Option<Box<dyn Node>>,
+    offline: bool,
+    with_taps: bool,
+) -> ProjectGraph {
     let ctx = FxContext {
         tempo_bpm: project.tempo_bpm as f32,
         offline,
@@ -446,6 +462,14 @@ pub fn build_project_graph_mode(
     };
     let mut tracks = HashMap::new();
     let mut bus_meters = HashMap::new();
+    let mut taps = HashMap::new();
+    if with_taps {
+        let (sink, handle) = tap();
+        let n = b.add_stereo(Box::new(sink));
+        b.connect_ch(sum_l, 0, n, 0);
+        b.connect_ch(sum_r, 0, n, 1);
+        taps.insert(None, handle);
+    }
     let mut reductions: HashMap<InsertId, Arc<AtomicU32>> = HashMap::new();
     let tempo = project.tempo_bpm;
     // Sidechain-Eingänge (Node, Quellspur), nach dem Bau aller Züge verdrahtet.
@@ -492,6 +516,13 @@ pub fn build_project_graph_mode(
         ));
         b.connect_ch(prev, 0, strip, 0);
         b.connect_ch(prev, 1, strip, 1);
+        if with_taps {
+            let (sink, handle) = tap();
+            let n = b.add_stereo(Box::new(sink));
+            b.connect_ch(strip, 0, n, 0);
+            b.connect_ch(strip, 1, n, 1);
+            taps.insert(Some(t.id), handle);
+        }
         buses.insert(
             t.id,
             BusPorts {
@@ -605,6 +636,13 @@ pub fn build_project_graph_mode(
         b.connect(tail, gain);
         b.connect(gain, pan_left);
         b.connect(gain, pan_right);
+        if with_taps {
+            let (sink, handle) = tap();
+            let n = b.add_stereo(Box::new(sink));
+            b.connect_ch(pan_left, 0, n, 0);
+            b.connect_ch(pan_right, 0, n, 1);
+            taps.insert(Some(t.id), handle);
+        }
         match t.output.and_then(|o| buses.get(&o)) {
             Some(dest) => {
                 b.connect_ch(pan_left, 0, dest.head, 0);
@@ -666,6 +704,7 @@ pub fn build_project_graph_mode(
         builder: b,
         tracks,
         bus_meters,
+        taps,
         reductions,
     }
 }

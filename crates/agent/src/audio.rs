@@ -7,6 +7,10 @@ use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use woa_dsp::analysis::loudness::{LoudnessMeter, true_peak_dbtp};
+use woa_dsp::analysis::spectrogram::Spectrogram;
+use woa_dsp::analysis::spectrum::{FLOOR_DB, bin_hz, octave_bands, peak_bin};
+use woa_dsp::analysis::stereo::StereoMeter;
 use woa_dsp::generate::{Drum, Note, render_drums, render_notes};
 use woa_dsp::synth::Waveform;
 use woa_engine::clip::{load_wav_mono, project_end_seconds, render_clips};
@@ -294,6 +298,97 @@ pub fn normalize_mix(mix: &mut Mix, target: f64) -> Result<serde_json::Value, St
         "gain_db": round(n.gain_db, 2),
         "peak_limited": n.peak_limited,
     }))
+}
+
+/// Rendert nur eine Spur (solo, entstummt), Mixer-Einstellungen bleiben.
+pub fn render_track(
+    project: &Project,
+    dir: &Path,
+    track: woa_model::TrackId,
+) -> Result<Mix, String> {
+    let mut alone = project.clone();
+    for o in &mut alone.tracks {
+        o.solo = o.id == track;
+        if o.id == track {
+            o.mute = false;
+        }
+    }
+    render(&alone, dir)
+}
+
+/// Fenstergröße und Schritt des Spektrums für Agent und Bild.
+const FFT_SIZE: usize = 4096;
+const FFT_HOP: usize = 2048;
+
+/// Erweiterte Messung (Paket 19): True Peak, Höchstwerte von momentan und kurzzeitig,
+/// mittleres Spektrum in Oktavbändern und Stereo-Bild, dazu kurze Bewertungen.
+pub fn analysis(mix: &Mix) -> serde_json::Value {
+    let mut meter = LoudnessMeter::new(RATE);
+    meter.push(&mix.left, &mix.right);
+    let tp = true_peak_dbtp(&mix.left, &mix.right);
+    let spec = Spectrogram::of_stereo(&mix.left, &mix.right, RATE, FFT_SIZE, FFT_HOP);
+    let mean = spec.mean_db();
+    let silent = mean.iter().all(|&d| d <= FLOOR_DB);
+    let bands: Vec<serde_json::Value> = if silent {
+        Vec::new()
+    } else {
+        octave_bands(&mean, spec.size, RATE)
+            .into_iter()
+            .map(|(hz, db)| serde_json::json!({ "hz": hz, "db": round(f64::from(db), 1) }))
+            .collect()
+    };
+    let peak_hz = (!silent)
+        .then(|| peak_bin(&mean))
+        .flatten()
+        .map(|k| round(f64::from(bin_hz(k, spec.size, RATE)), 1));
+    let mut st = StereoMeter::new(f64::INFINITY);
+    st.push(&mix.left, &mix.right);
+    let corr = st.correlation();
+    let mut notes: Vec<String> = Vec::new();
+    if let Some(t) = tp
+        && t > -1.0
+    {
+        notes.push(format!(
+            "true peak {t:.1} dBTP is above -1 dBTP: risk of clipping after lossy encoding"
+        ));
+    }
+    match corr {
+        Some(c) if c < 0.0 => notes.push(format!(
+            "correlation {c:.2} is negative: parts cancel in mono (phase problem)"
+        )),
+        Some(c) if c > 0.99 => {
+            notes.push("correlation is about +1: the mix is practically mono".into());
+        }
+        _ => {}
+    }
+    serde_json::json!({
+        "true_peak_dbtp": tp.map(|v| round(v, 2)),
+        "momentary_max_lufs": meter.max_momentary().map(|v| round(v, 2)),
+        "short_term_max_lufs": meter.max_short_term().map(|v| round(v, 2)),
+        "spectrum": { "peak_hz": peak_hz, "octave_bands": bands },
+        "stereo": {
+            "correlation": corr.map(|v| round(v, 3)),
+            "balance_db": st.balance_db().map(|v| round(v, 2)),
+            "side_to_mid_db": st.width_db().map(|v| round(v.clamp(-60.0, 60.0), 1)),
+        },
+        "notes": notes,
+    })
+}
+
+/// Spektrogramm des Mixes als RGB-Bild (`width * height * 3` Bytes), Frequenz logarithmisch.
+pub fn spectrogram_rgb(mix: &Mix, width: usize, height: usize) -> Vec<u8> {
+    Spectrogram::of_stereo(&mix.left, &mix.right, RATE, FFT_SIZE, FFT_HOP).render_rgb(width, height)
+}
+
+/// Schreibt ein RGB-Bild als PNG.
+pub fn write_png(path: &Path, rgb: &[u8], width: u32, height: u32) -> Result<(), String> {
+    let file = std::fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+    enc.set_color(png::ColorType::Rgb);
+    enc.set_depth(png::BitDepth::Eight);
+    let mut w = enc.write_header().map_err(|e| e.to_string())?;
+    w.write_image_data(rgb).map_err(|e| e.to_string())?;
+    w.finish().map_err(|e| e.to_string())
 }
 
 /// Rundet auf `digits` Nachkommastellen.

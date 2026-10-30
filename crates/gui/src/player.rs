@@ -10,7 +10,8 @@ use std::sync::atomic::AtomicU32;
 use std::time::Instant;
 use woa_dsp::instrument::note_queue;
 use woa_engine::clip::{
-    PEAK_BLOCK, clip_graph_live, load_wav_mono, peaks, project_end_seconds, render_clips, take_peak,
+    PEAK_BLOCK, clip_graph_analysis, load_wav_mono, peaks, project_end_seconds, render_clips,
+    take_peak,
 };
 
 use woa_engine::device::{
@@ -18,6 +19,7 @@ use woa_engine::device::{
     resume_output, start_output_with,
 };
 use woa_engine::project::{ProjectGraph, TrackNodes};
+use woa_engine::tap::TapHandle;
 use woa_engine::transport::{LoopRange, TransportHandle, beats_to_samples, samples_to_beats};
 use woa_engine::{AudioProcessor, Engine};
 use woa_model::{InsertId, Project, TrackId};
@@ -92,6 +94,10 @@ pub struct Player {
     midi_sink: woa_io::midi::EventSink,
     /// Zuletzt gesetzter Loop-Bereich in Samples.
     loop_range: Option<LoopRange>,
+    /// Abgriffe des Graphen fürs Analyse-Fenster: `None` ist der Master.
+    taps: HashMap<Option<TrackId>, TapHandle>,
+    /// Was das Analyse-Fenster hören will (`None`: Fenster zu, alle Abgriffe aus).
+    tap_source: Option<Option<TrackId>>,
 }
 
 /// Dekodiert einmal je Datei und merkt sich das Ergebnis; Fehler werden geloggt.
@@ -146,6 +152,8 @@ impl Player {
             peaks: HashMap::new(),
             midi_sink: woa_io::midi::event_sink(),
             loop_range: None,
+            taps: HashMap::new(),
+            tap_source: None,
         })
     }
 
@@ -233,7 +241,7 @@ impl Player {
             let sr = self.rate;
             let cache = &mut self.cache;
             let mut load = |rel: &str| load_cached(cache, resolve(rel)?, sr);
-            let graph = clip_graph_live(
+            let graph = clip_graph_analysis(
                 project,
                 &transport,
                 rate,
@@ -255,6 +263,8 @@ impl Player {
                     }
                     self.reductions = graph.reductions;
                     self.nodes = graph.tracks;
+                    self.taps = graph.taps;
+                    self.apply_tap_source();
                     self.structure = Some(structure);
                     self.mixer = None;
                 }
@@ -288,6 +298,36 @@ impl Player {
                 Ok(()) => self.mixer = Some(mixer),
                 Err(e) => tracing::warn!(error = %e, "mixer update failed"),
             }
+        }
+    }
+
+    /// Abtastrate der Engine.
+    pub fn sample_rate(&self) -> u32 {
+        self.rate
+    }
+
+    /// Wählt, was das Analyse-Fenster mithört: `Some(None)` den Master, `Some(Some(spur))`
+    /// eine Spur (nach Fader und Pan), `None` nichts (alle Abgriffe aus, kein Aufwand im
+    /// Audio-Thread außer einem Atomic je Block).
+    pub fn set_tap_source(&mut self, source: Option<Option<TrackId>>) {
+        if self.tap_source != source {
+            self.tap_source = source;
+            self.apply_tap_source();
+        }
+    }
+
+    fn apply_tap_source(&mut self) {
+        for (id, tap) in &mut self.taps {
+            tap.set_enabled(self.tap_source == Some(*id));
+        }
+    }
+
+    /// Holt die Samples des gewählten Abgriffs (hängt an). Liefert die seit dem letzten
+    /// Abholen verlorenen Frames.
+    pub fn drain_tap(&mut self, left: &mut Vec<f32>, right: &mut Vec<f32>) -> u64 {
+        match self.tap_source.and_then(|s| self.taps.get_mut(&s)) {
+            Some(tap) => tap.drain(left, right),
+            None => 0,
         }
     }
 
