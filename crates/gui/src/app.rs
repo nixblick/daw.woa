@@ -16,9 +16,9 @@ use crate::theme;
 /// Start-Zoom der Zeitleiste in Pixel je Beat.
 const PX_PER_BEAT: f32 = 24.0;
 /// Breite der Spurköpfe.
-const HEADER_W: f32 = 250.0;
+const HEADER_W: f32 = 264.0;
 /// Höhe einer Spur.
-const ROW_H: f32 = 88.0;
+const ROW_H: f32 = 92.0;
 const ZOOM_RANGE: std::ops::RangeInclusive<f32> = 2.0..=160.0;
 
 use crate::controls::{
@@ -495,22 +495,44 @@ impl WoaApp {
             .1
             .is_some_and(|t| now.duration_since(t).as_millis() < 150);
         let status = self.midi.status();
-        let color = match (&status, lit) {
-            (MidiStatus::Off, _) => theme::DIM,
-            (MidiStatus::Waiting(_), _) => theme::ON_AIR,
-            (MidiStatus::Connected(_), true) => egui::Color32::from_rgb(90, 220, 120),
-            (MidiStatus::Connected(_), false) => theme::mix(theme::SURFACE, theme::DIM, 0.8),
+        let (color, active) = match (&status, lit) {
+            (MidiStatus::Off, _) => (theme::DIM, false),
+            (MidiStatus::Waiting(_), _) => (theme::ON_AIR, true),
+            (MidiStatus::Connected(_), true) => (theme::OK_GREEN, true),
+            (MidiStatus::Connected(_), false) => (theme::CUE_CYAN, false),
         };
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(46.0, 16.0), egui::Sense::hover());
-        ui.painter()
-            .circle_filled(rect.left_center() + egui::vec2(6.0, 0.0), 5.0, color);
-        ui.painter().text(
-            rect.left_center() + egui::vec2(15.0, 0.0),
-            egui::Align2::LEFT_CENTER,
-            "MIDI",
-            egui::FontId::proportional(11.0),
-            theme::DIM,
-        );
+        let resp = egui::Frame::new()
+            .fill(if active {
+                theme::mix(color, theme::WELL, 0.72)
+            } else {
+                theme::WELL
+            })
+            .stroke(egui::Stroke::new(
+                1.0,
+                if active { color } else { theme::BORDER },
+            ))
+            .corner_radius(4)
+            .inner_margin(egui::Margin::symmetric(8, 3))
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.x = 5.0;
+                ui.horizontal(|ui| {
+                    let (dot, _) =
+                        ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                    ui.painter().circle_filled(dot.center(), 3.8, color);
+                    ui.label(
+                        egui::RichText::new("MIDI")
+                            .size(11.0)
+                            .strong()
+                            .monospace()
+                            .color(if active {
+                                theme::TEXT_BRIGHT
+                            } else {
+                                theme::DIM
+                            }),
+                    );
+                });
+            })
+            .response;
         let target = self
             .live_midi_track()
             .and_then(|id| self.state.project().track(id).map(|t| t.name.clone()));
@@ -536,14 +558,63 @@ impl WoaApp {
             self.midi_lamp(ui);
             let mut mode = self.config.mode;
             let on_air = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
-            ui.selectable_value(
-                &mut mode,
-                Mode::Radio,
-                if on_air { "● Radio" } else { "Radio" },
-            )
-            .on_hover_text("Sendeablauf: Playlist, Uhr, Carts, Mikro");
-            ui.selectable_value(&mut mode, Mode::Produzent, "Produzent")
-                .on_hover_text("Zeitleiste mit Spuren und Clips");
+            egui::Frame::new()
+                .fill(theme::WELL)
+                .stroke(egui::Stroke::new(1.0, theme::BORDER))
+                .corner_radius(5)
+                .inner_margin(egui::Margin::symmetric(4, 2))
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    let radio_active = mode == Mode::Radio;
+                    let radio_btn = egui::Button::new(
+                        egui::RichText::new(if on_air {
+                            "● 📻 Radio"
+                        } else {
+                            "📻 Radio"
+                        })
+                        .strong()
+                        .color(if radio_active || on_air {
+                            theme::WELL
+                        } else {
+                            theme::DIM
+                        }),
+                    )
+                    .fill(if on_air {
+                        theme::ON_AIR
+                    } else if radio_active {
+                        theme::ACCENT
+                    } else {
+                        theme::WELL
+                    })
+                    .stroke(egui::Stroke::NONE);
+                    if ui
+                        .add(radio_btn)
+                        .on_hover_text("Sendeablauf: Playlist, Uhr, Carts, Mikro")
+                        .clicked()
+                    {
+                        mode = Mode::Radio;
+                    }
+
+                    let prod_active = mode == Mode::Produzent;
+                    let prod_btn = egui::Button::new(
+                        egui::RichText::new("🎚 Produzent")
+                            .strong()
+                            .color(if prod_active { theme::WELL } else { theme::DIM }),
+                    )
+                    .fill(if prod_active {
+                        theme::ACCENT
+                    } else {
+                        theme::WELL
+                    })
+                    .stroke(egui::Stroke::NONE);
+                    if ui
+                        .add(prod_btn)
+                        .on_hover_text("Zeitleiste mit Spuren und Clips")
+                        .clicked()
+                    {
+                        mode = Mode::Produzent;
+                    }
+                });
             self.set_mode(mode);
         });
     }
@@ -751,56 +822,131 @@ impl WoaApp {
     fn transport_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let playing = self.player.as_ref().is_some_and(Player::is_playing);
-            let big = |t: &str| egui::RichText::new(t).size(18.0);
-            if ui
-                .add(egui::Button::new(big("⏮")).min_size(egui::vec2(40.0, 34.0)))
-                .on_hover_text("Zum Anfang (Pos1)")
-                .clicked()
-            {
-                self.rewind();
-            }
-            let play = egui::Button::new(big(if playing { "⏸" } else { "▶" }).color(if playing {
-                theme::BG
-            } else {
-                ui.visuals().text_color()
-            }))
-            .min_size(egui::vec2(52.0, 34.0))
-            .fill(if playing {
-                theme::ACCENT
-            } else {
-                theme::SURFACE
-            });
-            if ui
-                .add_enabled(self.player.is_some(), play)
-                .on_hover_text("Abspielen / Pause (Leertaste)")
-                .clicked()
-            {
-                self.toggle_play();
-            }
-            let end = egui::Button::new(egui::RichText::new("Stopp am Ende").small().color(
-                if self.stop_at_end {
-                    theme::BG
-                } else {
-                    theme::DIM
-                },
-            ))
-            .min_size(egui::vec2(0.0, 34.0))
-            .fill(if self.stop_at_end {
-                theme::ACCENT
-            } else {
-                theme::SURFACE
-            });
-            if ui
-                .add(end)
-                .on_hover_text(
-                    "An: die Wiedergabe hält am Ende des letzten Clips an. \
-                     Aus: sie läuft weiter, z. B. zum Aufnehmen über das Ende hinaus.",
-                )
-                .clicked()
-            {
-                self.stop_at_end = !self.stop_at_end;
-            }
-            // Zeitanzeige: Minuten:Sekunden groß, Takt.Schlag klein.
+            let big = |t: &str| egui::RichText::new(t).size(16.0).strong();
+
+            // 1. Hardware-Transport-Gruppe
+            egui::Frame::new()
+                .fill(theme::WELL)
+                .stroke(egui::Stroke::new(1.0, theme::BORDER))
+                .corner_radius(5)
+                .inner_margin(egui::Margin::symmetric(4, 3))
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    if ui
+                        .add(
+                            egui::Button::new(big("⏮"))
+                                .fill(theme::SURFACE)
+                                .min_size(egui::vec2(38.0, 32.0)),
+                        )
+                        .on_hover_text("Zum Anfang (Pos1)")
+                        .clicked()
+                    {
+                        self.rewind();
+                    }
+                    let play = egui::Button::new(
+                        big(if playing { "⏸" } else { "▶" }).color(if playing {
+                            theme::WELL
+                        } else {
+                            theme::TEXT_BRIGHT
+                        }),
+                    )
+                    .min_size(egui::vec2(48.0, 32.0))
+                    .fill(if playing {
+                        theme::OK_GREEN
+                    } else {
+                        theme::SURFACE
+                    })
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        if playing {
+                            theme::OK_GREEN
+                        } else {
+                            theme::BORDER
+                        },
+                    ));
+                    if ui
+                        .add_enabled(self.player.is_some(), play)
+                        .on_hover_text("Abspielen / Pause (Leertaste)")
+                        .clicked()
+                    {
+                        self.toggle_play();
+                    }
+
+                    let recording = self.recording();
+                    let label = match self.takes.first() {
+                        Some((_, rec)) => {
+                            let t = rec.elapsed().as_secs();
+                            format!("■  {}:{:02}", t / 60, t % 60)
+                        }
+                        None if recording => "■  MIDI".to_string(),
+                        None => "     Aufnahme".to_string(),
+                    };
+                    let rec_btn = egui::Button::new(
+                        egui::RichText::new(label)
+                            .strong()
+                            .size(14.0)
+                            .color(if recording {
+                                egui::Color32::WHITE
+                            } else {
+                                theme::TEXT_BRIGHT
+                            }),
+                    )
+                    .min_size(egui::vec2(114.0, 32.0))
+                    .fill(if recording {
+                        theme::ON_AIR
+                    } else {
+                        theme::SURFACE
+                    })
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        if recording {
+                            theme::ON_AIR
+                        } else {
+                            theme::BORDER
+                        },
+                    ));
+                    let rec_resp = ui.add(rec_btn).on_hover_text(
+                        "Nimmt auf jeder scharfen Spur (roter Punkt) ihre Quelle auf, \
+                             sonst auf der ausgewählten Spur (Strg+R)",
+                    );
+                    if !recording {
+                        // Die Schrift hat kein ●, also selbst zeichnen.
+                        let c = rec_resp.rect.left_center() + egui::vec2(18.0, 0.0);
+                        ui.painter().circle_filled(c, 5.5, theme::ON_AIR);
+                    }
+                    if rec_resp.clicked() {
+                        self.toggle_record();
+                    }
+
+                    let end = egui::Button::new(
+                        egui::RichText::new("⇥ Stopp am Ende")
+                            .small()
+                            .strong()
+                            .color(if self.stop_at_end {
+                                theme::WELL
+                            } else {
+                                theme::DIM
+                            }),
+                    )
+                    .min_size(egui::vec2(0.0, 32.0))
+                    .fill(if self.stop_at_end {
+                        theme::ACCENT
+                    } else {
+                        theme::SURFACE
+                    });
+                    if ui
+                        .add(end)
+                        .on_hover_text(
+                            "An: die Wiedergabe hält am Ende des letzten Clips an. \
+                             Aus: sie läuft weiter, z. B. zum Aufnehmen über das Ende hinaus.",
+                        )
+                        .clicked()
+                    {
+                        self.stop_at_end = !self.stop_at_end;
+                    }
+                });
+
+            // 2. Tiefschwarzes LCD-Zeit- & Takt-Display
             let secs = self.player.as_ref().map_or(0.0, Player::position_seconds);
             let tempo = self.state.project().tempo_bpm;
             let beats = self
@@ -808,68 +954,41 @@ impl WoaApp {
                 .as_ref()
                 .map_or(0.0, |p| p.position_beats(tempo));
             egui::Frame::new()
-                .fill(theme::BG)
-                .corner_radius(6)
-                .inner_margin(egui::Margin::symmetric(12, 2))
+                .fill(theme::WELL)
+                .stroke(egui::Stroke::new(1.0, theme::BORDER))
+                .corner_radius(5)
+                .inner_margin(egui::Margin::symmetric(12, 3))
                 .show(ui, |ui| {
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{:02}:{:04.1}",
-                                (secs / 60.0) as u64,
-                                secs % 60.0
-                            ))
-                            .monospace()
-                            .size(20.0)
-                            .color(theme::ACCENT),
-                        );
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Takt {}.{}  ·  {tempo:.0} BPM",
-                                (beats / 4.0) as u64 + 1,
-                                (beats % 4.0) as u64 + 1
-                            ))
-                            .small()
-                            .color(theme::DIM),
-                        );
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{:02}:{:04.1}",
+                                    (secs / 60.0) as u64,
+                                    secs % 60.0
+                                ))
+                                .monospace()
+                                .strong()
+                                .size(19.0)
+                                .color(theme::ACCENT),
+                            );
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "Takt {}.{}  ·  {tempo:.0} BPM",
+                                    (beats / 4.0) as u64 + 1,
+                                    (beats % 4.0) as u64 + 1
+                                ))
+                                .small()
+                                .monospace()
+                                .color(theme::DIM),
+                            );
+                        });
                     });
                 });
-            ui.add_space(12.0);
-            let recording = self.recording();
-            let label = match self.takes.first() {
-                Some((_, rec)) => {
-                    let t = rec.elapsed().as_secs();
-                    format!("■  {}:{:02}", t / 60, t % 60)
-                }
-                None => "     Aufnahme".to_string(),
-            };
-            let rec_btn = egui::Button::new(egui::RichText::new(label).strong().size(15.0).color(
-                if recording {
-                    egui::Color32::WHITE
-                } else {
-                    theme::ON_AIR
-                },
-            ))
-            .min_size(egui::vec2(120.0, 34.0))
-            .fill(if recording {
-                theme::ON_AIR
-            } else {
-                theme::SURFACE
-            });
-            let rec_resp = ui.add(rec_btn).on_hover_text(
-                "Nimmt auf jeder scharfen Spur (roter Punkt) ihre Quelle auf, \
-                     sonst auf der ausgewählten Spur (Strg+R)",
-            );
-            if !recording {
-                // Die Schrift hat kein ●, also selbst zeichnen.
-                let c = rec_resp.rect.left_center() + egui::vec2(22.0, 0.0);
-                ui.painter().circle_filled(c, 6.0, theme::ON_AIR);
-            }
-            if rec_resp.clicked() {
-                self.toggle_record();
-            }
-            if recording {
+
+            // 3. Live-Aufnahme-Pegelanzeige (wenn Aufnahme aktiv)
+            if self.recording() {
                 let mut fresh = 0.0f32;
                 for (track, take) in &self.takes {
                     let l = take.take_level();
@@ -881,42 +1000,45 @@ impl WoaApp {
                 }
                 self.level = fresh.max(self.level * 0.85);
                 let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(160.0, 10.0), egui::Sense::hover());
+                    ui.allocate_exact_size(egui::vec2(140.0, 14.0), egui::Sense::hover());
                 level_bar(ui.painter(), rect, self.level);
                 if self.rec_clipped {
-                    ui.label(
-                        egui::RichText::new("ÜBERSTEUERT")
-                            .small()
-                            .strong()
-                            .color(egui::Color32::from_rgb(220, 50, 50)),
-                    )
-                    .on_hover_text(
-                        "Mindestens ein Sample erreichte 0 dBFS. Quelle leiser stellen.",
-                    );
+                    theme::status_pill(ui, "ÜBERSTEUERT", theme::ON_AIR, true);
                 }
             }
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 0.0;
-                let out_ms = woa_engine::device::output_latency().as_secs_f64() * 1000.0;
-                ui.checkbox(
-                    &mut self.latency_auto,
-                    egui::RichText::new("Latenz ausgleichen").small(),
-                )
-                .on_hover_text(format!(
-                    "Verschiebt jede Aufnahme um die vom Treiber gemeldete Latenz nach vorn \
-                         (Ausgang zuletzt {out_ms:.1} ms, Eingang wird bei der Aufnahme gemessen)"
-                ));
-                ui.add(
-                    egui::DragValue::new(&mut self.latency_extra_ms)
-                        .range(-500.0..=500.0)
-                        .speed(0.5)
-                        .prefix("Zusatz +")
-                        .suffix(" ms"),
-                )
-                .on_hover_text(
-                    "Zusätzlicher Ausgleich von Hand, falls Aufnahmen noch zu spät liegen",
-                );
-            });
+
+            // 4. Latenz-Kapsel
+            egui::Frame::new()
+                .fill(theme::WELL)
+                .stroke(egui::Stroke::new(1.0, theme::BORDER))
+                .corner_radius(5)
+                .inner_margin(egui::Margin::symmetric(8, 3))
+                .show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 1.0;
+                        let out_ms = woa_engine::device::output_latency().as_secs_f64() * 1000.0;
+                        ui.checkbox(
+                            &mut self.latency_auto,
+                            egui::RichText::new("Latenz ausgleichen").small(),
+                        )
+                        .on_hover_text(format!(
+                            "Verschiebt jede Aufnahme um die vom Treiber gemeldete Latenz nach vorn \
+                                 (Ausgang zuletzt {out_ms:.1} ms, Eingang wird bei der Aufnahme gemessen)"
+                        ));
+                        ui.add(
+                            egui::DragValue::new(&mut self.latency_extra_ms)
+                                .range(-500.0..=500.0)
+                                .speed(0.5)
+                                .prefix("Zusatz +")
+                                .suffix(" ms"),
+                        )
+                        .on_hover_text(
+                            "Zusätzlicher Ausgleich von Hand, falls Aufnahmen noch zu spät liegen",
+                        );
+                    });
+                });
+
+            // 5. Rechtsbündig: Export-Ziel & Zoom
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let name = |v: Option<f64>| match v {
                     None => "unverändert".to_string(),
@@ -924,7 +1046,7 @@ impl WoaApp {
                 };
                 egui::ComboBox::from_id_salt("export_lufs")
                     .selected_text(name(self.export_lufs))
-                    .width(110.0)
+                    .width(106.0)
                     .show_ui(ui, |ui| {
                         for (v, hint) in [
                             (Some(-16.0), " · Web, Podcast"),
@@ -1194,6 +1316,20 @@ impl WoaApp {
 
     fn menu_items(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         {
+            egui::Frame::new()
+                .fill(theme::ACCENT)
+                .corner_radius(4)
+                .inner_margin(egui::Margin::symmetric(8, 2))
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new("WOA")
+                            .size(12.5)
+                            .strong()
+                            .monospace()
+                            .color(theme::WELL),
+                    );
+                });
+            ui.add_space(2.0);
             ui.menu_button("Datei", |ui| {
                 if ui.button("Neu (Strg+N)").clicked() {
                     self.state.new_project();
@@ -1271,9 +1407,19 @@ impl WoaApp {
             .map(|t| (t.id, t.name.clone(), t.gain_db, t.mute))
             .collect();
         egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 4.0;
+            ui.spacing_mut().item_spacing.y = 5.0;
             ui.horizontal(|ui| {
-                ui.add_space(HEADER_W + ui.spacing().item_spacing.x);
+                let (corner_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(HEADER_W, 24.0), egui::Sense::hover());
+                ui.painter()
+                    .rect_filled(corner_rect, 4.0, theme::PANEL_HEADER);
+                ui.painter().text(
+                    corner_rect.left_center() + egui::vec2(10.0, 0.0),
+                    egui::Align2::LEFT_CENTER,
+                    format!("SPUREN ({})  ·  MIXER", tracks.len()),
+                    egui::FontId::proportional(11.0),
+                    theme::DIM,
+                );
                 self.ruler(ui);
             });
             for (i, (id, name, gain, mute)) in tracks.into_iter().enumerate() {
@@ -1282,15 +1428,36 @@ impl WoaApp {
                     self.timeline(ui, id);
                 });
             }
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
                 if ui
-                    .add_sized([HEADER_W, 30.0], egui::Button::new("+  Spur hinzufügen"))
+                    .add_sized(
+                        [150.0, 32.0],
+                        egui::Button::new(
+                            egui::RichText::new("+  Audio-Spur")
+                                .strong()
+                                .color(theme::TEXT_BRIGHT),
+                        )
+                        .fill(theme::SURFACE),
+                    )
                     .clicked()
                 {
                     self.state.add_track();
                 }
                 if ui
-                    .add_sized([110.0, 30.0], egui::Button::new("+  MIDI-Spur"))
+                    .add_sized(
+                        [106.0, 32.0],
+                        egui::Button::new(
+                            egui::RichText::new("+  MIDI-Spur")
+                                .strong()
+                                .color(theme::CUE_CYAN),
+                        )
+                        .fill(theme::SURFACE)
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            theme::mix(theme::CUE_CYAN, theme::BORDER, 0.5),
+                        )),
+                    )
                     .on_hover_text("Spur für das Keyboard; scharf schalten zum Spielen")
                     .clicked()
                 {
@@ -1314,10 +1481,16 @@ impl WoaApp {
         let px = self.zoom;
         let end = self.timeline_end();
         let (rect, resp) = ui.allocate_exact_size(
-            egui::vec2((end as f32 + 16.0) * px, 20.0),
+            egui::vec2((end as f32 + 16.0) * px, 24.0),
             egui::Sense::click_and_drag(),
         );
         let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 4.0, theme::WELL);
+        painter.hline(
+            rect.x_range(),
+            rect.bottom() - 1.0,
+            egui::Stroke::new(1.0, theme::BORDER),
+        );
         let every = if px < 4.0 {
             16
         } else if px < 8.0 {
@@ -1329,24 +1502,34 @@ impl WoaApp {
             let x = rect.left() + beat as f32 * px;
             painter.vline(
                 x,
-                rect.bottom() - 6.0..=rect.bottom(),
-                egui::Stroke::new(1.0, theme::DIM),
+                rect.top() + 4.0..=rect.bottom(),
+                egui::Stroke::new(1.0, theme::BORDER),
             );
             painter.text(
-                egui::pos2(x + 3.0, rect.top() + 2.0),
+                egui::pos2(x + 4.0, rect.top() + 3.0),
                 egui::Align2::LEFT_TOP,
                 format!("{}", beat / 4 + 1),
-                egui::FontId::proportional(11.0),
+                egui::FontId::monospace(11.0),
                 theme::DIM,
             );
+            if px >= 12.0 && every == 4 {
+                for sub in 1..4 {
+                    let sx = x + sub as f32 * px;
+                    painter.vline(
+                        sx,
+                        rect.bottom() - 4.0..=rect.bottom(),
+                        egui::Stroke::new(1.0, theme::GRID),
+                    );
+                }
+            }
         }
         let tempo = self.state.project().tempo_bpm;
         if let Some(p) = &self.player {
             let x = rect.left() + p.position_beats(tempo) as f32 * px;
             painter.add(egui::Shape::convex_polygon(
                 vec![
-                    egui::pos2(x - 6.0, rect.top() + 6.0),
-                    egui::pos2(x + 6.0, rect.top() + 6.0),
+                    egui::pos2(x - 6.0, rect.top() + 8.0),
+                    egui::pos2(x + 6.0, rect.top() + 8.0),
                     egui::pos2(x, rect.bottom()),
                 ],
                 theme::ACCENT,
@@ -1518,23 +1701,39 @@ impl WoaApp {
         mute: bool,
     ) {
         let color = theme::track_color(index);
+        let is_midi = self
+            .state
+            .project()
+            .track(id)
+            .is_some_and(|t| t.kind == woa_model::TrackKind::Midi);
         let armed = if self.armed.is_empty() {
             self.selected_track == Some(id)
         } else {
             self.armed.contains(&id)
         };
+        let is_selected = self.selected_track == Some(id);
         let frame = egui::Frame::new()
             .fill(if armed {
-                theme::mix(theme::SURFACE, color, 0.12)
+                theme::mix(theme::PANEL, color, 0.14)
             } else {
-                theme::SURFACE
+                theme::PANEL
             })
-            .corner_radius(6)
+            .stroke(egui::Stroke::new(
+                1.0,
+                if armed {
+                    theme::mix(color, theme::ON_AIR, 0.45)
+                } else if is_selected {
+                    color
+                } else {
+                    theme::BORDER
+                },
+            ))
+            .corner_radius(5)
             .inner_margin(egui::Margin {
                 left: 12,
-                right: 6,
-                top: 4,
-                bottom: 4,
+                right: 8,
+                top: 5,
+                bottom: 5,
             });
         // Fest reserviertes Rechteck, damit Lineal und Zeitleisten bündig bleiben.
         let (slot, _) = ui.allocate_exact_size(egui::vec2(HEADER_W, ROW_H), egui::Sense::hover());
@@ -1546,18 +1745,34 @@ impl WoaApp {
         let resp = {
             let ui = &mut child;
             frame.show(ui, |ui| {
-                ui.set_width(HEADER_W - 18.0);
-                ui.set_max_width(HEADER_W - 18.0);
-                ui.set_height(ROW_H - 8.0);
-                ui.spacing_mut().item_spacing = egui::vec2(6.0, 4.0);
+                ui.set_width(HEADER_W - 20.0);
+                ui.set_max_width(HEADER_W - 20.0);
+                ui.set_height(ROW_H - 10.0);
+                ui.spacing_mut().item_spacing = egui::vec2(6.0, 5.0);
                 ui.horizontal(|ui| {
                     let (dot, arm) =
-                        ui.allocate_exact_size(egui::vec2(18.0, 22.0), egui::Sense::click());
+                        ui.allocate_exact_size(egui::vec2(20.0, 22.0), egui::Sense::click());
+                    ui.painter().rect_filled(
+                        dot.shrink2(egui::vec2(1.0, 2.0)),
+                        3.0,
+                        if armed {
+                            theme::mix(theme::ON_AIR, theme::WELL, 0.35)
+                        } else {
+                            theme::WELL
+                        },
+                    );
                     ui.painter().circle(
                         dot.center(),
-                        6.0,
-                        if armed { theme::ON_AIR } else { theme::BG },
-                        egui::Stroke::new(1.5, if armed { theme::ON_AIR } else { theme::DIM }),
+                        5.2,
+                        if armed { theme::ON_AIR } else { theme::WELL },
+                        egui::Stroke::new(
+                            1.5,
+                            if armed {
+                                egui::Color32::WHITE
+                            } else {
+                                theme::DIM
+                            },
+                        ),
                     );
                     if arm
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -1571,15 +1786,20 @@ impl WoaApp {
                         self.armed.insert(id);
                     }
                     self.track_name(ui, id, name);
-                    {
-                        let m =
-                            egui::Button::new(egui::RichText::new("M").strong().color(if mute {
-                                theme::BG
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let m = egui::Button::new(
+                            egui::RichText::new("M").size(12.0).strong().color(if mute {
+                                theme::WELL
                             } else {
                                 theme::DIM
-                            }))
-                            .fill(if mute { theme::ACCENT } else { theme::PANEL })
-                            .min_size(egui::vec2(26.0, 22.0));
+                            }),
+                        )
+                        .fill(if mute { theme::ACCENT } else { theme::WELL })
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            if mute { theme::ACCENT } else { theme::BORDER },
+                        ))
+                        .min_size(egui::vec2(25.0, 21.0));
                         let r = ui.add(m).on_hover_text("Stumm (Rechtsklick: MIDI lernen)");
                         if r.clicked() {
                             self.state.toggle_mute(id);
@@ -1587,7 +1807,16 @@ impl WoaApp {
                         if let Some(i) = self.track_index(id) {
                             self.learn_menu(&r, Target::TrackMute(i));
                         }
-                    }
+                        if is_midi {
+                            ui.label(
+                                egui::RichText::new("MIDI")
+                                    .size(9.5)
+                                    .strong()
+                                    .monospace()
+                                    .color(theme::CUE_CYAN),
+                            );
+                        }
+                    });
                 });
                 ui.horizontal(|ui| {
                     self.track_meter(ui, id, gain, mute);
@@ -1643,10 +1872,10 @@ impl WoaApp {
         };
         let r = resp.response.rect;
         ui.painter().rect_filled(
-            egui::Rect::from_min_size(r.min, egui::vec2(4.0, r.height())),
+            egui::Rect::from_min_size(r.min, egui::vec2(5.0, r.height())),
             egui::CornerRadius {
-                nw: 6,
-                sw: 6,
+                nw: 5,
+                sw: 5,
                 ne: 0,
                 se: 0,
             },
@@ -1668,7 +1897,7 @@ impl WoaApp {
                             .small()
                             .color(theme::DIM),
                     )
-                    .width(150.0)
+                    .width(156.0)
                     .truncate()
                     .show_ui(ui, |ui| {
                         let list = self.sources().to_vec();
@@ -1737,7 +1966,7 @@ impl WoaApp {
         let shown = self.track_levels.entry(track).or_insert(0.0);
         *shown = fresh.max(*shown * 0.85);
         let level = *shown;
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(60.0, 8.0), egui::Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(72.0, 11.0), egui::Sense::hover());
         level_bar(ui.painter(), rect, level);
     }
 }
@@ -1759,8 +1988,8 @@ fn draw_live_take(
     let x0 = rect.left() + start as f32 * px;
     let x1 = x0 + ((end - start) as f32 * px).max(2.0);
     let r = egui::Rect::from_x_y_ranges(x0..=x1, rect.top() + 3.0..=rect.bottom() - 3.0);
-    painter.rect_filled(r, 5.0, theme::mix(theme::ON_AIR, theme::BG, 0.62));
-    let head = egui::Rect::from_min_max(r.min, egui::pos2(r.right(), r.top() + 14.0));
+    painter.rect_filled(r, 5.0, theme::mix(theme::ON_AIR, theme::WELL, 0.65));
+    let head = egui::Rect::from_min_max(r.min, egui::pos2(r.right(), r.top() + 16.0));
     painter.rect_filled(
         head,
         egui::CornerRadius {
@@ -1774,13 +2003,13 @@ fn draw_live_take(
     painter.with_clip_rect(head.intersect(rect)).text(
         head.left_center() + egui::vec2(6.0, 0.0),
         egui::Align2::LEFT_CENTER,
-        "Aufnahme läuft",
+        "● Aufnahme läuft",
         egui::FontId::proportional(11.0),
         egui::Color32::WHITE,
     );
-    let mid = (r.top() + 14.0 + r.bottom()) / 2.0;
-    let half = (r.bottom() - r.top() - 14.0) / 2.0 - 2.0;
-    let stroke = egui::Stroke::new(1.0, theme::mix(theme::ON_AIR, egui::Color32::WHITE, 0.35));
+    let mid = (r.top() + 16.0 + r.bottom()) / 2.0;
+    let half = (r.bottom() - r.top() - 16.0) / 2.0 - 2.0;
+    let stroke = egui::Stroke::new(1.0, theme::mix(theme::ON_AIR, egui::Color32::WHITE, 0.45));
     // Nur sichtbare Spalten zeichnen.
     let clip = painter.clip_rect();
     let mut x = r.left().max(clip.left().floor());
@@ -1799,29 +2028,9 @@ fn draw_live_take(
     }
 }
 
-/// Waagerechte Pegelanzeige, dB-Skala -60..0: grün, ab -12 dB gelb, ab -3 dB rot.
+/// Mehrgliedrige Studio-LED-Pegelanzeige (-60..0 dB: Grün, ab -12 dB Gelb, ab -3 dB Rot).
 fn level_bar(painter: &egui::Painter, rect: egui::Rect, level: f32) {
-    {
-        painter.rect_filled(rect, 3.0, theme::BG);
-        let db = 20.0 * level.max(1e-6).log10();
-        let frac = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
-        let color = if db > -3.0 {
-            egui::Color32::from_rgb(220, 50, 50)
-        } else if db > -12.0 {
-            egui::Color32::from_rgb(230, 190, 40)
-        } else {
-            egui::Color32::from_rgb(60, 180, 75)
-        };
-        if frac > 0.0 {
-            let mut bar = rect.shrink(2.0);
-            bar.set_width(bar.width() * frac);
-            painter.rect_filled(bar, 1.0, color);
-        }
-        for mark in [-12.0f32, -3.0] {
-            let x = rect.left() + rect.width() * (mark + 60.0) / 60.0;
-            painter.vline(x, rect.y_range(), egui::Stroke::new(1.0, theme::PANEL));
-        }
-    }
+    theme::led_meter(painter, rect, level);
 }
 
 impl WoaApp {
@@ -1847,14 +2056,20 @@ impl WoaApp {
         let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, ROW_H), egui::Sense::click());
         self.track_rects.push((track, rect));
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 6.0, theme::BG);
+        painter.rect_filled(rect, 5.0, theme::WELL);
+        painter.rect_stroke(
+            rect,
+            5.0,
+            egui::Stroke::new(1.0, theme::BORDER),
+            egui::StrokeKind::Inside,
+        );
         // Raster: jeder zweite Takt leicht aufgehellt, Schläge als feine Linien.
         let bars = end as usize / 4 + 4;
         for bar in 0..bars {
             let x = rect.left() + (bar * 4) as f32 * px;
             if bar % 2 == 1 {
                 let r = egui::Rect::from_x_y_ranges(x..=x + 4.0 * px, rect.y_range());
-                painter.rect_filled(r, 0.0, theme::mix(theme::BG, theme::PANEL, 0.45));
+                painter.rect_filled(r, 0.0, theme::mix(theme::WELL, theme::PANEL, 0.38));
             }
             if px >= 10.0 {
                 for b in 1..4 {
@@ -1862,7 +2077,7 @@ impl WoaApp {
                     painter.vline(
                         xb,
                         rect.y_range(),
-                        egui::Stroke::new(1.0, theme::mix(theme::BG, theme::GRID, 0.4)),
+                        egui::Stroke::new(1.0, theme::mix(theme::WELL, theme::GRID, 0.45)),
                     );
                 }
             }
@@ -1901,11 +2116,21 @@ impl WoaApp {
                 ui.id().with(("clip", c.id.0)),
                 egui::Sense::click_and_drag(),
             );
-            let base = if c.audio.is_some() { color } else { theme::DIM };
+            let base = if c.audio.is_some() || c.midi.is_some() {
+                color
+            } else {
+                theme::DIM
+            };
             let selected = self.selected_clip == Some(c.id) || self.selected_clips.contains(&c.id);
-            painter.rect_filled(r, 5.0, theme::mix(base, theme::BG, 0.62));
+            painter.rect_filled(r, 5.0, theme::mix(base, theme::WELL, 0.68));
+            painter.rect_stroke(
+                r,
+                5.0,
+                egui::Stroke::new(1.0, theme::mix(base, theme::BORDER, 0.35)),
+                egui::StrokeKind::Inside,
+            );
             // Kopfzeile des Clips in der Spurfarbe, darin der Name.
-            let head = egui::Rect::from_min_max(r.min, egui::pos2(r.right(), r.top() + 14.0));
+            let head = egui::Rect::from_min_max(r.min, egui::pos2(r.right(), r.top() + 16.0));
             painter.rect_filled(
                 head,
                 egui::CornerRadius {
@@ -1914,7 +2139,7 @@ impl WoaApp {
                     sw: 0,
                     se: 0,
                 },
-                theme::mix(base, theme::BG, if selected { 0.0 } else { 0.25 }),
+                theme::mix(base, theme::WELL, if selected { 0.0 } else { 0.18 }),
             );
             // Waveform from the cached peaks.
             let file = c
@@ -1927,9 +2152,11 @@ impl WoaApp {
             };
             let audio_beats = peaks.as_ref().zip(ppb).map(|(p, ppb)| p.len() as f64 / ppb);
             if let (Some(ppb), Some(peaks)) = (ppb, peaks) {
-                let mid = (r.top() + 14.0 + r.bottom()) / 2.0;
-                let half = (r.bottom() - r.top() - 14.0) / 2.0 - 2.0;
-                let stroke = egui::Stroke::new(1.0, theme::mix(base, egui::Color32::WHITE, 0.35));
+                let mid = (r.top() + 16.0 + r.bottom()) / 2.0;
+                let half = (r.bottom() - r.top() - 16.0) / 2.0 - 2.0;
+                let fill_stroke =
+                    egui::Stroke::new(1.0, theme::mix(base, egui::Color32::WHITE, 0.25));
+                let peak_col = theme::mix(base, egui::Color32::WHITE, 0.65);
                 let mut x = r.left();
                 while x < r.right() {
                     let b0 = offset + f64::from((x - r.left()) / px);
@@ -1944,27 +2171,68 @@ impl WoaApp {
                     let local = f64::from((x - r.left()) / px);
                     let env = fade_gain(c, local) as f32;
                     let h = (v * env).min(1.0) * half;
-                    painter.vline(x, (mid - h)..=(mid + h), stroke);
+                    painter.vline(x, (mid - h)..=(mid + h), fill_stroke);
+                    if h > 1.0 {
+                        painter.circle_filled(egui::pos2(x, mid - h), 0.7, peak_col);
+                        painter.circle_filled(egui::pos2(x, mid + h), 0.7, peak_col);
+                    }
                     x += 1.0;
                 }
             }
-            // Fades as dark triangles.
-            let shade = egui::Color32::from_black_alpha(130);
+            // MIDI-Noten-Vorschau (Mini-Piano-Roll direkt im Clip wie in Ableton)
+            if let Some(midi) = &c.midi
+                && !midi.notes.is_empty()
+            {
+                let body = egui::Rect::from_min_max(
+                    egui::pos2(r.left() + 2.0, r.top() + 18.0),
+                    egui::pos2(r.right() - 2.0, r.bottom() - 3.0),
+                );
+                let min_p = midi.notes.iter().map(|n| n.pitch).min().unwrap_or(48);
+                let max_p = midi.notes.iter().map(|n| n.pitch).max().unwrap_or(72);
+                let span = f32::from((max_p.saturating_sub(min_p)).max(12)) + 2.0;
+                let note_h = (body.height() / span).clamp(2.5, 6.0);
+                let note_col = theme::mix(base, egui::Color32::WHITE, 0.55);
+                let clip_view = painter.with_clip_rect(body.intersect(rect));
+                for n in &midi.notes {
+                    let ns = n.beat - offset;
+                    let ne = ns + n.length_beats;
+                    if ne <= 0.0 || ns >= len {
+                        continue;
+                    }
+                    let nx0 = r.left() + (ns.max(0.0) as f32) * px;
+                    let nx1 = r.left() + (ne.min(len) as f32) * px;
+                    let rel = 1.0 - f32::from(n.pitch.saturating_sub(min_p)) / span;
+                    let ny = body.top() + rel * (body.height() - note_h);
+                    let nr = egui::Rect::from_min_max(
+                        egui::pos2(nx0, ny),
+                        egui::pos2(nx1.max(nx0 + 2.0), ny + note_h),
+                    );
+                    clip_view.rect_filled(nr, 1.5, note_col);
+                }
+            }
+            // Fades als abgedunkelte Dreiecke + helle Hüllkurven-Diagonale.
+            let shade = egui::Color32::from_black_alpha(135);
+            let fade_line = egui::Stroke::new(1.5, theme::mix(base, egui::Color32::WHITE, 0.7));
             if c.fade_in_beats > 0.0 {
-                let fx = r.left() + c.fade_in_beats as f32 * px;
+                let fx = (r.left() + c.fade_in_beats as f32 * px).min(r.right());
                 painter.add(egui::Shape::convex_polygon(
                     vec![r.left_top(), egui::pos2(fx, r.top()), r.left_bottom()],
                     shade,
                     egui::Stroke::NONE,
                 ));
+                painter.line_segment([r.left_bottom(), egui::pos2(fx, r.top() + 16.0)], fade_line);
             }
             if c.fade_out_beats > 0.0 {
-                let fx = r.right() - c.fade_out_beats as f32 * px;
+                let fx = (r.right() - c.fade_out_beats as f32 * px).max(r.left());
                 painter.add(egui::Shape::convex_polygon(
                     vec![egui::pos2(fx, r.top()), r.right_top(), r.right_bottom()],
                     shade,
                     egui::Stroke::NONE,
                 ));
+                painter.line_segment(
+                    [egui::pos2(fx, r.top() + 16.0), r.right_bottom()],
+                    fade_line,
+                );
             }
             if selected {
                 painter.rect_stroke(
@@ -1978,8 +2246,8 @@ impl WoaApp {
                 head.left_center() + egui::vec2(6.0, 0.0),
                 egui::Align2::LEFT_CENTER,
                 &c.name,
-                egui::FontId::proportional(11.0),
-                theme::BG,
+                egui::FontId::proportional(11.5),
+                theme::WELL,
             );
             if cresp.clicked() || cresp.drag_started() {
                 let m = ui.input(|i| i.modifiers);
@@ -2107,7 +2375,14 @@ impl WoaApp {
     /// Bearbeitungszeile für den gewählten Clip: Fades, Schneiden, Löschen.
     fn clip_bar(&mut self, ui: &mut egui::Ui) {
         let Some(id) = self.selected_clip else {
-            ui.label("Clip anklicken zum Bearbeiten · Strg+Klick: mehrere · Strg+Mausrad: Zoom · Strg+E: Export");
+            theme::status_pill(ui, "CLIP-INSPEKTOR", theme::DIM, false);
+            ui.label(
+                egui::RichText::new(
+                    "Clip anklicken zum Bearbeiten  ·  Strg+Klick: mehrere  ·  S: Schneiden am Kopf  ·  Strg+Mausrad: Zoom  ·  Strg+E: Export",
+                )
+                .small()
+                .color(theme::DIM),
+            );
             return;
         };
         let Some((_, c)) = self.state.project().clip(id) else {
@@ -2117,7 +2392,9 @@ impl WoaApp {
         };
         let c = c.clone();
         ui.horizontal(|ui| {
+            theme::status_pill(ui, "CLIP", theme::ACCENT, true);
             ui.strong(&c.name);
+            ui.separator();
             let (mut fi, mut fo) = match self.fade_edit {
                 Some((cid, a, b)) if cid == id => (a, b),
                 _ => (c.fade_in_beats, c.fade_out_beats),
@@ -2456,15 +2733,21 @@ impl eframe::App for WoaApp {
             theme::apply(&ctx);
             self.themed = true;
         }
-        egui::Panel::top("menu").show(ui, |ui| self.menu(ui, &ctx));
+        egui::Panel::top("menu")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::PANEL_HEADER)
+                    .inner_margin(egui::Margin::symmetric(12, 5)),
+            )
+            .show(ui, |ui| self.menu(ui, &ctx));
         if self.config.mode == Mode::Radio
             && let Some(radio) = self.radio.as_mut()
         {
             egui::CentralPanel::default()
                 .frame(
                     egui::Frame::new()
-                        .fill(theme::mix(theme::PANEL, theme::BG, 0.5))
-                        .inner_margin(egui::Margin::symmetric(16, 12)),
+                        .fill(theme::BG)
+                        .inner_margin(egui::Margin::symmetric(14, 12)),
                 )
                 .show(ui, |ui| radio.ui(ui));
             self.controller_window(&ctx);
@@ -2476,39 +2759,44 @@ impl eframe::App for WoaApp {
             .frame(
                 egui::Frame::new()
                     .fill(theme::PANEL)
-                    .inner_margin(egui::Margin::symmetric(12, 8)),
+                    .inner_margin(egui::Margin::symmetric(12, 7)),
             )
             .show(ui, |ui| self.transport_bar(ui));
         egui::Panel::top("clipbar")
             .frame(
                 egui::Frame::new()
                     .fill(theme::mix(theme::PANEL, theme::BG, 0.5))
-                    .inner_margin(egui::Margin::symmetric(12, 6)),
+                    .inner_margin(egui::Margin::symmetric(12, 5)),
             )
             .show(ui, |ui| ui.horizontal(|ui| self.clip_bar(ui)));
         egui::Panel::bottom("status")
             .frame(
                 egui::Frame::new()
-                    .fill(theme::BG)
+                    .fill(theme::WELL)
                     .inner_margin(egui::Margin::symmetric(12, 4)),
             )
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     match &self.state.status {
                         Status::Idle => {
-                            ui.label("");
+                            ui.label(
+                                egui::RichText::new("● Engine bereit")
+                                    .small()
+                                    .color(theme::OK_GREEN),
+                            );
                         }
                         Status::Info(m) => {
-                            ui.label(egui::RichText::new(m).small().color(theme::DIM));
+                            ui.label(egui::RichText::new(m).small().color(theme::TEXT_BRIGHT));
                         }
                         Status::Error(m) => {
-                            ui.colored_label(ui.visuals().error_fg_color, m);
+                            ui.colored_label(theme::ON_AIR, m);
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             egui::RichText::new(format!("WOA {}", env!("CARGO_PKG_VERSION")))
                                 .small()
+                                .monospace()
                                 .color(theme::DIM),
                         );
                     });
@@ -2517,7 +2805,7 @@ impl eframe::App for WoaApp {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(theme::mix(theme::PANEL, theme::BG, 0.5))
+                    .fill(theme::BG)
                     .inner_margin(egui::Margin::symmetric(12, 10)),
             )
             .show(ui, |ui| self.tracks(ui));
