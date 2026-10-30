@@ -326,6 +326,18 @@ impl Controller {
         self.apply_settings();
     }
 
+    /// Pegel von Musik, Carts oder Mikro in dB (Paket 14, Fader am Controller);
+    /// −60 dB und weniger = aus, höchstens +6 dB.
+    pub fn set_level(&mut self, bus: crate::mixer::LevelBus, db: f64) {
+        let db = db.clamp(crate::mixer::LEVEL_MIN_DB, crate::mixer::LEVEL_MAX_DB);
+        let gain = if db <= crate::mixer::LEVEL_MIN_DB {
+            0.0
+        } else {
+            10f64.powf(db / 20.0) as f32
+        };
+        self.send(Cmd::SetLevel { bus, gain });
+    }
+
     // ---- Transport -------------------------------------------------------------------
 
     /// Start (wenn nichts läuft) oder Weiter (Überblenden zum nächsten Titel).

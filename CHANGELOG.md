@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.0 — 2026-10-30
+
+Paket 14 aus M4 (#5): Controller und MIDI-Learn.
+
+- **Controller wählen:** Einstellungen → „Controller und MIDI-Learn …“. Ein zweiter MIDI-Eingang neben dem Keyboard, mit Hotplug wie dort (abziehen, wieder einstecken, verbindet nach höchstens 2 s neu).
+- **MIDI-Learn per Rechtsklick:** Spur-Fader (dort auch Pan und Solo), Stumm-Knopf, Start/Weiter, Stopp, Mikro, die neuen Pegelregler und jede Cart-Taste haben „MIDI lernen“. Die nächste Bewegung oder das nächste Pad am Gerät wird gebunden; eine Quelle steuert genau ein Ziel. Das Layout (Produzent/Radio) lässt sich im Controller-Fenster auf einen Taster legen. Das Fenster zeigt die Liste (Quelle, Ziel) mit „Löschen“.
+- **Gespeichert je Gerät** in `config.json` (nicht im Projekt), unter dem Gerätenamen ohne ALSA-Nummern: Nach Neustart oder Wieder-Einstecken an anderem USB-Port gilt dieselbe Zuordnung.
+- **Takeover:** Ein Fader springt nicht. Er greift erst, wenn er den Wert auf dem Bildschirm erreicht oder überquert; stellt die Maus den Wert um, wird neu abgeholt. Spur-Fader und Pan gehen nach 300 ms Ruhe als ein Undo-Schritt ins Projekt, nicht je CC.
+- **Pads lösen Carts aus** (zweites Drücken hält an, wie der Klick), Taster als CC lösen nur beim Drücken aus. **LEDs:** Hat das Gerät einen MIDI-Eingang, bekommen Pads Note-Out (127 an, 0 aus) für laufende Carts, offenes Mikro, laufende Sendung, stumme oder Solo-Spuren und das aktive Layout; gesendet wird nur bei Änderung.
+- **Pegelregler im Radio-Layout:** Musik, Carts und Mikro von −60 dB (aus) bis +6 dB, im Mixer geglättet (kein Zipper beim Fader). Sie werden nicht gespeichert und starten bei 0 dB.
+- **Echtzeit:** Die Controller-Meldungen gehen im MIDI-Thread in eine eigene `rtrb`-Queue (1024 Plätze), die Oberfläche leert sie je Bild und fasst mehrere Werte eines Faders zum letzten zusammen. Der MIDI-Thread weckt die Oberfläche sofort, ein Pad startet den Cart ohne auf das nächste Bild zu warten. Der Audio-Callback bekommt nur die vorhandenen Mixer-Befehle; neu ist dort `SetLevel`, ohne Sperre und Allokation.
+
 ## 0.8.0 — 2026-10-30
 
 Paket 13 aus M4 (#5): Piano-Roll.

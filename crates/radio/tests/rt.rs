@@ -310,3 +310,63 @@ fn stream_ring_gets_the_broadcast_without_alloc_and_counts_drops() {
     block(&mut c, &mut m, &mut l, &mut r);
     assert_eq!(consumer.slots(), 0);
 }
+
+/// Paket 14: Pegelregler für Musik und Carts (vom Controller-Fader), geglättet und ohne
+/// Allokation im Process-Aufruf.
+#[test]
+fn level_faders_scale_music_and_carts_smoothly() {
+    use woa_radio::mixer::LevelBus;
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("musik.wav");
+    let jingle = tmp.path().join("jingle.wav");
+    write_tone(&a, 3.0, 0.0, 0.4);
+    write_tone(&jingle, 2.0, 0.0, 0.2);
+    let (mut c, mut m) = Controller::new(show_of(&[a], 3.0), SR);
+    c.assign_cart(0, Some(jingle)).unwrap();
+    c.start();
+    let mut l = vec![0.0f32; BLOCK];
+    let mut r = vec![0.0f32; BLOCK];
+    for _ in 0..20 {
+        block(&mut c, &mut m, &mut l, &mut r);
+    }
+    let full = l[BLOCK - 1];
+    // Die Musik hat ihre Titel-Verstärkung (Lautheitsausgleich); gerechnet wird relativ.
+    assert!(full > 0.1, "{full}");
+
+    // Musik auf −6 dB: gleitet hin (kein Sprung), landet bei der Hälfte.
+    c.set_level(LevelBus::Music, -6.0206);
+    let mut prev = full;
+    let mut max_step = 0.0f32;
+    for _ in 0..40 {
+        block(&mut c, &mut m, &mut l, &mut r);
+        for &x in l.iter() {
+            max_step = max_step.max((x - prev).abs());
+            prev = x;
+        }
+    }
+    assert!((l[BLOCK - 1] - full / 2.0).abs() < 2e-3, "{}", l[BLOCK - 1]);
+    assert!(max_step < 0.002, "Sprung {max_step}");
+
+    // Cart dazu, Carts-Regler ganz unten: nur die Musik bleibt.
+    c.set_level(LevelBus::Carts, -100.0);
+    c.trigger_cart(0);
+    for _ in 0..40 {
+        block(&mut c, &mut m, &mut l, &mut r);
+    }
+    assert_ne!(
+        c.status().carts.load(Ordering::Acquire) & 1,
+        0,
+        "Cart läuft"
+    );
+    assert!((l[BLOCK - 1] - full / 2.0).abs() < 2e-3, "{}", l[BLOCK - 1]);
+    // Carts wieder auf 0 dB: Cart hörbar.
+    c.set_level(LevelBus::Carts, 0.0);
+    for _ in 0..40 {
+        block(&mut c, &mut m, &mut l, &mut r);
+    }
+    assert!(
+        (l[BLOCK - 1] - (full / 2.0 + 0.2)).abs() < 2e-3,
+        "{}",
+        l[BLOCK - 1]
+    );
+}

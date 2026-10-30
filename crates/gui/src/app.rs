@@ -21,9 +21,14 @@ const HEADER_W: f32 = 250.0;
 const ROW_H: f32 = 88.0;
 const ZOOM_RANGE: std::ops::RangeInclusive<f32> = 2.0..=160.0;
 
+use crate::controls::{
+    ControlDesk, Surface, gain_from_norm, gain_to_norm, level_from_norm, level_to_norm,
+    pan_from_norm, pan_to_norm,
+};
 use crate::feedback::{FeedbackDialog, GuiConfig, Mode, Phase, encode_png};
 use crate::radio::RadioDesk;
 use crate::state::{AppState, Status};
+use woa_io::controller::{Layout, Target};
 
 /// The desktop window.
 pub struct WoaApp {
@@ -104,6 +109,148 @@ pub struct WoaApp {
     midi_seen: (u64, Option<Instant>),
     /// Offene Piano-Roll (Paket 13), Doppelklick auf einen MIDI-Clip.
     piano_roll: Option<crate::pianoroll::PianoRoll>,
+    /// Controller und MIDI-Learn (Paket 14).
+    controls: ControlDesk,
+    /// Waker für den Controller gesetzt.
+    controls_woken: bool,
+    /// Fader/Pan vom Controller, noch nicht als Undo-Schritt eingetragen.
+    ctrl_pending: Option<Pending>,
+}
+
+/// Ein Controller-Wert, der erst nach einer Ruhepause als ein Undo-Schritt ins Projekt geht
+/// (sonst wäre jeder CC ein eigener Schritt).
+#[derive(Debug, Clone, Copy)]
+struct Pending {
+    target: Target,
+    track: TrackId,
+    value: f64,
+    at: Instant,
+}
+
+/// Ruhepause, nach der ein Controller-Wert ins Projekt geht.
+const CTRL_COMMIT: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// Die App, wie der Controller sie sieht (getrennte Felder, damit die Ausleihe passt).
+struct AppSurface<'a> {
+    state: &'a mut AppState,
+    radio: Option<&'a mut RadioDesk>,
+    gain_drag: &'a mut Option<(TrackId, f64)>,
+    pending: &'a mut Option<Pending>,
+    mode: Mode,
+    mode_request: Option<Layout>,
+}
+
+impl AppSurface<'_> {
+    fn track(&self, i: usize) -> Option<&woa_model::Track> {
+        self.state.project().tracks.get(i)
+    }
+
+    fn commit(state: &mut AppState, gain_drag: &mut Option<(TrackId, f64)>, p: Pending) {
+        match p.target {
+            Target::TrackGain(_) => {
+                if gain_drag.is_some_and(|(t, _)| t == p.track) {
+                    *gain_drag = None;
+                }
+                state.set_gain(p.track, p.value);
+            }
+            Target::TrackPan(_) => {
+                state.set_pan(p.track, p.value);
+            }
+            _ => {}
+        }
+    }
+
+    fn hold(&mut self, target: Target, track: TrackId, value: f64) {
+        if let Some(old) = self.pending.take_if(|p| p.target != target) {
+            Self::commit(self.state, self.gain_drag, old);
+        }
+        *self.pending = Some(Pending {
+            target,
+            track,
+            value,
+            at: Instant::now(),
+        });
+        if matches!(target, Target::TrackGain(_)) {
+            *self.gain_drag = Some((track, value));
+        }
+    }
+}
+
+impl Surface for AppSurface<'_> {
+    fn current(&self, target: &Target) -> Option<f32> {
+        if let Some(p) = self.pending.as_ref().filter(|p| p.target == *target) {
+            return Some(match target {
+                Target::TrackPan(_) => pan_to_norm(p.value),
+                _ => gain_to_norm(p.value),
+            });
+        }
+        match *target {
+            Target::TrackGain(i) => {
+                let t = self.track(i)?;
+                let g = match *self.gain_drag {
+                    Some((d, v)) if d == t.id => v,
+                    _ => t.gain_db,
+                };
+                Some(gain_to_norm(g))
+            }
+            Target::TrackPan(i) => Some(pan_to_norm(self.track(i)?.pan)),
+            Target::Level(b) => Some(level_to_norm(self.radio.as_ref()?.level_db(b))),
+            _ => None,
+        }
+    }
+
+    fn set(&mut self, target: Target, value: f32) {
+        match target {
+            Target::TrackGain(i) => {
+                if let Some(id) = self.track(i).map(|t| t.id) {
+                    self.hold(target, id, gain_from_norm(value));
+                }
+            }
+            Target::TrackPan(i) => {
+                if let Some(id) = self.track(i).map(|t| t.id) {
+                    self.hold(target, id, pan_from_norm(value));
+                }
+            }
+            Target::Level(b) => {
+                if let Some(r) = self.radio.as_mut() {
+                    r.set_level(b, level_from_norm(value));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn press(&mut self, target: Target) {
+        tracing::debug!(target = %target.label(), "controller press");
+        match target {
+            Target::TrackMute(i) => {
+                if let Some(id) = self.track(i).map(|t| t.id) {
+                    self.state.toggle_mute(id);
+                }
+            }
+            Target::TrackSolo(i) => {
+                if let Some(id) = self.track(i).map(|t| t.id) {
+                    self.state.toggle_solo(id);
+                }
+            }
+            Target::Mode(l) => self.mode_request = Some(l),
+            other => {
+                if let Some(r) = self.radio.as_mut() {
+                    r.press(other);
+                }
+            }
+        }
+    }
+
+    fn lit(&self, target: &Target) -> bool {
+        match *target {
+            Target::TrackMute(i) => self.track(i).is_some_and(|t| t.mute),
+            Target::TrackSolo(i) => self.track(i).is_some_and(|t| t.solo),
+            Target::Mode(Layout::Radio) => self.mode == Mode::Radio,
+            Target::Mode(Layout::Produzent) => self.mode == Mode::Produzent,
+            ref other => self.radio.as_ref().is_some_and(|r| r.lit(other)),
+        }
+    }
 }
 
 impl WoaApp {
@@ -125,7 +272,11 @@ impl WoaApp {
         if config.midi_input.is_some() {
             midi.select(config.midi_input.clone());
         }
+        let controls = ControlDesk::new(&config);
         Self {
+            controls,
+            controls_woken: false,
+            ctrl_pending: None,
             midi,
             midi_seen: (0, None),
             piano_roll: None,
@@ -193,6 +344,71 @@ impl WoaApp {
         {
             tracing::warn!(error = %e, "config not saved");
         }
+    }
+
+    fn save_config(&self) {
+        if let Some(p) = &self.config_path
+            && let Err(e) = self.config.save(p)
+        {
+            tracing::warn!(error = %e, "config not saved");
+        }
+    }
+
+    /// Controller: Queue leeren, Aktionen ausführen, Werte nach Ruhepause ins Projekt.
+    fn controller_frame(&mut self, ctx: &egui::Context) {
+        if !self.controls_woken {
+            self.controls.set_waker(ctx);
+            self.controls_woken = true;
+        }
+        let now = Instant::now();
+        self.controls.poll(now);
+        if let Some(r) = self.radio.as_mut()
+            && let Some(t) = r.learn.take()
+        {
+            self.controls.mapper.learn(t);
+        }
+        let mut surface = AppSurface {
+            state: &mut self.state,
+            radio: self.radio.as_mut(),
+            gain_drag: &mut self.gain_drag,
+            pending: &mut self.ctrl_pending,
+            mode: self.config.mode,
+            mode_request: None,
+        };
+        let before = self.config.controller_maps.clone();
+        let any = self.controls.frame(&mut surface, &mut self.config);
+        if let Some(p) = surface
+            .pending
+            .take_if(|p| now.duration_since(p.at) >= CTRL_COMMIT)
+        {
+            AppSurface::commit(surface.state, surface.gain_drag, p);
+        }
+        let request = surface.mode_request;
+        if before != self.config.controller_maps {
+            self.save_config();
+        }
+        if let Some(l) = request {
+            let mode = match l {
+                Layout::Produzent => Mode::Produzent,
+                Layout::Radio => Mode::Radio,
+                Layout::Toggle if self.config.mode == Mode::Radio => Mode::Produzent,
+                Layout::Toggle => Mode::Radio,
+            };
+            self.set_mode(mode);
+        }
+        if any || self.ctrl_pending.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(30));
+        }
+    }
+
+    /// „MIDI lernen“ im Kontextmenü eines Widgets.
+    fn learn_menu(&mut self, r: &egui::Response, t: Target) {
+        let bound = self.controls.mapper.source_of(t).map(|s| s.label());
+        r.context_menu(|ui| {
+            if let Some(t) = crate::controls::learn_menu(ui, t, bound) {
+                self.controls.mapper.learn(t);
+            }
+        });
     }
 
     fn ensure_radio(&mut self) {
@@ -912,6 +1128,10 @@ impl WoaApp {
         };
         *frames += 1;
         let first = *frames == 2;
+        if first && std::env::var_os("WOA_CONTROLLER").is_some() {
+            // Fotomodus der Zuordnungsliste.
+            self.controls.window = true;
+        }
         if first && std::env::var_os("WOA_PIANOROLL").is_some() {
             // Fotomodus der Piano-Roll: ersten MIDI-Clip öffnen, zwei Noten wählen.
             let clip = self
@@ -962,6 +1182,14 @@ impl WoaApp {
             self.menu_items(ui, ctx);
             self.mode_switch(ui);
         });
+        if let Some(t) = self.controls.learning_text() {
+            ui.horizontal(|ui| {
+                ui.colored_label(theme::ACCENT, t);
+                if ui.small_button("Abbrechen").clicked() {
+                    self.controls.mapper.cancel_learn();
+                }
+            });
+        }
     }
 
     fn menu_items(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -1007,6 +1235,10 @@ impl WoaApp {
             });
             ui.menu_button("Einstellungen", |ui| {
                 self.midi_menu(ui);
+                if ui.button("Controller und MIDI-Learn …").clicked() {
+                    self.controls.window = true;
+                    ui.close();
+                }
                 ui.separator();
                 let mut on = self.config.telemetry_enabled == Some(true);
                 if ui
@@ -1348,8 +1580,12 @@ impl WoaApp {
                             }))
                             .fill(if mute { theme::ACCENT } else { theme::PANEL })
                             .min_size(egui::vec2(26.0, 22.0));
-                        if ui.add(m).on_hover_text("Stumm").clicked() {
+                        let r = ui.add(m).on_hover_text("Stumm (Rechtsklick: MIDI lernen)");
+                        if r.clicked() {
                             self.state.toggle_mute(id);
+                        }
+                        if let Some(i) = self.track_index(id) {
+                            self.learn_menu(&r, Target::TrackMute(i));
                         }
                     }
                 });
@@ -1365,7 +1601,29 @@ impl WoaApp {
                                 .suffix(" dB")
                                 .fixed_decimals(1),
                         )
-                        .on_hover_text("Lautstärke der Spur (Doppelklick: 0 dB)");
+                        .on_hover_text(
+                            "Lautstärke der Spur (Doppelklick: 0 dB, Rechtsklick: MIDI lernen \
+                             für Fader, Pan und Solo)",
+                        );
+                    if let Some(i) = self.track_index(id) {
+                        let bound = |t| self.controls.mapper.source_of(t).map(|s| s.label());
+                        let items = [
+                            (Target::TrackGain(i), bound(Target::TrackGain(i))),
+                            (Target::TrackPan(i), bound(Target::TrackPan(i))),
+                            (Target::TrackSolo(i), bound(Target::TrackSolo(i))),
+                        ];
+                        let mut chosen = None;
+                        r.context_menu(|ui| {
+                            for (t, b) in items {
+                                if let Some(t) = crate::controls::learn_menu(ui, t, b) {
+                                    chosen = Some(t);
+                                }
+                            }
+                        });
+                        if let Some(t) = chosen {
+                            self.controls.mapper.learn(t);
+                        }
+                    }
                     if r.double_clicked() {
                         g = 0.0;
                         self.gain_drag = None;
@@ -2100,6 +2358,17 @@ impl WoaApp {
 }
 
 impl WoaApp {
+    /// Stelle der Spur im Projekt (für Controller-Ziele, die Spuren ab 0 zählen).
+    fn track_index(&self, id: TrackId) -> Option<usize> {
+        self.state.project().tracks.iter().position(|t| t.id == id)
+    }
+
+    fn controller_window(&mut self, ctx: &egui::Context) {
+        if self.controls.window(ctx, &mut self.config) {
+            self.save_config();
+        }
+    }
+
     /// `WOA_REPAINT_DEBUG=1`: alle 5 s eine Logzeile mit Bildern je Sekunde und den
     /// Auslösern der Repaints (Fehlersuche bei CPU-Last, #56).
     fn repaint_debug(&mut self, ctx: &egui::Context) {
@@ -2150,6 +2419,7 @@ impl eframe::App for WoaApp {
         // meter needs a faster beat while recording.
         let project = self.state.project().clone();
         self.midi.poll(Instant::now());
+        self.controller_frame(ctx);
         let live = self.live_midi_track();
         let state = &self.state;
         if let Some(p) = self.player.as_mut() {
@@ -2161,7 +2431,11 @@ impl eframe::App for WoaApp {
         // Radio: 5 Bilder/s, solange ein Titel läuft (Uhr, Pegel), sonst 2/s. Vorher 10/s
         // dauerhaft, 34 % CPU in Ruhe (Paket 8).
         let radio_playing = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
-        let midi_on = matches!(self.midi.status(), woa_io::midi::MidiStatus::Connected(_));
+        let midi_on = matches!(self.midi.status(), woa_io::midi::MidiStatus::Connected(_))
+            || matches!(
+                self.controls.status(),
+                woa_io::midi::MidiStatus::Connected(_)
+            );
         let beat = if busy {
             40
         } else if midi_on {
@@ -2193,6 +2467,7 @@ impl eframe::App for WoaApp {
                         .inner_margin(egui::Margin::symmetric(16, 12)),
                 )
                 .show(ui, |ui| radio.ui(ui));
+            self.controller_window(&ctx);
             self.feedback_window(&ctx);
             self.telemetry_window(&ctx);
             return;
@@ -2247,6 +2522,7 @@ impl eframe::App for WoaApp {
             )
             .show(ui, |ui| self.tracks(ui));
         self.piano_roll_window(&ctx);
+        self.controller_window(&ctx);
         self.feedback_window(&ctx);
         self.telemetry_window(&ctx);
     }

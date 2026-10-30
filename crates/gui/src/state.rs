@@ -132,6 +132,23 @@ impl AppState {
         self.apply(Command::SetMute { track, mute })
     }
 
+    /// Sets the pan (one undo step; the controller calls this when the knob rests).
+    pub fn set_pan(&mut self, track: TrackId, pan: f64) -> bool {
+        let unchanged = self.project().track(track).is_some_and(|t| t.pan == pan);
+        if unchanged {
+            return false;
+        }
+        self.apply(Command::SetPan { track, pan })
+    }
+
+    /// Toggles solo.
+    pub fn toggle_solo(&mut self, track: TrackId) -> bool {
+        let Some(solo) = self.project().track(track).map(|t| !t.solo) else {
+            return false;
+        };
+        self.apply(Command::SetSolo { track, solo })
+    }
+
     /// Where new takes are written: the project folder, or the recovery folder while unsaved.
     pub fn takes_dir(&self) -> PathBuf {
         self.session

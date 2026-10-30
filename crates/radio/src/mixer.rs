@@ -26,6 +26,32 @@ const MIC_TAU: f32 = 0.01;
 /// Mehr Mikro-Vorlauf als das (Sekunden) wird verworfen, damit die Latenz klein bleibt.
 const MIC_BACKLOG: f32 = 0.08;
 
+/// Glättung der Pegelregler (Sekunden, Zeitkonstante), gegen Zipper-Noise beim Fader.
+const LEVEL_TAU: f32 = 0.02;
+
+/// Unterste Stellung der Pegelregler (dB) = aus.
+pub const LEVEL_MIN_DB: f64 = -60.0;
+/// Oberste Stellung der Pegelregler (dB).
+pub const LEVEL_MAX_DB: f64 = 6.0;
+
+/// Pegelregler im Sendemixer (Paket 14, auch per Controller).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LevelBus {
+    Music,
+    Carts,
+    Mic,
+}
+
+impl LevelBus {
+    fn index(self) -> usize {
+        match self {
+            LevelBus::Music => 0,
+            LevelBus::Carts => 1,
+            LevelBus::Mic => 2,
+        }
+    }
+}
+
 /// Kommandos vom Control- an den Audio-Thread.
 pub enum Cmd {
     /// Nächsten Titel bereitlegen (ersetzt einen schon bereitgelegten).
@@ -68,6 +94,8 @@ pub enum Cmd {
     SetProcessing { bus: bool, mic: bool },
     /// Ziel-Lautheit des Sendebusses (LUFS).
     SetTarget(f64),
+    /// Pegel eines Zweigs (linear, 1.0 = unverändert), geglättet.
+    SetLevel { bus: LevelBus, gain: f32 },
 }
 
 /// Lock-frei lesbarer Zustand des Mixers.
@@ -252,6 +280,8 @@ pub struct Mixer {
     bus_on: bool,
     mic_chain: MicChain,
     mic_chain_on: bool,
+    /// Pegel Musik, Carts, Mikro (geglättet).
+    levels: [Smoother; 3],
 }
 
 impl Mixer {
@@ -285,6 +315,7 @@ impl Mixer {
             bus_on: true,
             mic_chain: MicChain::new(rate),
             mic_chain_on: true,
+            levels: std::array::from_fn(|_| Smoother::new(1.0, LEVEL_TAU, r)),
         }
     }
 
@@ -334,6 +365,9 @@ impl Mixer {
                     self.mic_chain_on = mic;
                 }
                 Cmd::SetTarget(t) => self.bus.set_target(t),
+                Cmd::SetLevel { bus, gain } => {
+                    self.levels[bus.index()].set_target(gain.clamp(0.0, 4.0));
+                }
             }
         }
     }
@@ -474,8 +508,12 @@ impl Mixer {
             if self.mic_chain_on {
                 (il, ir) = self.mic_chain.process(il, ir);
             }
-            let mg = self.mic_gain.tick();
-            let duck = self.duck.tick();
+            let [lm, lc, li] = &mut self.levels;
+            let (lm, lc) = (lm.tick(), lc.tick());
+            let mg = self.mic_gain.tick() * li.tick();
+            let duck = self.duck.tick() * lm;
+            cl *= lc;
+            cr *= lc;
             il *= mg;
             ir *= mg;
             mic_peak = mic_peak.max(il.abs()).max(ir.abs());
