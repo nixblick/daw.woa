@@ -1209,9 +1209,7 @@ impl RadioDesk {
                                 crate::clock_editor::now_unix(),
                                 self.zone,
                             ))
-                            .size(40.0)
-                            .strong()
-                            .monospace()
+                            .font(theme::seg_font(40.0))
                             .color(theme::text()),
                         )
                         .on_hover_text("Uhrzeit (Ortszeit der Stundenuhr)");
@@ -1232,9 +1230,7 @@ impl RadioDesk {
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new(clock(v.remaining_title))
-                                .size(54.0)
-                                .strong()
-                                .monospace()
+                                .font(theme::seg_font(54.0))
                                 .color(clock_col),
                         )
                         .on_hover_text("Restzeit des laufenden Titels (bis Cue-Out)");

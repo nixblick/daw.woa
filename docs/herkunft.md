@@ -116,7 +116,8 @@ Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
 
 ## Schriften des Design Systems
 
-Liegen als woff2 in `docs/design/woa-design-system/fonts/`; für egui später als TTF. Alle unter der
+Liegen als woff2 in `docs/design/woa-design-system/fonts/`; für egui als TTF in
+`crates/gui/assets/fonts/` (eingebettet, Paket D2). Alle unter der
 **SIL Open Font License 1.1** (frei nutzbar, einbettbar und weitergebbar, nicht einzeln verkaufen;
 Lizenztext gehört zu jeder Weitergabe).
 
@@ -124,6 +125,19 @@ Lizenztext gehört zu jeder Weitergabe).
 - **Barlow Condensed** (Jeremy Tribby, `jpt/barlow`, OFL 1.1): Pult-Beschriftungen, Titel, Party-Anzeigen (`font-label`).
 - **JetBrains Mono** (JetBrains, `JetBrains/JetBrainsMono`, OFL 1.1): Zahlen, Zeiten, Messwerte (`font-mono`).
 - **DSEG7 Classic** (Keshikan, `keshikan/DSEG`, OFL 1.1): Leuchtziffern in LCDs und Uhren (`font-seg`).
+
+**Quelle der TTF-Dateien (30.10.2026), unverändert übernommen:**
+
+- Barlow (Regular, Medium, SemiBold, Bold) und Barlow Condensed (Medium, SemiBold, Bold, ExtraBold):
+  `jpt/barlow`, Commit `dc2940e2e04ef4ec96c07e23e0f02aefbddd343b` (Release 1.422), `fonts/ttf/`,
+  Lizenztext `OFL.txt` → `OFL-Barlow.txt`.
+- JetBrains Mono (Regular, Medium, Bold): `JetBrains/JetBrainsMono`, Commit
+  `19371302b95d218af43299bce79ddbddd0bc364d` (Release v2.304), `fonts/ttf/`, Lizenztext `OFL.txt`
+  → `OFL-JetBrainsMono.txt`.
+- DSEG7 Classic Bold: `keshikan/DSEG`, Release v0.46 (Commit
+  `a32644015f2c81b98bc6a80e897770780003b15e`), Archiv `fonts-DSEG_v046.zip`,
+  `DSEG7-Classic/DSEG7Classic-Bold.ttf`, Lizenztext `DSEG-LICENSE.txt` → `OFL-DSEG.txt`.
+- Der Über-Dialog der App (Einstellungen-Leiste, „Über WOA …“) nennt die OFL.
 
 ## Regel
 

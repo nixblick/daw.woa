@@ -174,6 +174,8 @@ pub struct WoaApp {
     /// Thema schon gesetzt.
     /// Zuletzt eingestelltes Thema samt Modus; `None` = noch nicht gesetzt.
     themed: Option<(theme::Theme, theme::Mode)>,
+    /// Fenster „Über WOA“ (Version, Lizenz, Schriften) offen.
+    about_open: bool,
     /// Misst langsame Frames und Hänger für die Telemetrie (nur Dauer).
     frame_watch: woa_telemetry::FrameWatch,
     /// Fotomodus (`WOA_SCREENSHOT=datei.png`): Zielpfad und gezählte Bilder.
@@ -457,6 +459,7 @@ impl WoaApp {
             fade_handle: None,
             gain_preview: None,
             themed: None,
+            about_open: false,
             frame_watch: woa_telemetry::FrameWatch::new(),
             party: crate::party::PartyView::default(),
             photo: std::env::var_os("WOA_SCREENSHOT").map(|p| (PathBuf::from(p), 0)),
@@ -2239,6 +2242,9 @@ impl WoaApp {
             if ui.button("Feedback …").clicked() {
                 self.feedback.open();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+            }
+            if ui.button("Über WOA …").clicked() {
+                self.about_open = true;
             }
         }
     }
@@ -4478,6 +4484,40 @@ impl WoaApp {
         }
     }
 
+    /// „Über WOA“: Version, Lizenz und die eingebetteten Schriften mit ihrer Lizenz (SIL OFL).
+    fn about_window(&mut self, ctx: &egui::Context) {
+        if !self.about_open {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Über WOA")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(
+                    egui::RichText::new("WIR ON AIR").font(theme::label_font(theme::TYPE_TITLE)),
+                );
+                ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                ui.label("Freie Software unter der GPL-3.0-only.");
+                ui.separator();
+                ui.label(egui::RichText::new("Schriften").strong());
+                ui.label(
+                    "Barlow und Barlow Condensed (Jeremy Tribby), JetBrains Mono (JetBrains) \
+                     und DSEG7 Classic (keshikan) sind eingebettet. Alle vier stehen unter \
+                     der SIL Open Font License 1.1 (OFL).",
+                );
+                ui.label(
+                    egui::RichText::new(
+                        "Die Lizenztexte liegen im Quelltext unter crates/gui/assets/fonts/.",
+                    )
+                    .size(theme::TYPE_SMALL)
+                    .color(theme::text_dim()),
+                );
+            });
+        self.about_open = open;
+    }
+
     /// First start: ask once whether anonymous error codes may be sent (opt-in).
     fn telemetry_window(&mut self, ctx: &egui::Context) {
         if self.config.telemetry_enabled.is_some() || self.photo.is_some() {
@@ -4831,6 +4871,12 @@ impl eframe::App for WoaApp {
             self.report_metrics();
         }
         let ctx = ui.ctx().clone();
+        // Die Schriften gelten erst ab dem nächsten Durchlauf (sonst fehlen die Familien
+        // `label` und `seg`): beim allerersten Bild nur setzen und neu zeichnen lassen.
+        if theme::install_fonts(&ctx) {
+            ctx.request_repaint();
+            return;
+        }
         self.photo(&ctx);
         let want = (
             theme::env_override().unwrap_or(self.config.theme),
@@ -4885,6 +4931,7 @@ impl eframe::App for WoaApp {
             self.outputs_window(&ctx);
             self.phone_window(&ctx);
             self.telemetry_window(&ctx);
+            self.about_window(&ctx);
             return;
         }
         egui::Panel::top("transport")
@@ -4954,6 +5001,7 @@ impl eframe::App for WoaApp {
         self.outputs_window(&ctx);
         self.phone_window(&ctx);
         self.telemetry_window(&ctx);
+        self.about_window(&ctx);
     }
 }
 
