@@ -32,6 +32,9 @@ Notfall-Playlist laufen als eigener Prozess (`apps/woa-streamd`).
    M0–M11 der Reihe nach), mit Akzeptanzkriterium. **Plan-Mode zuerst**, Code erst nach Andrés OK.
 2. Kleine Commits, ein Feature pro Branch, Merge nur bei grüner CI:
    `cargo clippy --all-targets -- -D warnings`, `cargo test`, `cargo fmt --check`, `cargo deny check`.
+   Lokal (Notebook, 7 GB RAM) nur `clippy` und `cargo test -p <geänderte Crates>`; die volle Testsuite
+   läuft nur in der CI, die auf `main` Pflicht ist (André, 30.10.2026). Ein Rust-Bau gleichzeitig,
+   `CARGO_TARGET_DIR` unter `~/.cache`, nie unter `/tmp`.
 3. Golden-File-Tests für den Klang (`tests/golden/`), `assert_no_alloc` für Echtzeit,
    Snapshot-Tests (`insta`) für das Projektformat.
 4. Testen per Feedback-Button: Screenshot plus Hinweis wird Issue, Agent arbeitet Issues ab.
