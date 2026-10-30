@@ -418,6 +418,20 @@ impl AppState {
         self.apply(Command::RemoveClip { clip })
     }
 
+    /// Replaces the notes of a MIDI clip (Piano-Roll), one undo step. Unchanged content
+    /// is not applied, so a click without effect leaves the undo list alone.
+    pub fn set_notes(&mut self, clip: ClipId, midi: woa_model::MidiData) -> bool {
+        let same = self
+            .project()
+            .clip(clip)
+            .and_then(|(_, c)| c.midi.as_ref())
+            .is_some_and(|m| *m == midi);
+        if same {
+            return false;
+        }
+        self.apply(Command::SetNotes { clip, midi })
+    }
+
     /// Undo; "nothing to undo" is not an error for the user.
     pub fn undo(&mut self) {
         match self.session.undo() {

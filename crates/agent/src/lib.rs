@@ -191,6 +191,34 @@ pub struct GenerateNotesParams {
     pub midi: bool,
 }
 
+/// Parameters of `edit_notes`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct EditNotesParams {
+    /// MIDI clip id.
+    pub clip: u64,
+    /// The complete new note list (times relative to the clip start, inside the clip).
+    /// Controller values (pedal) stay as they are.
+    pub notes: Vec<AgentNote>,
+}
+
+/// Parameters of `quantize_notes`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct QuantizeNotesParams {
+    /// MIDI clip id.
+    pub clip: u64,
+    /// Grid as note value: 4 = quarter, 8 = eighth, 16 = sixteenth, 32 = 32nd.
+    pub division: u32,
+    /// Triplet grid (two thirds of the step).
+    #[serde(default)]
+    pub triplet: bool,
+    /// Also snap the note ends (default: keep the lengths).
+    #[serde(default)]
+    pub ends: bool,
+    /// Indices (as returned by read_notes) of the notes to quantize; default all.
+    #[serde(default)]
+    pub notes: Option<Vec<usize>>,
+}
+
 /// Parameters of `read_notes`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReadNotesParams {
@@ -589,6 +617,18 @@ impl WoaAgent {
         }
     }
 
+    fn set_notes(
+        s: &mut Session,
+        clip: ClipId,
+        midi: woa_model::MidiData,
+        n: usize,
+    ) -> CallToolResult {
+        match s.group(AGENT_LABEL, |s| s.apply(Command::SetNotes { clip, midi })) {
+            Ok(()) => ok_json(serde_json::json!({ "clip": clip.0, "notes": n })),
+            Err(e) => fail(e),
+        }
+    }
+
     fn clip_of(s: &Session, clip: u64) -> Result<Clip, ModelError> {
         s.project()
             .clip(ClipId(clip))
@@ -908,6 +948,65 @@ impl WoaAgent {
             "notes": notes,
             "cc": cc,
         })))
+    }
+
+    #[tool(
+        description = "Replace the notes of a MIDI clip (piano-roll edit: move, lengthen, delete, change velocity). Read them first with read_notes, change the list, send it back complete. Times in beats relative to the clip start; pedal values stay. One undo step."
+    )]
+    async fn edit_notes(
+        &self,
+        Parameters(p): Parameters<EditNotesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut s = self.lock()?;
+        let clip = match Self::clip_of(&s, p.clip) {
+            Ok(c) => c,
+            Err(e) => return Ok(fail(e)),
+        };
+        let Some(old) = &clip.midi else {
+            return Ok(fail(ModelError::NotMidiClip(clip.id)));
+        };
+        let mut midi = match audio::notes_midi(&p.notes, clip.length_beats) {
+            Ok(m) => m,
+            Err(e) => return Ok(fail(e)),
+        };
+        midi.cc = old.cc.clone();
+        let count = midi.notes.len();
+        Ok(Self::set_notes(&mut s, clip.id, midi, count))
+    }
+
+    #[tool(
+        description = "Quantize a MIDI clip: snap note starts (and with ends: true also the ends) to a grid, e.g. division 16 = sixteenth notes, triplet: true for triplets. Without notes all notes are quantized. One undo step."
+    )]
+    async fn quantize_notes(
+        &self,
+        Parameters(p): Parameters<QuantizeNotesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut s = self.lock()?;
+        if ![1, 2, 4, 8, 16, 32, 64].contains(&p.division) {
+            return Ok(fail(format!(
+                "division muss 1, 2, 4, 8, 16, 32 oder 64 sein, war {}",
+                p.division
+            )));
+        }
+        let clip = match Self::clip_of(&s, p.clip) {
+            Ok(c) => c,
+            Err(e) => return Ok(fail(e)),
+        };
+        let Some(old) = &clip.midi else {
+            return Ok(fail(ModelError::NotMidiClip(clip.id)));
+        };
+        let sel = p.notes.unwrap_or_default();
+        if let Some(bad) = sel.iter().find(|&&i| i >= old.notes.len()) {
+            return Ok(fail(format!("Note {bad} gibt es nicht")));
+        }
+        let grid = woa_model::grid_beats(p.division, p.triplet);
+        let (midi, _) = old.quantize(&sel, grid, p.ends);
+        let count = if sel.is_empty() {
+            midi.notes.len()
+        } else {
+            sel.len()
+        };
+        Ok(Self::set_notes(&mut s, clip.id, midi, count))
     }
 
     #[tool(

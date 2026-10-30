@@ -40,6 +40,12 @@ pub fn mix(c: Color32, with: Color32, t: f32) -> Color32 {
 
 /// Setzt Farben, Abstände und Schriftgrößen.
 pub fn apply(ctx: &egui::Context) {
+    // Helles Thema nur zur Probe (`WOA_THEME=hell`): Fenster und Piano-Roll folgen ihm,
+    // die Zeitleiste bleibt dunkel.
+    if std::env::var("WOA_THEME").is_ok_and(|t| t == "hell" || t == "light") {
+        ctx.set_theme(egui::Theme::Light);
+        return;
+    }
     ctx.set_theme(egui::Theme::Dark);
     ctx.style_mut_of(egui::Theme::Dark, |s| {
         let v = &mut s.visuals;

@@ -134,3 +134,42 @@ fn set_notes_json_shape() {
     .unwrap();
     assert!(matches!(cmd, Command::SetNotes { .. }));
 }
+
+/// Paket 13: Jede Bearbeitung der Piano-Roll ist ein `SetNotes` und damit ein Undo-Schritt.
+#[test]
+fn piano_roll_edits_are_single_undo_steps() {
+    let (mut s, c, _) = session_with_clip();
+    let notes = |s: &Session| s.project().clip(c).unwrap().1.midi.clone().unwrap();
+    let before = notes(&s);
+    type Step = Box<dyn Fn(&MidiData) -> MidiData>;
+    let steps: Vec<Step> = vec![
+        Box::new(|d| d.add_note(note(1.6, 72, 90)).0),
+        Box::new(|d| d.move_notes(&[1, 2], 0.25, 2).0),
+        Box::new(|d| d.resize_notes(&[0], 0.5).0),
+        Box::new(|d| d.set_velocity(&[0, 1, 2], 30)),
+        Box::new(|d| d.quantize(&[], grid_beats(8, false), false).0),
+        Box::new(|d| d.delete_notes(&[0])),
+    ];
+    let mut states = vec![before.clone()];
+    for step in &steps {
+        let next = step(&notes(&s));
+        s.apply(Command::SetNotes {
+            clip: c,
+            midi: next,
+        })
+        .unwrap();
+        states.push(notes(&s));
+    }
+    // Quantisiert: alle Einsätze auf Achteln, Pedal unverändert.
+    let q = &states[5];
+    assert!(q.notes.iter().all(|n| (n.beat * 2.0).fract() == 0.0));
+    assert_eq!(q.cc, before.cc);
+    for expected in states.iter().rev().skip(1) {
+        s.undo().unwrap();
+        assert_eq!(&notes(&s), expected);
+    }
+    for expected in states.iter().skip(1) {
+        s.redo().unwrap();
+        assert_eq!(&notes(&s), expected);
+    }
+}
