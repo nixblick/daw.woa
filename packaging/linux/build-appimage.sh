@@ -35,7 +35,7 @@ install -m644 "$here/de.wironair.woa.desktop" "$appdir/usr/share/applications/"
 install -m644 "$here/icons/de.wironair.woa.png" "$appdir/usr/share/icons/hicolor/256x256/apps/"
 install -m644 "$here/icons/de.wironair.woa.svg" "$appdir/usr/share/icons/hicolor/scalable/apps/"
 version="$("$here/render-metainfo.sh" "$appdir/usr/share/metainfo/de.wironair.woa.appdata.xml")"
-install -m644 "$root/LICENSE" "$appdir/usr/share/doc-LICENSE" 2>/dev/null || true
+install -Dm644 "$root/LICENSE" "$appdir/usr/share/doc/woa/LICENSE"
 echo "X-AppImage-Version=$version" >> "$appdir/usr/share/applications/de.wironair.woa.desktop"
 
 # Die AppImage-Werkzeuge sind selbst AppImages; ohne FUSE (CI) entpackt sie sich selbst.
