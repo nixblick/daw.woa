@@ -4,6 +4,21 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 25: Analyse: BPM, Tonart, Lautheit, automatische Cue-Punkte (0.20.0, offen)
+
+Aus M7. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Spalten ansehen:** „Bibliothek“ öffnen, einen Ordner mit Musik importieren (oder den schon importierten lassen). Unten läuft „analysiert: n von m“ im Hintergrund, die App bleibt bedienbar. In der Liste füllen sich die Spalten BPM, TONART und LUFS (bis dahin „…“, „–“ heißt: nicht bestimmbar).
+2. **Bekannten Song prüfen:** Einen Song wählen, dessen Tempo und Tonart du kennst. Stimmt das Tempo (±1; bei halbem oder doppeltem Tempo sag es mir) und die Tonart (Dur/Moll)? Unter der Liste steht die ganze Analyse in einer Zeile, „Neu analysieren“ misst noch einmal.
+3. **Laut und leise nacheinander:** Radio-Modus, einen sehr lauten und einen sehr leisen Titel nacheinander in die Playlist ziehen und abspielen (Probe über Kopfhörer, nicht auf Sendung): beide wirken gleich laut, die Lautheitsanzeige bleibt um −16 LUFS.
+4. **Auto-Cues im Cue-Editor:** In der Playlist bei einem Titel mit Stille am Anfang oder Ende den Cue-Editor öffnen: blasse Linien „(Vorschlag)“ stehen hinter der Stille vorn, vor der Stille hinten und am Beginn des Ausklangs. „Vorschlag einsetzen“ übernimmt sie; schon von dir gesetzte Marker bleiben unverändert.
+
+Selbst geprüft von Claude (ohne Ton): Klicktrack 120 BPM gibt 120 ±1, weitere Tempi und Abtastraten; Sinus ohne Einsätze, Stille und zu kurzes Material geben kein Tempo; Sinus-Akkorde geben ihre Tonart; Stille vorn und hinten wird gefunden, Cue-Vorschläge überspringen sie und finden den Ausklang; EBU Tech 3341 (1 kHz, −23 dBFS) gibt −23,0 LUFS, auch über den Dateiweg; 1 000 erzeugte Titel unterschiedlicher Lautstärke werden im Hintergrund analysiert (keine Fehler), mit dem berechneten Gain liegen alle auf dem Ziel; kaputte Datei wird markiert und nicht wiederholt, geänderter Inhalt macht den Titel wieder offen, Migration von Schema 2 behält die Titel; von Hand gesetzte Cues werden nie überschrieben; Bibliothek-Fenster und Cue-Editor als Zustandstests ohne Fenster. Alles im Hintergrund-Thread, nichts im Audio-Thread.
+
+Nicht selbst geprüft: Treffsicherheit an echter Musik (nur erzeugte Signale; bei dichter Musik, Tempowechseln und Modulation sind Tempo und Tonart Näherungen, halbes oder doppeltes Tempo ist möglich), Geschwindigkeit mit echten MP3-Titeln, Aussehen und Spaltenbreiten im echten Fenster, der Klang des Lautheitsangleichs.
+
+Noch nicht drin: Tempo und Tonart im Radio-Modus anzeigen, Sortieren nach Spalten, Analysewerte im Agenten (MCP).
+
 ## Paket 24: Bibliothek in SQLite mit Suche und Tags (0.19.0, offen)
 
 Aus M7. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
@@ -19,7 +34,7 @@ Selbst geprüft von Claude (ohne Ton): 1 000 erzeugte Sinus-Dateien in 10 Ordner
 
 Nicht selbst geprüft: das Ziehen mit der Maus im echten Fenster (Zeigerereignisse nicht simuliert; die Ablage-Logik auf Playlist und Cart-Pads ist nur durch Übersetzen und Lesen geprüft), das Vorhören im Kopfhörer (kein Ton auf dem Notebook), Aussehen und Griffigkeit des Fensters, Geschwindigkeit mit echten MP3-Dateien (die Tests nutzen kurze WAVs; echte Titel brauchen länger, weil jede Datei zur Dauerbestimmung dekodiert wird).
 
-Noch nicht drin (Paket 25 und folgende): BPM, Tonart, Lautheit, automatische Cue-Punkte; Titel aus der Bibliothek entfernen; Vorhören im Produzenten-Layout ohne Radio-Modus.
+Noch nicht drin (folgende Pakete): Titel aus der Bibliothek entfernen; Vorhören im Produzenten-Layout ohne Radio-Modus.
 
 ## Paket 23: Time-Stretch, Tonhöhe, Abnahme ganzer Song (0.18.0, offen)
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.19.1 — 2026-10-30
+## 0.20.1 — 2026-10-30
 
 Öffentliches Repo aufgeräumt (André: „push nach nix hin was da nicht hin soll“).
 
@@ -8,7 +8,16 @@
 - Servername, Server-IP, Hosting-Anbieter, interne Token-Liste und Heimatpfade aus Code, Doku und Tests entfernt („eigener Server“).
 - `.gitignore`: `docs/intern/`, `.refs/`, alles mit `mitbewerber` im Namen, `*.local.md`.
 - `CLAUDE.md`: Regel „Das Repo ist öffentlich“.
-- Prüfung: gitleaks über alle 136 Commits ohne Fund; kein Geheimnis war im Repo.
+- Prüfung: gitleaks über alle 136 Commits ohne Fund; kein Geheimnis war im Repo.## 0.20.0 — 2026-10-30
+
+Paket 25 aus M7: Analyse mit Tempo, Tonart, Lautheit und automatischen Cue-Punkten.
+
+- **Analyse (`woa_dsp::analysis::track`):** Tempo aus der Autokorrelation der Einsatzkurve (70 bis 180 BPM, `None` bei Sinus ohne Einsätze, Stille oder zu kurzem Material), Tonart aus einem Chroma-Vektor gegen die Krumhansl-Profile (Anzeige „C-Dur“, „a-Moll“), Stille vorn und hinten (Schwelle −50 dBFS), Lautheit und True Peak aus dem vorhandenen Code. Alles ohne neue Abhängigkeit, im Hintergrund-Thread, nie im Audio-Thread. Die Treffsicherheit an echter Musik ist eine Vermutung, bis André sie an bekannten Titeln gesehen hat.
+- **Cue-Vorschläge:** Cue-In hinter der Stille am Anfang, Cue-Out vor der Stille am Ende, Fade-Out am Beginn des Ausklangs (höchstens 15 s). Kürzer als 2 s oder ohne Stille: kein Vorschlag. Im Radio-Modus setzt das Messen einer Playlist-Zeile die Vorschläge nur, wo noch keine Cue-Punkte stehen; von Hand gesetzte haben Vorrang. Im Cue-Editor zeigt eine blasse Linie den Vorschlag, „Vorschlag einsetzen“ übernimmt nur die fehlenden Marker.
+- **Bibliothek:** Schema 3 (Spalten für Tempo, Tonart, Lautheit, True Peak, Stille und Cue-Vorschlag; `analyzed_hash` verknüpft die Werte mit dem Inhalt, eine geänderte Datei kommt wieder an die Reihe). Schema 2 wird beim Öffnen angehoben, die Titel bleiben. Die Analyse läuft nach dem Import im Hintergrund mit eigener Datenbankverbindung, Fortschritt und Abbruch über Atomics; eine nicht lesbare Datei wird einmal gezählt und nicht endlos wiederholt.
+- **Oberfläche:** Neue Spalten BPM, TONART und LUFS in der Bibliothek („…“ bis der Titel dran war), die Detailzeile zeigt alle Messwerte und „Neu analysieren“. Fenster etwas breiter.
+- **Lautheitsangleich:** Der Radio-Modus gleicht Titel schon auf −16 LUFS an (Spitze höchstens −1 dBFS); die Rechnung steht jetzt an einer Stelle (`gain_to_target_db`), Radio und Bibliothek nutzen dieselbe.
+- **Tests:** Klicktrack 120 BPM (und andere Tempi und Abtastraten) gibt 120 ±1; Sinus-Akkorde geben ihre Tonart; Stille vorn und hinten; EBU-Tech-3341-Referenz (1 kHz bei −23 dBFS gibt −23,0 LUFS) auch über den Dateiweg; 1 000 erzeugte Titel offline analysiert, danach liegen alle mit dem Gain auf dem Ziel; Migration, kaputte Datei, geänderter Inhalt; Cue-Editor und Bibliothek-Fenster als Zustandstests.
 
 ## 0.19.0 — 2026-10-30
 
@@ -344,7 +353,7 @@ Paket 9 aus M3 (#4): Sendebus-Processing.
 
 ## 0.1.13 — 2026-10-29
 
-- `docs/intern/andre-handgriffe.md` (nur lokal): Andrés erledigte Schritte (DNS, Token, Ablauf) entfernt; Ausrollen macht Claude.
+- `docs/andre-handgriffe.md`: Andrés erledigte Schritte (DNS, Token, Ablauf) entfernt; Ausrollen macht Claude.
 
 ## 0.1.12 — 2026-10-29
 
@@ -420,7 +429,7 @@ Paket 9 aus M3 (#4): Sendebus-Processing.
 - egui-Prototyp (M0, Branch 5, `m0/gui`): `woa-gui` mit fensterunabhängigem `AppState` (Spur hinzufügen/umbenennen, Gain, Mute, Undo/Redo, Neu/Öffnen/Speichern, Autosave alle 10 s, ungespeichert in `recovery.woa`) und Feedback-Dialog (Text + Screenshot über `woa-telemetry`, leere `feedback_url` = „Server noch nicht eingerichtet“). `apps/woa` startet das Fenster (eframe 0.35, rfd). Bewertung in `docs/entscheidungen.md`. `deny.toml`: Lizenz-Ausnahme für die egui-Standardschriften (OFL-1.1, Ubuntu Font Licence), vier „unmaintained“-Hinweise transitiver Crates (ttf-parser, zbus-Teilcrates) bewusst ignoriert.
 - Telemetrie (M0, `woa-telemetry`): `tracing` mit JSON-Logdatei je Tag (30 Tage), Panic-Hook, Opt-in-Upload-Senke (gebündelt, nur Code/Stufe/Zahl, Scrubber, eigener Thread, `ureq`) im Format der bretteins-`/ingest`-Route, Feedback-Client `submit_feedback` mit Screenshot. Tests gegen lokalen Mock-Server, Vertrag in `docs/telemetrie.md`. `deny.toml`: Ausnahme CDLA-Permissive-2.0 nur für `webpki-roots`.
 - Projektmodell `woa-model` (M0, Branch 2): `Project`/`Track`/`Clip` mit `u64`-IDs, `Command`-Enum (Spuren, Gain, Pan, Mute, Solo, Tempo, Clips) mit exakten Inversen, `Session::apply` mit Undo/Redo und Gruppen, Ordnerformat `<name>.woa/project.json` mit `format_version`, atomares Schreiben, Autosave-Hook `Session::autosave` ohne Zeitgeber. Tests: Roundtrip, insta-Snapshot, proptest apply+undo.
-- Feedback-Server vorbereitet (M0, Branch 4): `server/README.md` mit Anleitung für eine zweite Instanz der bretteins-Rolle `feedback` (feedback.wironair.de, Port 8081, `GITHUB_REPO=nixblick/daw.woa`), Prüfung der Mehrinstanzfähigkeit samt Patch-Vorschlag, Vorlagen unter `server/feedback/`, Runbook `docs/intern/andre-handgriffe.md` (nur lokal). Nichts ausgerollt.
+- Feedback-Server vorbereitet (M0, Branch 4): `server/README.md` mit Anleitung für eine zweite Instanz der bretteins-Rolle `feedback` (feedback.wironair.de, Port 8081, `GITHUB_REPO=nixblick/daw.woa`), Prüfung der Mehrinstanzfähigkeit samt Patch-Vorschlag, Vorlagen unter `server/feedback/`, Runbook `docs/andre-handgriffe.md`. Nichts ausgerollt.
 - Engine-Spike (Vorarbeit M1, #2): `woa-dsp` mit `Node`-Trait (allokationsfreies `process`), linearer Parameter-Glättung, Sinus-Oszillator und Gain. `woa-engine` mit Graph-Kompilierung im Control-Thread (Topologie, Puffer vorab, Zyklusprüfung), Kommandos über `rtrb`, Graph-Tausch im Audio-Thread und Freigabe über `basedrop`, Graph-Beschreibung per `arc-swap`, Offline-Render und WAV (hound). cpal-Ausgabe nur hinter Feature `device`. Tests: `assert_no_alloc` um jeden Process-Aufruf, Golden-Render `tests/golden/sine_440hz_gain05_1s.wav`, Glättung ohne Sprung.
 
 ## 0.1.0 — 2026-10-28

@@ -6,6 +6,7 @@
 //! Datenbanken werden beim Öffnen schrittweise angehoben, eine neuere als diese Programmversion
 //! wird abgelehnt statt beschädigt.
 
+pub mod analysis;
 mod hash;
 pub mod import;
 
@@ -17,7 +18,7 @@ use rusqlite::{Connection, OptionalExtension, params, params_from_iter, types::V
 pub use hash::file_hash;
 
 /// Aktuelle Schemaversion.
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 /// Längste Tag-Bezeichnung (Zeichen).
 pub const MAX_TAG_CHARS: usize = 40;
 /// Mehr Tags je Titel nimmt die Bibliothek nicht an.
@@ -52,7 +53,23 @@ CREATE VIRTUAL TABLE tracks_fts USING fts5(
 INSERT INTO tracks_fts(rowid, title, tags, path) SELECT id, title, '', path FROM tracks;
 ";
 
-const MIGRATIONS: [&str; 2] = [V1, V2];
+/// Paket 25: Analyse je Titel. `analyzed_hash` hält den Inhalt, zu dem die Werte gehören;
+/// ändert sich die Datei, passt er nicht mehr und der Titel kommt wieder an die Reihe.
+const V3: &str = "
+ALTER TABLE tracks ADD COLUMN analyzed_hash TEXT;
+ALTER TABLE tracks ADD COLUMN bpm REAL;
+ALTER TABLE tracks ADD COLUMN key TEXT;
+ALTER TABLE tracks ADD COLUMN lufs REAL;
+ALTER TABLE tracks ADD COLUMN true_peak REAL;
+ALTER TABLE tracks ADD COLUMN peak_db REAL;
+ALTER TABLE tracks ADD COLUMN lead REAL;
+ALTER TABLE tracks ADD COLUMN tail REAL;
+ALTER TABLE tracks ADD COLUMN cue_in REAL;
+ALTER TABLE tracks ADD COLUMN fade_out REAL;
+ALTER TABLE tracks ADD COLUMN cue_out REAL;
+";
+
+const MIGRATIONS: [&str; 3] = [V1, V2, V3];
 
 /// Fehler der Bibliothek, Text ohne Pfade.
 #[derive(Debug)]
@@ -149,6 +166,38 @@ pub struct Track {
     pub added: i64,
     /// Alphabetisch.
     pub tags: Vec<String>,
+    /// Ergebnis der Analyse (Paket 25); `None`, solange der Titel noch nicht dran war oder die
+    /// Datei sich seitdem geändert hat.
+    pub analysis: Option<Analysis>,
+}
+
+/// Messwerte eines Titels (Paket 25). Fehlt ein Wert, ließ er sich nicht bestimmen
+/// (Sinus ohne Einsätze hat kein Tempo, Stille keine Lautheit).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Analysis {
+    pub bpm: Option<f64>,
+    /// Anzeigename, z. B. „C-Dur“.
+    pub key: Option<String>,
+    /// Integrierte Lautheit in LUFS.
+    pub lufs: Option<f64>,
+    /// True Peak in dBTP.
+    pub true_peak_db: Option<f64>,
+    /// Sample-Spitze in dBFS.
+    pub peak_db: Option<f64>,
+    /// Sekunden Stille am Anfang und am Ende.
+    pub lead_silence: Option<f64>,
+    pub tail_silence: Option<f64>,
+    /// Vorgeschlagene Cue-Punkte in Sekunden (Cue-In, Fade-Out, Cue-Out).
+    pub cue_in: Option<f64>,
+    pub fade_out: Option<f64>,
+    pub cue_out: Option<f64>,
+}
+
+impl Analysis {
+    /// Verstärkung in dB, die den Titel auf `target` LUFS bringt (Spitze höchstens −1 dBFS).
+    pub fn gain_db(&self, target: f64) -> f64 {
+        woa_dsp::analysis::track::gain_to_target_db(self.lufs, self.peak_db, target, -1.0)
+    }
 }
 
 /// Was beim Eintragen mit einer Datei geschah.
@@ -236,7 +285,9 @@ fn now_secs() -> i64 {
 }
 
 const SELECT: &str = "SELECT t.id, t.path, t.hash, t.title, t.duration, t.kind, t.added, \
-    (SELECT group_concat(tag, char(31)) FROM (SELECT tag FROM tags WHERE track_id = t.id ORDER BY tag)) \
+    (SELECT group_concat(tag, char(31)) FROM (SELECT tag FROM tags WHERE track_id = t.id ORDER BY tag)), \
+    (t.analyzed_hash IS NOT NULL AND t.analyzed_hash = t.hash), \
+    t.bpm, t.key, t.lufs, t.true_peak, t.peak_db, t.lead, t.tail, t.cue_in, t.fade_out, t.cue_out \
     FROM tracks t";
 
 fn row_track(r: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
@@ -253,6 +304,22 @@ fn row_track(r: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
         tags: tags
             .map(|s| s.split('\u{1f}').map(str::to_string).collect())
             .unwrap_or_default(),
+        analysis: if r.get::<_, bool>(8)? {
+            Some(Analysis {
+                bpm: r.get(9)?,
+                key: r.get(10)?,
+                lufs: r.get(11)?,
+                true_peak_db: r.get(12)?,
+                peak_db: r.get(13)?,
+                lead_silence: r.get(14)?,
+                tail_silence: r.get(15)?,
+                cue_in: r.get(16)?,
+                fade_out: r.get(17)?,
+                cue_out: r.get(18)?,
+            })
+        } else {
+            None
+        },
     })
 }
 
@@ -325,6 +392,62 @@ impl Library {
             .conn
             .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))?;
         Ok(n.max(0) as usize)
+    }
+
+    /// Titel, deren Analyse fehlt oder zu einem älteren Inhalt gehört: Nummer, Pfad, Hash.
+    pub fn pending_analysis(&self, limit: usize) -> Result<Vec<(i64, String, String)>> {
+        let mut st = self.conn.prepare(
+            "SELECT id, path, hash FROM tracks \
+             WHERE analyzed_hash IS NULL OR analyzed_hash != hash ORDER BY id LIMIT ?1",
+        )?;
+        let rows = st.query_map([limit as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Anzahl der Titel, die noch analysiert werden müssen.
+    pub fn pending_analysis_count(&self) -> Result<usize> {
+        let n: i64 = self.conn.query_row(
+            "SELECT count(*) FROM tracks WHERE analyzed_hash IS NULL OR analyzed_hash != hash",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(n.max(0) as usize)
+    }
+
+    /// Speichert die Analyse, wenn die Datei noch zu `hash` gehört. Gibt `false` zurück, wenn
+    /// der Eintrag fehlt oder sich der Inhalt inzwischen geändert hat.
+    pub fn set_analysis(&self, id: i64, hash: &str, a: &Analysis) -> Result<bool> {
+        let n = self.conn.execute(
+            "UPDATE tracks SET analyzed_hash = ?2, bpm = ?3, key = ?4, lufs = ?5, true_peak = ?6, \
+             peak_db = ?7, lead = ?8, tail = ?9, cue_in = ?10, fade_out = ?11, cue_out = ?12 \
+             WHERE id = ?1 AND hash = ?2",
+            params![
+                id,
+                hash,
+                a.bpm,
+                a.key,
+                a.lufs,
+                a.true_peak_db,
+                a.peak_db,
+                a.lead_silence,
+                a.tail_silence,
+                a.cue_in,
+                a.fade_out,
+                a.cue_out
+            ],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Verwirft die Analyse eines Titels (er wird beim nächsten Lauf neu gemessen).
+    pub fn clear_analysis(&self, id: i64) -> Result<()> {
+        let n = self
+            .conn
+            .execute("UPDATE tracks SET analyzed_hash = NULL WHERE id = ?1", [id])?;
+        if n == 0 {
+            return Err(Error::NotFound(id));
+        }
+        Ok(())
     }
 
     /// Ein Titel nach Nummer.

@@ -63,9 +63,12 @@ pub struct Measured {
     pub lufs: Option<f64>,
     pub peak_db: Option<f64>,
     pub seconds: f64,
+    /// Cue-Vorschlag aus der Stille vorn und hinten (Paket 25). Gilt nur für Titel ohne
+    /// eigene Cue-Punkte; von Hand gesetzte haben Vorrang.
+    pub auto_cues: crate::cues::Cues,
 }
 
-/// Misst integrierte Lautheit, Spitze und Länge.
+/// Misst integrierte Lautheit, Spitze und Länge und schlägt Cue-Punkte vor.
 pub fn measure(s: &Stereo, rate: u32) -> Measured {
     let peak = s
         .left
@@ -76,6 +79,18 @@ pub fn measure(s: &Stereo, rate: u32) -> Measured {
         lufs: integrated_lufs(&s.left, &s.right, rate),
         peak_db: (peak > 0.0).then(|| 20.0 * f64::from(peak).log10()),
         seconds: s.frames() as f64 / f64::from(rate.max(1)),
+        auto_cues: suggest_cues(&s.left, &s.right, rate),
+    }
+}
+
+/// Cue-Vorschlag für einen Titel (Stille vorn und hinten, Beginn des Ausklangs).
+pub fn suggest_cues(left: &[f32], right: &[f32], rate: u32) -> crate::cues::Cues {
+    let a = woa_dsp::analysis::track::suggest_cues(left, right, rate);
+    crate::cues::Cues {
+        cue_in: a.cue_in,
+        cue_out: a.cue_out,
+        fade_out: a.fade_out,
+        ..crate::cues::Cues::default()
     }
 }
 

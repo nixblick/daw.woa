@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use eframe::egui;
+use woa_library::analysis::Job as AnalysisJob;
 use woa_library::import::{self, Import, Progress};
-use woa_library::{Kind, Library, Query, Track};
+use woa_library::{Analysis, Kind, Library, Query, Track};
 
 use crate::theme;
 
@@ -45,6 +46,10 @@ pub struct LibraryWindow {
     tag_filter: Option<String>,
     import_kind: Kind,
     import: Option<Import>,
+    /// Hintergrundanalyse (Paket 25) und wie viele Titel noch darauf warten.
+    analysis: Option<AnalysisJob>,
+    pending: usize,
+    analysis_blocked: bool,
     results: Vec<Track>,
     total: usize,
     tags: Vec<(String, usize)>,
@@ -68,6 +73,9 @@ impl LibraryWindow {
             tag_filter: None,
             import_kind: Kind::Music,
             import: None,
+            analysis: None,
+            pending: 0,
+            analysis_blocked: false,
             results: Vec::new(),
             total: 0,
             tags: Vec::new(),
@@ -84,6 +92,9 @@ impl LibraryWindow {
         if db_path != self.db_path {
             self.db_path = db_path;
             self.import = None;
+            self.analysis = None;
+            self.analysis_blocked = false;
+            self.pending = 0;
             self.lib = None;
             self.results.clear();
             self.selected = None;
@@ -130,6 +141,7 @@ impl LibraryWindow {
             }
         }
         self.total = lib.count().unwrap_or(0);
+        self.pending = lib.pending_analysis_count().unwrap_or(0);
         self.tags = lib.all_tags().unwrap_or_default();
         self.dirty = false;
         self.refreshed = Instant::now();
@@ -230,6 +242,37 @@ impl LibraryWindow {
         true
     }
 
+    /// Startet die Analyse im Hintergrund, sobald Titel darauf warten und kein Import läuft,
+    /// und holt ihren Fortschritt ab. Gibt zurück, ob sie läuft.
+    fn poll_analysis(&mut self) -> bool {
+        if let Some(job) = &self.analysis {
+            let p = &job.progress;
+            if p.is_finished() {
+                if p.fatal.load(std::sync::atomic::Ordering::Acquire) {
+                    self.note = Some("Analyse fehlgeschlagen (siehe Protokoll)".into());
+                    self.analysis_blocked = true;
+                }
+                self.analysis = None;
+                self.dirty = true;
+                return false;
+            }
+            if self.refreshed.elapsed() >= REFRESH_EVERY {
+                self.dirty = true;
+            }
+            return true;
+        }
+        if self.pending > 0 && !self.analysis_blocked && !self.importing() && self.lib.is_some() {
+            self.analysis = Some(woa_library::analysis::start(&self.db_path));
+            return true;
+        }
+        false
+    }
+
+    /// Ob die Hintergrundanalyse läuft.
+    pub fn analysing(&self) -> bool {
+        self.analysis.is_some()
+    }
+
     /// Zeichnet das Fenster, wenn es offen ist.
     pub fn show(&mut self, ctx: &egui::Context, pfl_available: bool) -> Output {
         let mut out = Output::default();
@@ -238,6 +281,8 @@ impl LibraryWindow {
         }
         self.ensure_open();
         let running = self.poll();
+        let analysing = self.poll_analysis();
+        let running = running || analysing;
         if self.dirty {
             self.refresh();
         }
@@ -247,8 +292,8 @@ impl LibraryWindow {
         let mut open = true;
         let resp = egui::Window::new("Bibliothek")
             .open(&mut open)
-            .default_size([680.0, 540.0])
-            .min_size([420.0, 320.0])
+            .default_size([820.0, 540.0])
+            .min_size([560.0, 320.0])
             .frame(theme::card_frame())
             .show(ctx, |ui| self.body(ui, pfl_available, &mut out));
         self.open = open;
@@ -354,6 +399,19 @@ impl LibraryWindow {
                 if ui.small_button("Abbrechen").clicked() {
                     imp.cancel();
                 }
+            } else if let Some(job) = &self.analysis {
+                let p = &job.progress;
+                ui.spinner();
+                ui.label(
+                    egui::RichText::new(format!(
+                        "analysiert: {} von {}",
+                        Progress::get(&p.done),
+                        Progress::get(&p.total)
+                    ))
+                    .small()
+                    .color(theme::ACCENT),
+                )
+                .on_hover_text("BPM, Tonart, Lautheit und Stille im Hintergrund");
             } else if let Some(n) = &self.note {
                 ui.label(egui::RichText::new(n).small().color(theme::TEXT_BRIGHT));
             }
@@ -394,6 +452,28 @@ impl LibraryWindow {
             return;
         }
         let n = self.results.len();
+        // Spaltenköpfe über der Liste.
+        {
+            let (rect, _) = ui
+                .allocate_exact_size(egui::vec2(ui.available_width(), 14.0), egui::Sense::hover());
+            let cols = Columns::at(rect.right());
+            let painter = ui.painter_at(rect);
+            let head = |x: f32, align: egui::Align2, s: &str| {
+                painter.text(
+                    egui::pos2(x, rect.center().y),
+                    align,
+                    s,
+                    egui::FontId::proportional(10.0),
+                    theme::DIM,
+                );
+            };
+            head(rect.left() + 8.0, egui::Align2::LEFT_CENTER, "TITEL");
+            head(cols.bpm, egui::Align2::RIGHT_CENTER, "BPM");
+            head(cols.key, egui::Align2::RIGHT_CENTER, "TONART");
+            head(cols.lufs, egui::Align2::RIGHT_CENTER, "LUFS");
+            head(cols.kind, egui::Align2::RIGHT_CENTER, "ART");
+            head(cols.duration, egui::Align2::RIGHT_CENTER, "DAUER");
+        }
         let mut clicked = None;
         let mut started = None;
         let mut stopped = None;
@@ -426,24 +506,39 @@ impl LibraryWindow {
                         egui::FontId::proportional(13.0),
                         text_col,
                     );
+                    let cols = Columns::at(rect.right());
                     painter.text(
-                        egui::pos2(rect.right() - 8.0, mid),
+                        egui::pos2(cols.duration, mid),
                         egui::Align2::RIGHT_CENTER,
                         duration_text(t.duration),
                         egui::FontId::monospace(12.0),
                         theme::DIM,
                     );
-                    let kind_x = rect.right() - 62.0;
                     painter.text(
-                        egui::pos2(kind_x, mid),
+                        egui::pos2(cols.kind, mid),
                         egui::Align2::RIGHT_CENTER,
                         t.kind.label(),
                         egui::FontId::proportional(11.0),
                         theme::CUE_CYAN,
                     );
+                    // Analyse (Paket 25): „…“ solange der Titel noch nicht dran war.
+                    let a = t.analysis.as_ref();
+                    for (x, text) in [
+                        (cols.lufs, lufs_text(a)),
+                        (cols.key, key_text(a)),
+                        (cols.bpm, bpm_text(a)),
+                    ] {
+                        painter.text(
+                            egui::pos2(x, mid),
+                            egui::Align2::RIGHT_CENTER,
+                            text,
+                            egui::FontId::monospace(12.0),
+                            if a.is_some() { text_col } else { theme::DIM },
+                        );
+                    }
                     if !t.tags.is_empty() {
                         painter.text(
-                            egui::pos2(kind_x - 70.0, mid),
+                            egui::pos2(cols.tags, mid),
                             egui::Align2::RIGHT_CENTER,
                             t.tags.join(" · "),
                             egui::FontId::proportional(11.0),
@@ -585,6 +680,126 @@ impl LibraryWindow {
                 self.tag_selected(&tag);
             }
         });
+        ui.horizontal_wrapped(|ui| {
+            ui.label(egui::RichText::new("ANALYSE").size(10.0).color(theme::DIM));
+            match &t.analysis {
+                Some(a) => {
+                    ui.label(
+                        egui::RichText::new(analysis_summary(a))
+                            .small()
+                            .color(theme::TEXT_BRIGHT),
+                    );
+                    if ui
+                        .small_button("Neu analysieren")
+                        .on_hover_text("Misst den Titel noch einmal")
+                        .clicked()
+                        && let Some(lib) = &self.lib
+                    {
+                        if let Err(e) = lib.clear_analysis(t.id) {
+                            self.note = Some(e.to_string());
+                        }
+                        self.analysis_blocked = false;
+                        self.dirty = true;
+                    }
+                }
+                None => {
+                    ui.label(
+                        egui::RichText::new("wartet auf die Hintergrundanalyse …")
+                            .small()
+                            .color(theme::DIM),
+                    );
+                }
+            }
+        });
+    }
+}
+
+/// Rechte Kanten der Spalten (x-Koordinaten, rechtsbündig) einer Zeile, die bei `right` endet.
+#[derive(Debug, Clone, Copy)]
+struct Columns {
+    duration: f32,
+    kind: f32,
+    lufs: f32,
+    key: f32,
+    bpm: f32,
+    tags: f32,
+}
+
+impl Columns {
+    fn at(right: f32) -> Self {
+        let duration = right - 8.0;
+        let kind = right - 62.0;
+        let lufs = kind - 56.0;
+        let key = lufs - 62.0;
+        let bpm = key - 50.0;
+        Self {
+            duration,
+            kind,
+            lufs,
+            key,
+            bpm,
+            tags: bpm - 56.0,
+        }
+    }
+}
+
+/// Tempo für die Spalte: „128“ oder „–“, „…“ vor der Analyse.
+fn bpm_text(a: Option<&Analysis>) -> String {
+    match a {
+        None => "…".into(),
+        Some(a) => a.bpm.map_or("–".into(), |b| format!("{b:.0}")),
+    }
+}
+
+fn key_text(a: Option<&Analysis>) -> String {
+    match a {
+        None => "…".into(),
+        Some(a) => a.key.clone().unwrap_or_else(|| "–".into()),
+    }
+}
+
+fn lufs_text(a: Option<&Analysis>) -> String {
+    match a {
+        None => "…".into(),
+        Some(a) => a.lufs.map_or("–".into(), |l| format!("{l:.1}")),
+    }
+}
+
+/// Eine Zeile für die Detailansicht: alle Messwerte und der Cue-Vorschlag.
+fn analysis_summary(a: &Analysis) -> String {
+    let mut parts = Vec::new();
+    if let Some(b) = a.bpm {
+        parts.push(format!("{b:.1} BPM"));
+    }
+    if let Some(k) = &a.key {
+        parts.push(k.clone());
+    }
+    if let Some(l) = a.lufs {
+        parts.push(format!("{l:.1} LUFS"));
+    }
+    if let Some(p) = a.true_peak_db {
+        parts.push(format!("True Peak {p:.1} dBTP"));
+    }
+    if let (Some(lead), Some(tail)) = (a.lead_silence, a.tail_silence)
+        && (lead >= 0.25 || tail >= 0.5)
+    {
+        parts.push(format!("Stille vorn {lead:.1} s, hinten {tail:.1} s"));
+    }
+    let cues: Vec<String> = [
+        ("Cue-In", a.cue_in),
+        ("Fade-Out", a.fade_out),
+        ("Cue-Out", a.cue_out),
+    ]
+    .into_iter()
+    .filter_map(|(n, v)| v.map(|v| format!("{n} {v:.2} s")))
+    .collect();
+    if !cues.is_empty() {
+        parts.push(format!("Cue-Vorschlag: {}", cues.join(", ")));
+    }
+    if parts.is_empty() {
+        "Analyse ohne Ergebnis (Stille oder nicht lesbar)".into()
+    } else {
+        parts.join(" · ")
     }
 }
 
@@ -732,6 +947,56 @@ mod tests {
             });
         }
         assert!(w.open);
+    }
+
+    #[test]
+    fn window_analyses_after_import_and_shows_the_columns() {
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("m");
+        std::fs::create_dir_all(&music).unwrap();
+        // 2 s Sinus, damit eine Lautheit messbar ist.
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 8000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut wr = hound::WavWriter::create(music.join("ton.wav"), spec).unwrap();
+        for i in 0..16_000 {
+            let s = (i as f32 * 440.0 * std::f32::consts::TAU / 8000.0).sin();
+            wr.write_sample((s * 8000.0) as i16).unwrap();
+        }
+        wr.finalize().unwrap();
+        let mut w = LibraryWindow::new(dir.path().join(DB_FILE));
+        w.open = true;
+        w.start_import(&music);
+        wait_import(&mut w);
+        assert!(w.results()[0].analysis.is_none(), "noch nicht analysiert");
+        let ctx = egui::Context::default();
+        let t0 = Instant::now();
+        loop {
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let _ = w.show(ui.ctx(), false);
+            });
+            if !w.analysing() && w.pending == 0 && w.results()[0].analysis.is_some() {
+                break;
+            }
+            assert!(t0.elapsed() < Duration::from_secs(60), "analysis hangs");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let a = w.results()[0].analysis.clone().unwrap();
+        assert!(a.lufs.is_some());
+        assert!(lufs_text(Some(&a)).contains('.'));
+        assert_eq!(bpm_text(Some(&a)), "–");
+        assert_eq!(bpm_text(None), "…");
+        assert!(analysis_summary(&a).contains("LUFS"));
+        assert!(analysis_summary(&Analysis::default()).contains("ohne Ergebnis"));
+        // Mit Auswahl zeichnen (Detailzeile mit Analyse).
+        let id = w.results()[0].id;
+        w.select(Some(id));
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _ = w.show(ui.ctx(), false);
+        });
     }
 
     #[test]
