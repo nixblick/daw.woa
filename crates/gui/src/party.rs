@@ -59,6 +59,18 @@ impl PartyView {
             if i.consume_key(n, egui::Key::N) || i.consume_key(n, egui::Key::ArrowRight) {
                 v.push(PartyCommand::Next);
             }
+            if i.consume_key(n, egui::Key::P) || i.consume_key(n, egui::Key::ArrowLeft) {
+                v.push(PartyCommand::Previous);
+            }
+            if i.consume_key(n, egui::Key::M) {
+                v.push(PartyCommand::Mute);
+            }
+            if i.consume_key(n, egui::Key::R) {
+                v.push(PartyCommand::CycleRepeat);
+            }
+            if i.consume_key(n, egui::Key::S) {
+                v.push(PartyCommand::ToggleShuffle);
+            }
             if i.consume_key(n, egui::Key::ArrowUp) {
                 v.push(PartyCommand::VolumeUp);
             }
@@ -213,6 +225,7 @@ fn now_card(ui: &mut egui::Ui, l: &PartyLayout, _height: f32) {
         ui.set_min_height(260.0);
         let (badge, col) = match &l.now {
             Some(n) if n.playing => ("JETZT", theme::ACCENT),
+            Some(n) if n.paused => ("PAUSE", theme::ON_AIR),
             _ => ("BEREIT", theme::CUE_CYAN),
         };
         ui.label(
@@ -282,29 +295,36 @@ fn now_card(ui: &mut egui::Ui, l: &PartyLayout, _height: f32) {
 fn buttons_row(ui: &mut egui::Ui, l: &PartyLayout, cmds: &mut Vec<PartyCommand>) -> bool {
     let mut folder = false;
     let w = (ui.available_width() - 3.0 * 8.0) / 4.0;
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 8.0;
-        for b in &l.buttons {
-            let primary = matches!(b.command, PartyCommand::PlayPause);
-            let btn = egui::Button::new(egui::RichText::new(b.label).size(28.0).strong().color(
-                if primary {
-                    theme::WELL
+    for (n, row) in l.buttons.iter().enumerate() {
+        // Die erste Reihe (Transport) ist groß, die anderen etwas flacher.
+        let (h, size) = if n == 0 { (90.0, 28.0) } else { (56.0, 20.0) };
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            for b in row {
+                let primary = matches!(b.command, PartyCommand::PlayPause);
+                let lit = primary || b.active;
+                let btn = egui::Button::new(
+                    egui::RichText::new(b.label)
+                        .size(size)
+                        .strong()
+                        .color(if lit { theme::WELL } else { theme::TEXT_BRIGHT }),
+                )
+                .fill(if primary {
+                    theme::OK_GREEN
+                } else if b.active {
+                    theme::ACCENT
                 } else {
-                    theme::TEXT_BRIGHT
-                },
-            ))
-            .fill(if primary {
-                theme::OK_GREEN
-            } else {
-                theme::SURFACE
-            })
-            .min_size(egui::vec2(w, 90.0));
-            if ui.add(btn).clicked() {
-                cmds.push(b.command.clone());
+                    theme::SURFACE
+                })
+                .min_size(egui::vec2(w, h));
+                if ui.add(btn).clicked() {
+                    cmds.push(b.command.clone());
+                }
             }
-        }
-    });
-    ui.add_space(6.0);
+        });
+        ui.add_space(4.0);
+    }
+    ui.add_space(2.0);
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(format!("Lautstärke {:+.0} dB", l.level_db))

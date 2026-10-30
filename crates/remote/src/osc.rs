@@ -2,7 +2,8 @@
 //!
 //! OSC kennt keine Anmeldung. Darum ist er standardmäßig aus, und wer ihn einschaltet, gibt
 //! jedem im Netz DJ-Rechte. Die Pfade sind fest (Muster aus Ardours OSC-Oberfläche: ein Pfad je
-//! Befehl): `/woa/party/play_pause`, `/next`, `/volume_up`, `/volume_down`. Tasten schicken oft
+//! Befehl, Namen wie in [`crate::command::simple_command`]): `/woa/party/play_pause`, `/next`,
+//! `/previous`, `/stop`, `/seek_back`, `/volume_up` und so weiter. Tasten schicken oft
 //! 1.0 beim Drücken und 0.0 beim Loslassen; nur das Drücken zählt.
 
 use std::io;
@@ -21,13 +22,7 @@ use crate::command::RemoteCommand;
 
 /// Der Befehl zu einem OSC-Pfad.
 pub fn command_for(addr: &str) -> Option<PartyCommand> {
-    match addr {
-        "/woa/party/play_pause" => Some(PartyCommand::PlayPause),
-        "/woa/party/next" => Some(PartyCommand::Next),
-        "/woa/party/volume_up" => Some(PartyCommand::VolumeUp),
-        "/woa/party/volume_down" => Some(PartyCommand::VolumeDown),
-        _ => None,
-    }
+    crate::command::simple_command(addr.strip_prefix("/woa/party/")?)
 }
 
 /// Zählt als Drücken: kein Argument, Zahl ungleich 0, wahr.
@@ -168,6 +163,25 @@ mod tests {
         collect(&msg("/woa/party/unbekannt", vec![]), 0, &mut out);
         collect(&msg("/ardour/transport", vec![]), 0, &mut out);
         assert_eq!(out, vec![PartyCommand::Next, PartyCommand::PlayPause]);
+    }
+
+    #[test]
+    fn transport_paths_map_to_commands() {
+        for (path, cmd) in [
+            ("previous", PartyCommand::Previous),
+            ("stop", PartyCommand::Stop),
+            ("play", PartyCommand::Play),
+            ("restart", PartyCommand::Restart),
+            ("seek_back", PartyCommand::SeekBack),
+            ("seek_forward", PartyCommand::SeekForward),
+            ("mute", PartyCommand::Mute),
+            ("repeat", PartyCommand::CycleRepeat),
+            ("shuffle", PartyCommand::ToggleShuffle),
+        ] {
+            assert_eq!(command_for(&format!("/woa/party/{path}")), Some(cmd));
+        }
+        assert_eq!(command_for("/woa/party/"), None);
+        assert_eq!(command_for("/woa/other/previous"), None);
     }
 
     #[test]

@@ -97,6 +97,9 @@ pub enum Cmd {
     Stop,
     /// Jetzt zum nächsten Titel überblenden (oder ausblenden, wenn keiner bereitliegt).
     Next,
+    /// Im laufenden Titel um so viele Frames springen (negativ: zurück); bleibt zwischen
+    /// Cue-In und Cue-Out.
+    Seek(i64),
     /// Crossfade-Länge in Frames.
     SetCrossfade(usize),
     /// Absenkung der Musik bei offenem Mikro (linear).
@@ -163,6 +166,8 @@ pub struct Status {
     pub position: AtomicU64,
     /// Ende des aktuellen Titels (Frames), bei „Weiter“ vorgezogen.
     pub end: AtomicU64,
+    /// Zählt jeden Titelwechsel (auch wenn derselbe Titel noch einmal beginnt).
+    pub plays: AtomicU32,
     pub playing: AtomicBool,
     /// Bit je laufendem Cart.
     pub carts: AtomicU32,
@@ -206,6 +211,7 @@ impl Default for Status {
             next: AtomicU32::new(NONE),
             position: AtomicU64::new(0),
             end: AtomicU64::new(0),
+            plays: AtomicU32::new(0),
             playing: AtomicBool::new(false),
             carts: AtomicU32::new(0),
             deck_state: std::array::from_fn(|_| AtomicU32::new(DECK_EMPTY)),
@@ -513,6 +519,7 @@ impl Mixer {
                     }
                 }
                 Cmd::Next => self.skip(),
+                Cmd::Seek(delta) => self.seek(delta),
                 Cmd::SetCrossfade(f) => self.xf_frames = f,
                 Cmd::SetDuck(g) => {
                     self.duck_lin = g.clamp(0.0, 1.0);
@@ -623,6 +630,18 @@ impl Mixer {
         }
     }
 
+    /// Springt im laufenden Titel (kein Sprung während einer Überblendung oder Ausblendung).
+    fn seek(&mut self, delta: i64) {
+        if !self.playing || self.outgoing.is_some() {
+            return;
+        }
+        if let Some(c) = self.current.as_mut() {
+            let last = c.end.saturating_sub(1).max(c.start);
+            let to = (c.pos as i64).saturating_add(delta).max(c.start as i64) as usize;
+            c.pos = to.min(last);
+        }
+    }
+
     /// „Weiter“: das aktuelle Stück endet nach einer Überblendlänge.
     fn skip(&mut self) {
         if !self.playing || self.outgoing.is_some() {
@@ -708,6 +727,7 @@ impl Mixer {
                 return;
             }
             self.current = self.next.take();
+            self.status.plays.fetch_add(1, Ordering::Release);
             self.start_at = None;
             return;
         }
@@ -738,6 +758,7 @@ impl Mixer {
             self.xf_step = 1;
             self.outgoing = if self.xf_len > 0 { out } else { None };
             self.current = self.next.take();
+            self.status.plays.fetch_add(1, Ordering::Release);
         }
     }
 

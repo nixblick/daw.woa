@@ -29,6 +29,37 @@ const UNMEASURED_SECONDS: f64 = 180.0;
 /// Eine Mitschnitt-Datei je so vielen Sekunden (WAV-Grenze 4 GiB).
 pub const RECORD_FILE_SECONDS: u64 = 3600;
 
+/// Wiederholen nach Art von Apple Music: aus, ganze Playlist, ein Titel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Repeat {
+    #[default]
+    Off,
+    /// Nach dem letzten Titel beginnt die Playlist von vorn.
+    All,
+    /// Am Ende beginnt derselbe Titel neu; „Weiter“ springt trotzdem.
+    One,
+}
+
+impl Repeat {
+    /// Der nächste Zustand beim Klick: aus, Playlist, Titel, aus.
+    pub fn cycled(self) -> Self {
+        match self {
+            Repeat::Off => Repeat::All,
+            Repeat::All => Repeat::One,
+            Repeat::One => Repeat::Off,
+        }
+    }
+
+    /// Name für Anzeige-Zustand und Fernbedienung.
+    pub fn name(self) -> &'static str {
+        match self {
+            Repeat::Off => "off",
+            Repeat::All => "all",
+            Repeat::One => "one",
+        }
+    }
+}
+
 type WavOut = hound::WavWriter<std::io::BufWriter<std::fs::File>>;
 
 /// Ein laufender Mitschnitt.
@@ -115,6 +146,20 @@ pub struct Controller {
     next_uid: u32,
     /// Bereitgelegter, vom Mixer noch nicht begonnener Titel.
     pending: Option<u32>,
+    /// Titelwechsel-Zähler des Mixers, als `pending` bereitgelegt wurde: so ist erkennbar,
+    /// dass auch derselbe Titel (Wiederholen) wirklich neu begonnen hat.
+    pending_plays: u32,
+    /// Pausiert: Titel (uid), Stelle und Ende in Frames. `None`, wenn nicht pausiert.
+    paused: Option<(u32, u64, u64)>,
+    /// Nach dem Beginn des Titels (uid) einmal an diese Stelle springen; dazu der Stand des
+    /// Titelwechsel-Zählers beim Start.
+    resume_at: Option<(u32, u64, u32)>,
+    /// Wiederholen und Zufall (laufen nur, nicht in der gespeicherten Sendung).
+    repeat: Repeat,
+    shuffle: bool,
+    /// Bei Zufall schon gespielte Titel (uid).
+    played: Vec<u32>,
+    rng: u64,
     /// Titel, mit dem „Start“ beginnt (uid), falls nichts läuft.
     cue: Option<u32>,
     running: bool,
@@ -177,6 +222,13 @@ impl Controller {
             show: RadioShow::default(),
             next_uid: 1,
             pending: None,
+            pending_plays: 0,
+            paused: None,
+            resume_at: None,
+            repeat: Repeat::Off,
+            shuffle: false,
+            played: Vec::new(),
+            rng: 0x9e37_79b9_7f4a_7c15 ^ wall_now().to_bits(),
             cue: None,
             running: false,
             carts: vec![None; CARTS],
@@ -400,9 +452,159 @@ impl Controller {
 
     // ---- Transport -------------------------------------------------------------------
 
-    /// Start (wenn nichts läuft) oder Weiter (Überblenden zum nächsten Titel).
-    pub fn start_or_next(&mut self) {
+    /// Wiederholen-Modus.
+    pub fn repeat(&self) -> Repeat {
+        self.repeat
+    }
+
+    pub fn set_repeat(&mut self, r: Repeat) {
+        if self.repeat != r {
+            self.repeat = r;
+            self.requeue_choice();
+        }
+    }
+
+    /// Ein Knopf, drei Zustände: aus, Playlist, Titel, aus.
+    pub fn cycle_repeat(&mut self) {
+        self.set_repeat(self.repeat.cycled());
+    }
+
+    /// Zufällige Reihenfolge.
+    pub fn shuffle(&self) -> bool {
+        self.shuffle
+    }
+
+    pub fn set_shuffle(&mut self, on: bool) {
+        if self.shuffle != on {
+            self.shuffle = on;
+            self.played.clear();
+            if on && let Some(i) = self.current_index() {
+                // Was gerade läuft, zählt als gespielt.
+                let uid = self.show.playlist[i].uid;
+                self.played.push(uid);
+            }
+            self.requeue_choice();
+        }
+    }
+
+    pub fn toggle_shuffle(&mut self) {
+        self.set_shuffle(!self.shuffle);
+    }
+
+    /// Die Wahl des nächsten Titels hat sich geändert: den bereitgelegten verwerfen, der Takt
+    /// legt einen neuen bereit.
+    fn requeue_choice(&mut self) {
+        self.requeue();
+    }
+
+    fn rand(&mut self) -> u64 {
+        // xorshift64: reicht für eine Zufallsfolge von Titeln.
+        let mut x = self.rng;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.rng = x;
+        x
+    }
+
+    /// Titel, die als Nächstes infrage kommen, in Reihenfolge der Wahl (nur Musik, keine
+    /// Voice-Tracks). `after`: erster Index der normalen Reihenfolge. `honor_one`: bei
+    /// „Titel wiederholen“ kommt zuerst derselbe Titel (aus bei „Weiter“).
+    fn candidates(&mut self, cur: Option<usize>, after: usize, honor_one: bool) -> Vec<usize> {
+        let n = self.show.playlist.len();
+        let music = |s: &Self, i: usize| s.show.playlist[i].voice.is_none();
+        let mut out = Vec::new();
+        if honor_one
+            && self.repeat == Repeat::One
+            && let Some(i) = cur.filter(|&i| i < n && music(self, i))
+        {
+            out.push(i);
+        }
+        if self.shuffle {
+            let mut pool: Vec<usize> = (0..n)
+                .filter(|&i| music(self, i) && Some(i) != cur)
+                .filter(|&i| !self.played.contains(&self.show.playlist[i].uid))
+                .collect();
+            if pool.is_empty() && self.repeat == Repeat::All {
+                // Alle durch: eine neue Runde.
+                self.played.clear();
+                pool = (0..n)
+                    .filter(|&i| music(self, i) && Some(i) != cur)
+                    .collect();
+            }
+            if !pool.is_empty() {
+                let k = (self.rand() % pool.len() as u64) as usize;
+                out.push(pool[k]);
+            }
+        } else {
+            out.extend((after..n).filter(|&i| music(self, i)));
+            if self.repeat == Repeat::All {
+                let upto = cur.map_or(0, |c| c + 1).min(n);
+                out.extend((0..upto).filter(|&i| music(self, i)));
+            }
+        }
+        out
+    }
+
+    /// Spielt Titel `index` jetzt: Überblendung dorthin (oder Start, wenn nichts läuft).
+    fn jump_to(&mut self, index: usize) {
         if self.running && self.status.current.load(Ordering::Acquire) != NONE {
+            self.send(Cmd::ClearNext);
+            self.pending = None;
+            if self.queue_index(index) {
+                self.send(Cmd::Next);
+            }
+        } else {
+            self.set_cue(index);
+            self.start();
+        }
+    }
+
+    /// Vorheriger Titel; am Anfang der Playlist beginnt der laufende Titel neu.
+    pub fn previous(&mut self) {
+        let cur = self.current_index().unwrap_or_else(|| self.cue_index());
+        let to = self.show.prev_music(cur).unwrap_or(cur);
+        self.jump_to(to);
+    }
+
+    /// Der laufende (bzw. bereitliegende) Titel beginnt von vorn.
+    pub fn restart(&mut self) {
+        if self.running && self.status.current.load(Ordering::Acquire) != NONE {
+            // Ohne Überblendung: zurück auf Cue-In (der Mixer begrenzt den Sprung).
+            self.send(Cmd::Seek(-1_000_000_000_000));
+        } else {
+            let cur = self.current_index().unwrap_or_else(|| self.cue_index());
+            self.set_cue(cur);
+            self.start();
+        }
+    }
+
+    /// Im laufenden Titel um `seconds` springen (negativ: zurück).
+    pub fn seek(&mut self, seconds: f64) {
+        if self.status.current.load(Ordering::Acquire) == NONE || !seconds.is_finite() {
+            return;
+        }
+        let frames = (seconds * f64::from(self.rate)).round() as i64;
+        self.send(Cmd::Seek(frames));
+    }
+
+    /// Start (wenn nichts läuft) oder Weiter (Überblenden zum nächsten Titel). Bei „Titel
+    /// wiederholen“ springt Weiter trotzdem zum nächsten Titel.
+    pub fn start_or_next(&mut self) {
+        if self.paused.is_some() {
+            self.play();
+            return;
+        }
+        if self.running && self.status.current.load(Ordering::Acquire) != NONE {
+            if self.repeat == Repeat::One {
+                let cur = self.current_index();
+                let after = cur.map_or(0, |i| i + 1);
+                let target = self.candidates(cur, after, false).into_iter().next();
+                if let Some(t) = target {
+                    self.jump_to(t);
+                    return;
+                }
+            }
             self.send(Cmd::Next);
         } else {
             self.start();
@@ -423,8 +625,13 @@ impl Controller {
         self.send(Cmd::ClearNext);
         self.pending = None;
         self.failed.clear();
+        self.played.clear();
         self.running = true;
         if self.queue_index(from) {
+            if self.shuffle {
+                let uid = self.show.playlist[from].uid;
+                self.played.push(uid);
+            }
             self.send(Cmd::Play);
         } else {
             self.running = false;
@@ -433,12 +640,81 @@ impl Controller {
 
     /// Blendet die Musik aus und hält an. „Start“ beginnt danach mit dem Titel, der lief.
     pub fn stop(&mut self) {
+        self.paused = None;
+        self.resume_at = None;
         if let Some(i) = self.current_index() {
             self.set_cue(i);
         }
         self.running = false;
         self.pending = None;
         self.send(Cmd::Stop);
+    }
+
+    /// Pause: blendet aus und merkt sich die Stelle. [`Self::play`] macht dort weiter.
+    pub fn pause(&mut self) {
+        let cur = self.status.current.load(Ordering::Acquire);
+        if !self.running || cur == NONE {
+            return;
+        }
+        let pos = self.status.position.load(Ordering::Acquire);
+        let end = self.status.end.load(Ordering::Acquire);
+        self.stop();
+        self.paused = Some((cur, pos, end));
+    }
+
+    /// Pausiert (Stelle gemerkt)?
+    pub fn is_paused(&self) -> bool {
+        self.paused.is_some()
+    }
+
+    /// Restzeit des pausierten Titels (Sekunden) und seine Länge bis Cue-Out, wenn pausiert.
+    pub fn paused_times(&self) -> Option<(f64, f64)> {
+        let (_, pos, end) = self.paused?;
+        let r = f64::from(self.rate);
+        Some((end.saturating_sub(pos) as f64 / r, end as f64 / r))
+    }
+
+    /// Play: nach einer Pause an der gemerkten Stelle weiter, sonst starten (wie
+    /// [`Self::start_or_next`]).
+    pub fn play(&mut self) {
+        let Some((uid, pos, _)) = self.paused else {
+            self.start_or_next();
+            return;
+        };
+        let Some(i) = self.index_of(uid) else {
+            // Der Titel ist nicht mehr in der Playlist: normal starten.
+            self.paused = None;
+            self.start();
+            return;
+        };
+        self.paused = None;
+        if self.status.current.load(Ordering::Acquire) == uid {
+            // Die Ausblendung läuft noch: Play nimmt sie zurück, der Titel läuft einfach weiter.
+            self.running = true;
+            self.send(Cmd::Play);
+            return;
+        }
+        let plays = self.status.plays.load(Ordering::Acquire);
+        self.set_cue(i);
+        self.start();
+        if self.running {
+            self.resume_at = Some((uid, pos, plays));
+        }
+    }
+
+    /// Nach dem Beginn des pausierten Titels an die gemerkte Stelle springen.
+    fn resume_tick(&mut self) {
+        let Some((uid, pos, plays)) = self.resume_at else {
+            return;
+        };
+        if self.status.current.load(Ordering::Acquire) != uid
+            || self.status.plays.load(Ordering::Acquire) == plays
+        {
+            return;
+        }
+        self.resume_at = None;
+        let now = self.status.position.load(Ordering::Acquire);
+        self.send(Cmd::Seek(pos as i64 - now as i64));
     }
 
     /// Legt Titel `index` beim Mixer bereit. `false` bei Fehler (Titel wird übersprungen
@@ -501,6 +777,7 @@ impl Controller {
                     hold: event.is_some_and(|r| r.hard),
                 });
                 self.pending = Some(uid);
+                self.pending_plays = self.status.plays.load(Ordering::Acquire);
                 self.queue_voice(index, uid);
                 true
             }
@@ -867,6 +1144,7 @@ impl Controller {
     pub fn pump_at(&mut self, now: f64) {
         self.sync_voices();
         self.pump_queue();
+        self.resume_tick();
         self.event_tick(now);
     }
 
@@ -891,6 +1169,10 @@ impl Controller {
                 // Noch bereitgelegt oder unterwegs: warten.
                 return;
             }
+            if self.status.plays.load(Ordering::Acquire) == self.pending_plays {
+                // Derselbe Titel läuft noch (Wiederholen): der neue hat noch nicht begonnen.
+                return;
+            }
             // Mixer hat ihn begonnen.
             self.pending = None;
         }
@@ -909,16 +1191,16 @@ impl Controller {
             // Laufender Titel wurde aus der Playlist entfernt: mit dem Cue weiter.
             None => self.cue_index(),
         };
-        for i in after..self.show.playlist.len() {
+        let cur_idx = self.index_of(cur);
+        for i in self.candidates(cur_idx, after, true) {
             let uid = self.show.playlist[i].uid;
-            if self.show.playlist[i].voice.is_some() {
-                // Voice-Tracks spielen nie als Deck, sie hängen am Titel dahinter.
-                continue;
-            }
             if self.failed.contains(&uid) {
                 continue;
             }
             if self.queue_index(i) {
+                if self.shuffle {
+                    self.played.push(uid);
+                }
                 break;
             }
             // Kaputte Datei: überspringen (Meldung steht in `message`).

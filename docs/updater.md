@@ -11,7 +11,7 @@ Ausschalten: Einstellungen → „Beim Start nach Updates suchen“, oder `"auto
 
 Code: `crates/updater` (Prüfung, Netz), `crates/gui/src/update.rs` und `update_*` in
 `crates/gui/src/app.rs` (Anzeige), `packaging/windows/woa.wxs` (Neustart),
-`.github/workflows/release.yml` (Bau, Signatur, Entwurf).
+`.github/workflows/release.yml` (Bau, Signatur, Entwurf; Ablauf: `docs/release.md`).
 
 ## Quelle und Manifest
 
