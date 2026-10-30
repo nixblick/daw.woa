@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.24.0 — 2026-10-30
+
+Paket 29 aus M9: Feste Zeit-Events und pünktliche volle Stunde.
+
+- **Zeit-Events (`woa_radio::events`):** Nachrichten, Werbung oder Stundenjingle mit Uhrzeit oder Muster (Wochentage, Stunden, Minute, Sekunde), **hart** oder **weich**. Tabelle in `events.json` (atomar gespeichert, Grenzen geprüft, kaputte Datei wird gemeldet und nie überschrieben). Ein Prüftakt im Steuer-Thread löst aus; Vorbild ist die Eintragstabelle `cron.liq` in Liquidsoap (nur die Idee, kein Code).
+- **Hart:** 30 s vorher wird die Datei vorgeladen, das Event wird in die Playlist eingefügt und beginnt zur genauen Zeit; der laufende Titel blendet in 250 ms ab, auch mitten in einer Überblendung (die wird beschleunigt beendet). **Weich:** das Event kommt direkt nach dem laufenden Titel. Zu spät (hart 20 s, weich 30 min) oder nicht auf Sendung: „verpasst“, mit Log, nie doppelt.
+- **Sommerzeit automatisch:** Ortszeit mit EU-Regel ohne Zeitzonendatenbank (`woa_engine::localtime`), Häkchen „Sommerzeit“ in der Stundenuhr. Feste Uhrzeit in der doppelten Oktoberstunde: einmal; in der ausgefallenen Märzstunde: zum Umstellmoment; jede Stunde: jede echte Stunde. Die Stundenuhr nutzt dieselbe Zone.
+- **AutoDJ plant rückwärts:** Vor einem harten Event wählt `rotation::plan_until` in den letzten 8 Minuten die Titel, die am besten in die Lücke passen, und zieht die Überblendung ab; Schnitt und Rest stehen im Log.
+- **Übergänge nach Mixxx:** `woa_radio::transition` rechnet die Überblendung aus Outro- und Intro-Marken samt Randfällen. **Verhaltensänderung:** bei sehr kurzem Folgetitel (4 s) ist die Überblendung jetzt 1 s statt der Hälfte; `show::total_length` rechnet danach. `Cmd::Queue` trägt dafür `lead` und `hold`, neu sind `Cmd::StartAt` und `Cmd::ClearStartAt`.
+- **Oberfläche:** Knopf „Zeit-Events“ (Liste, Muster, hart/weich, Datei, Entfernen); unter der Uhr „NÄCHSTES EVENT … in mm:ss“ und „ZULETZT … ±x,x s“.
+- **Tests:** eine Stunde durch den echten Mixer (hart nach 0,12 s, mitten in Überblendung, weich nach dem Titel, keine Lücke, ohne Speicher im Audio-Thread), eine Woche mit simulierter Uhr über Mitternacht und Zeitumstellung, Mixxx-Randfälle, Planer, Editor, Fenster ohne Display.
+- **Herkunft und Lizenz:** `docs/herkunft.md`.
+- **Nicht gebaut:** Nachrichtenquelle (externer Dienst); Events spielen eine lokale Datei.
+
 ## 0.23.0 — 2026-10-30
 
 Paket 28 aus M9: Stundenuhr und AutoDJ-Rotation.

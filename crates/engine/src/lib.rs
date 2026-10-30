@@ -33,6 +33,7 @@ pub const RADIO_BUFFER_FRAMES: u32 = 0;
 pub mod export;
 pub mod ffmpeg;
 pub mod live_peaks;
+pub mod localtime;
 pub mod loudness;
 pub mod midi_clip;
 pub mod project;

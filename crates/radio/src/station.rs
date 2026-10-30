@@ -82,6 +82,12 @@ pub struct View {
     /// Cue-Bearbeitungen lassen sich zurücknehmen / wiederholen.
     pub cues_undo: bool,
     pub cues_redo: bool,
+    /// Nächstes Zeit-Event: Name, Sekunden bis dahin, hart (Paket 29).
+    pub next_event: Option<(String, f64, bool)>,
+    /// Zuletzt gespieltes Zeit-Event und Abweichung in Sekunden (positiv: zu spät).
+    pub last_event: Option<(String, f64)>,
+    /// Verpasste Zeit-Events seit dem Start.
+    pub events_missed: u32,
 }
 
 /// Griff auf den laufenden Sende-Thread.
@@ -274,6 +280,9 @@ fn run(
             pfl_playing: c.pfl_playing(),
             cues_undo: c.can_undo_cues(),
             cues_redo: c.can_redo_cues(),
+            next_event: c.next_event(crate::control::wall_now()),
+            last_event: c.last_event().cloned(),
+            events_missed: c.events_missed(),
         };
         if let Ok(mut out) = view.lock() {
             *out = v;

@@ -62,7 +62,17 @@ pub enum Cmd {
         gain: f32,
         /// Cue-Punkte in Frames (Paket 15).
         cues: CueFrames,
+        /// Überblendlänge vom laufenden Titel in diesen (Paket 29, Mixxx-Übergang aus
+        /// Intro/Outro); `None`: die eingestellte Überblendzeit.
+        lead: Option<usize>,
+        /// Zeit-Event: beginnt nie von selbst, sondern erst mit [`Cmd::StartAt`].
+        hold: bool,
     },
+    /// Das bereitgelegte Zeit-Event beginnt, sobald die Mixer-Uhr diesen Frame erreicht
+    /// (Paket 29). Der laufende Titel wird darunter ausgeblendet.
+    StartAt(u64),
+    /// Nimmt [`Cmd::StartAt`] zurück.
+    ClearStartAt,
     /// Bereitgelegten Titel verwerfen.
     ClearNext,
     /// Sendung starten: der bereitgelegte Titel beginnt.
@@ -214,6 +224,10 @@ struct Deck {
     gain: f32,
     /// Ausblenden über die letzten so vielen Frames (0 = keins), bei „Weiter“ ohne Nachfolger.
     tail: usize,
+    /// Überblendlänge vom Vorgänger (Paket 29).
+    lead: Option<usize>,
+    /// Zeit-Event: wartet auf [`Cmd::StartAt`].
+    hold: bool,
 }
 
 impl Deck {
@@ -231,6 +245,8 @@ impl Deck {
             skipped: false,
             gain,
             tail: 0,
+            lead: None,
+            hold: false,
         }
     }
 
@@ -282,6 +298,12 @@ pub struct Mixer {
     xf_frames: usize,
     xf_len: usize,
     xf_pos: usize,
+    /// Schritt von `xf_pos` je Frame; größer als 1 beschleunigt eine laufende Überblendung
+    /// vor einem harten Zeit-Event.
+    xf_step: usize,
+    /// Frame der Mixer-Uhr, an dem das bereitgelegte Zeit-Event beginnt.
+    start_at: Option<u64>,
+    rate_hz: u32,
     playing: bool,
     stop_len: usize,
     stopping: Option<usize>,
@@ -317,6 +339,9 @@ impl Mixer {
             xf_frames: (3.0 * r) as usize,
             xf_len: 0,
             xf_pos: 0,
+            xf_step: 1,
+            start_at: None,
+            rate_hz: rate.max(1),
             playing: false,
             stop_len: (STOP_SECONDS * r).max(1.0) as usize,
             stopping: None,
@@ -347,7 +372,16 @@ impl Mixer {
                     buf,
                     gain,
                     cues,
-                } => self.next = Some(Deck::new(uid, buf, gain, cues)),
+                    lead,
+                    hold,
+                } => {
+                    let mut d = Deck::new(uid, buf, gain, cues);
+                    d.lead = lead;
+                    d.hold = hold;
+                    self.next = Some(d);
+                }
+                Cmd::StartAt(frame) => self.start_at = Some(frame),
+                Cmd::ClearStartAt => self.start_at = None,
                 Cmd::ClearNext => self.next = None,
                 Cmd::Play => {
                     self.playing = true;
@@ -421,6 +455,10 @@ impl Mixer {
             // Vorgezogenes Ende („Weiter“): die Restlänge ist die Überblendung.
             return cur.remaining();
         }
+        if let Some(l) = next.lead {
+            // Übergang aus Intro/Outro (Controller gerechnet, `transition.rs`).
+            return l.min(cur.len()).min(next.len() / 2);
+        }
         match cur.fade {
             // Fade-Out-Marker: Überblendung von dort bis Cue-Out (wie `crossfade_entries`).
             Some(f) => f.min(cur.len()).min(next.len() / 2),
@@ -432,21 +470,47 @@ impl Mixer {
         if !self.playing || self.stopping.is_some() {
             return;
         }
+        let due = self.start_at.is_some_and(|t| self.clock >= t);
+        let held = self.next.as_ref().is_some_and(|n| n.hold);
+        if due && self.outgoing.is_some() && held {
+            // Läuft noch eine Überblendung: in rund 0,2 s zu Ende bringen, nicht warten.
+            let fast = (self.rate_hz as usize / 5).max(1);
+            let left = self.xf_len.saturating_sub(self.xf_pos);
+            self.xf_step = self.xf_step.max(left.div_ceil(fast).max(1));
+        }
         if self.current.is_none() && self.outgoing.is_none() && self.next.is_some() {
+            if held && !due {
+                return;
+            }
             self.current = self.next.take();
+            self.start_at = None;
             return;
         }
         if self.outgoing.is_some() {
             return;
         }
         let start = match (&self.current, &self.next) {
+            (Some(c), Some(n)) if n.hold => due && !c.done(),
             (Some(c), Some(n)) => c.remaining() <= self.xf_for(c, n),
             _ => false,
         };
+        if start && held {
+            // Hartes Zeit-Event: der laufende Titel wird unter dem Event ausgeblendet.
+            self.start_at = None;
+            if let (Some(c), Some(n)) = (self.current.as_mut(), self.next.as_ref()) {
+                // Kurz (250 ms): das Event soll auf die Zeit sitzen, nicht langsam einblenden.
+                let fade = (self.rate_hz as usize / 4)
+                    .min(self.xf_frames)
+                    .min(c.remaining())
+                    .min(n.len() / 2);
+                c.end = c.pos + fade;
+            }
+        }
         if start {
             let out = self.current.take();
             self.xf_len = out.as_ref().map_or(0, Deck::remaining);
             self.xf_pos = 0;
+            self.xf_step = 1;
             self.outgoing = if self.xf_len > 0 { out } else { None };
             self.current = self.next.take();
         }
@@ -481,7 +545,7 @@ impl Mixer {
                 let (l, r) = o.next();
                 ml += l * g_out;
                 mr += r * g_out;
-                self.xf_pos += 1;
+                self.xf_pos += self.xf_step;
                 if self.xf_pos >= self.xf_len || o.done() {
                     self.outgoing = None;
                 }

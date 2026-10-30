@@ -15,7 +15,8 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use woa_library::Library;
 use woa_library::rotation::{
-    self, Ahead, AutoDjState, HourClock, MAX_CLOCKS, MAX_SLOTS, Schedule, Slot, WEEK_HOURS,
+    self, Ahead, AutoDjState, Deadline, HourClock, MAX_CLOCKS, MAX_SLOTS, Schedule, Slot,
+    WEEK_HOURS,
 };
 use woa_radio::station::View;
 
@@ -52,6 +53,8 @@ pub struct ClockEditor {
     /// Zuletzt als gespielt eingetragen: Position und Pfad.
     last_played: Option<(usize, PathBuf)>,
     planned_at: Option<Instant>,
+    /// Zeit-Events (Paket 29): der AutoDJ plant rückwärts auf das nächste harte.
+    events: woa_radio::events::EventTable,
     /// Letzte Auswahlen, neueste zuletzt.
     pub log: Vec<String>,
 }
@@ -72,6 +75,7 @@ impl ClockEditor {
             queued: HashMap::new(),
             last_played: None,
             planned_at: None,
+            events: woa_radio::events::EventTable::default(),
             log: Vec::new(),
         }
     }
@@ -356,6 +360,11 @@ impl ClockEditor {
 
     // ---- AutoDJ -------------------------------------------------------------------------
 
+    /// Die Zeit-Events, auf deren hartes nächstes der AutoDJ rückwärts plant.
+    pub fn set_events(&mut self, table: woa_radio::events::EventTable) {
+        self.events = table;
+    }
+
     fn note(&mut self, line: String) {
         self.log.push(line);
         if self.log.len() > LOG_LINES {
@@ -394,6 +403,10 @@ impl ClockEditor {
             };
         let schedule = self.schedule.clone();
         let mut state = self.state.clone();
+        let deadline = self.events.next_hard(start).map(|(at, _)| Deadline {
+            at,
+            overlap_s: v.crossfade_seconds.round() as i64,
+        });
         let Some(lib) = self.library() else {
             self.error = Some("AutoDJ: Bibliothek nicht zu öffnen".into());
             return Vec::new();
@@ -412,14 +425,15 @@ impl ClockEditor {
                 }
             })
             .collect();
-        let picks = match rotation::plan(lib, &schedule, &mut state, start, &ahead, need) {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::error!(error = %e, "autodj plan failed");
-                self.error = Some(format!("AutoDJ: {e}"));
-                return Vec::new();
-            }
-        };
+        let picks =
+            match rotation::plan_until(lib, &schedule, &mut state, start, &ahead, need, deadline) {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::error!(error = %e, "autodj plan failed");
+                    self.error = Some(format!("AutoDJ: {e}"));
+                    return Vec::new();
+                }
+            };
         self.state = state;
         if picks.is_empty() {
             self.note("Nichts zu spielen: Kategorie, Ersatz und Notfall sind leer".into());
@@ -577,7 +591,19 @@ impl ClockEditor {
                     .range(-840..=840)
                     .suffix(" min"),
             )
-            .on_hover_text("Ortszeit gegenüber UTC: Winter 60, Sommer 120");
+            .on_hover_text("Ortszeit gegenüber UTC im Winter (Mitteleuropa 60)");
+            let mut dst = self.schedule.auto_dst;
+            if ui
+                .checkbox(&mut dst, "Sommerzeit")
+                .on_hover_text(
+                    "EU-Sommerzeit automatisch (letzter Sonntag im März bis Oktober). \
+                     Aus: der Versatz gilt das ganze Jahr.",
+                )
+                .changed()
+            {
+                self.schedule.auto_dst = dst;
+                self.touch();
+            }
             if (ahead, tl, al, off) != before {
                 self.set_rules(ahead, tl, al, off);
             }
@@ -678,7 +704,7 @@ impl ClockEditor {
                 .color(theme::DIM),
         );
         let cell = egui::vec2(15.0, 17.0);
-        let now = rotation::local_hour(now_unix(), self.schedule.utc_offset_min);
+        let now = rotation::local_hour(now_unix(), self.schedule.zone());
         let mut changes: Vec<(u8, u8, bool)> = Vec::new();
         for (d, day) in DAYS.iter().enumerate() {
             ui.horizontal(|ui| {
@@ -855,6 +881,7 @@ mod tests {
         let (mut e, dir) = editor();
         seed_library(dir.path());
         e.schedule.utc_offset_min = 0;
+        e.schedule.auto_dst = false;
         e.schedule.lookahead = 4;
         e.schedule.track_lockout_min = 0;
         e.schedule.artist_lockout_min = 0;

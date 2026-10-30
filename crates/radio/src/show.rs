@@ -269,17 +269,14 @@ impl RadioShow {
             .max(0.0)
     }
 
-    /// Überblendung von Eintrag `a` nach `b`: mit Fade-Out-Marker von dort bis Cue-Out
-    /// (höchstens die halbe Länge von `b`), sonst [`Self::crossfade_between`].
+    /// Überblendung von Eintrag `a` nach `b` nach der Mixxx-Logik aus Outro von `a` und Intro
+    /// von `b` (`transition.rs`); ohne Marken [`Self::crossfade_between`].
     /// Ungemessene Titel zählen 0.
     pub fn crossfade_entries(&self, a: &PlaylistEntry, b: &PlaylistEntry) -> f64 {
-        let (Some(la), Some(lb)) = (a.play_seconds(), b.play_seconds()) else {
+        let (Some(sa), Some(sb)) = (a.seconds, b.seconds) else {
             return 0.0;
         };
-        match a.seconds.and_then(|s| a.cues.fade_seconds(s)) {
-            Some(f) => f.min(la).min(lb / 2.0).max(0.0),
-            None => self.crossfade_between(la, lb),
-        }
+        crate::transition::overlap_seconds(self.crossfade_seconds, &a.cues, sa, &b.cues, sb)
     }
 
     /// Gesamtlänge der Playlist ab Titel `from` (Sekunden): gespielte Längen minus
@@ -375,9 +372,9 @@ mod tests {
             e.seconds = Some(s);
             show.playlist.push(e);
         }
-        // 3 s between 10 and 20, then at most half of 4 s = 2 s.
-        assert!((show.total_seconds_from(0) - (34.0 - 3.0 - 2.0)).abs() < 1e-9);
-        assert!((show.total_seconds_from(1) - 22.0).abs() < 1e-9);
+        // 3 s between 10 and 20, then for the 4 s title Mixxx keeps the transition time before its own end: 4 - 3 = 1 s.
+        assert!((show.total_seconds_from(0) - (34.0 - 3.0 - 1.0)).abs() < 1e-9);
+        assert!((show.total_seconds_from(1) - 23.0).abs() < 1e-9);
         assert!(show.move_entry(2, 0));
         assert_eq!(show.playlist[0].seconds, Some(4.0));
         assert!(!show.move_entry(5, 0));

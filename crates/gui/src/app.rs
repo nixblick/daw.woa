@@ -172,6 +172,7 @@ pub struct WoaApp {
     /// Export-Fenster (Paket 26).
     export_dialog: crate::export_dialog::ExportDialog,
     clock_editor: crate::clock_editor::ClockEditor,
+    event_editor: crate::event_editor::EventEditor,
     /// Sendeablauf; läuft weiter, auch wenn das Produzent-Layout zu sehen ist.
     radio: Option<RadioDesk>,
     /// MIDI-Eingang (Paket 11), spielt das Instrument der scharfen MIDI-Spur.
@@ -485,6 +486,7 @@ impl WoaApp {
             ),
             export_dialog: crate::export_dialog::ExportDialog::new(),
             clock_editor: crate::clock_editor::ClockEditor::new(woa_radio::data_dir()),
+            event_editor: crate::event_editor::EventEditor::new(woa_radio::data_dir()),
             radio: None,
             frames: (0, Instant::now()),
         }
@@ -514,6 +516,7 @@ impl WoaApp {
     pub fn set_data_dir(&mut self, dir: PathBuf) {
         self.library.set_db_path(dir.join(crate::library::DB_FILE));
         self.clock_editor.set_dir(dir.clone());
+        self.event_editor.set_dir(dir.clone());
         self.data_dir = dir;
     }
 
@@ -2084,6 +2087,13 @@ impl WoaApp {
                 .clicked()
             {
                 self.clock_editor.toggle();
+            }
+            if ui
+                .selectable_label(self.event_editor.open, "Zeit-Events")
+                .on_hover_text("Nachrichten, Werbung und Stundenjingle zur festen Zeit")
+                .clicked()
+            {
+                self.event_editor.toggle();
             }
             if ui.button("Feedback …").clicked() {
                 self.feedback.open();
@@ -4533,6 +4543,17 @@ impl eframe::App for WoaApp {
         let player_active = self.player.as_ref().is_some_and(Player::is_active);
         if let Some(r) = self.radio.as_mut() {
             r.tick(player_active);
+            // Zeit-Events: Tabelle laden, Zone von der Stundenuhr, an den Sende-Thread reichen;
+            // der AutoDJ plant rückwärts auf das nächste harte Event.
+            self.event_editor.ensure_loaded();
+            self.event_editor.set_zone(
+                self.clock_editor.schedule.utc_offset_min,
+                self.clock_editor.schedule.auto_dst,
+            );
+            if let Some(t) = self.event_editor.take_push() {
+                self.clock_editor.set_events(t.clone());
+                r.push_events(t);
+            }
             // AutoDJ: Historie nachtragen und die Playlist hinten auffüllen.
             let add = self
                 .clock_editor
@@ -4542,6 +4563,7 @@ impl eframe::App for WoaApp {
             }
         }
         self.clock_editor.tick_save();
+        self.event_editor.tick_save();
         if self.config.mode == Mode::Radio {
             if let Some(r) = self.radio.as_mut() {
                 r.shortcuts(ctx);
@@ -4631,6 +4653,8 @@ impl eframe::App for WoaApp {
             radio.cue_window(&ctx);
             self.library_window(&ctx);
             self.clock_editor.show(&ctx);
+            self.event_editor
+                .show(&ctx, self.radio.as_ref().map(|r| r.view()));
             self.export_window(&ctx);
             self.controller_window(&ctx);
             self.feedback_window(&ctx);
@@ -4696,6 +4720,8 @@ impl eframe::App for WoaApp {
         self.analysis_window(&ctx);
         self.library_window(&ctx);
         self.clock_editor.show(&ctx);
+        self.event_editor
+            .show(&ctx, self.radio.as_ref().map(|r| r.view()));
         self.export_window(&ctx);
         self.controller_window(&ctx);
         self.feedback_window(&ctx);

@@ -4,18 +4,44 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 29: Feste Zeit-Events und pünktliche volle Stunde (0.24.0, offen)
+
+Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Event anlegen:** Radio-Modus, Knopf „Zeit-Events“, „+ Event …“, eine kurze Audiodatei (Jingle) wählen. Es erscheint als Stundenjingle: Tage `*`, Stunden `*`, Minute 00, Sekunde 00, **hart**.
+2. **Pünktlichkeit (Kopfhörer, nicht auf Sendung):** AutoDJ an, Sendung kurz vor der vollen Stunde laufen lassen. Unter der Uhr zählt „NÄCHSTES EVENT … in mm:ss (hart)“ herunter, in den letzten 30 s rot. Zur vollen Stunde blendet der laufende Titel schnell ab, das Jingle beginnt 0 bis 2 s nach der Zeit; danach steht „ZULETZT … +0,x s“.
+3. **Weich:** Das Event auf „weich“ stellen und einen Zeitpunkt mitten in einem Titel wählen: das Event kommt erst nach dem laufenden Titel, der Titel wird nicht angeschnitten.
+4. **Sommerzeit:** Bei Bedarf das Häkchen in „Stundenuhr“ prüfen; die Zeit-Events folgen derselben Einstellung.
+
+Selbst geprüft von Claude (ohne Ton, ohne Gerät, alles mit Puffern und simulierter Uhr):
+- Eine Stunde Sendung durch den echten Mixer mit 20-s-Titeln und Überblendung: hartes Event zur vollen Stunde nach 0,12 s gehört (erlaubt 0 bis 2 s), auch wenn es mitten in einer Überblendung liegt; weiches Event kommt nach dem Titel, vor ihm nur Musik; in der ganzen Stunde keine Lücke (kleinster Pegel über 50 ms bleibt hörbar); gemeldete Abweichung stimmt mit der Messung überein.
+- Der Mixer läuft in diesen Tests in `assert_no_alloc`: kein Speicher im Audio-Thread beim Event-Start.
+- Eine Woche Events mit simulierter Uhr (ohne Audio, `EventClock`): jedes Event genau einmal, über Mitternacht und über die Zeitumstellung im Oktober; Verspätungsgrenzen (hart 20 s, weich 30 min) führen zu „verpasst“, nicht zu Doppelauslösung. Die Woche läuft nicht durch den Mixer; dort gilt nur die eine Stunde oben.
+- Mixxx-Randfälle als Einheitentests (`transition.rs`): kurzer Folgetitel (4 s gibt 1 s Überblendung statt der Hälfte), fehlende Marken, Titel kürzer als Mindestlänge, ungültige Werte.
+- Rückwärts planender AutoDJ: vor einem harten Event wird die Füllung so gewählt, dass der Schnitt klein bleibt (schlechtester Schnitt höchstens 100 s und besser als ohne Planung).
+- Oberfläche: Zustandstests des Editors (Anlegen, Muster, Speichern, Laden, kaputte Datei wird nicht überschrieben, Zone folgt der Stundenuhr); Fenster zeichnet ohne Display.
+
+Nicht selbst geprüft: das Fenster im echten Bild, Hörbarkeit und Klang des schnellen Abblendens (250 ms) bei echter Musik, das Verhalten über Stunden mit echten Dateien und echtem Gerät, und die Zeitumstellung am echten Tag (nur simuliert).
+
+Bewusst so:
+- **Hart** heißt: das Event beginnt zur genauen Zeit, der alte Titel blendet in 250 ms ab; **weich**: direkt nach dem laufenden Titel (bis 30 min Verspätung, danach verpasst).
+- **Sommerzeit:** Ein Event mit fester Uhrzeit in der doppelten Stunde im Oktober läuft nur einmal (im ersten Durchgang). Ein Event in der ausgefallenen Stunde im März läuft im Moment der Umstellung. Ein Event für jede Stunde (Stundenjingle) läuft jede echte Stunde, also im Oktober um 02:00 zweimal.
+- Events spielen nur eine lokale Datei. Eine Nachrichtenquelle (Audio-Feed eines Anbieters) ist ein externer Dienst und nicht gebaut; das entscheidet André.
+- Endet der vorherige Titel vor der Zeit, bleibt bis etwa 1 s Stille vor dem Event.
+- Kurzer Folgetitel: Mixxx-Überblendung (siehe CHANGELOG 0.24.0).
+
 ## Paket 28: Stundenuhr und AutoDJ-Rotation (0.23.0, offen)
 
 Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
 
 1. **Titel taggen:** „Bibliothek“ öffnen, einige Titel mit den Tags `hit`, `neu` und `jingle` versehen (mindestens je ein paar Stück; für den Notfall ein paar mit `notfall`). Interpret steht im Titel als „Interpret - Titel“, sonst gilt nur die Titel-Sperre.
-2. **Stundenuhr anlegen und zuordnen:** Radio-Modus, Knopf „Stundenuhr“. Die Uhr „Standard“ (hit, hit, neu, jingle) anpassen oder eine neue anlegen, im Wochenraster die aktuelle Stunde anklicken (umrandet), oder „Gewählte Uhr für die ganze Woche“. Zeitverschiebung prüfen (Winter 60, Sommer 120).
+2. **Stundenuhr anlegen und zuordnen:** Radio-Modus, Knopf „Stundenuhr“. Die Uhr „Standard“ (hit, hit, neu, jingle) anpassen oder eine neue anlegen, im Wochenraster die aktuelle Stunde anklicken (umrandet), oder „Gewählte Uhr für die ganze Woche“. Zeitverschiebung prüfen (Grundwert 60; Sommerzeit schaltet seit 0.24.0 selbst, Häkchen „Sommerzeit“).
 3. **AutoDJ an (Kopfhörer):** „AutoDJ an“ klicken. Die Playlist füllt sich hinten auf drei Titel; beim Abspielen (über den Kopfhörer, nicht auf Sendung) folgt sie der Uhr: hit, hit, neu, jingle, und kein Titel oder Interpret kommt zu früh wieder. Die Liste „Letzte Auswahlen“ nennt zu jedem Titel Slot und Kategorie.
 4. **Eigenen Titel einschieben:** Einen Titel von Hand in die Playlist ziehen oder einfügen: er bleibt stehen, der AutoDJ hängt nur hinten an. Eine Kategorie ohne Titel (z. B. `werbung`) fällt auf die Ersatzkategorie zurück.
 
 Selbst geprüft von Claude (ohne Ton, ohne Gerät): 24 Stunden mit simulierter Uhr gegen 500 erzeugte Titel: keine Sperrfrist für Titel (180 min) oder Interpret (60 min) verletzt, in jeder der 24 Stunden folgen die Slots der Uhr der Reihe nach; leere Kategorie fällt auf die Ersatzkategorie, dann auf den Notfall-Tag zurück, ist auch der leer, kommt keine Wahl und kein Absturz; gleicher Startwert gibt dieselbe Folge, ein anderer eine andere; die Historie liegt in SQLite und überlebt das Schließen und Öffnen der Datenbank (Sperren und Position in der Stunde gelten danach weiter); von Hand gesetzte Titel werden nicht gewählt und belegen ihre Zeit; Dateien mit kaputtem oder feindlichem Inhalt werden gemeldet, nie überschrieben; Editor als Zustandstest (Uhren, Slots, Wochenraster, Umbenennen nimmt die Woche mit, Speichern und Laden); der AutoDJ-Takt gegen eine nachgebildete Sendung (Auffüllen bis zur Zahl im Voraus, Historie genau einmal je Titel); jede Wahl steht im Log.
 
-Nicht selbst geprüft: das Fenster im echten Bild (Aussehen, Wochenraster, Klickverhalten), das Zusammenspiel mit dem echten Sendemixer über Stunden (nur der Takt gegen nachgebildete Sendedaten), und wie die Folge mit echter Musik klingt. Die Zeitzone ist eine Zahl in Minuten; die Sommerzeitumstellung ist nicht automatisch.
+Nicht selbst geprüft: das Fenster im echten Bild (Aussehen, Wochenraster, Klickverhalten), das Zusammenspiel mit dem echten Sendemixer über Stunden (nur der Takt gegen nachgebildete Sendedaten), und wie die Folge mit echter Musik klingt. Die Zeitzone ist eine Zahl in Minuten; die Sommerzeitumstellung ist seit 0.24.0 automatisch.
 
 Noch nicht drin (gehört zu M9, nicht zu diesem Paket): feste Zeit-Events (Nachrichten, Werbung, Stundenjingle zur vollen Stunde) und der Voice-Tracking-Editor. Gespielte Titel werden nur eingetragen, solange die Sendung läuft und der Titel in der Bibliothek steht.
 
