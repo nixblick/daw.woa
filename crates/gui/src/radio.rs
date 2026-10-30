@@ -483,131 +483,294 @@ impl RadioDesk {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let v = self.view.clone();
         if let Some(e) = self.error.clone() {
-            ui.horizontal(|ui| {
-                ui.colored_label(ui.visuals().error_fg_color, e);
-                if ui.small_button("x").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Frame::new()
+                .fill(theme::mix(theme::ON_AIR, theme::WELL, 0.78))
+                .stroke(egui::Stroke::new(1.0, theme::ON_AIR))
+                .corner_radius(5)
+                .inner_margin(egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("⚠").strong().color(theme::ON_AIR));
+                        ui.colored_label(theme::TEXT_BRIGHT, e);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.small_button("✕").clicked() {
+                                self.error = None;
+                            }
+                        });
+                    });
+                });
+            ui.add_space(6.0);
         }
         for m in &v.messages {
             ui.label(egui::RichText::new(m).small().color(theme::DIM));
         }
         ui.columns(2, |cols| {
-            self.clock_and_controls(&mut cols[0], &v);
-            cols[0].add_space(12.0);
-            self.playlist(&mut cols[0], &v);
-            self.cart_wall(&mut cols[1], &v);
+            cols[0].spacing_mut().item_spacing.y = 10.0;
+            cols[1].spacing_mut().item_spacing.y = 10.0;
+            theme::card_frame().show(&mut cols[0], |ui| {
+                self.clock_and_controls(ui, &v);
+            });
+            theme::card_frame().show(&mut cols[0], |ui| {
+                self.playlist(ui, &v);
+            });
+            theme::card_frame().show(&mut cols[1], |ui| {
+                self.cart_wall(ui, &v);
+            });
+            theme::card_frame().show(&mut cols[1], |ui| {
+                self.processing_rack(ui);
+            });
         });
     }
 
     fn clock_and_controls(&mut self, ui: &mut egui::Ui, v: &View) {
+        let idx = v.current.or((!v.running).then_some(v.cue));
+        let entry = idx.and_then(|i| v.playlist.get(i));
         let title = v
             .current
             .and_then(|i| v.playlist.get(i))
             .map(|e| e.title.clone())
-            .unwrap_or_else(|| "–".to_string());
+            .unwrap_or_else(|| {
+                entry
+                    .map(|e| format!("Bereit: {}", e.title))
+                    .unwrap_or_else(|| "– Kein Titel geladen –".to_string())
+            });
+        let total_title_secs = entry.and_then(|e| e.seconds).unwrap_or(0.0);
         // Cover des laufenden Titels (vor dem Start: des Titels, der als Nächstes kommt).
-        let cover_path = v
-            .current
-            .or((!v.running).then_some(v.cue))
-            .and_then(|i| v.playlist.get(i))
-            .map(|e| e.path.clone());
+        let cover_path = entry.map(|e| e.path.clone());
         let ctx = ui.ctx().clone();
         let covers = self
             .covers
             .get_or_insert_with(|| crate::covers::Covers::new(&ctx));
         covers.poll(&ctx);
         let (now, before, t) = covers.big(&ctx, cover_path.as_deref());
+
+        // Modul-Kopfzeile: Status-Badges links, Sendestatus rechts.
         ui.horizontal(|ui| {
-            crate::covers::paint_square(ui, 168.0, now.as_ref(), before.as_ref(), t)
-                .on_hover_text("Cover des Titels (aus der Datei)");
-            ui.vertical(|ui| {
-                ui.label(egui::RichText::new(title).size(18.0));
-                ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new("SENDE-DECK & MASTER-UHR")
+                    .size(11.5)
+                    .strong()
+                    .color(theme::DIM),
+            );
+            if v.running {
+                theme::status_pill(ui, "DECK LÄUFT", theme::OK_GREEN, true);
+            } else {
+                theme::status_pill(ui, "BEREIT / CUE", theme::ACCENT, false);
+            }
+            if v.mic_open {
+                theme::status_pill(ui, "MIKRO OFFEN", theme::ON_AIR, true);
+            }
+            if v.recording.is_some() {
+                theme::status_pill(ui, "REC LÄUFT", theme::ON_AIR, true);
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let n = self.underruns();
+                if n > 0 {
                     ui.label(
-                        egui::RichText::new(clock(v.remaining_title))
-                            .size(64.0)
-                            .monospace()
-                            .color(if v.running && v.remaining_title < 10.0 {
-                                theme::ON_AIR
-                            } else {
-                                theme::ACCENT
-                            }),
+                        egui::RichText::new(format!("Aussetzer: {n}"))
+                            .small()
+                            .color(theme::ON_AIR),
                     )
-                    .on_hover_text("Restzeit des laufenden Titels");
+                    .on_hover_text(
+                        "Puffer-Unterläufe der Ausgabe seit dem Öffnen. Steigt die Zahl, \
+                         in config.json radio_buffer_frames setzen, etwa 4096 (Vorgabe: Treiber).",
+                    );
+                }
+            });
+        });
+        ui.add_space(4.0);
+
+        // Haupt-Display: Cover links, tiefschwarzes LCD-Cockpit rechts.
+        ui.horizontal(|ui| {
+            egui::Frame::new()
+                .fill(theme::WELL)
+                .stroke(egui::Stroke::new(1.0, theme::BORDER))
+                .corner_radius(6)
+                .inner_margin(egui::Margin::same(3))
+                .show(ui, |ui| {
+                    crate::covers::paint_square(ui, 152.0, now.as_ref(), before.as_ref(), t)
+                        .on_hover_text("Cover des Titels (aus der Datei)");
+                });
+
+            theme::lcd_frame().show(ui, |ui| {
+                ui.set_min_height(142.0);
+                ui.set_width(ui.available_width());
+                ui.vertical(|ui| {
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("bis Playlist-Ende").color(theme::DIM));
+                        let badge_text = if v.running {
+                            "AKTUELL ON AIR"
+                        } else {
+                            "NÄCHSTER START (CUE)"
+                        };
+                        let badge_col = if v.running {
+                            theme::ACCENT
+                        } else {
+                            theme::CUE_CYAN
+                        };
                         ui.label(
-                            egui::RichText::new(clock(v.remaining_total))
-                                .size(28.0)
-                                .monospace(),
+                            egui::RichText::new(badge_text)
+                                .size(10.5)
+                                .strong()
+                                .monospace()
+                                .color(badge_col),
                         );
+                        if let Some(lufs) = entry.and_then(|e| e.lufs) {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!("{lufs:.1} LUFS"))
+                                            .size(11.0)
+                                            .monospace()
+                                            .color(theme::DIM),
+                                    );
+                                },
+                            );
+                        }
                     });
-                    let n = self.underruns();
-                    if n > 0 {
-                        ui.label(
-                            egui::RichText::new(format!("Aussetzer: {n}"))
-                                .small()
-                                .color(theme::DIM),
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(title)
+                                .size(17.5)
+                                .strong()
+                                .color(theme::TEXT_BRIGHT),
                         )
-                        .on_hover_text(
-                            "Puffer-Unterläufe der Ausgabe seit dem Öffnen. Steigt die Zahl, \
-                             in config.json radio_buffer_frames setzen, etwa 4096 (Vorgabe: Treiber).",
-                        );
+                        .truncate(),
+                    );
+                    ui.add_space(2.0);
+
+                    let urgent = v.running && v.remaining_title < 10.0;
+                    let clock_col = if urgent { theme::ON_AIR } else { theme::ACCENT };
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(clock(v.remaining_title))
+                                .size(54.0)
+                                .strong()
+                                .monospace()
+                                .color(clock_col),
+                        )
+                        .on_hover_text("Restzeit des laufenden Titels");
+
+                        ui.add_space(10.0);
+                        ui.vertical(|ui| {
+                            ui.add_space(10.0);
+                            ui.label(
+                                egui::RichText::new("bis Playlist-Ende")
+                                    .size(11.0)
+                                    .color(theme::DIM),
+                            );
+                            ui.label(
+                                egui::RichText::new(clock(v.remaining_total))
+                                    .size(24.0)
+                                    .strong()
+                                    .monospace()
+                                    .color(theme::TEXT_BRIGHT),
+                            );
+                        });
+                    });
+
+                    // Visueller Restzeit-Balken im LCD
+                    let progress = if total_title_secs > 0.1 {
+                        ((total_title_secs - v.remaining_title) / total_title_secs).clamp(0.0, 1.0)
+                            as f32
+                    } else if v.running {
+                        0.5
+                    } else {
+                        0.0
+                    };
+                    let (bar_rect, _) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), 6.0),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter().rect_filled(bar_rect, 3.0, theme::PANEL);
+                    if progress > 0.0 {
+                        let mut fill_r = bar_rect;
+                        fill_r.set_width(bar_rect.width() * progress);
+                        ui.painter().rect_filled(fill_r, 3.0, clock_col);
                     }
                 });
             });
         });
+
+        ui.add_space(6.0);
+
+        // Hardware-Tastenreihe (Broadcast-Konsole)
         ui.horizontal_wrapped(|ui| {
-            let big = |t: &str| egui::RichText::new(t).size(17.0);
+            let big = |t: &str| egui::RichText::new(t).size(15.0).strong();
             let go = if v.running { "▶ Weiter" } else { "▶ Start" };
-            if ui
-                .add(egui::Button::new(big(go)).min_size(egui::vec2(100.0, 40.0)))
-                .on_hover_text("Leertaste")
-                .clicked()
-            {
+            let go_btn = egui::Button::new(big(go).color(if v.running {
+                theme::WELL
+            } else {
+                theme::TEXT_BRIGHT
+            }))
+            .fill(if v.running {
+                theme::OK_GREEN
+            } else {
+                theme::mix(theme::OK_GREEN, theme::SURFACE, 0.72)
+            })
+            .stroke(egui::Stroke::new(1.0, theme::OK_GREEN))
+            .min_size(egui::vec2(104.0, 38.0));
+            if ui.add(go_btn).on_hover_text("Leertaste").clicked() {
                 self.with(|c| c.start_or_next());
             }
+
             if ui
-                .add(egui::Button::new(big("■ Stopp")).min_size(egui::vec2(90.0, 40.0)))
+                .add(
+                    egui::Button::new(big("■ Stopp"))
+                        .fill(theme::SURFACE)
+                        .min_size(egui::vec2(88.0, 38.0)),
+                )
                 .clicked()
             {
                 self.with(|c| c.stop());
             }
-            let mic = egui::Button::new(big("Mikro (M)").color(if v.mic_open {
-                theme::BG
+
+            let mic = egui::Button::new(big("🎙 Mikro (M)").color(if v.mic_open {
+                egui::Color32::WHITE
             } else {
-                ui.visuals().text_color()
+                theme::TEXT_BRIGHT
             }))
             .fill(if v.mic_open {
                 theme::ON_AIR
             } else {
                 theme::SURFACE
             })
-            .min_size(egui::vec2(90.0, 40.0));
+            .stroke(egui::Stroke::new(
+                1.0,
+                if v.mic_open {
+                    theme::mix(theme::ON_AIR, egui::Color32::WHITE, 0.35)
+                } else {
+                    theme::BORDER
+                },
+            ))
+            .min_size(egui::vec2(108.0, 38.0));
             if ui.add(mic).on_hover_text("Taste M").clicked() {
                 self.toggle_mic();
             }
-            let rec = if v.recording.is_some() {
-                "Mitschnitt läuft"
-            } else {
-                "Mitschnitt"
-            };
+
             let rec_on = v.recording.is_some();
+            let rec = if rec_on {
+                "● Mitschnitt läuft"
+            } else {
+                "● Mitschnitt"
+            };
             if ui
                 .add(
                     egui::Button::new(big(rec).color(if rec_on {
-                        theme::BG
+                        egui::Color32::WHITE
                     } else {
-                        ui.visuals().text_color()
+                        theme::TEXT_BRIGHT
                     }))
                     .fill(if rec_on {
                         theme::ON_AIR
                     } else {
                         theme::SURFACE
                     })
-                    .min_size(egui::vec2(120.0, 40.0)),
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        if rec_on { theme::ON_AIR } else { theme::BORDER },
+                    ))
+                    .min_size(egui::vec2(126.0, 38.0)),
                 )
                 .on_hover_text(format!(
                     "Sendung als WAV nach {}",
@@ -618,82 +781,118 @@ impl RadioDesk {
                 self.toggle_recording();
             }
         });
+
+        ui.add_space(4.0);
         self.on_air_row(ui);
-        // Je Regler eine Zeile: Ein Slider ist ein Widget, `horizontal_wrapped` bricht nicht
-        // in ihm um, und bei 900 px Fensterbreite wurde die zweite Beschriftung abgeschnitten.
-        let mut xf = v.crossfade_seconds;
-        if ui
-            .add(
-                egui::Slider::new(&mut xf, 0.0..=10.0)
-                    .suffix(" s")
-                    .text("Crossfade"),
-            )
-            .changed()
-        {
-            self.view.crossfade_seconds = xf;
-            self.with(move |c| c.set_crossfade(xf));
-        }
-        let mut duck = v.duck_db;
-        if ui
-            .add(
-                egui::Slider::new(&mut duck, -30.0..=0.0)
-                    .suffix(" dB")
-                    .text("Ducking"),
-            )
-            .changed()
-        {
-            self.view.duck_db = duck;
-            self.with(move |c| c.set_duck(duck));
-        }
+    }
+
+    /// 19-Zoll-Broadcast-Processing- & Übergangs-Rack (rechts unter der Cart-Wall).
+    fn processing_rack(&mut self, ui: &mut egui::Ui) {
+        let v = self.view.clone();
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("BROADCAST-PROCESSING & ÜBERGÄNGE")
+                    .size(11.5)
+                    .strong()
+                    .color(theme::DIM),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                theme::status_pill(
+                    ui,
+                    &format!("ZIEL {:.0} LUFS", v.target_lufs),
+                    theme::ACCENT,
+                    v.bus_processing,
+                );
+            });
+        });
+        ui.add_space(4.0);
+
+        // Regler für Crossfade und Ducking in einem eingefassten Panel
+        theme::lcd_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            let mut xf = v.crossfade_seconds;
+            if ui
+                .add(
+                    egui::Slider::new(&mut xf, 0.0..=10.0)
+                        .suffix(" s")
+                        .text("Crossfade-Blende"),
+                )
+                .changed()
+            {
+                self.view.crossfade_seconds = xf;
+                self.with(move |c| c.set_crossfade(xf));
+            }
+            let mut duck = v.duck_db;
+            if ui
+                .add(
+                    egui::Slider::new(&mut duck, -30.0..=0.0)
+                        .suffix(" dB")
+                        .text("Musik-Ducking (bei Mikro)"),
+                )
+                .changed()
+            {
+                self.view.duck_db = duck;
+                self.with(move |c| c.set_duck(duck));
+            }
+        });
+
+        ui.add_space(4.0);
         self.processing_row(ui);
     }
 
-    /// Sendebus- und Mikro-Processing: Schalter und Anzeige.
+    /// Sendebus- und Mikro-Processing: Schalter und digitale Messanzeige.
     fn processing_row(&mut self, ui: &mut egui::Ui) {
         let v = &self.view;
         let (mut bus, mut mic) = (v.bus_processing, v.mic_processing);
         let mut changed = false;
-        ui.horizontal_wrapped(|ui| {
-            changed |= ui
-                .checkbox(&mut bus, "Sendebus")
-                .on_hover_text(format!(
-                    "Lautheitsregelung auf {:.0} LUFS (±12 dB, langsam), Kompressor und \
-                     Limiter bei −1 dBFS. Wirkt auf Sendung, Mitschnitt und Abhören.",
-                    v.target_lufs
-                ))
-                .changed();
-            changed |= ui
-                .checkbox(&mut mic, "Mikro-Kette")
-                .on_hover_text(
-                    "Hochpass 80 Hz, Präsenz +3 dB bei 3 kHz, Gate ab −50 dBFS, \
-                     Kompressor 4:1 ab −24 dBFS mit +6 dB.",
-                )
-                .changed();
+        theme::lcd_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_wrapped(|ui| {
+                changed |= ui
+                    .checkbox(&mut bus, egui::RichText::new("Sendebus").strong())
+                    .on_hover_text(format!(
+                        "Lautheitsregelung auf {:.0} LUFS (±12 dB, langsam), Kompressor und \
+                         Limiter bei −1 dBFS. Wirkt auf Sendung, Mitschnitt und Abhören.",
+                        v.target_lufs
+                    ))
+                    .changed();
+                changed |= ui
+                    .checkbox(&mut mic, egui::RichText::new("Mikro-Kette").strong())
+                    .on_hover_text(
+                        "Hochpass 80 Hz, Präsenz +3 dB bei 3 kHz, Gate ab −50 dBFS, \
+                         Kompressor 4:1 ab −24 dBFS mit +6 dB.",
+                    )
+                    .changed();
+                if v.mic_processing && v.mic_open {
+                    let (t, c, active) = if v.mic_gate_open {
+                        ("Gate offen", theme::OK_GREEN, true)
+                    } else {
+                        ("Gate zu", theme::DIM, false)
+                    };
+                    theme::status_pill(ui, t, c, active);
+                }
+            });
+
             if v.bus_processing {
+                ui.add_space(4.0);
                 let lufs = if v.bus_lufs > -60.0 {
                     format!("{:.1} LUFS", v.bus_lufs)
                 } else {
                     "– LUFS".into()
                 };
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{lufs} · Regelung {:+.1} dB · Begrenzer −{:.1} dB",
-                        v.bus_agc_db,
-                        v.bus_reduction_db.max(0.0)
-                    ))
-                    .small()
-                    .monospace()
-                    .color(theme::DIM),
-                )
-                .on_hover_text("Kurzzeit-Lautheit am Sendeausgang, Verstärkung der Regelung, Absenkung durch Kompressor und Limiter");
-            }
-            if v.mic_processing && v.mic_open {
-                let (t, c) = if v.mic_gate_open {
-                    ("Gate offen", theme::ACCENT)
-                } else {
-                    ("Gate zu", theme::DIM)
-                };
-                ui.label(egui::RichText::new(t).small().color(c));
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{lufs}  ·  Regelung {:+.1} dB  ·  Begrenzer −{:.1} dB",
+                            v.bus_agc_db,
+                            v.bus_reduction_db.max(0.0)
+                        ))
+                        .small()
+                        .monospace()
+                        .color(theme::ACCENT),
+                    )
+                    .on_hover_text("Kurzzeit-Lautheit am Sendeausgang, Verstärkung der Regelung, Absenkung durch Kompressor und Limiter");
+                });
             }
         });
         if changed {
@@ -708,126 +907,226 @@ impl RadioDesk {
         let st = self.stream_status.clone();
         let running = st.as_ref().is_some_and(|s| s.is_running(now));
         let on = self.feeder.is_some();
-        ui.horizontal_wrapped(|ui| {
-            let (label, fill) = if on {
-                ("Sendung beenden", theme::ON_AIR)
-            } else {
-                ("Auf Sendung", theme::SURFACE)
-            };
-            let text = egui::RichText::new(label).size(17.0).color(if on {
-                theme::BG
-            } else {
-                ui.visuals().text_color()
-            });
-            if ui
-                .add(
-                    egui::Button::new(text)
-                        .fill(fill)
-                        .min_size(egui::vec2(140.0, 40.0)),
-                )
-                .on_hover_text("Sendung an den eigenen Shoutcast (woa-streamd)")
-                .clicked()
-            {
-                if on {
-                    self.go_off_air();
+        theme::lcd_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_wrapped(|ui| {
+                let (label, fill, border) = if on {
+                    (
+                        "📡 Sendung beenden",
+                        theme::ON_AIR,
+                        theme::mix(theme::ON_AIR, egui::Color32::WHITE, 0.35),
+                    )
                 } else {
-                    self.go_on_air();
-                }
-            }
-            match &st {
-                Some(s) if running => {
-                    let color = if s.emergency || !s.connected {
-                        theme::ON_AIR
+                    (
+                        "📡 Auf Sendung",
+                        theme::mix(theme::ACCENT, theme::SURFACE, 0.72),
+                        theme::ACCENT,
+                    )
+                };
+                let text = egui::RichText::new(label).size(14.5).strong().color(if on {
+                    egui::Color32::WHITE
+                } else {
+                    theme::TEXT_BRIGHT
+                });
+                if ui
+                    .add(
+                        egui::Button::new(text)
+                            .fill(fill)
+                            .stroke(egui::Stroke::new(1.0, border))
+                            .min_size(egui::vec2(148.0, 34.0)),
+                    )
+                    .on_hover_text("Sendung an den eigenen Shoutcast (woa-streamd)")
+                    .clicked()
+                {
+                    if on {
+                        self.go_off_air();
                     } else {
-                        theme::ACCENT
-                    };
-                    ui.label(egui::RichText::new(s.summary()).color(color))
-                        .on_hover_text(format!("{} · {}", s.server, s.title));
+                        self.go_on_air();
+                    }
                 }
-                Some(s) if s.last_error.is_some() && on => {
-                    ui.colored_label(
-                        ui.visuals().error_fg_color,
-                        s.last_error.clone().unwrap_or_default(),
-                    );
+                match &st {
+                    Some(s) if running => {
+                        let color = if s.emergency || !s.connected {
+                            theme::ON_AIR
+                        } else {
+                            theme::OK_GREEN
+                        };
+                        theme::status_pill(ui, &s.summary(), color, true);
+                    }
+                    Some(s) if s.last_error.is_some() && on => {
+                        ui.colored_label(
+                            ui.visuals().error_fg_color,
+                            s.last_error.clone().unwrap_or_default(),
+                        );
+                    }
+                    _ if on => {
+                        ui.label(egui::RichText::new("starte woa-streamd …").color(theme::DIM));
+                    }
+                    _ => {
+                        ui.label(
+                            egui::RichText::new("Stream-Encoder bereit (Shoutcast / Icecast)")
+                                .small()
+                                .color(theme::DIM),
+                        );
+                    }
                 }
-                _ if on => {
-                    ui.label(egui::RichText::new("starte woa-streamd …").color(theme::DIM));
-                }
-                _ => {}
+            });
+            if let Some(p) = st
+                .as_ref()
+                .filter(|_| running)
+                .and_then(StreamStatus::problem)
+            {
+                ui.label(egui::RichText::new(p).small().color(theme::ON_AIR));
             }
         });
-        if let Some(p) = st
-            .as_ref()
-            .filter(|_| running)
-            .and_then(StreamStatus::problem)
-        {
-            ui.label(egui::RichText::new(p).small().color(theme::ON_AIR));
-        }
     }
 
     fn playlist(&mut self, ui: &mut egui::Ui, v: &View) {
         ui.horizontal(|ui| {
-            ui.heading("Playlist");
-            if ui.button("+ Titel …").clicked() {
-                self.add_dialog();
-            }
+            ui.label(
+                egui::RichText::new("SENDE-PLAYLIST")
+                    .size(11.5)
+                    .strong()
+                    .color(theme::DIM),
+            );
+            ui.label(
+                egui::RichText::new(format!("({} Titel)", v.playlist.len()))
+                    .small()
+                    .color(theme::DIM),
+            );
             if v.measuring > 0 {
                 ui.spinner();
-                ui.label(egui::RichText::new("misst Lautheit …").color(theme::DIM));
+                ui.label(
+                    egui::RichText::new("misst Lautheit …")
+                        .small()
+                        .color(theme::ACCENT),
+                );
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("+ Titel …")
+                                .strong()
+                                .color(theme::TEXT_BRIGHT),
+                        )
+                        .fill(theme::mix(theme::ACCENT, theme::SURFACE, 0.72))
+                        .stroke(egui::Stroke::new(1.0, theme::ACCENT)),
+                    )
+                    .clicked()
+                {
+                    self.add_dialog();
+                }
+            });
         });
+        ui.add_space(4.0);
+
         if v.playlist.is_empty() {
-            ui.label(
-                egui::RichText::new(
-                    "Audiodateien (MP3, FLAC, WAV, OGG, M4A, AIFF …) hierher ziehen oder „+ Titel …“.",
-                )
-                .color(theme::DIM),
-            );
-        }
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for (i, e) in v.playlist.iter().enumerate() {
-                let on_air = v.current == Some(i);
-                let frame = egui::Frame::new()
-                    .fill(if on_air {
-                        theme::mix(theme::ON_AIR, theme::PANEL, 0.6)
-                    } else if i == v.cue && !v.running {
-                        theme::SURFACE
-                    } else {
-                        theme::PANEL
-                    })
-                    .inner_margin(egui::Margin::symmetric(8, 4));
-                frame.show(ui, |ui| {
+            theme::lcd_frame().show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.vertical_centered(|ui| {
+                    ui.add_space(12.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "Audiodateien (MP3, FLAC, WAV, OGG, M4A, AIFF …) hierher ziehen oder „+ Titel …“.",
+                        )
+                        .color(theme::DIM),
+                    );
+                    ui.add_space(12.0);
+                });
+            });
+        } else {
+            // Spaltenkopf wie in mAirList
+            egui::Frame::new()
+                .fill(theme::PANEL_HEADER)
+                .corner_radius(egui::CornerRadius {
+                    nw: 4,
+                    ne: 4,
+                    sw: 0,
+                    se: 0,
+                })
+                .inner_margin(egui::Margin::symmetric(8, 4))
+                .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        ui.label(format!("{:>2}", i + 1));
-                        let thumb = self.covers.as_mut().and_then(|c| c.thumb(&e.path));
-                        crate::covers::paint_square(ui, 32.0, thumb.as_ref(), None, 1.0);
-                        if ui.small_button("^").on_hover_text("Nach oben").clicked() && i > 0 {
-                            self.with(move |c| {
-                                c.move_entry(i, i - 1);
-                            });
-                        }
-                        if ui.small_button("v").on_hover_text("Nach unten").clicked() {
-                            self.with(move |c| {
-                                c.move_entry(i, i + 1);
-                            });
-                        }
-                        if ui.small_button("x").on_hover_text("Entfernen").clicked() {
-                            self.with(move |c| {
-                                c.remove(i);
-                            });
-                        }
+                        ui.label(egui::RichText::new("#").small().strong().color(theme::DIM));
+                        ui.add_space(30.0);
                         ui.label(
-                            egui::RichText::new(
-                                e.seconds.map(clock).unwrap_or_else(|| "--:--".into()),
-                            )
-                            .monospace(),
+                            egui::RichText::new("TITEL & LAUTHEIT")
+                                .small()
+                                .strong()
+                                .color(theme::DIM),
                         );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new("AKTION  ·  DAUER")
+                                    .small()
+                                    .strong()
+                                    .color(theme::DIM),
+                            );
+                        });
+                    });
+                });
+        }
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 3.0;
+            for (i, e) in v.playlist.iter().enumerate() {
+                let on_air = v.current == Some(i);
+                let is_cue = i == v.cue && !v.running;
+                let row_fill = if on_air {
+                    theme::mix(theme::ON_AIR, theme::PANEL, 0.72)
+                } else if is_cue {
+                    theme::mix(theme::CUE_CYAN, theme::PANEL, 0.82)
+                } else if i % 2 == 1 {
+                    theme::mix(theme::WELL, theme::PANEL, 0.65)
+                } else {
+                    theme::WELL
+                };
+                let stroke = if on_air {
+                    egui::Stroke::new(1.0, theme::ON_AIR)
+                } else if is_cue {
+                    egui::Stroke::new(1.0, theme::CUE_CYAN)
+                } else {
+                    egui::Stroke::new(1.0, theme::mix(theme::BORDER, theme::WELL, 0.5))
+                };
+                let frame = egui::Frame::new()
+                    .fill(row_fill)
+                    .stroke(stroke)
+                    .corner_radius(4)
+                    .inner_margin(egui::Margin::symmetric(8, 5));
+                let resp = frame.show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!("{:>2}", i + 1))
+                                .monospace()
+                                .strong()
+                                .color(if on_air {
+                                    theme::ON_AIR
+                                } else if is_cue {
+                                    theme::CUE_CYAN
+                                } else {
+                                    theme::DIM
+                                }),
+                        );
+                        let thumb = self.covers.as_mut().and_then(|c| c.thumb(&e.path));
+                        crate::covers::paint_square(ui, 34.0, thumb.as_ref(), None, 1.0);
+
+                        // Rechte Seite zuerst reservieren (Steuerung + Dauer + LUFS-Badge),
+                        // damit der Titel links sauber abschneidet.
+                        let lufs_badge = e
+                            .lufs
+                            .map(|l| format!("{l:.1} LUFS ({:+.1} dB)", e.gain_db));
                         if ui
                             .add(
-                                egui::Label::new(&e.title)
-                                    .truncate()
-                                    .sense(egui::Sense::click()),
+                                egui::Label::new(
+                                    egui::RichText::new(&e.title)
+                                        .strong()
+                                        .color(theme::TEXT_BRIGHT),
+                                )
+                                .truncate()
+                                .sense(egui::Sense::click()),
                             )
                             .on_hover_text(format!(
                                 "{}\n{}\nDoppelklick: als Nächstes beim Start",
@@ -840,19 +1139,83 @@ impl RadioDesk {
                         {
                             self.with(move |c| c.set_cue(i));
                         }
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.small_button("x").on_hover_text("Entfernen").clicked() {
+                                self.with(move |c| {
+                                    c.remove(i);
+                                });
+                            }
+                            if ui.small_button("v").on_hover_text("Nach unten").clicked() {
+                                self.with(move |c| {
+                                    c.move_entry(i, i + 1);
+                                });
+                            }
+                            if ui.small_button("^").on_hover_text("Nach oben").clicked() && i > 0 {
+                                self.with(move |c| {
+                                    c.move_entry(i, i - 1);
+                                });
+                            }
+                            ui.label(
+                                egui::RichText::new(
+                                    e.seconds.map(clock).unwrap_or_else(|| "--:--".into()),
+                                )
+                                .monospace()
+                                .strong()
+                                .color(theme::ACCENT),
+                            );
+                            if let Some(lb) = lufs_badge {
+                                ui.label(
+                                    egui::RichText::new(lb)
+                                        .size(10.5)
+                                        .monospace()
+                                        .color(theme::DIM),
+                                );
+                            }
+                        });
                     });
                 });
+                // Farbiger Indikator-Streifen am linken Zeilenrand bei aktivem oder gecuetem Track
+                if on_air || is_cue {
+                    let r = resp.response.rect;
+                    let stripe = egui::Rect::from_min_size(r.min, egui::vec2(4.0, r.height()));
+                    ui.painter().rect_filled(
+                        stripe,
+                        egui::CornerRadius {
+                            nw: 4,
+                            sw: 4,
+                            ne: 0,
+                            se: 0,
+                        },
+                        if on_air {
+                            theme::ON_AIR
+                        } else {
+                            theme::CUE_CYAN
+                        },
+                    );
+                }
             }
         });
     }
 
     fn cart_wall(&mut self, ui: &mut egui::Ui, v: &View) {
-        ui.heading("Cart-Wall");
-        ui.label(
-            egui::RichText::new("Klick oder Taste 1–9, 0 spielt; Rechtsklick belegt.")
-                .small()
-                .color(theme::DIM),
-        );
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("CART-WALL (JINGLES & SOUNDS)")
+                    .size(11.5)
+                    .strong()
+                    .color(theme::DIM),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    egui::RichText::new("Tasten 1–9, 0 · Rechtsklick: Belegen")
+                        .small()
+                        .color(theme::DIM),
+                );
+            });
+        });
+        ui.add_space(4.0);
+
         let w = ((ui.available_width() - 3.0 * 8.0) / 4.0).max(60.0);
         egui::Grid::new("carts")
             .spacing(egui::vec2(8.0, 8.0))
@@ -860,26 +1223,66 @@ impl RadioDesk {
                 for slot in 0..CARTS {
                     let label = v.carts.get(slot).cloned().flatten();
                     let playing = v.carts_playing & (1 << slot) != 0;
+                    let pad_color = theme::track_color(slot);
                     let key = match slot {
                         0..=8 => format!("{}", slot + 1),
                         9 => "0".into(),
-                        _ => String::new(),
+                        _ => format!("F{}", slot + 1),
                     };
                     let text = format!("{key}\n{}", label.clone().unwrap_or_else(|| "leer".into()));
-                    let b = egui::Button::new(egui::RichText::new(text).color(if playing {
-                        theme::BG
+                    let fill = if playing {
+                        theme::mix(theme::ACCENT, theme::SURFACE, 0.25)
                     } else if label.is_some() {
-                        ui.visuals().text_color()
+                        theme::mix(pad_color, theme::SURFACE, 0.80)
                     } else {
-                        theme::DIM
-                    }))
-                    .fill(if playing {
-                        theme::ACCENT
+                        theme::WELL
+                    };
+                    let stroke = if playing {
+                        egui::Stroke::new(2.0, theme::ACCENT)
+                    } else if label.is_some() {
+                        egui::Stroke::new(1.0, theme::mix(pad_color, theme::BORDER, 0.45))
                     } else {
-                        theme::SURFACE
-                    })
-                    .min_size(egui::vec2(w, 64.0));
+                        egui::Stroke::new(1.0, theme::BORDER)
+                    };
+                    let b =
+                        egui::Button::new(egui::RichText::new(text).strong().color(if playing {
+                            theme::WELL
+                        } else if label.is_some() {
+                            theme::TEXT_BRIGHT
+                        } else {
+                            theme::DIM
+                        }))
+                        .fill(fill)
+                        .stroke(stroke)
+                        .min_size(egui::vec2(w, 68.0));
                     let r = ui.add(b);
+
+                    // Hardware-Pad-Optik: LED oben rechts + Farb-Streifen unten
+                    let pad_rect = r.rect;
+                    let led_col = if playing {
+                        theme::WELL
+                    } else if label.is_some() {
+                        pad_color
+                    } else {
+                        theme::mix(theme::DIM, theme::WELL, 0.6)
+                    };
+                    ui.painter().circle_filled(
+                        egui::pos2(pad_rect.right() - 9.0, pad_rect.top() + 9.0),
+                        3.5,
+                        led_col,
+                    );
+                    if label.is_some() {
+                        let bottom_bar = egui::Rect::from_min_max(
+                            egui::pos2(pad_rect.left() + 3.0, pad_rect.bottom() - 4.0),
+                            egui::pos2(pad_rect.right() - 3.0, pad_rect.bottom() - 1.5),
+                        );
+                        ui.painter().rect_filled(
+                            bottom_bar,
+                            1.0,
+                            if playing { theme::WELL } else { pad_color },
+                        );
+                    }
+
                     if r.clicked() {
                         if label.is_some() {
                             self.with(move |c| c.trigger_cart(slot));
