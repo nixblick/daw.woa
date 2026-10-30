@@ -1655,6 +1655,77 @@ impl WoaApp {
         }
     }
 
+    /// Schreibt das Projekt als `.dawproject` (Austausch mit Bitwig, Studio One, Cubase …).
+    fn export_dawproject(&mut self) {
+        let Some(out) = rfd::FileDialog::new()
+            .set_title("Als DAWproject exportieren")
+            .add_filter("DAWproject", &["dawproject"])
+            .set_file_name(format!("{}.dawproject", self.state.project().meta.name))
+            .save_file()
+        else {
+            return;
+        };
+        let project = self.state.project().clone();
+        let resolve = |rel: &str| self.state.resolve_audio(rel);
+        let probe = |p: &std::path::Path| {
+            woa_io::dawproject::probe_wav(p).or_else(|| {
+                let d = woa_engine::decode::decode_file(p).ok()?;
+                Some(woa_io::dawproject::AudioInfo {
+                    sample_rate: d.rate,
+                    channels: 2,
+                    seconds: d.frames() as f64 / f64::from(d.rate.max(1)),
+                })
+            })
+        };
+        match woa_io::dawproject::export::export_file(&project, &resolve, &probe, &out) {
+            Ok(rep) => {
+                tracing::info!(path = %out.display(), notes = rep.notes.len(), "dawproject exported");
+                self.state.status = Status::Info(format!("DAWproject: {}", rep.summary()));
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "dawproject export failed");
+                self.state.status = Status::Error(format!("DAWproject-Export: {e}"));
+            }
+        }
+    }
+
+    /// Liest eine `.dawproject`-Datei in einen neuen Projektordner `<name>.woa` neben der
+    /// Datei und öffnet ihn.
+    fn open_dawproject(&mut self) {
+        let Some(file) = rfd::FileDialog::new()
+            .set_title("DAWproject öffnen")
+            .add_filter("DAWproject", &["dawproject"])
+            .pick_file()
+        else {
+            return;
+        };
+        let stem = file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Import")
+            .to_owned();
+        let parent = file.parent().unwrap_or_else(|| std::path::Path::new("."));
+        let mut dir = parent.join(format!("{stem}.woa"));
+        let mut n = 2;
+        while dir.exists() {
+            dir = parent.join(format!("{stem} ({n}).woa"));
+            n += 1;
+        }
+        match woa_io::dawproject::import::import_to_folder(&file, &dir) {
+            Ok((_, rep)) => {
+                tracing::info!(path = %dir.display(), notes = rep.notes.len(), "dawproject imported");
+                self.state.open(&dir);
+                // Nach dem Öffnen überschreibt `open` die Statuszeile; die Zusammenfassung
+                // ist das, was der Nutzer sehen soll.
+                self.state.status = Status::Info(format!("DAWproject: {}", rep.summary()));
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "dawproject import failed");
+                self.state.status = Status::Error(format!("DAWproject-Import: {e}"));
+            }
+        }
+    }
+
     /// Öffnet einen Projektordner (z. B. von der Kommandozeile).
     pub fn open_project(&mut self, dir: &std::path::Path) {
         self.state.open(dir);
@@ -1941,6 +2012,12 @@ impl WoaApp {
                 ui.separator();
                 if ui.button("Exportieren … (Strg+E)").clicked() {
                     self.export();
+                }
+                if ui.button("Als DAWproject exportieren …").clicked() {
+                    self.export_dawproject();
+                }
+                if ui.button("DAWproject öffnen …").clicked() {
+                    self.open_dawproject();
                 }
                 ui.separator();
                 if ui

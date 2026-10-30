@@ -8,12 +8,17 @@ repository.workspace = true
 
 [dependencies]
 midir = "0.11.1"
+quick-xml = "0.42.0"
 rtrb = "0.4.1"
 serde = { version = "1.0.229", features = ["derive"] }
+tempfile = "3.27.0"
 tracing = "0.1.44"
-woa-dsp = { version = "0.21", path = "../dsp" }
-woa-model = { version = "0.21", path = "../model" }
+woa-dsp = { version = "0.22", path = "../dsp" }
+woa-model = { version = "0.22", path = "../model" }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 assert_no_alloc = "1.1.2"
+hound = "3.5.1"
+insta = "1.49.0"
 serde_json = "1.0.154"
