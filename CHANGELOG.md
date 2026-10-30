@@ -1,6 +1,10 @@
 # Changelog
 
 <<<<<<< HEAD
+## 0.6.1 — 2026-10-30
+
+- Bauen ohne volle Debug-Infos: eigener Code mit `line-tables-only` (Backtraces mit Zeilen bleiben), Abhängigkeiten ganz ohne. Kleinerer Bauordner, schnelleres Linken, weniger RAM auf dem 7-GB-Notebook. André: „kann man das nicht effizienter???“
+
 ## 0.6.0 — 2026-10-30
 
 Paket 11 aus M4 (#5): Keyboard spielt live.
