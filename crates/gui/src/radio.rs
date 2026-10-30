@@ -20,24 +20,14 @@ use crate::feedback::PflOutput;
 use crate::theme;
 use crate::voice_editor::{VoiceAction, VoiceEditor, VoiceInput};
 use crate::xrun::XrunLog;
+use woa_engine::localtime::Zone;
 
 const NO_PFL: &str = "Kein Kopfhörer-Ausgang: Einstellungen → Vorhören (PFL)";
 
 type Stream = Box<dyn std::any::Any>;
 
-/// Tasten für die ersten zehn Carts: 1–9, dann 0.
-const CART_KEYS: [egui::Key; 10] = [
-    egui::Key::Num1,
-    egui::Key::Num2,
-    egui::Key::Num3,
-    egui::Key::Num4,
-    egui::Key::Num5,
-    egui::Key::Num6,
-    egui::Key::Num7,
-    egui::Key::Num8,
-    egui::Key::Num9,
-    egui::Key::Num0,
-];
+/// Tasten, die schon etwas anderes tun und keinem Cart gehören können.
+const RESERVED_KEYS: [egui::Key; 2] = [egui::Key::M, egui::Key::Space];
 
 /// Die laufende Sendung samt Gerät.
 pub struct RadioDesk {
@@ -74,6 +64,10 @@ pub struct RadioDesk {
     /// Fläche der Playlist und der Cart-Pads im letzten Bild (Ziel für Ziehen aus der Bibliothek).
     playlist_rect: egui::Rect,
     cart_rects: Vec<egui::Rect>,
+    /// Cart, das die nächste gedrückte Taste als neue Taste bekommt.
+    key_capture: Option<usize>,
+    /// Ortszeit für die Uhrzeit-Anzeige (von der Stundenuhr).
+    zone: Zone,
     /// Offener Cue-Editor (Paket 15).
     cue_editor: Option<CueEditor>,
     /// Offener Voice-Track-Editor (Paket 30).
@@ -162,7 +156,28 @@ pub fn clock(seconds: f64) -> String {
     }
 }
 
+/// Uhrzeit `hh:mm:ss` zur Unix-Zeit `unix` in `zone` (zum Ansagen).
+pub fn time_of_day(unix: i64, zone: Zone) -> String {
+    let l = zone.local(unix);
+    format!("{:02}:{:02}:{:02}", l.hour, l.minute, l.second)
+}
+
+/// Name der Zifferntaste, die zur Nummer von Cart `slot` passt (1–9, 0 für 10).
+fn cart_number_key(slot: usize) -> Option<String> {
+    woa_radio::show::default_cart_key(slot).map(str::to_string)
+}
+
+/// Egui-Taste zu einem gespeicherten Namen (`None`, wenn es sie nicht gibt oder sie reserviert ist).
+fn cart_key_of(name: &str) -> Option<egui::Key> {
+    egui::Key::from_name(name).filter(|k| !RESERVED_KEYS.contains(k))
+}
+
 impl RadioDesk {
+    /// Zone der Uhrzeit-Anzeige: Versatz in Minuten im Winter, EU-Sommerzeit ja/nein.
+    pub fn set_zone(&mut self, base_min: i32, eu_dst: bool) {
+        self.zone = Zone { base_min, eu_dst };
+    }
+
     /// Lädt `radio.json` und öffnet die Ausgabe. Geht das Gerät nicht, bleibt die
     /// Playlist bearbeitbar und die Meldung steht oben.
     /// `buffer_frames`: Puffergröße der Ausgabe (`None` = Treiber).
@@ -301,6 +316,8 @@ impl RadioDesk {
             learn: None,
             playlist_rect: egui::Rect::NOTHING,
             cart_rects: Vec::new(),
+            key_capture: None,
+            zone: Zone::CENTRAL_EUROPE,
             cue_editor: None,
             voice_editor: None,
             cue_seen: std::collections::HashMap::new(),
@@ -639,11 +656,57 @@ impl RadioDesk {
             return;
         }
         let n = egui::Modifiers::NONE;
+        // Neue Taste für ein Cart: die nächste Taste gilt (Esc bricht ab, Entf nimmt die Taste weg).
+        if let Some(slot) = self.key_capture {
+            let pressed = ctx.input(|i| {
+                i.events.iter().find_map(|e| match e {
+                    egui::Event::Key {
+                        key,
+                        pressed: true,
+                        repeat: false,
+                        ..
+                    } => Some(*key),
+                    _ => None,
+                })
+            });
+            if let Some(key) = pressed {
+                self.key_capture = None;
+                match key {
+                    egui::Key::Escape => {}
+                    egui::Key::Delete | egui::Key::Backspace => {
+                        self.with(move |c| {
+                            let _ = c.set_cart_key(slot, None);
+                        });
+                    }
+                    k if RESERVED_KEYS.contains(&k) => {
+                        self.error = Some(format!(
+                            "Die Taste {} ist belegt (M: Mikro, Leertaste: Start/Weiter)",
+                            k.name()
+                        ));
+                    }
+                    k => {
+                        let name = k.name();
+                        self.with(move |c| {
+                            if let Err(e) = c.set_cart_key(slot, Some(name)) {
+                                c.report(e);
+                            }
+                        });
+                    }
+                }
+            }
+            ctx.input_mut(|i| {
+                i.events
+                    .retain(|e| !matches!(e, egui::Event::Key { .. } | egui::Event::Text(_)));
+            });
+            return;
+        }
+        let keys = self.view.cart_keys.clone();
         let (mic, go, carts) = ctx.input_mut(|i| {
-            let carts: Vec<usize> = CART_KEYS
+            let carts: Vec<usize> = keys
                 .iter()
                 .enumerate()
-                .filter(|(_, k)| i.consume_key(n, **k))
+                .filter_map(|(slot, k)| Some((slot, cart_key_of(k.as_deref()?)?)))
+                .filter(|(_, k)| i.consume_key(n, *k))
                 .map(|(slot, _)| slot)
                 .collect();
             (
@@ -840,6 +903,29 @@ impl RadioDesk {
                         .truncate(),
                     );
                     ui.add_space(2.0);
+
+                    // Uhrzeit zum Ansagen, groß und ruhig.
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(250));
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(time_of_day(
+                                crate::clock_editor::now_unix(),
+                                self.zone,
+                            ))
+                            .size(40.0)
+                            .strong()
+                            .monospace()
+                            .color(theme::TEXT_BRIGHT),
+                        )
+                        .on_hover_text("Uhrzeit (Ortszeit der Stundenuhr)");
+                        ui.label(
+                            egui::RichText::new("UHR")
+                                .size(11.0)
+                                .strong()
+                                .color(theme::DIM),
+                        );
+                    });
 
                     let urgent = v.running && v.remaining_title < 10.0;
                     let clock_col = if urgent { theme::ON_AIR } else { theme::ACCENT };
@@ -1799,15 +1885,24 @@ impl RadioDesk {
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
-                    egui::RichText::new("Tasten 1–9, 0 · Rechtsklick: Belegen")
-                        .small()
-                        .color(theme::DIM),
+                    egui::RichText::new(match self.key_capture {
+                        Some(n) => format!(
+                            "Taste für Cart {} drücken · Esc: abbrechen · Entf: ohne Taste",
+                            n + 1
+                        ),
+                        None => {
+                            "Taste startet und stoppt · Rechtsklick: Belegen, Taste, Schnitt".into()
+                        }
+                    })
+                    .small()
+                    .color(theme::DIM),
                 );
             });
         });
         ui.add_space(4.0);
 
         let w = ((ui.available_width() - 3.0 * 8.0) / 4.0).max(60.0);
+        let mut cut: Option<usize> = None;
         egui::Grid::new("carts")
             .spacing(egui::vec2(8.0, 8.0))
             .show(ui, |ui| {
@@ -1815,12 +1910,19 @@ impl RadioDesk {
                     let label = v.carts.get(slot).cloned().flatten();
                     let playing = v.carts_playing & (1 << slot) != 0;
                     let pad_color = theme::track_color(slot);
-                    let key = match slot {
-                        0..=8 => format!("{}", slot + 1),
-                        9 => "0".into(),
-                        _ => format!("F{}", slot + 1),
+                    // Die große Zahl ist die Nummer des Carts. Die Taste steht klein in der
+                    // Ecke, sobald sie nicht die Nummer selbst ist.
+                    let number = (slot + 1).to_string();
+                    let key = v.cart_keys.get(slot).cloned().flatten();
+                    let key_text = match &key {
+                        Some(k) if cart_number_key(slot).as_deref() == Some(k.as_str()) => None,
+                        Some(k) => Some(k.clone()),
+                        None => Some("–".to_string()),
                     };
-                    let text = format!("{key}\n{}", label.clone().unwrap_or_else(|| "leer".into()));
+                    let text = format!(
+                        "{number}\n{}",
+                        label.clone().unwrap_or_else(|| "leer".into())
+                    );
                     let fill = if playing {
                         theme::mix(theme::ACCENT, theme::SURFACE, 0.25)
                     } else if label.is_some() {
@@ -1854,6 +1956,30 @@ impl RadioDesk {
 
                     // Hardware-Pad-Optik: LED oben rechts + Farb-Streifen unten
                     let pad_rect = r.rect;
+                    if let Some(k) = key_text {
+                        let capturing = self.key_capture == Some(slot);
+                        let font = egui::FontId::monospace(11.0);
+                        let text = if capturing { "?".to_string() } else { k };
+                        let galley = ui.painter().layout_no_wrap(
+                            text,
+                            font,
+                            if capturing {
+                                theme::ACCENT
+                            } else {
+                                theme::TEXT_BRIGHT
+                            },
+                        );
+                        let tag = egui::Rect::from_min_size(
+                            pad_rect.left_top() + egui::vec2(4.0, 4.0),
+                            galley.size() + egui::vec2(8.0, 2.0),
+                        );
+                        ui.painter().rect_filled(tag, 3.0, theme::WELL);
+                        ui.painter().galley(
+                            tag.min + egui::vec2(4.0, 1.0),
+                            galley,
+                            theme::TEXT_BRIGHT,
+                        );
+                    }
                     let led_col = if playing {
                         theme::WELL
                     } else if label.is_some() {
@@ -1906,6 +2032,14 @@ impl RadioDesk {
                             });
                             ui.close();
                         }
+                        if ui.button("Taste ändern …").clicked() {
+                            self.key_capture = Some(slot);
+                            ui.close();
+                        }
+                        if label.is_some() && ui.button("Start und Ende schneiden …").clicked() {
+                            cut = Some(slot);
+                            ui.close();
+                        }
                         if label.is_some() && ui.button("Leeren").clicked() {
                             self.with(move |c| {
                                 let _ = c.assign_cart(slot, None);
@@ -1918,6 +2052,9 @@ impl RadioDesk {
                     }
                 }
             });
+        if let Some(slot) = cut {
+            self.open_cart_cue_editor(slot);
+        }
     }
 
     /// Rechtsklick auf einen Titel: Cue-Punkte, Vorhören (Paket 15).
@@ -2072,6 +2209,17 @@ impl RadioDesk {
         }
     }
 
+    /// Öffnet den Schnitt (Start und Ende) für Cart `slot`.
+    pub fn open_cart_cue_editor(&mut self, slot: usize) {
+        let path = self.view.cart_paths.get(slot).cloned().flatten();
+        if let (Some(path), Some(Some(title))) = (path, self.view.carts.get(slot)) {
+            let cues = self.view.cart_cues.get(slot).copied().unwrap_or_default();
+            let mut ed = CueEditor::open(slot, path, title.clone(), None, cues);
+            ed.cart = true;
+            self.cue_editor = Some(ed);
+        }
+    }
+
     /// Zeichnet den Cue-Editor, falls offen, und reicht seine Aufträge weiter.
     pub fn cue_window(&mut self, ctx: &egui::Context) {
         let Some(ed) = self.cue_editor.as_mut() else {
@@ -2079,7 +2227,12 @@ impl RadioDesk {
         };
         let v = &self.view;
         // Titel verschoben oder entfernt: Editor schließen statt falschen Titel zu ändern.
-        if v.playlist.get(ed.index).map(|e| &e.path) != Some(&ed.path) {
+        let gone = if ed.cart {
+            v.carts.get(ed.index).is_none_or(Option::is_none)
+        } else {
+            v.playlist.get(ed.index).map(|e| &e.path) != Some(&ed.path)
+        };
+        if gone {
             self.cue_editor = None;
             return;
         }
@@ -2088,20 +2241,31 @@ impl RadioDesk {
             ctx,
             &mut open,
             (v.pfl_available, v.pfl_playing),
-            (v.cues_undo, v.cues_redo),
+            (v.cues_undo && !ed.cart, v.cues_redo && !ed.cart),
         );
+        let cart = ed.cart;
         if !open {
             self.cue_editor = None;
         }
         for a in actions {
             match a {
                 CueAction::Apply(i, cues) => self.with(move |c| {
-                    if let Err(e) = c.set_cues(i, cues) {
+                    let r = if cart {
+                        c.set_cart_cues(i, cues)
+                    } else {
+                        c.set_cues(i, cues)
+                    };
+                    if let Err(e) = r {
                         c.report(e);
                     }
                 }),
                 CueAction::Preview(i, from) => self.with(move |c| {
-                    if let Err(e) = c.pfl_title_at(i, from) {
+                    let r = if cart {
+                        c.pfl_cart_at(i, from)
+                    } else {
+                        c.pfl_title_at(i, from)
+                    };
+                    if let Err(e) = r {
                         c.report(e);
                     }
                 }),
@@ -2181,6 +2345,36 @@ impl RadioDesk {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn time_of_day_follows_the_zone() {
+        use woa_engine::localtime::Zone;
+        // 2026-12-31 22:59:58 UTC ist in Mitteleuropa (Winter) 23:59:58.
+        let unix = 1_798_757_998;
+        assert_eq!(super::time_of_day(unix, Zone::CENTRAL_EUROPE), "23:59:58");
+        assert_eq!(
+            super::time_of_day(unix + 2, Zone::CENTRAL_EUROPE),
+            "00:00:00"
+        );
+        assert_eq!(super::time_of_day(unix, Zone::fixed(0)), "22:59:58");
+    }
+
+    #[test]
+    fn cart_keys_map_to_egui_keys_and_skip_reserved_ones() {
+        use eframe::egui::Key;
+        assert_eq!(super::cart_key_of("1"), Some(Key::Num1));
+        assert_eq!(super::cart_key_of("0"), Some(Key::Num0));
+        assert_eq!(super::cart_key_of("F5"), Some(Key::F5));
+        assert_eq!(super::cart_key_of("M"), None);
+        assert_eq!(super::cart_key_of("Space"), None);
+        assert_eq!(super::cart_key_of("gibtsnicht"), None);
+        // Jeder Name, den egui liefert, kommt als Taste zurück.
+        for k in [Key::Num7, Key::A, Key::F12, Key::Comma] {
+            assert_eq!(Key::from_name(k.name()), Some(k));
+        }
+        assert_eq!(super::cart_number_key(9).as_deref(), Some("0"));
+        assert_eq!(super::cart_number_key(10), None);
+    }
+
     #[test]
     fn clock_format() {
         assert_eq!(super::clock(0.0), "00:00");

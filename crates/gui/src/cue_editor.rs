@@ -117,6 +117,8 @@ type PeakResult = Result<(Vec<f32>, f64, Cues), String>;
 pub struct CueEditor {
     pub index: usize,
     pub path: PathBuf,
+    /// Cart-Wall statt Playlist: `index` ist das Cart, nur Cue-In und Cue-Out zählen.
+    pub cart: bool,
     title: String,
     seconds: Option<f64>,
     pub draft: Cues,
@@ -155,6 +157,7 @@ impl CueEditor {
         Self {
             index,
             path,
+            cart: false,
             title,
             seconds,
             draft: cues,
@@ -166,10 +169,20 @@ impl CueEditor {
         }
     }
 
+    /// Die Marker, die dieser Editor anbietet: bei einem Cart nur Anfang und Ende.
+    fn markers(&self) -> &'static [Marker] {
+        if self.cart {
+            &[Marker::CueIn, Marker::CueOut]
+        } else {
+            &Marker::ALL
+        }
+    }
+
     /// Gibt es einen Vorschlag für einen Marker, der noch nicht gesetzt ist?
     pub fn can_fill_auto(&self) -> bool {
         AUTO_MARKERS
             .iter()
+            .filter(|m| self.markers().contains(m))
             .any(|m| m.get(&self.draft).is_none() && m.get(&self.auto).is_some())
     }
 
@@ -177,7 +190,10 @@ impl CueEditor {
     /// Vorrang). Passt das Ergebnis nicht zusammen, bleibt der Entwurf unverändert.
     pub fn fill_auto(&mut self) -> bool {
         let mut next = self.draft;
-        for m in AUTO_MARKERS {
+        for m in AUTO_MARKERS
+            .into_iter()
+            .filter(|m| self.markers().contains(m))
+        {
             if m.get(&next).is_none() {
                 m.set(&mut next, m.get(&self.auto));
             }
@@ -192,6 +208,7 @@ impl CueEditor {
     fn auto_text(&self) -> String {
         let parts: Vec<String> = AUTO_MARKERS
             .iter()
+            .filter(|m| self.markers().contains(m))
             .filter_map(|m| m.get(&self.auto).map(|v| format!("{} {v:.2} s", m.label())))
             .collect();
         if self.loading.is_some() {
@@ -234,7 +251,11 @@ impl CueEditor {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
         let mut out = Vec::new();
-        let title = format!("Cue-Punkte: {}", self.title);
+        let title = if self.cart {
+            format!("Cart schneiden: {}", self.title)
+        } else {
+            format!("Cue-Punkte: {}", self.title)
+        };
         egui::Window::new(title)
             .id(egui::Id::new("woa-cue-editor"))
             .open(open)
@@ -253,7 +274,7 @@ impl CueEditor {
         let len = self.seconds.unwrap_or(0.0);
         ui.horizontal(|ui| {
             ui.label("Klick setzt:");
-            for m in Marker::ALL {
+            for &m in self.markers() {
                 ui.selectable_value(
                     &mut self.marker,
                     m,

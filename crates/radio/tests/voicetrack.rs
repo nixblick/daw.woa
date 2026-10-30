@@ -231,6 +231,39 @@ fn voice_after_the_transition_starts_over_the_intro() {
 }
 
 #[test]
+fn jingle_bed_starts_the_title_quietly_and_raises_it_after_the_jingle() {
+    let tmp = tempfile::tempdir().unwrap();
+    let f = files(tmp.path(), 6.0);
+    let show = show_of(vec![
+        PlaylistEntry::new(&f.a),
+        voice_entry(&f.v, VoiceParams::jingle_bed()),
+        PlaylistEntry::new(&f.b),
+    ]);
+    let t0 = A_LEN - XF;
+    let (out, _) = run(show, 45.0, None);
+    // Das Jingle beginnt zeitgenau mit B.
+    let v_on = onset(&out, V_HZ, 0.02, 10.0).expect("Jingle fehlt");
+    assert!((v_on - t0).abs() < 0.06, "Jingle bei {v_on}, erwartet {t0}");
+    let free = mag(&out, B_HZ, 40.0, 0.4);
+    // B unter dem Jingle (nach der Überblendung, 4 s nach Beginn): −20 dB.
+    let under = mag(&out, B_HZ, t0 + 4.0, 0.4) / free;
+    assert!(
+        (under - 0.1).abs() < 0.1 * 0.05,
+        "B unter dem Jingle {under}"
+    );
+    // Jingle endet nach 6 s; 1,5 s später ist B wieder voll.
+    assert!(
+        mag(&out, V_HZ, t0 + 6.4, 0.3) < 0.002,
+        "Jingle läuft zu lang"
+    );
+    let back = mag(&out, B_HZ, t0 + 8.0, 0.4) / free;
+    assert!((back - 1.0).abs() < 0.03, "B danach {back}");
+    // Mitten im Hochfahren liegt B dazwischen, ohne Sprung.
+    let mid = mag(&out, B_HZ, t0 + 6.75, 0.1) / free;
+    assert!(mid > 0.2 && mid < 0.9, "B im Hochfahren {mid}");
+}
+
+#[test]
 fn next_pressed_early_still_plays_the_whole_voice_from_its_start() {
     let tmp = tempfile::tempdir().unwrap();
     let f = files(tmp.path(), 4.0);

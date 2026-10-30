@@ -4621,6 +4621,10 @@ impl eframe::App for WoaApp {
                 self.clock_editor.schedule.utc_offset_min,
                 self.clock_editor.schedule.auto_dst,
             );
+            r.set_zone(
+                self.clock_editor.schedule.utc_offset_min,
+                self.clock_editor.schedule.auto_dst,
+            );
             if let Some(t) = self.event_editor.take_push() {
                 self.clock_editor.set_events(t.clone());
                 r.push_events(t);

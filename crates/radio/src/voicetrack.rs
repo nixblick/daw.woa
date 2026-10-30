@@ -81,6 +81,18 @@ impl Default for VoiceParams {
 }
 
 impl VoiceParams {
+    /// Jingle-Übergang: Das Jingle beginnt genau mit dem nächsten Titel, der Titel startet
+    /// leise darunter (−20 dB) und fährt nach dem Ende des Jingles in 1,5 s auf volle Lautstärke.
+    pub fn jingle_bed() -> Self {
+        Self {
+            offset: 0.0,
+            gain_db: 0.0,
+            duck_db: -20.0,
+            attack: 0.1,
+            release: 1.5,
+        }
+    }
+
     /// Bringt alle Werte in gültige Bereiche (nicht endliche Werte fallen auf die Vorgabe).
     pub fn sanitized(mut self) -> Self {
         let fix = |v: f64, d: f64| if v.is_finite() { v } else { d };

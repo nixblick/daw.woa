@@ -106,6 +106,9 @@ pub enum Cmd {
         slot: usize,
         buf: Shared<Stereo>,
         gain: f32,
+        /// Start und Ende im Puffer (Frames, Cue-In und Cue-Out).
+        start: usize,
+        end: usize,
     },
     /// Cart anhalten.
     CartStop(usize),
@@ -298,6 +301,8 @@ impl Deck {
 struct Voice {
     buf: Shared<Stereo>,
     pos: usize,
+    /// Ende (Frames, Cue-Out).
+    end: usize,
     gain: f32,
 }
 
@@ -466,9 +471,21 @@ impl Mixer {
                 }
                 Cmd::MicMonitor(on) => self.mic_monitor = on,
                 Cmd::MicInput(c) => self.mic = c,
-                Cmd::Cart { slot, buf, gain } => {
+                Cmd::Cart {
+                    slot,
+                    buf,
+                    gain,
+                    start,
+                    end,
+                } => {
                     if let Some(v) = self.carts.get_mut(slot) {
-                        *v = Some(Voice { buf, pos: 0, gain });
+                        let end = end.min(buf.frames());
+                        *v = Some(Voice {
+                            buf,
+                            pos: start.min(end),
+                            end,
+                            gain,
+                        });
                     }
                 }
                 Cmd::CartStop(slot) => {
@@ -671,7 +688,7 @@ impl Mixer {
             let (mut cl, mut cr) = (0.0f32, 0.0f32);
             for slot in self.carts.iter_mut() {
                 if let Some(v) = slot {
-                    if v.pos < v.buf.frames() {
+                    if v.pos < v.end {
                         cl += v.buf.left[v.pos] * v.gain;
                         cr += v.buf.right[v.pos] * v.gain;
                         v.pos += 1;
