@@ -96,6 +96,10 @@ pub struct WoaApp {
     data_dir: PathBuf,
     /// Sendeablauf; läuft weiter, auch wenn das Produzent-Layout zu sehen ist.
     radio: Option<RadioDesk>,
+    /// MIDI-Eingang (Paket 11), spielt das Instrument der scharfen MIDI-Spur.
+    midi: woa_io::midi::MidiIn,
+    /// Letzter gesehener Event-Zähler und wann er sich zuletzt geändert hat (Lampe).
+    midi_seen: (u64, Option<Instant>),
 }
 
 impl WoaApp {
@@ -110,7 +114,16 @@ impl WoaApp {
                 None
             }
         };
+        let sink = player
+            .as_ref()
+            .map_or_else(woa_io::midi::event_sink, Player::midi_sink);
+        let mut midi = woa_io::midi::MidiIn::new(sink);
+        if config.midi_input.is_some() {
+            midi.select(config.midi_input.clone());
+        }
         Self {
+            midi,
+            midi_seen: (0, None),
             takes: Vec::new(),
             rec_start: 0.0,
             live_peaks: std::collections::HashMap::new(),
@@ -187,8 +200,118 @@ impl WoaApp {
         }
     }
 
+    /// Untermenü „MIDI-Eingang“: Aus oder ein Gerät; gespeichert in `config.json`.
+    fn midi_menu(&mut self, ui: &mut egui::Ui) {
+        ui.menu_button("MIDI-Eingang", |ui| {
+            let wanted = self.midi.wanted().map(str::to_string);
+            let mut ports: Vec<String> = self.midi.ports().to_vec();
+            if let Some(w) = &wanted
+                && !ports.contains(w)
+            {
+                ports.push(w.clone());
+            }
+            let mut choice = wanted.clone();
+            ui.radio_value(&mut choice, None, "Aus");
+            if ports.is_empty() {
+                ui.weak("Kein MIDI-Gerät gefunden");
+            }
+            for p in ports {
+                let missing = !self.midi.ports().contains(&p);
+                let label = if missing {
+                    format!("{p} (nicht verbunden)")
+                } else {
+                    p.clone()
+                };
+                ui.radio_value(&mut choice, Some(p), label);
+            }
+            ui.separator();
+            ui.weak("Spielt die scharf geschaltete MIDI-Spur");
+            if choice != wanted {
+                self.midi.select(choice.clone());
+                self.config.midi_input = choice;
+                if let Some(p) = &self.config_path
+                    && let Err(e) = self.config.save(p)
+                {
+                    tracing::warn!(error = %e, "config not saved");
+                }
+            }
+        });
+    }
+
+    /// Die MIDI-Spur, die das Keyboard spielt: die erste scharf geschaltete MIDI-Spur
+    /// (ohne scharfe Spuren: die ausgewählte, wenn sie eine MIDI-Spur ist).
+    fn live_midi_track(&self) -> Option<TrackId> {
+        self.state
+            .project()
+            .tracks
+            .iter()
+            .filter(|t| t.kind == woa_model::TrackKind::Midi)
+            .map(|t| t.id)
+            .find(|id| {
+                if self.armed.is_empty() {
+                    self.selected_track == Some(*id)
+                } else {
+                    self.armed.contains(id)
+                }
+            })
+    }
+
+    /// MIDI-Lampe: leuchtet kurz bei jedem Event, Tooltip nennt Gerät und Zustand.
+    fn midi_lamp(&mut self, ui: &mut egui::Ui) {
+        use woa_io::midi::MidiStatus;
+        let now = Instant::now();
+        let events = self
+            .midi
+            .counters()
+            .events
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if events != self.midi_seen.0 {
+            self.midi_seen = (events, Some(now));
+        }
+        let lit = self
+            .midi_seen
+            .1
+            .is_some_and(|t| now.duration_since(t).as_millis() < 150);
+        let status = self.midi.status();
+        let color = match (&status, lit) {
+            (MidiStatus::Off, _) => theme::DIM,
+            (MidiStatus::Waiting(_), _) => theme::ON_AIR,
+            (MidiStatus::Connected(_), true) => egui::Color32::from_rgb(90, 220, 120),
+            (MidiStatus::Connected(_), false) => theme::mix(theme::SURFACE, theme::DIM, 0.8),
+        };
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(46.0, 16.0), egui::Sense::hover());
+        ui.painter()
+            .circle_filled(rect.left_center() + egui::vec2(6.0, 0.0), 5.0, color);
+        ui.painter().text(
+            rect.left_center() + egui::vec2(15.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            "MIDI",
+            egui::FontId::proportional(11.0),
+            theme::DIM,
+        );
+        let target = self
+            .live_midi_track()
+            .and_then(|id| self.state.project().track(id).map(|t| t.name.clone()));
+        let text = match status {
+            MidiStatus::Off => {
+                "MIDI: kein Gerät gewählt (Einstellungen → MIDI-Eingang)".to_string()
+            }
+            MidiStatus::Waiting(n) => format!("MIDI: {n} nicht da, suche alle 2 s"),
+            MidiStatus::Connected(n) => format!(
+                "MIDI: {n}\nSpielt: {}",
+                target.as_deref().unwrap_or("keine MIDI-Spur scharf")
+            ),
+        };
+        resp.on_hover_text(text);
+        if lit {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(60));
+        }
+    }
+
     fn mode_switch(&mut self, ui: &mut egui::Ui) {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            self.midi_lamp(ui);
             let mut mode = self.config.mode;
             let on_air = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
             ui.selectable_value(
@@ -746,6 +869,8 @@ impl WoaApp {
                 }
             });
             ui.menu_button("Einstellungen", |ui| {
+                self.midi_menu(ui);
+                ui.separator();
                 let mut on = self.config.telemetry_enabled == Some(true);
                 if ui
                     .checkbox(&mut on, "Fehlercodes anonym senden (ab nächstem Start)")
@@ -794,6 +919,13 @@ impl WoaApp {
                     .clicked()
                 {
                     self.state.add_track();
+                }
+                if ui
+                    .add_sized([110.0, 30.0], egui::Button::new("+  MIDI-Spur"))
+                    .on_hover_text("Spur für das Keyboard; scharf schalten zum Spielen")
+                    .clicked()
+                {
+                    self.state.add_midi_track();
                 }
             });
             if self.state.project().tracks.is_empty() {
@@ -1791,9 +1923,11 @@ impl eframe::App for WoaApp {
         // Keep the autosave timer and the feedback poll ticking while idle; the level
         // meter needs a faster beat while recording.
         let project = self.state.project().clone();
+        self.midi.poll(Instant::now());
+        let live = self.live_midi_track();
         let state = &self.state;
         if let Some(p) = self.player.as_mut() {
-            p.sync(&project, &|rel| state.resolve_audio(rel));
+            p.sync(&project, &|rel| state.resolve_audio(rel), live);
         }
         self.stop_at_audio_end();
         self.drain_live_peaks();
@@ -1801,8 +1935,12 @@ impl eframe::App for WoaApp {
         // Radio: 5 Bilder/s, solange ein Titel läuft (Uhr, Pegel), sonst 2/s. Vorher 10/s
         // dauerhaft, 34 % CPU in Ruhe (Paket 8).
         let radio_playing = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
+        let midi_on = matches!(self.midi.status(), woa_io::midi::MidiStatus::Connected(_));
         let beat = if busy {
             40
+        } else if midi_on {
+            // Aktivitätslampe: 5 Bilder/s, solange ein Gerät verbunden ist.
+            200
         } else if self.config.mode == Mode::Radio && radio_playing {
             200
         } else {

@@ -36,6 +36,9 @@ pub struct GuiConfig {
     /// ([`woa_engine::RADIO_BUFFER_FRAMES`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub radio_buffer_frames: Option<u32>,
+    /// Gewählter MIDI-Eingang (Portname), `None` = aus.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub midi_input: Option<String>,
 }
 
 impl GuiConfig {
@@ -75,6 +78,7 @@ impl Default for GuiConfig {
             mode: Mode::Produzent,
             stream: woa_stream::StreamConfig::default(),
             radio_buffer_frames: None,
+            midi_input: None,
         }
     }
 }

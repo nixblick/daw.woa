@@ -2,7 +2,8 @@
 //! feste Stimmenzahl, Voice-Stealing.
 
 use crate::instrument::{
-    Adsr, AdsrParams, AdsrStage, Instrument, NoteEvent, NoteEventKind, note_to_hz, pick_voice,
+    Adsr, AdsrParams, AdsrStage, Instrument, NoteEvent, NoteEventKind, bend_factor, note_to_hz,
+    pick_voice,
 };
 use crate::{DEFAULT_RAMP_SECONDS, Smoother};
 
@@ -75,6 +76,8 @@ struct SynthVoice {
     velocity: f32,
     env: Adsr,
     age: u64,
+    /// Taste losgelassen, Pedal hält die Stimme.
+    held: bool,
 }
 
 /// Polyphoner Synthesizer mit fester, vorab angelegter Stimmenzahl.
@@ -85,6 +88,10 @@ pub struct PolySynth {
     adsr: AdsrParams,
     gain: Smoother,
     counter: u64,
+    /// Haltepedal gedrückt.
+    sustain: bool,
+    /// Frequenzfaktor aus dem Pitchbend.
+    bend: f64,
 }
 
 impl PolySynth {
@@ -97,6 +104,8 @@ impl PolySynth {
             adsr: AdsrParams::default(),
             gain: Smoother::new(0.5, DEFAULT_RAMP_SECONDS),
             counter: 0,
+            sustain: false,
+            bend: 1.0,
         }
     }
 
@@ -143,13 +152,33 @@ impl PolySynth {
         v.inc = inc;
         v.velocity = f32::from(velocity.min(127)) / 127.0;
         v.age = age;
+        v.held = false;
         v.env.trigger(&adsr, sr);
     }
 
     fn note_off(&mut self, note: u8) {
+        let sustain = self.sustain;
         for v in self.voices.iter_mut() {
             if v.note == note && v.env.is_active() && v.env.stage() != AdsrStage::Release {
-                v.env.release();
+                if sustain {
+                    v.held = true;
+                } else {
+                    v.env.release();
+                }
+            }
+        }
+    }
+
+    fn set_sustain(&mut self, on: bool) {
+        self.sustain = on;
+        if !on {
+            for v in self.voices.iter_mut() {
+                if v.held {
+                    v.held = false;
+                    if v.env.is_active() {
+                        v.env.release();
+                    }
+                }
             }
         }
     }
@@ -181,25 +210,30 @@ impl Instrument for PolySynth {
             NoteEventKind::NoteOn { note, velocity } => self.note_on(note, velocity),
             NoteEventKind::AllNotesOff => {
                 for v in self.voices.iter_mut() {
+                    v.held = false;
                     v.env.release();
                 }
             }
             NoteEventKind::ProgramChange { .. } => {}
+            NoteEventKind::Sustain { on } => self.set_sustain(on),
+            NoteEventKind::PitchBend { value } => self.bend = bend_factor(value),
         }
     }
 
     fn render(&mut self, out: &mut [f32]) {
         out.fill(0.0);
         let wave = self.waveform;
+        let bend = self.bend;
         for v in self.voices.iter_mut() {
             if !v.env.is_active() {
                 continue;
             }
             for s in out.iter_mut() {
                 let env = v.env.next_value();
-                let x = osc_sample(wave, v.phase, v.inc) as f32;
+                let inc = v.inc * bend;
+                let x = osc_sample(wave, v.phase, inc) as f32;
                 *s += x * env * v.velocity;
-                v.phase += v.inc;
+                v.phase += inc;
                 if v.phase >= 1.0 {
                     v.phase -= 1.0;
                 }
@@ -281,5 +315,38 @@ mod tests {
         s.render(&mut buf);
         assert_eq!(s.active_voices(), 0);
         assert!(buf.iter().all(|x| *x == 0.0));
+    }
+
+    #[test]
+    fn sustain_pedal_holds_until_released() {
+        let mut s = synth(2);
+        s.set_param(synth_params::RELEASE, 0.01);
+        s.handle_event(&NoteEvent::note_on(60, 127));
+        s.handle_event(&NoteEvent {
+            offset: 0,
+            channel: 0,
+            kind: NoteEventKind::Sustain { on: true },
+        });
+        s.handle_event(&NoteEvent::note_off(60));
+        let mut buf = vec![0.0f32; 4800];
+        s.render(&mut buf);
+        assert!(
+            buf[4000..].iter().any(|x| x.abs() > 0.01),
+            "pedal must hold"
+        );
+        s.handle_event(&NoteEvent {
+            offset: 0,
+            channel: 0,
+            kind: NoteEventKind::Sustain { on: false },
+        });
+        s.render(&mut buf);
+        s.render(&mut buf);
+        assert_eq!(s.active_voices(), 0);
+    }
+
+    #[test]
+    fn pitch_bend_raises_frequency() {
+        assert!((crate::instrument::bend_factor(8191) - 2f64.powf(2.0 / 12.0)).abs() < 1e-3);
+        assert_eq!(crate::instrument::bend_factor(0), 1.0);
     }
 }

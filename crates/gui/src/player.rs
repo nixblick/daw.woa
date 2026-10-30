@@ -8,8 +8,10 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 
 use std::time::Instant;
+use woa_dsp::instrument::{InstrumentNode, note_queue};
+use woa_dsp::synth::{PolySynth, Waveform};
 use woa_engine::clip::{
-    PEAK_BLOCK, clip_graph, load_wav_mono, peaks, project_end_seconds, render_clips, take_peak,
+    PEAK_BLOCK, clip_graph_live, load_wav_mono, peaks, project_end_seconds, render_clips, take_peak,
 };
 
 use woa_engine::device::{
@@ -23,8 +25,17 @@ use woa_model::{Project, TrackId};
 
 use crate::xrun::XrunLog;
 
-/// Was einen neuen Graphen verlangt.
-type Structure = (u64, Vec<(TrackId, Vec<([u64; 5], Option<String>)>)>);
+/// Was einen neuen Graphen verlangt (Tempo, Clips, scharfe MIDI-Spur).
+type Structure = (
+    u64,
+    Vec<(TrackId, Vec<([u64; 5], Option<String>)>)>,
+    Option<TrackId>,
+);
+
+/// Plätze in der Note-Queue der scharfen MIDI-Spur.
+const LIVE_QUEUE: usize = 1024;
+/// Stimmen des Live-Instruments.
+const LIVE_VOICES: usize = 16;
 /// Was nur Parameter ändert.
 type Mixer = Vec<(TrackId, u64, u64, bool, bool)>;
 
@@ -45,6 +56,8 @@ pub struct Player {
     mixer: Option<Mixer>,
     meters: HashMap<TrackId, Arc<AtomicU32>>,
     peaks: HashMap<PathBuf, Arc<[f32]>>,
+    /// Producer der Note-Queue des Live-Instruments; der MIDI-Eingang schreibt hinein.
+    midi_sink: woa_io::midi::EventSink,
 }
 
 /// Dekodiert einmal je Datei und merkt sich das Ergebnis; Fehler werden geloggt.
@@ -96,12 +109,24 @@ impl Player {
             mixer: None,
             meters: HashMap::new(),
             peaks: HashMap::new(),
+            midi_sink: woa_io::midi::event_sink(),
         })
     }
 
+    /// Senke für den MIDI-Eingang (Note-Queue der scharfen MIDI-Spur).
+    pub fn midi_sink(&self) -> woa_io::midi::EventSink {
+        Arc::clone(&self.midi_sink)
+    }
+
     /// Hält den Graphen beim Projekt. `resolve` macht aus einem Clip-Pfad eine Datei.
-    /// Fehler (fehlende Datei) werden geloggt, der Clip bleibt dann stumm.
-    pub fn sync(&mut self, project: &Project, resolve: &dyn Fn(&str) -> Option<PathBuf>) {
+    /// Fehler (fehlende Datei) werden geloggt, der Clip bleibt dann stumm. `live` ist die
+    /// scharfe MIDI-Spur: Sie bekommt ein Instrument, das der MIDI-Eingang spielt.
+    pub fn sync(
+        &mut self,
+        project: &Project,
+        resolve: &dyn Fn(&str) -> Option<PathBuf>,
+        live: Option<TrackId>,
+    ) {
         self.engine.collect();
         let total = self.engine.underruns();
         if let Some(new) = self.xruns.due(total, Instant::now())
@@ -146,15 +171,42 @@ impl Player {
                     (t.id, clips)
                 })
                 .collect(),
+            live,
         );
         if self.structure.as_ref() != Some(&structure) {
+            let live_node = live.map(|id| {
+                let (producer, consumer) = note_queue(LIVE_QUEUE);
+                let node: Box<dyn woa_dsp::Node> = Box::new(InstrumentNode::new(
+                    PolySynth::new(LIVE_VOICES, Waveform::Saw),
+                    consumer,
+                ));
+                (id, node, producer)
+            });
+            let (live_graph, producer) = match live_node {
+                Some((id, node, p)) => (Some((id, node)), Some(p)),
+                None => (None, None),
+            };
             let transport = self.transport.clone();
             let sr = self.rate;
             let cache = &mut self.cache;
             let mut load = |rel: &str| load_cached(cache, resolve(rel)?, sr);
-            let graph = clip_graph(project, &transport, rate, &mut load, Some(&mut self.meters));
+            let graph = clip_graph_live(
+                project,
+                &transport,
+                rate,
+                &mut load,
+                Some(&mut self.meters),
+                live_graph,
+            );
             match self.engine.set_graph(graph.builder, rate, 4096) {
                 Ok(()) => {
+                    if self.structure.as_ref().map(|s| s.2) != Some(live) {
+                        tracing::info!(track = ?live.map(|t| t.0), "midi live track");
+                    }
+                    match self.midi_sink.lock() {
+                        Ok(mut g) => *g = producer,
+                        Err(e) => tracing::warn!(error = %e, "midi sink poisoned"),
+                    }
                     self.nodes = graph.tracks;
                     self.structure = Some(structure);
                     self.mixer = None;
