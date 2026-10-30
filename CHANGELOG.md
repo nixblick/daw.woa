@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.33.6 — 2026-10-30
+
+- **Auto-Update per MSI** (André, für Tester unter Windows 10). Beim Start fragt WOA höchstens einmal am Tag bei GitHub nach dem neuesten **veröffentlichten** Release; ein Streifen zeigt „Update x.y.z verfügbar – Jetzt installieren“ mit den Neuerungen. Unter Windows lädt der Klick das MSI, prüft es, startet `msiexec /passive` und beendet die App (Projekt wird vorher gespeichert oder gefragt); das MSI startet die neue Version danach selbst (`RESTARTWOA=1`, `woa.wxs`). Linux und macOS zeigen nur den Link zur Release-Seite. Ausschalten: Einstellungen → „Beim Start nach Updates suchen“ (`auto_update` in `config.json`), sofort suchen im selben Menü. Netz nur in Hintergrund-Threads.
+- **Zwei Stufen:** Stufe A (jetzt aktiv, solange `packaging/windows/updater.pub` ein Platzhalter ist): nur HTTPS auf `github.com/nixblick/daw.woa/releases/…` (Weiterleitungen nur auf `objects.githubusercontent.com` und `release-assets.githubusercontent.com`), SHA-256 aus `latest.json` gegen das MSI. Stufe B (echter minisign-Schlüssel in `updater.pub`): Signatur Pflicht, fail-closed, der signierte Kommentar muss `woa <version>` mit der Manifest-Version sein, kein Rückfall auf A. In beiden: Downgrade-Wächter (nur strikt neuere Version). Restrisiko von Stufe A und Einrichtung von Stufe B: `docs/updater.md`.
+- **Release-Workflow** `release.yml` (Tag `v*`): Windows-Bau (wiederverwendet `windows-build.yml`), signieren mit `WOA_UPDATER_KEY` (fehlt das Secret: nur SHA-256 und Warnung), `latest.json`, Release als Entwurf. Veröffentlichen macht das Update sichtbar.
+- Neuer Crate-Inhalt `woa-updater` (`minisign-verify`, `sha2`, `ureq`), Tests ohne Netz mit Fixtures in `tests/fixtures/updater/`.
+
 ## 0.33.5 — 2026-10-30
 
 Silvester-Paket (#132), Abnahme: `docs/abnahme.md`.
