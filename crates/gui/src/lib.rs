@@ -14,6 +14,7 @@ pub mod event_editor;
 pub mod export_dialog;
 pub mod feedback;
 pub mod library;
+pub mod party;
 pub mod pianoroll;
 pub mod player;
 pub mod radio;

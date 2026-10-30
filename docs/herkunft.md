@@ -66,6 +66,16 @@ Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
   Einteilung (Datei statt Plugin-Kennung als Sperrschlüssel). **Kein Code übernommen.**
 - **Nicht gelesen:** `tracktion_engine` (Plugin-Graph); Paket 34 baut keinen Graph.
 
+## Party-Layout (Paket 35)
+
+- **Mixxx** (`mixxxdj/mixxx`, GPL-2.0-or-later, Commit `bc49961fd3e5`), `src/library/autodj/autodjprocessor.cpp`
+  (`AutoDJProcessor::skipNext`, `fadeNow`). **Nur die Idee gelesen:** Mixxx trennt „nächsten Titel aus
+  der Warteschlange überspringen“ (`skip_next`) von „jetzt überblenden“ (`fade_now`), beide als benannte
+  Steuerungen, die Oberfläche, Controller und Skripte gleich ansprechen. Bei uns: „Weiter“ ist das
+  Überblenden jetzt (`Controller::start_or_next`), und alle Tasten sind `PartyCommand`s mit Protokoll
+  (`crates/radio/src/party.rs`), damit Fernbedienung und MIDI später dieselben Befehle schicken.
+  Eigener Entwurf in Rust. **Kein Code übernommen.**
+
 ## Regel
 
 Quellen werden nur mit Repository, Datei und Commit genannt, nie mit Pfaden einer Maschine.

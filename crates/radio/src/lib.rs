@@ -12,6 +12,7 @@
 //!   Titel ein, schreibt den Mitschnitt und gibt alte Puffer frei.
 //! - [`station::Station`] lässt den Controller in einem eigenen Thread laufen, damit die
 //!   Sendung weiterläuft, auch wenn die Oberfläche gerade nicht zeichnet.
+//! - [`party`]: Party-Layout ohne Fenster, Wunschliste und Tastenbefehle (Paket 35).
 //! - [`voicetrack`]: Moderation zwischen zwei Titeln mit Ducking (Paket 30).
 //! - [`show::RadioShow`] ist die gespeicherte Playlist und Cart-Belegung (`radio.json`).
 
@@ -24,6 +25,7 @@ pub mod dynamics;
 pub mod events;
 pub mod level;
 pub mod mixer;
+pub mod party;
 pub mod pfl;
 pub mod show;
 pub mod station;

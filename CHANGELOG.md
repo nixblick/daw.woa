@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.30.0 — 2026-10-30
+
+Paket 35 aus M9: Party-Layout (Abnahme: `docs/abnahme.md`).
+
+- **Modus Party:** Dritter Modus neben Radio und Produzent (Taste „Party“ oben rechts, wird in `config.json` gespeichert). Er spielt über denselben Sendemixer wie das Radio, also mit AutoDJ, Crossfade und Lautheitsangleich aus `woa-radio`; der Projekt-Player ruht wie im Radio.
+- **Anzeige:** Großer Titel mit Interpret (aus „Interpret - Titel“ im Dateinamen), große Restzeit (rot in den letzten Sekunden), Fortschrittsbalken, darunter der nächste Musiktitel (Voice-Tracks werden übersprungen).
+- **Tasten:** Play/Pause, Weiter (Crossfade zum nächsten Titel), Leiser, Lauter (2-dB-Schritte auf dem Musikpegel), dazu Vollbild an/aus. Tastatur: Leertaste, N oder Pfeil rechts, Pfeil hoch/runter, F oder F11. „Ordner laden …“ hängt alle Audiodateien eines Ordners (bis drei Ebenen tief) hinten an die Playlist.
+- **Wunschliste:** Wünsche werden nach Stimmen und dann nach Eingang sortiert; derselbe Titel (gleicher Name ohne Beachtung von Groß-/Kleinschreibung und Leerzeichen) zählt als Stimme, nicht als zweiter Eintrag. „Als Nächstes“ reiht den Wunsch hinter dem laufenden Titel ein, „✕“ verwirft ihn. Eingetragen wird bisher über „+ Wunsch aus Datei“; die Handy-Seite folgt mit Paket 36.
+- **Befehlsschicht:** Zustand, Befehle und Layout stehen fensterunabhängig in `woa_radio::party` (`PartyCommand`, `PartyState::apply` mit Protokoll, `Wishlist`, `layout` mit Textform als Schnappschuss). Jede Taste ist ein Befehl mit Effekt auf die Sendung; Fernbedienung und MIDI sollen später dieselben Befehle nutzen. Die Idee „Überblenden jetzt“ getrennt von „Überspringen“ folgt Mixxx (`docs/herkunft.md`), Code ist nicht übernommen.
+- **Tests:** Layout als Textschnappschuss ohne Fenster; Tasten lösen die erwarteten Effekte aus (Befehlsprotokoll); Wunschliste sortiert und dedupliziert; angezeigte Restzeit und Fortschritt gegen die Länge des Offline-Renders (Controller und Mixer in Blöcken, ohne Audiogerät); „Weiter“ blendet über und ein Wunsch läuft hinter dem laufenden Titel; Ordner-Suche; Modus wird gespeichert.
+- **Nicht gebaut:** Cover im Party-Layout; Wünsche per Handy (Paket 36); Modus-Taste am Controller (`Layout::Party`); Streamen („Auf Sendung“) aus dem Party-Modus.
+
 ## 0.29.0 — 2026-10-30
 
 Paket 34 aus M8: Abnahme „Surge XT und Vital stabil“ (Abnahme: `docs/abnahme.md`).

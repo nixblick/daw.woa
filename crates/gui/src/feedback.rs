@@ -86,6 +86,15 @@ pub enum Mode {
     #[default]
     Produzent,
     Radio,
+    /// Party-Layout (Paket 35): spielt über denselben Sendemixer wie das Radio.
+    Party,
+}
+
+impl Mode {
+    /// Nutzt den Sendemixer (Radio und Party) statt des Projekt-Players.
+    pub fn uses_desk(self) -> bool {
+        matches!(self, Mode::Radio | Mode::Party)
+    }
 }
 
 fn is_default_feedback_url(s: &str) -> bool {
