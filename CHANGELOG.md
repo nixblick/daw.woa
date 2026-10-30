@@ -11,6 +11,10 @@ Paket 32 aus M8: Plugin-Fenster (Abnahme: `docs/abnahme.md`).
 - **Nicht gebaut:** Automation von Plugin-Reglern, eingebettetes Fenster, Auslagern in einen eigenen Prozess (Paket 33).
 - **Abhängigkeiten:** `rtrb` und `libc` (Unix) in `woa-plugins`; `gui`, `timer`, `posix-fd` in `clack-extensions`.
 
+## 0.26.1 — 2026-10-30
+
+Sicherheit (#101): Der DAWproject-Import begrenzt jede Audiodatei beim Lesen auf das Restbudget der Gesamtgrenze, nicht nur auf die Grenze je Datei. Eine präparierte Datei mit gefälschten ZIP-Größen kann die Platte nicht mehr vollschreiben. Test dazu.
+
 ## 0.26.0 — 2026-10-30
 
 Paket 31 aus M8: CLAP-Plugins finden und laden (Abnahme: `docs/abnahme.md`).
@@ -67,7 +71,6 @@ Paket 28 aus M9: Stundenuhr und AutoDJ-Rotation.
 - **Zeitzone:** Die Ortszeit ist eine Einstellung in Minuten gegenüber UTC (Vorgabe 60); die Umstellung auf Sommerzeit muss von Hand erfolgen.
 - **Nicht in diesem Paket:** feste Zeit-Events (Nachrichten, Werbung zur vollen Stunde) und der Voice-Tracking-Editor; beides gehört zu M9, steht aber nicht im Auftrag dieses Pakets.
 - **Tests:** 24 Stunden mit simulierter Uhr gegen 500 erzeugte Titel (keine Sperrfrist verletzt, Slot-Folge je Stunde stimmt), Rückfall auf Ersatz und Notfall, nichts zu spielen ohne Absturz, gleicher und anderer Startwert, Historie nach Neustart der Datenbank (Sperren und Slot-Position), von Hand gesetzte Titel, Datei mit feindlichen Werten, Editor als Zustandstest (Anlegen, Umbenennen mit Wochenübernahme, Slots, Speichern und Laden), AutoDJ-Takt gegen eine nachgebildete Sendung, Fenster zeichnet ohne Display.
-
 
 ## 0.22.0 — 2026-10-30
 
