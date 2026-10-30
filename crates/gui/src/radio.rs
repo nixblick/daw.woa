@@ -598,6 +598,13 @@ impl RadioDesk {
         match e {
             Effect::StartOrNext => self.with(|c| c.start_or_next()),
             Effect::Stop => self.with(|c| c.stop()),
+            Effect::Pause => self.with(|c| c.pause()),
+            Effect::Play => self.with(|c| c.play()),
+            Effect::Previous => self.with(|c| c.previous()),
+            Effect::Restart => self.with(|c| c.restart()),
+            Effect::Seek(s) => self.with(move |c| c.seek(s)),
+            Effect::CycleRepeat => self.with(|c| c.cycle_repeat()),
+            Effect::ToggleShuffle => self.with(|c| c.toggle_shuffle()),
             Effect::MusicLevel(db) => self.set_level(Bus::Music, db),
             Effect::InsertNext(path) => self.with(move |c| {
                 // Hinter den laufenden Titel, sonst hinter den Titel, der als Nächstes startet.
@@ -1077,6 +1084,79 @@ impl RadioDesk {
                 self.with(|c| c.stop());
             }
             self.learn_menu(&r, Target::Stop);
+
+            // Weitere Transportknöpfe: derselbe Weg wie im Party-Modus und am Handy
+            // (`PartyState::apply` und die Effekte in `party_effect`).
+            let mut state = woa_radio::party::PartyState::default();
+            for (label, cmd, tip) in [
+                (
+                    "⏮",
+                    woa_radio::party::PartyCommand::Previous,
+                    "Vorheriger Titel (P)",
+                ),
+                (
+                    "↺",
+                    woa_radio::party::PartyCommand::Restart,
+                    "Titel von vorn",
+                ),
+                (
+                    "−10 s",
+                    woa_radio::party::PartyCommand::SeekBack,
+                    "10 s zurück",
+                ),
+                (
+                    "+10 s",
+                    woa_radio::party::PartyCommand::SeekForward,
+                    "10 s vor",
+                ),
+            ] {
+                let b = egui::Button::new(big(label))
+                    .fill(theme::SURFACE)
+                    .min_size(egui::vec2(48.0, 38.0));
+                if ui.add(b).on_hover_text(tip).clicked() {
+                    for e in state.apply(cmd, v.running) {
+                        self.party_effect(e);
+                    }
+                }
+            }
+            let (rep_label, rep_tip) = match v.repeat {
+                woa_radio::control::Repeat::Off => ("🔁", "Wiederholen: aus"),
+                woa_radio::control::Repeat::All => ("🔁", "Wiederholen: ganze Playlist"),
+                woa_radio::control::Repeat::One => ("🔂", "Wiederholen: ein Titel"),
+            };
+            let on = v.repeat != woa_radio::control::Repeat::Off;
+            let b = egui::Button::new(big(rep_label).color(if on {
+                theme::WELL
+            } else {
+                theme::TEXT_BRIGHT
+            }))
+            .fill(if on { theme::ACCENT } else { theme::SURFACE })
+            .min_size(egui::vec2(48.0, 38.0));
+            if ui.add(b).on_hover_text(rep_tip).clicked() {
+                self.party_effect(woa_radio::party::Effect::CycleRepeat);
+            }
+            let b = egui::Button::new(big("🔀").color(if v.shuffle {
+                theme::WELL
+            } else {
+                theme::TEXT_BRIGHT
+            }))
+            .fill(if v.shuffle {
+                theme::ACCENT
+            } else {
+                theme::SURFACE
+            })
+            .min_size(egui::vec2(48.0, 38.0));
+            if ui
+                .add(b)
+                .on_hover_text(if v.shuffle {
+                    "Zufall: an"
+                } else {
+                    "Zufall: aus"
+                })
+                .clicked()
+            {
+                self.party_effect(woa_radio::party::Effect::ToggleShuffle);
+            }
 
             let mic = egui::Button::new(big("🎙 Mikro (M)").color(if v.mic_open {
                 egui::Color32::WHITE

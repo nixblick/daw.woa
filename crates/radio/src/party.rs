@@ -15,11 +15,14 @@
 
 use std::path::PathBuf;
 
+use crate::control::Repeat;
 use crate::mixer::{LEVEL_MAX_DB, LEVEL_MIN_DB};
 use crate::station::View;
 
 /// Schritt für Lauter/Leiser (dB).
 pub const VOLUME_STEP_DB: f64 = 2.0;
+/// Sprung der Spultasten (Sekunden).
+pub const SEEK_STEP_SECONDS: f64 = 10.0;
 /// So viele Protokollzeilen bleiben stehen.
 pub const LOG_CAP: usize = 200;
 
@@ -106,8 +109,27 @@ impl Wishlist {
 pub enum PartyCommand {
     /// Läuft die Musik, anhalten; sonst starten.
     PlayPause,
-    /// Weiter: Crossfade zum nächsten Titel (startet, wenn nichts läuft).
+    /// Starten, wenn nichts läuft; sonst nichts.
+    Play,
+    /// Stopp: ausblenden und die gemerkte Pausenstelle vergessen.
+    Stop,
+    /// Weiter: Crossfade zum nächsten Titel (startet, wenn nichts läuft). Auch bei
+    /// „Titel wiederholen“ geht es zum nächsten Titel.
     Next,
+    /// Zurück: vorheriger Titel.
+    Previous,
+    /// Titel von vorn.
+    Restart,
+    /// 10 s zurück.
+    SeekBack,
+    /// 10 s vor.
+    SeekForward,
+    /// Stumm schalten bzw. wieder auf den alten Pegel.
+    Mute,
+    /// Wiederholen weiterschalten: aus, Playlist, Titel, aus.
+    CycleRepeat,
+    /// Zufall ein/aus.
+    ToggleShuffle,
     VolumeUp,
     VolumeDown,
     /// Wunsch eintragen (doppelte zählen als Stimme).
@@ -127,7 +149,16 @@ impl PartyCommand {
     pub fn name(&self) -> String {
         match self {
             PartyCommand::PlayPause => "play_pause".into(),
+            PartyCommand::Play => "play".into(),
+            PartyCommand::Stop => "stop".into(),
             PartyCommand::Next => "next".into(),
+            PartyCommand::Previous => "previous".into(),
+            PartyCommand::Restart => "restart".into(),
+            PartyCommand::SeekBack => "seek_back".into(),
+            PartyCommand::SeekForward => "seek_forward".into(),
+            PartyCommand::Mute => "mute".into(),
+            PartyCommand::CycleRepeat => "repeat".into(),
+            PartyCommand::ToggleShuffle => "shuffle".into(),
             PartyCommand::VolumeUp => "volume_up".into(),
             PartyCommand::VolumeDown => "volume_down".into(),
             PartyCommand::Wish { title, .. } => format!("wish {title}"),
@@ -145,6 +176,20 @@ pub enum Effect {
     StartOrNext,
     /// `Controller::stop`.
     Stop,
+    /// `Controller::pause`.
+    Pause,
+    /// `Controller::play`: nach einer Pause an der Stelle weiter, sonst starten.
+    Play,
+    /// `Controller::previous`.
+    Previous,
+    /// `Controller::restart`.
+    Restart,
+    /// `Controller::seek` um so viele Sekunden.
+    Seek(f64),
+    /// `Controller::cycle_repeat`.
+    CycleRepeat,
+    /// `Controller::toggle_shuffle`.
+    ToggleShuffle,
     /// Pegel des Musikzweigs (dB).
     MusicLevel(f64),
     /// Datei hinter dem laufenden (bzw. Cue-)Titel einfügen.
@@ -158,6 +203,8 @@ pub struct PartyState {
     pub wishes: Wishlist,
     /// Musikpegel (dB), die Quelle für Lauter/Leiser.
     pub level_db: f64,
+    /// Pegel vor dem Stummschalten.
+    saved_db: f64,
     pub fullscreen: bool,
     log: Vec<String>,
 }
@@ -167,6 +214,7 @@ impl Default for PartyState {
         Self {
             wishes: Wishlist::default(),
             level_db: 0.0,
+            saved_db: 0.0,
             fullscreen: false,
             log: Vec::new(),
         }
@@ -186,8 +234,19 @@ impl PartyState {
         }
         self.log.push(cmd.name());
         match cmd {
-            PartyCommand::PlayPause if running => vec![Effect::Stop],
-            PartyCommand::PlayPause | PartyCommand::Next => vec![Effect::StartOrNext],
+            PartyCommand::PlayPause if running => vec![Effect::Pause],
+            PartyCommand::PlayPause => vec![Effect::Play],
+            PartyCommand::Next => vec![Effect::StartOrNext],
+            PartyCommand::Play if !running => vec![Effect::Play],
+            PartyCommand::Play => Vec::new(),
+            PartyCommand::Stop => vec![Effect::Stop],
+            PartyCommand::Previous => vec![Effect::Previous],
+            PartyCommand::Restart => vec![Effect::Restart],
+            PartyCommand::SeekBack => vec![Effect::Seek(-SEEK_STEP_SECONDS)],
+            PartyCommand::SeekForward => vec![Effect::Seek(SEEK_STEP_SECONDS)],
+            PartyCommand::Mute => self.toggle_mute(),
+            PartyCommand::CycleRepeat => vec![Effect::CycleRepeat],
+            PartyCommand::ToggleShuffle => vec![Effect::ToggleShuffle],
             PartyCommand::VolumeUp => self.step_level(VOLUME_STEP_DB),
             PartyCommand::VolumeDown => self.step_level(-VOLUME_STEP_DB),
             PartyCommand::Wish { path, title } => {
@@ -209,7 +268,26 @@ impl PartyState {
         }
     }
 
+    /// Stumm, wenn der Pegel am unteren Anschlag steht.
+    pub fn muted(&self) -> bool {
+        self.level_db <= LEVEL_MIN_DB
+    }
+
+    fn toggle_mute(&mut self) -> Vec<Effect> {
+        if self.muted() {
+            self.level_db = self.saved_db;
+        } else {
+            self.saved_db = self.level_db;
+            self.level_db = LEVEL_MIN_DB;
+        }
+        vec![Effect::MusicLevel(self.level_db)]
+    }
+
     fn step_level(&mut self, step: f64) -> Vec<Effect> {
+        if self.muted() {
+            // Lauter/Leiser hebt die Stummschaltung auf und geht vom alten Pegel aus.
+            self.level_db = self.saved_db;
+        }
         let next = (self.level_db + step).clamp(LEVEL_MIN_DB, LEVEL_MAX_DB);
         if next == self.level_db {
             return Vec::new();
@@ -251,6 +329,8 @@ pub struct NowPlaying {
     pub progress: f32,
     /// Läuft, sonst „bereit“.
     pub playing: bool,
+    /// Pausiert: die Stelle ist gemerkt, Play macht dort weiter.
+    pub paused: bool,
 }
 
 /// Eine große Taste.
@@ -258,6 +338,8 @@ pub struct NowPlaying {
 pub struct PartyButton {
     pub label: &'static str,
     pub command: PartyCommand,
+    /// Funktion ist an (Zufall, Wiederholen, Stumm): Knopf hervorheben.
+    pub active: bool,
 }
 
 /// Alles, was das Party-Layout anzeigt, ohne Fenster.
@@ -266,32 +348,56 @@ pub struct PartyLayout {
     pub now: Option<NowPlaying>,
     /// „Interpret – Titel“ des nächsten Musiktitels.
     pub next: Option<String>,
-    pub buttons: Vec<PartyButton>,
+    /// Die Tasten in Reihen (Transport, Spulen, Pegel, Modi).
+    pub buttons: Vec<Vec<PartyButton>>,
+    pub repeat: Repeat,
+    pub shuffle: bool,
+    pub muted: bool,
     /// „Titel (×Stimmen)“ in Reihenfolge.
     pub wishes: Vec<String>,
     pub level_db: f64,
     pub fullscreen: bool,
 }
 
-/// Die großen Tasten (feste Reihenfolge, wenige).
-pub fn buttons(running: bool) -> Vec<PartyButton> {
+/// Die Tasten in festen Reihen: Transport, Spulen, Pegel, Modi. App und Fernbedienung
+/// zeigen dieselben Befehle; die Namen dort sind die aus [`PartyCommand::name`].
+pub fn buttons(running: bool, repeat: Repeat, shuffle: bool, muted: bool) -> Vec<Vec<PartyButton>> {
+    let b = |label, command, active| PartyButton {
+        label,
+        command,
+        active,
+    };
     vec![
-        PartyButton {
-            label: if running { "Pause" } else { "Play" },
-            command: PartyCommand::PlayPause,
-        },
-        PartyButton {
-            label: "Weiter",
-            command: PartyCommand::Next,
-        },
-        PartyButton {
-            label: "Leiser",
-            command: PartyCommand::VolumeDown,
-        },
-        PartyButton {
-            label: "Lauter",
-            command: PartyCommand::VolumeUp,
-        },
+        vec![
+            b("Zurück", PartyCommand::Previous, false),
+            b(
+                if running { "Pause" } else { "Play" },
+                PartyCommand::PlayPause,
+                false,
+            ),
+            b("Stopp", PartyCommand::Stop, false),
+            b("Weiter", PartyCommand::Next, false),
+        ],
+        vec![
+            b("Von vorn", PartyCommand::Restart, false),
+            b("−10 s", PartyCommand::SeekBack, false),
+            b("+10 s", PartyCommand::SeekForward, false),
+            b("Stumm", PartyCommand::Mute, muted),
+        ],
+        vec![
+            b("Leiser", PartyCommand::VolumeDown, false),
+            b("Lauter", PartyCommand::VolumeUp, false),
+            b("🔀 Zufall", PartyCommand::ToggleShuffle, shuffle),
+            b(
+                match repeat {
+                    Repeat::One => "🔂 Titel",
+                    Repeat::All => "🔁 Playlist",
+                    Repeat::Off => "🔁 Aus",
+                },
+                PartyCommand::CycleRepeat,
+                repeat != Repeat::Off,
+            ),
+        ],
     ]
 }
 
@@ -302,14 +408,18 @@ pub fn layout(view: &View, state: &PartyState) -> PartyLayout {
     let entry = idx.and_then(|i| view.playlist.get(i));
     let now = entry.map(|e| {
         let (artist, title) = split_title(&e.title);
-        let playing = view.current.is_some();
-        let progress = match (playing, e.seconds) {
-            (true, Some(len)) if len > 0.0 => {
+        let paused = view.paused;
+        let playing = view.current.is_some() && paused.is_none();
+        let progress = match (playing, paused, e.seconds) {
+            (_, Some((rest, len)), _) if len > 0.0 => (1.0 - rest / len).clamp(0.0, 1.0) as f32,
+            (true, None, Some(len)) if len > 0.0 => {
                 (1.0 - view.remaining_title / len).clamp(0.0, 1.0) as f32
             }
             _ => 0.0,
         };
-        let remaining = if playing {
+        let remaining = if let Some((rest, _)) = paused {
+            clock(rest)
+        } else if playing {
             clock(view.remaining_title)
         } else {
             clock(e.seconds.unwrap_or(0.0))
@@ -320,6 +430,7 @@ pub fn layout(view: &View, state: &PartyState) -> PartyLayout {
             remaining,
             progress,
             playing,
+            paused: paused.is_some(),
         }
     });
     let next = idx.and_then(|i| {
@@ -339,7 +450,10 @@ pub fn layout(view: &View, state: &PartyState) -> PartyLayout {
     PartyLayout {
         now,
         next,
-        buttons: buttons(view.running),
+        buttons: buttons(view.running, view.repeat, view.shuffle, state.muted()),
+        repeat: view.repeat,
+        shuffle: view.shuffle,
+        muted: state.muted(),
         wishes: state
             .wishes
             .items()
@@ -371,7 +485,13 @@ impl PartyLayout {
                         format!("{} – ", n.artist)
                     },
                     n.title,
-                    if n.playing { "läuft" } else { "bereit" },
+                    if n.playing {
+                        "läuft"
+                    } else if n.paused {
+                        "pausiert"
+                    } else {
+                        "bereit"
+                    },
                     n.remaining,
                     n.progress * 100.0
                 );
@@ -379,8 +499,13 @@ impl PartyLayout {
             None => s += "jetzt: –\n",
         }
         s += &format!("nächster: {}\n", self.next.as_deref().unwrap_or("–"));
-        let labels: Vec<&str> = self.buttons.iter().map(|b| b.label).collect();
-        s += &format!("tasten: {}\n", labels.join(" | "));
+        for row in &self.buttons {
+            let labels: Vec<String> = row
+                .iter()
+                .map(|b| format!("{}{}", b.label, if b.active { "*" } else { "" }))
+                .collect();
+            s += &format!("tasten: {}\n", labels.join(" | "));
+        }
         s += &format!(
             "pegel: {:+.0} dB, vollbild: {}\n",
             self.level_db,
@@ -433,11 +558,8 @@ mod tests {
     #[test]
     fn buttons_emit_the_expected_commands() {
         let mut s = PartyState::default();
-        assert_eq!(
-            s.apply(PartyCommand::PlayPause, false),
-            vec![Effect::StartOrNext]
-        );
-        assert_eq!(s.apply(PartyCommand::PlayPause, true), vec![Effect::Stop]);
+        assert_eq!(s.apply(PartyCommand::PlayPause, false), vec![Effect::Play]);
+        assert_eq!(s.apply(PartyCommand::PlayPause, true), vec![Effect::Pause]);
         assert_eq!(s.apply(PartyCommand::Next, true), vec![Effect::StartOrNext]);
         assert_eq!(
             s.apply(PartyCommand::VolumeDown, true),
@@ -519,7 +641,9 @@ mod tests {
             l.to_text(),
             "jetzt: Abba – Waterloo [läuft] rest 0:50 fortschritt 75%\n\
              nächster: Queen – Radio Ga Ga\n\
-             tasten: Pause | Weiter | Leiser | Lauter\n\
+             tasten: Zurück | Pause | Stopp | Weiter\n\
+             tasten: Von vorn | −10 s | +10 s | Stumm\n\
+             tasten: Leiser | Lauter | 🔀 Zufall | 🔁 Aus\n\
              pegel: +0 dB, vollbild: aus\n\
              wünsche:\n  1. Mr. Brightside (×2)\n  2. Wonderwall\n"
         );
@@ -532,7 +656,7 @@ mod tests {
         };
         let t = layout(&idle, &PartyState::default()).to_text();
         assert!(t.starts_with("jetzt: Queen – Radio Ga Ga [bereit] rest 3:00 fortschritt 0%\n"));
-        assert!(t.contains("nächster: Solo\n") && t.contains("tasten: Play |"));
+        assert!(t.contains("nächster: Solo\n") && t.contains("tasten: Zurück | Play |"));
         assert!(
             layout(&View::default(), &PartyState::default())
                 .to_text()

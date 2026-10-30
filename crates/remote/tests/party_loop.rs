@@ -134,3 +134,63 @@ fn remote_search_id(a: SocketAddr, token: &str, q: &str) -> String {
     let j: Value = serde_json::from_str(out.split_once("\r\n\r\n").unwrap().1).unwrap();
     j["results"][0]["id"].as_str().unwrap().to_string()
 }
+
+#[test]
+fn transport_buttons_from_the_phone_reach_the_party_layer() {
+    use woa_radio::party::PartyCommand;
+    let remote = Remote::start(RemoteConfig {
+        pins: Some(("111111".into(), "222222".into())),
+        limits: woa_remote::Limits {
+            commands_per_second: 100,
+            ..woa_remote::Limits::default()
+        },
+        ..RemoteConfig::default()
+    })
+    .expect("start");
+    let a = remote.addr();
+    let dj = post(a, "/api/login", None, &json!({"pin": "222222"}));
+    let dj_token = dj["token"].as_str().unwrap().to_string();
+    let g = post(a, "/api/login", None, &json!({"pin": "111111"}));
+    let guest_token = g["token"].as_str().unwrap().to_string();
+
+    let all = [
+        ("previous", PartyCommand::Previous),
+        ("play_pause", PartyCommand::PlayPause),
+        ("play", PartyCommand::Play),
+        ("stop", PartyCommand::Stop),
+        ("next", PartyCommand::Next),
+        ("restart", PartyCommand::Restart),
+        ("seek_back", PartyCommand::SeekBack),
+        ("seek_forward", PartyCommand::SeekForward),
+        ("mute", PartyCommand::Mute),
+        ("repeat", PartyCommand::CycleRepeat),
+        ("shuffle", PartyCommand::ToggleShuffle),
+        ("volume_down", PartyCommand::VolumeDown),
+        ("volume_up", PartyCommand::VolumeUp),
+    ];
+    for (name, expected) in all {
+        // Der Gast darf keinen davon.
+        let r = post(a, "/api/cmd", Some(&guest_token), &json!({"cmd": name}));
+        assert_ne!(r["ok"], true, "{name}: Gast darf nicht");
+        assert!(
+            remote.poll().is_empty(),
+            "{name}: nichts bei der Oberfläche"
+        );
+        // Der DJ darf alle, und der Befehl kommt unverändert an.
+        let r = post(a, "/api/cmd", Some(&dj_token), &json!({"cmd": name}));
+        assert_eq!(r["ok"], true, "{name}: {r}");
+        let got = remote.poll();
+        assert_eq!(got.len(), 1, "{name}");
+        assert_eq!(got[0].command, expected, "{name}");
+    }
+    // Unbekanntes und kaputtes wird abgelehnt.
+    for body in [
+        json!({"cmd": "format_c"}),
+        json!({"cmd": "seek_forward_x"}),
+        json!({}),
+    ] {
+        let r = post(a, "/api/cmd", Some(&dj_token), &body);
+        assert_ne!(r["ok"], true);
+    }
+    assert!(remote.poll().is_empty());
+}

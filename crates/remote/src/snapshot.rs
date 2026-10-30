@@ -18,6 +18,8 @@ pub struct NowSnap {
     /// 0..1.
     pub progress: f32,
     pub playing: bool,
+    /// Pausiert: Play macht an der Stelle weiter.
+    pub paused: bool,
 }
 
 /// Ein Wunsch in der Liste. Der Pfad bleibt im Programm und geht nie ans Handy.
@@ -42,6 +44,10 @@ pub struct PartySnapshot {
     pub next: Option<String>,
     pub wishes: Vec<WishSnap>,
     pub level_db: f64,
+    /// Wiederholen: aus, Playlist, Titel.
+    pub repeat: woa_radio::control::Repeat,
+    pub shuffle: bool,
+    pub muted: bool,
 }
 
 /// Kurze, stabile Kennung eines Pfads (FNV-1a, 64 Bit, hex). Das Handy kennt nur sie.
@@ -65,6 +71,7 @@ impl PartySnapshot {
                 // Auf ganze Prozent, damit der Strom nicht bei jedem Bruchteil sendet.
                 "progress": (f64::from(n.progress) * 100.0).round() / 100.0,
                 "playing": n.playing,
+                "paused": n.paused,
             }),
             None => Value::Null,
         };
@@ -78,6 +85,9 @@ impl PartySnapshot {
             "next": self.next,
             "wishes": wishes,
             "level_db": self.level_db.round(),
+            "repeat": self.repeat.name(),
+            "shuffle": self.shuffle,
+            "muted": self.muted,
         })
     }
 }
@@ -120,6 +130,7 @@ mod tests {
                 remaining: "1:00".into(),
                 progress: 0.5,
                 playing: true,
+                paused: false,
             }),
             next: Some("N".into()),
             wishes: vec![WishSnap {
@@ -128,10 +139,17 @@ mod tests {
                 path: "/geheim/ordner/w.mp3".into(),
             }],
             level_db: -2.0,
+            repeat: woa_radio::control::Repeat::One,
+            shuffle: true,
+            muted: false,
         };
         let text = s.to_public().to_string();
         assert!(!text.contains("geheim"), "{text}");
         assert!(text.contains(&short_id(Path::new("/geheim/ordner/w.mp3"))));
+        let v = s.to_public();
+        assert_eq!(v["repeat"], "one");
+        assert_eq!(v["shuffle"], true);
+        assert_eq!(v["muted"], false);
     }
 
     #[test]

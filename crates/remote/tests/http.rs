@@ -137,10 +137,14 @@ fn snap(title: &str, remaining: &str) -> PartySnapshot {
             remaining: remaining.into(),
             progress: 0.25,
             playing: true,
+            paused: false,
         }),
         next: Some("Nächster".into()),
         wishes: vec![],
         level_db: 0.0,
+        repeat: Default::default(),
+        shuffle: false,
+        muted: false,
     }
 }
 

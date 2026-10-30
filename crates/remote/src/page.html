@@ -28,6 +28,11 @@ h1{font-size:15px;letter-spacing:.12em;margin:0;color:var(--dim);font-weight:700
 progress{width:100%;height:10px;accent-color:var(--accent)}
 #next{margin-top:8px;color:var(--cue);font-size:16px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.grid4 button{padding:10px 4px;font-size:15px}
+.grid4 button.big{font-size:24px;padding:8px 4px}
+.grid4 button small{display:block;font-size:12px;font-weight:600}
+button.on{background:var(--accent);color:var(--well);border-color:var(--accent)}
 button{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);
 border-radius:10px;padding:14px 10px;min-height:56px;font-weight:700}
 button:active{filter:brightness(1.25)}
@@ -79,11 +84,23 @@ li .n{color:var(--accent);font-family:ui-monospace,monospace;min-width:1.6em}
   <div id="msg" role="status"></div>
 
   <section id="dj" class="hidden">
-    <div class="grid" style="margin-bottom:12px">
+    <div class="grid4" style="margin-bottom:8px">
+      <button class="big" data-cmd="previous" aria-label="Vorheriger Titel">&#9198;<small>Zurück</small></button>
       <button class="primary big" data-cmd="play_pause" id="playBtn">Play</button>
-      <button class="big" data-cmd="next">Weiter</button>
-      <button class="big" data-cmd="volume_down">Leiser</button>
-      <button class="big" data-cmd="volume_up">Lauter</button>
+      <button class="big" data-cmd="stop" aria-label="Stopp">&#9209;<small>Stopp</small></button>
+      <button class="big" data-cmd="next" aria-label="Nächster Titel">&#9197;<small>Weiter</small></button>
+    </div>
+    <div class="grid4" style="margin-bottom:8px">
+      <button data-cmd="restart">Von vorn</button>
+      <button data-cmd="seek_back">&minus;10 s</button>
+      <button data-cmd="seek_forward">+10 s</button>
+      <button data-cmd="mute" id="muteBtn">Stumm</button>
+    </div>
+    <div class="grid4" style="margin-bottom:12px">
+      <button data-cmd="volume_down">Leiser</button>
+      <button data-cmd="volume_up">Lauter</button>
+      <button data-cmd="shuffle" id="shuffleBtn" aria-pressed="false">&#128256; Zufall</button>
+      <button data-cmd="repeat" id="repeatBtn" aria-pressed="false">&#128257; Aus</button>
     </div>
   </section>
 
@@ -198,8 +215,8 @@ li .n{color:var(--accent);font-family:ui-monospace,monospace;min-width:1.6em}
   function render() {
     if (!state) return;
     var n = state.now;
-    $("badge").textContent = n && n.playing ? "JETZT" : "BEREIT";
-    $("badge").className = "badge" + (n && n.playing ? "" : " ready");
+    $("badge").textContent = n && n.playing ? "JETZT" : n && n.paused ? "PAUSE" : "BEREIT";
+    $("badge").className = "badge" + (n && (n.playing || n.paused) ? "" : " ready");
     $("title").textContent = n ? n.title : "–";
     $("artist").textContent = n ? n.artist : "";
     $("remaining").textContent = n ? n.remaining : "0:00";
@@ -207,6 +224,15 @@ li .n{color:var(--accent);font-family:ui-monospace,monospace;min-width:1.6em}
     $("prog").value = n ? n.progress : 0;
     $("next").textContent = state.next ? "NÄCHSTER: " + state.next : "";
     $("playBtn").textContent = n && n.playing ? "Pause" : "Play";
+    // Wiederholen, Zufall und Stumm zeigen denselben Zustand wie die App.
+    var rep = state.repeat || "off";
+    $("repeatBtn").textContent = rep === "one" ? "\uD83D\uDD02 Titel" : rep === "all" ? "\uD83D\uDD01 Playlist" : "\uD83D\uDD01 Aus";
+    $("repeatBtn").classList.toggle("on", rep !== "off");
+    $("repeatBtn").setAttribute("aria-pressed", rep !== "off");
+    $("shuffleBtn").classList.toggle("on", !!state.shuffle);
+    $("shuffleBtn").setAttribute("aria-pressed", !!state.shuffle);
+    $("muteBtn").classList.toggle("on", !!state.muted);
+    $("muteBtn").setAttribute("aria-pressed", !!state.muted);
     var ul = $("wishes"); ul.textContent = "";
     var w = state.wishes || [];
     $("nowishes").classList.toggle("hidden", w.length > 0);
