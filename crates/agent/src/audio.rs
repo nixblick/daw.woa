@@ -380,9 +380,39 @@ pub fn spectrogram_rgb(mix: &Mix, width: usize, height: usize) -> Vec<u8> {
     Spectrogram::of_stereo(&mix.left, &mix.right, RATE, FFT_SIZE, FFT_HOP).render_rgb(width, height)
 }
 
-/// Schreibt ein RGB-Bild als PNG.
+/// Schreibt ein RGB-Bild als PNG, wie `write_mix`: in eine per `create_new` neu angelegte
+/// Temp-Datei im Zielordner und danach per `rename` an den Zielnamen. So folgt der Agent
+/// keinem untergeschobenen Symlink (#83).
 pub fn write_png(path: &Path, rgb: &[u8], width: u32, height: u32) -> Result<(), String> {
-    let file = std::fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let dir = path.parent().ok_or("kein Zielordner")?;
+    let mut opened = None;
+    for n in 0..100u32 {
+        let p = dir.join(format!(".woa-png-{}-{n}.png", std::process::id()));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&p)
+        {
+            Ok(f) => {
+                opened = Some((p, f));
+                break;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("{}: {e}", p.display())),
+        }
+    }
+    let (tmp, file) = opened.ok_or("keine Temp-Datei frei")?;
+    let r = encode_png(&file, rgb, width, height)
+        .and_then(|()| file.sync_all().map_err(|e| e.to_string()))
+        .and_then(|()| std::fs::rename(&tmp, path).map_err(|e| e.to_string()));
+    drop(file);
+    if r.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    r
+}
+
+fn encode_png(file: &std::fs::File, rgb: &[u8], width: u32, height: u32) -> Result<(), String> {
     let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
     enc.set_color(png::ColorType::Rgb);
     enc.set_depth(png::BitDepth::Eight);

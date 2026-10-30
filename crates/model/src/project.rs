@@ -1,6 +1,7 @@
 //! Plain data types of a project. They carry no behaviour beyond lookups;
 //! changes go through [`crate::Command`].
 
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -404,14 +405,18 @@ impl Project {
     /// Automation of a target that no longer exists (deleted effect or send) is kept; it
     /// comes back to life with Undo and the engine ignores it meanwhile.
     pub(crate) fn check_routing(&self) -> Result<()> {
-        let mut seen: Vec<u64> = Vec::new();
+        // Sets instead of linear scans: a hostile project file with many tracks, sends and
+        // inserts must not make loading quadratic (#79).
+        let track_ids: HashSet<u64> = self.tracks.iter().map(|t| t.id.0).collect();
+        let mut seen: HashSet<u64> = HashSet::new();
         for t in &self.tracks {
             for r in t.output.iter().chain(t.sends.iter().map(|s| &s.target)) {
                 self.check_destination(t.id, *r)?;
             }
-            for (i, s) in t.sends.iter().enumerate() {
+            let mut targets: HashSet<TrackId> = HashSet::new();
+            for s in &t.sends {
                 check_send_level(s.level_db)?;
-                if t.sends[..i].iter().any(|o| o.target == s.target) {
+                if !targets.insert(s.target) {
                     return Err(ModelError::DuplicateSend {
                         track: t.id,
                         target: s.target,
@@ -423,33 +428,64 @@ impl Project {
                 if let Some(src) = i.sidechain {
                     self.check_sidechain(t, i, src)?;
                 }
-                if seen.contains(&i.id.0) || self.tracks.iter().any(|o| o.id.0 == i.id.0) {
+                if track_ids.contains(&i.id.0) || !seen.insert(i.id.0) {
                     return Err(ModelError::DuplicateId(i.id.0));
                 }
-                seen.push(i.id.0);
             }
         }
         for t in &self.tracks {
             Self::check_automation(t)?;
         }
-        // Cycle search: every connection must not lead back to its source.
+        self.check_acyclic()
+    }
+
+    /// Every edge of the signal graph: outputs, sends, and sidechain source → listening track.
+    fn edges(&self) -> HashMap<TrackId, Vec<TrackId>> {
+        let mut out: HashMap<TrackId, Vec<TrackId>> = HashMap::with_capacity(self.tracks.len());
         for t in &self.tracks {
+            let e = out.entry(t.id).or_default();
+            e.extend(t.output);
+            e.extend(t.sends.iter().map(|s| s.target));
             for i in &t.inserts {
-                if let Some(src) = i.sidechain
-                    && self.reaches(t.id, src)
-                {
-                    return Err(ModelError::RoutingCycle {
-                        from: src,
-                        to: t.id,
-                    });
+                if let Some(src) = i.sidechain {
+                    out.entry(src).or_default().push(t.id);
                 }
             }
-            for to in t.output.iter().chain(t.sends.iter().map(|s| &s.target)) {
-                if self.reaches(*to, t.id) {
-                    return Err(ModelError::RoutingCycle {
-                        from: t.id,
-                        to: *to,
-                    });
+        }
+        out
+    }
+
+    /// One pass over the whole graph (Kahn, O(V+E)) instead of one search per edge (#79).
+    /// On a cycle the error names an edge between two tracks that are both on it.
+    fn check_acyclic(&self) -> Result<()> {
+        let edges = self.edges();
+        let mut indegree: HashMap<TrackId, usize> = edges.keys().map(|k| (*k, 0)).collect();
+        for to in edges.values().flatten() {
+            *indegree.entry(*to).or_default() += 1;
+        }
+        let mut ready: Vec<TrackId> = indegree
+            .iter()
+            .filter(|(_, d)| **d == 0)
+            .map(|(k, _)| *k)
+            .collect();
+        while let Some(id) = ready.pop() {
+            for to in edges.get(&id).into_iter().flatten() {
+                if let Some(d) = indegree.get_mut(to) {
+                    *d -= 1;
+                    if *d == 0 {
+                        ready.push(*to);
+                    }
+                }
+            }
+            indegree.remove(&id);
+        }
+        // What is left lies on a cycle or behind one; find an edge inside the rest.
+        let mut left: Vec<TrackId> = indegree.keys().copied().collect();
+        left.sort();
+        for from in left {
+            for to in edges.get(&from).into_iter().flatten() {
+                if indegree.contains_key(to) {
+                    return Err(ModelError::RoutingCycle { from, to: *to });
                 }
             }
         }
@@ -514,29 +550,20 @@ impl Project {
         Ok(())
     }
 
-    /// True if `goal` can be reached from `start` over outputs and sends (or is `start`).
+    /// True if `goal` can be reached from `start` over outputs, sends and sidechains (or is
+    /// `start`). O(V+E): the edges are built once per call (#79).
     pub fn reaches(&self, start: TrackId, goal: TrackId) -> bool {
+        let edges = self.edges();
         let mut stack = vec![start];
-        let mut visited: Vec<TrackId> = Vec::new();
+        let mut visited: HashSet<TrackId> = HashSet::new();
         while let Some(id) = stack.pop() {
             if id == goal {
                 return true;
             }
-            if visited.contains(&id) {
+            if !visited.insert(id) {
                 continue;
             }
-            visited.push(id);
-            if let Some(t) = self.track(id) {
-                stack.extend(t.output);
-                stack.extend(t.sends.iter().map(|s| s.target));
-            }
-            // A sidechain feeds the track whose insert listens to `id` (Paket 18).
-            stack.extend(
-                self.tracks
-                    .iter()
-                    .filter(|o| o.inserts.iter().any(|i| i.sidechain == Some(id)))
-                    .map(|o| o.id),
-            );
+            stack.extend(edges.get(&id).into_iter().flatten().copied());
         }
         false
     }
