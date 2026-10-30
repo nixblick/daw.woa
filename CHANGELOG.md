@@ -1,6 +1,10 @@
 # Changelog
 
 <<<<<<< HEAD
+## 0.6.2 — 2026-10-30
+
+- CLAUDE.md: Lokal laufen nur clippy und die Tests der geänderten Crates, die volle Testsuite nur in der CI (Pflicht auf main). André: „ja, mach beides“.
+
 ## 0.6.1 — 2026-10-30
 
 - Bauen ohne volle Debug-Infos: eigener Code mit `line-tables-only` (Backtraces mit Zeilen bleiben), Abhängigkeiten ganz ohne. Kleinerer Bauordner, schnelleres Linken, weniger RAM auf dem 7-GB-Notebook. André: „kann man das nicht effizienter???“
