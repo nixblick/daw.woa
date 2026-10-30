@@ -1,0 +1,37 @@
+<!-- MSI für Windows (WiX Toolset 5). Gebaut von .github/workflows/windows-build.yml:
+     wix build packaging/windows/woa.wxs -arch x64 -d Version=<x.y.z> -d Bin=target\release -o woa.msi
+     UpgradeCode NIE ändern: daran erkennt Windows ältere Versionen und ersetzt sie. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="WOA – Wir on Air" Manufacturer="creaVisions" Version="$(var.Version)"
+           UpgradeCode="16647BDD-1E47-4AA9-AAED-B1D5D1D4A822" Scope="perMachine" Language="1031" Codepage="65001">
+    <MajorUpgrade DowngradeErrorMessage="Eine neuere Version von WOA ist bereits installiert." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="WOA" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <ComponentGroup Id="Programme" Directory="INSTALLFOLDER">
+      <Component>
+        <File Id="woa.exe" Source="$(var.Bin)\woa.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuWoa" Directory="ProgramMenuFolder" Name="WOA – Wir on Air"
+                    WorkingDirectory="INSTALLFOLDER" Advertise="yes" />
+        </File>
+      </Component>
+      <Component>
+        <File Source="$(var.Bin)\woa-headless.exe" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Source="$(var.Bin)\woa-streamd.exe" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Source="LICENSE" Name="LICENSE.txt" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Haupt" Title="WOA">
+      <ComponentGroupRef Id="Programme" />
+    </Feature>
+  </Package>
+</Wix>

@@ -1,9 +1,15 @@
 name: Windows-Bau
 # Von Hand starten (Actions → Windows-Bau → Run workflow) oder per `gh workflow run windows-build.yml`.
-# Ergebnis: ein ZIP mit woa.exe, woa-headless.exe, woa-streamd.exe als Artefakt am Lauf.
+# Ergebnis als Artefakt am Lauf: woa-<version>-x64.msi (Installer, Startmenü-Eintrag, Update ersetzt die alte
+# Version) und ein ZIP mit woa.exe, woa-headless.exe, woa-streamd.exe zum Auspacken ohne Installation.
 # Unsigniert; Windows SmartScreen fragt beim ersten Start nach („Weitere Informationen“ → „Trotzdem ausführen“).
 on:
   workflow_dispatch:
+  # Prüft Änderungen am Installer schon im PR.
+  pull_request:
+    paths:
+      - packaging/windows/**
+      - .github/workflows/windows-build.yml
 
 jobs:
   build:
@@ -21,8 +27,15 @@ jobs:
           Copy-Item target/release/woa.exe, target/release/woa-headless.exe, target/release/woa-streamd.exe, LICENSE, README.md, CHANGELOG.md woa-windows/
           Compress-Archive -Path woa-windows/* -DestinationPath "woa-$v-windows-x64.zip"
           "WOA_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: MSI bauen (WiX 5)
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix build packaging/windows/woa.wxs -arch x64 -d Version=$env:WOA_VERSION -d Bin=target\release -o "woa-$env:WOA_VERSION-x64.msi"
       - uses: actions/upload-artifact@v4
         with:
           name: woa-${{ env.WOA_VERSION }}-windows-x64
-          path: woa-*-windows-x64.zip
+          path: |
+            woa-*-windows-x64.zip
+            woa-*-x64.msi
           retention-days: 30
