@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1 — 2026-10-30
+
+- Neues Studio- und Sende-Design (von Gemini gebaut, von André übernommen: „gefällt mir ganz gut“): Tiefenstaffelung und Hardware-Rahmen, beleuchtete Status-Pillen, 20-Segment-LED-Meter. Radio-Ansicht in vier Modulen (Sende-Deck mit Master-Uhr und Restzeit-Balken, Playlist mit Spaltenkopf und LUFS, Cart-Wall im Drumpad-Stil, Processing-Rack). Kopfleiste mit MIDI-Lampe und Modus-Umschalter, LCD für Takt und Zeit, Fade-Diagonalen und Notenvorschau in MIDI-Clips. Analyse in `docs/ui-analyse-und-ziele.md`.
+
 ## 0.8.0 — 2026-10-30
 
 Paket 13 aus M4 (#5): Piano-Roll.
