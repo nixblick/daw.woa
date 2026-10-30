@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.0 — 2026-10-30
+
+Paket 13 aus M4 (#5): Piano-Roll.
+
+- **Editor für MIDI-Clips:** Doppelklick auf einen MIDI-Clip öffnet die Piano-Roll. Klick ins Leere zeichnet eine Note (einen Rasterschritt lang), Ziehen verschiebt in Zeit und Tonhöhe, der rechte Rand ändert die Länge, Doppelklick oder Entf löscht. Mehrfachauswahl mit Strg/Umschalt+Klick, Rahmen ziehen oder Strg+A. Alt beim Ziehen schaltet das Raster ab, Esc schließt.
+- **Raster und Quantisieren:** 1/4 bis 1/32, auf Wunsch Triolen. „Quantisieren“ (oder Q) setzt die Einsätze der Auswahl, ohne Auswahl aller Noten, aufs Raster; die Längen bleiben, das Pedal bleibt, wo es war.
+- **Velocity-Leiste** unter den Noten: senkrecht ziehen setzt die Velocity der Auswahl (sonst der nächsten Note). Die Helligkeit der Noten zeigt die Velocity.
+- **Klaviatur** links mit Notennamen (C4 = 60). Klick hört die Taste vor, solange gedrückt, über das Live-Instrument der Spur; ohne aktiven Ausgang bleibt es still. Zoom waagerecht (Regler oder Strg+Mausrad), Zeilenhöhe, Umschalt+Mausrad blättert.
+- **Alles über `SetNotes`:** Jede Bearbeitung ist ein Befehl und ein Undo-Schritt, Strg+Z/Strg+Y gehen sie einzeln zurück. Die Bearbeitungen selbst (`add_note`, `move_notes`, `resize_notes`, `delete_notes`, `set_velocity`, `quantize`, `grid_beats`) liegen in `woa_model::MidiData`, damit Oberfläche und Agent denselben Code nutzen.
+- **Agent:** neue Werkzeuge `quantize_notes` (Raster, Triolen, Enden, nur bestimmte Noten) und `edit_notes` (Notenliste ersetzen: verschieben, Länge, Velocity, löschen; Pedal bleibt).
+- Fotomodus: `WOA_PIANOROLL=1` öffnet den ersten MIDI-Clip, `WOA_THEME=hell` schaltet zur Probe auf das helle Thema (nur Fenster und Piano-Roll, die Zeitleiste bleibt dunkel).
+- Tests: Bearbeitungsbefehle (Raster, Quantisieren mit und ohne Auswahl und Enden, Verschieben als Ganzes mit Grenzen, Auswahl folgt der neuen Reihenfolge, Länge, Löschen, Velocity), sechs Bearbeitungen als einzelne Undo-/Redo-Schritte, Offline-Render vor und nach dem Quantisieren (Einsätze vorher daneben, nachher höchstens 48 Samples am Raster), Agent-Loop über MCP mit Fehlerfällen und Undo.
+
 ## 0.7.2 — 2026-10-30
 
 - Konzept: Lücken im Sendestudio aufgenommen – Cue-Punkte je Titel (Cue-In/-Out, Ramp, Hook, Fade-Out), Vorhören (PFL) auf eigenem Ausgang, Stundenuhr mit AutoDJ-Rotation und festen Zeit-Events, Voice-Tracking. Eingeplant in M7 (Bibliothek in SQLite, Cue-Punkte, PFL) und M9 (Automation, Voice-Tracking, Gäste).
