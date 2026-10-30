@@ -78,7 +78,7 @@ pub struct RadioDesk {
     /// Zuletzt in den Editor übernommene Cue-Punkte je Titel (erkennt Undo/Redo).
     cue_seen: std::collections::HashMap<usize, woa_radio::Cues>,
     /// Eigener Strom für das Vorhören auf einem zweiten Gerät.
-    _pfl_output: Option<Stream>,
+    _pfl_output: Option<woa_engine::device::ManagedOutput>,
 }
 
 fn level_bus(b: Bus) -> LevelBus {
@@ -244,19 +244,17 @@ impl RadioDesk {
                 };
                 let prate = woa_engine::device::output_sample_rate(&cfg).unwrap_or(48_000);
                 let (h, mut player) = woa_radio::pfl::channel(prate);
-                match woa_engine::device::start_stereo_output(
-                    &cfg,
-                    move |l, r| player.process(l, r),
-                    |e| {
-                        if !woa_engine::device::is_xrun(&e) {
-                            tracing::warn!(error = %e, "pfl output");
-                        }
-                    },
-                ) {
+                let render: woa_engine::device::PairsRender = Box::new(move |bufs, frames| {
+                    if let Some(b) = bufs.first_mut() {
+                        player.process(&mut b.l[..frames], &mut b.r[..frames]);
+                    }
+                });
+                match woa_engine::device::ManagedOutput::open("pfl", &cfg, 1, false, render, |_| {})
+                {
                     Ok(st) => {
                         tracing::info!(device = %id, rate = prate, "pfl on second device");
                         controller.set_pfl(Some(h));
-                        (None, Some(Box::new(st) as Stream))
+                        (None, Some(st))
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, device = %id, "pfl output failed");
@@ -419,9 +417,27 @@ impl RadioDesk {
         }
     }
 
+    /// Rettungsknopf „Ausgabe neu verbinden“: öffnet Sendeausgänge und Vorhören sofort neu.
+    /// Das Ergebnis steht oben im Sendepult.
+    pub fn reconnect_outputs(&mut self) {
+        let mut ok = self.outputs.reconnect_now();
+        if let Some(o) = self._pfl_output.as_mut() {
+            ok &= !matches!(o.reconnect_now(), woa_engine::device::Reconnect::Failed(_));
+        }
+        self.error = if ok {
+            None
+        } else {
+            Some("Neu verbinden hat nicht geklappt, WOA versucht es weiter".into())
+        };
+    }
+
     /// Ein Takt: Schnappschuss holen, speichern, fremde Änderungen an radio.json laden.
     /// `player_active`: Der Player-Strom läuft gleichzeitig (für das Log).
     pub fn tick(&mut self, player_active: bool) {
+        self.outputs.poll();
+        if let Some(o) = self._pfl_output.as_mut() {
+            o.poll();
+        }
         let Some(st) = &self.station else { return };
         self.view = st.view();
         self.tick_stream();

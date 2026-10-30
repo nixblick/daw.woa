@@ -25,6 +25,25 @@ Nicht selbst geprüft: Start der Oberfläche aus dem Paket (die CI hat keinen Bi
 - Die App-Kennung `de.wironair.woa` setzt voraus, dass die Domain wironair.de dir gehört.
 - CLAP-Plugins des Rechners sieht ein Flatpak nicht; dafür bräuchte es eine Erweiterung oder das AppImage.
 
+## Kopfhörer unter Windows (0.34.1, offen, #139)
+
+Zweck: Stecken Sie Kopfhörer ein oder aus, schaltet Windows das Standard-Ausgabegerät um. Bisher blieb WOA stumm; jetzt verbindet es sich selbst neu. Windows-Notebook mit Kopfhörern (Klinke oder USB), Ausgabegerät in den Windows-Einstellungen auf „Standard“, WOA aus der neuen Version.
+
+1. **Einstecken im Player:** Modus „Arrangement“, ein Projekt mit Ton starten. Kopfhörer einstecken. Nach ein bis drei Sekunden kommt der Ton auf den Kopfhörern weiter, ohne dass Sie etwas klicken. Wiedergabe und Playhead laufen ohne Sprung.
+2. **Ausstecken:** Kopfhörer wieder abziehen. Der Ton kommt nach ein bis drei Sekunden aus den Lautsprechern zurück.
+3. **Im Radio-Modus:** Modus „Radio“, Titel starten, Kopfhörer ein- und ausstecken wie oben. Titel und Carts laufen auf dem neuen Gerät weiter. Oben im Sendepult darf kurz eine Meldung zu einem ausgefallenen Ausgang stehen.
+4. **Vorhören (PFL):** Einstellungen, Vorhören auf „Gerät: Kopfhörer“ stellen. Kopfhörer abziehen und wieder einstecken, dann ein Vorhören auslösen. Der Ton kommt wieder an.
+5. **Rettungsknopf:** Einstellungen, „Ausgabe neu verbinden“. Der Ton setzt kurz aus und läuft danach auf dem aktuellen Standardgerät. Probieren Sie ihn, falls einmal nach dem Umstecken Stille bleibt.
+6. **Ohne Neustart prüfen:** Das Ganze dreimal hintereinander. Es darf kein Neustart des Programms nötig sein.
+
+Telemetrie: Für Gerätefehler gibt es Codes der Form `audio.output.device_invalidated`, `audio.output.device_not_available`, `audio.output.device_busy`, `audio.output.config`, `audio.output.backend`, `audio.output.other`; kein Freitext, kein Gerätename.
+
+Grenze: Hat das neue Gerät eine andere Abtastrate als das alte (zum Beispiel 44,1 statt 48 kHz), kann WOA den laufenden Mix nicht darauf umstellen. Dann bleibt es still, und der Code `audio.output.config` erscheint. Dann bitte melden; WOA versucht es mit wachsenden Pausen weiter, bis zum Programmneustart.
+
+Selbst geprüft von Claude (ohne Ton, ohne Windows): Fehlerklassen, Neuöffnen nur bei Gerätefehlern (nicht bei Aussetzern), Wartezeiten zwischen Versuchen, dass die Render-Funktion ein Neuöffnen überlebt und im Audio-Thread nie wartet. Quelle für die Windows-Fehler: der Quelltext von cpal 0.18.2 (WASAPI meldet beim Wechsel des Standardgeräts `StreamInvalidated` oder `DeviceNotAvailable` und baut den Strom nicht selbst neu).
+
+Nicht selbst geprüft: das Verhalten mit echten Kopfhörern unter Windows (kein Windows, kein Gerät hier), Bluetooth-Kopfhörer, der Bauvorgang für Windows, ob die Fehlermeldungen von cpal in der Praxis genau so ankommen, wie der Quelltext es erwarten lässt.
+
 ## Silvester Teil 2, Paket 1: Ausgänge je Soundkarte (0.33.6, offen, #134)
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`, Modus „Radio“. Möglichst beide Soundkarten und das Pult angeschlossen.
