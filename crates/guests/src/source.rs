@@ -58,10 +58,11 @@ impl SineGen {
 
     /// Füllt `out` Stereo verschachtelt (beide Seiten gleich).
     pub fn fill(&mut self, out: &mut [f32]) {
-        for f in out.chunks_exact_mut(2) {
+        for f in out.chunks_mut(2) {
             let v = self.phase.sin() as f32 * self.amp;
-            f[0] = v;
-            f[1] = v;
+            for x in f.iter_mut() {
+                *x = v;
+            }
             self.phase += self.step;
             if self.phase > std::f64::consts::TAU {
                 self.phase -= std::f64::consts::TAU;
