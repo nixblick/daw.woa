@@ -85,9 +85,33 @@ pub fn clip_graph(
     transport: &TransportHandle,
     rate: f32,
     load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
-    mut meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
+    meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
 ) -> ProjectGraph {
+    clip_graph_live(project, transport, rate, load, meters, None)
+}
+
+/// Wie [`clip_graph`], dazu eine Live-Quelle (Instrument der scharfen MIDI-Spur, Paket 11)
+/// auf der Spur `live.0`. Sie läuft unabhängig vom Transport und geht durch Fader, Pan,
+/// Mute und Solo der Spur.
+pub fn clip_graph_live(
+    project: &Project,
+    transport: &TransportHandle,
+    rate: f32,
+    load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
+    mut meters: Option<&mut HashMap<TrackId, Arc<AtomicU32>>>,
+    live: Option<(TrackId, Box<dyn Node>)>,
+) -> ProjectGraph {
+    let mut live = live;
     let mut source = |t: &woa_model::Track| -> Option<Box<dyn Node>> {
+        if t.kind == TrackKind::Midi {
+            return match live.take() {
+                Some((id, node)) if id == t.id => Some(node),
+                other => {
+                    live = other;
+                    None
+                }
+            };
+        }
         if t.kind != TrackKind::Audio {
             return None;
         }
@@ -319,6 +343,47 @@ mod tests {
         assert_eq!(p.envelope(0), 0.0);
         assert_eq!(p.envelope(1), 0.5);
         assert_eq!(p.envelope(2), 1.0);
+    }
+
+    #[test]
+    fn live_instrument_plays_on_its_midi_track_while_stopped() {
+        use woa_dsp::instrument::{InstrumentNode, NoteEvent, note_queue};
+        use woa_dsp::synth::{PolySynth, Waveform};
+        let mut project = Project::new("live");
+        project
+            .tracks
+            .push(woa_model::Track::new(TrackId(1), "Piano", TrackKind::Midi));
+        let mut quiet = woa_model::Track::new(TrackId(2), "Other", TrackKind::Midi);
+        quiet.gain_db = -6.0;
+        project.tracks.push(quiet);
+        let (mut engine, mut proc_) = Engine::new(16);
+        let (mut tx, rx) = note_queue(64);
+        let node = InstrumentNode::new(PolySynth::new(4, Waveform::Sine), rx);
+        let graph = clip_graph_live(
+            &project,
+            &engine.transport(),
+            48_000.0,
+            &mut |_| None,
+            None,
+            Some((TrackId(1), Box::new(node))),
+        );
+        assert_eq!(
+            graph.tracks.len(),
+            1,
+            "only the live MIDI track gets a source"
+        );
+        engine.set_graph(graph.builder, 48_000.0, 256).unwrap();
+        tx.push(NoteEvent::note_on(69, 100)).unwrap();
+        let (mut l, mut r) = (vec![0.0; 256], vec![0.0; 256]);
+        let mut peak = 0.0f32;
+        for _ in 0..20 {
+            proc_.process_stereo(&mut l, &mut r);
+            peak = l.iter().fold(peak, |m, x| m.max(x.abs()));
+        }
+        assert!(
+            peak > 0.05,
+            "live note audible in the mix without play: {peak}"
+        );
     }
 
     #[test]

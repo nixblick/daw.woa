@@ -118,6 +118,15 @@ impl Instrument for SoundFontPlayer {
                 self.synth
                     .process_midi_message(ch, 0xC0, i32::from(program.min(127)), 0)
             }
+            NoteEventKind::Sustain { on } => {
+                self.synth
+                    .process_midi_message(ch, 0xB0, 64, if on { 127 } else { 0 })
+            }
+            NoteEventKind::PitchBend { value } => {
+                let v = i32::from(value) + 8192;
+                self.synth
+                    .process_midi_message(ch, 0xE0, v & 0x7F, (v >> 7) & 0x7F)
+            }
         }
     }
 

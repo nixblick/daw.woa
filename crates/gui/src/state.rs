@@ -85,6 +85,20 @@ impl AppState {
             .then_some(id)
     }
 
+    /// Appends a MIDI track named "MIDI N" (Paket 11: plays the keyboard when armed).
+    pub fn add_midi_track(&mut self) -> Option<TrackId> {
+        let id = self.session.new_track_id();
+        let n = self
+            .project()
+            .tracks
+            .iter()
+            .filter(|t| t.kind == TrackKind::Midi)
+            .count();
+        let name = format!("MIDI {}", n + 1);
+        self.apply(Command::add_track(id, name, TrackKind::Midi))
+            .then_some(id)
+    }
+
     /// Renames a track; empty or unchanged names are ignored.
     pub fn rename_track(&mut self, track: TrackId, name: &str) -> bool {
         let name = name.trim();

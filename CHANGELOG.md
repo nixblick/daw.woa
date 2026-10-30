@@ -1,14 +1,28 @@
 # Changelog
 
-## 0.5.3 — 2026-10-30
+<<<<<<< HEAD
+## 0.6.1 — 2026-10-30
 
 - Bauen ohne volle Debug-Infos: eigener Code mit `line-tables-only` (Backtraces mit Zeilen bleiben), Abhängigkeiten ganz ohne. Kleinerer Bauordner, schnelleres Linken, weniger RAM auf dem 7-GB-Notebook. André: „kann man das nicht effizienter???“
 
+## 0.6.0 — 2026-10-30
+
+Paket 11 aus M4 (#5): Keyboard spielt live.
+
+- **MIDI-Eingang** (`woa_io::midi`, mit `midir` 0.11, MIT): Eingänge auflisten, verbinden, alle 2 s neu abfragen. Wird das Gerät abgezogen, trennt WOA die Verbindung, schickt „Pedal los“ und „alle Noten aus“ (nichts hängt) und verbindet von selbst wieder, sobald es zurück ist, auch mit neuer ALSA-Nummer. Log-Zeile je Auswahl, Verbindung, Trennung und Fehler (gleiche Fehler nur einmal).
+- **Parser** für Note On/Off (Note On mit Velocity 0 = Note aus), Anschlagstärke, Haltepedal (CC 64), Pitchbend, Program Change und All Notes Off (CC 120/123); versteht Running Status, überspringt SysEx und Echtzeit-Bytes.
+- **Scharfe MIDI-Spur spielt:** Neuer Knopf „+ MIDI-Spur“. Die erste scharf geschaltete MIDI-Spur (sonst die ausgewählte, wenn sie eine MIDI-Spur ist) bekommt ein Live-Instrument (Synthesizer, 16 Stimmen) und klingt durch Fader, Pan, Mute und Solo der Spur, auch ohne ▶. Die Events gehen über die `rtrb`-Queue in den Audio-Thread, dort ohne Sperre und ohne Allokation.
+- **Synthesizer** versteht jetzt Haltepedal und Pitchbend (±2 Halbtöne), der SoundFont-Player reicht beides weiter. Der Sampler ignoriert beides noch.
+- **Einstellungen → MIDI-Eingang:** Aus oder ein Gerät, gespeichert in `config.json` (`midi_input`). Ein gewähltes, nicht eingestecktes Gerät steht mit „(nicht verbunden)“ in der Liste.
+- **MIDI-Lampe** rechts in der Kopfzeile: grau = aus oder verbunden in Ruhe, rot = gewählt, aber nicht da, grün bei jedem Event. Der Tooltip nennt Gerät und gespielte Spur.
+- Tests: Parser mit Bytefolgen; virtueller ALSA-Port spielt eine leise und eine laute Note mit Pedal in die Instrument-Node (Offline-Render unter `assert_no_alloc`: nicht still, laut mehr als dreimal so laut wie leise, Pedal hält, Pedal los gibt frei), schließt den Port (Status „wartet“, keine hängende Note) und öffnet ihn wieder (verbunden, Events kommen an); Live-Instrument im Projekt-Graphen klingt ohne laufenden Transport.
+=======
 ## 0.5.2 — 2026-10-30
 
 - **Dauertest: Bündel zu später Blöcke behoben.** Ursache: `broadcast-ui` rechnete den Mixer und dekodierte Titel in derselben Schleife. Läuft die Playlist im Kreis, wird der Titel beim Neustart neu dekodiert (rund 250 ms für 3 min MP3), und der Takt stand so lange still. Belegt mit Zeitstempeln: alle 25 späten Blöcke im Probelauf fielen auf t = 197,8 s, das Ende des 197,6-s-Titels, unmittelbar nach „decode_ms=255“; die Verspätung fiel von 296 ms in 11,6-ms-Schritten (ein Block) ab. Jetzt läuft der Mixer wie in der Oberfläche in einem eigenen Takt-Thread, der nur rechnet; Dekodieren, Titel und Bericht macht der Steuer-Thread. Jeder späte Block und jeder Neustart der Playlist steht als `ui-log` auf stderr, mit Unix-Zeit (Abgleich mit dem Journal), Prozess-ID (erste oder neu gestartete Oberfläche) und Sekunden seit Start; dazu ein Hinweis, wenn der Steuer-Thread über 100 ms still stand, und bei späten Blöcken Seitenfehler und Auslagerung des Prozesses. Probe nach dem Umbau: zwei Läufe à 10 min gegen lokalen Icecast, beide bestanden (0 zu spät, 0 verloren, 0 Puffer leer, 0 Neuverbindungen, Notfall nach 2009 und 2113 ms), obwohl der Steuer-Thread bei jedem Neustart der Playlist 315–382 ms stand.
 - Nicht geklärt: Im ersten 10-min-Probelauf nach dem Umbau stand der ganze Rechner rund 5 s (Oberfläche und Prüfprozess gleichzeitig, Nutzer-Journal von 07:16:30 bis 07:18:32 leer, dann viele Timer auf einmal). Vermutung: Ruhezustand oder Speicherdruck des Notebooks, nicht der Mixer. Die neuen Logzeilen trennen das beim nächsten Mal.
 - **CI-Test wackelt nicht mehr unter Windows (#66).** `broadcast_test_survives_ui_crash_against_icecast` prüft die Logik (Notfall übernimmt binnen 2,5 s, Oberfläche übernimmt wieder, keine verlorenen Samples, keine Neuverbindung, Bytes beim Server). Zu späte Blöcke und leere Sendepuffer auf dem geteilten Runner werden nur gemeldet; die Grenzen im Code und die strenge Zählung im echten Dauertest bleiben.
+>>>>>>> origin/main
 
 ## 0.5.1 — 2026-10-30
 

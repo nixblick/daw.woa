@@ -15,12 +15,13 @@ rtrb = "0.4.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tracing = "0.1.44"
-woa-dsp = { version = "0.5", path = "../dsp" }
-woa-engine = { version = "0.5", path = "../engine", features = ["device"] }
-woa-model = { version = "0.5", path = "../model" }
-woa-radio = { version = "0.5", path = "../radio" }
-woa-stream = { version = "0.5", path = "../stream" }
-woa-telemetry = { version = "0.5", path = "../telemetry" }
+woa-dsp = { version = "0.6", path = "../dsp" }
+woa-io = { version = "0.6", path = "../io" }
+woa-engine = { version = "0.6", path = "../engine", features = ["device"] }
+woa-model = { version = "0.6", path = "../model" }
+woa-radio = { version = "0.6", path = "../radio" }
+woa-stream = { version = "0.6", path = "../stream" }
+woa-telemetry = { version = "0.6", path = "../telemetry" }
 
 [dev-dependencies]
 tempfile = "3.27.0"
