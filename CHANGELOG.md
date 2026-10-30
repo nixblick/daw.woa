@@ -1,6 +1,17 @@
 # Changelog
 
-<<<<<<< HEAD
+## 0.7.0 — 2026-10-30
+
+Paket 12 aus M4 (#5): MIDI aufnehmen und als Noten speichern.
+
+- **MIDI-Clips im Projekt:** Ein Clip kann jetzt Noten (Beginn, Länge, Tonhöhe, Anschlag) und Controller (Haltepedal CC 64) tragen statt einer Audiodatei, gespeichert in `project.json` (Feld `midi`, alte Projekte laden unverändert). Neuer Befehl `SetNotes` ändert den Inhalt als ein Undo-Schritt; beim Laden und vor jedem Befehl werden die Noten geprüft (Tonhöhe, Anschlag, Länge, Obergrenze).
+- **Aufnahme auf der scharfen MIDI-Spur:** Aufnahme-Knopf wie bei Audio. Jedes Event bekommt im MIDI-Thread die Zeit, eine Sample-Uhr des Audio-Threads (Seqlock, ohne Sperre und Allokation im Callback) rechnet sie auf das Sample genau in Transportposition um, unabhängig von der Blockgröße. Stopp legt einen Clip „MIDI-Take“ an (ein Undo-Schritt); ohne MIDI-Spur entsteht eine neue.
+- **Abspielen und Mixdown:** Die MIDI-Spur spielt ihre Clips sampelgenau mit dem Spur-Synthesizer (16 Stimmen), zusammen mit dem Live-Keyboard. Springen und Stopp schicken „alle Noten aus“, nichts hängt. Der Export (WAV, FLAC, MP3) und der Agent-Export enthalten die MIDI-Spuren. Änderungen an Noten bauen den Graphen neu.
+- **`.mid` importieren und exportieren:** Datei → „MIDI importieren (.mid) …“ legt den Inhalt als Clip am Kopf an, „MIDI-Clip exportieren (.mid) …“ schreibt den ausgewählten Clip. Eigener Leser und Schreiber (`woa_io::smf`) für Standard-MIDI-Dateien Format 0 und 1: Running Status, Note On mit Velocity 0, Tempo, Spurname, SysEx und Meta werden verstanden; geschrieben wird Format 0 mit 480 Ticks je Viertel. Kein `midly`, weil dessen Lizenz (Unlicense) in #5 noch offen ist.
+- **Agent:** `generate_notes` mit `midi: true` legt auf einer MIDI-Spur einen bearbeitbaren MIDI-Clip an statt einer WAV-Datei. Neues Werkzeug `read_notes` liest Noten und Pedal eines MIDI-Clips zurück.
+- `CHANGELOG.md` ohne die versehentlich mitgelieferten Konfliktmarken zwischen 0.6.2, 0.6.1, 0.6.0 und 0.5.2.
+- Tests: Modell-Roundtrip, `SetNotes` mit Undo/Redo, ungültige Noten abgelehnt; Wiedergabe unter `assert_no_alloc` mit Einsatz höchstens 2 Samples daneben, Offline-Export mit Einsatzprüfung, Stopp und Springen ohne hängende Note; virtueller ALSA-Port spielt ein festes Muster mit Pedal, aufgenommen höchstens 1 ms daneben (gemessen: 0,2 ms); `.mid`-Roundtrip und eine von Hand nach der Spezifikation geschriebene Fremddatei (Format 1, Tempospur, Running Status); Agent-Loop über MCP (Noten schreiben, lesen, exportieren, Fehlerfälle, Undo).
+
 ## 0.6.2 — 2026-10-30
 
 - CLAUDE.md: Lokal laufen nur clippy und die Tests der geänderten Crates, die volle Testsuite nur in der CI (Pflicht auf main). André: „ja, mach beides“.
@@ -20,13 +31,11 @@ Paket 11 aus M4 (#5): Keyboard spielt live.
 - **Einstellungen → MIDI-Eingang:** Aus oder ein Gerät, gespeichert in `config.json` (`midi_input`). Ein gewähltes, nicht eingestecktes Gerät steht mit „(nicht verbunden)“ in der Liste.
 - **MIDI-Lampe** rechts in der Kopfzeile: grau = aus oder verbunden in Ruhe, rot = gewählt, aber nicht da, grün bei jedem Event. Der Tooltip nennt Gerät und gespielte Spur.
 - Tests: Parser mit Bytefolgen; virtueller ALSA-Port spielt eine leise und eine laute Note mit Pedal in die Instrument-Node (Offline-Render unter `assert_no_alloc`: nicht still, laut mehr als dreimal so laut wie leise, Pedal hält, Pedal los gibt frei), schließt den Port (Status „wartet“, keine hängende Note) und öffnet ihn wieder (verbunden, Events kommen an); Live-Instrument im Projekt-Graphen klingt ohne laufenden Transport.
-=======
 ## 0.5.2 — 2026-10-30
 
 - **Dauertest: Bündel zu später Blöcke behoben.** Ursache: `broadcast-ui` rechnete den Mixer und dekodierte Titel in derselben Schleife. Läuft die Playlist im Kreis, wird der Titel beim Neustart neu dekodiert (rund 250 ms für 3 min MP3), und der Takt stand so lange still. Belegt mit Zeitstempeln: alle 25 späten Blöcke im Probelauf fielen auf t = 197,8 s, das Ende des 197,6-s-Titels, unmittelbar nach „decode_ms=255“; die Verspätung fiel von 296 ms in 11,6-ms-Schritten (ein Block) ab. Jetzt läuft der Mixer wie in der Oberfläche in einem eigenen Takt-Thread, der nur rechnet; Dekodieren, Titel und Bericht macht der Steuer-Thread. Jeder späte Block und jeder Neustart der Playlist steht als `ui-log` auf stderr, mit Unix-Zeit (Abgleich mit dem Journal), Prozess-ID (erste oder neu gestartete Oberfläche) und Sekunden seit Start; dazu ein Hinweis, wenn der Steuer-Thread über 100 ms still stand, und bei späten Blöcken Seitenfehler und Auslagerung des Prozesses. Probe nach dem Umbau: zwei Läufe à 10 min gegen lokalen Icecast, beide bestanden (0 zu spät, 0 verloren, 0 Puffer leer, 0 Neuverbindungen, Notfall nach 2009 und 2113 ms), obwohl der Steuer-Thread bei jedem Neustart der Playlist 315–382 ms stand.
 - Nicht geklärt: Im ersten 10-min-Probelauf nach dem Umbau stand der ganze Rechner rund 5 s (Oberfläche und Prüfprozess gleichzeitig, Nutzer-Journal von 07:16:30 bis 07:18:32 leer, dann viele Timer auf einmal). Vermutung: Ruhezustand oder Speicherdruck des Notebooks, nicht der Mixer. Die neuen Logzeilen trennen das beim nächsten Mal.
 - **CI-Test wackelt nicht mehr unter Windows (#66).** `broadcast_test_survives_ui_crash_against_icecast` prüft die Logik (Notfall übernimmt binnen 2,5 s, Oberfläche übernimmt wieder, keine verlorenen Samples, keine Neuverbindung, Bytes beim Server). Zu späte Blöcke und leere Sendepuffer auf dem geteilten Runner werden nur gemeldet; die Grenzen im Code und die strenge Zählung im echten Dauertest bleiben.
->>>>>>> origin/main
 
 ## 0.5.1 — 2026-10-30
 

@@ -8,8 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 
 use std::time::Instant;
-use woa_dsp::instrument::{InstrumentNode, note_queue};
-use woa_dsp::synth::{PolySynth, Waveform};
+use woa_dsp::instrument::note_queue;
 use woa_engine::clip::{
     PEAK_BLOCK, clip_graph_live, load_wav_mono, peaks, project_end_seconds, render_clips, take_peak,
 };
@@ -28,14 +27,12 @@ use crate::xrun::XrunLog;
 /// Was einen neuen Graphen verlangt (Tempo, Clips, scharfe MIDI-Spur).
 type Structure = (
     u64,
-    Vec<(TrackId, Vec<([u64; 5], Option<String>)>)>,
+    Vec<(TrackId, Vec<([u64; 5], Option<String>, Option<u64>)>)>,
     Option<TrackId>,
 );
 
 /// Plätze in der Note-Queue der scharfen MIDI-Spur.
 const LIVE_QUEUE: usize = 1024;
-/// Stimmen des Live-Instruments.
-const LIVE_VOICES: usize = 16;
 /// Was nur Parameter ändert.
 type Mixer = Vec<(TrackId, u64, u64, bool, bool)>;
 
@@ -113,6 +110,16 @@ impl Player {
         })
     }
 
+    /// Sample-Uhr des Audio-Threads (MIDI-Aufnahme stempelt damit, Paket 12).
+    pub fn clock(&self) -> Arc<woa_dsp::clock::SampleClock> {
+        self.transport.clock()
+    }
+
+    /// Kopfposition in Samples.
+    pub fn position_samples(&self) -> u64 {
+        self.transport.position()
+    }
+
     /// Senke für den MIDI-Eingang (Note-Queue der scharfen MIDI-Spur).
     pub fn midi_sink(&self) -> woa_io::midi::EventSink {
         Arc::clone(&self.midi_sink)
@@ -165,6 +172,7 @@ impl Player {
                                 ]
                                 .map(f64::to_bits),
                                 c.audio.clone(),
+                                c.midi.as_ref().map(woa_model::MidiData::fingerprint),
                             )
                         })
                         .collect();
@@ -174,16 +182,11 @@ impl Player {
             live,
         );
         if self.structure.as_ref() != Some(&structure) {
-            let live_node = live.map(|id| {
-                let (producer, consumer) = note_queue(LIVE_QUEUE);
-                let node: Box<dyn woa_dsp::Node> = Box::new(InstrumentNode::new(
-                    PolySynth::new(LIVE_VOICES, Waveform::Saw),
-                    consumer,
-                ));
-                (id, node, producer)
-            });
-            let (live_graph, producer) = match live_node {
-                Some((id, node, p)) => (Some((id, node)), Some(p)),
+            let (live_graph, producer) = match live {
+                Some(id) => {
+                    let (producer, consumer) = note_queue(LIVE_QUEUE);
+                    (Some((id, consumer)), Some(producer))
+                }
                 None => (None, None),
             };
             let transport = self.transport.clone();

@@ -19,6 +19,9 @@ pub enum ModelError {
     /// No clip with this id exists.
     #[error("clip {0} not found")]
     ClipNotFound(ClipId),
+    /// The clip carries no notes (audio or placeholder clip).
+    #[error("clip {0} is not a MIDI clip")]
+    NotMidiClip(ClipId),
     /// A track or clip with this id already exists.
     #[error("id {0} is already in use")]
     DuplicateId(u64),

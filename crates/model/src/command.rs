@@ -112,6 +112,14 @@ pub enum Command {
         #[serde(default)]
         index: Option<usize>,
     },
+    /// Replaces the notes and controller values of a MIDI clip (recording, import,
+    /// agent, later the piano roll). The clip must already be a MIDI clip.
+    SetNotes {
+        /// Clip to change.
+        clip: ClipId,
+        /// New content; sorted on apply.
+        midi: crate::midi::MidiData,
+    },
 }
 
 impl Command {
@@ -138,6 +146,7 @@ impl Command {
             Command::RemoveClip { .. } => "Remove clip",
             Command::MoveClip { .. } => "Move clip",
             Command::EditClip { .. } => "Edit clip",
+            Command::SetNotes { .. } => "Edit notes",
         }
     }
 
@@ -280,6 +289,16 @@ impl Command {
                     fade_out_beats: old.fade_out_beats,
                 })
             }
+            Command::SetNotes { clip, mut midi } => {
+                midi.check()?;
+                let (ti, ci) = locate_clip(project, clip)?;
+                let Some(old) = project.tracks[ti].clips[ci].midi.as_mut() else {
+                    return Err(ModelError::NotMidiClip(clip));
+                };
+                midi.sort();
+                let old = std::mem::replace(old, midi);
+                Ok(Command::SetNotes { clip, midi: old })
+            }
             Command::MoveClip {
                 clip,
                 to_track,
@@ -375,6 +394,9 @@ fn check_clip(c: &Clip) -> Result<()> {
         if !(value.is_finite() && value >= 0.0) {
             return Err(ModelError::InvalidValue { field, value });
         }
+    }
+    if let Some(m) = &c.midi {
+        m.check()?;
     }
     let fades = c.fade_in_beats + c.fade_out_beats;
     if fades > c.length_beats + 1e-9 {

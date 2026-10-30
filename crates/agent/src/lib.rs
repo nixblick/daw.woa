@@ -170,7 +170,7 @@ pub struct SetSoloParams {
 /// Parameters of `generate_notes`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GenerateNotesParams {
-    /// Audio track that gets the new clip.
+    /// Track that gets the new clip: an audio track, or a MIDI track with `midi: true`.
     pub track: u64,
     /// Clip name; default "Synth".
     #[serde(default)]
@@ -185,6 +185,17 @@ pub struct GenerateNotesParams {
     pub waveform: AgentWaveform,
     /// Notes, times relative to the clip start.
     pub notes: Vec<AgentNote>,
+    /// `true`: store the notes as a MIDI clip on a MIDI track (editable, played by the
+    /// track instrument; `waveform` is ignored). Default `false`: render to audio.
+    #[serde(default)]
+    pub midi: bool,
+}
+
+/// Parameters of `read_notes`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReadNotesParams {
+    /// MIDI clip id.
+    pub clip: u64,
 }
 
 /// Parameters of `generate_drums`.
@@ -540,6 +551,44 @@ impl WoaAgent {
         }
     }
 
+    /// `generate_notes` with `midi: true`: a MIDI clip on a MIDI track (one undo step).
+    fn add_midi_clip(s: &mut Session, p: GenerateNotesParams) -> CallToolResult {
+        match s.project().track(TrackId(p.track)) {
+            None => return fail(ModelError::TrackNotFound(TrackId(p.track))),
+            Some(t) if t.kind != TrackKind::Midi => {
+                return fail(format!("Spur {} ist keine MIDI-Spur", p.track));
+            }
+            Some(_) => {}
+        }
+        if !(p.start_beats.is_finite() && p.start_beats >= 0.0) {
+            return fail(format!("start_beats muss >= 0 sein, war {}", p.start_beats));
+        }
+        let midi = match audio::notes_midi(&p.notes, p.length_beats) {
+            Ok(m) => m,
+            Err(e) => return fail(e),
+        };
+        let notes = midi.notes.len();
+        let id = s.new_clip_id();
+        let name = p.name.unwrap_or_else(|| "MIDI".into());
+        let clip = Clip::new_midi(id, name, p.start_beats, p.length_beats, midi);
+        let r = s.group(AGENT_LABEL, |s| {
+            s.apply(Command::AddClip {
+                track: TrackId(p.track),
+                clip,
+                index: None,
+            })
+        });
+        match r {
+            Ok(()) => ok_json(serde_json::json!({
+                "clip": id.0,
+                "midi": true,
+                "notes": notes,
+                "length_beats": audio::round(p.length_beats, 4),
+            })),
+            Err(e) => fail(e),
+        }
+    }
+
     fn clip_of(s: &Session, clip: u64) -> Result<Clip, ModelError> {
         s.project()
             .clip(ClipId(clip))
@@ -784,6 +833,7 @@ impl WoaAgent {
                     offset_beats: 0.0,
                     fade_in_beats: 0.0,
                     fade_out_beats: 0.0,
+                    midi: None,
                 },
                 index: None,
             })?;
@@ -792,13 +842,16 @@ impl WoaAgent {
     }
 
     #[tool(
-        description = "Render notes with the built-in synth into a new audio clip (WAV in the project's aufnahmen/ folder). Times in beats relative to the clip start; pitch is MIDI (60 = C4). Returns the clip id."
+        description = "Render notes with the built-in synth into a new audio clip (WAV in the project's aufnahmen/ folder). Times in beats relative to the clip start; pitch is MIDI (60 = C4). With midi: true the notes become an editable MIDI clip on a MIDI track instead (played by the track instrument, readable with read_notes). Returns the clip id."
     )]
     async fn generate_notes(
         &self,
         Parameters(p): Parameters<GenerateNotesParams>,
     ) -> Result<CallToolResult, McpError> {
         let mut s = self.lock()?;
+        if p.midi {
+            return Ok(Self::add_midi_clip(&mut s, p));
+        }
         if let Err(e) = Self::check_target(&s, p.track, p.start_beats) {
             return Ok(fail(e));
         }
@@ -809,6 +862,52 @@ impl WoaAgent {
         };
         let name = p.name.unwrap_or_else(|| "Synth".into());
         Ok(self.add_take(&mut s, p.track, name, p.start_beats, p.length_beats, &buf))
+    }
+
+    #[tool(
+        description = "Read the notes and controller values (sustain pedal = controller 64) of a MIDI clip: times in beats relative to the clip start, pitch is MIDI (60 = C4)."
+    )]
+    async fn read_notes(
+        &self,
+        Parameters(p): Parameters<ReadNotesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let s = self.lock()?;
+        let Some((track, clip)) = s.project().clip(ClipId(p.clip)) else {
+            return Ok(fail(ModelError::ClipNotFound(ClipId(p.clip))));
+        };
+        let Some(m) = &clip.midi else {
+            return Ok(fail(ModelError::NotMidiClip(clip.id)));
+        };
+        let notes: Vec<_> = m
+            .notes
+            .iter()
+            .map(|n| {
+                serde_json::json!({
+                    "beat": audio::round(n.beat, 4),
+                    "length_beats": audio::round(n.length_beats, 4),
+                    "pitch": n.pitch,
+                    "velocity": n.velocity,
+                })
+            })
+            .collect();
+        let cc: Vec<_> =
+            m.cc.iter()
+                .map(|c| {
+                    serde_json::json!({
+                        "beat": audio::round(c.beat, 4),
+                        "controller": c.controller,
+                        "value": c.value,
+                    })
+                })
+                .collect();
+        Ok(ok_json(serde_json::json!({
+            "clip": clip.id.0,
+            "track": track.id.0,
+            "start_beats": clip.start_beats,
+            "length_beats": clip.length_beats,
+            "notes": notes,
+            "cc": cc,
+        })))
     }
 
     #[tool(
@@ -1183,7 +1282,9 @@ impl ServerHandler for WoaAgent {
             .with_instructions(
                 "WOA (Wir on Air) DAW. Every tool call is one undo step labelled \"Agent\". \
                  Use project_info for ids, then edit; generate_drums and generate_notes \
-                 make sound, repeat_clip builds loops, analyze measures, export writes \
+                 make sound (generate_notes with midi: true on a MIDI track keeps editable \
+                 notes, read_notes reads them back), repeat_clip builds loops, analyze \
+                 measures, export writes \
                  the mixdown (target_lufs normalises; if target_reached is false, lower \
                  the drum track gain a few dB and export again); call save to write the \
                  project.",

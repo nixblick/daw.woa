@@ -44,6 +44,8 @@ pub struct WoaApp {
     takes: Vec<(Option<TrackId>, Take)>,
     /// Startpunkt der laufenden Aufnahme in Beats.
     rec_start: f64,
+    /// Laufende MIDI-Aufnahmen (Paket 12): Zielspur und Take.
+    midi_takes: Vec<(TrackId, woa_io::record::MidiTake)>,
     /// Wellenform der laufenden Aufnahme je Spur: Spitzen je `PEAK_BLOCK` Frames und deren
     /// Abtastrate (#43).
     live_peaks: std::collections::HashMap<TrackId, (Vec<f32>, u32)>,
@@ -126,6 +128,7 @@ impl WoaApp {
             midi_seen: (0, None),
             takes: Vec::new(),
             rec_start: 0.0,
+            midi_takes: Vec::new(),
             live_peaks: std::collections::HashMap::new(),
             rec_clipped: false,
             armed: std::collections::BTreeSet::new(),
@@ -329,7 +332,7 @@ impl WoaApp {
     /// Startet oder beendet die Aufnahme. Jede scharf geschaltete Spur (sonst die
     /// ausgewählte) nimmt ihre eigene Quelle in `aufnahmen/` auf, alle ab demselben Punkt.
     fn toggle_record(&mut self) {
-        if !self.takes.is_empty() {
+        if self.recording() {
             self.stop_record();
             return;
         }
@@ -345,6 +348,25 @@ impl WoaApp {
             self.armed.iter().copied().map(Some).collect()
         };
         let mut errors = Vec::new();
+        let project = self.state.project();
+        let (midi_targets, targets): (Vec<_>, Vec<_>) = targets.into_iter().partition(|t| {
+            t.and_then(|t| project.track(t))
+                .is_some_and(|t| t.kind == woa_model::TrackKind::Midi)
+        });
+        if !midi_targets.is_empty() {
+            match self.player.as_ref() {
+                Some(p) => {
+                    let tap = self.midi.record_tap();
+                    let at = p.position_samples();
+                    for t in midi_targets.into_iter().flatten() {
+                        let take = woa_io::record::MidiTake::start(&tap, p.clock(), at);
+                        tracing::info!(track = t.0, start_sample = at, "midi take started");
+                        self.midi_takes.push((t, take));
+                    }
+                }
+                None => errors.push("MIDI: keine Wiedergabe, keine Uhr".into()),
+            }
+        }
         for track in targets {
             let key = track
                 .and_then(|t| self.track_source.get(&t).cloned())
@@ -364,7 +386,7 @@ impl WoaApp {
                 }
             }
         }
-        if self.takes.is_empty() {
+        if !self.recording() {
             self.state.status =
                 Status::Error(format!("Aufnahme nicht gestartet: {}", errors.join("; ")));
             return;
@@ -373,7 +395,10 @@ impl WoaApp {
         self.live_peaks.clear();
         self.rec_clipped = false;
         self.state.status = if errors.is_empty() {
-            Status::Info(format!("Nimmt auf: {} Spur(en)", self.takes.len()))
+            Status::Info(format!(
+                "Nimmt auf: {} Spur(en)",
+                self.takes.len() + self.midi_takes.len()
+            ))
         } else {
             Status::Error(format!("Nimmt auf, aber: {}", errors.join("; ")))
         };
@@ -393,6 +418,34 @@ impl WoaApp {
         let start = self.rec_start;
         let mut saved = Vec::new();
         let mut errors = Vec::new();
+        let tempo = self.state.project().tempo_bpm;
+        for (track, take) in std::mem::take(&mut self.midi_takes) {
+            let r = take.finish(tempo);
+            tracing::info!(
+                events = r.events,
+                notes = r.midi.notes.len(),
+                dropped = r.dropped,
+                "midi take finished"
+            );
+            if r.midi.notes.is_empty() && r.midi.cc.is_empty() {
+                errors.push("MIDI: keine Noten gespielt".to_string());
+                continue;
+            }
+            let n = r.midi.notes.len();
+            if let Some(clip) =
+                self.state
+                    .add_midi_clip(Some(track), "MIDI-Take", start, r.length_beats, r.midi)
+            {
+                self.selected_clip = Some(clip);
+                self.selected_track = Some(track);
+            }
+            let lost = if r.dropped > 0 {
+                format!(", {} Events verloren", r.dropped)
+            } else {
+                String::new()
+            };
+            saved.push(format!("{n} Noten{lost}"));
+        }
         for (track, take) in std::mem::take(&mut self.takes) {
             match take.stop() {
                 Ok((s, measured)) => {
@@ -458,7 +511,7 @@ impl WoaApp {
     }
 
     fn toggle_play(&mut self) {
-        if !self.takes.is_empty() {
+        if self.recording() {
             self.toggle_record();
         } else {
             let end = self.audio_end();
@@ -564,7 +617,7 @@ impl WoaApp {
                     });
                 });
             ui.add_space(12.0);
-            let recording = !self.takes.is_empty();
+            let recording = self.recording();
             let label = match self.takes.first() {
                 Some((_, rec)) => {
                     let t = rec.elapsed().as_secs();
@@ -856,6 +909,13 @@ impl WoaApp {
                 {
                     self.export();
                 }
+                ui.separator();
+                if ui.button("MIDI importieren (.mid) …").clicked() {
+                    self.import_midi();
+                }
+                if ui.button("MIDI-Clip exportieren (.mid) …").clicked() {
+                    self.export_midi();
+                }
             });
             ui.menu_button("Bearbeiten", |ui| {
                 let h = self.state.session().history();
@@ -1005,7 +1065,7 @@ impl WoaApp {
     /// Hält die Wiedergabe am Ende des letzten Clips an, wenn „Stopp am Ende“ an ist.
     /// Beim Aufnehmen nie: da läuft die Zeit absichtlich über das Ende hinaus.
     fn stop_at_audio_end(&mut self) {
-        if !self.stop_at_end || !self.takes.is_empty() {
+        if !self.stop_at_end || self.recording() {
             return;
         }
         let end = self.audio_end();
@@ -1027,6 +1087,87 @@ impl WoaApp {
             .flat_map(|t| t.clips.iter().map(|c| c.end_beats()))
             .fold(64.0f64, f64::max)
             .max(self.live_end_beats())
+    }
+
+    /// Läuft eine Aufnahme (Audio oder MIDI)?
+    fn recording(&self) -> bool {
+        !self.takes.is_empty() || !self.midi_takes.is_empty()
+    }
+
+    /// Holt die gestempelten MIDI-Events der laufenden Aufnahmen ab.
+    fn drain_midi_takes(&mut self) {
+        for (_, take) in &mut self.midi_takes {
+            take.drain();
+        }
+    }
+
+    /// Importiert eine `.mid`-Datei als MIDI-Clip am Kopf (Paket 12).
+    fn import_midi(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("MIDI importieren")
+            .add_filter("MIDI", &["mid", "midi"])
+            .pick_file()
+        else {
+            return;
+        };
+        let read = std::fs::read(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|b| woa_io::smf::read_smf(&b).map_err(|e| e.to_string()));
+        let smf = match read {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(error = %e, path = %path.display(), "midi import failed");
+                self.state.status = Status::Error(format!("MIDI-Import: {e}"));
+                return;
+            }
+        };
+        let tempo = self.state.project().tempo_bpm;
+        let at = self
+            .player
+            .as_ref()
+            .map_or(0.0, |p| p.position_beats(tempo));
+        let name = smf.name.clone().unwrap_or_else(|| {
+            path.file_stem()
+                .map_or_else(|| "MIDI".into(), |s| s.to_string_lossy().into_owned())
+        });
+        let n = smf.midi.notes.len();
+        let target = self.selected_track;
+        if let Some(clip) =
+            self.state
+                .add_midi_clip(target, &name, at, smf.end_beats.max(1.0), smf.midi)
+        {
+            self.selected_clip = Some(clip);
+            self.selected_track = self.state.project().clip(clip).map(|(t, _)| t.id);
+            self.state.status = Status::Info(format!("MIDI importiert: {n} Noten"));
+        }
+    }
+
+    /// Schreibt den ausgewählten MIDI-Clip als `.mid` (Paket 12).
+    fn export_midi(&mut self) {
+        let clip = self
+            .selected_clip
+            .and_then(|c| self.state.project().clip(c))
+            .and_then(|(_, c)| c.midi.clone().map(|m| (c.name.clone(), m)));
+        let Some((name, midi)) = clip else {
+            self.state.status = Status::Error("Erst einen MIDI-Clip auswählen".into());
+            return;
+        };
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("MIDI exportieren")
+            .set_file_name(format!("{name}.mid"))
+            .add_filter("MIDI", &["mid"])
+            .save_file()
+        else {
+            return;
+        };
+        let bytes = woa_io::smf::write_smf(&midi, self.state.project().tempo_bpm, &name);
+        self.state.status = match std::fs::write(&path, bytes) {
+            Ok(()) => Status::Info(format!("MIDI gespeichert: {}", path.display())),
+            Err(e) => {
+                tracing::error!(error = %e, path = %path.display(), "midi export failed");
+                Status::Error(format!("MIDI-Export: {e}"))
+            }
+        };
     }
 
     /// Ende der laufenden Aufnahme in Beats (0 ohne Aufnahme).
@@ -1180,7 +1321,7 @@ impl WoaApp {
 
     /// Quellenwahl und Mithören einer Spur.
     fn track_source_row(&mut self, ui: &mut egui::Ui, id: TrackId) {
-        let busy = !self.takes.is_empty();
+        let busy = self.recording();
         ui.horizontal(|ui| {
             let current = self.track_source.get(&id).cloned().unwrap_or_default();
             let mut chosen = None;
@@ -1894,6 +2035,7 @@ impl WoaApp {
 impl eframe::App for WoaApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.repaint_debug(ctx);
+        self.drain_midi_takes();
         if self.config.mode == Mode::Radio {
             self.ensure_radio();
         }
@@ -1931,7 +2073,7 @@ impl eframe::App for WoaApp {
         }
         self.stop_at_audio_end();
         self.drain_live_peaks();
-        let busy = !self.takes.is_empty() || self.player.as_ref().is_some_and(Player::is_playing);
+        let busy = self.recording() || self.player.as_ref().is_some_and(Player::is_playing);
         // Radio: 5 Bilder/s, solange ein Titel läuft (Uhr, Pegel), sonst 2/s. Vorher 10/s
         // dauerhaft, 34 % CPU in Ruhe (Paket 8).
         let radio_playing = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);

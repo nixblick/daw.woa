@@ -47,6 +47,7 @@ pub(crate) struct Shared {
     pub(crate) playing: AtomicBool,
     pub(crate) tempo_bits: AtomicU64,
     pub(crate) underruns: AtomicU64,
+    pub(crate) clock: Arc<woa_dsp::clock::SampleClock>,
 }
 
 /// Lesezugriff auf Transport und Zähler, beliebig oft klonbar.
@@ -69,6 +70,12 @@ impl TransportHandle {
     /// Tempo in BPM, wie zuletzt an die Engine geschickt.
     pub fn tempo_bpm(&self) -> f64 {
         f64::from_bits(self.shared.tempo_bits.load(Ordering::Acquire))
+    }
+
+    /// Sample-Uhr für sample-genaue MIDI-Aufnahme (Paket 12); der Audio-Thread meldet
+    /// sie je Block.
+    pub fn clock(&self) -> Arc<woa_dsp::clock::SampleClock> {
+        Arc::clone(&self.shared.clock)
     }
 
     /// Bisher gezählte Unter- bzw. Überläufe des Geräts.
@@ -145,6 +152,11 @@ impl Transport {
             self.position = l.start + (self.position - l.end);
         }
         self.publish();
+    }
+
+    /// Meldet Position und Zustand an die Sample-Uhr (Blockanfang). Echtzeitsicher.
+    pub(crate) fn publish_clock(&self, rate: f32) {
+        self.shared.clock.publish(self.position, self.playing, rate);
     }
 
     fn publish(&self) {

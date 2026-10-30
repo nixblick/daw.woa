@@ -33,6 +33,7 @@ pub const RADIO_BUFFER_FRAMES: u32 = 0;
 pub mod export;
 pub mod live_peaks;
 pub mod loudness;
+pub mod midi_clip;
 pub mod project;
 #[cfg(feature = "device")]
 pub mod record;
@@ -471,6 +472,7 @@ impl AudioProcessor {
     /// Ein Audio-Callback: Kommandos abarbeiten, dann rechnen. Allokationsfrei.
     pub fn process(&mut self, out: &mut [f32]) {
         self.drain_commands();
+        self.publish_clock();
         let mut done = 0;
         while done < out.len() {
             let n = self.transport.segment(out.len() - done);
@@ -487,6 +489,7 @@ impl AudioProcessor {
     /// Wie [`AudioProcessor::process`], aber Stereo in zwei Puffern. Allokationsfrei.
     pub fn process_stereo(&mut self, left: &mut [f32], right: &mut [f32]) {
         self.drain_commands();
+        self.publish_clock();
         let len = left.len().min(right.len());
         let mut done = 0;
         while done < len {
@@ -502,6 +505,12 @@ impl AudioProcessor {
             }
             self.transport.advance(n);
             done += n;
+        }
+    }
+
+    fn publish_clock(&self) {
+        if let Some(g) = self.graph.as_ref() {
+            self.transport.publish_clock(g.sample_rate());
         }
     }
 
