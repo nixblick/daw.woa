@@ -23,6 +23,13 @@ pub mod cover;
 pub mod decode;
 #[cfg(feature = "device")]
 pub mod device;
+
+/// Puffergröße für den Sendebetrieb: 0 = Vorgabe des Treibers. Im Radio zählt Stabilität,
+/// nicht Latenz. Kurze Proben am Desktop (PipeWire, #51) mit `radio-play`: 128 Frames
+/// mit vielen Aussetzern, Treiber-Vorgabe in 2 min ohne. Kein Dauertest.
+/// Steht außerhalb von `device`, weil auch Builds ohne Gerät (`woa-headless`) sie als Vorgabe zeigen.
+pub const RADIO_BUFFER_FRAMES: u32 = 0;
+
 pub mod export;
 pub mod live_peaks;
 pub mod loudness;

@@ -18,10 +18,7 @@ const SCRATCH_FRAMES: usize = 4096;
 /// Puffergröße, die WOA standardmäßig anfordert (Abnahmekriterium M1).
 pub const DEFAULT_BUFFER_FRAMES: u32 = 128;
 
-/// Puffergröße für den Sendebetrieb: 0 = Vorgabe des Treibers. Im Radio zählt Stabilität,
-/// nicht Latenz. Kurze Proben am Desktop (PipeWire, #51) mit `radio-play`: 128 Frames
-/// mit vielen Aussetzern, Treiber-Vorgabe in 2 min ohne. Kein Dauertest.
-pub const RADIO_BUFFER_FRAMES: u32 = 0;
+pub use crate::RADIO_BUFFER_FRAMES;
 
 /// Ein laufender Ausgabestrom; er spielt, solange er lebt.
 pub type OutputStream = cpal::Stream;
