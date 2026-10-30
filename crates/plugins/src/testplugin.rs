@@ -7,7 +7,7 @@
 //! verstärkt es das Signal um den Regler `GAIN`.
 
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use clack_extensions::audio_ports::{
     AudioPortFlags, AudioPortInfo, AudioPortInfoWriter, AudioPortType, PluginAudioPortsImpl,
@@ -15,6 +15,7 @@ use clack_extensions::audio_ports::{
 use clack_extensions::gui::{
     GuiApiType, GuiConfiguration, GuiSize, PluginGui, PluginGuiImpl, Window,
 };
+use clack_extensions::latency::{PluginLatency, PluginLatencyImpl};
 use clack_extensions::note_ports::{
     NoteDialect, NoteDialects, NotePortInfo, NotePortInfoWriter, PluginNotePortsImpl,
 };
@@ -40,6 +41,27 @@ pub const ID: &str = "de.woa.test-plugin";
 pub const GAIN: u32 = 1;
 /// Regler: Lautstärke des Synths (0..1, Grundwert 0.5).
 pub const LEVEL: u32 = 2;
+/// Regler (nur mit [`allow_faults`], versteckt): Wert über 0,5 lässt das Plugin im Audio-Block
+/// abstürzen (`abort`). Dient der Prüfung des Absturzschutzes.
+pub const CRASH: u32 = 3;
+/// Regler (nur mit [`allow_faults`], versteckt): Wert über 0,5 lässt das Plugin im Audio-Block
+/// hängen (Endlosschleife).
+pub const HANG: u32 = 4;
+
+static FAULTS: AtomicBool = AtomicBool::new(false);
+static LATENCY: AtomicU32 = AtomicU32::new(0);
+
+/// Schaltet die Fehler-Regler [`CRASH`] und [`HANG`] frei. Nur im Plugin-Prozess der Tests
+/// gedacht (ein Absturz beendet den ganzen Prozess); wirkt für danach angelegte Instanzen.
+pub fn allow_faults(on: bool) {
+    FAULTS.store(on, Ordering::Relaxed);
+}
+
+/// Stellt die Latenz des Test-Plugins ein (Abtastwerte); wirkt für danach aktivierte Instanzen.
+/// Als Effekt verzögert es dann seinen Eingang um so viel und meldet es dem Host.
+pub fn set_latency(samples: u32) {
+    LATENCY.store(samples, Ordering::Relaxed);
+}
 
 /// Was die „Oberfläche“ des Test-Plugins dem Host meldet.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -147,6 +169,7 @@ impl Plugin for TestPlugin {
             .register::<clack_extensions::params::PluginParams>()
             .register::<clack_extensions::state::PluginState>()
             .register::<PluginGui>()
+            .register::<PluginLatency>()
             .register::<PluginTimer>();
     }
 }
@@ -242,6 +265,12 @@ impl PluginGuiImpl for TestMain<'_> {
     }
 }
 
+impl PluginLatencyImpl for TestMain<'_> {
+    fn get(&self) -> u32 {
+        LATENCY.load(Ordering::Relaxed)
+    }
+}
+
 impl PluginTimerImpl for TestMain<'_> {
     fn on_timer(&self, _timer_id: TimerId) {
         TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
@@ -288,18 +317,24 @@ impl PluginNotePortsImpl for TestMain<'_> {
 
 impl PluginMainThreadParams for TestMain<'_> {
     fn count(&self) -> u32 {
-        2
+        if FAULTS.load(Ordering::Relaxed) { 4 } else { 2 }
     }
 
     fn get_info(&self, index: u32, info: &mut ParamInfoWriter) {
         let (id, name, max, default): (u32, &[u8], f64, f64) = match index {
             0 => (GAIN, b"Gain", 2.0, 1.0),
             1 => (LEVEL, b"Level", 1.0, 0.5),
+            2 if FAULTS.load(Ordering::Relaxed) => (CRASH, b"Crash", 1.0, 0.0),
+            3 if FAULTS.load(Ordering::Relaxed) => (HANG, b"Hang", 1.0, 0.0),
             _ => return,
         };
         info.set(&ParamInfo {
             id: ClapId::new(id),
-            flags: ParamInfoFlags::IS_AUTOMATABLE,
+            flags: if id >= CRASH {
+                ParamInfoFlags::IS_HIDDEN
+            } else {
+                ParamInfoFlags::IS_AUTOMATABLE
+            },
             cookie: Default::default(),
             name,
             module: b"",
@@ -363,6 +398,21 @@ impl PluginStateImpl for TestMain<'_> {
     }
 }
 
+/// Absturz oder Hänger auf Wunsch (nur nach [`allow_faults`]).
+fn fault(id: u32, value: f64) {
+    if value <= 0.5 || !FAULTS.load(Ordering::Relaxed) {
+        return;
+    }
+    if id == CRASH {
+        std::process::abort();
+    }
+    if id == HANG {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+}
+
 const VOICES: usize = 8;
 
 #[derive(Clone, Copy)]
@@ -378,6 +428,9 @@ pub struct TestProcessor<'a> {
     shared: &'a TestShared,
     voices: [Option<Voice>; VOICES],
     rate: f64,
+    /// Verzögerung des Eingangs (Latenz), je Kanal.
+    delay: [Vec<f32>; 2],
+    dpos: usize,
 }
 
 impl<'a> PluginAudioProcessor<'a, TestShared, TestMain<'a>> for TestProcessor<'a> {
@@ -391,6 +444,11 @@ impl<'a> PluginAudioProcessor<'a, TestShared, TestMain<'a>> for TestProcessor<'a
             shared,
             voices: [None; VOICES],
             rate: config.sample_rate,
+            delay: [
+                vec![0.0; LATENCY.load(Ordering::Relaxed) as usize],
+                vec![0.0; LATENCY.load(Ordering::Relaxed) as usize],
+            ],
+            dpos: 0,
         })
     }
 
@@ -470,6 +528,7 @@ impl<'a> PluginAudioProcessor<'a, TestShared, TestMain<'a>> for TestProcessor<'a
                     }
                     Some(CoreEventSpace::ParamValue(p)) => {
                         if let Some(id) = p.param_id() {
+                            fault(id.get(), p.value());
                             self.shared.set(id.get(), p.value());
                         }
                     }
@@ -486,12 +545,21 @@ impl<'a> PluginAudioProcessor<'a, TestShared, TestMain<'a>> for TestProcessor<'a
             }
             let synth = synth as f32;
             for ch in 0..2usize {
+                let dpos = self.dpos;
+                let line = &mut self.delay[ch];
+                let mut late = |x: f32| {
+                    if line.is_empty() {
+                        x
+                    } else {
+                        std::mem::replace(&mut line[dpos], x)
+                    }
+                };
                 let sample = channels.channel_pair(ch).map(|c| match c {
                     ChannelPair::InputOutput(i, o) => {
-                        o[frame] = i[frame] * gain + synth;
+                        o[frame] = late(i[frame]) * gain + synth;
                     }
                     ChannelPair::InPlace(b) => {
-                        b[frame] = b[frame] * gain + synth;
+                        b[frame] = late(b[frame]) * gain + synth;
                     }
                     ChannelPair::OutputOnly(o) => {
                         o[frame] = synth;
@@ -499,6 +567,9 @@ impl<'a> PluginAudioProcessor<'a, TestShared, TestMain<'a>> for TestProcessor<'a
                     ChannelPair::InputOnly(_) => {}
                 });
                 let _ = sample;
+            }
+            if !self.delay[0].is_empty() {
+                self.dpos = (self.dpos + 1) % self.delay[0].len();
             }
             cursor += 1;
         }

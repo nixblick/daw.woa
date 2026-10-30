@@ -350,12 +350,15 @@ impl Player {
 
     fn ensure_rack(&mut self) {
         if self.rack.is_none() {
-            let catalog = Arc::new(woa_plugins::Catalog::scan_default());
+            let isolation = plugin_isolation();
+            let catalog = Arc::new(scan_plugins(&isolation));
             for p in catalog.problems() {
                 tracing::warn!(file = %p.path.display(), error = %p.reason, "plugin scan problem");
             }
             tracing::info!(found = catalog.plugins().len(), "plugin scan done");
-            self.rack = Some(woa_plugins::PluginRack::new(catalog, self.rate as f32));
+            self.rack = Some(
+                woa_plugins::PluginRack::new(catalog, self.rate as f32).with_isolation(isolation),
+            );
         }
     }
 
@@ -369,13 +372,54 @@ impl Player {
 
     /// Sucht die Plugins neu; alle Plätze werden danach neu geladen.
     pub fn rescan_plugins(&mut self) {
-        let catalog = Arc::new(woa_plugins::Catalog::scan_default());
+        let isolation = self
+            .rack
+            .as_ref()
+            .map_or_else(plugin_isolation, |r| r.isolation().clone());
+        let catalog = Arc::new(scan_plugins(&isolation));
         tracing::info!(found = catalog.plugins().len(), "plugin rescan done");
         match self.rack.as_mut() {
             Some(r) => r.reset(catalog),
-            None => self.rack = Some(woa_plugins::PluginRack::new(catalog, self.rate as f32)),
+            None => {
+                self.rack = Some(
+                    woa_plugins::PluginRack::new(catalog, self.rate as f32)
+                        .with_isolation(isolation),
+                );
+            }
         }
         self.plugin_epoch += 1;
+    }
+
+    /// Startet ein ausgefallenes Plugin neu (der Graph bleibt derselbe).
+    pub fn reload_plugin(&mut self, project: &Project, id: InsertId) -> Result<(), String> {
+        match self.rack.as_mut() {
+            Some(r) => r.reload(project, id).map_err(|e| e.to_string()),
+            None => Err("keine Plugins geladen".into()),
+        }
+    }
+
+    /// Beendet den Plugin-Prozess hart (Absturztest, nur im Testmenü).
+    pub fn simulate_plugin_crash(&mut self, id: InsertId) {
+        if let Some(r) = self.rack.as_mut() {
+            r.simulate_crash(id);
+        }
+    }
+
+    /// Ob dieser Platz in einem eigenen Prozess läuft.
+    pub fn plugin_isolated(&self, id: InsertId) -> bool {
+        self.rack.as_ref().is_some_and(|r| r.is_isolated(id))
+    }
+
+    /// Ob irgendein Plugin im eigenen Prozess läuft.
+    pub fn has_isolated_plugins(&self) -> bool {
+        self.rack.as_ref().is_some_and(|r| r.has_isolated())
+    }
+
+    /// Plätze, die seit dem letzten Aufruf ausgefallen sind.
+    pub fn new_plugin_failures(&mut self) -> Vec<InsertId> {
+        self.rack
+            .as_mut()
+            .map_or_else(Vec::new, |r| r.new_failures())
     }
 
     /// Status eines Plugin-Platzes.
@@ -694,5 +738,34 @@ impl Player {
             skipped: render.skipped,
             norm,
         })
+    }
+}
+
+/// Wo Plugins laufen: im eigenen Prozess (Absturzschutz, Paket 33), wenn sich der Plugin-Prozess
+/// finden lässt; sonst im Programm selbst. `WOA_PLUGINS_IN_PROCESS=1` schaltet den Schutz aus
+/// (Fehlersuche).
+fn plugin_isolation() -> woa_plugins::Isolation {
+    if std::env::var_os("WOA_PLUGINS_IN_PROCESS").is_some_and(|v| v == "1") {
+        tracing::warn!(
+            "plugins run inside the app (WOA_PLUGINS_IN_PROCESS=1), no crash protection"
+        );
+        return woa_plugins::Isolation::InProcess;
+    }
+    match woa_plugins::HostConfig::discover().or_else(woa_plugins::HostConfig::multicall) {
+        Some(cfg) => {
+            tracing::info!(exe = %cfg.exe.display(), "plugins run in their own process");
+            woa_plugins::Isolation::Process(cfg)
+        }
+        None => {
+            tracing::warn!("no plugin host found, plugins run inside the app");
+            woa_plugins::Isolation::InProcess
+        }
+    }
+}
+
+fn scan_plugins(isolation: &woa_plugins::Isolation) -> woa_plugins::Catalog {
+    match isolation {
+        woa_plugins::Isolation::Process(cfg) => woa_plugins::Catalog::scan_default_isolated(cfg),
+        woa_plugins::Isolation::InProcess => woa_plugins::Catalog::scan_default(),
     }
 }

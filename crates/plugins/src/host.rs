@@ -20,6 +20,7 @@ use clack_extensions::audio_ports::{AudioPortInfoBuffer, PluginAudioPorts};
 use clack_extensions::gui::{
     GuiApiType, GuiConfiguration, GuiSize, HostGui, HostGuiImpl, PluginGui,
 };
+use clack_extensions::latency::PluginLatency;
 use clack_extensions::params::{
     HostParams, HostParamsImplMainThread, HostParamsImplShared, ParamClearFlags, ParamInfoBuffer,
     ParamInfoFlags, ParamRescanFlags, PluginParams,
@@ -321,6 +322,8 @@ pub struct ClapInstance {
     clap_id: String,
     params: Vec<ParamDesc>,
     rate: f32,
+    /// Latenz des Plugins in Abtastwerten (nach dem Aktivieren gelesen).
+    latency: u32,
     flags: Arc<Flags>,
     /// Reglermeldungen aus dem Audio-Thread.
     feedback_rx: rtrb::Consumer<ParamChange>,
@@ -413,6 +416,10 @@ impl ClapInstance {
         let stopped = instance
             .activate(|_, _| (), config)
             .map_err(|e| HostError::Load(e.to_string()))?;
+        let latency = {
+            let h = instance.plugin_handle();
+            h.get_extension::<PluginLatency>().map_or(0, |l| l.get(&h))
+        };
         let n = MAX_FRAMES as usize;
         let (fb_tx, fb_rx) = rtrb::RingBuffer::new(FEEDBACK_CAP);
         let (set_tx, set_rx) = rtrb::RingBuffer::new(SET_CAP);
@@ -444,6 +451,7 @@ impl ClapInstance {
             clap_id: clap_id.to_string(),
             params,
             rate,
+            latency,
             flags,
             feedback_rx: fb_rx,
             sets_tx: set_tx,
@@ -663,6 +671,11 @@ impl ClapInstance {
         self.rate
     }
 
+    /// Latenz des Plugins in Abtastwerten.
+    pub fn latency(&self) -> u32 {
+        self.latency
+    }
+
     /// Die Regler des Plugins.
     pub fn params(&self) -> &[ParamDesc] {
         &self.params
@@ -685,6 +698,7 @@ impl ClapInstance {
             cell: Arc::clone(&self.cell),
             pending: Vec::with_capacity(PENDING_CAP),
             flush: false,
+            latency: self.latency,
         })
     }
 
@@ -817,6 +831,7 @@ struct ClapProcessor {
     pending: Vec<(u32, f64)>,
     /// `reset` wurde gerufen: der nächste Block beginnt mit „alle Noten aus“.
     flush: bool,
+    latency: u32,
 }
 
 impl StereoProcessor for ClapProcessor {
@@ -897,6 +912,10 @@ impl StereoProcessor for ClapProcessor {
 
     fn reset(&mut self) {
         self.flush = true;
+    }
+
+    fn latency(&self) -> u32 {
+        self.latency
     }
 }
 

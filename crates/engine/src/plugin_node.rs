@@ -12,6 +12,7 @@ use woa_dsp::plugin::{BYPASS_PARAM, StereoProcessor, TrackPlugins};
 use woa_dsp::{StereoBuffers, StereoNode};
 use woa_model::{InsertId, PluginRole, Track};
 
+use crate::compensate::DelayLine;
 use crate::midi_clip::{TimedEvent, track_events};
 
 /// Platz für die Events eines Blocks.
@@ -150,12 +151,21 @@ impl StereoNode for PluginInstrumentNode {
 pub struct PluginFxNode {
     processor: Box<dyn StereoProcessor>,
     bypass: bool,
+    /// Umgangen behält der Effekt seine Latenz, sonst springt der Ausgleich der Spur.
+    bypass_delay: Option<(DelayLine, DelayLine)>,
 }
 
 impl PluginFxNode {
     /// Neuer Knoten.
     pub fn new(processor: Box<dyn StereoProcessor>, bypass: bool) -> Self {
-        Self { processor, bypass }
+        let latency = processor.latency();
+        let bypass_delay =
+            (latency > 0).then(|| (DelayLine::new(latency), DelayLine::new(latency)));
+        Self {
+            processor,
+            bypass,
+            bypass_delay,
+        }
     }
 }
 
@@ -168,6 +178,10 @@ impl StereoNode for PluginFxNode {
             if on != self.bypass {
                 self.bypass = on;
                 self.processor.reset();
+                if let Some((l, r)) = &mut self.bypass_delay {
+                    l.clear();
+                    r.clear();
+                }
             }
         } else {
             self.processor.set_param(param, f64::from(value));
@@ -178,8 +192,13 @@ impl StereoNode for PluginFxNode {
 
     fn process(&mut self, b: StereoBuffers<'_>) {
         if self.bypass {
-            b.out_left.copy_from_slice(b.in_left);
-            b.out_right.copy_from_slice(b.in_right);
+            if let Some((l, r)) = &mut self.bypass_delay {
+                l.run(b.in_left, b.out_left);
+                r.run(b.in_right, b.out_right);
+            } else {
+                b.out_left.copy_from_slice(b.in_left);
+                b.out_right.copy_from_slice(b.in_right);
+            }
         } else {
             self.processor
                 .process(&[], b.in_left, b.in_right, b.out_left, b.out_right);
@@ -193,6 +212,9 @@ pub struct PluginChain {
     pub head: Option<(InsertId, Box<dyn StereoNode>)>,
     /// Effekte, erster zuerst.
     pub effects: Vec<(InsertId, Box<dyn StereoNode>)>,
+    /// Latenz der ganzen Kette in Abtastwerten (Instrument plus alle Effekte, auch umgangene);
+    /// der Graph-Bau gleicht sie zwischen den Spuren aus.
+    pub latency: u32,
 }
 
 impl PluginChain {
@@ -210,6 +232,16 @@ impl PluginChain {
         if track.plugins.is_empty() {
             return None;
         }
+        let latency = plugins
+            .instrument
+            .as_ref()
+            .map_or(0, |p| p.latency())
+            .saturating_add(
+                plugins
+                    .effects
+                    .iter()
+                    .fold(0u32, |a, e| a.saturating_add(e.processor.latency())),
+            );
         let head = track
             .plugins
             .iter()
@@ -235,6 +267,10 @@ impl PluginChain {
                 )
             })
             .collect();
-        Some(Self { head, effects })
+        Some(Self {
+            head,
+            effects,
+            latency,
+        })
     }
 }

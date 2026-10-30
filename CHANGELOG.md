@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.28.0 — 2026-10-30
+
+Paket 33 aus M8: Absturzschutz per eigenem Prozess (Abnahme: `docs/abnahme.md`).
+
+- **Plugin-Prozess:** Neues Programm `woa-plugin-host` (und derselbe Code über `woa --woa-plugin-host`) lädt ein CLAP-Plugin abseits der Oberfläche. Stürzt das Plugin ab oder hängt es, trifft es nur diesen Prozess.
+- **Austausch:** Gemeinsamer Speicher (eine Datei, die beide abbilden) mit Atomen, dazu ein Briefkasten für Aufrufe (Info, Zustand, Fenster) und lock-freie Ringe für Reglerwerte und Rückmeldungen. Die Idee folgt dem RemotePlugin von LMMS; Code ist nicht übernommen (`docs/herkunft.md`).
+- **Takt:** Jeder Block wird im Plugin-Prozess gerechnet, ohne zusätzliche Latenz. Kommt die Antwort nicht rechtzeitig (Echtzeit: etwa zwei Drittel der Blockdauer, mindestens 1 ms, höchstens 50 ms), gibt der Block Stille aus und zählt einen verspäteten Block. Im Audio-Thread wartet nur eine begrenzte Schleife; sie ist im Quelltext benannt.
+- **Absturz und Hänger:** Ein beendeter Prozess oder ein Block, der länger als 1,5 s nicht fertig wird (dann wird der Prozess beendet), schaltet nur dieses Plugin stumm. Der Platz zeigt „Plugin abgestürzt – neu laden“, die Statuszeile nennt es ebenfalls; alles andere spielt weiter. „Neu laden“ startet den Prozess neu und stellt den letzten Zustand und die Regler wieder her; der Graph bleibt derselbe. Kein automatisches Neuladen.
+- **Suche:** Jede Plugin-Datei wird in einem eigenen Suchprozess gelesen (20 s Frist); Absturz oder Zeitüberschreitung wird ein Suchproblem statt eines Absturzes der App.
+- **Latenzausgleich:** Meldet ein Plugin Latenz (CLAP `latency`), verzögert die Engine alle anderen Spuren um die Differenz, damit alles zusammen ankommt; ein abgeschaltetes Effekt-Plugin behält seine Latenz. `StereoProcessor::latency()` (Standard 0).
+- **Wächter:** Der Plugin-Prozess beendet sich selbst, wenn die App 10 s lang kein Lebenszeichen gibt.
+- **Testmenü:** Mit `WOA_TESTMENU=1` erscheint im Plugin-Platz „Absturz simulieren“. `WOA_PLUGINS_IN_PROCESS=1` schaltet den Schutz aus (Fehlersuche).
+- **Tests:** Selbstprüfung mit dem Test-Plugin, das absichtlich abstürzt oder hängt (Offline-Render und Echtzeit-Fenster, ohne Audiogerät): gleiche Ausgabe wie im Programm, gemessene Latenz (Impuls an Stelle 64), Absturz stumm nur dort, Hänger wird beendet, Neuladen, Zustand und Regler über die Prozessgrenze, ein Suchprozess, der stirbt; Engine: Ausgleich zwischen Spuren.
+- **Nicht gebaut:** Plugin-Fenster im Schutzprozess unter Windows; Nachführen einer Latenz, die sich nach dem Laden ändert; Verpacken des zweiten Programms (AppImage, MSI, Flatpak) — bis dahin ruft sich die App selbst mit `--woa-plugin-host` auf.
+- **Abhängigkeit:** `memmap2` in `woa-plugins`; `latency` in `clack-extensions`.
+- **Windows:** Ungenutzter Import im Test behoben, der die Prüfung unter Windows brach.
+
 ## 0.27.1 — 2026-10-30
 
 - **CI:** Neuer Workflow „Windows-Bau“ (`.github/workflows/windows-build.yml`), von Hand zu starten. Baut `woa.exe`, `woa-headless.exe` und `woa-streamd.exe` im Release-Profil und legt sie als MSI-Installer (WiX 5, `packaging/windows/woa.wxs`: Programme-Ordner, Startmenü-Eintrag, neuere Version ersetzt ältere) und als ZIP an den Lauf (30 Tage). Unsigniert. Produktname in der MSI mit einfachem Bindestrich (Codepage 1252).
