@@ -279,3 +279,15 @@ fn default_ingest_url_is_own_server() {
         "https://feedback.wironair.de/api/logs/ingest"
     );
 }
+
+/// Fenster zu, Prozess muss enden: Auch wenn noch ein Layer (globaler Subscriber) einen
+/// Sender hält, kehrt `Drop` zurück (André 30.10., Windows-Prozess lief weiter).
+#[test]
+fn drop_returns_while_a_layer_still_holds_a_sender() {
+    let up = Uploader::start(upload_cfg("http://127.0.0.1:9/ingest".into())).expect("enabled");
+    let layer = up.layer();
+    let t = std::time::Instant::now();
+    drop(up);
+    assert!(t.elapsed() < std::time::Duration::from_secs(5));
+    drop(layer);
+}
