@@ -35,6 +35,15 @@ pub struct ViewEntry {
     pub gain_db: f64,
     /// Cue-Punkte (Paket 15).
     pub cues: crate::cues::Cues,
+    /// Voice-Track: Beginn der Stimme, ob der Eintrag auf „prüfen“ steht (Paket 30).
+    pub voice: Option<VoiceBrief>,
+}
+
+/// Kurzform eines Voice-Tracks für die Anzeige.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VoiceBrief {
+    pub params: crate::voicetrack::VoiceParams,
+    pub check: bool,
 }
 
 /// Schnappschuss für die Oberfläche.
@@ -242,6 +251,10 @@ fn run(
                     lufs: e.lufs,
                     gain_db: e.gain_db(target),
                     cues: e.cues,
+                    voice: e.voice.as_ref().map(|v| VoiceBrief {
+                        params: v.params,
+                        check: v.check,
+                    }),
                 })
                 .collect(),
             current: c.current_index(),

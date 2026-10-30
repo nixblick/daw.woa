@@ -4558,8 +4558,14 @@ impl eframe::App for WoaApp {
             let add = self
                 .clock_editor
                 .autodj_tick(r.view(), crate::clock_editor::now_unix());
-            if !add.is_empty() {
-                r.append_files(add);
+            // Auswahlen aus `moderation` werden Voice-Tracks, der Rest hängt hinten an; die
+            // Reihenfolge bleibt, damit die Stimme vor ihrem Titel steht.
+            for path in add {
+                if self.clock_editor.take_voice_pick(&path) {
+                    r.add_voice_file(path, None);
+                } else {
+                    r.append_files(vec![path]);
+                }
             }
         }
         self.clock_editor.tick_save();
@@ -4651,6 +4657,7 @@ impl eframe::App for WoaApp {
                 )
                 .show(ui, |ui| radio.ui(ui));
             radio.cue_window(&ctx);
+            radio.voice_window(&ctx);
             self.library_window(&ctx);
             self.clock_editor.show(&ctx);
             self.event_editor

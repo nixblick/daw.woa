@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.25.0 — 2026-10-30
+
+Paket 30 aus M9: Voice-Tracking-Editor.
+
+- **Voice-Track (`woa_radio::voicetrack`):** Eine vorab aufgenommene oder importierte Moderation liegt als eigener Playlist-Eintrag (`voice`) zwischen zwei Titeln und verweist auf ihre Nachbarn. Zeitachse: Null ist der Beginn der Überblendung, die Stimme beginnt bei `offset` (negativ: im Ausklang von A). Werte: Beginn, Stimmenpegel, Absenkung der Musik (Vorgabe −12 dB), Rampe vor und nach der Stimme.
+- **Ducking im Mixer:** Der Mixer startet die Stimme selbst, sample-genau relativ zum Übergang (keine Zeitsteuerung im Steuer-Thread). Die Absenkung ist eine Kosinus-Rampe aus einer einzigen reinen Funktion (`duck_gain`), die Mixer, Editor und Tests gemeinsam nutzen. Kommt der Übergang früher (Taste „Weiter“) oder später als geplant, läuft die Stimme immer vollständig von vorn, nie mittendrin. Die Stimme läuft über den Cart-Zweig; neuer Befehl `Cmd::VoiceOver`, kein Speicher und keine Sperre im Audio-Thread.
+- **„Prüfen“:** Ändert sich ein Nachbar (anderer Titel, andere Länge, andere Marken), steht der Voice-Track auf „prüfen“ und geht nicht auf Sendung, bis er im Editor bestätigt wird. Nachträgliches Messen eines Nachbarn gilt nicht als Änderung. Die Meldung steht in der Sendungsmeldung und im Log.
+- **Voice-Tracks sind keine Titel:** sie sind nie das laufende Deck, zählen nicht in Gesamtlänge und Restzeit, beginnen nie eine Sendung und werden bei harten Events nicht zwischen Stimme und Titel zerschnitten.
+- **AutoDJ:** Auswahlen aus der Kategorie `moderation` werden als Voice-Track eingefügt, vor dem Titel, der dahinter kommt; sie zählen nicht zum Vorlauf.
+- **Editor (Radio-Modus, Rechtsklick auf einen Titel):** „Voice-Track danach einfügen …“ wählt eine Sprachdatei (Messung, Vorschlag für den Beginn: die Stimme endet am Ramp-Punkt von B, sonst 2 s nach dem Beginn von B). „Voice-Track bearbeiten …“ zeigt die Wellenformen von A (Ausklang) und B (Anfang), die mit der Maus verschiebbare Stimme und darunter die Absenkungskurve. „Vorhören“ rendert A, Stimme, B offline durch den echten Mixer und spielt das Ergebnis nur im Kopfhörer (PFL), nie auf Sendung. In der Playlist trägt die Zeile „VOICE“ und „prüfen“.
+- **Tests:** Offline-Render A, Stimme, B mit erzeugten Tönen durch den echten Mixer unter `assert_no_alloc` (Beginn der Stimme auf 0,06 s genau, Absenkung 12 dB auf 3 % genau, Rückkehr der Musik, keine Lücke), Stimme nach dem Übergang, „Weiter“ vorzeitig, Tausch eines Nachbarn setzt „prüfen“ und die Stimme wird nicht gesendet (nach Bestätigung schon), Speichern und Laden als Schnappschuss (`insta`), Einheitentests der Kurve, des Abgleichs und des Vorschlags, Editor als Zustandstest, Fenster zeichnet ohne Display.
+- **Herkunft und Lizenz:** Idee von `smooth_add` in Liquidsoap, kein Code übernommen (`docs/herkunft.md`).
+- **Nicht gebaut:** Aufnahme der Stimme im Editor (Mikrofon, braucht einen Gerätetest) und ein MCP-Werkzeug für Voice-Tracks.
+
 ## 0.24.0 — 2026-10-30
 
 Paket 29 aus M9: Feste Zeit-Events und pünktliche volle Stunde.

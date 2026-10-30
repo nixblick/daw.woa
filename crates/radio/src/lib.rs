@@ -12,6 +12,7 @@
 //!   Titel ein, schreibt den Mitschnitt und gibt alte Puffer frei.
 //! - [`station::Station`] lässt den Controller in einem eigenen Thread laufen, damit die
 //!   Sendung weiterläuft, auch wenn die Oberfläche gerade nicht zeichnet.
+//! - [`voicetrack`]: Moderation zwischen zwei Titeln mit Ducking (Paket 30).
 //! - [`show::RadioShow`] ist die gespeicherte Playlist und Cart-Belegung (`radio.json`).
 
 use std::path::PathBuf;
@@ -27,6 +28,7 @@ pub mod pfl;
 pub mod show;
 pub mod station;
 pub mod transition;
+pub mod voicetrack;
 
 pub use control::{Controller, render};
 pub use cues::Cues;

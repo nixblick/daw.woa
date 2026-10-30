@@ -24,6 +24,8 @@ use crate::theme;
 
 const DAYS: [&str; 7] = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 /// So oft schaut der AutoDJ nach, ob die Playlist aufgefüllt werden muss.
+/// Kategorie, deren Auswahl als Voice-Track zwischen zwei Titel kommt (Paket 30).
+pub const VOICE_CATEGORY: &str = "moderation";
 const PLAN_EVERY: Duration = Duration::from_secs(3);
 /// Änderungen werden so lange gesammelt, dann gespeichert.
 const SAVE_AFTER: Duration = Duration::from_millis(700);
@@ -372,6 +374,20 @@ impl ClockEditor {
         }
     }
 
+    /// War `path` eine Auswahl aus der Kategorie `moderation`? Dann gehört er als Voice-Track
+    /// zwischen zwei Titel (Paket 30). Der Eintrag wird dabei vergessen: eine Moderation wird
+    /// nie als Titel gespielt und käme sonst nie aus der Warteliste.
+    pub fn take_voice_pick(&mut self, path: &std::path::Path) -> bool {
+        let key = path.to_string_lossy().into_owned();
+        match self.queued.get(&key) {
+            Some(c) if c.trim().eq_ignore_ascii_case(VOICE_CATEGORY) => {
+                self.queued.remove(&key);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Ein Takt des AutoDJ für den Schnappschuss `v` der Sendung zur Zeit `now`: trägt neu
     /// gestartete Titel in die Historie ein und gibt die Pfade zurück, die hinten an die
     /// Playlist gehängt werden sollen. Gespeichert wird hier nichts an der Playlist.
@@ -385,7 +401,13 @@ impl ClockEditor {
             return Vec::new();
         }
         let first_ahead = v.current.map_or(v.cue, |c| c + 1);
-        let ahead_entries: Vec<_> = v.playlist.iter().skip(first_ahead).collect();
+        // Voice-Tracks sind keine Titel: sie zählen nicht zum Vorlauf.
+        let ahead_entries: Vec<_> = v
+            .playlist
+            .iter()
+            .skip(first_ahead)
+            .filter(|e| e.voice.is_none())
+            .collect();
         let need = self.schedule.lookahead.saturating_sub(ahead_entries.len());
         if need == 0 {
             return Vec::new();
@@ -801,6 +823,7 @@ mod tests {
             lufs: None,
             gain_db: 0.0,
             cues: woa_radio::Cues::default(),
+            voice: None,
         }
     }
 
@@ -927,6 +950,22 @@ mod tests {
         // Dasselbe Bild noch einmal trägt nichts doppelt ein.
         e.autodj_tick(&v, now + 3);
         assert_eq!(lib.plays_since(0).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn moderation_picks_become_voice_tracks_once() {
+        let (mut e, _dir) = editor();
+        e.queued
+            .insert("/m/ansage.wav".into(), " Moderation ".into());
+        e.queued.insert("/m/song.wav".into(), "hit".into());
+        assert!(e.take_voice_pick(Path::new("/m/ansage.wav")));
+        assert!(!e.queued.contains_key("/m/ansage.wav"), "wird vergessen");
+        assert!(!e.take_voice_pick(Path::new("/m/ansage.wav")));
+        assert!(!e.take_voice_pick(Path::new("/m/song.wav")));
+        assert!(
+            e.queued.contains_key("/m/song.wav"),
+            "Titel bleibt in der Warteliste"
+        );
     }
 
     #[test]

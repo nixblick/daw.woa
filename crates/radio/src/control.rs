@@ -139,6 +139,8 @@ pub struct Controller {
     last_event: Option<(String, f64)>,
     /// Verpasste Events seit dem Start.
     events_missed: u32,
+    /// Vorhör-Rendering eines Voice-Tracks läuft im Hintergrund (Paket 30).
+    preview: Option<std::sync::mpsc::Receiver<Result<Stereo, String>>>,
 }
 
 /// Ein Zeit-Event in der Playlist.
@@ -184,6 +186,7 @@ impl Controller {
             event_runs: HashMap::new(),
             last_event: None,
             events_missed: 0,
+            preview: None,
         };
         c.replace_show(show);
         (c, mixer)
@@ -394,7 +397,11 @@ impl Controller {
 
     /// Startet ab dem Cue-Titel.
     pub fn start(&mut self) {
-        let from = self.cue_index();
+        // Ein Voice-Track beginnt nie eine Sendung: ab dem ersten Titel dahinter.
+        let from = self
+            .show
+            .first_music_from(self.cue_index())
+            .unwrap_or(usize::MAX);
         if from >= self.show.playlist.len() {
             self.message = Some("Playlist ist leer".into());
             return;
@@ -461,8 +468,9 @@ impl Controller {
                     .unwrap_or_default()
                     .frames(self.rate, buf.frames());
                 // Übergang vom laufenden Titel (Mixxx-Logik aus Intro/Outro, `transition.rs`).
-                let lead = index
-                    .checked_sub(1)
+                let lead = self
+                    .show
+                    .prev_music(index)
                     .filter(|&p| self.current_index() == Some(p))
                     .and_then(|p| {
                         let (a, b) = (self.show.playlist.get(p)?, self.show.playlist.get(index)?);
@@ -479,6 +487,7 @@ impl Controller {
                     hold: event.is_some_and(|r| r.hard),
                 });
                 self.pending = Some(uid);
+                self.queue_voice(index, uid);
                 true
             }
             Err(err) => {
@@ -630,6 +639,7 @@ impl Controller {
     /// Wie [`Self::pump`] mit vorgegebener Uhrzeit (Unix-Sekunden). Die Tests treiben so die
     /// Zeit-Events mit einer simulierten Uhr.
     pub fn pump_at(&mut self, now: f64) {
+        self.sync_voices();
         self.pump_queue();
         self.event_tick(now);
     }
@@ -672,6 +682,10 @@ impl Controller {
         };
         for i in after..self.show.playlist.len() {
             let uid = self.show.playlist[i].uid;
+            if self.show.playlist[i].voice.is_some() {
+                // Voice-Tracks spielen nie als Deck, sie hängen am Titel dahinter.
+                continue;
+            }
             if self.failed.contains(&uid) {
                 continue;
             }
@@ -700,7 +714,11 @@ impl Controller {
             Some(i) => {
                 let rest = self.remaining_title();
                 let after = self.show.total_seconds_from(i + 1);
-                let fade = match (self.show.playlist.get(i), self.show.playlist.get(i + 1)) {
+                let next = self
+                    .show
+                    .next_music(i)
+                    .and_then(|k| self.show.playlist.get(k));
+                let fade = match (self.show.playlist.get(i), next) {
                     (Some(a), Some(b)) => self.show.crossfade_entries(a, b).min(rest),
                     _ => 0.0,
                 };
@@ -997,10 +1015,27 @@ impl Controller {
         let target = at as f64 - 1.0 - now;
         let mut end = self.remaining_title();
         let mut k = cur + 1;
-        while let (Some(a), Some(b)) = (self.show.playlist.get(k - 1), self.show.playlist.get(k)) {
+        while let Some(b) = self.show.playlist.get(k) {
+            if b.voice.is_some() {
+                // Voice-Tracks haben keine eigene Zeit.
+                k += 1;
+                continue;
+            }
+            let Some(a) = self
+                .show
+                .prev_music(k)
+                .and_then(|p| self.show.playlist.get(p))
+            else {
+                break;
+            };
             let start = end - self.show.crossfade_entries(a, b);
             if start >= target {
-                return k;
+                // Nicht zwischen einen Voice-Track und seinen Titel schneiden.
+                return if k > 0 && self.show.playlist[k - 1].voice.is_some() {
+                    k - 1
+                } else {
+                    k
+                };
             }
             end = start + b.play_seconds().unwrap_or(UNMEASURED_SECONDS);
             k += 1;
@@ -1127,5 +1162,177 @@ impl Controller {
         } else {
             tracing::info!(id, "soft event queued after the running title");
         }
+    }
+}
+
+// ---- Voice-Tracking (Paket 30) --------------------------------------------------------
+
+impl Controller {
+    /// Gleicht die Voice-Tracks mit ihren Nachbarn ab; was sich geändert hat, steht auf
+    /// „prüfen“ und wird nicht gesendet.
+    fn sync_voices(&mut self) {
+        let flagged = self.show.relink_voices();
+        for i in flagged {
+            let name = self
+                .show
+                .playlist
+                .get(i)
+                .map(PlaylistEntry::title)
+                .unwrap_or_default();
+            tracing::warn!(index = i, voice = %name, "voice track neighbour changed, needs check");
+            self.message = Some(format!(
+                "Voice-Track „{name}“ (Eintrag {}): ein Nachbar hat sich geändert, bitte prüfen",
+                i + 1
+            ));
+            // Einen schon bereitgelegten Titel ohne diesen Voice-Track neu bereitlegen, aber
+            // nie den Start selbst (noch kein Titel am Laufen) wegräumen.
+            if self.status.current.load(Ordering::Acquire) != NONE {
+                self.requeue();
+            }
+        }
+        self.poll_preview();
+    }
+
+    /// Legt den Voice-Track vor dem Titel `index` (Kennung `uid`) beim Mixer bereit.
+    fn queue_voice(&mut self, index: usize, uid: u32) {
+        let Some(vi) = index.checked_sub(1) else {
+            return;
+        };
+        let Some(ve) = self.show.playlist.get(vi).filter(|e| e.voice.is_some()) else {
+            return;
+        };
+        let Some(v) = ve.voice.clone() else { return };
+        let (path, name) = (ve.path.clone(), ve.title());
+        if v.check {
+            tracing::warn!(voice = %name, "voice track skipped: needs check");
+            self.message = Some(format!(
+                "Voice-Track „{name}“ übersprungen: Nachbar geändert, erst bestätigen"
+            ));
+            return;
+        }
+        let stereo = match load_stereo(&path, self.rate) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(error = %e, "voice track load failed");
+                self.message = Some(format!("Voice-Track „{name}“: {e}"));
+                return;
+            }
+        };
+        if stereo.frames() == 0 {
+            self.message = Some(format!("Voice-Track „{name}“ ist leer"));
+            return;
+        }
+        let m = measure(&stereo, self.rate);
+        let auto = crate::level::auto_gain_db(m.lufs, m.peak_db, self.show.target_lufs);
+        let gain = db_to_gain(auto + v.params.gain_db);
+        let frames = v.params.frames(self.rate, stereo.frames());
+        let buf = Shared::new(&self.collector.handle(), stereo);
+        tracing::info!(
+            voice = %name,
+            offset_s = v.params.offset,
+            duck_db = v.params.duck_db,
+            gain_db = auto + v.params.gain_db,
+            "voice track queued"
+        );
+        self.send(Cmd::VoiceOver {
+            uid,
+            buf,
+            gain,
+            frames,
+        });
+    }
+
+    /// Legt eine Sprachdatei als Voice-Track bei `at` in die Playlist (gemessen, an die jetzigen
+    /// Nachbarn gebunden, Beginn der Stimme vorgeschlagen). Gibt den Index zurück.
+    pub fn add_voice(&mut self, path: &Path, at: Option<usize>) -> Result<usize, String> {
+        let s = load_stereo(path, self.rate)?;
+        let m = measure(&s, self.rate);
+        if m.seconds < 0.2 {
+            return Err(format!("{}: zu kurz für eine Moderation", path.display()));
+        }
+        if m.seconds > crate::voicetrack::MAX_VOICE_SECONDS {
+            return Err(format!(
+                "{}: länger als {} s",
+                path.display(),
+                crate::voicetrack::MAX_VOICE_SECONDS
+            ));
+        }
+        let mut e = PlaylistEntry::new(path);
+        e.uid = self.next_uid;
+        self.next_uid += 1;
+        e.set_measured(m);
+        // Die Cue-Vorschläge der Titel-Analyse gelten nicht für eine Moderation.
+        e.cues = Cues::default();
+        let at = at.unwrap_or(self.show.playlist.len());
+        let i = self.show.insert_voice(at, e);
+        self.requeue();
+        tracing::info!(file = %path.display(), index = i, "voice track added");
+        Ok(i)
+    }
+
+    /// Ändert die Werte von Voice-Track `index`.
+    pub fn set_voice(
+        &mut self,
+        index: usize,
+        params: crate::voicetrack::VoiceParams,
+    ) -> Result<(), String> {
+        self.show.set_voice_params(index, params)?;
+        self.requeue();
+        Ok(())
+    }
+
+    /// Bestätigt einen Voice-Track auf „prüfen“.
+    pub fn confirm_voice(&mut self, index: usize) -> Result<(), String> {
+        self.show.confirm_voice(index)?;
+        self.requeue();
+        Ok(())
+    }
+
+    /// Rendert A, Stimme, B im Hintergrund und spielt das Ergebnis im Kopfhörer (PFL), nie auf
+    /// Sendung. Das Ergebnis holt [`Self::pump_at`] ab.
+    pub fn pfl_voice(&mut self, index: usize) -> Result<(), String> {
+        let Some(rate) = self.pfl.as_ref().map(|h| h.rate) else {
+            return Err("Kein Kopfhörer-Ausgang für das Vorhören eingestellt".into());
+        };
+        let show = self.show.voice_preview(index)?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::Builder::new()
+            .name("woa-voice-preview".into())
+            .spawn(move || {
+                let _ = tx.send(render(&show, rate));
+            })
+            .map_err(|e| format!("Vorhören: {e}"))?;
+        self.preview = Some(rx);
+        Ok(())
+    }
+
+    fn poll_preview(&mut self) {
+        let Some(rx) = self.preview.as_ref() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(Ok(s)) => {
+                self.preview = None;
+                if let Err(e) = self.pfl_stereo(s) {
+                    self.report(e);
+                }
+            }
+            Ok(Err(e)) => {
+                self.preview = None;
+                self.report(format!("Vorhören: {e}"));
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.preview = None,
+        }
+    }
+
+    fn pfl_stereo(&mut self, s: Stereo) -> Result<(), String> {
+        let buf = Shared::new(&self.collector.handle(), s);
+        let Some(h) = self.pfl.as_mut() else {
+            return Err("Kein Kopfhörer-Ausgang für das Vorhören eingestellt".into());
+        };
+        h.cmds
+            .push(PflCmd::Play { buf, start: 0 })
+            .map_err(|_| "Vorhören: Warteschlange voll".to_string())
     }
 }
