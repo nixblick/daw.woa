@@ -455,3 +455,57 @@ fn cue_edits_undo_and_redo() {
     assert!(c.redo_cues());
     assert_eq!(c.show().playlist[0].cues, cues);
 }
+
+/// Zahl der Frames, in denen am linken Ausgang etwas liegt, bis das Cart durch ist.
+fn cart_frames(c: &mut Controller, m: &mut Mixer, slot: usize, seconds: f64) -> usize {
+    let mut l = vec![0.0f32; BLOCK];
+    let mut r = vec![0.0f32; BLOCK];
+    c.trigger_cart(slot);
+    let (mut sounding, mut first) = (0usize, None);
+    for b in 0..((seconds * f64::from(SR)) as usize / BLOCK) {
+        block(c, m, &mut l, &mut r);
+        for (i, v) in l.iter().enumerate() {
+            if v.abs() > 0.01 {
+                sounding += 1;
+                first.get_or_insert(b * BLOCK + i);
+            }
+        }
+    }
+    let _ = first;
+    sounding
+}
+
+#[test]
+fn cart_plays_only_between_its_cue_points() {
+    use woa_radio::Cues;
+    let tmp = tempfile::tempdir().unwrap();
+    let jingle = tmp.path().join("jingle.wav");
+    write_tone(&jingle, 2.0, 0.0, 0.3);
+    let show = RadioShow {
+        bus_processing: false,
+        mic_processing: false,
+        ..RadioShow::default()
+    };
+    let (mut c, mut m) = Controller::new(show, SR);
+    c.assign_cart(2, Some(jingle)).unwrap();
+    let whole = cart_frames(&mut c, &mut m, 2, 2.5);
+    assert!((whole as f64 / f64::from(SR) - 2.0).abs() < 0.02, "{whole}");
+    c.set_cart_cues(
+        2,
+        Cues {
+            cue_in: Some(0.5),
+            cue_out: Some(1.25),
+            ..Cues::default()
+        },
+    )
+    .unwrap();
+    let cut = cart_frames(&mut c, &mut m, 2, 2.5);
+    assert!((cut as f64 / f64::from(SR) - 0.75).abs() < 0.02, "{cut}");
+    assert_eq!(c.status().carts.load(Ordering::Acquire) & (1 << 2), 0);
+    // Ein Ende hinter der Datei oder vor dem Anfang wird abgelehnt.
+    let past = Cues {
+        cue_out: Some(5.0),
+        ..Cues::default()
+    };
+    assert!(c.set_cart_cues(2, past).is_err());
+}

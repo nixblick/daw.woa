@@ -102,14 +102,34 @@ pub struct CartEntry {
     pub path: PathBuf,
     #[serde(default)]
     pub label: String,
+    /// Start- und Endpunkt des Carts (nur Cue-In und Cue-Out zählen).
+    #[serde(default, skip_serializing_if = "Cues::is_empty")]
+    pub cues: Cues,
 }
 
 impl CartEntry {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         let path = path.into();
         let label = title_of(&path);
-        Self { path, label }
+        Self {
+            path,
+            label,
+            cues: Cues::default(),
+        }
     }
+}
+
+/// Kein Cart auf dieser Taste: Wert in [`RadioShow::cart_keys`].
+pub const NO_KEY: &str = "-";
+
+/// Tastenname der Standardbelegung: Cart 1–9 auf 1–9, Cart 10 auf 0 (Namen wie `egui::Key::name`).
+pub fn default_cart_key(slot: usize) -> Option<&'static str> {
+    const KEYS: [&str; 10] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
+    KEYS.get(slot).copied()
+}
+
+fn all_empty(v: &[String]) -> bool {
+    v.iter().all(String::is_empty)
 }
 
 fn default_crossfade() -> f64 {
@@ -149,6 +169,10 @@ pub struct RadioShow {
     /// Genau [`CARTS`] Felder, `null` = frei.
     #[serde(default)]
     pub carts: Vec<Option<CartEntry>>,
+    /// Taste je Cart (Name wie `egui::Key::name`), leer = Standard ([`default_cart_key`]),
+    /// [`NO_KEY`] = keine. Genau [`CARTS`] Felder.
+    #[serde(default, skip_serializing_if = "all_empty")]
+    pub cart_keys: Vec<String>,
 }
 
 impl Default for RadioShow {
@@ -162,6 +186,7 @@ impl Default for RadioShow {
             mic_processing: true,
             playlist: Vec::new(),
             carts: vec![None; CARTS],
+            cart_keys: vec![String::new(); CARTS],
         }
     }
 }
@@ -185,10 +210,76 @@ impl RadioShow {
         }
         self.target_lufs = self.target_lufs.clamp(-40.0, -5.0);
         self.carts.resize(CARTS, None);
+        self.cart_keys.resize(CARTS, String::new());
+        for e in self.carts.iter_mut().flatten() {
+            if e.cues.validate(None).is_err() {
+                e.cues = Cues::default();
+            }
+        }
         for e in &mut self.playlist {
             if let Some(v) = e.voice.as_mut() {
                 v.params = v.params.sanitized();
             }
+        }
+    }
+
+    /// Die Taste von Cart `slot`: eigene Belegung, sonst die Standardtaste.
+    pub fn cart_key(&self, slot: usize) -> Option<String> {
+        match self.cart_keys.get(slot).map(String::as_str) {
+            Some(NO_KEY) => None,
+            Some(k) if !k.is_empty() => Some(k.to_string()),
+            _ => default_cart_key(slot).map(str::to_string),
+        }
+    }
+
+    /// Legt die Taste von Cart `slot` fest (`None` = keine). Hatte ein anderes Cart diese Taste,
+    /// verliert es sie: eine Taste startet immer genau ein Cart.
+    pub fn set_cart_key(&mut self, slot: usize, key: Option<&str>) -> Result<(), String> {
+        if slot >= CARTS {
+            return Err(format!("Cart {slot} gibt es nicht"));
+        }
+        self.cart_keys.resize(CARTS, String::new());
+        if let Some(k) = key {
+            if k.is_empty()
+                || k == NO_KEY
+                || k.len() > 16
+                || !k.chars().all(|c| c.is_ascii_alphanumeric())
+            {
+                return Err(format!("Taste „{k}“ ist ungültig"));
+            }
+            for other in 0..CARTS {
+                if other != slot && self.cart_key(other).as_deref() == Some(k) {
+                    self.cart_keys[other] = NO_KEY.to_string();
+                }
+            }
+        }
+        self.cart_keys[slot] = key.map_or(NO_KEY.to_string(), str::to_string);
+        // Wieder die Standardtaste: Eintrag leer lassen, damit die Datei schlicht bleibt.
+        if self.cart_keys[slot] == default_cart_key(slot).unwrap_or("") {
+            self.cart_keys[slot].clear();
+        }
+        Ok(())
+    }
+
+    /// Das Cart, das die Taste `key` startet.
+    pub fn cart_for_key(&self, key: &str) -> Option<usize> {
+        (0..CARTS).find(|&s| self.cart_key(s).as_deref() == Some(key))
+    }
+
+    /// Setzt Start und Ende von Cart `slot` (geprüft; andere Marken fallen weg).
+    pub fn set_cart_cues(&mut self, slot: usize, cues: Cues) -> Result<(), String> {
+        let c = Cues {
+            cue_in: cues.cue_in,
+            cue_out: cues.cue_out,
+            ..Cues::default()
+        };
+        c.validate(None)?;
+        match self.carts.get_mut(slot) {
+            Some(Some(e)) => {
+                e.cues = c;
+                Ok(())
+            }
+            _ => Err(format!("Cart {} ist frei", slot + 1)),
         }
     }
 
@@ -470,5 +561,62 @@ mod tests {
         let text = serde_json::to_string(&show).unwrap();
         assert!(text.contains("cue_in"));
         assert_eq!(RadioShow::from_json(&text).unwrap(), show);
+    }
+
+    #[test]
+    fn cart_keys_default_change_and_stay_unique() {
+        let mut show = RadioShow::default();
+        assert_eq!(show.cart_key(0).as_deref(), Some("1"));
+        assert_eq!(show.cart_key(9).as_deref(), Some("0"));
+        assert_eq!(show.cart_key(10), None, "ab Cart 11 keine Standardtaste");
+        assert_eq!(show.cart_for_key("3"), Some(2));
+        // Cart 11 bekommt F5; Cart 1 bekommt Cart 3s Taste: Cart 3 verliert sie.
+        show.set_cart_key(10, Some("F5")).unwrap();
+        assert_eq!(show.cart_for_key("F5"), Some(10));
+        show.set_cart_key(0, Some("3")).unwrap();
+        assert_eq!(show.cart_for_key("3"), Some(0));
+        assert_eq!(show.cart_key(2), None);
+        assert_eq!(show.cart_key(0).as_deref(), Some("3"));
+        // Zurück auf die Standardtaste hält die Datei schlicht; keine Taste geht auch.
+        show.set_cart_key(2, Some("3")).unwrap();
+        assert_eq!(show.cart_key(0), None);
+        assert!(show.cart_keys[2].is_empty());
+        show.set_cart_key(1, None).unwrap();
+        assert_eq!(show.cart_key(1), None);
+        assert!(show.set_cart_key(1, Some("a b")).is_err());
+        assert!(show.set_cart_key(CARTS, Some("A")).is_err());
+        // Überlebt Speichern und Laden; alte Dateien ohne Tasten bekommen die Standardtasten.
+        let back: RadioShow = serde_json::from_str(&serde_json::to_string(&show).unwrap()).unwrap();
+        assert_eq!(back.cart_key(10).as_deref(), Some("F5"));
+        let mut old: RadioShow = serde_json::from_str(r#"{"version":1}"#).unwrap();
+        old.sanitize();
+        assert_eq!(old.cart_key(4).as_deref(), Some("5"));
+    }
+
+    #[test]
+    fn cart_cues_are_validated_and_kept() {
+        let mut show = RadioShow::default();
+        let cues = Cues {
+            cue_in: Some(0.5),
+            cue_out: Some(2.0),
+            hook: Some(1.0),
+            ..Cues::default()
+        };
+        assert!(show.set_cart_cues(3, cues).is_err(), "leeres Cart");
+        show.carts[3] = Some(CartEntry::new("/jingles/Station ID.wav"));
+        show.set_cart_cues(3, cues).unwrap();
+        let e = show.carts[3].as_ref().unwrap();
+        assert_eq!(
+            (e.cues.cue_in, e.cues.cue_out, e.cues.hook),
+            (Some(0.5), Some(2.0), None)
+        );
+        let bad = Cues {
+            cue_in: Some(3.0),
+            cue_out: Some(2.0),
+            ..Cues::default()
+        };
+        assert!(show.set_cart_cues(3, bad).is_err());
+        let back: RadioShow = serde_json::from_str(&serde_json::to_string(&show).unwrap()).unwrap();
+        assert_eq!(back.carts[3].as_ref().unwrap().cues.cue_out, Some(2.0));
     }
 }

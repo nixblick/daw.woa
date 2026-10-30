@@ -472,6 +472,19 @@ impl VoiceEditor {
                 self.suggest();
             }
             if ui
+                .button("Jingle-Übergang")
+                .on_hover_text(
+                    "Für ein Jingle: beginnt mit Titel B, B startet leise (−20 dB) darunter und \
+                     wird nach dem Ende des Jingles in 1,5 s hochgefahren",
+                )
+                .clicked()
+            {
+                self.draft = VoiceParams {
+                    gain_db: self.draft.gain_db,
+                    ..VoiceParams::jingle_bed()
+                };
+            }
+            if ui
                 .add_enabled(self.dirty(), egui::Button::new("Übernehmen"))
                 .clicked()
             {

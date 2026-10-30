@@ -16,6 +16,15 @@ Paket 39 aus M10: Linux-Pakete aus der CI, AppImage und Flatpak (Abnahme: `docs/
 - **Nicht gebaut / nicht geprüft:** Signatur der Pakete; Veröffentlichung auf wironair.de oder Flathub; Start der Oberfläche im Paket (CI hat keinen Bildschirm); CLAP-Plugins im Flatpak (die Sandbox sieht die Plugins des Rechners nicht); Update-Prüfung (Paket 40).
 - **Offen für André:** Code-Signing-Zertifikat und Signatur der Pakete (Kosten); Ort der Veröffentlichung (wironair.de, Flathub, GitHub-Releases); ob die App-Kennung `de.wironair.woa` so bleiben soll (setzt die Domain wironair.de voraus).
 
+## 0.33.5 — 2026-10-30
+
+Silvester-Paket (#132), Abnahme: `docs/abnahme.md`.
+
+- **Cart-Wall: Nummer ist die Taste:** Das Pad zeigt groß seine Nummer, die Taste startet das Cart, nochmal drücken hält es an (1–9, 0 für Cart 10 wie bisher). Die Taste steht klein in der Ecke und lässt sich je Cart ändern (Rechtsklick, „Taste ändern …“, Esc bricht ab, Entf nimmt die Taste weg). Jede Taste gehört genau einem Cart; M und Leertaste bleiben reserviert. Carts 11–16 haben anfangs keine Taste. Gespeichert in `radio.json` (`cart_keys`, alte Dateien laden unverändert).
+- **Carts schneiden:** Rechtsklick, „Start und Ende schneiden …“: Cue-In und Cue-Out je Cart mit Wellenform und Vorhören. Der Mixer spielt nur das Stück dazwischen; das Vorhören eines Carts beginnt am Cue-In.
+- **Uhrzeit:** Im Sende-Deck steht die Ortszeit groß über dem Countdown (Zone der Stundenuhr).
+- **Jingle-Übergang:** Im Voice-Track-Editor stellt „Jingle-Übergang“ alles passend ein: Das Jingle beginnt zeitgenau mit dem nächsten Titel, der Titel startet 20 dB leiser darunter und wird nach dem Ende des Jingles in 1,5 s hochgefahren. Per Offline-Render gemessen.
+
 ## 0.33.4 — 2026-10-30
 
 - **Windows: App beendete sich nicht, MSI-Installation brach ab** (André). Beim Schließen wartete die Telemetrie auf einen Kanal, den der globale Logger nie freigibt. Das Fenster ging zu, der Prozess lief weiter, und der Installer verlangte, die App zu beenden. Jetzt bekommt der Upload ein Ende-Signal und hat höchstens 3 s für den letzten Versand. Test: `drop_returns_while_a_layer_still_holds_a_sender`.

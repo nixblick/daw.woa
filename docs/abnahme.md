@@ -25,6 +25,23 @@ Nicht selbst geprüft: Start der Oberfläche aus dem Paket (die CI hat keinen Bi
 - Die App-Kennung `de.wironair.woa` setzt voraus, dass die Domain wironair.de dir gehört.
 - CLAP-Plugins des Rechners sieht ein Flatpak nicht; dafür bräuchte es eine Erweiterung oder das AppImage.
 
+## Silvester-Paket: Cart-Tasten, Schnitt, Uhrzeit, Jingle-Übergang (0.33.4, offen, #132)
+
+Wünsche des Moderators der Silvestersendung. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`, Modus „Radio“. Kopfhörer-Ausgang für das Vorhören unter Einstellungen → Vorhören (PFL) einstellen, sonst bleibt „Vorhören“ grau.
+
+1. **Cart-Nummer ist die Taste:** In der Cart-Wall zeigt jedes Pad groß seine Nummer 1 bis 16. Die Tasten 1 bis 9 und 0 (für Cart 10) starten das Cart, nochmal drücken hält es an. Zwei oder drei Carts nacheinander starten: Sie laufen gleichzeitig.
+2. **Taste ändern:** Rechtsklick auf ein Pad, „Taste ändern …“, dann die neue Taste drücken (Esc bricht ab, Entf nimmt dem Cart die Taste). Die Taste steht jetzt klein in der Ecke des Pads. Carts 11 bis 16 haben anfangs keine Taste („–“ in der Ecke), dort selbst eine vergeben, etwa Q, W, E. Vergibst du eine schon benutzte Taste, verliert das andere Cart sie. M und Leertaste sind belegt und werden abgelehnt. Programm schließen und neu starten: Die Tasten sind noch da.
+3. **Cart schneiden:** Rechtsklick auf ein belegtes Pad, „Start und Ende schneiden …“. In der Wellenform Cue-In und Cue-Out setzen, „Übernehmen“. Cart starten: Es spielt nur das Stück dazwischen. „Vorhören ab …“ spielt im Kopfhörer, nie auf Sendung.
+4. **Vorhören:** Rechtsklick auf Cart oder Playlist-Titel, „Vorhören“: Es kommt nur im Kopfhörer an, der Sendepegel bewegt sich nicht.
+5. **Uhrzeit:** Im Sende-Deck steht über dem Countdown die Uhrzeit in großen Ziffern, sie läuft sekundengenau. Stimmt sie nicht mit deiner Uhr überein, unter Stundenuhr den Zeitversatz prüfen.
+6. **Jingle-Übergang:** Ein Jingle als Voice-Track zwischen zwei Titel legen (Rechtsklick auf den Titel davor, „Voice-Track danach einfügen …“, Jingle wählen), im Editor „Jingle-Übergang“ klicken, „Übernehmen“. Der Jingle beginnt genau mit dem nächsten Titel, der Titel startet leise darunter und wird nach dem Ende des Jingles in 1,5 Sekunden hochgefahren. Das Ende des Jingles und die Lautstärke darunter lassen sich im Editor ändern.
+
+Selbst geprüft von Claude (ohne Ton, offline durch den echten Mixer): Cart mit Cue-Punkten spielt genau die Länge dazwischen (ohne Schnitt 2,0 s, mit Schnitt 0,75 s); Tasten Standard, ändern, eindeutig, Speichern und Laden, alte Dateien; Uhrzeit mit Zeitzone und Mitternacht; Jingle-Übergang gemessen (Jingle zeitgenau mit Titel B, B darunter −20 dB, nach dem Jingle wieder volle Lautstärke, dazwischen ohne Sprung).
+
+Nicht selbst geprüft: das Aussehen von Pad-Ecke, Uhr und Schnitt-Fenster im Fenster (gebaut, nicht angeklickt, kein Bildschirm), das Drücken der Tasten am echten Gerät.
+
+**Offen (wartet auf Antwort des Moderators, nicht Teil dieses Pakets):** mehrere Haupt-Player auf getrennten Soundkarten-Ausgängen, Mischpult-Steuerung, Telefon-Kanal, Wunschtitel-Fach statt Spotify.
+
 ## Paket 38: Browser-Gast per WebRTC (lokal) (0.33.0, offen)
 
 Aus M9. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
