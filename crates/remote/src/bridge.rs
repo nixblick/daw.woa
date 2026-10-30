@@ -30,6 +30,9 @@ pub fn snapshot(layout: &PartyLayout, state: &PartyState) -> PartySnapshot {
             })
             .collect(),
         level_db: layout.level_db,
+        repeat: layout.repeat,
+        shuffle: layout.shuffle,
+        muted: layout.muted,
     }
 }
 

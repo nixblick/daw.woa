@@ -54,6 +54,10 @@ pub struct View {
     pub cue: usize,
     pub running: bool,
     pub remaining_title: f64,
+    /// Wiederholen: aus, Playlist, Titel.
+    pub repeat: crate::control::Repeat,
+    /// Zufällige Reihenfolge.
+    pub shuffle: bool,
     pub remaining_total: f64,
     pub crossfade_seconds: f64,
     pub duck_db: f64,
@@ -272,6 +276,8 @@ fn run(
             cue: c.cue_index(),
             running: c.is_running() && st.current.load(Ordering::Acquire) != NONE,
             remaining_title: c.remaining_title(),
+            repeat: c.repeat(),
+            shuffle: c.shuffle(),
             remaining_total: c.remaining_total(),
             crossfade_seconds: c.show().crossfade_seconds,
             duck_db: c.show().duck_db,

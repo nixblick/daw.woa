@@ -4,6 +4,24 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Transportknöpfe: Zurück, Spulen, Stumm, Wiederholen, Zufall (offen, #137)
+
+Wunsch von André bei der Abnahme von Party-Modus und Fernbedienung (30.10.2026): normale Knöpfe in der App und am Handy, dazu Wiederholen und Zufall wie bei Apple Music. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`, Modus „Party“, Playlist mit mindestens drei Titeln laden (Knopf „Ordner laden …“), Fernbedienung an, Handy per QR-Code als DJ anmelden („DJ-PIN zeigen“, Adresse mit der DJ-PIN öffnen). Zum Prüfen leise stellen oder Kopfhörer nehmen.
+
+Die Tasten stehen in drei Reihen, in der App und am Handy gleich: **Zurück · Play/Pause · Stopp · Weiter**, dann **Von vorn · −10 s · +10 s · Stumm**, dann **Leiser · Lauter · Zufall · Wiederholen**. Im Radio-Modus stehen neben „Stopp“ zusätzlich ⏮, ↺, −10 s, +10 s, Wiederholen und Zufall.
+
+1. **Play/Pause und Stopp:** In der App „Play“ drücken: Titel läuft, die Taste heißt jetzt „Pause“, am Handy auch. Am Handy „Stopp“: Musik blendet aus, in der App steht wieder „Play“. Es gibt keine Pause mit Merkstelle: Pause und Stopp blenden aus, „Play“ beginnt den Titel von vorn.
+2. **Weiter und Zurück:** „Weiter“ blendet zum nächsten Titel über. „Zurück“ blendet zum vorherigen Titel. Beim ersten Titel beginnt „Zurück“ den Titel von vorn. Tasten in der App: P oder Pfeil links für Zurück.
+3. **Von vorn, −10 s, +10 s:** Titel eine Weile laufen lassen, „+10 s“ springt zehn Sekunden vor (die Restzeit sinkt um 10, am Handy und in der App), „−10 s“ zurück. „Von vorn“ setzt den Titel auf den Anfang, ohne Überblendung. Am Ende des Titels hören die Sprünge an, sie springen nie über das Ende hinaus.
+4. **Stumm:** „Stumm“ drücken: Pegel ganz unten, die Taste ist orange in der App und am Handy. Nochmal: alter Pegel ist wieder da. „Lauter“ bei Stumm holt den alten Pegel und geht einen Schritt höher. Taste M in der App.
+5. **Wiederholen (ein Knopf, drei Zustände):** Jeder Klick schaltet weiter: aus → 🔁 Playlist → 🔂 Titel → aus. Ist es an, ist der Knopf orange, in der App und am Handy gleich, auch wenn du am Handy drückst. **Playlist:** Nach dem letzten Titel geht es mit dem ersten weiter. **Titel:** Der Titel beginnt am Ende von vorn; „Weiter“ springt trotzdem zum nächsten Titel (der wird dann wiederholt). Taste R in der App.
+6. **Zufall:** Eigener Knopf, orange, wenn an. Die Titel kommen in zufälliger Reihenfolge, jeder einmal, danach ist die Sendung zu Ende. Mit Wiederholen „Playlist“ geht es mit einer neuen Runde weiter. Taste S in der App.
+7. **Gast:** Mit der Gast-PIN am Handy erscheinen die Tasten nicht, ein Gast kann nur wünschen. Wiederholen, Zufall und Stumm gelten für die Sendung, nicht für den einzelnen Handy-Besucher. OSC: dieselben Namen unter `/woa/party/previous`, `/stop`, `/seek_back`, `/seek_forward`, `/restart`, `/mute`, `/repeat`, `/shuffle`, `/play`.
+
+Selbst geprüft von Claude (ohne Ton, offline durch den echten Mixer): Zurück, Weiter, Von vorn, Spulen ±10 s (Restzeit gemessen, Grenzen am Anfang und am Ende), Stumm mit altem Pegel, Wiederholen aus/Playlist/Titel je mit eigenem Test (Titel wechselt nicht, Playlist beginnt von vorn, aus beendet die Sendung), Weiter bei „Titel wiederholen“, Zufall (jeder Titel genau einmal, mit Wiederholen endlos), die Befehle durch dieselbe Prüfung wie bisher (Gast bekommt 403, Unbekanntes 400, Zusatzfelder ohne Wirkung) und der Weg Handy → Party-Schicht für alle 13 Befehle.
+
+Nicht selbst geprüft: das Aussehen der Tasten in der App und im Handy-Browser (gebaut und von Clippy geprüft, nicht angeklickt, kein Bildschirm), die Emoji-Symbole 🔁 🔂 🔀 in der App-Schrift (ein leeres Kästchen statt Symbol wäre ein Befund), und das Hören von Sprung, Überblendung und Stumm am echten Gerät. Wiederholen und Zufall sind bei jedem Programmstart aus.
+
 ## Silvester-Paket: Cart-Tasten, Schnitt, Uhrzeit, Jingle-Übergang (0.33.4, offen, #132)
 
 Wünsche des Moderators der Silvestersendung. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`, Modus „Radio“. Kopfhörer-Ausgang für das Vorhören unter Einstellungen → Vorhören (PFL) einstellen, sonst bleibt „Vorhören“ grau.

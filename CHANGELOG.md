@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.33.7 — 2026-10-30
+
+Transportknöpfe (#137), Abnahme: `docs/abnahme.md`.
+
+- **Normale Knöpfe in App und Fernbedienung:** Zurück, Play/Pause, Stopp, Weiter, Von vorn, 10 s zurück, 10 s vor, Stumm, Leiser, Lauter. Im Party-Modus in drei Reihen, am Handy (nur mit DJ-PIN) dieselben, im Radio-Modus neben „Stopp“. Alles läuft über eine Befehlsschicht (`PartyCommand` und `Effect` in `woa-radio`); die Tabelle der Befehlsnamen (`simple_command`) gilt für das Handy und für OSC (`/woa/party/<name>`). Neue Befehle sind in der Fernbedienung automatisch nur für den DJ, Anmeldung, Ratenbegrenzung und Eingabeprüfung sind unverändert.
+- **Wiederholen wie bei Apple Music:** Ein Knopf, jeder Klick schaltet weiter: aus, 🔁 Playlist, 🔂 Titel, aus. „Titel“ beginnt den Titel am Ende neu, „Weiter“ springt trotzdem zum nächsten. „Playlist“ beginnt nach dem letzten Titel von vorn. **Zufall** ist ein eigener Umschalter (jeder Titel einmal je Runde, mit „Playlist“ endlos). Ist eine Funktion an, ist der Knopf orange, in der App und am Handy gleich (Zustand im Schnappschuss: `repeat`, `shuffle`, `muted`).
+- **Mixer:** neues Kommando `Seek` (Sprung im laufenden Titel, begrenzt auf Cue-In bis Cue-Out) und ein Titelwechsel-Zähler im Status, damit auch derselbe Titel als neu begonnen erkannt wird. Tasten in der Party-Ansicht: P/Pfeil links, M, R, S.
+
 ## 0.33.6 — 2026-10-30
 
 - **Auto-Update per MSI** (André, für Tester unter Windows 10). Beim Start fragt WOA höchstens einmal am Tag bei GitHub nach dem neuesten **veröffentlichten** Release; ein Streifen zeigt „Update x.y.z verfügbar – Jetzt installieren“ mit den Neuerungen. Unter Windows lädt der Klick das MSI, prüft es, startet `msiexec /passive` und beendet die App (Projekt wird vorher gespeichert oder gefragt); das MSI startet die neue Version danach selbst (`RESTARTWOA=1`, `woa.wxs`). Linux und macOS zeigen nur den Link zur Release-Seite. Ausschalten: Einstellungen → „Beim Start nach Updates suchen“ (`auto_update` in `config.json`), sofort suchen im selben Menü. Netz nur in Hintergrund-Threads.

@@ -48,12 +48,32 @@ pub fn clean_title(raw: &str) -> Option<String> {
     (1..=MAX_TITLE_CHARS).contains(&n).then_some(t)
 }
 
-/// Befehle, die nur der DJ schicken darf.
+/// Die Befehle ohne Argument (Transport, Pegel, Modi) mit ihrem Namen auf dem Draht. Sie
+/// tragen dieselben Namen wie [`PartyCommand::name`], im Protokoll der Oberfläche und als
+/// OSC-Pfad (`/woa/party/<name>`): eine Tabelle für alle Wege hinein.
+pub fn simple_command(name: &str) -> Option<PartyCommand> {
+    Some(match name {
+        "play_pause" => PartyCommand::PlayPause,
+        "play" => PartyCommand::Play,
+        "stop" => PartyCommand::Stop,
+        "next" => PartyCommand::Next,
+        "previous" => PartyCommand::Previous,
+        "restart" => PartyCommand::Restart,
+        "seek_back" => PartyCommand::SeekBack,
+        "seek_forward" => PartyCommand::SeekForward,
+        "mute" => PartyCommand::Mute,
+        "repeat" => PartyCommand::CycleRepeat,
+        "shuffle" => PartyCommand::ToggleShuffle,
+        "volume_up" => PartyCommand::VolumeUp,
+        "volume_down" => PartyCommand::VolumeDown,
+        _ => return None,
+    })
+}
+
+/// Befehle, die nur der DJ schicken darf: alles außer dem Wünschen. Neue Befehle sind damit
+/// standardmäßig DJ-only.
 fn is_dj_only(cmd: &str) -> bool {
-    matches!(
-        cmd,
-        "play_pause" | "next" | "volume_up" | "volume_down" | "play_wish" | "drop_wish"
-    )
+    simple_command(cmd).is_some() || matches!(cmd, "play_wish" | "drop_wish")
 }
 
 /// Wertet eine Nachricht `{"cmd": …}` aus.
@@ -85,11 +105,10 @@ pub fn resolve(
             .map(|w| w.path.clone())
             .ok_or(CmdError::NotFound)
     };
+    if let Some(c) = simple_command(cmd) {
+        return Ok(c);
+    }
     match cmd {
-        "play_pause" => Ok(PartyCommand::PlayPause),
-        "next" => Ok(PartyCommand::Next),
-        "volume_up" => Ok(PartyCommand::VolumeUp),
-        "volume_down" => Ok(PartyCommand::VolumeDown),
         "play_wish" => Ok(PartyCommand::PlayWish(wish_path(
             id.ok_or(CmdError::Bad("id fehlt"))?,
         )?)),
@@ -140,10 +159,72 @@ mod tests {
         HashMap::from([(short_id(&item.path), item)])
     }
 
+    /// Jeder Befehl ohne Argument, den die Fernbedienung kennt, mit dem Befehl dahinter.
+    const ALL_SIMPLE: [&str; 13] = [
+        "play_pause",
+        "play",
+        "stop",
+        "next",
+        "previous",
+        "restart",
+        "seek_back",
+        "seek_forward",
+        "mute",
+        "repeat",
+        "shuffle",
+        "volume_up",
+        "volume_down",
+    ];
+
+    #[test]
+    fn every_transport_command_resolves_and_matches_its_name() {
+        let c = catalog();
+        for cmd in ALL_SIMPLE {
+            let body = format!(r#"{{"cmd":"{cmd}"}}"#);
+            let got = resolve(Role::Dj, &body, &c, &[]).unwrap_or_else(|e| panic!("{cmd}: {e:?}"));
+            // Der Name auf dem Draht ist der Name im Protokoll der Oberfläche.
+            let logged = got.name();
+            let expected = if cmd == "repeat" { "repeat" } else { cmd };
+            assert_eq!(logged, expected);
+        }
+    }
+
+    #[test]
+    fn transport_commands_ignore_extra_fields_and_stay_dj_only() {
+        let c = catalog();
+        // Zusatzfelder ändern nichts; Gäste bleiben ausgesperrt, auch mit Tricks.
+        for body in [
+            r#"{"cmd":"previous","id":"x","title":"y"}"#,
+            r#"{"cmd":"seek_forward","seconds":9999}"#,
+            r#"{"cmd":"mute","role":"dj"}"#,
+        ] {
+            assert_eq!(
+                resolve(Role::Guest, body, &c, &[]),
+                Err(CmdError::Forbidden)
+            );
+            assert!(resolve(Role::Dj, body, &c, &[]).is_ok());
+        }
+        // Falsche Schreibweise und Nachbarn sind unbekannt, nicht „fast“ erlaubt.
+        for cmd in [
+            "Previous",
+            "prev",
+            "seek",
+            "seek_forward ",
+            "repeat_all",
+            "PLAY",
+        ] {
+            let body = format!(r#"{{"cmd":"{cmd}"}}"#);
+            assert!(
+                matches!(resolve(Role::Dj, &body, &c, &[]), Err(CmdError::Bad(_))),
+                "{cmd}"
+            );
+        }
+    }
+
     #[test]
     fn guest_may_only_wish() {
         let c = catalog();
-        for cmd in ["play_pause", "next", "volume_up", "volume_down"] {
+        for cmd in ALL_SIMPLE {
             let body = format!(r#"{{"cmd":"{cmd}"}}"#);
             assert_eq!(
                 resolve(Role::Guest, &body, &c, &[]),

@@ -175,3 +175,276 @@ fn next_button_crossfades_and_wish_is_played_after_the_current_title() {
         ]
     );
 }
+
+// ---- Transportknöpfe (#137) -------------------------------------------------------------
+
+use woa_radio::control::Repeat;
+
+/// Wie `RadioDesk::party_effect` in der App: der Effekt eines Befehls auf den Controller.
+fn press(c: &mut Controller, state: &mut PartyState, cmd: PartyCommand) {
+    for e in state.apply(cmd, c.is_running()) {
+        match e {
+            Effect::StartOrNext => c.start_or_next(),
+            Effect::Stop => c.stop(),
+            Effect::Previous => c.previous(),
+            Effect::Restart => c.restart(),
+            Effect::Seek(s) => c.seek(s),
+            Effect::CycleRepeat => c.cycle_repeat(),
+            Effect::ToggleShuffle => c.toggle_shuffle(),
+            other => panic!("unerwartet: {other:?}"),
+        }
+    }
+}
+
+fn secs(s: f64) -> usize {
+    (s * f64::from(SR)) as usize / BLOCK
+}
+
+/// `n` Titel zu je `len` Sekunden, ohne Überblendung.
+fn tracks(tmp: &Path, n: usize, len: f64) -> (Controller, Mixer) {
+    let paths: Vec<PathBuf> = (0..n)
+        .map(|i| {
+            let p = tmp.join(format!("T{i} - Titel.wav"));
+            write_tone(&p, len);
+            p
+        })
+        .collect();
+    let (mut c, m) = Controller::new(show_of(&paths, 0.0), SR);
+    c.measure_missing();
+    (c, m)
+}
+
+#[test]
+fn repeat_button_cycles_off_all_one_off() {
+    let mut s = PartyState::default();
+    let mut r = Repeat::Off;
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, _m) = tracks(tmp.path(), 1, 1.0);
+    for want in [Repeat::All, Repeat::One, Repeat::Off, Repeat::All] {
+        press(&mut c, &mut s, PartyCommand::CycleRepeat);
+        r = r.cycled();
+        assert_eq!(r, want);
+        assert_eq!(c.repeat(), want);
+    }
+    assert_eq!(Repeat::All.name(), "all");
+    assert_eq!(Repeat::One.name(), "one");
+}
+
+#[test]
+fn repeat_off_ends_the_show_after_the_last_title() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = tracks(tmp.path(), 2, 1.0);
+    c.start();
+    step(&mut c, &mut m, secs(2.6));
+    assert_eq!(c.current_index(), None);
+    assert!(!c.is_running());
+}
+
+#[test]
+fn repeat_one_restarts_the_same_title_at_the_end() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = tracks(tmp.path(), 2, 1.0);
+    let mut s = PartyState::default();
+    press(&mut c, &mut s, PartyCommand::CycleRepeat);
+    press(&mut c, &mut s, PartyCommand::CycleRepeat);
+    assert_eq!(c.repeat(), Repeat::One);
+    c.start();
+    let plays0 = c.status().plays.load(std::sync::atomic::Ordering::Acquire);
+    step(&mut c, &mut m, secs(3.5));
+    assert_eq!(c.current_index(), Some(0), "bleibt beim ersten Titel");
+    let plays = c.status().plays.load(std::sync::atomic::Ordering::Acquire);
+    assert!(plays >= plays0 + 3, "{plays0} -> {plays}");
+}
+
+#[test]
+fn next_still_jumps_to_the_next_title_in_repeat_one() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = tracks(tmp.path(), 3, 5.0);
+    let mut s = PartyState::default();
+    c.set_repeat(Repeat::One);
+    c.start();
+    step(&mut c, &mut m, secs(0.5));
+    assert_eq!(c.current_index(), Some(0));
+    press(&mut c, &mut s, PartyCommand::Next);
+    step(&mut c, &mut m, secs(0.5));
+    assert_eq!(
+        c.current_index(),
+        Some(1),
+        "Weiter springt trotz Wiederholen"
+    );
+    // Und der neue Titel wird wieder wiederholt, nicht der übernächste.
+    step(&mut c, &mut m, secs(5.5));
+    assert_eq!(c.current_index(), Some(1));
+}
+
+#[test]
+fn repeat_all_starts_over_after_the_last_title() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = tracks(tmp.path(), 2, 1.0);
+    c.set_repeat(Repeat::All);
+    c.start();
+    let mut seen = Vec::new();
+    for _ in 0..secs(4.6) {
+        step(&mut c, &mut m, 1);
+        let cur = c.current_index();
+        if cur.is_some() && seen.last() != Some(&cur) {
+            seen.push(cur);
+        }
+    }
+    assert_eq!(
+        &seen[..5],
+        &[Some(0), Some(1), Some(0), Some(1), Some(0)],
+        "{seen:?}"
+    );
+    assert!(c.is_running());
+}
+
+#[test]
+fn shuffle_plays_every_title_once_in_some_order() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = tracks(tmp.path(), 5, 0.5);
+    let mut s = PartyState::default();
+    press(&mut c, &mut s, PartyCommand::ToggleShuffle);
+    assert!(c.shuffle());
+    c.start();
+    let mut seen = Vec::new();
+    for _ in 0..secs(4.0) {
+        step(&mut c, &mut m, 1);
+        let cur = c.current_index();
+        if cur.is_some() && seen.last() != Some(&cur) {
+            seen.push(cur);
+        }
+    }
+    let mut sorted: Vec<_> = seen.iter().flatten().copied().collect();
+    sorted.sort_unstable();
+    assert_eq!(sorted, vec![0, 1, 2, 3, 4], "jeder genau einmal: {seen:?}");
+    assert!(!c.is_running(), "ohne Wiederholen endet die Runde");
+    press(&mut c, &mut s, PartyCommand::ToggleShuffle);
+    assert!(!c.shuffle());
+}
+
+#[test]
+fn shuffle_with_repeat_all_keeps_going() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = tracks(tmp.path(), 3, 0.5);
+    c.set_shuffle(true);
+    c.set_repeat(Repeat::All);
+    c.start();
+    step(&mut c, &mut m, secs(5.0));
+    assert!(c.is_running() && c.current_index().is_some());
+}
+
+#[test]
+fn previous_goes_back_and_restarts_at_the_first_title() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = tracks(tmp.path(), 3, 5.0);
+    let mut s = PartyState::default();
+    c.set_cue(2);
+    c.start();
+    step(&mut c, &mut m, secs(0.5));
+    assert_eq!(c.current_index(), Some(2));
+    press(&mut c, &mut s, PartyCommand::Previous);
+    step(&mut c, &mut m, secs(0.5));
+    assert_eq!(c.current_index(), Some(1));
+    press(&mut c, &mut s, PartyCommand::Previous);
+    step(&mut c, &mut m, secs(0.5));
+    assert_eq!(c.current_index(), Some(0));
+    // Vor dem ersten Titel gibt es keinen: er beginnt neu.
+    step(&mut c, &mut m, secs(2.0));
+    let before = c.remaining_title();
+    press(&mut c, &mut s, PartyCommand::Previous);
+    step(&mut c, &mut m, secs(0.5));
+    assert_eq!(c.current_index(), Some(0));
+    assert!(c.remaining_title() > before + 1.0);
+}
+
+#[test]
+fn restart_jumps_to_the_start_of_the_title() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = tracks(tmp.path(), 1, 20.0);
+    let mut s = PartyState::default();
+    c.start();
+    step(&mut c, &mut m, secs(8.0));
+    assert!(c.remaining_title() < 12.5);
+    press(&mut c, &mut s, PartyCommand::Restart);
+    step(&mut c, &mut m, 2);
+    assert!(c.remaining_title() > 19.0, "{}", c.remaining_title());
+    assert_eq!(c.current_index(), Some(0));
+}
+
+#[test]
+fn seek_buttons_jump_ten_seconds_and_stay_inside_the_title() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = tracks(tmp.path(), 1, 60.0);
+    let mut s = PartyState::default();
+    c.start();
+    step(&mut c, &mut m, secs(1.0));
+    let r0 = c.remaining_title();
+    press(&mut c, &mut s, PartyCommand::SeekForward);
+    step(&mut c, &mut m, 1);
+    let r1 = c.remaining_title();
+    assert!((r0 - r1 - 10.0).abs() < 0.2, "{r0} -> {r1}");
+    press(&mut c, &mut s, PartyCommand::SeekBack);
+    step(&mut c, &mut m, 1);
+    assert!((c.remaining_title() - r0).abs() < 0.2);
+    // Zu weit zurück: Anfang des Titels. Zu weit vor: kurz vor das Ende, nicht darüber.
+    c.seek(-1000.0);
+    step(&mut c, &mut m, 1);
+    assert!(c.remaining_title() > 59.5);
+    c.seek(1000.0);
+    step(&mut c, &mut m, 1);
+    assert!(c.current_index().is_none() || c.remaining_title() < 0.5);
+    // Ohne laufenden Titel passiert nichts.
+    step(&mut c, &mut m, secs(1.0));
+    c.seek(10.0);
+}
+
+#[test]
+fn mute_remembers_the_old_level_and_volume_unmutes() {
+    let mut s = PartyState::default();
+    s.level_db = -4.0;
+    assert_eq!(
+        s.apply(PartyCommand::Mute, true),
+        vec![Effect::MusicLevel(woa_radio::mixer::LEVEL_MIN_DB)]
+    );
+    assert!(s.muted());
+    assert_eq!(
+        s.apply(PartyCommand::Mute, true),
+        vec![Effect::MusicLevel(-4.0)]
+    );
+    assert!(!s.muted());
+    // Lauter bei Stumm: zurück auf den alten Pegel plus Schritt.
+    s.apply(PartyCommand::Mute, true);
+    assert_eq!(
+        s.apply(PartyCommand::VolumeUp, true),
+        vec![Effect::MusicLevel(-2.0)]
+    );
+    assert!(!s.muted());
+}
+
+#[test]
+fn play_and_stop_buttons_are_idempotent() {
+    let mut s = PartyState::default();
+    assert_eq!(
+        s.apply(PartyCommand::Play, false),
+        vec![Effect::StartOrNext]
+    );
+    assert!(s.apply(PartyCommand::Play, true).is_empty());
+    assert_eq!(s.apply(PartyCommand::Stop, true), vec![Effect::Stop]);
+    assert!(s.apply(PartyCommand::Stop, false).is_empty());
+}
+
+#[test]
+fn layout_shows_the_active_modes() {
+    let mut view = View::default();
+    let state = PartyState::default();
+    let t = layout(&view, &state).to_text();
+    assert!(t.contains("🔁 Aus |") || t.contains("🔁 Aus\n"), "{t}");
+    view.repeat = Repeat::One;
+    view.shuffle = true;
+    let l = layout(&view, &state);
+    let t = l.to_text();
+    assert!(t.contains("🔂 Titel*") && t.contains("🔀 Zufall*"), "{t}");
+    view.repeat = Repeat::All;
+    assert!(layout(&view, &state).to_text().contains("🔁 Playlist*"));
+}

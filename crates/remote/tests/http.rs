@@ -141,6 +141,9 @@ fn snap(title: &str, remaining: &str) -> PartySnapshot {
         next: Some("Nächster".into()),
         wishes: vec![],
         level_db: 0.0,
+        repeat: Default::default(),
+        shuffle: false,
+        muted: false,
     }
 }
 
