@@ -1,5 +1,9 @@
 target/
 
+# Linux-Pakete (Paket 39): entstehen im Bau
+/dist/
+/packaging/linux/flatpak/cargo-sources.json
+
 # Lokale Projekte, Mitschnitte und Logs, nie ins Repo
 *.woa/
 /logs/

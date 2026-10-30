@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=WOA - Wir on Air
+GenericName=Radio DAW
+GenericName[de]=Radio-DAW
+Comment=Digital audio workstation with radio studio and party player
+Comment[de]=Digitale Audio-Workstation mit Radio-Studio und Party-Player
+Exec=woa
+Icon=de.wironair.woa
+Terminal=false
+Categories=AudioVideo;Audio;Midi;Mixer;Recorder;
+Keywords=DAW;radio;audio;recording;mixer;podcast;
+StartupWMClass=WOA

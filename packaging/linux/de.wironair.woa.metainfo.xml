@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- @VERSION@ und @DATE@ setzt packaging/linux/render-metainfo.sh aus Cargo.toml und CHANGELOG.md. -->
+<component type="desktop-application">
+  <id>de.wironair.woa</id>
+  <name>WOA - Wir on Air</name>
+  <summary>Radio DAW with studio, party player and agent control</summary>
+  <summary xml:lang="de">Radio-DAW mit Studio, Party-Player und Agentensteuerung</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <developer id="de.creavisions">
+    <name>creaVisions</name>
+  </developer>
+  <description>
+    <p>WOA is a digital audio workstation written in Rust with a built-in radio studio and a party player. Three modes (producer, radio, party) share one engine; people and AI agents can operate it side by side.</p>
+    <p xml:lang="de">WOA ist eine Digital Audio Workstation in Rust mit eingebautem Radio-Studio und Party-Player. Drei Modi (Produzent, Radio, Party) laufen auf einer Engine; Mensch und KI-Agent bedienen sie gleichberechtigt.</p>
+  </description>
+  <launchable type="desktop-id">de.wironair.woa.desktop</launchable>
+  <url type="homepage">https://github.com/nixblick/daw.woa</url>
+  <url type="bugtracker">https://github.com/nixblick/daw.woa/issues</url>
+  <provides>
+    <binary>woa</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+</component>
