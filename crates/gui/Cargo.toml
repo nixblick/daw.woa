@@ -18,6 +18,7 @@ tracing = "0.1.44"
 woa-dsp = { version = "0.18", path = "../dsp" }
 woa-io = { version = "0.18", path = "../io" }
 woa-engine = { version = "0.18", path = "../engine", features = ["device"] }
+woa-library = { version = "0.18", path = "../library" }
 woa-model = { version = "0.18", path = "../model" }
 woa-radio = { version = "0.18", path = "../radio" }
 woa-stream = { version = "0.18", path = "../stream" }
@@ -27,3 +28,4 @@ woa-telemetry = { version = "0.18", path = "../telemetry" }
 assert_no_alloc = "1.1.2"
 midir = "0.11.1"
 tempfile = "3.27.0"
+hound = "3.5.1"

@@ -10,6 +10,7 @@ pub mod controls;
 pub mod covers;
 pub mod cue_editor;
 pub mod feedback;
+pub mod library;
 pub mod pianoroll;
 pub mod player;
 pub mod radio;

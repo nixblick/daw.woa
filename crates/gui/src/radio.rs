@@ -68,6 +68,9 @@ pub struct RadioDesk {
     levels_db: [f64; 3],
     /// „MIDI lernen“ per Rechtsklick gewählt; die App holt es ab.
     pub learn: Option<Target>,
+    /// Fläche der Playlist und der Cart-Pads im letzten Bild (Ziel für Ziehen aus der Bibliothek).
+    playlist_rect: egui::Rect,
+    cart_rects: Vec<egui::Rect>,
     /// Offener Cue-Editor (Paket 15).
     cue_editor: Option<CueEditor>,
     /// Zuletzt in den Editor übernommene Cue-Punkte je Titel (erkennt Undo/Redo).
@@ -290,6 +293,8 @@ impl RadioDesk {
             device,
             levels_db: [0.0; 3],
             learn: None,
+            playlist_rect: egui::Rect::NOTHING,
+            cart_rects: Vec::new(),
             cue_editor: None,
             cue_seen: std::collections::HashMap::new(),
             _pfl_output: pfl_output,
@@ -655,9 +660,12 @@ impl RadioDesk {
             theme::card_frame().show(&mut cols[0], |ui| {
                 self.clock_and_controls(ui, &v);
             });
-            theme::card_frame().show(&mut cols[0], |ui| {
-                self.playlist(ui, &v);
-            });
+            self.playlist_rect = theme::card_frame()
+                .show(&mut cols[0], |ui| {
+                    self.playlist(ui, &v);
+                })
+                .response
+                .rect;
             theme::card_frame().show(&mut cols[1], |ui| {
                 self.cart_wall(ui, &v);
             });
@@ -1440,6 +1448,10 @@ impl RadioDesk {
                         .stroke(stroke)
                         .min_size(egui::vec2(w, 68.0));
                     let r = ui.add(b);
+                    if self.cart_rects.len() <= slot {
+                        self.cart_rects.resize(slot + 1, egui::Rect::NOTHING);
+                    }
+                    self.cart_rects[slot] = r.rect;
 
                     // Hardware-Pad-Optik: LED oben rechts + Farb-Streifen unten
                     let pad_rect = r.rect;
@@ -1607,6 +1619,44 @@ impl RadioDesk {
             ed.draft = e.cues;
             self.cue_seen.insert(ed.index, e.cues);
         }
+    }
+
+    /// Ob das Vorhören (PFL) einen Ausgang hat.
+    pub fn pfl_available(&self) -> bool {
+        self.view.pfl_available
+    }
+
+    /// Hört eine Datei der Bibliothek im Kopfhörer vor (nie auf Sendung, derselbe PFL-Weg).
+    pub fn preview_file(&self, path: PathBuf) {
+        self.with(move |c| {
+            if let Err(e) = c.pfl_file(&path) {
+                c.report(e);
+            }
+        });
+    }
+
+    pub fn preview_stop(&self) {
+        self.with(Controller::pfl_stop);
+    }
+
+    /// Eine aus der Bibliothek gezogene Datei bei `pos` ablegen: auf einem Cart-Pad wird sie
+    /// dem Pad zugewiesen, auf der Playlist hinten angehängt. Gibt zurück, ob etwas geschah.
+    pub fn drop_library_path(&mut self, path: PathBuf, pos: egui::Pos2) -> bool {
+        if let Some(slot) = self.cart_rects.iter().position(|r| r.contains(pos)) {
+            self.with(move |c| {
+                if let Err(e) = c.assign_cart(slot, Some(path)) {
+                    c.report(e);
+                }
+            });
+            return true;
+        }
+        if self.playlist_rect.contains(pos)
+            && let Some(s) = &self.station
+        {
+            s.add_files(vec![path]);
+            return true;
+        }
+        false
     }
 
     fn assign_cart(&self, slot: usize) {

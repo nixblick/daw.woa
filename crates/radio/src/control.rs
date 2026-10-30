@@ -780,6 +780,11 @@ impl Controller {
         self.pfl_play(&path, from)
     }
 
+    /// Hört eine Datei (z. B. aus der Bibliothek) im Kopfhörer vor, von Anfang an.
+    pub fn pfl_file(&mut self, path: &Path) -> Result<(), String> {
+        self.pfl_play(path, 0.0)
+    }
+
     /// Hört Cart `slot` vor.
     pub fn pfl_cart(&mut self, slot: usize) -> Result<(), String> {
         let path = match self.show.carts.get(slot) {

@@ -167,6 +167,8 @@ pub struct WoaApp {
     photo: Option<(PathBuf, u32)>,
     /// Datenordner (radio.json, Mitschnitte).
     data_dir: PathBuf,
+    /// Bibliotheks-Fenster (Paket 24).
+    library: crate::library::LibraryWindow,
     /// Sendeablauf; läuft weiter, auch wenn das Produzent-Layout zu sehen ist.
     radio: Option<RadioDesk>,
     /// MIDI-Eingang (Paket 11), spielt das Instrument der scharfen MIDI-Spur.
@@ -475,6 +477,9 @@ impl WoaApp {
             analysis_buf: (Vec::new(), Vec::new()),
             last_title: String::new(),
             data_dir: woa_radio::data_dir(),
+            library: crate::library::LibraryWindow::new(
+                woa_radio::data_dir().join(crate::library::DB_FILE),
+            ),
             radio: None,
             frames: (0, Instant::now()),
         }
@@ -502,6 +507,7 @@ impl WoaApp {
 
     /// Sets the data folder (radio.json, recordings). Default: the WOA data folder.
     pub fn set_data_dir(&mut self, dir: PathBuf) {
+        self.library.set_db_path(dir.join(crate::library::DB_FILE));
         self.data_dir = dir;
     }
 
@@ -1981,6 +1987,15 @@ impl WoaApp {
                     self.set_telemetry(on);
                 }
             });
+            if ui
+                .selectable_label(self.library.open, "Bibliothek")
+                .on_hover_text(
+                    "Musik, Samples und Jingles suchen, taggen, vorhören und hineinziehen",
+                )
+                .clicked()
+            {
+                self.library.open = !self.library.open;
+            }
             if ui.button("Feedback …").clicked() {
                 self.feedback.open();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
@@ -3932,7 +3947,48 @@ impl WoaApp {
         if files.is_empty() {
             return;
         }
-        let pos = ctx.pointer_latest_pos();
+        self.place_audio(&files, ctx.pointer_latest_pos());
+    }
+
+    /// Das Bibliotheks-Fenster zeichnen und seine Wünsche ausführen: Vorhören im Kopfhörer
+    /// (derselbe PFL-Weg wie im Radio, nie auf Sendung) und Ablegen gezogener Titel.
+    fn library_window(&mut self, ctx: &egui::Context) {
+        let pfl = self.radio.as_ref().is_some_and(RadioDesk::pfl_available);
+        let out = self.library.show(ctx, pfl);
+        if let Some(path) = out.preview {
+            match self.radio.as_ref() {
+                Some(r) => r.preview_file(path),
+                None => {
+                    self.state.status = Status::Error(
+                        "Vorhören braucht den Radio-Modus mit Kopfhörer-Ausgang (Einstellungen → Vorhören)".into(),
+                    );
+                }
+            }
+        }
+        if out.stop_preview
+            && let Some(r) = self.radio.as_ref()
+        {
+            r.preview_stop();
+        }
+        if let Some((path, pos)) = out.drop {
+            if self.config.mode == Mode::Radio {
+                let done = self
+                    .radio
+                    .as_mut()
+                    .is_some_and(|r| r.drop_library_path(path, pos));
+                if !done {
+                    self.state.status = Status::Info(
+                        "Zum Ablegen auf die Playlist oder ein Cart-Pad ziehen".into(),
+                    );
+                }
+            } else {
+                self.place_audio(&[path], Some(pos));
+            }
+        }
+    }
+
+    /// Legt Audiodateien als Clips ab (Ziehen aufs Fenster oder aus der Bibliothek).
+    fn place_audio(&mut self, files: &[PathBuf], pos: Option<egui::Pos2>) {
         let hit = pos.and_then(|p| self.track_rects.iter().find(|(_, r)| r.contains(p)));
         let (track, at) = match (pos, hit) {
             (Some(p), Some((t, r))) => (
@@ -4283,6 +4339,7 @@ impl eframe::App for WoaApp {
                 )
                 .show(ui, |ui| radio.ui(ui));
             radio.cue_window(&ctx);
+            self.library_window(&ctx);
             self.controller_window(&ctx);
             self.feedback_window(&ctx);
             self.telemetry_window(&ctx);
@@ -4345,6 +4402,7 @@ impl eframe::App for WoaApp {
             .show(ui, |ui| self.tracks(ui));
         self.piano_roll_window(&ctx);
         self.analysis_window(&ctx);
+        self.library_window(&ctx);
         self.controller_window(&ctx);
         self.feedback_window(&ctx);
         self.telemetry_window(&ctx);
