@@ -534,8 +534,8 @@ impl Inner {
             };
             match p.start_processing() {
                 Ok(s) => self.proc = Proc::Started(s),
-                Err(e) => {
-                    tracing::error!(error = %e, "plugin start_processing failed");
+                Err(_) => {
+                    // Kein Log im Audio-Thread: der Aufrufer setzt `failed`, der Control-Thread meldet es.
                     return false;
                 }
             }
