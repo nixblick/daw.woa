@@ -3966,40 +3966,140 @@ impl WoaApp {
         if matches!(self.feedback.phase, Phase::Closed | Phase::Capturing) {
             return;
         }
+        let now = Instant::now();
+        self.feedback.tick(now);
+        if let Some(left) = self.feedback.thanks_left(now) {
+            ctx.request_repaint_after(left.min(std::time::Duration::from_millis(100)));
+        }
         let mut close = false;
+        // Dim the app behind the dialog so it reads as modal.
+        egui::Area::new(egui::Id::new("feedback-scrim"))
+            .order(egui::Order::Middle)
+            .fixed_pos(egui::Pos2::ZERO)
+            .interactable(true)
+            .show(ctx, |ui| {
+                let screen = ctx.content_rect();
+                ui.painter()
+                    .rect_filled(screen, 0.0, egui::Color32::from_black_alpha(140));
+                ui.allocate_rect(screen, egui::Sense::click());
+            });
         egui::Window::new("Feedback")
+            .title_bar(false)
             .collapsible(false)
-            .show(ctx, |ui| match self.feedback.phase.clone() {
-                Phase::Editing => {
-                    ui.label("Was ist passiert, was wünschst du dir?");
-                    ui.add(egui::TextEdit::multiline(&mut self.feedback.text).desired_rows(6));
-                    let has = self.feedback.screenshot.is_some();
-                    ui.add_enabled(
-                        has,
-                        egui::Checkbox::new(&mut self.feedback.attach, "Screenshot anhängen"),
-                    );
-                    ui.horizontal(|ui| {
-                        if ui.button("Senden").clicked() {
-                            self.feedback.send(&self.config);
-                        }
-                        if ui.button("Abbrechen").clicked() {
-                            close = true;
-                        }
-                    });
-                }
-                Phase::Sending => {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label("Wird gesendet …");
-                    });
-                }
-                Phase::Done(msg) => {
-                    ui.label(msg);
-                    if ui.button("Schließen").clicked() {
-                        close = true;
+            .resizable(false)
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .fixed_size(egui::vec2(420.0, 0.0))
+            .frame(
+                theme::card_frame()
+                    .inner_margin(egui::Margin::same(20))
+                    .shadow(egui::epaint::Shadow {
+                        offset: [0, 8],
+                        blur: 28,
+                        spread: 0,
+                        color: egui::Color32::from_black_alpha(160),
+                    }),
+            )
+            .show(ctx, |ui| {
+                ui.label(
+                    egui::RichText::new("Feedback")
+                        .size(20.0)
+                        .strong()
+                        .color(theme::TEXT_BRIGHT),
+                );
+                ui.add_space(4.0);
+                match self.feedback.phase.clone() {
+                    Phase::Editing => {
+                        ui.label(
+                            egui::RichText::new("Was ist passiert, was wünschst du dir?")
+                                .color(theme::DIM),
+                        );
+                        ui.add_space(10.0);
+                        ui.add(
+                            egui::TextEdit::multiline(&mut self.feedback.text)
+                                .desired_rows(6)
+                                .desired_width(f32::INFINITY)
+                                .hint_text("Schreib einfach los …"),
+                        );
+                        ui.add_space(6.0);
+                        let has = self.feedback.screenshot.is_some();
+                        ui.add_enabled(
+                            has,
+                            egui::Checkbox::new(&mut self.feedback.attach, "Screenshot anhängen"),
+                        );
+                        ui.add_space(12.0);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let send = egui::Button::new(
+                                egui::RichText::new("Senden").strong().color(theme::WELL),
+                            )
+                            .fill(theme::ACCENT)
+                            .min_size(egui::vec2(96.0, 30.0));
+                            if ui.add(send).clicked() {
+                                self.feedback.send(&self.config);
+                            }
+                            let cancel =
+                                egui::Button::new("Abbrechen").min_size(egui::vec2(96.0, 30.0));
+                            if ui.add(cancel).clicked() {
+                                close = true;
+                            }
+                        });
                     }
+                    Phase::Sending => {
+                        ui.add_space(16.0);
+                        ui.vertical_centered(|ui| {
+                            ui.spinner();
+                            ui.label(egui::RichText::new("Wird gesendet …").color(theme::DIM));
+                        });
+                        ui.add_space(16.0);
+                    }
+                    Phase::Done(msg) if self.feedback.is_thanks() => {
+                        ui.add_space(12.0);
+                        ui.vertical_centered(|ui| {
+                            ui.label(egui::RichText::new("✔").size(40.0).color(theme::OK_GREEN));
+                            ui.add_space(6.0);
+                            ui.label(
+                                egui::RichText::new(msg)
+                                    .size(16.0)
+                                    .strong()
+                                    .color(theme::TEXT_BRIGHT),
+                            );
+                            ui.label(
+                                egui::RichText::new("Das Fenster schließt sich gleich.")
+                                    .small()
+                                    .color(theme::DIM),
+                            );
+                        });
+                        // Thin bar that runs out with the countdown.
+                        let left = self.feedback.thanks_left(now).unwrap_or_default();
+                        let frac =
+                            left.as_secs_f32() / crate::feedback::THANKS_VISIBLE.as_secs_f32();
+                        ui.add_space(10.0);
+                        let (r, _) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), 3.0),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().rect_filled(r, 1.5, theme::WELL);
+                        let mut bar = r;
+                        bar.set_width(r.width() * frac.clamp(0.0, 1.0));
+                        ui.painter().rect_filled(bar, 1.5, theme::OK_GREEN);
+                    }
+                    Phase::Done(msg) => {
+                        ui.add_space(8.0);
+                        ui.label(egui::RichText::new(msg).color(theme::ON_AIR));
+                        ui.add_space(12.0);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .add(
+                                    egui::Button::new("Schließen").min_size(egui::vec2(96.0, 30.0)),
+                                )
+                                .clicked()
+                            {
+                                close = true;
+                            }
+                        });
+                    }
+                    Phase::Closed | Phase::Capturing => {}
                 }
-                Phase::Closed | Phase::Capturing => {}
             });
         if close {
             self.feedback.close();

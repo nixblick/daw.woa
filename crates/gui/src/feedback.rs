@@ -2,6 +2,7 @@
 
 use std::path::Path;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use woa_telemetry::{
@@ -162,6 +163,9 @@ impl GuiConfig {
     }
 }
 
+/// How long the thank-you after a successful send stays before the dialog closes itself.
+pub const THANKS_VISIBLE: Duration = Duration::from_secs(3);
+
 /// Where the dialog is.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Phase {
@@ -188,6 +192,8 @@ pub struct FeedbackDialog {
     /// Captured PNG, if any.
     pub screenshot: Option<Vec<u8>>,
     pending: Option<Receiver<Result<Option<u64>, FeedbackError>>>,
+    /// Set when the send succeeded; the dialog closes [`THANKS_VISIBLE`] later.
+    thanks_since: Option<Instant>,
 }
 
 impl Default for FeedbackDialog {
@@ -198,6 +204,7 @@ impl Default for FeedbackDialog {
             attach: true,
             screenshot: None,
             pending: None,
+            thanks_since: None,
         }
     }
 }
@@ -273,6 +280,9 @@ impl FeedbackDialog {
             Err(TryRecvError::Disconnected) => Err(FeedbackError::Transport("abgebrochen".into())),
         };
         self.pending = None;
+        if result.is_ok() {
+            self.thanks_since = Some(Instant::now());
+        }
         self.phase = Phase::Done(match result {
             Ok(Some(n)) => format!("Danke! Gemeldet als #{n}"),
             Ok(None) => "Danke! Gemeldet".into(),
@@ -282,6 +292,26 @@ impl FeedbackDialog {
                 format!("Senden fehlgeschlagen: {e}")
             }
         });
+    }
+}
+
+impl FeedbackDialog {
+    /// True after a successful send (the message is a thank-you, not an error).
+    pub fn is_thanks(&self) -> bool {
+        self.thanks_since.is_some()
+    }
+
+    /// Time left until the thank-you closes itself, `None` if nothing is pending.
+    pub fn thanks_left(&self, now: Instant) -> Option<Duration> {
+        self.thanks_since
+            .map(|t| THANKS_VISIBLE.saturating_sub(now.saturating_duration_since(t)))
+    }
+
+    /// Closes the dialog once the thank-you has been visible long enough; call every frame.
+    pub fn tick(&mut self, now: Instant) {
+        if self.thanks_left(now) == Some(Duration::ZERO) {
+            self.close();
+        }
     }
 }
 
@@ -301,6 +331,27 @@ pub fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, png::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thanks_close_after_three_seconds_errors_stay() {
+        let t0 = Instant::now();
+        let mut d = FeedbackDialog {
+            phase: Phase::Done("Danke! Gemeldet".into()),
+            thanks_since: Some(t0),
+            ..Default::default()
+        };
+        d.tick(t0 + Duration::from_millis(2900));
+        assert!(matches!(d.phase, Phase::Done(_)));
+        d.tick(t0 + THANKS_VISIBLE);
+        assert_eq!(d.phase, Phase::Closed);
+        // An error never closes by itself.
+        let mut e = FeedbackDialog {
+            phase: Phase::Done("Senden fehlgeschlagen: x".into()),
+            ..Default::default()
+        };
+        e.tick(t0 + Duration::from_secs(60));
+        assert!(matches!(e.phase, Phase::Done(_)));
+    }
 
     #[test]
     fn empty_url_reports_not_configured_without_request() {
