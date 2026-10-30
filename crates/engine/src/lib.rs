@@ -37,6 +37,7 @@ pub mod live_peaks;
 pub mod localtime;
 pub mod loudness;
 pub mod midi_clip;
+pub mod pairs;
 pub mod plugin_node;
 pub mod project;
 #[cfg(feature = "device")]

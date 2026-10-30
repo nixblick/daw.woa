@@ -25,6 +25,22 @@ Nicht selbst geprüft: Start der Oberfläche aus dem Paket (die CI hat keinen Bi
 - Die App-Kennung `de.wironair.woa` setzt voraus, dass die Domain wironair.de dir gehört.
 - CLAP-Plugins des Rechners sieht ein Flatpak nicht; dafür bräuchte es eine Erweiterung oder das AppImage.
 
+## Silvester Teil 2, Paket 1: Ausgänge je Soundkarte (0.33.6, offen, #134)
+
+Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`, Modus „Radio“. Möglichst beide Soundkarten und das Pult angeschlossen.
+
+1. **Zuordnen:** Einstellungen, „Ausgänge (Soundkarten) …“. Playlist auf Karte 1 Kanal 1/2, Cart-Wall auf Karte 2 Kanal 1/2 (oder auf Karte 1 Kanal 3/4), „Übernehmen“. Programm neu starten, falls die Sendung lief.
+2. **Hören am Pult:** Titel starten, Cart drücken. Die Musik kommt nur am Pult-Kanal der Playlist, das Cart nur am Pult-Kanal der Cart-Wall. Den Pegel am Pult einstellen.
+3. **Neu starten:** Programm schließen und öffnen: Die Zuordnung ist noch da.
+4. **Gerät fehlt:** Karte 2 abziehen, Programm starten. Es erscheint eine Meldung, das Cart läuft über die Playlist weiter (nie Stille ohne Hinweis). Karte 2 im Betrieb abziehen: Meldung „Ausgang … ist ausgefallen“, Playlist läuft weiter.
+5. **Dauertest:** Eine Stunde Musik und Carts auf zwei Karten mit unterschiedlichem Takt. In den Ausgängen sollen „verworfen“, „übersprungen“ und „leer gelaufen“ bei 0 bleiben oder nur selten zählen. Knackser notieren.
+
+Takt und Drift: Das Gerät der Playlist taktet den Mixer. Weitere Geräte laufen mit eigener Uhr; ein Ring und ein Resampler (Hermite) halten das Polster bei etwa 50 ms, auch bei 44,1 gegen 48 kHz. Empfehlung bleibt gleiche Abtastrate an allen Karten. Getrennte Ausgänge tragen das Signal vor der Sendeverarbeitung (Kompressor/Limiter); Aufnahme und Stream bekommen weiter die Summe.
+
+Selbst geprüft von Claude (ohne Ton, offline): Kanalzuordnung je Paar, Cart-Wall nicht im Hauptausgang und Summe gleich dem alten Mix, zweites Gerät mit 44,1 kHz über den Ring, Drift bis 1000 ppm über 60 s ohne Lücken, ausgefallenes Gerät, Plan bei fehlendem Gerät, Speichern und Laden der Zuordnung, keine Speicheranforderung im Audio-Thread.
+
+Nicht selbst geprüft: Öffnen echter Karten und des Pults unter Windows (kein Gerät, kein Windows hier), Aussehen des Fensters, Verhalten beim Abziehen im Betrieb.
+
 ## Silvester-Paket: Cart-Tasten, Schnitt, Uhrzeit, Jingle-Übergang (0.33.4, offen, #132)
 
 Wünsche des Moderators der Silvestersendung. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`, Modus „Radio“. Kopfhörer-Ausgang für das Vorhören unter Einstellungen → Vorhören (PFL) einstellen, sonst bleibt „Vorhören“ grau.
