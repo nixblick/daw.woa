@@ -4608,6 +4608,7 @@ impl eframe::App for WoaApp {
         }
         // Keep the autosave timer and the feedback poll ticking while idle; the level
         // meter needs a faster beat while recording.
+        self.plugin_frame(ctx);
         let project = self.state.project().clone();
         self.midi.poll(Instant::now());
         self.controller_frame(ctx);
@@ -4755,6 +4756,44 @@ impl eframe::App for WoaApp {
 }
 
 impl WoaApp {
+    /// Plugin-Fenster (Paket 32), jedes Bild: Reglerbewegungen aus den Fenstern werden ein
+    /// Rückgängig-Schritt (ein Regler: sein neuer Wert; ein Preset-Wechsel: der ganze Zustand),
+    /// die Plugins bekommen ihre Zeitgeber, und nach „Rückgängig“ gleicht das Rack die laufenden
+    /// Plugins mit dem Projekt ab.
+    fn plugin_frame(&mut self, ctx: &egui::Context) {
+        let Some(player) = self.player.as_mut() else {
+            return;
+        };
+        let edits = player.pump_plugins();
+        for (insert, edit) in edits {
+            let Some(track) = self
+                .state
+                .project()
+                .tracks
+                .iter()
+                .find(|t| t.plugin(insert).is_some())
+                .map(|t| t.id)
+            else {
+                continue;
+            };
+            match edit {
+                woa_plugins::ParamEdit::Param { id, new, .. } => {
+                    self.state.set_plugin_param(track, insert, id, new);
+                }
+                woa_plugins::ParamEdit::WholeState => {
+                    if let Some(cmd) = player.capture_plugin_slot(self.state.project(), insert) {
+                        self.state.apply_plugin_state(vec![cmd]);
+                    }
+                }
+            }
+        }
+        player.reconcile_plugins(self.state.project());
+        if player.any_plugin_gui_open() {
+            // Offene Plugin-Fenster brauchen den Takt für Zeitgeber und Reglermeldungen.
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        }
+    }
+
     /// Holt je Bild die Samples des Abgriffs fürs Analyse-Fenster. Ist es zu, sind alle
     /// Abgriffe aus.
     fn analysis_frame(&mut self) {
@@ -5597,6 +5636,30 @@ impl WoaApp {
                             .color(theme::TEXT_BRIGHT),
                     );
                 }
+                if matches!(status, Some(woa_plugins::SlotStatus::Loaded)) {
+                    let open = self
+                        .player
+                        .as_ref()
+                        .is_some_and(|p| p.plugin_gui_open(slot.id));
+                    let b = egui::Button::new(egui::RichText::new("Fenster").size(10.5).color(
+                        if open { theme::WELL } else { theme::TEXT_BRIGHT },
+                    ))
+                    .fill(if open { theme::CUE_CYAN } else { theme::SURFACE })
+                    .min_size(egui::vec2(52.0, 18.0));
+                    if ui
+                        .add(b)
+                        .on_hover_text("Oberfläche des Plugins öffnen oder schließen")
+                        .clicked()
+                        && let Some(p) = self.player.as_mut()
+                    {
+                        if open {
+                            p.close_plugin_gui(slot.id);
+                        } else if let Err(e) = p.open_plugin_gui(slot.id, &slot.name) {
+                            tracing::warn!(plugin = %slot.clap_id, error = %e, "plugin window not opened");
+                            self.state.status = Status::Error(e);
+                        }
+                    }
+                }
                 if ui
                     .small_button("✕")
                     .on_hover_text("Plugin entfernen")
@@ -5682,7 +5745,7 @@ impl WoaApp {
                     }
                     if params.len() > SHOWN {
                         ui.label(small(&format!(
-                            "… und {} weitere (Plugin-Oberfläche folgt)",
+                            "… und {} weitere (alle im Plugin-Fenster)",
                             params.len() - SHOWN
                         )));
                     }

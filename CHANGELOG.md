@@ -1,8 +1,17 @@
 # Changelog
 
-## 0.26.2 — 2026-10-30
+## 0.27.1 — 2026-10-30
 
-- **CI:** Neuer Workflow „Windows-Bau“ (`.github/workflows/windows-build.yml`), von Hand zu starten. Baut `woa.exe`, `woa-headless.exe` und `woa-streamd.exe` im Release-Profil und legt sie als MSI-Installer (WiX 5, `packaging/windows/woa.wxs`: Programme-Ordner, Startmenü-Eintrag, neuere Version ersetzt ältere) und als ZIP an den Lauf (30 Tage). Unsigniert.
+- **CI:** Neuer Workflow „Windows-Bau“ (`.github/workflows/windows-build.yml`), von Hand zu starten. Baut `woa.exe`, `woa-headless.exe` und `woa-streamd.exe` im Release-Profil und legt sie als MSI-Installer (WiX 5, `packaging/windows/woa.wxs`: Programme-Ordner, Startmenü-Eintrag, neuere Version ersetzt ältere) und als ZIP an den Lauf (30 Tage). Unsigniert. Produktname in der MSI mit einfachem Bindestrich (Codepage 1252).## 0.27.0 — 2026-10-30
+
+Paket 32 aus M8: Plugin-Fenster (Abnahme: `docs/abnahme.md`).
+
+- **Fenster:** Im Kanalzug hat jedes geladene Plugin die Taste „Fenster“. Das Plugin öffnet sein eigenes, schwebendes Fenster (CLAP `gui` im schwebenden Modus). Schließen und wieder Öffnen baut nichts neu auf; beim Entfernen oder Beenden wird die Oberfläche vor dem Plugin abgebaut. Bietet ein Plugin kein schwebendes Fenster an, steht ein Hinweis in der Statuszeile.
+- **Host:** Zeitgeber (`timer`), Dateikennungen (`posix-fd`, nur Unix), `request_callback` und Regler-Neuabgleich (`params`) werden bedient, jedes Bild der Oberfläche über `ClapInstance::pump`.
+- **Reglerrückmeldung:** Was im Plugin-Fenster bewegt wird, kommt über eine lock-freie Queue (`rtrb`) aus dem Audio-Thread zurück und wird zu Rückgängig-Schritten: ein gezogener Regler ist ein Schritt, ein Preset-Wechsel (viele Regler auf einmal) ein Schritt mit dem ganzen Zustand. Werte, die der Host selbst setzt, werden nicht zurückgemeldet. Rückgängig und Wiederholen stellen die Regler im laufenden Plugin wieder her.
+- **Tests:** Host- und Rack-Tests mit dem Test-Plugin (Fensterablauf, Zeitgeber, Regler ziehen, Preset-Flut ohne Allokation unter `assert_no_alloc`, Rückgängig/Wiederholen); kein echtes Fenster.
+- **Nicht gebaut:** Automation von Plugin-Reglern, eingebettetes Fenster, Auslagern in einen eigenen Prozess (Paket 33).
+- **Abhängigkeiten:** `rtrb` und `libc` (Unix) in `woa-plugins`; `gui`, `timer`, `posix-fd` in `clack-extensions`.
 
 ## 0.26.1 — 2026-10-30
 
@@ -64,7 +73,6 @@ Paket 28 aus M9: Stundenuhr und AutoDJ-Rotation.
 - **Zeitzone:** Die Ortszeit ist eine Einstellung in Minuten gegenüber UTC (Vorgabe 60); die Umstellung auf Sommerzeit muss von Hand erfolgen.
 - **Nicht in diesem Paket:** feste Zeit-Events (Nachrichten, Werbung zur vollen Stunde) und der Voice-Tracking-Editor; beides gehört zu M9, steht aber nicht im Auftrag dieses Pakets.
 - **Tests:** 24 Stunden mit simulierter Uhr gegen 500 erzeugte Titel (keine Sperrfrist verletzt, Slot-Folge je Stunde stimmt), Rückfall auf Ersatz und Notfall, nichts zu spielen ohne Absturz, gleicher und anderer Startwert, Historie nach Neustart der Datenbank (Sperren und Slot-Position), von Hand gesetzte Titel, Datei mit feindlichen Werten, Editor als Zustandstest (Anlegen, Umbenennen mit Wochenübernahme, Slots, Speichern und Laden), AutoDJ-Takt gegen eine nachgebildete Sendung, Fenster zeichnet ohne Display.
-
 
 ## 0.22.0 — 2026-10-30
 
