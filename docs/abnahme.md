@@ -4,6 +4,24 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 18: Automation und Sidechain (0.13.0, offen)
+
+Aus M5. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Lautstärke-Kurve zeichnen:** Studio-Dock → Reiter „〰 Automation“. Eine Spur anklicken, oben „Lautstärke“ ist vorgewählt. In die Fläche klicken setzt Punkte (zum Beispiel Beat 0 bei 0 dB, Beat 8 bei −18 dB, Beat 16 bei 0 dB). Punkt ziehen verschiebt ihn (rastet auf Viertel-Beats), Rechtsklick auf einen Punkt löscht ihn. Strg+Z nimmt jede Änderung als einen Schritt zurück.
+2. **Abspielen:** Leertaste. Der Lautstärke-Regler der Spur wandert mit der Kurve; „am Kopf: … dB“ im Editor zeigt den Wert. Im Editor läuft der Kopf als blaue Linie mit.
+3. **Andere Ziele:** In der Auswahl oben Pan, einen Send oder einen Effekt-Regler wählen (zum Beispiel „Kompressor · Schwelle“) und ebenso zeichnen. Auswahl-Regler (zum Beispiel „Takt“ beim Echo) halten ihren Wert bis zum nächsten Punkt.
+4. **Sidechain (Ducking):** Zwei Spuren: Musik und Sprache. Bei der Musik „+ Effekt“ → Kompressor, darunter „Sidechain“ → „Sprache“. Spielt die Sprache, sinkt die Musik; der Balken „Absenkung“ schlägt aus. Auch Gate hat „Sidechain“. Auf einem Bus geht es nicht („nur Spuren“).
+5. **Aufnehmen mit dem Controller:** Fader an „Pegel der Spur“ per Rechtsklick → „MIDI lernen“ binden (wie in Paket 14). Im Editor „Schreiben“ wählen, Wiedergabe starten, Fader fahren, Stopp: Die Fahrt steht als Kurve da, die Betriebsart springt auf „Lesen“, Strg+Z nimmt alles in einem Schritt zurück. „Latch“ wartet auf die erste Berührung und läuft bis zum Stopp.
+6. **Speichern, neu öffnen:** Kurven und Sidechains sind noch da. Projekte ohne Automation bleiben im alten Format und öffnen auch in 0.12.
+7. **Agent:** `add_automation`, `remove_automation`, `set_sidechain`.
+
+Selbst geprüft von Claude: Lautstärke-Automation mit drei Punkten: Rampe Sample für Sample gegen die dB-Rechnung, identisch bei Blockgröße 1, 128 und 1000; abspielen im Offline-Render, ohne Kurve klingt das Projekt bitgleich wie vorher (alte Referenzdateien unverändert). Pan-Fahrt, Send-Kurve, Effekt-Regler-Kurve (+12 dB), Loop-Sprung, Wert am Cursor bei Stopp. Kompressor mit Sidechain Sprache: Die Musik wird gemessen mehr als 6 dB leiser, solange die Sprache spricht, und kommt danach zurück; der Absenkungsmesser (Gain-Reduction) schlägt aus; ohne Sidechain bleibt die Musik laut. Alles unter `assert_no_alloc`. Modell: Undo und Redo, Kreiserkennung über Sidechains, Spur löschen trennt Sidechains, Format 3 nur bei Bedarf (Insta-Schnappschuss, alte Dateien laden). Controller-Aufnahme über einen virtuellen ALSA-Port: gelernter Fader, Fahrt wird zur Kurve, Offline-Render folgt der Fahrt, ein Undo-Schritt. Aufnehmer als reine Logik getestet (Schreiben, Latch, Ersetzen nur der aufgenommenen Strecke, gehaltener Wert bleibt flach, Punktgrenze 4096, Loop-Rücksprung). Agent über MCP einschließlich Fehlerfällen. Es wurde nichts abgespielt, kein Gerät und kein Mikrofon benutzt.
+
+Nicht selbst geprüft: echter Klang (kein Ton auf dem Notebook, nur Messwerte), Aussehen und Bedienung des Kurven-Editors und der Sidechain-Auswahl im echten Fenster (gebaut und kompiliert, nicht angeklickt), ein echter Controller, das Gefühl beim Aufnehmen mit dem Fader.
+
+Noch nicht drin: Sidechain für Effekte auf Bussen; der Schlüssel wird nach dem Fader und vor dem Pan der Quelle abgegriffen (keine Wahl vor Fader oder nach Effekten, kein Sidechain-Filter und kein „Schlüssel hören“). Aufnehmen mit dem Controller gibt es für Lautstärke und Pan; Sends und Effekt-Regler lassen sich zeichnen oder per Agent setzen, aber nicht live einfahren, und Kurven im Modus Schreiben oder Latch spielen nicht ab, bis die Aufnahme beendet ist. Der Fader zeigt die Kurve beim Abspielen, folgt ihr im Pan-Regler noch nicht. Kein Kopieren und Verschieben mehrerer Punkte, keine Kurvenform zwischen Punkten außer linear (dB-linear bei Lautstärke und Send). Effekt-Kurven laufen in Schritten zu 64 Samples. Jede Änderung einer Kurve baut den Graphen neu (hörbar nur als kurzer Wechsel, nicht als Knacken).
+
 ## Paket 17: Alle eingebauten Effekte (0.12.0, offen)
 
 Aus M5. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

@@ -2,12 +2,13 @@
 
 ## 0.13.0 — 2026-10-30
 
-Paket 18 aus M5: Automation und Sidechain (im Bau, wird mit jeder Schicht ergänzt).
+Paket 18 aus M5: Automation und Sidechain (Sidechain für Effekte auf Bussen und Live-Einfahren von Sends und Effekt-Reglern folgen später).
 
 - **Modell:** Jede Spur kann je Ziel (Lautstärke, Pan, Send, Effekt-Regler) eine Automationskurve mit Betriebsart Lesen, Schreiben oder Latch haben (`Command::SetAutomation`). Kompressor und Gate nehmen ein Sidechain-Signal einer anderen Spur (`Command::SetInsertSidechain`); Kreise über Sidechains werden abgelehnt, Spur löschen trennt Sidechains im selben Undo-Schritt. Projektformat 3 wird nur geschrieben, wenn Automation oder Sidechain vorkommt; alle anderen Projekte bleiben Format 2, ältere Dateien laden unverändert.
 - **Engine und DSP:** Kurven laufen im Audio-Thread sample-genau (Blockgröße ohne Einfluss, Loop-Sprung exakt, bei Stopp gilt der Wert am Cursor). Lautstärke, Pan (auch Balance am Bus) und Sends rechnen die Kurve pro Sample (dB-Interpolation), Effekt-Regler folgen in 64-Sample-Schritten. Nur wo eine Kurve spielt, tauscht der Graph die Knoten; Projekte ohne Automation klingen bit-gleich wie vorher. Kompressor und Gate einer Spur nehmen einen Sidechain-Schlüssel (Signal der Quelle nach Fader, vor Pan); jeder dynamische Effekt hat einen Absenkungsmesser (`ProjectGraph::reductions`). Kurven im Modus Schreiben oder Latch spielen nicht ab.
 - **Agent:** neue Werkzeuge `add_automation` (Kurve für Lautstärke, Pan, Send oder Effekt-Regler, ein Undo-Schritt), `remove_automation` und `set_sidechain` (Kompressor oder Gate misst den Pegel einer anderen Spur; Schleifen werden abgelehnt). Beschrieben in `docs/agent.md`.
-- **Tests:** Rampe mit drei Punkten gegen die dB-Rechnung Sample für Sample in Blöcken zu 1, 128 und 1000; Pan-Fahrt; Send-Kurve; Regler-Kurve (+12 dB); Loop-Sprung; Stopp am Cursor; Ducking per Sidechain gemessen (Musik mehr als 6 dB leiser, Absenkungsmesser schlägt aus); alles zusammen unter `assert_no_alloc`.
+- **Oberfläche:** Neuer Reiter „Automation“ im Studio-Dock: Kurve einer Spur für Lautstärke, Pan, Sends und Effekt-Regler zeichnen (Klick setzt, Ziehen verschiebt, Rechtsklick löscht, ein Undo-Schritt je Änderung), Betriebsart Lesen, Schreiben oder Latch. Der Lautstärke-Regler folgt beim Abspielen der Kurve. Kompressor und Gate haben die Auswahl „Sidechain“ (nur Spuren) und eine Absenkungs-Anzeige. Controller-Fahrten (Fader und Pan, per MIDI-Lernen gebunden) werden in den Modi Schreiben und Latch aufgenommen und beim Stopp als eine Kurve eingetragen.
+- **Tests:** Rampe mit drei Punkten gegen die dB-Rechnung Sample für Sample in Blöcken zu 1, 128 und 1000; Pan-Fahrt; Send-Kurve; Regler-Kurve (+12 dB); Loop-Sprung; Stopp am Cursor; Ducking per Sidechain gemessen (Musik mehr als 6 dB leiser, Absenkungsmesser schlägt aus); alles zusammen unter `assert_no_alloc`. Controller-Fahrt über einen virtuellen MIDI-Port wird zur Kurve, der Offline-Render folgt ihr.
 
 ## 0.12.0 — 2026-10-30
 

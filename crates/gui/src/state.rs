@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use woa_model::{
-    Clip, ClipId, Command, EffectKind, Insert, InsertId, ModelError, Project, Send, Session,
-    TrackId, TrackKind,
+    AutoMode, AutoPoint, AutoTarget, Clip, ClipId, Command, EffectKind, Insert, InsertId,
+    ModelError, Project, Send, Session, TrackId, TrackKind,
 };
 
 /// Subfolder for recorded takes, inside the project or recovery folder.
@@ -282,6 +282,54 @@ impl AppState {
             insert,
             param,
             value,
+        })
+    }
+
+    /// Replaces the automation lane of one target (one undo step); `false` if nothing changed.
+    pub fn set_automation(
+        &mut self,
+        track: TrackId,
+        target: AutoTarget,
+        points: Vec<AutoPoint>,
+        mode: AutoMode,
+    ) -> bool {
+        let unchanged = self
+            .project()
+            .track(track)
+            .and_then(|t| t.lane(&target))
+            .map_or(points.is_empty() && mode == AutoMode::Read, |l| {
+                l.points == points && l.mode == mode
+            });
+        if unchanged {
+            return false;
+        }
+        self.apply(Command::SetAutomation {
+            track,
+            target,
+            points,
+            mode,
+        })
+    }
+
+    /// Lets a compressor or gate measure its level from `source` (`None`: its own signal).
+    pub fn set_sidechain(
+        &mut self,
+        track: TrackId,
+        insert: InsertId,
+        source: Option<TrackId>,
+    ) -> bool {
+        let unchanged = self
+            .project()
+            .track(track)
+            .and_then(|t| t.inserts.iter().find(|i| i.id == insert))
+            .is_some_and(|i| i.sidechain == source);
+        if unchanged {
+            return false;
+        }
+        self.apply(Command::SetInsertSidechain {
+            track,
+            insert,
+            source,
         })
     }
 
