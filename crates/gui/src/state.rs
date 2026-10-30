@@ -4,7 +4,10 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use woa_model::{Clip, ClipId, Command, ModelError, Project, Session, TrackId, TrackKind};
+use woa_model::{
+    Clip, ClipId, Command, EffectKind, Insert, InsertId, ModelError, Project, Send, Session,
+    TrackId, TrackKind,
+};
 
 /// Subfolder for recorded takes, inside the project or recovery folder.
 pub const TAKES_DIR: &str = "aufnahmen";
@@ -150,8 +153,136 @@ impl AppState {
     }
 
     /// Removes a track with all its clips as one undo step.
+    /// Sends and outputs that lead to the track are cut in the same step.
     pub fn remove_track(&mut self, track: TrackId) -> bool {
-        self.apply(Command::RemoveTrack { track })
+        let r = self.session.remove_track_routed(track);
+        self.report("Remove track", r)
+    }
+
+    /// Appends a bus named `name` (empty: "Bus N").
+    pub fn add_bus(&mut self, name: &str) -> Option<TrackId> {
+        let id = self.session.new_track_id();
+        let name = name.trim();
+        let name = if name.is_empty() {
+            let n = self
+                .project()
+                .tracks
+                .iter()
+                .filter(|t| t.kind == TrackKind::Bus)
+                .count();
+            format!("Bus {}", n + 1)
+        } else {
+            name.to_string()
+        };
+        self.apply(Command::add_track(id, name, TrackKind::Bus))
+            .then_some(id)
+    }
+
+    /// Routes a track to a bus (`None`: master). A loop is refused and shown in the status bar.
+    pub fn set_output(&mut self, track: TrackId, output: Option<TrackId>) -> bool {
+        let unchanged = self
+            .project()
+            .track(track)
+            .is_some_and(|t| t.output == output);
+        if unchanged {
+            return false;
+        }
+        self.apply(Command::SetOutput { track, output })
+    }
+
+    /// Creates the send to `target` or changes its level and tap point.
+    pub fn set_send(
+        &mut self,
+        track: TrackId,
+        target: TrackId,
+        level_db: f64,
+        pre_fader: bool,
+    ) -> bool {
+        let existing = self
+            .project()
+            .track(track)
+            .and_then(|t| t.sends.iter().find(|s| s.target == target))
+            .map(|s| (s.level_db, s.pre_fader));
+        match existing {
+            Some(cur) if cur == (level_db, pre_fader) => false,
+            Some(_) => self.apply(Command::SetSend {
+                track,
+                target,
+                level_db,
+                pre_fader,
+            }),
+            None => self.apply(Command::AddSend {
+                track,
+                send: Send {
+                    target,
+                    level_db,
+                    pre_fader,
+                },
+                index: None,
+            }),
+        }
+    }
+
+    /// Removes the send to `target`.
+    pub fn remove_send(&mut self, track: TrackId, target: TrackId) -> bool {
+        self.apply(Command::RemoveSend { track, target })
+    }
+
+    /// Appends an effect with default values to the track's chain.
+    pub fn add_insert(&mut self, track: TrackId, kind: EffectKind) -> Option<InsertId> {
+        let id = self.session.new_insert_id();
+        self.apply(Command::AddInsert {
+            track,
+            insert: Insert::new(id, kind),
+            index: None,
+        })
+        .then_some(id)
+    }
+
+    /// Removes an effect.
+    pub fn remove_insert(&mut self, track: TrackId, insert: InsertId) -> bool {
+        self.apply(Command::RemoveInsert { track, insert })
+    }
+
+    /// Switches an effect's bypass.
+    pub fn toggle_insert_bypass(&mut self, track: TrackId, insert: InsertId) -> bool {
+        let Some(bypass) = self
+            .project()
+            .track(track)
+            .and_then(|t| t.inserts.iter().find(|i| i.id == insert))
+            .map(|i| !i.bypass)
+        else {
+            return false;
+        };
+        self.apply(Command::SetInsertBypass {
+            track,
+            insert,
+            bypass,
+        })
+    }
+
+    /// Sets one effect parameter (one undo step; the UI calls this when a drag ends).
+    pub fn set_insert_param(
+        &mut self,
+        track: TrackId,
+        insert: InsertId,
+        param: usize,
+        value: f64,
+    ) -> bool {
+        let unchanged = self
+            .project()
+            .track(track)
+            .and_then(|t| t.inserts.iter().find(|i| i.id == insert))
+            .is_some_and(|i| i.params.get(param) == Some(&value));
+        if unchanged {
+            return false;
+        }
+        self.apply(Command::SetInsertParam {
+            track,
+            insert,
+            param,
+            value,
+        })
     }
 
     /// Sets the project tempo in BPM (20..=400) as one undo step.
@@ -795,6 +926,43 @@ mod tests {
         assert!(s.project().clip(a).is_some() && s.project().clip(b).is_some());
         s.undo();
         assert_eq!(s.project().clip(a).unwrap().1.start_beats, 0.0);
+    }
+
+    #[test]
+    fn mixer_clicklist_bus_send_insert_undo_and_save() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        let t = s.add_track().unwrap();
+        let bus = s.add_bus("Hall").unwrap();
+        assert_eq!(s.project().track(bus).unwrap().name, "Hall");
+        assert!(s.set_send(t, bus, -6.0, false));
+        assert!(!s.set_send(t, bus, -6.0, false));
+        let eq = s.add_insert(t, EffectKind::Eq).unwrap();
+        assert!(s.set_insert_param(t, eq, 2, 3.0));
+        assert!(s.toggle_insert_bypass(t, eq));
+        // A bus onto itself is refused and nothing changes.
+        assert!(!s.set_output(bus, Some(bus)));
+        // Each routing command undoes on its own.
+        s.undo();
+        assert!(!s.project().track(t).unwrap().inserts[0].bypass);
+        s.undo();
+        s.undo();
+        assert!(s.project().track(t).unwrap().inserts.is_empty());
+        s.undo();
+        assert!(s.project().track(t).unwrap().sends.is_empty());
+        s.redo();
+        s.redo();
+        s.redo();
+        s.redo();
+        let tr = s.project().track(t).unwrap();
+        assert_eq!(tr.sends.len(), 1);
+        assert_eq!(tr.inserts[0].params[2], 3.0);
+        assert!(tr.inserts[0].bypass);
+        // Deleting the bus cuts the send in the same step; undo brings both back.
+        assert!(s.remove_track(bus));
+        assert!(s.project().track(t).unwrap().sends.is_empty());
+        s.undo();
+        assert_eq!(s.project().track(t).unwrap().sends.len(), 1);
     }
 
     #[test]

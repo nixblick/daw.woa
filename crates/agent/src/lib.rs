@@ -21,8 +21,8 @@ use rmcp::{ErrorData as McpError, ServerHandler, ServiceExt, tool, tool_handler,
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use woa_model::{
-    Clip, ClipId, Command, EffectKind, Insert, InsertId, ModelError, Send as SendRoute, Session, TrackId,
-    TrackKind, store,
+    Clip, ClipId, Command, EffectKind, Insert, InsertId, ModelError, Send as SendRoute, Session,
+    TrackId, TrackKind, store,
 };
 
 pub mod audio;
@@ -1375,9 +1375,9 @@ impl WoaAgent {
             let id = s.new_insert_id();
             let mut insert = Insert::new(id, kind);
             for (name, value) in &p.params {
-                let index = kind.param_index(name).ok_or_else(|| {
-                    ModelError::UnknownParamName(name.clone())
-                })?;
+                let index = kind
+                    .param_index(name)
+                    .ok_or_else(|| ModelError::UnknownParamName(name.clone()))?;
                 insert.params[index] = *value;
             }
             s.apply(Command::AddInsert {
@@ -1398,9 +1398,9 @@ impl WoaAgent {
     ) -> Result<CallToolResult, McpError> {
         self.agent_step(|s| {
             let (track, kind) = find_insert(s, InsertId(p.insert))?;
-            let param = kind.param_index(&p.param).ok_or_else(|| {
-                ModelError::UnknownParamName(p.param.clone())
-            })?;
+            let param = kind
+                .param_index(&p.param)
+                .ok_or_else(|| ModelError::UnknownParamName(p.param.clone()))?;
             s.apply(Command::SetInsertParam {
                 track,
                 insert: InsertId(p.insert),

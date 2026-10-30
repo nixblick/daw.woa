@@ -32,7 +32,6 @@ const AGC_STEP: u32 = 64;
 
 pub use woa_dsp::dynamics::{Biquad, Compressor, Gate, Limiter, coef, lin_to_db};
 
-
 /// Lautheitsmessung am Ausgang (K-gefiltert, gleitend) und langsame Regelung.
 #[derive(Debug, Clone, Copy)]
 struct Agc {
@@ -170,7 +169,6 @@ impl BusProcessor {
         }
     }
 }
-
 
 /// Mikrofon-Kette: EQ (Hochpass, Präsenz), Gate, Kompressor mit Aufholverstärkung.
 #[derive(Debug, Clone, Copy)]

@@ -367,7 +367,10 @@ impl Project {
         for t in &self.tracks {
             for to in t.output.iter().chain(t.sends.iter().map(|s| &s.target)) {
                 if self.reaches(*to, t.id) {
-                    return Err(ModelError::RoutingCycle { from: t.id, to: *to });
+                    return Err(ModelError::RoutingCycle {
+                        from: t.id,
+                        to: *to,
+                    });
                 }
             }
         }

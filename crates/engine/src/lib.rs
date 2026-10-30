@@ -253,7 +253,8 @@ impl GraphBuilder {
                 nodes.push(node);
             }
         }
-        let mut inputs: Vec<[Vec<(usize, u8)>; 2]> = (0..n).map(|_| [Vec::new(), Vec::new()]).collect();
+        let mut inputs: Vec<[Vec<(usize, u8)>; 2]> =
+            (0..n).map(|_| [Vec::new(), Vec::new()]).collect();
         for e in &self.edges {
             inputs[position[e.to.0]][usize::from(e.to_ch)].push((position[e.from.0], e.from_ch));
         }
@@ -378,14 +379,12 @@ impl CompiledGraph {
                     input: &in_l[..len],
                     output: &mut out_l[..len],
                 }),
-                Slot::Stereo(node) => node.process(
-                    StereoBuffers {
-                        in_left: &in_l[..len],
-                        in_right: &in_r[..len],
-                        out_left: &mut out_l[..len],
-                        out_right: &mut out_r[..len],
-                    },
-                ),
+                Slot::Stereo(node) => node.process(StereoBuffers {
+                    in_left: &in_l[..len],
+                    in_right: &in_r[..len],
+                    out_left: &mut out_l[..len],
+                    out_right: &mut out_r[..len],
+                }),
             }
         }
     }

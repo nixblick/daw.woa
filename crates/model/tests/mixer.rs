@@ -88,7 +88,14 @@ fn inserts_add_edit_remove_with_undo() {
         index: Some(0),
     })
     .unwrap();
-    let kinds: Vec<_> = s.project().track(t).unwrap().inserts.iter().map(|i| i.kind).collect();
+    let kinds: Vec<_> = s
+        .project()
+        .track(t)
+        .unwrap()
+        .inserts
+        .iter()
+        .map(|i| i.kind)
+        .collect();
     assert_eq!(kinds, [EffectKind::Compressor, EffectKind::Eq]);
 
     let bell = EffectKind::Eq.param_index("bell_db").unwrap();
@@ -120,7 +127,11 @@ fn inserts_add_edit_remove_with_undo() {
     })
     .unwrap();
     s.undo().unwrap();
-    assert_eq!(s.project().track(t).unwrap().inserts[0].id, id2, "same place");
+    assert_eq!(
+        s.project().track(t).unwrap().inserts[0].id,
+        id2,
+        "same place"
+    );
 }
 
 #[test]
@@ -370,11 +381,18 @@ fn hand_edited_files_with_bad_routing_are_rejected() {
         track(1, "bus", r#","output":2"#),
         track(2, "bus", r#","output":1"#)
     );
-    assert!(matches!(load(base(&cyc)), Err(ModelError::RoutingCycle { .. })));
+    assert!(matches!(
+        load(base(&cyc)),
+        Err(ModelError::RoutingCycle { .. })
+    ));
     // Ziel fehlt.
     assert!(load(base(&track(1, "audio", r#","output":9"#))).is_err());
     // Ziel ist keine Bus-Spur.
-    let notbus = format!("{},{}", track(1, "audio", r#","output":2"#), track(2, "audio", ""));
+    let notbus = format!(
+        "{},{}",
+        track(1, "audio", r#","output":2"#),
+        track(2, "audio", "")
+    );
     assert!(matches!(load(base(&notbus)), Err(ModelError::NotABus(_))));
     // Regler außerhalb des Bereichs.
     let bad = track(

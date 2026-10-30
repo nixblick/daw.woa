@@ -25,16 +25,35 @@ use woa_model::{Project, TrackId};
 use crate::xrun::XrunLog;
 
 /// Was einen neuen Graphen verlangt (Tempo, Clips, scharfe MIDI-Spur).
+/// Das letzte Feld ist das Routing (Art, Ausgang, Sends, Insert-Kette je Spur).
 type Structure = (
     u64,
     Vec<(TrackId, Vec<([u64; 5], Option<String>, Option<u64>)>)>,
     Option<TrackId>,
+    String,
 );
+
+/// Routing und Effektketten als Schlüssel: Ändert sich eines davon, braucht es einen neuen Graphen.
+fn routing_key(project: &Project) -> String {
+    use std::fmt::Write;
+    let mut key = String::new();
+    for t in &project.tracks {
+        let _ = write!(key, "{}:{:?}:{:?}", t.id.0, t.kind, t.output.map(|o| o.0));
+        for s in &t.sends {
+            let _ = write!(key, "|s{}{}", s.target.0, u8::from(s.pre_fader));
+        }
+        for i in &t.inserts {
+            let _ = write!(key, "|i{}{:?}", i.id.0, i.kind);
+        }
+        key.push(';');
+    }
+    key
+}
 
 /// Plätze in der Note-Queue der scharfen MIDI-Spur.
 const LIVE_QUEUE: usize = 1024;
 /// Was nur Parameter ändert.
-type Mixer = Vec<(TrackId, u64, u64, bool, bool)>;
+type Mixer = Vec<(TrackId, u64, u64, bool, bool, Vec<u64>)>;
 
 pub struct Player {
     engine: Engine,
@@ -85,7 +104,7 @@ impl Player {
     pub fn open() -> Result<Self, String> {
         let config = OutputConfig::default();
         let rate = output_sample_rate(&config).map_err(|e| e.to_string())?;
-        let (engine, processor): (Engine, AudioProcessor) = Engine::new(256);
+        let (engine, processor): (Engine, AudioProcessor) = Engine::new(2048);
         let transport = engine.transport();
         // Der Fehlerpfad kann im Audio-Thread laufen: Xruns nur zählen (macht
         // `start_output_with` im Transport), geloggt wird je Minute in `sync`.
@@ -183,6 +202,7 @@ impl Player {
                 })
                 .collect(),
             live,
+            routing_key(project),
         );
         if self.structure.as_ref() != Some(&structure) {
             let (live_graph, producer) = match live {
@@ -213,6 +233,9 @@ impl Player {
                         Ok(mut g) => *g = producer,
                         Err(e) => tracing::warn!(error = %e, "midi sink poisoned"),
                     }
+                    for (id, m) in graph.bus_meters {
+                        self.meters.insert(id, m);
+                    }
                     self.nodes = graph.tracks;
                     self.structure = Some(structure);
                     self.mixer = None;
@@ -226,7 +249,21 @@ impl Player {
         let mixer: Mixer = project
             .tracks
             .iter()
-            .map(|t| (t.id, t.gain_db.to_bits(), t.pan.to_bits(), t.mute, t.solo))
+            .map(|t| {
+                let mut extra: Vec<u64> = t.sends.iter().map(|s| s.level_db.to_bits()).collect();
+                for i in &t.inserts {
+                    extra.push(u64::from(i.bypass));
+                    extra.extend(i.params.iter().map(|p| p.to_bits()));
+                }
+                (
+                    t.id,
+                    t.gain_db.to_bits(),
+                    t.pan.to_bits(),
+                    t.mute,
+                    t.solo,
+                    extra,
+                )
+            })
             .collect();
         if self.mixer.as_ref() != Some(&mixer) {
             match ProjectGraph::update(&self.nodes, &mut self.engine, project) {

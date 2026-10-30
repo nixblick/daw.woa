@@ -2,7 +2,9 @@
 
 ## 0.11.0 — 2026-10-30
 
-Paket 16 aus M5: Mixer mit Bussen, Sends und Inserts (in Arbeit).
+Paket 16 aus M5: Mixer mit Bussen, Sends und Inserts.
+
+- **Oberfläche:** Im Mixer-Dock hat jeder Zug Ausgangswahl, Sends (Pegel, vor/nach Fader) und eine Effektkette mit Bypass und Reglern; „+ Bus“ legt Gruppenspuren an, Bus-Züge haben Pegelanzeige. Der Player baut den Graphen neu, wenn sich Routing oder Effektkette ändern, und schickt Reglerwerte geglättet. Spuren löschen trennt Sends und Ausgänge im selben Undo-Schritt.
 
 - **Modell:** Bus-Spuren sind jetzt verschaltbar. Jede Spur hat einen Ausgang (Master oder Bus), Sends (vor oder nach dem Fader) und eine Insert-Kette. Alles sind Commands mit genauem Gegenstück (Rückgängig/Wiederholen); ein Bus auf sich selbst oder im Kreis wird abgelehnt. Projektformat 2, Dateien der Version 1 laden unverändert.
 - **Engine:** Der Graph kennt Stereo-Nodes (zwei Ein-, zwei Ausgänge). Daraus baut `build_project_graph` das Mischpult: Insert-Kette je Spur, Ausgang auf Master oder Bus, Sends vor oder nach dem Fader, Bus-Züge mit Inserts, Fader, Balance und Pegelmesser. Solo einer Spur hält die Busse hörbar, die sie speist. Änderungen an Reglern, Sends und Effekt-Parametern gehen geglättet ohne neuen Graphen. Der Golden-Render des alten Mixes bleibt bit-gleich innerhalb 1e-5, ein neuer Golden-Render (`mixer_bus_send_05s.wav`) hält Bus, Send und Effekte fest.

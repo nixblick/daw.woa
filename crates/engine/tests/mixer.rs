@@ -135,7 +135,9 @@ fn golden_project() -> Project {
         .expect("eq");
     }
     let comp = add_insert(&mut s, a, EffectKind::Compressor);
-    let thr = EffectKind::Compressor.param_index("threshold_db").expect("param");
+    let thr = EffectKind::Compressor
+        .param_index("threshold_db")
+        .expect("param");
     s.apply(Command::SetInsertParam {
         track: a,
         insert: comp,
@@ -155,7 +157,8 @@ fn golden_project() -> Project {
         output: Some(grp),
     })
     .expect("out");
-    s.apply(Command::SetPan { track: b, pan: 0.6 }).expect("pan");
+    s.apply(Command::SetPan { track: b, pan: 0.6 })
+        .expect("pan");
     s.project().clone()
 }
 
@@ -163,7 +166,8 @@ fn golden_project() -> Project {
 fn golden_mixer_with_bus_send_and_inserts() {
     let (l, r) = render_project(&golden_project(), SR as usize / 2);
     assert!(peak(&l) > 0.05 && peak(&r) > 0.05, "silent mix");
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/golden/mixer_bus_send_05s.wav");
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/golden/mixer_bus_send_05s.wav");
     if std::env::var_os("WOA_BLESS").is_some() {
         write_wav_stereo(&path, &l, &r, SR).expect("write golden");
     }
@@ -179,7 +183,11 @@ fn bus_in_between_is_transparent() {
     // Spur -> Bus (Fader 0, Balance Mitte) -> Master klingt wie Spur -> Master.
     let mut s = Session::new("thru");
     let a = add_track(&mut s, "440", TrackKind::Audio);
-    s.apply(Command::SetPan { track: a, pan: -0.3 }).expect("pan");
+    s.apply(Command::SetPan {
+        track: a,
+        pan: -0.3,
+    })
+    .expect("pan");
     let (dl, dr) = render_project(s.project(), 4800);
     let bus = add_track(&mut s, "Bus", TrackKind::Bus);
     s.apply(Command::SetOutput {
@@ -195,7 +203,8 @@ fn bus_in_between_is_transparent() {
 fn post_fader_send_adds_the_send_level() {
     let mut s = Session::new("send");
     let a = add_track(&mut s, "440", TrackKind::Audio);
-    s.apply(Command::SetPan { track: a, pan: 0.5 }).expect("pan");
+    s.apply(Command::SetPan { track: a, pan: 0.5 })
+        .expect("pan");
     let (dl, dr) = render_project(s.project(), 4800);
     let hall = add_track(&mut s, "Hall", TrackKind::Bus);
     s.apply(Command::AddSend {
@@ -234,7 +243,11 @@ fn pre_fader_send_ignores_the_fader_post_follows_it() {
             gain_db: -20.0,
         })
         .expect("gain");
-        s.apply(Command::SetPan { track: a, pan: -1.0 }).expect("pan");
+        s.apply(Command::SetPan {
+            track: a,
+            pan: -1.0,
+        })
+        .expect("pan");
         s.apply(Command::AddSend {
             track: a,
             send: send(hall, 0.0, pre),
@@ -266,7 +279,11 @@ fn solo_on_a_track_keeps_its_bus_audible() {
         output: Some(hall),
     })
     .expect("out");
-    s.apply(Command::SetSolo { track: a, solo: true }).expect("solo");
+    s.apply(Command::SetSolo {
+        track: a,
+        solo: true,
+    })
+    .expect("solo");
     let (l, _) = render_project(s.project(), 9600);
     // 5000 Hz (Spur b) ist stumm, 220 Hz kommt zweimal an (direkt und über den Bus).
     let tail = &l[4800..];

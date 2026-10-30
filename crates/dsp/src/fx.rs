@@ -39,7 +39,11 @@ impl EqChain {
     fn design(p: &[f32; MAX_PARAMS], rate: f32) -> Self {
         let rate = f64::from(rate.max(8000.0));
         let hp = if p[0] >= 10.0 {
-            Biquad::highpass(f64::from(p[0]).min(rate * 0.45), std::f64::consts::FRAC_1_SQRT_2, rate)
+            Biquad::highpass(
+                f64::from(p[0]).min(rate * 0.45),
+                std::f64::consts::FRAC_1_SQRT_2,
+                rate,
+            )
         } else {
             Biquad::identity()
         };
@@ -197,16 +201,16 @@ impl Fx {
                 (out[0], out[1])
             }
             FxKind::Compressor => {
-                let power = if stereo {
-                    0.5 * (l * l + r * r)
-                } else {
-                    l * l
-                };
+                let power = if stereo { 0.5 * (l * l + r * r) } else { l * l };
                 let g = self.comp.gain(power) * self.makeup.next_value();
                 (l * g, r * g)
             }
             FxKind::Limiter => {
-                let peak = if stereo { l.abs().max(r.abs()) } else { l.abs() };
+                let peak = if stereo {
+                    l.abs().max(r.abs())
+                } else {
+                    l.abs()
+                };
                 let g = self.lim.gain(peak);
                 let (l, r) = (l * g, r * g);
                 // Harte Sicherung gegen Überschwinger beim Angriff.
@@ -344,7 +348,11 @@ mod tests {
         assert!((gain_db - 12.0).abs() < 0.5, "{gain_db}");
         // Flach eingestellt ändert der EQ nichts.
         let flat = run_mono(FxKind::Eq, &[0.0, 1000.0, 0.0, 1.0], &tone);
-        let err = flat.iter().zip(&tone).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
+        let err = flat
+            .iter()
+            .zip(&tone)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f32::max);
         assert!(err < 1e-4, "{err}");
     }
 

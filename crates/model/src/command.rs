@@ -4,10 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::effect::{Insert, InsertId};
 use crate::error::{ModelError, Result};
-use crate::project::{check_send_level, 
+use crate::project::{
     Clip, ClipId, MAX_GAIN_DB, MAX_TEMPO_BPM, MIN_GAIN_DB, MIN_TEMPO_BPM, Project, Send, Track,
-    TrackId,
-    TrackKind,
+    TrackId, TrackKind, check_send_level,
 };
 
 /// One change to a project.
@@ -254,7 +253,11 @@ impl Command {
                         return Err(ModelError::DuplicateId(c.id.0));
                     }
                 }
-                for r in track.output.iter().chain(track.sends.iter().map(|s| &s.target)) {
+                for r in track
+                    .output
+                    .iter()
+                    .chain(track.sends.iter().map(|s| &s.target))
+                {
                     project.check_destination(track.id, *r)?;
                 }
                 for (i, s) in track.sends.iter().enumerate() {
@@ -426,7 +429,9 @@ impl Command {
             }
             Command::AddSend { track, send, index } => {
                 check_send_level(send.level_db)?;
-                let t = project.track(track).ok_or(ModelError::TrackNotFound(track))?;
+                let t = project
+                    .track(track)
+                    .ok_or(ModelError::TrackNotFound(track))?;
                 if t.sends.iter().any(|s| s.target == send.target) {
                     return Err(ModelError::DuplicateSend {
                         track,
