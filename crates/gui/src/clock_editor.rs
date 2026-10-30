@@ -535,7 +535,7 @@ impl ClockEditor {
 
     fn body(&mut self, ui: &mut egui::Ui) {
         if let Some(e) = self.error.clone() {
-            ui.colored_label(theme::ON_AIR, &e);
+            ui.colored_label(theme::on_air(), &e);
             if ui.button("Neu laden").clicked() {
                 self.error = None;
                 self.loaded = false;
@@ -558,10 +558,10 @@ impl ClockEditor {
         ui.label(
             egui::RichText::new("LETZTE AUSWAHLEN")
                 .small()
-                .color(theme::DIM),
+                .color(theme::text_dim()),
         );
         if self.log.is_empty() {
-            ui.label(egui::RichText::new("Noch nichts gewählt").color(theme::DIM));
+            ui.label(egui::RichText::new("Noch nichts gewählt").color(theme::text_dim()));
         }
         for l in self.log.iter().rev() {
             ui.label(egui::RichText::new(l).small());
@@ -645,7 +645,11 @@ impl ClockEditor {
     }
 
     fn clock_list(&mut self, ui: &mut egui::Ui) {
-        ui.label(egui::RichText::new("UHREN").small().color(theme::DIM));
+        ui.label(
+            egui::RichText::new("UHREN")
+                .small()
+                .color(theme::text_dim()),
+        );
         let mut pick = None;
         for (i, c) in self.schedule.clocks.iter().enumerate() {
             let col = theme::track_color(i);
@@ -672,7 +676,7 @@ impl ClockEditor {
         });
         let i = self.selected;
         if i >= self.schedule.clocks.len() {
-            ui.label(egui::RichText::new("Noch keine Uhr").color(theme::DIM));
+            ui.label(egui::RichText::new("Noch keine Uhr").color(theme::text_dim()));
             return;
         }
         ui.add_space(6.0);
@@ -683,7 +687,7 @@ impl ClockEditor {
         ui.label(
             egui::RichText::new("SLOTS (Kategorie, Ersatz)")
                 .small()
-                .color(theme::DIM),
+                .color(theme::text_dim()),
         );
         let slots = self.schedule.clocks[i].slots.clone();
         let tags = self.tags.clone();
@@ -723,7 +727,7 @@ impl ClockEditor {
         ui.label(
             egui::RichText::new("WOCHE: Klick ordnet die gewählte Uhr zu, Rechtsklick leert")
                 .small()
-                .color(theme::DIM),
+                .color(theme::text_dim()),
         );
         let cell = egui::vec2(15.0, 17.0);
         let now = rotation::local_hour(now_unix(), self.schedule.zone());
@@ -731,11 +735,11 @@ impl ClockEditor {
         for (d, day) in DAYS.iter().enumerate() {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(1.0, 1.0);
-                ui.label(egui::RichText::new(*day).small().color(theme::DIM));
+                ui.label(egui::RichText::new(*day).small().color(theme::text_dim()));
                 for h in 0..24 {
                     let name = &self.schedule.week[d * 24 + h];
                     let idx = self.schedule.clocks.iter().position(|c| &c.name == name);
-                    let fill = idx.map_or(theme::WELL, theme::track_color);
+                    let fill = idx.map_or(theme::well(), theme::track_color);
                     let (rect, resp) = ui.allocate_exact_size(cell, egui::Sense::click());
                     ui.painter().rect_filled(rect, 2.0, fill);
                     let here = now.weekday as usize == d && now.hour as usize == h;
@@ -744,11 +748,7 @@ impl ClockEditor {
                         2.0,
                         egui::Stroke::new(
                             if here { 2.0 } else { 1.0 },
-                            if here {
-                                theme::TEXT_BRIGHT
-                            } else {
-                                theme::BORDER
-                            },
+                            if here { theme::text() } else { theme::border() },
                         ),
                         egui::StrokeKind::Inside,
                     );

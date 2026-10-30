@@ -31,6 +31,8 @@ pub struct GuiConfig {
     pub telemetry_url: String,
     /// Layout: Produzent (Zeitleiste) oder Radio (Sendeablauf).
     pub mode: Mode,
+    /// Farbthema: Dunkel (Vorgabe) oder Hell. Die Modusfarbe folgt dem Layout.
+    pub theme: crate::theme::Theme,
     /// Sendung an den eigenen Shoutcast (liest auch woa-streamd). Ohne Kennwort.
     pub stream: woa_stream::StreamConfig,
     /// Puffergröße der Radio-Ausgabe in Frames. Fehlt oder 0 = Vorgabe des Treibers
@@ -121,6 +123,7 @@ impl Default for GuiConfig {
             telemetry_enabled: None,
             telemetry_url: DEFAULT_INGEST_URL.to_string(),
             mode: Mode::Produzent,
+            theme: crate::theme::Theme::default(),
             stream: woa_stream::StreamConfig::default(),
             radio_buffer_frames: None,
             midi_input: None,
@@ -460,6 +463,21 @@ mod tests {
         assert_eq!(GuiConfig::load(&p).feedback_url, "https://x/api/feedback");
         std::fs::write(&p, "kaputt").unwrap();
         assert_eq!(GuiConfig::load(&p), GuiConfig::default());
+    }
+
+    #[test]
+    fn theme_defaults_to_dark_and_is_persisted() {
+        use crate::theme::Theme;
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("config.json");
+        // Alte Konfiguration ohne Thema: Dunkel.
+        std::fs::write(&p, r#"{"mode":"radio"}"#).unwrap();
+        assert_eq!(GuiConfig::load(&p).theme, Theme::Dunkel);
+        let mut c = GuiConfig::load(&p);
+        c.theme = Theme::Hell;
+        c.save(&p).unwrap();
+        assert_eq!(GuiConfig::load(&p).theme, Theme::Hell);
+        assert_eq!(GuiConfig::load(&p).mode, Mode::Radio);
     }
 
     #[test]

@@ -56,27 +56,27 @@ impl Palette {
     fn of(ui: &egui::Ui) -> Self {
         if ui.visuals().dark_mode {
             Self {
-                bg: theme::BG,
-                row_black: theme::mix(theme::BG, Color32::BLACK, 0.25),
-                line: theme::mix(theme::BG, theme::GRID, 0.6),
-                bar: theme::mix(theme::GRID, theme::DIM, 0.35),
+                bg: theme::bg(),
+                row_black: theme::mix(theme::bg(), Color32::BLACK, 0.25),
+                line: theme::mix(theme::bg(), theme::grid(), 0.6),
+                bar: theme::mix(theme::grid(), theme::text_dim(), 0.35),
                 note: Color32::from_rgb(82, 156, 255),
-                note_sel: theme::ACCENT,
-                text: theme::DIM,
+                note_sel: theme::accent(),
+                text: theme::text_dim(),
                 key_white: Color32::from_rgb(214, 218, 226),
                 key_black: Color32::from_rgb(28, 30, 36),
             }
         } else {
             Self {
-                bg: Color32::from_rgb(250, 250, 252),
-                row_black: Color32::from_rgb(234, 236, 242),
-                line: Color32::from_rgb(222, 225, 232),
-                bar: Color32::from_rgb(170, 176, 190),
-                note: Color32::from_rgb(40, 110, 220),
-                note_sel: Color32::from_rgb(230, 110, 20),
-                text: Color32::from_rgb(90, 96, 110),
+                bg: theme::panel(),
+                row_black: theme::well(),
+                line: theme::grid(),
+                bar: theme::border_strong(),
+                note: theme::track_color(0),
+                note_sel: theme::accent(),
+                text: theme::text_dim(),
                 key_white: Color32::WHITE,
-                key_black: Color32::from_rgb(40, 42, 48),
+                key_black: theme::text(),
             }
         }
     }

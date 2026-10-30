@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.34.7 — 2026-10-31
+
+Design D1: zwei Themen, Hell und Dunkel, mit Modusfarbe (Vorgabe `docs/design/woa-design-system/`).
+
+- **Thema wählbar:** Einstellungen, „Erscheinungsbild“: Dunkel (Vorgabe) oder Hell, gespeichert in der Konfiguration (`theme`). Alte Konfigurationen starten dunkel.
+- **Modusfarbe folgt dem Layout:** Akzent, Zweitfarbe und Leuchtziffern wechseln mit Produzent (Amber), Radio (Rot) und Party (Magenta); sechs Paletten (3 Modi × 2 Themen) aus `tokens.json`.
+- **Farben als Palette:** `crates/gui/src/theme.rs` hält alle Tokens (neu: `border_strong`, `lcd_bg`, `led_off`, `vu_face`, `vu_ink`, Abstände und Radien); die alten Konstanten (`ACCENT`, `WELL` …) sind Funktionen (`accent()`, `well()` …) der aktiven Palette. Ein Test liest `tokens.json` und prüft, dass alle Werte übereinstimmen.
+- **LCDs und LED-Ketten bleiben auch im hellen Thema dunkel** (wie Hardware), Pegelanzeigen nutzen `lcd_bg` und die LED-Farben des Design Systems. Bedienbare Elemente haben die kräftigere Kontur `border_strong`.
+- Die Probe `WOA_THEME=hell|dunkel` bleibt für den Fotomodus; sie schlägt die Einstellung.
+
 ## 0.34.6 — 2026-10-30
 
 - **Design System im Repo:** `docs/design/woa-design-system.zip` (Original aus Claude Design) und entpackt unter `docs/design/woa-design-system/` (Brand-Book, Tokens für 6 Themen, Bausteine mit Vorschau, Screen-Entwürfe, Logos, Schriften). Übersicht in `docs/design/README.md`, Schriftlizenzen (SIL OFL 1.1) in `docs/herkunft.md`, `CLAUDE.md` nennt das Design System als verbindliche Vorgabe für `crates/gui`. Kein Code geändert.

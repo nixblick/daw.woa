@@ -47,10 +47,10 @@ impl Marker {
 
     fn color(self) -> egui::Color32 {
         match self {
-            Marker::CueIn | Marker::CueOut => theme::OK_GREEN,
-            Marker::Ramp => theme::ACCENT,
-            Marker::Hook => theme::CUE_CYAN,
-            Marker::FadeOut => theme::ON_AIR,
+            Marker::CueIn | Marker::CueOut => theme::ok(),
+            Marker::Ramp => theme::accent(),
+            Marker::Hook => theme::cue(),
+            Marker::FadeOut => theme::on_air(),
         }
     }
 
@@ -292,7 +292,7 @@ impl CueEditor {
             egui::Sense::click_and_drag(),
         );
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 4.0, theme::WELL);
+        painter.rect_filled(rect, 4.0, theme::well());
         let x_of = |s: f64| rect.left() + (s / len.max(1e-9)) as f32 * rect.width();
         if let Some(p) = &self.peaks {
             let w = rect.width() / p.len().max(1) as f32;
@@ -302,9 +302,9 @@ impl CueEditor {
                 let x = rect.left() + i as f32 * w;
                 let t = (i as f64 + 0.5) / p.len() as f64 * len;
                 let col = if t < start || t > end {
-                    theme::BORDER
+                    theme::border()
                 } else {
-                    theme::DIM
+                    theme::text_dim()
                 };
                 let h = v * rect.height() * 0.48;
                 painter.line_segment(
@@ -321,7 +321,7 @@ impl CueEditor {
                 egui::Align2::CENTER_CENTER,
                 "Wellenform wird gelesen …",
                 egui::FontId::proportional(13.0),
-                theme::DIM,
+                theme::text_dim(),
             );
         }
         if len > 0.0 {
@@ -349,14 +349,14 @@ impl CueEditor {
                     let x = x_of(s);
                     painter.line_segment(
                         [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                        egui::Stroke::new(1.0, theme::mix(m.color(), theme::WELL, 0.45)),
+                        egui::Stroke::new(1.0, theme::mix(m.color(), theme::well(), 0.45)),
                     );
                     painter.text(
                         egui::pos2(x + 3.0, rect.bottom() - 2.0),
                         egui::Align2::LEFT_BOTTOM,
                         format!("{} (Vorschlag)", m.label()),
                         egui::FontId::proportional(10.0),
-                        theme::mix(m.color(), theme::WELL, 0.35),
+                        theme::mix(m.color(), theme::well(), 0.35),
                     );
                 }
             }
@@ -397,7 +397,7 @@ impl CueEditor {
                             }
                         }
                         None => {
-                            ui.label(egui::RichText::new("nicht gesetzt").color(theme::DIM));
+                            ui.label(egui::RichText::new("nicht gesetzt").color(theme::text_dim()));
                             ui.label("");
                         }
                     }
@@ -424,15 +424,15 @@ impl CueEditor {
             ui.label(
                 egui::RichText::new(self.auto_text())
                     .small()
-                    .color(theme::DIM),
+                    .color(theme::text_dim()),
             );
         });
         let check = self.draft.validate(self.seconds);
         if let Err(e) = &check {
-            ui.colored_label(theme::ON_AIR, e);
+            ui.colored_label(theme::on_air(), e);
         }
         if let Some(e) = &self.error {
-            ui.colored_label(theme::ON_AIR, e);
+            ui.colored_label(theme::on_air(), e);
         }
         ui.separator();
         ui.horizontal(|ui| {
