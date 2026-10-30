@@ -9,6 +9,8 @@
 pub mod analysis;
 mod hash;
 pub mod import;
+pub mod plays;
+pub mod rotation;
 
 use std::fmt;
 use std::path::Path;
@@ -18,7 +20,7 @@ use rusqlite::{Connection, OptionalExtension, params, params_from_iter, types::V
 pub use hash::file_hash;
 
 /// Aktuelle Schemaversion.
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 /// Längste Tag-Bezeichnung (Zeichen).
 pub const MAX_TAG_CHARS: usize = 40;
 /// Mehr Tags je Titel nimmt die Bibliothek nicht an.
@@ -69,7 +71,21 @@ ALTER TABLE tracks ADD COLUMN fade_out REAL;
 ALTER TABLE tracks ADD COLUMN cue_out REAL;
 ";
 
-const MIGRATIONS: [&str; 3] = [V1, V2, V3];
+/// Paket 28: Spielhistorie. Eine Zeile je gespielten Titel; `artist` und `category` sind
+/// Abzüge zum Spielzeitpunkt (der Titel kann später umbenannt oder umgetaggt werden).
+const V4: &str = "
+CREATE TABLE plays (
+    id       INTEGER PRIMARY KEY,
+    track_id INTEGER NOT NULL,
+    artist   TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT '',
+    played   INTEGER NOT NULL
+);
+CREATE INDEX plays_by_time ON plays(played);
+CREATE INDEX plays_by_track ON plays(track_id, played);
+";
+
+const MIGRATIONS: [&str; 4] = [V1, V2, V3, V4];
 
 /// Fehler der Bibliothek, Text ohne Pfade.
 #[derive(Debug)]

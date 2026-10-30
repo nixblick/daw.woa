@@ -171,6 +171,7 @@ pub struct WoaApp {
     library: crate::library::LibraryWindow,
     /// Export-Fenster (Paket 26).
     export_dialog: crate::export_dialog::ExportDialog,
+    clock_editor: crate::clock_editor::ClockEditor,
     /// Sendeablauf; läuft weiter, auch wenn das Produzent-Layout zu sehen ist.
     radio: Option<RadioDesk>,
     /// MIDI-Eingang (Paket 11), spielt das Instrument der scharfen MIDI-Spur.
@@ -483,6 +484,7 @@ impl WoaApp {
                 woa_radio::data_dir().join(crate::library::DB_FILE),
             ),
             export_dialog: crate::export_dialog::ExportDialog::new(),
+            clock_editor: crate::clock_editor::ClockEditor::new(woa_radio::data_dir()),
             radio: None,
             frames: (0, Instant::now()),
         }
@@ -511,6 +513,7 @@ impl WoaApp {
     /// Sets the data folder (radio.json, recordings). Default: the WOA data folder.
     pub fn set_data_dir(&mut self, dir: PathBuf) {
         self.library.set_db_path(dir.join(crate::library::DB_FILE));
+        self.clock_editor.set_dir(dir.clone());
         self.data_dir = dir;
     }
 
@@ -2074,6 +2077,13 @@ impl WoaApp {
                 .clicked()
             {
                 self.library.open = !self.library.open;
+            }
+            if ui
+                .selectable_label(self.clock_editor.open, "Stundenuhr")
+                .on_hover_text("Stundenuhren, Wochenplan und AutoDJ für den Radio-Modus")
+                .clicked()
+            {
+                self.clock_editor.toggle();
             }
             if ui.button("Feedback …").clicked() {
                 self.feedback.open();
@@ -4523,7 +4533,15 @@ impl eframe::App for WoaApp {
         let player_active = self.player.as_ref().is_some_and(Player::is_active);
         if let Some(r) = self.radio.as_mut() {
             r.tick(player_active);
+            // AutoDJ: Historie nachtragen und die Playlist hinten auffüllen.
+            let add = self
+                .clock_editor
+                .autodj_tick(r.view(), crate::clock_editor::now_unix());
+            if !add.is_empty() {
+                r.append_files(add);
+            }
         }
+        self.clock_editor.tick_save();
         if self.config.mode == Mode::Radio {
             if let Some(r) = self.radio.as_mut() {
                 r.shortcuts(ctx);
@@ -4612,6 +4630,7 @@ impl eframe::App for WoaApp {
                 .show(ui, |ui| radio.ui(ui));
             radio.cue_window(&ctx);
             self.library_window(&ctx);
+            self.clock_editor.show(&ctx);
             self.export_window(&ctx);
             self.controller_window(&ctx);
             self.feedback_window(&ctx);
@@ -4676,6 +4695,7 @@ impl eframe::App for WoaApp {
         self.piano_roll_window(&ctx);
         self.analysis_window(&ctx);
         self.library_window(&ctx);
+        self.clock_editor.show(&ctx);
         self.export_window(&ctx);
         self.controller_window(&ctx);
         self.feedback_window(&ctx);

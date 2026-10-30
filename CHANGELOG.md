@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.23.0 — 2026-10-30
+
+Paket 28 aus M9: Stundenuhr und AutoDJ-Rotation.
+
+- **Stundenuhren (`woa_library::rotation`):** Eine Uhr ist eine Folge von Slots, jeder Slot hat eine Kategorie (ein Tag der Bibliothek, z. B. `hit`, `neu`, `jingle`) und optional eine Ersatzkategorie. Eine Wochentabelle (7 × 24 Stunden) ordnet jeder Stunde eine Uhr zu; innerhalb der Stunde laufen die Slots der Reihe nach und beginnen mit jeder neuen Stunde von vorn. Gespeichert wird in `stundenuhr.json` (atomar, Grenzen und Namen werden geprüft, kaputte Dateien werden gemeldet und nie überschrieben).
+- **Auswahl:** Gewichtet nach der Zeit seit dem letzten Spiel (je länger her, desto wahrscheinlicher, höchstens eine Woche zählt), mit Sperrfristen für Titel (Vorgabe 180 min) und Interpret (60 min). Der Interpret kommt aus dem Titel nach dem Muster „Interpret - Titel“; ohne Trenner gilt nur die Titel-Sperre. Ist der Slot leer (keine Titel oder alle gesperrt), kommt die Ersatzkategorie, danach der Notfall-Tag (Vorgabe `notfall`; er ignoriert die Sperrfristen, bevor gar nichts spielt). Das Muster Slot, Ersatz, Notfall stammt von `fallback`/`rotate` in Liquidsoap, das Auffüllen einer Warteschlange vom AutoDJ in Mixxx; Code ist nicht übernommen.
+- **Deterministisch:** Zufall ist SplitMix64 mit dem Startwert aus der Datei; gleicher Startwert, gleiche Bibliothek und Historie ergeben die gleiche Folge. Jede Wahl steht im Log (Uhr, Slot, gewünschte und gewählte Kategorie, Titel) und in der Liste „Letzte Auswahlen“.
+- **Spielhistorie:** Neue Tabelle `plays` in der Bibliothek (Schema 4, Migration von 1 bis 3 getestet). Jeder Titel, der in der Sendung beginnt und in der Bibliothek steht, kommt mit Interpret, Kategorie und Zeit hinein; die Sperrfristen überleben damit einen Neustart, auch die Position in der Stundenuhr.
+- **AutoDJ:** Schalter im Fenster. Er hält `Im Voraus` Titel hinter dem laufenden bereit (Vorgabe 3) und hängt nur hinten an: von Hand gesetzte Titel bleiben stehen, belegen aber ihre Zeit und gelten für die Sperrfristen (keine Doppel). Läuft im Oberflächen-Thread alle 3 Sekunden höchstens einmal, nie im Audio-Thread.
+- **Oberfläche:** Neuer Knopf „Stundenuhr“ in der Menüleiste öffnet das Fenster „Stundenuhr und AutoDJ“: Uhren anlegen, umbenennen, löschen; Slots mit Kategorie und Ersatz (Auswahl aus den Tags der Bibliothek), verschieben, entfernen; Wochenraster mit Klick zum Zuordnen und Rechtsklick zum Leeren, die aktuelle Stunde ist umrandet; Sperrfristen, Zeitverschiebung gegenüber UTC, Notfall-Tag, AutoDJ-Schalter.
+- **Zeitzone:** Die Ortszeit ist eine Einstellung in Minuten gegenüber UTC (Vorgabe 60); die Umstellung auf Sommerzeit muss von Hand erfolgen.
+- **Nicht in diesem Paket:** feste Zeit-Events (Nachrichten, Werbung zur vollen Stunde) und der Voice-Tracking-Editor; beides gehört zu M9, steht aber nicht im Auftrag dieses Pakets.
+- **Tests:** 24 Stunden mit simulierter Uhr gegen 500 erzeugte Titel (keine Sperrfrist verletzt, Slot-Folge je Stunde stimmt), Rückfall auf Ersatz und Notfall, nichts zu spielen ohne Absturz, gleicher und anderer Startwert, Historie nach Neustart der Datenbank (Sperren und Slot-Position), von Hand gesetzte Titel, Datei mit feindlichen Werten, Editor als Zustandstest (Anlegen, Umbenennen mit Wochenübernahme, Slots, Speichern und Laden), AutoDJ-Takt gegen eine nachgebildete Sendung, Fenster zeichnet ohne Display.
+
+
 ## 0.22.0 — 2026-10-30
 
 Paket 27 aus M7: DAWproject-Import und -Export.
