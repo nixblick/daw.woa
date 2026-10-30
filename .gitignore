@@ -71,3 +71,10 @@ credentials.yaml
 .htpasswd
 *.kdbx
 # <<< nixblick-geheimnisse <<<
+
+# Öffentliches Repo (André, 30.10.2026): interne Runbooks, Mitbewerber-Analysen und
+# geklonte Referenz-Repos bleiben lokal.
+/docs/intern/
+/.refs/
+*mitbewerber*
+*.local.md

@@ -13,7 +13,7 @@ use woa_telemetry::{
 pub const NOT_CONFIGURED: &str = "Server noch nicht eingerichtet";
 
 /// App configuration (`config.json` in the config folder). Missing file = defaults.
-/// Eigener Feedback-Server (bretteins.infra, Instanz `daw.woa` auf lfs001).
+/// Eigener Feedback-Server (eigener Server).
 pub const DEFAULT_FEEDBACK_URL: &str = "https://feedback.wironair.de/api/feedback";
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]

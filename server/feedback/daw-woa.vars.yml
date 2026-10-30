@@ -1,7 +1,7 @@
 # Vorlage: Variablen fuer die ZWEITE Instanz der bretteins-Rolle `feedback`
 # (bretteins.infra/ansible/roles/feedback) fuer daw.woa.
 # Kein Geheimnis in dieser Datei. Der GitHub-Token entsteht auf dem Server
-# (/etc/daw.woa/geheimnisse/feedback/GITHUB_TOKEN, siehe docs/andre-handgriffe.md).
+# (/etc/daw.woa/geheimnisse/feedback/GITHUB_TOKEN, siehe interne Doku).
 #
 # Einbindung (in bretteins.infra, erst NACH dem Patch aus server/README.md):
 #   - name: Feedback daw.woa

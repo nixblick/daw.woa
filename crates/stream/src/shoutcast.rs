@@ -3,7 +3,7 @@
 //! Warum Legacy statt Uvox2: DNAS v2 nimmt beide Quellprotokolle an. Der Legacy-Weg ist
 //! eine Textzeile (Kennwort), eine Antwort (`OK2`), ein paar `icy-*`-Kopfzeilen und dann
 //! rohes MP3. Uvox2 braucht Binär-Rahmen und einen verschlüsselten Anmelde-Schritt (XTEA)
-//! – viel mehr Code und Fehlerfläche für dasselbe Ergebnis. Auf lfs001 ist zudem nur der
+//! – viel mehr Code und Fehlerfläche für dasselbe Ergebnis. Auf dem eigenen Server ist zudem nur der
 //! v1-Quellport (8001) offen (bretteins.infra#150).
 //!
 //! Stream-ID 1 braucht keinen Zusatz; ab 2 hängt sie am Kennwort (`kennwort:#sid`). Das

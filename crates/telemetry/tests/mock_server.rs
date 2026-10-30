@@ -145,7 +145,7 @@ fn layer_forwards_codes_but_never_text() {
     let up = Uploader::start(upload_cfg(format!("{}/ingest", m.url))).unwrap();
     let subscriber = tracing_subscriber::registry().with(up.layer());
     tracing::subscriber::with_default(subscriber, || {
-        tracing::warn!(target: "woa_engine::graph", "could not open /home/anhi/geheim.wav");
+        tracing::warn!(target: "woa_engine::graph", "could not open /home/user/geheim.wav");
         tracing::info!(target: "woa_io", art = "perf.load.ms", wert = 42u64, "loaded /x/y.wav");
         tracing::info!(target: "woa_io", "plain info is not uploaded");
         tracing::error!(target: "woa_io", art = "Freitext mit Leerzeichen", "nope");

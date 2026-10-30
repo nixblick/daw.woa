@@ -93,7 +93,7 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// Log-Endpunkt des eigenen Servers (bretteins.infra, Instanz `daw.woa` auf lfs001).
+/// Log-Endpunkt des eigenen Servers (eigener Server).
 pub const DEFAULT_INGEST_URL: &str = "https://feedback.wironair.de/api/logs/ingest";
 
 /// Neue zufällige Installations-ID im UUID-v4-Format, ohne Personenbezug.

@@ -14,7 +14,7 @@ Edge-nginx) ein zweites Mal, mit `GITHUB_REPO=nixblick/daw.woa`.
 | `feedback/daw-woa.vars.yml` | Variablen der zweiten Instanz (Container, Port 8081, Pfade, Repo) |
 | `feedback/nginx-feedback.wironair.de.conf` | vhost für den Edge-nginx, TLS per certbot-Webroot |
 | `feedback/.env.example` | Platzhalter; echte Werte nur auf dem Server |
-| `../docs/andre-handgriffe.md` | Runbook: DNS, Token, Ausrollen, Gegenprobe |
+| `docs/intern/andre-handgriffe.md` (nur lokal) | Runbook: DNS, Token, Ausrollen, Gegenprobe |
 
 ### Geheimnisse
 

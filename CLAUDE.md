@@ -52,6 +52,11 @@ Notfall-Playlist laufen als eigener Prozess (`apps/woa-streamd`).
 Nie im Repo. Vault: `~/.secrets/daw.woa/`. Die App enthält keine GitHub-Zugangsdaten; Feedback und
 Telemetrie gehen an den eigenen Server (`server/`), der die Issues erzeugt.
 
+**Das Repo ist öffentlich** (André, 30.10.2026). Nichts Internes hinein: keine Servernamen, IPs,
+Pfade unter `/home/<name>`, internen Repos oder Token-Listen, keine Runbooks für André, keine
+Mitbewerber-Analysen, keine geklonten Referenz-Repos. Solches liegt lokal unter `docs/intern/`
+(gitignored). In Code und Doku heißt der Server nur „eigener Server“.
+
 ## Struktur
 
 `crates/` Bibliotheken (model, engine, dsp, io, library, plugins, radio, stream, guests, remote, agent,
