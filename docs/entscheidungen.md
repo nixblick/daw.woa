@@ -46,4 +46,4 @@ Bildschirm unter Linux und Windows und nach Klärung der Startzeit.
 - **Pan-Gesetz:** Constant-Power, -3 dB in der Mitte, so wie in `woa-engine` gebaut.
 - **Standard-SoundFont:** GeneralUser GS 2.0.3, Lizenz und Bezug in `docs/sounds/`.
 - **Feedback-Server:** Die Rolle `feedback` in bretteins.infra wird mehrinstanzfähig, Ticket an Dave
-  nixblick/bretteins.infra#145. Danach rollt André die zweite Instanz nach `docs/andre-handgriffe.md` aus.
+  nixblick/bretteins.infra#145. Danach rollt André die zweite Instanz nach `docs/intern/andre-handgriffe.md` (nur lokal) aus.

@@ -161,13 +161,13 @@ Logging ist Kernbaustein ab der ersten Zeile. Claude Code wertet die Daten aller
 
 - **Erfasst (nur technisch):** Abstürze mit Stacktrace, Errors, Warnings; Zeiten für Start, Laden von Instrumenten, Speichern, Rendern, Export; Buffer-Underruns, CPU-Last, Latenz; Stream-Abbrüche und Reconnects; Installations-ID (zufällige UUID), Betriebssystem, App-Version, Audio-Backend
 - **Nie erfasst:** Inhalte, Dateinamen, Titel, Anzahl erstellter Dateien, Nutzungsverhalten, IP-Adressen
-- **Technik:** `tracing` mit Spans für Zeitmessung, lokal rotierende JSON-Logs, gebündelter komprimierter Upload an den eigenen Server (Hetzner-VPS oder Goneo)
+- **Technik:** `tracing` mit Spans für Zeitmessung, lokal rotierende JSON-Logs, gebündelter komprimierter Upload an den eigenen Server (eigener Server)
 - **DSGVO:** Opt-in beim ersten Start, jederzeit abschaltbar, Datenschutzerklärung auf wironair.de, begrenzte Speicherfrist, Server in der EU
 - **Auswertung:** regelmäßiger Claude-Code-Lauf über die gesammelten Logs, Ergebnis als GitHub-Issues
 
 ### Feedback-Button (Pflicht)
 
-Wie in Bretteins und Mein Bilderschatz: Lob, Kritik oder Bug direkt aus der App, mit Screenshot. Das Feedback geht an einen Endpunkt auf dem Hetzner-VPS, der daraus ein GitHub-Issue erstellt; keine GitHub-Zugangsdaten in der App. Die Lösung wird aus den bestehenden Repos übernommen. Das ist der Haupt-Testweg: Screenshot machen, Hinweis schreiben, Ticket entsteht, KI-Agenten arbeiten es ab.
+Wie in Bretteins und Mein Bilderschatz: Lob, Kritik oder Bug direkt aus der App, mit Screenshot. Das Feedback geht an einen Endpunkt auf dem eigenen Server, der daraus ein GitHub-Issue erstellt; keine GitHub-Zugangsdaten in der App. Die Lösung wird aus den bestehenden Repos übernommen. Das ist der Haupt-Testweg: Screenshot machen, Hinweis schreiben, Ticket entsteht, KI-Agenten arbeiten es ab.
 
 ## Repository-Struktur
 
@@ -247,5 +247,5 @@ Der Stream ist für Teststreams und geschlossene Runden gedacht: standardmäßig
 
 ## Offene Entscheidungen
 
-- Server für Telemetrie und Feedback: Hetzner-VPS oder Goneo
+- Server für Telemetrie und Feedback: eigener Server
 - GUI-Framework final bestätigen (`egui` als Vorschlag) nach einem kurzen Prototyp in M0

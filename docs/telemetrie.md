@@ -64,7 +64,7 @@ Gesendet wird nur, wenn der Nutzer zugestimmt hat: Ereigniscode, Stufe, Zahl, Ze
 Installations-ID, App-Version und Betriebssystem. Keine Texte, Dateinamen, Pfade, Projektinhalte
 oder Aufnahmen. Die Installations-ID ist Zufall und lässt sich durch Löschen von `install_id` in
 `config.json` neu würfeln. Server: Instanz `daw.woa` der Rolle `feedback` (bretteins.infra) auf
-lfs001, Datenbank `woa_stats`; Aufbewahrung nach der Retention der Rolle.
+der eigene Server, Datenbank `woa_stats`; Aufbewahrung nach der Retention der Rolle.
 
 ## Feedback
 

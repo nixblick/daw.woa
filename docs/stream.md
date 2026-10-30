@@ -12,7 +12,7 @@ Mixer (Audio-Thread) ──rtrb──▶ Feeder-Thread ──lokal──▶ woa-
 
 ## Server
 
-Der Server ist der eigene Shoutcast DNAS v2 auf lfs001 (bretteins.infra#150).
+Der Server ist der eigene Shoutcast DNAS v2 auf dem eigenen Server.
 
 - Quelle: `stream.wironair.de:8001`, Stream-ID 1
 - Hören: <https://stream.wironair.de/stream>. Ohne Quelle spielt der Server eine eigene Notfall-Schleife; das ist erwartet.
@@ -29,7 +29,7 @@ DNAS v2 nimmt das alte Quellprotokoll an:
 Warum nicht Uvox2 (das v2-Protokoll):
 
 - Uvox2 braucht Binär-Rahmen und eine XTEA-verschlüsselte Anmeldung, also viel mehr Code für dasselbe Ergebnis.
-- Auf lfs001 ist nur der v1-Quellport von außen offen.
+- Auf dem eigenen Server ist nur der v1-Quellport von außen offen.
 
 **Titel:** Das v1-Protokoll kann keine Titel in der Quellverbindung tragen; die `icy-*`-Kopfzeilen
 gelten nur einmal beim Anmelden. Titel gehen nur per HTTP an `admin.cgi?mode=updinfo`, und dabei

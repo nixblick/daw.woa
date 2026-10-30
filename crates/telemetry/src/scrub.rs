@@ -57,7 +57,7 @@ mod tests {
         for bad in [
             "",
             "Hallo Welt",
-            "/home/anhi/song.wav",
+            "/home/user/song.wav",
             "C:\\Users\\x",
             "..",
             "a..b",

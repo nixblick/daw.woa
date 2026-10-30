@@ -16,7 +16,7 @@ pub fn default_password_file() -> PathBuf {
         .join("shoutcast-source.pass")
 }
 
-/// Eigener Shoutcast auf lfs001 (bretteins.infra#150). Hören: `https://stream.wironair.de/stream`.
+/// Eigener Shoutcast auf dem eigenen Server. Hören: `https://stream.wironair.de/stream`.
 pub const DEFAULT_HOST: &str = "stream.wironair.de";
 
 /// Quellprotokoll des Servers.
