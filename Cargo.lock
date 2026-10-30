@@ -1904,9 +1904,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 6.0.0",
  "rand_core",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -2832,6 +2834,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix"
+version = "0.31.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+dependencies = [
+ "bitflags 2.13.2",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
+
+[[package]]
 name = "nnnoiseless"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3698,6 +3712,15 @@ name = "quick-xml"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
 dependencies = [
  "memchr",
 ]
@@ -5040,6 +5063,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "typed-path"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ce898823d8cd0f028662d2f349694b1af0a5cc9be83f1d213a00d3147445e1e"
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5420,7 +5449,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "338e30461b3a2b67d70eb30a6d89f8e0c93a833e07d2ae89085cd070c4a00ac0"
 dependencies = [
  "proc-macro2",
- "quick-xml",
+ "quick-xml 0.41.0",
  "quote",
 ]
 
@@ -6023,7 +6052,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "woa"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "eframe",
  "tracing",
@@ -6035,7 +6064,7 @@ dependencies = [
 
 [[package]]
 name = "woa-agent"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "hound",
  "png",
@@ -6054,7 +6083,7 @@ dependencies = [
 
 [[package]]
 name = "woa-dsp"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "assert_no_alloc",
  "hound",
@@ -6067,7 +6096,7 @@ dependencies = [
 
 [[package]]
 name = "woa-engine"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "arc-swap",
  "assert_no_alloc",
@@ -6086,11 +6115,11 @@ dependencies = [
 
 [[package]]
 name = "woa-guests"
-version = "0.21.0"
+version = "0.22.0"
 
 [[package]]
 name = "woa-gui"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "assert_no_alloc",
  "eframe",
@@ -6116,7 +6145,7 @@ dependencies = [
 
 [[package]]
 name = "woa-headless"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -6137,21 +6166,26 @@ dependencies = [
 
 [[package]]
 name = "woa-io"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "assert_no_alloc",
+ "hound",
+ "insta",
  "midir",
+ "quick-xml 0.42.0",
  "rtrb",
  "serde",
  "serde_json",
+ "tempfile",
  "tracing",
  "woa-dsp",
  "woa-model",
+ "zip",
 ]
 
 [[package]]
 name = "woa-library"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "hound",
  "rusqlite",
@@ -6163,7 +6197,7 @@ dependencies = [
 
 [[package]]
 name = "woa-model"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "insta",
  "proptest",
@@ -6175,11 +6209,11 @@ dependencies = [
 
 [[package]]
 name = "woa-plugins"
-version = "0.21.0"
+version = "0.22.0"
 
 [[package]]
 name = "woa-radio"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "assert_no_alloc",
  "basedrop",
@@ -6195,11 +6229,11 @@ dependencies = [
 
 [[package]]
 name = "woa-remote"
-version = "0.21.0"
+version = "0.22.0"
 
 [[package]]
 name = "woa-stream"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "hound",
  "mp3lame-encoder",
@@ -6213,7 +6247,7 @@ dependencies = [
 
 [[package]]
 name = "woa-streamd"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "tracing",
  "woa-radio",
@@ -6223,7 +6257,7 @@ dependencies = [
 
 [[package]]
 name = "woa-telemetry"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "base64",
  "serde",
@@ -6238,7 +6272,7 @@ dependencies = [
 
 [[package]]
 name = "woa-updater"
-version = "0.21.0"
+version = "0.22.0"
 
 [[package]]
 name = "writeable"
@@ -6519,6 +6553,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "zip"
+version = "9.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1156b39d142a34b999c2310a50455e0cb3760bf7efad0122f796d813bee26ccb"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "getrandom 0.4.3",
+ "indexmap",
+ "memchr",
+ "nix",
+ "typed-path",
+ "windows-sys 0.61.2",
+ "zopfli",
+]
+
+[[package]]
 name = "zlib-rs"
 version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6529,6 +6580,18 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[package]]
+name = "zopfli"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaf7fc5d30c28483d93805c4a5e12b05bbb52407fa67c5f8bd552374cd01fb11"
+dependencies = [
+ "bumpalo",
+ "crc32fast",
+ "log",
+ "simd-adler32",
+]
 
 [[package]]
 name = "zune-core"

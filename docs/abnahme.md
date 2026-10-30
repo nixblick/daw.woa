@@ -4,6 +4,23 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 27: DAWproject Import/Export (0.22.0, offen)
+
+Aus M7. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Als DAWproject exportieren:** Ein Projekt mit mehreren Spuren (Audio, MIDI, ein Bus mit Effekt, ein Send) öffnen, Datei, „Als DAWproject exportieren …“, Ziel wählen. Die Statuszeile nennt Spuren, Clips, Audiodateien und eventuell Hinweise zu nicht Übertragenem.
+2. **In Bitwig oder Studio One öffnen:** Die Datei dort öffnen (über den Öffnen- oder Import-Eintrag des Programms). Es sollten Spuren, Clips an ihrer Stelle, Lautstärke, Pan, Mute, Sends und die Lautstärke-Automation da sein. Unsere Effekte erscheinen dort nicht (sie sind WOA-eigen), das ist so gewollt. Cubase kann DAWproject laut Hersteller ebenfalls, die Version bitte selbst prüfen.
+3. **Fremde Datei in WOA öffnen:** In Bitwig oder Studio One ein kleines Projekt als `.dawproject` speichern, in WOA Datei, „DAWproject öffnen …“. Es entsteht ein Ordner `<Name>.woa` neben der Datei und wird geöffnet. Fremde Plugins fehlen (siehe Log), alles andere sollte stimmen.
+4. **Zurück nach WOA:** Die eigene Exportdatei aus Schritt 1 wieder öffnen: Tonhöhe, Clip-Verstärkung, Blendenform und „Tempo folgen“ der Clips sind wieder da.
+
+Selbst geprüft von Claude (ohne Ton): Rundreise WOA nach DAWproject nach WOA mit Audio-, MIDI- und Bus-Spuren, Pegel, Pan, Mute, Ausgang, Send, Effekten mit allen Reglern, Clip-Werten (Position, Länge, Versatz, Blenden, Dehnung, Gain, Tonhöhe, Tempo folgen), MIDI-Noten und Lautstärke-Automation, jeweils mit Werten verglichen; `project.xml` besteht die Prüfung gegen das DAWproject-Schema 1.0 (`xmllint`); eine handgebaute Datei nach den Konventionen der Referenztests von Bitwig (Lautstärke linear, Pan normalisiert, Master als Track, Audio über Warps) wird richtig gelesen, das fremde Plugin steht im Bericht; kaputte oder feindliche Dateien (kein ZIP, ohne `project.xml`, zu tief verschachtelt, falsche Wurzel, `../` im Audiopfad) enden mit klarer Meldung und schreiben nichts außerhalb des Zielordners.
+
+Nicht selbst geprüft: das Öffnen in Bitwig, Studio One oder Cubase (ich habe keine davon), also ob die Gegenseite alle Konventionen so liest, wie die Referenztests es zeigen. Offizielle Beispieldateien gibt es im DAWproject-Repository nicht (nicht gefunden); geprüft wurde gegen das Schema und gegen eine nach der Referenz gebaute Datei. Der Export läuft im Oberflächen-Thread: bei sehr großen Audiodateien kann die Oberfläche kurz stehen.
+
+Bewusst so: DAWproject kennt keine Erweiterungen, deshalb stehen Tonhöhe, Gain, Blendenform und „Tempo folgen“ als Text im Kommentar des Clips (`woa: …`). Warp-Punkte außer Anfang und Ende, Marker, Szenen, Tempo-Automation und fremde Plugins werden nicht übernommen, aber im Log genannt. Automation von Lautstärke wird linear gespeichert; ob andere Programme zwischen den Punkten in dB oder linear interpolieren, ist offen.
+
+Offene Frage an André: Hast du Bitwig, Studio One oder Cubase für den Gegentest? Ohne eine davon bleibt „öffnet dort richtig“ eine Annahme nach der Referenz.
+
 ## Paket 26: Alle Export-Formate und Stems (0.21.0, offen)
 
 Aus M7. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

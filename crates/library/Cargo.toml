@@ -9,8 +9,8 @@ repository.workspace = true
 [dependencies]
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 tracing = "0.1.44"
-woa-engine = { version = "0.21", path = "../engine" }
-woa-dsp = { version = "0.21", path = "../dsp" }
+woa-engine = { version = "0.22", path = "../engine" }
+woa-dsp = { version = "0.22", path = "../dsp" }
 
 [dev-dependencies]
 hound = "3.5.1"

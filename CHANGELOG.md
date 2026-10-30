@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.22.0 — 2026-10-30
+
+Paket 27 aus M7: DAWproject-Import und -Export.
+
+- **Neues Modul `woa_io::dawproject`:** Eine `.dawproject`-Datei (DAWproject 1.0, ZIP mit `project.xml`, `metadata.xml` und `audio/`) wird geschrieben und gelesen. Übertragen werden Spuren (Audio, MIDI, Bus), Clips mit Position, Länge, Versatz, Blenden und Dehnung, MIDI-Noten und Controller, Tempo, Lautstärke, Pan, Mute, Solo, Ausgänge, Sends, die eigenen Effekte (als `Device` mit der Kennung `woa:<art>` samt allen Reglern) und die Automation von Lautstärke, Pan, Sends und Effekt-Reglern.
+- **Was das Format nicht kennt** (Tonhöhe, Clip-Verstärkung, Blendenform, „Tempo folgen“, die genaue Dehnung) steht als Notiz `woa: …` im Kommentar des Clips und kommt bei der Rückkehr nach WOA wieder heraus. Andere Programme zeigen die Notiz nur als Kommentar.
+- **Was WOA nicht kennt** (fremde Plugins, Szenen, Marker, Tempo- und Taktart-Automation, Clip-Schleifen, Video, Warp-Punkte außer Anfang und Ende) wird nicht übernommen, aber im Bericht genannt und geloggt; die Statuszeile zeigt die Zahl der Hinweise.
+- **Fremde Dateien sind Eingabe, nicht Vertrauen:** XML mit Tiefen- und Elementgrenze (Entitäten und DTDs werden nie aufgelöst), ZIP mit Grenzen für Einträge, Größe je Eintrag und gesamt (auch wenn die Größenangabe lügt), Audio landet nur unter selbst vergebenen Namen im Ordner `audio/` des neuen Projekts (nie ein Pfad aus der Datei), und das Ergebnis geht durch dieselbe Prüfung wie eine geladene `project.json`. Bei einem Fehler wird der angelegte Ordner wieder entfernt.
+- **Konventionen nach den Referenztests von Bitwig:** Lautstärke linear, Pan normalisiert (0,5 = Mitte), Master als Track mit `Channel role="master"`, Audio über `Warps` mit Inhalt in Sekunden und Zeit in Beats, MIDI-Controller als `Points` mit `Target expression="channelController"`.
+- **Oberfläche:** Menü Datei: „Als DAWproject exportieren …“ und „DAWproject öffnen …“ (legt `<Name>.woa` neben der Datei an und öffnet es). Rate und Länge der Audiodateien kommen aus dem WAV-Kopf, sonst vom Decoder.
+- **Schema-Datei:** `crates/io/tests/schema/Project.xsd` stammt aus dem DAWproject-Repository (MIT, Copyright 2020 Bitwig), die Lizenz liegt daneben.
+- **Abhängigkeiten:** `zip` 9.0 (nur Deflate) und `quick-xml` 0.42, beide MIT; `tempfile` jetzt auch für das atomare Schreiben. `zip` 8.6 fiel durch `cargo deny` (RUSTSEC-2026-0367 bis 0369, alle zu `extract()`, das wir nicht benutzen; behoben ab 9.0).
+- **Tests:** Rundreise (Spuren, Mixer, Bus, Send, Effekte, Automation, MIDI, Clip-Werte), gedehnter Clip mit „Tempo folgen“, `project.xml` gegen das offizielle Schema geprüft (`xmllint`, übersprungen wo es fehlt), Schnappschuss des XML, handgebaute fremde Datei nach den Konventionen von Bitwig (mit fremdem Plugin im Bericht), feindliche Dateien (kein ZIP, ohne `project.xml`, zu tief, falsche Wurzel, Pfad-Trick im Audiopfad). Offizielle Beispieldateien: im DAWproject-Repository gibt es keine `.dawproject`-Dateien, nicht gefunden.
+
 ## 0.21.0 — 2026-10-30
 
 Paket 26 aus M7: Alle Export-Formate und Stems.

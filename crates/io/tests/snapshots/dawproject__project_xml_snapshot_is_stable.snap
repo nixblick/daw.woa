@@ -1,0 +1,100 @@
+---
+source: crates/io/tests/dawproject.rs
+expression: text
+---
+<?xml version="1.0" encoding="UTF-8"?>
+<Project version="1.000000000">
+  <Application name="WOA" version="X"/>
+  <Transport>
+    <Tempo id="tempo" unit="bpm" value="100" min="20" max="400"/>
+    <TimeSignature id="timesignature" numerator="4" denominator="4"/>
+  </Transport>
+  <Structure>
+    <Track id="trkmaster" name="Master" loaded="true">
+      <Channel id="chmaster" role="master" audioChannels="2">
+        <Volume id="volmaster" unit="linear" value="1" min="0" max="2"/>
+      </Channel>
+    </Track>
+    <Track id="trk1" name="Hall" contentType="tracks" loaded="true">
+      <Channel id="ch1" role="effect" audioChannels="2" destination="chmaster" solo="false">
+        <Devices>
+          <Device id="dev2" name="Reverb" deviceRole="audioFX" deviceName="Reverb" deviceID="woa:reverb" deviceVendor="WOA" loaded="true">
+            <Parameters>
+              <RealParameter id="dp2_0" name="decay_s" parameterID="0" unit="linear" value="1.800000000" min="0.100000000" max="10"/>
+              <RealParameter id="dp2_1" name="predelay_ms" parameterID="1" unit="linear" value="15" min="0" max="200"/>
+              <RealParameter id="dp2_2" name="damping_pct" parameterID="2" unit="linear" value="40" min="0" max="100"/>
+              <RealParameter id="dp2_3" name="mix_pct" parameterID="3" unit="linear" value="25" min="0" max="100"/>
+            </Parameters>
+            <Enabled id="en2" value="true"/>
+          </Device>
+        </Devices>
+        <Mute id="mute1" value="false"/>
+        <Pan id="pan1" unit="normalized" value="0.500000000" min="0" max="1"/>
+        <Volume id="vol1" unit="linear" value="1" min="0" max="15.848931925"/>
+      </Channel>
+    </Track>
+    <Track id="trk3" name="Sprecher" contentType="audio" loaded="true">
+      <Channel id="ch3" role="regular" audioChannels="2" destination="ch1" solo="false">
+        <Devices>
+          <Device id="dev5" name="Kompressor" deviceRole="audioFX" deviceName="Kompressor" deviceID="woa:compressor" deviceVendor="WOA" loaded="true">
+            <Parameters>
+              <RealParameter id="dp5_0" name="threshold_db" parameterID="0" unit="decibel" value="-18" min="-60" max="0"/>
+              <RealParameter id="dp5_1" name="ratio" parameterID="1" unit="linear" value="2" min="1" max="20"/>
+              <RealParameter id="dp5_2" name="attack_ms" parameterID="2" unit="linear" value="10" min="0.100000000" max="200"/>
+              <RealParameter id="dp5_3" name="release_ms" parameterID="3" unit="linear" value="120" min="5" max="2000"/>
+              <RealParameter id="dp5_4" name="makeup_db" parameterID="4" unit="decibel" value="0" min="0" max="24"/>
+            </Parameters>
+            <Enabled id="en5" value="true"/>
+          </Device>
+        </Devices>
+        <Mute id="mute3" value="true"/>
+        <Pan id="pan3" unit="normalized" value="0.250000000" min="0" max="1"/>
+        <Sends>
+          <Send id="snd3_1" destination="ch1" type="post">
+            <Enable id="sen3_1" value="true"/>
+            <Volume id="sv3_1" unit="linear" value="0.251188643" min="0" max="3.981071706"/>
+          </Send>
+        </Sends>
+        <Volume id="vol3" unit="linear" value="0.501187234" min="0" max="15.848931925"/>
+      </Channel>
+    </Track>
+    <Track id="trk6" name="Keys" contentType="notes" loaded="true">
+      <Channel id="ch6" role="regular" audioChannels="2" destination="chmaster" solo="false">
+        <Mute id="mute6" value="false"/>
+        <Pan id="pan6" unit="normalized" value="0.500000000" min="0" max="1"/>
+        <Volume id="vol6" unit="linear" value="1" min="0" max="15.848931925"/>
+      </Channel>
+    </Track>
+  </Structure>
+  <Arrangement id="arrangement">
+    <Lanes id="arrangementlanes" timeUnit="beats">
+      <Lanes id="lanes3" track="trk3" timeUnit="beats">
+        <Clips id="clips3" timeUnit="beats">
+          <Clip name="Intro" time="4" duration="8" contentTimeUnit="beats" fadeTimeUnit="beats" fadeInTime="1" fadeOutTime="0.500000000" comment="woa: gain=3 pitch=2" playStart="2" playStop="10">
+            <Warps timeUnit="beats" contentTimeUnit="seconds">
+              <Audio timeUnit="seconds" duration="6" sampleRate="48000" channels="2" algorithm="stretch">
+                <File path="audio/001-a.wav"/>
+              </Audio>
+              <Warp time="0" contentTime="0"/>
+              <Warp time="10" contentTime="6"/>
+            </Warps>
+          </Clip>
+        </Clips>
+        <Points timeUnit="beats" unit="linear">
+          <Target parameter="vol3"/>
+          <RealPoint time="0" value="0.251188643" interpolation="linear"/>
+          <RealPoint time="8" value="1" interpolation="linear"/>
+        </Points>
+      </Lanes>
+      <Lanes id="lanes6" track="trk6" timeUnit="beats">
+        <Clips id="clips6" timeUnit="beats">
+          <Clip name="Akkord" time="0" duration="4" contentTimeUnit="beats" playStart="0">
+            <Notes timeUnit="beats">
+              <Note time="1" duration="2" channel="0" key="64" vel="0.787401575"/>
+            </Notes>
+          </Clip>
+        </Clips>
+      </Lanes>
+    </Lanes>
+  </Arrangement>
+</Project>
