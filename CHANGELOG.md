@@ -7,6 +7,7 @@ Paket 38 aus M9: Browser-Gast per WebRTC (lokal). Arbeitsstand, wird bis zum Mer
 - **Rückweg ins Netz:** Die Gast-Bank schreibt je Gast den Mix-Minus in einen eigenen `rtrb`-Ring (`woa_guests::ret`), nach derselben Summenbearbeitung wie die Sendung. Kein Lock, keine Allokation im Audio-Thread; ist der Ring voll, werden Frames gezählt und verworfen.
 - **Abhängigkeiten:** `str0m` (Sans-IO-WebRTC, DTLS über aws-lc-rs, weil die reine Rust-Variante `crypto-bigint` 0.5 mit RUSTSEC-2026-0387 mitbringt) und `opus`.
 - **Netzkern:** Ein UDP-Thread treibt alle Gäste (`woa_guests::net`), Opus-Decoder und -Encoder mit Resampler (`codec`, `resample`), RTT und Verlust ins Log.
+- **Einladung und Warteraum:** `gate` (Einladung 30 Minuten, einmal benutzbar; Warteraum mit Stille-Frist), `server` (HTTPS mit selbst ausgestelltem Zertifikat, Routen unter `/gast`), `web` (verbindet beides mit den Gast-Kanälen).
 
 ## 0.32.0 — 2026-10-30
 

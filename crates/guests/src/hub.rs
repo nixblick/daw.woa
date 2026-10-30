@@ -43,6 +43,8 @@ pub struct GuestView {
     pub overflows: u64,
     /// Sein Rückweg liegt im Kopfhörer.
     pub monitored: bool,
+    /// Verbindungswerte, wenn der Gast aus dem Browser kommt (Paket 38).
+    pub net: Option<crate::web::NetView>,
 }
 
 struct Guest {
@@ -67,6 +69,8 @@ pub struct GuestHub {
     guests: Vec<Option<Guest>>,
     monitor: Option<usize>,
     next_number: usize,
+    /// Zugang für Browser-Gäste (Paket 38), wenn eingeschaltet.
+    pub(crate) web: Option<crate::web::WebGuests>,
 }
 
 /// Legt Hub und Bank für `rate` an. Die Bank gehört in den Audio-Thread.
@@ -97,6 +101,7 @@ pub fn channel(rate: u32) -> (GuestHub, GuestBank) {
         guests: (0..MAX_GUESTS).map(|_| None).collect(),
         monitor: None,
         next_number: 1,
+        web: None,
     };
     (hub, bank)
 }
@@ -230,6 +235,8 @@ impl GuestHub {
         let Some(g) = self.guests.get_mut(slot).and_then(Option::take) else {
             return;
         };
+        // Ein Browser-Gast wird dabei auch im Netz getrennt.
+        self.web_hangup_slot(slot);
         if self.monitor == Some(slot) {
             self.set_monitor(None);
         }
@@ -277,6 +284,7 @@ impl GuestHub {
     /// Schreibt neue Aussetzer und Überläufe ins Log und gibt die letzte Meldung (für die
     /// Anzeige) zurück. Aufruf im Control-Takt.
     pub fn poll(&mut self) -> Option<String> {
+        self.web_tick();
         let mut last = None;
         for (slot, g) in self.guests.iter_mut().enumerate() {
             let Some(g) = g else { continue };
@@ -321,6 +329,7 @@ impl GuestHub {
                     underruns: st.underruns.load(Ordering::Relaxed),
                     overflows: st.overflows.load(Ordering::Relaxed),
                     monitored: self.monitor == Some(slot),
+                    net: self.net_view(slot),
                 })
             })
             .collect()

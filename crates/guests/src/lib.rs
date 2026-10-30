@@ -17,17 +17,21 @@
 
 pub mod bank;
 pub mod codec;
+pub mod gate;
 pub mod hub;
 pub mod jitter;
 pub mod net;
 pub mod resample;
 pub mod ret;
+pub mod server;
 pub mod source;
+pub mod web;
 
 pub use bank::{GuestBank, GuestCmd};
 pub use hub::{GuestHub, GuestView, NetGuest, channel};
 pub use jitter::{GuestFeed, SlotStats};
 pub use source::TestSignal;
+pub use web::{NetView, WebConfig, WebView};
 
 /// Höchstzahl gleichzeitiger Gäste.
 pub const MAX_GUESTS: usize = 8;

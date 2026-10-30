@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>WOA Gast</title>
+<style>
+  :root {
+    --bg: #12141a; --panel: #1b1e26; --surface: #292e3a; --border: #383f4e;
+    --text: #ecf0f8; --dim: #8a94a6; --accent: #ff9838; --ok: #38d070; --air: #ee3844;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 26rem; margin: 0 auto; padding: 24px 16px 40px; }
+  h1 { font-size: 1.25rem; margin: 0 0 4px; letter-spacing: .02em; }
+  h1 span { color: var(--accent); }
+  p { margin: 8px 0; }
+  .dim { color: var(--dim); font-size: .9rem; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-top: 16px; }
+  label { display: block; font-size: .85rem; color: var(--dim); margin-bottom: 6px; }
+  input[type=text] { width: 100%; padding: 12px; font-size: 1rem; color: var(--text);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+  input[type=text]:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button { width: 100%; margin-top: 12px; padding: 14px; font-size: 1rem; font-weight: 600;
+    color: #1b1206; background: var(--accent); border: 0; border-radius: 8px; cursor: pointer; }
+  button.quiet { background: var(--surface); color: var(--text); font-weight: 500; }
+  button.hang { background: var(--air); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .state { font-weight: 600; }
+  .state.ok { color: var(--ok); }
+  .state.bad { color: var(--air); }
+  .meter { height: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
+    overflow: hidden; margin-top: 10px; }
+  .meter > i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .08s linear; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>WOA <span>Gast</span></h1>
+  <p class="dim">Du wirst in eine Radiosendung geschaltet. Setz bitte Kopfhörer auf, sonst hörst du dich selbst.</p>
+
+  <section class="card" id="form">
+    <label for="name">Dein Name</label>
+    <input type="text" id="name" maxlength="24" autocomplete="given-name" placeholder="z. B. Anna">
+    <button id="join" type="button">Beitreten</button>
+    <p class="dim">Dein Browser fragt gleich nach dem Mikrofon. Der Moderator muss dich noch hereinlassen.</p>
+  </section>
+
+  <section class="card" id="status" hidden>
+    <p class="state" id="msg" role="status" aria-live="polite"></p>
+    <div class="meter" id="meterbox" hidden aria-hidden="true"><i id="meter"></i></div>
+    <button class="hang" id="leave" type="button">Auflegen</button>
+  </section>
+
+  <audio id="out" autoplay playsinline></audio>
+</main>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var invite = new URLSearchParams(location.search).get('i') || '';
+  var pc = null, stream = null, ticket = '', timer = 0, ctx = null, answered = false, over = false;
+
+  // Der Titel trägt den Stand; Testläufe lesen ihn aus.
+  function setTitle(s) { document.title = 'WOA-GAST ' + s; }
+  function show(text, cls) {
+    $('form').hidden = true; $('status').hidden = false;
+    var m = $('msg'); m.textContent = text; m.className = 'state ' + (cls || '');
+  }
+  function post(path, obj) {
+    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(obj), cache: 'no-store' }).then(function (r) {
+      return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'Fehler'); return j; });
+    });
+  }
+  function get(path) { return fetch(path, { cache: 'no-store' }).then(function (r) { return r.json(); }); }
+
+  function finish(text, cls, title) {
+    if (over) return; over = true;
+    clearInterval(timer);
+    if (pc) { try { pc.close(); } catch (e) {} pc = null; }
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    if (ctx) { try { ctx.close(); } catch (e) {} ctx = null; }
+    $('meterbox').hidden = true; $('leave').hidden = true;
+    show(text, cls); setTitle(title || 'ende');
+  }
+
+  function meter() {
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var an = ctx.createAnalyser(); an.fftSize = 512;
+      ctx.createMediaStreamSource(stream).connect(an);
+      var buf = new Uint8Array(an.fftSize);
+      $('meterbox').hidden = false;
+      (function draw() {
+        if (!ctx) return;
+        an.getByteTimeDomainData(buf);
+        var peak = 0;
+        for (var i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128));
+        $('meter').style.width = Math.min(100, peak / 128 * 140) + '%';
+        requestAnimationFrame(draw);
+      })();
+    } catch (e) { /* Pegel ist nur Zugabe */ }
+  }
+
+  function gathered() {
+    return new Promise(function (resolve) {
+      if (pc.iceGatheringState === 'complete') return resolve();
+      var done = function () { pc.removeEventListener('icegatheringstatechange', on); resolve(); };
+      var on = function () { if (pc.iceGatheringState === 'complete') done(); };
+      pc.addEventListener('icegatheringstatechange', on);
+      setTimeout(done, 3000);
+    });
+  }
+
+  function poll() {
+    get('/gast/state?t=' + encodeURIComponent(ticket)).then(function (s) {
+      if (over) return;
+      if (s.state === 'accepted' && !answered) {
+        answered = true;
+        setTitle('annahme');
+        show('Verbinde …');
+        pc.setRemoteDescription({ type: 'answer', sdp: s.sdp }).catch(function () {
+          finish('Verbindung nicht möglich.', 'bad', 'fehler');
+        });
+      } else if (s.state === 'rejected') {
+        finish('Der Moderator hat dich nicht hereingelassen.', 'bad', 'abgelehnt');
+      } else if (s.state === 'ended') {
+        finish('Die Verbindung ist beendet.', '', 'ende');
+      }
+    }).catch(function () { /* Netz wackelt: nächster Versuch */ });
+  }
+
+  function join() {
+    var name = $('name').value.trim();
+    if (!name) { $('name').focus(); return; }
+    $('join').disabled = true;
+    setTitle('start');
+    get('/gast/check?i=' + encodeURIComponent(invite)).then(function (c) {
+      if (!c.ok) throw new Error('Dieser Link ist abgelaufen oder wurde schon benutzt.');
+      return navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+        video: false
+      }).catch(function () { throw new Error('Ohne Mikrofon geht es nicht. Bitte erlaube es in der Adressleiste.'); });
+    }).then(function (s) {
+      stream = s; meter();
+      pc = new RTCPeerConnection({ iceServers: [] });
+      stream.getAudioTracks().forEach(function (t) { pc.addTrack(t, stream); });
+      pc.ontrack = function (e) { var a = $('out'); a.srcObject = e.streams[0] || new MediaStream([e.track]); a.play().catch(function () {}); };
+      pc.onconnectionstatechange = function () {
+        if (over) return;
+        if (pc.connectionState === 'connected') { show('Du bist auf Sendung geschaltet. Sprich los.', 'ok'); setTitle('verbunden'); }
+        else if (pc.connectionState === 'failed') finish('Verbindung fehlgeschlagen. Seid ihr im selben WLAN?', 'bad', 'fehler');
+        else if (pc.connectionState === 'disconnected') finish('Verbindung verloren.', 'bad', 'ende');
+      };
+      return pc.createOffer({ offerToReceiveAudio: true }).then(function (o) { return pc.setLocalDescription(o); }).then(gathered);
+    }).then(function () {
+      return post('/gast/join', { invite: invite, name: name, sdp: pc.localDescription.sdp });
+    }).then(function (r) {
+      ticket = r.ticket;
+      show('Warte auf den Moderator …');
+      setTitle('wartet');
+      timer = setInterval(poll, 1000);
+    }).catch(function (e) {
+      finish(e.message || 'Das hat nicht geklappt.', 'bad', 'fehler');
+    });
+  }
+
+  function leave() {
+    if (ticket) { try { navigator.sendBeacon('/gast/leave', new Blob([JSON.stringify({ t: ticket })], { type: 'application/json' })); } catch (e) {} }
+    finish('Aufgelegt. Danke für deinen Besuch.', '', 'ende');
+  }
+
+  $('join').addEventListener('click', join);
+  $('name').addEventListener('keydown', function (e) { if (e.key === 'Enter') join(); });
+  $('leave').addEventListener('click', leave);
+  window.addEventListener('pagehide', function () {
+    if (ticket && !over) { try { navigator.sendBeacon('/gast/leave', new Blob([JSON.stringify({ t: ticket })], { type: 'application/json' })); } catch (e) {} }
+  });
+  setTitle('bereit');
+  // Für Testläufe: Name und Beitritt per Adresse, nur mit ?auto=1.
+  if (new URLSearchParams(location.search).get('auto') === '1') { $('name').value = 'Testgast'; join(); }
+})();
+</script>
+</body>
+</html>

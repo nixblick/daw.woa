@@ -42,6 +42,8 @@ const RETURN_MAX_SECONDS: f32 = 0.150;
 /// Ab so viel Verlust (Anteil) oder RTT (ms) wird sofort gewarnt.
 const WARN_LOSS: f32 = 0.05;
 const WARN_RTT_MS: u32 = 300;
+/// So lange darf der Verbindungsaufbau nach der Annahme dauern.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 /// Abstand der regelmäßigen Statistikzeilen.
 const LOG_EVERY: Duration = Duration::from_secs(10);
 
@@ -209,6 +211,7 @@ struct Peer {
     /// RTP-Zeit des nächsten Rückweg-Pakets (48-kHz-Einheiten).
     rtp_time: u64,
     connected: bool,
+    created: Instant,
     shared: Arc<PeerShared>,
     last_log: Instant,
     warned_at: Option<Instant>,
@@ -465,6 +468,14 @@ fn run(
             soonest = soonest.min(p.drive(&socket, &events));
         }
 
+        // Wer sich nach der Annahme nicht verbindet (Handy in anderem Netz, Firewall), gibt den
+        // Kanal wieder frei.
+        for p in peers.values_mut() {
+            if !p.connected && p.rtc.is_alive() && p.created.elapsed() > CONNECT_TIMEOUT {
+                p.fail("Verbindung kam nicht zustande".into());
+            }
+        }
+
         // Beendete Verbindungen melden und freigeben.
         let dead: Vec<PeerId> = peers
             .iter()
@@ -588,6 +599,7 @@ fn add(
                 ret_buf: Vec::with_capacity(8192),
                 rtp_time: 0,
                 connected: false,
+                created: Instant::now(),
                 shared: Arc::new(PeerShared::default()),
                 last_log: Instant::now(),
                 warned_at: None,
