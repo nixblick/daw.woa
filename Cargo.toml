@@ -3,7 +3,19 @@ resolver = "3"
 members = ["crates/*", "apps/*"]
 
 [workspace.package]
-version = "0.5.2"
+version = "0.5.3"
 edition = "2024"
 license = "GPL-3.0-only"
 repository = "https://github.com/nixblick/daw.woa"
+
+# Schneller bauen, weniger RAM beim Linken (André 30.10.2026: „kann man das nicht effizienter?“).
+# Eigener Code mit Zeilentabellen für Backtraces, Abhängigkeiten ohne Debug-Infos.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.test]
+debug = "line-tables-only"
+
