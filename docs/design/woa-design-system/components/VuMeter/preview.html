@@ -1,0 +1,14 @@
+<!-- @dsCard group="Anzeigen" height=420 subtitle="Pegelansicht: Analog (VU) · Modern · Aus – umschaltbar" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}</style></head>
+<body>
+
+<div class="woa-col" style="gap:16px;max-width:520px">
+<div class="woa-card"><div class="woa-card__body"><div class="woa-levels" data-view="analog"><div class="woa-levels__bar"><span class="woa-label">Master-Pegel</span><div class="woa-seg3" role="group" aria-label="Pegelansicht"><button data-view="analog">Analog</button><button data-view="modern">Modern</button><button data-view="aus">Aus</button></div></div><div class="woa-levels__analog"><div class="woa-vu" data-level="-3" data-label="MASTER L" style="width:200px"></div><div class="woa-vu" data-level="-4" data-label="MASTER R" style="width:200px"></div></div><div class="woa-levels__modern"><div class="woa-bars" data-ch="L,R" data-level="-9"></div></div><div class="woa-levels__off">Pegelanzeige ausgeblendet – LED-Kette im Transport bleibt.</div></div></div></div>
+<div class="woa-card"><div class="woa-card__body"><div class="woa-levels" data-view="modern"><div class="woa-levels__bar"><span class="woa-label">Master-Pegel</span><div class="woa-seg3" role="group" aria-label="Pegelansicht"><button data-view="analog">Analog</button><button data-view="modern">Modern</button><button data-view="aus">Aus</button></div></div><div class="woa-levels__analog"><div class="woa-vu" data-level="-3" data-label="MASTER L" style="width:200px"></div><div class="woa-vu" data-level="-4" data-label="MASTER R" style="width:200px"></div></div><div class="woa-levels__modern"><div class="woa-bars" data-ch="L,R" data-level="-9"></div></div><div class="woa-levels__off">Pegelanzeige ausgeblendet – LED-Kette im Transport bleibt.</div></div></div></div>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>

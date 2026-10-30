@@ -114,6 +114,17 @@ Liquidsoap. Übernommen sind Ideen, Randfälle und Testfälle, kein Quelltext.
 - **Mixxx** (`mixxxdj/mixxx`, GPL-2.0-or-later, Commit `bc49961fd3e5`), `.github/workflows/release.yml`. **Nur den Aufbau gelesen:** ein Release-Workflow löst bei einem Tag aus und setzt die Bauten (Plattformen, AppImage, Flatpak) aus eigenen, wiederverwendbaren Workflows (`workflow_call`) zusammen; Prüfsummen liegen als Datei neben dem Paket. Bei uns: `release.yml` ruft `windows-build.yml` und `linux-build.yml` auf, dazu eine gemeinsame `SHA256SUMS`. **Kein Code übernommen.**
 - **Nicht gelesen:** Audacity und LMMS für diesen Teil (Windows-Signierung und Mixxx' Hochladen auf eigene Server sind bewusst nicht nachgebaut: Zertifikat und Veröffentlichung sind Andrés Entscheidung).
 
+## Schriften des Design Systems
+
+Liegen als woff2 in `docs/design/woa-design-system/fonts/`; für egui später als TTF. Alle unter der
+**SIL Open Font License 1.1** (frei nutzbar, einbettbar und weitergebbar, nicht einzeln verkaufen;
+Lizenztext gehört zu jeder Weitergabe).
+
+- **Barlow** (Jeremy Tribby, `jpt/barlow`, OFL 1.1): Oberfläche und Listen (`font-ui`).
+- **Barlow Condensed** (Jeremy Tribby, `jpt/barlow`, OFL 1.1): Pult-Beschriftungen, Titel, Party-Anzeigen (`font-label`).
+- **JetBrains Mono** (JetBrains, `JetBrains/JetBrainsMono`, OFL 1.1): Zahlen, Zeiten, Messwerte (`font-mono`).
+- **DSEG7 Classic** (Keshikan, `keshikan/DSEG`, OFL 1.1): Leuchtziffern in LCDs und Uhren (`font-seg`).
+
 ## Regel
 
 Quellen werden nur mit Repository, Datei und Commit genannt, nie mit Pfaden einer Maschine.

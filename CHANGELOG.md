@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.6 — 2026-10-31
+## 0.34.7 — 2026-10-31
 
 Silvestersendung Teil 2, Paket 3 von 4 (#134): Telefon mit Rückweg.
 
@@ -9,6 +9,10 @@ Silvestersendung Teil 2, Paket 3 von 4 (#134): Telefon mit Rückweg.
 - **Rückweg (Mix-Minus):** neue Quelle „Telefon-Rückweg“ unter „Ausgänge (Soundkarten)“, Gerät und Kanalpaar frei (Karte 1). Er trägt alles, was auf Sendung ist, nur nicht den Anrufer. Ohne Wahl gibt es keinen Rückweg und nie eine Ausgabe im Hauptausgang; ein Paar, das schon eine andere Quelle trägt, wird abgelehnt.
 - **Zwei Karten, ein Takt:** Der Eingang kommt über dieselbe Taktverbindung wie die weiteren Ausgänge (`woa_engine::pairs::link`, leichter Hermite-Umrechner, 50 ms Polster): andere Rate und auseinanderlaufende Takte werden ausgeglichen. Neu in der Engine: `record::start_pair_input`, `probe_input`, `InputConfig.pair`.
 - Tests ohne Ton und ohne Allokation: Rückweg ohne Anrufer-Anteil, ohne Anrufer-Signal gleich dem Programm, Pegel ohne Sendung, 44,1 kHz, kein Rückweg, Absenkung, Zuordnung. Abnahme: `docs/abnahme.md`, „Silvester Teil 2, Paket 3“.
+
+## 0.34.6 — 2026-10-30
+
+- **Design System im Repo:** `docs/design/woa-design-system.zip` (Original aus Claude Design) und entpackt unter `docs/design/woa-design-system/` (Brand-Book, Tokens für 6 Themen, Bausteine mit Vorschau, Screen-Entwürfe, Logos, Schriften). Übersicht in `docs/design/README.md`, Schriftlizenzen (SIL OFL 1.1) in `docs/herkunft.md`, `CLAUDE.md` nennt das Design System als verbindliche Vorgabe für `crates/gui`. Kein Code geändert.
 
 ## 0.34.5 — 2026-10-30
 

@@ -1,0 +1,15 @@
+<!-- @dsCard group="Bedienelemente" height=96 subtitle="Mute · Solo · PFL · Rec-Arm" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}</style></head>
+<body>
+
+<div class="woa-row" style="gap:24px">
+ <div class="woa-keys"><button class="woa-key woa-key--sm woa-key--sq woa-key--rec is-on" aria-label="Mute">M</button><button class="woa-key woa-key--sm woa-key--sq woa-key--warn" aria-label="Solo">S</button><button class="woa-key woa-key--sm woa-key--cue" aria-label="Vorhören">PFL</button><button class="woa-key woa-key--sm woa-key--sq" aria-label="Aufnahme scharf" style="color:var(--on-air)">●</button></div>
+ <div class="woa-keys"><button class="woa-key woa-key--sm woa-key--sq" aria-label="Mute">M</button><button class="woa-key woa-key--sm woa-key--sq woa-key--warn is-on" aria-label="Solo">S</button><button class="woa-key woa-key--sm woa-key--cue is-lit" aria-label="Vorhören"><span class="woa-key__led"></span>PFL</button><button class="woa-key woa-key--sm woa-key--sq woa-key--rec is-lit" aria-label="Aufnahme scharf"><span class="woa-key__led"></span></button></div>
+</div>
+<p class="woa-dim" style="margin:12px 0 0;font-size:12px">M rot (stumm) · S gelb (solo) · PFL cyan (Vorhören) · Rec-Arm rot blinkend bei Aufnahme</p>
+<script>WOA.init();</script>
+</body>
+</html>
