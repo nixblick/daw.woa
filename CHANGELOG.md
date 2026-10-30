@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1 — 2026-10-30
+
+- MIDI-Import: Noten ohne „Aus“ zählen gegen die Obergrenze mit. Eine präparierte Datei nur aus Note-Ons konnte die Grenze umgehen und den Speicher füllen; das Auflösen ist jetzt FIFO mit `VecDeque` statt `remove(0)` (Fund der Sicherheitsprüfung).
+
 ## 0.7.0 — 2026-10-30
 
 Paket 12 aus M4 (#5): MIDI aufnehmen und als Noten speichern.
