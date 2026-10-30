@@ -15,6 +15,7 @@ Paket 33 aus M8: Absturzschutz per eigenem Prozess (Abnahme: `docs/abnahme.md`).
 - **Tests:** Selbstprüfung mit dem Test-Plugin, das absichtlich abstürzt oder hängt (Offline-Render und Echtzeit-Fenster, ohne Audiogerät): gleiche Ausgabe wie im Programm, gemessene Latenz (Impuls an Stelle 64), Absturz stumm nur dort, Hänger wird beendet, Neuladen, Zustand und Regler über die Prozessgrenze, ein Suchprozess, der stirbt; Engine: Ausgleich zwischen Spuren.
 - **Nicht gebaut:** Plugin-Fenster im Schutzprozess unter Windows; Nachführen einer Latenz, die sich nach dem Laden ändert; Verpacken des zweiten Programms (AppImage, MSI, Flatpak) — bis dahin ruft sich die App selbst mit `--woa-plugin-host` auf.
 - **Abhängigkeit:** `memmap2` in `woa-plugins`; `latency` in `clack-extensions`.
+- **Windows:** Ungenutzter Import im Test behoben, der die Prüfung unter Windows brach.
 
 ## 0.27.1 — 2026-10-30
 

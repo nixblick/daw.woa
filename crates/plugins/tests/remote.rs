@@ -7,8 +7,10 @@ use std::time::{Duration, Instant};
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use woa_dsp::instrument::NoteEvent;
 use woa_dsp::plugin::StereoProcessor;
+#[cfg(unix)]
+use woa_plugins::Catalog;
 use woa_plugins::testplugin::{self, CRASH, GAIN, HANG, LEVEL};
-use woa_plugins::{Catalog, ClapInstance, Health, HostConfig, RemoteInstance};
+use woa_plugins::{ClapInstance, Health, HostConfig, RemoteInstance};
 
 #[global_allocator]
 static A: AllocDisabler = AllocDisabler;
