@@ -41,7 +41,7 @@ pub mod store;
 pub use command::Command;
 pub use error::{ModelError, Result};
 pub use history::{History, HistoryEntry};
-pub use midi::{CC_SUSTAIN, MidiCc, MidiData, MidiNote};
+pub use midi::{CC_SUSTAIN, Edited, MIN_NOTE_BEATS, MidiCc, MidiData, MidiNote, grid_beats};
 pub use project::{
     Clip, ClipId, DEFAULT_TEMPO_BPM, MAX_GAIN_DB, MAX_ID, MAX_TEMPO_BPM, MIN_GAIN_DB,
     MIN_TEMPO_BPM, Project, ProjectMeta, Track, TrackId, TrackKind, is_safe_audio_path,

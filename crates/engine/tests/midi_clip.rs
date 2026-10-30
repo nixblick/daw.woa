@@ -198,3 +198,31 @@ fn audio_thread_publishes_the_sample_clock() {
     assert_eq!(r.rate, SR as f32);
     let _ = Arc::strong_count(&clock);
 }
+
+/// Paket 13: Offline-Render vor und nach dem Quantisieren. Vorher setzen die Noten
+/// daneben ein, nachher auf dem Viertel-Raster (höchstens 1 ms = 48 Samples daneben).
+#[test]
+fn quantize_moves_rendered_onsets_onto_the_grid() {
+    let (mut project, expected) = project();
+    let off = [0.07, 1.12, 1.93, 3.04];
+    let midi = project.tracks[0].clips[0].midi.as_mut().unwrap();
+    for (n, b) in midi.notes.iter_mut().zip(off) {
+        n.beat = b;
+    }
+    let (q, _) = midi.quantize(&[], woa_model::grid_beats(4, false), false);
+    let before = project.clone();
+    project.tracks[0].clips[0].midi = Some(q);
+    let end = project_end_seconds(&before);
+    let (l0, _) = render_clips(&before, SR, end, &mut |_| None).unwrap();
+    let (l1, _) = render_clips(&project, SR, end, &mut |_| None).unwrap();
+    for (i, (&e, b)) in expected.iter().zip(off).enumerate() {
+        let e = e as usize;
+        let was = ((2.0 + b) * 24_000.0) as usize;
+        let from = e.min(was) - 2_000;
+        let got0 = onset(&l0, from, 1e-4).unwrap();
+        let got1 = onset(&l1, from, 1e-4).unwrap();
+        assert!(got0.abs_diff(was) <= 48, "note {i} before: {got0} vs {was}");
+        assert!(got0.abs_diff(e) > 500, "note {i} was off the grid");
+        assert!(got1.abs_diff(e) <= 48, "note {i} after: {got1} vs {e}");
+    }
+}

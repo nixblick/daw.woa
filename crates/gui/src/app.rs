@@ -102,6 +102,8 @@ pub struct WoaApp {
     midi: woa_io::midi::MidiIn,
     /// Letzter gesehener Event-Zähler und wann er sich zuletzt geändert hat (Lampe).
     midi_seen: (u64, Option<Instant>),
+    /// Offene Piano-Roll (Paket 13), Doppelklick auf einen MIDI-Clip.
+    piano_roll: Option<crate::pianoroll::PianoRoll>,
 }
 
 impl WoaApp {
@@ -126,6 +128,7 @@ impl WoaApp {
         Self {
             midi,
             midi_seen: (0, None),
+            piano_roll: None,
             takes: Vec::new(),
             rec_start: 0.0,
             midi_takes: Vec::new(),
@@ -768,7 +771,58 @@ impl WoaApp {
         }
     }
 
+    /// Opens the piano roll for a MIDI clip and selects its track (live instrument for
+    /// the preview keyboard).
+    fn open_piano_roll(&mut self, clip: ClipId) {
+        let Some((track, c)) = self.state.project().clip(clip) else {
+            return;
+        };
+        if c.midi.is_none() {
+            return;
+        }
+        self.selected_track = Some(track.id);
+        self.selected_clip = Some(clip);
+        tracing::info!(clip = clip.0, "piano roll opened");
+        self.piano_roll = Some(crate::pianoroll::PianoRoll::new(clip));
+    }
+
+    /// Draws the open piano roll; closes it when its window or clip is gone.
+    fn piano_roll_window(&mut self, ctx: &egui::Context) {
+        let Some(pr) = self.piano_roll.as_mut() else {
+            return;
+        };
+        let track = self.state.project().clip(pr.clip).map(|(t, _)| t.id);
+        let live = self
+            .state
+            .project()
+            .tracks
+            .iter()
+            .filter(|t| t.kind == woa_model::TrackKind::Midi)
+            .map(|t| t.id)
+            .find(|id| {
+                if self.armed.is_empty() {
+                    self.selected_track == Some(*id)
+                } else {
+                    self.armed.contains(id)
+                }
+            });
+        // Vorhören nur, wenn ein Ausgang läuft und die Spur des Clips das Live-Instrument hat.
+        let sink = self
+            .player
+            .as_ref()
+            .filter(|_| track.is_some() && track == live)
+            .map(Player::midi_sink);
+        if !pr.show(ctx, &mut self.state, sink.as_ref()) {
+            self.piano_roll = None;
+        }
+    }
+
     fn shortcuts(&mut self, ctx: &egui::Context) {
+        if let Some(pr) = self.piano_roll.as_mut()
+            && !pr.keys(ctx, &mut self.state)
+        {
+            self.piano_roll = None;
+        }
         let (undo, redo, save, open, new, record) = ctx.input_mut(|i| {
             let m = egui::Modifiers::COMMAND;
             let sm = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
@@ -853,10 +907,33 @@ impl WoaApp {
     /// Fotomodus für Design-Prüfungen: nach ein paar Bildern ein Bildschirmfoto des Fensters
     /// als PNG speichern und beenden.
     fn photo(&mut self, ctx: &egui::Context) {
-        let Some((path, frames)) = &mut self.photo else {
+        let Some((_, frames)) = &mut self.photo else {
             return;
         };
         *frames += 1;
+        let first = *frames == 2;
+        if first && std::env::var_os("WOA_PIANOROLL").is_some() {
+            // Fotomodus der Piano-Roll: ersten MIDI-Clip öffnen, zwei Noten wählen.
+            let clip = self
+                .state
+                .project()
+                .tracks
+                .iter()
+                .flat_map(|t| &t.clips)
+                .find(|c| c.midi.is_some())
+                .map(|c| c.id);
+            if let Some(clip) = clip {
+                self.open_piano_roll(clip);
+                if let Some(pr) = self.piano_roll.as_mut() {
+                    pr.sel = vec![1, 2];
+                }
+            }
+            ctx.request_repaint();
+            return;
+        }
+        let Some((path, frames)) = &mut self.photo else {
+            return;
+        };
         if *frames == 20 {
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
         }
@@ -1692,8 +1769,15 @@ impl WoaApp {
                     .map(|(t, _)| *t);
                 self.state.move_clip_to(id, target, snapped);
             }
+            if cresp.double_clicked() && c.midi.is_some() {
+                self.open_piano_roll(c.id);
+            }
             cresp.on_hover_text(
-                "Ziehen: verschieben (auch auf andere Spur) · Ränder ziehen: kürzen · S: am Kopf schneiden · Entf: löschen",
+                if c.midi.is_some() {
+                    "Doppelklick: Piano-Roll · Ziehen: verschieben (auch auf andere Spur) · Ränder ziehen: kürzen · S: am Kopf schneiden · Entf: löschen"
+                } else {
+                    "Ziehen: verschieben (auch auf andere Spur) · Ränder ziehen: kürzen · S: am Kopf schneiden · Entf: löschen"
+                },
             );
             // Griffe an beiden Rändern zum Kürzen.
             for left in [true, false] {
@@ -2162,6 +2246,7 @@ impl eframe::App for WoaApp {
                     .inner_margin(egui::Margin::symmetric(12, 10)),
             )
             .show(ui, |ui| self.tracks(ui));
+        self.piano_roll_window(&ctx);
         self.feedback_window(&ctx);
         self.telemetry_window(&ctx);
     }

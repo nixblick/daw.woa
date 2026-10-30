@@ -6,6 +6,7 @@
 pub mod app;
 pub mod covers;
 pub mod feedback;
+pub mod pianoroll;
 pub mod player;
 pub mod radio;
 mod sources;
