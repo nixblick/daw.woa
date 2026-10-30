@@ -4,6 +4,26 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 40: Release-Workflow für beide Plattformen (0.34.1, offen)
+
+Aus M10. Ein Tag `v…` baut Windows und Linux und legt ein Release als **Entwurf** an. Den Probelauf gibt es ohne Tag (GitHub → Actions → Release → Run workflow); er legt kein Release an. Ablauf: `docs/release.md`.
+
+1. **Release-Entwurf ansehen:** Nach dem Tag (oder dem ersten echten Release) auf GitHub unter Releases den Entwurf „WOA <version>“ öffnen. Die Neuerungen im Text sind der CHANGELOG-Abschnitt.
+2. **Dateien plus SHA256SUMS da:** `woa-<v>-x64.msi`, `woa-<v>-windows-x64.zip`, `WOA-<v>-x86_64.AppImage`, `woa-<v>.flatpak`, `latest.json`, `SHA256SUMS`. Nach dem Herunterladen in einen Ordner: `sha256sum -c SHA256SUMS` meldet überall OK.
+3. **Freigeben:** Entwurf veröffentlichen. Erst danach bietet die App das Update an.
+
+Selbst geprüft von Claude (ohne Ton, ohne Audiogerät; lokal und im CI-Lauf):
+- **Prüfskript:** `packaging/test-release-check.sh` mit 19 Fällen: Tag passt, Tag zu alt, Tag mit Zusatz, CHANGELOG hinkt hinterher oder ist leer, geänderter UpgradeCode, fehlende oder leere Release-Dateien, `SHA256SUMS` (schließt sich nicht selbst ein, Gegenprobe, geänderte Datei fällt auf). `shellcheck` ohne Befund.
+- **Probelauf im PR:** Der Workflow läuft bei Änderungen an `release.yml` ohne Tag durch (Prüfen, Windows, Linux, Paket) und hängt den fertigen Ordner als Artefakt `release-probe` an; keine Veröffentlichung.
+- **MSI-Upgrade im Windows-Runner:** alt (0.0.1) installieren, neu darüber, ein Eintrag, Dateien da, Downgrade abgelehnt, Deinstallation sauber (`test-upgrade.ps1`).
+
+Nicht selbst geprüft: ein echter Tag-Lauf mit Entwurf (der Tag setzt ein echtes Release in Gang; das ist dein Handgriff); Update von einer schon installierten, früheren Version auf deinem Rechner (nur der Runner-Ersatz mit 0.0.1).
+
+**Offen für André:**
+- Windows-Codesigning-Zertifikat (kostenpflichtig) und Signatur der Linux-Pakete.
+- Veröffentlichung: Download-Seite und Datenschutzerklärung auf wironair.de, Flathub.
+- minisign-Schlüssel für Stufe B des Updaters (`docs/updater.md`).
+
 ## Paket 39: Linux-Pakete aus der CI (AppImage und Flatpak) (0.34.0, offen)
 
 Aus M10. Die Pakete entstehen im Workflow „Linux-Bau“ (GitHub → Actions → Linux-Bau → Run workflow, oder bei diesem PR automatisch). Sie sind unsigniert.
