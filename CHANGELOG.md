@@ -16,6 +16,10 @@ Paket 33 aus M8: Absturzschutz per eigenem Prozess (Abnahme: `docs/abnahme.md`).
 - **Nicht gebaut:** Plugin-Fenster im Schutzprozess unter Windows; Nachführen einer Latenz, die sich nach dem Laden ändert; Verpacken des zweiten Programms (AppImage, MSI, Flatpak) — bis dahin ruft sich die App selbst mit `--woa-plugin-host` auf.
 - **Abhängigkeit:** `memmap2` in `woa-plugins`; `latency` in `clack-extensions`.
 
+## 0.27.1 — 2026-10-30
+
+- **CI:** Neuer Workflow „Windows-Bau“ (`.github/workflows/windows-build.yml`), von Hand zu starten. Baut `woa.exe`, `woa-headless.exe` und `woa-streamd.exe` im Release-Profil und legt sie als MSI-Installer (WiX 5, `packaging/windows/woa.wxs`: Programme-Ordner, Startmenü-Eintrag, neuere Version ersetzt ältere) und als ZIP an den Lauf (30 Tage). Unsigniert. Produktname in der MSI mit einfachem Bindestrich (Codepage 1252).
+
 ## 0.27.0 — 2026-10-30
 
 Paket 32 aus M8: Plugin-Fenster (Abnahme: `docs/abnahme.md`).
