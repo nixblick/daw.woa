@@ -395,6 +395,62 @@ impl Player {
         self.rack.as_mut()?.param_value(id, param)
     }
 
+    /// Ob das Plugin ein eigenes Fenster anbietet.
+    pub fn plugin_has_gui(&mut self, id: InsertId) -> bool {
+        self.rack.as_mut().is_some_and(|r| r.has_gui(id))
+    }
+
+    /// Ob das Fenster des Plugins offen ist.
+    pub fn plugin_gui_open(&self, id: InsertId) -> bool {
+        self.rack.as_ref().is_some_and(|r| r.gui_open(id))
+    }
+
+    /// Ob irgendein Plugin-Fenster offen ist.
+    pub fn any_plugin_gui_open(&self) -> bool {
+        self.rack.as_ref().is_some_and(|r| r.any_gui_open())
+    }
+
+    /// Öffnet das Plugin-Fenster; der Fehlertext ist für die Statuszeile.
+    pub fn open_plugin_gui(&mut self, id: InsertId, title: &str) -> Result<(), String> {
+        match self.rack.as_mut() {
+            Some(r) => r.open_gui(id, title).map_err(|e| e.to_string()),
+            None => Err("Plugin-Fenster: keine Plugins geladen".into()),
+        }
+    }
+
+    /// Schließt das Plugin-Fenster.
+    pub fn close_plugin_gui(&mut self, id: InsertId) {
+        if let Some(r) = self.rack.as_mut() {
+            r.close_gui(id);
+        }
+    }
+
+    /// Jedes Bild: Reglerbewegungen aus den Plugin-Fenstern holen, dann die Plugins bedienen.
+    pub fn pump_plugins(&mut self) -> Vec<(InsertId, woa_plugins::ParamEdit)> {
+        let Some(r) = self.rack.as_mut() else {
+            return Vec::new();
+        };
+        let edits = r.poll_edits();
+        r.pump();
+        edits
+    }
+
+    /// Gleicht die laufenden Plugins mit dem Projekt ab (nach Rückgängig/Wiederholen).
+    pub fn reconcile_plugins(&mut self, project: &Project) {
+        if let Some(r) = self.rack.as_mut() {
+            r.reconcile(project);
+        }
+    }
+
+    /// Der Zustand eines Plugins als Befehl (Preset-Wechsel im Fenster).
+    pub fn capture_plugin_slot(
+        &mut self,
+        project: &Project,
+        id: InsertId,
+    ) -> Option<woa_model::Command> {
+        self.rack.as_mut()?.capture_slot(project, id)
+    }
+
     /// Befehle, die den Zustand der laufenden Plugins ins Projekt übernehmen.
     pub fn capture_plugin_state(&mut self, project: &Project) -> Vec<woa_model::Command> {
         self.rack

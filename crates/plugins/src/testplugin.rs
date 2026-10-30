@@ -6,10 +6,14 @@
 //! Als Instrument (keine Eingabe) klingt es bei Noten; als Effekt (Eingabe, keine Noten)
 //! verstärkt es das Signal um den Regler `GAIN`.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use clack_extensions::audio_ports::{
     AudioPortFlags, AudioPortInfo, AudioPortInfoWriter, AudioPortType, PluginAudioPortsImpl,
+};
+use clack_extensions::gui::{
+    GuiApiType, GuiConfiguration, GuiSize, PluginGui, PluginGuiImpl, Window,
 };
 use clack_extensions::note_ports::{
     NoteDialect, NoteDialects, NotePortInfo, NotePortInfoWriter, PluginNotePortsImpl,
@@ -19,8 +23,12 @@ use clack_extensions::params::{
     PluginMainThreadParams,
 };
 use clack_extensions::state::PluginStateImpl;
+use clack_extensions::timer::{HostTimer, PluginTimer, PluginTimerImpl, TimerId};
 use clack_host::entry::PluginEntry;
 use clack_plugin::clack_export_entry;
+use clack_plugin::events::event_types::{
+    ParamGestureBeginEvent, ParamGestureEndEvent, ParamValueEvent,
+};
 use clack_plugin::events::spaces::CoreEventSpace;
 use clack_plugin::prelude::*;
 use clack_plugin::stream::{InputStream, OutputStream};
@@ -32,6 +40,60 @@ pub const ID: &str = "de.woa.test-plugin";
 pub const GAIN: u32 = 1;
 /// Regler: Lautstärke des Synths (0..1, Grundwert 0.5).
 pub const LEVEL: u32 = 2;
+
+/// Was die „Oberfläche“ des Test-Plugins dem Host meldet.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SimEvent {
+    /// Regler angefasst.
+    Begin(u32),
+    /// Neuer Wert.
+    Value(u32, f64),
+    /// Regler losgelassen.
+    End(u32),
+}
+
+static GUI_LOG: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+static SIM: Mutex<Vec<SimEvent>> = Mutex::new(Vec::new());
+static TIMER_TICKS: AtomicU32 = AtomicU32::new(0);
+static SERIAL: Mutex<()> = Mutex::new(());
+
+/// Tests, die das Fenster-Protokoll oder die Simulation benutzen, halten diese Sperre (sonst
+/// mischen sich parallele Tests).
+pub fn serial() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Die Aufrufe des Hosts an die Oberfläche des Test-Plugins seit dem letzten [`gui_log_clear`].
+pub fn gui_log() -> Vec<&'static str> {
+    GUI_LOG.lock().map(|g| g.clone()).unwrap_or_default()
+}
+
+/// Leert das Protokoll, die Simulation und den Zeitgeberzähler.
+pub fn gui_log_clear() {
+    if let Ok(mut g) = GUI_LOG.lock() {
+        g.clear();
+    }
+    if let Ok(mut g) = SIM.lock() {
+        g.clear();
+    }
+    TIMER_TICKS.store(0, Ordering::Relaxed);
+}
+
+/// Wie oft der Host den Zeitgeber der „Oberfläche“ gerufen hat.
+pub fn timer_ticks() -> u32 {
+    TIMER_TICKS.load(Ordering::Relaxed)
+}
+
+/// Lässt die „Oberfläche“ Regler bewegen: Das Plugin meldet die Ereignisse im nächsten Block
+/// als Ausgangs-Events und setzt seine eigenen Werte entsprechend.
+pub fn simulate_gui(events: &[SimEvent]) {
+    if let Ok(mut g) = SIM.lock() {
+        // Als Stapel abgelegt, der Audio-Thread nimmt von hinten (kein Freigeben dort).
+        g.extend(events.iter().rev());
+    }
+}
 
 /// Die Reglerwerte, vom Audio- und vom Control-Thread gemeinsam gelesen (als Bits eines `f64`).
 pub struct TestShared {
@@ -83,7 +145,9 @@ impl Plugin for TestPlugin {
             .register::<clack_extensions::audio_ports::PluginAudioPorts>()
             .register::<clack_extensions::note_ports::PluginNotePorts>()
             .register::<clack_extensions::params::PluginParams>()
-            .register::<clack_extensions::state::PluginState>();
+            .register::<clack_extensions::state::PluginState>()
+            .register::<PluginGui>()
+            .register::<PluginTimer>();
     }
 }
 
@@ -100,16 +164,88 @@ impl DefaultPluginFactory for TestPlugin {
     }
 
     fn new_main_thread<'a>(
-        _host: HostMainThreadHandle<'a>,
+        host: HostMainThreadHandle<'a>,
         shared: &'a TestShared,
     ) -> Result<TestMain<'a>, PluginError> {
-        Ok(TestMain { shared })
+        Ok(TestMain { shared, host })
     }
 }
 
 /// Control-Thread-Teil.
 pub struct TestMain<'a> {
     shared: &'a TestShared,
+    host: HostMainThreadHandle<'a>,
+}
+
+fn log(what: &'static str) {
+    if let Ok(mut g) = GUI_LOG.lock() {
+        g.push(what);
+    }
+}
+
+impl PluginGuiImpl for TestMain<'_> {
+    fn is_api_supported(&self, configuration: GuiConfiguration) -> bool {
+        configuration.is_floating
+    }
+
+    fn get_preferred_api(&self) -> Option<GuiConfiguration<'_>> {
+        Some(GuiConfiguration {
+            api_type: GuiApiType::X11,
+            is_floating: true,
+        })
+    }
+
+    fn create(&self, _configuration: GuiConfiguration) -> Result<(), PluginError> {
+        log("create");
+        // Wie ein echtes Plugin: einen Zeitgeber für die Oberfläche anmelden.
+        if let Some(t) = self.host.get_extension::<HostTimer>() {
+            let _ = t.register_timer(&self.host, 20);
+        }
+        Ok(())
+    }
+
+    fn destroy(&self) {
+        log("destroy");
+    }
+
+    fn set_scale(&self, _scale: f64) -> Result<(), PluginError> {
+        Ok(())
+    }
+
+    fn get_size(&self) -> Option<GuiSize> {
+        Some(GuiSize {
+            width: 400,
+            height: 300,
+        })
+    }
+
+    fn set_size(&self, _size: GuiSize) -> Result<(), PluginError> {
+        Ok(())
+    }
+
+    fn set_parent(&self, _window: Window) -> Result<(), PluginError> {
+        Err(PluginError::Message("nur schwebend"))
+    }
+
+    fn set_transient(&self, _window: Window) -> Result<(), PluginError> {
+        Err(PluginError::Message("nicht unterstützt"))
+    }
+
+    fn show(&self) -> Result<(), PluginError> {
+        log("show");
+        Ok(())
+    }
+
+    fn hide(&self) -> Result<(), PluginError> {
+        log("hide");
+        Ok(())
+    }
+}
+
+impl PluginTimerImpl for TestMain<'_> {
+    fn on_timer(&self, _timer_id: TimerId) {
+        TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 impl<'a> PluginMainThread<'a, TestShared> for TestMain<'a> {}
@@ -271,6 +407,32 @@ impl<'a> PluginAudioProcessor<'a, TestShared, TestMain<'a>> for TestProcessor<'a
             return Ok(ProcessStatus::Continue);
         };
         let frames = channels.frames_count() as usize;
+        // Die simulierte Oberfläche meldet ihre Reglerbewegungen (ohne Warten: try_lock).
+        if let Ok(mut sim) = SIM.try_lock() {
+            while let Some(e) = sim.pop() {
+                match e {
+                    SimEvent::Begin(id) => {
+                        let _ = events
+                            .output
+                            .try_push(ParamGestureBeginEvent::new(0, ClapId::new(id)));
+                    }
+                    SimEvent::Value(id, v) => {
+                        self.shared.set(id, v);
+                        let _ = events.output.try_push(ParamValueEvent::new(
+                            0,
+                            ClapId::new(id),
+                            clack_plugin::events::Pckn::match_all(),
+                            v,
+                        ));
+                    }
+                    SimEvent::End(id) => {
+                        let _ = events
+                            .output
+                            .try_push(ParamGestureEndEvent::new(0, ClapId::new(id)));
+                    }
+                }
+            }
+        }
         let mut cursor = 0usize;
         let mut input = events.input.into_iter().peekable();
         for frame in 0..frames {

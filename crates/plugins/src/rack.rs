@@ -9,8 +9,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use woa_dsp::plugin::{PluginEffect, TrackPlugins};
-use woa_model::{Command, InsertId, PluginRole, PluginSlot, Project, Track};
+use woa_model::{Command, InsertId, PluginParam, PluginRole, PluginSlot, Project, Track};
 
+use crate::feedback::ParamEdit;
 use crate::host::{ClapInstance, HostError, ParamDesc};
 use crate::scan::Catalog;
 
@@ -29,6 +30,16 @@ struct Entry {
     clap_id: String,
     status: SlotStatus,
     instance: Option<ClapInstance>,
+    /// Reglerwerte nach dem Laden: dorthin geht ein Regler zurück, wenn „Rückgängig“ seinen
+    /// gespeicherten Wert aus dem Projekt nimmt.
+    baseline: HashMap<u32, f64>,
+    /// Wert vor der ersten Änderung aus der Plugin-Oberfläche (genauer als `baseline`).
+    origin: HashMap<u32, f64>,
+    /// Zustand des Plugins vor jedem Laden eines Projektzustands (der „Grundzustand“).
+    initial_state: Option<Vec<u8>>,
+    /// Was das Projekt zuletzt für diesen Platz hielt (um Änderungen durch Rückgängig zu merken).
+    seen_params: Vec<PluginParam>,
+    seen_state: Option<String>,
 }
 
 /// Geladene Plugins eines Projekts.
@@ -100,14 +111,21 @@ impl PluginRack {
             clap_id: slot.clap_id.clone(),
             status: SlotStatus::Missing,
             instance: None,
+            baseline: HashMap::new(),
+            origin: HashMap::new(),
+            initial_state: None,
+            seen_params: slot.params.clone(),
+            seen_state: slot.state.clone(),
         };
         match ClapInstance::new(&self.catalog, &slot.clap_id, self.rate) {
             Ok(mut inst) => {
+                entry.initial_state = inst.save_state().ok();
                 if let Some(bytes) = slot.state_bytes()
                     && let Err(e) = inst.load_state(&bytes)
                 {
                     tracing::warn!(plugin = %slot.clap_id, error = %e, "plugin state not applied");
                 }
+                entry.baseline = inst.all_values().into_iter().collect();
                 entry.status = SlotStatus::Loaded;
                 entry.instance = Some(inst);
             }
@@ -175,6 +193,154 @@ impl PluginRack {
             }
         }
         out
+    }
+
+    /// Ob dieses Plugin ein eigenes Fenster anbietet.
+    pub fn has_gui(&mut self, id: InsertId) -> bool {
+        self.instance_mut(id).is_some_and(ClapInstance::has_gui)
+    }
+
+    /// Ob das Fenster dieses Plugins offen ist.
+    pub fn gui_open(&self, id: InsertId) -> bool {
+        self.slots
+            .get(&id.0)
+            .and_then(|e| e.instance.as_ref())
+            .is_some_and(ClapInstance::gui_open)
+    }
+
+    /// Ob irgendein Plugin-Fenster offen ist (dann muss die Oberfläche ständig neu zeichnen).
+    pub fn any_gui_open(&self) -> bool {
+        self.slots
+            .values()
+            .filter_map(|e| e.instance.as_ref())
+            .any(ClapInstance::gui_open)
+    }
+
+    /// Öffnet das Fenster eines Plugins.
+    pub fn open_gui(&mut self, id: InsertId, title: &str) -> Result<(), HostError> {
+        match self.instance_mut(id) {
+            Some(i) => i.open_gui(title),
+            None => Err(HostError::Gui("Das Plugin ist nicht geladen".into())),
+        }
+    }
+
+    /// Schließt das Fenster eines Plugins.
+    pub fn close_gui(&mut self, id: InsertId) {
+        if let Some(i) = self.instance_mut(id) {
+            i.close_gui();
+        }
+    }
+
+    fn instance_mut(&mut self, id: InsertId) -> Option<&mut ClapInstance> {
+        self.slots.get_mut(&id.0)?.instance.as_mut()
+    }
+
+    /// Bedient alle Plugins (Zeitgeber, Oberflächen-Ereignisse). Jedes Bild der Oberfläche.
+    pub fn pump(&mut self) {
+        for e in self.slots.values_mut() {
+            if let Some(i) = e.instance.as_mut() {
+                i.pump();
+            }
+        }
+    }
+
+    /// Reglerbewegungen aus den Plugin-Fenstern seit dem letzten Aufruf, als Bearbeitungen je Platz.
+    pub fn poll_edits(&mut self) -> Vec<(InsertId, ParamEdit)> {
+        let mut out = Vec::new();
+        for (id, e) in &mut self.slots {
+            let Some(i) = e.instance.as_mut() else {
+                continue;
+            };
+            let mut edits = Vec::new();
+            i.poll_feedback(&mut edits);
+            for ed in edits {
+                if let ParamEdit::Param { id: p, old, .. } = ed {
+                    e.origin.entry(p).or_insert(old);
+                }
+                out.push((InsertId(*id), ed));
+            }
+        }
+        out
+    }
+
+    /// Gleicht die laufenden Plugins mit dem Projekt ab, wenn „Rückgängig“ oder „Wiederholen“ Reglerwerte
+    /// oder den Zustand eines Platzes geändert hat: Ein Regler, der aus der Liste des Projekts
+    /// verschwindet, geht auf seinen früheren Wert zurück; ein anderer gespeicherter Zustand wird
+    /// ins Plugin geladen. Gespeicherte Reglerwerte setzt sonst der Mixer.
+    pub fn reconcile(&mut self, project: &Project) {
+        for t in &project.tracks {
+            for slot in &t.plugins {
+                let Some(e) = self.slots.get_mut(&slot.id.0) else {
+                    continue;
+                };
+                let Some(inst) = e.instance.as_mut() else {
+                    continue;
+                };
+                if e.seen_state == slot.state && e.seen_params == slot.params {
+                    continue;
+                }
+                if e.seen_state != slot.state {
+                    let wanted = slot.state_bytes().or_else(|| e.initial_state.clone());
+                    if let Some(bytes) = wanted
+                        && inst.save_state().ok().as_deref() != Some(bytes.as_slice())
+                    {
+                        match inst.load_state(&bytes) {
+                            Ok(()) => {
+                                // Der Zustand setzt alle Regler; die gespeicherten gelten darüber.
+                                for p in &slot.params {
+                                    inst.push_param(p.id, p.value);
+                                }
+                            }
+                            Err(err) => {
+                                tracing::warn!(plugin = %slot.clap_id, error = %err, "plugin state not restored");
+                            }
+                        }
+                    }
+                }
+                for old in &e.seen_params {
+                    if !slot.params.iter().any(|p| p.id == old.id) {
+                        let back = e
+                            .origin
+                            .remove(&old.id)
+                            .or_else(|| e.baseline.get(&old.id).copied());
+                        if let Some(v) = back {
+                            inst.push_param(old.id, v);
+                        }
+                    }
+                }
+                e.seen_params = slot.params.clone();
+                e.seen_state = slot.state.clone();
+            }
+        }
+    }
+
+    /// Der Zustand eines Plugins als Befehl, wenn er vom Projekt abweicht; die gespeicherten
+    /// Reglerwerte werden dabei verworfen (der Zustand enthält sie alle, auch nach einem Preset).
+    pub fn capture_slot(&mut self, project: &Project, id: InsertId) -> Option<Command> {
+        let (track, slot) = project
+            .tracks
+            .iter()
+            .find_map(|t| t.plugin(id).map(|s| (t.id, s)))?;
+        let e = self.slots.get_mut(&id.0)?;
+        let inst = e.instance.as_mut()?;
+        let bytes = match inst.save_state() {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!(plugin = %slot.clap_id, error = %e, "plugin state not saved");
+                return None;
+            }
+        };
+        let encoded = PluginSlot::encode_state(&bytes);
+        // Der Abgleich nach „Rückgängig“ soll diese Übernahme nicht als fremde Änderung sehen.
+        e.seen_params.clear();
+        e.seen_state = Some(encoded.clone());
+        e.origin.clear();
+        Some(Command::SetPluginState {
+            track,
+            plugin: id,
+            state: Some(encoded),
+            params: Vec::new(),
+        })
     }
 
     /// Befehle, die den Zustand der laufenden Plugins ins Projekt übernehmen (vor Speichern,

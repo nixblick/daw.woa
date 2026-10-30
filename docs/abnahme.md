@@ -4,6 +4,30 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Paket 32: Plugin-Fenster (GUI) (0.27.0, offen)
+
+Aus M8. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
+
+1. **Surge-Fenster öffnen:** MIDI-Spur mit Surge XT (wie bei Paket 31). Unter „PLUGINS“ neben dem Namen die Taste „Fenster“ drücken. Das Fenster von Surge erscheint schwebend; die Taste leuchtet. Erscheint kein Fenster, steht in der Statuszeile unten der Grund (z. B. „nur eingebettet“) – bitte genau diesen Text melden.
+2. **Preset wechseln:** Im Surge-Fenster ein anderes Preset wählen, die Klangänderung hören. Danach in der App „Rückgängig“ (Strg+Z): Das Preset ist wieder das alte.
+3. **Regler drehen:** Einen Regler im Fenster ziehen, loslassen, Strg+Z, Strg+Umschalt+Z: Wert springt zurück und wieder vor.
+4. **Schließen und öffnen:** Fenster mit dem Schließknopf des Fensters zumachen, dann „Fenster“ erneut drücken: Es kommt mit demselben Stand wieder. Taste noch einmal: schließt.
+5. **Speichern:** Speichern, Projekt neu öffnen: Der Klang von Preset und Reglern ist wie vorher.
+
+Selbst geprüft von Claude (ohne Ton, ohne Audiogerät, mit dem Test-Plugin aus `clack-plugin`, dessen Oberfläche nur protokolliert; **kein echtes Fenster, kein Xvfb, Surge nicht installiert**):
+- Fensterablauf: anlegen, zeigen, verstecken, wieder zeigen, abbauen vor dem Entladen.
+- Zeitgeber des Plugins laufen über `pump`.
+- Ein gezogener Regler wird ein Schritt (alt/neu); ein noch laufender Zug meldet nichts; 400 Meldungen auf einmal werden ein „ganzer Zustand“ ohne Allokation im Audio-Thread; bei geschlossenem Fenster wird nichts gemeldet; Werte des Hosts kommen nicht zurück.
+- Rückgängig und Wiederholen eines Fensterreglers und eines Preset-Wechsels stellen den Wert im laufenden Plugin wieder her.
+
+Nicht selbst geprüft: ein echtes Plugin-Fenster (X11/Wayland), Surge XT, Fenster-Verhalten beim Schließen durch den Fenstermanager, Windows.
+
+Bewusst so:
+- Nur das schwebende Fenster; ein eingebettetes Fenster ist nicht gebaut. **Offen:** Ob Surge XT unter Linux ein schwebendes Fenster anbietet, ist nicht belegt (JUCE-Plugins sind oft nur eingebettet). Dann zeigt die App den Hinweis, und ein eingebettetes Fenster wäre ein eigenes Paket.
+- **Keine Automation von Plugin-Reglern:** Das Modell hat dafür kein Ziel, das wäre eine Formatänderung. Fensterbewegungen gehen als Reglerwert in den Rückgängig-Verlauf, nicht als Kurve.
+- Ardour wurde nicht gelesen; die Zusammenfassung zu Schritten ist ein eigener Entwurf (siehe `docs/herkunft.md`).
+- Während die Wiedergabe steht, rechnet der Audio-Thread keine Blöcke; Reglermeldungen eines Plugins, das nur bei stehendem Transport sendet, kommen erst beim nächsten Rechnen an.
+
 ## Paket 31: CLAP-Plugins finden und laden (0.26.0, offen)
 
 Aus M8. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`

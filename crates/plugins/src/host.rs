@@ -10,21 +10,34 @@
 //! Geprüfte Quellen für den Umgang mit `clack-host` 0.2: README und Tests der Crate
 //! (MIT/Apache-2.0). Es ist kein Code daraus übernommen.
 
-use std::cell::UnsafeCell;
+use std::cell::{Cell, RefCell, UnsafeCell};
 use std::ffi::CString;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use clack_extensions::audio_ports::{AudioPortInfoBuffer, PluginAudioPorts};
-use clack_extensions::params::{ParamInfoBuffer, ParamInfoFlags, PluginParams};
+use clack_extensions::gui::{
+    GuiApiType, GuiConfiguration, GuiSize, HostGui, HostGuiImpl, PluginGui,
+};
+use clack_extensions::params::{
+    HostParams, HostParamsImplMainThread, HostParamsImplShared, ParamClearFlags, ParamInfoBuffer,
+    ParamInfoFlags, ParamRescanFlags, PluginParams,
+};
+#[cfg(unix)]
+use clack_extensions::posix_fd::{FdFlags, HostPosixFd, HostPosixFdImpl, PluginPosixFd};
 use clack_extensions::state::PluginState;
+use clack_extensions::timer::{HostTimer, HostTimerImpl, PluginTimer, TimerId};
 use clack_host::events::Match;
 use clack_host::events::event_types::{MidiEvent, NoteOffEvent, NoteOnEvent, ParamValueEvent};
+use clack_host::events::spaces::CoreEventSpace;
+use clack_host::extensions::prelude::HostError as HostError2;
 use clack_host::prelude::*;
 use woa_dsp::instrument::{NoteEvent, NoteEventKind};
 use woa_dsp::plugin::StereoProcessor;
 use woa_model::plugin::MAX_PLUGIN_STATE_BYTES;
 
+use crate::feedback::{ChangeKind, Feedback, ParamChange, ParamEdit};
 use crate::scan::Catalog;
 
 /// Längster Block, den das Plugin auf einmal bekommt; längere Blöcke werden zerlegt.
@@ -35,6 +48,11 @@ const MAX_PARAMS: u32 = 4096;
 const EVENT_CAP: usize = 2048;
 /// Platz für noch nicht abgeschickte Reglerwerte.
 const PENDING_CAP: usize = 512;
+/// Platz in der Queue der Reglermeldungen vom Audio-Thread zum Control-Thread. Ist sie voll,
+/// fallen Meldungen weg (der Audio-Thread wartet nie).
+const FEEDBACK_CAP: usize = 4096;
+/// Platz in der Queue der Reglerwerte vom Control-Thread zum Plugin (Rücksetzen nach Rückgängig).
+const SET_CAP: usize = 512;
 
 /// Fehler beim Laden oder Benutzen eines Plugins.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +65,8 @@ pub enum HostError {
     Channels(u32),
     /// Zustand speichern oder laden schlug fehl.
     State(String),
+    /// Die Oberfläche des Plugins ließ sich nicht öffnen.
+    Gui(String),
 }
 
 impl std::fmt::Display for HostError {
@@ -56,6 +76,7 @@ impl std::fmt::Display for HostError {
             Self::Load(e) => write!(f, "Plugin ließ sich nicht laden: {e}"),
             Self::Channels(n) => write!(f, "Plugin mit {n} Kanälen wird nicht unterstützt"),
             Self::State(e) => write!(f, "Plugin-Zustand: {e}"),
+            Self::Gui(e) => write!(f, "Plugin-Fenster: {e}"),
         }
     }
 }
@@ -85,22 +106,144 @@ pub struct ParamDesc {
     pub hidden: bool,
 }
 
-struct HostShared;
+/// Zustand, den Plugin-Rückrufe aus beliebigen Threads setzen und der Control-Thread abholt.
+#[derive(Default)]
+struct Flags {
+    /// Das Plugin will `on_main_thread` gerufen haben.
+    callback: AtomicBool,
+    /// Das Plugin meldet das Fenster als geschlossen.
+    closed: AtomicBool,
+    /// … und hat es dabei selbst zerstört (dann muss der Host `destroy` rufen).
+    destroyed: AtomicBool,
+    /// Das Plugin will, dass alle Reglerwerte neu gelesen werden (Preset).
+    rescan: AtomicBool,
+}
+
+struct HostShared {
+    flags: Arc<Flags>,
+}
 
 impl SharedHandler<'_> for HostShared {
     fn request_restart(&self) {
         tracing::debug!("plugin asked for a restart (ignored)");
     }
     fn request_process(&self) {}
-    fn request_callback(&self) {}
+    fn request_callback(&self) {
+        self.flags.callback.store(true, Ordering::Relaxed);
+    }
+}
+
+impl HostGuiImpl for HostShared {
+    fn resize_hints_changed(&self) {}
+
+    fn request_resize(&self, _new_size: GuiSize) -> Result<(), HostError2> {
+        // Das schwebende Fenster gehört dem Plugin; es passt seine Größe selbst an.
+        Ok(())
+    }
+
+    fn request_show(&self) -> Result<(), HostError2> {
+        Ok(())
+    }
+
+    fn request_hide(&self) -> Result<(), HostError2> {
+        Ok(())
+    }
+
+    fn closed(&self, was_destroyed: bool) {
+        self.flags.destroyed.store(was_destroyed, Ordering::Relaxed);
+        self.flags.closed.store(true, Ordering::Relaxed);
+    }
+}
+
+impl HostParamsImplShared for HostShared {
+    fn request_flush(&self) {
+        // Das Plugin rechnet ohnehin jeden Block; einen eigenen Flush braucht es nicht.
+    }
+}
+
+struct TimerReg {
+    id: u32,
+    period: Duration,
+    next: Instant,
+}
+
+/// Control-Thread-Teil des Hosts: Zeitgeber und Dateikennungen, die das Plugin für seine
+/// Oberfläche anmeldet (CLAP `timer-support`, `posix-fd-support`). Gerufen wird aus
+/// [`ClapInstance::pump`] in jedem Bild der Oberfläche.
+struct HostMain {
+    flags: Arc<Flags>,
+    timers: RefCell<Vec<TimerReg>>,
+    next_timer: Cell<u32>,
+    #[cfg(unix)]
+    fds: RefCell<Vec<(std::os::unix::io::RawFd, FdFlags)>>,
+}
+
+impl MainThreadHandler<'_> for HostMain {}
+
+impl HostTimerImpl for HostMain {
+    fn register_timer(&self, period_ms: u32) -> Result<TimerId, HostError2> {
+        let id = self.next_timer.get();
+        self.next_timer.set(id.wrapping_add(1));
+        // CLAP: mindestens 10 ms.
+        let period = Duration::from_millis(u64::from(period_ms.max(10)));
+        self.timers.borrow_mut().push(TimerReg {
+            id,
+            period,
+            next: Instant::now() + period,
+        });
+        Ok(TimerId(id))
+    }
+
+    fn unregister_timer(&self, timer_id: TimerId) -> Result<(), HostError2> {
+        self.timers.borrow_mut().retain(|t| t.id != timer_id.0);
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+impl HostPosixFdImpl for HostMain {
+    fn register_fd(&self, fd: std::os::unix::io::RawFd, flags: FdFlags) -> Result<(), HostError2> {
+        let mut fds = self.fds.borrow_mut();
+        fds.retain(|f| f.0 != fd);
+        fds.push((fd, flags));
+        Ok(())
+    }
+
+    fn modify_fd(&self, fd: std::os::unix::io::RawFd, flags: FdFlags) -> Result<(), HostError2> {
+        self.register_fd(fd, flags)
+    }
+
+    fn unregister_fd(&self, fd: std::os::unix::io::RawFd) -> Result<(), HostError2> {
+        self.fds.borrow_mut().retain(|f| f.0 != fd);
+        Ok(())
+    }
+}
+
+impl HostParamsImplMainThread for HostMain {
+    fn rescan(&self, flags: ParamRescanFlags) {
+        if flags.contains(ParamRescanFlags::VALUES) || flags.contains(ParamRescanFlags::ALL) {
+            self.flags.rescan.store(true, Ordering::Relaxed);
+        }
+    }
+
+    fn clear(&self, _param_id: ClapId, _flags: ParamClearFlags) {}
 }
 
 struct Host;
 
 impl HostHandlers for Host {
     type Shared<'a> = HostShared;
-    type MainThread<'a> = ();
+    type MainThread<'a> = HostMain;
     type AudioProcessor<'a> = ();
+
+    fn declare_extensions(builder: &mut HostExtensions<Self>, _shared: &HostShared) {
+        builder
+            .register::<HostGui>()
+            .register::<HostParams>()
+            .register::<HostTimer>();
+        #[cfg(unix)]
+        builder.register::<HostPosixFd>();
+    }
 }
 
 enum Proc {
@@ -124,6 +267,10 @@ struct Inner {
     in_ch: usize,
     out_ch: usize,
     steady: u64,
+    /// Reglermeldungen des Plugins (aus seiner Oberfläche) zum Control-Thread.
+    feedback: rtrb::Producer<ParamChange>,
+    /// Reglerwerte vom Control-Thread ans Plugin (Rücksetzen nach Rückgängig).
+    sets: rtrb::Consumer<(u32, f64)>,
 }
 
 // SAFETY: `AudioPorts` hält rohe Zeiger, die bei jedem Aufruf neu gesetzt werden und nie über
@@ -174,6 +321,14 @@ pub struct ClapInstance {
     clap_id: String,
     params: Vec<ParamDesc>,
     rate: f32,
+    flags: Arc<Flags>,
+    /// Reglermeldungen aus dem Audio-Thread.
+    feedback_rx: rtrb::Consumer<ParamChange>,
+    /// Werte ans Plugin.
+    sets_tx: rtrb::Producer<(u32, f64)>,
+    feedback: Feedback,
+    gui_created: bool,
+    gui_shown: bool,
 }
 
 fn lossy(b: &[u8]) -> String {
@@ -199,8 +354,22 @@ impl ClapInstance {
             env!("CARGO_PKG_VERSION"),
         )
         .map_err(|e| HostError::Load(e.to_string()))?;
-        let mut instance = PluginInstance::<Host>::new(|_| HostShared, |_| (), entry, &id, &host)
-            .map_err(|e| HostError::Load(e.to_string()))?;
+        let flags = Arc::new(Flags::default());
+        let (f1, f2) = (Arc::clone(&flags), Arc::clone(&flags));
+        let mut instance = PluginInstance::<Host>::new(
+            move |_| HostShared { flags: f1 },
+            move |_| HostMain {
+                flags: f2,
+                timers: RefCell::new(Vec::new()),
+                next_timer: Cell::new(1),
+                #[cfg(unix)]
+                fds: RefCell::new(Vec::new()),
+            },
+            entry,
+            &id,
+            &host,
+        )
+        .map_err(|e| HostError::Load(e.to_string()))?;
 
         // Anschlüsse: nur der erste Audio-Ein- und -Ausgang wird benutzt.
         let (mut in_ch, mut out_ch) = (0u32, 0u32);
@@ -245,12 +414,14 @@ impl ClapInstance {
             .activate(|_, _| (), config)
             .map_err(|e| HostError::Load(e.to_string()))?;
         let n = MAX_FRAMES as usize;
+        let (fb_tx, fb_rx) = rtrb::RingBuffer::new(FEEDBACK_CAP);
+        let (set_tx, set_rx) = rtrb::RingBuffer::new(SET_CAP);
         let inner = Inner {
             proc: Proc::Stopped(stopped),
             in_ports: AudioPorts::with_capacity(2, 1),
             out_ports: AudioPorts::with_capacity(2, 1),
             ev_in: EventBuffer::with_capacity(EVENT_CAP),
-            ev_out: EventBuffer::with_capacity(64),
+            ev_out: EventBuffer::with_capacity(EVENT_CAP),
             in_l: vec![0.0; n],
             in_r: vec![0.0; n],
             out_l: vec![0.0; n],
@@ -259,8 +430,10 @@ impl ClapInstance {
             in_ch: in_ch as usize,
             out_ch: out_ch as usize,
             steady: 0,
+            feedback: fb_tx,
+            sets: set_rx,
         };
-        Ok(Self {
+        let mut this = Self {
             instance,
             cell: Arc::new(ProcCell {
                 busy: AtomicBool::new(false),
@@ -271,7 +444,213 @@ impl ClapInstance {
             clap_id: clap_id.to_string(),
             params,
             rate,
-        })
+            flags,
+            feedback_rx: fb_rx,
+            sets_tx: set_tx,
+            feedback: Feedback::new(),
+            gui_created: false,
+            gui_shown: false,
+        };
+        this.refresh_values();
+        Ok(this)
+    }
+
+    /// Alle Reglerwerte laut Plugin (Kennung, Wert).
+    pub fn all_values(&mut self) -> Vec<(u32, f64)> {
+        let ids: Vec<u32> = self.params.iter().map(|p| p.id).collect();
+        ids.into_iter()
+            .filter_map(|id| self.param_value(id).map(|v| (id, v)))
+            .collect()
+    }
+
+    /// Liest alle Reglerwerte neu in den Merkspeicher der Rückmeldung.
+    fn refresh_values(&mut self) {
+        let values = self.all_values();
+        self.feedback.clear();
+        for (id, v) in values {
+            self.feedback.set_known(id, v);
+        }
+    }
+
+    /// Setzt einen Reglerwert im laufenden Plugin (über die Queue zum Audio-Thread; ein Wert,
+    /// den das Plugin dann zurückmeldet, zählt nicht als Änderung des Nutzers). `false`, wenn die
+    /// Queue voll ist oder der Wert ungültig.
+    pub fn push_param(&mut self, id: u32, value: f64) -> bool {
+        if !value.is_finite() {
+            return false;
+        }
+        self.feedback.set_known(id, value);
+        self.sets_tx.push((id, value)).is_ok()
+    }
+
+    /// Ob das Plugin ein eigenes (schwebendes) Fenster anbietet.
+    pub fn has_gui(&mut self) -> bool {
+        let h = self.instance.plugin_handle();
+        h.get_extension::<PluginGui>()
+            .is_some_and(|g| g.is_api_supported(&h, gui_config()))
+    }
+
+    /// Ob das Fenster des Plugins gerade offen ist.
+    pub fn gui_open(&self) -> bool {
+        self.gui_shown
+    }
+
+    /// Öffnet das Fenster des Plugins (schwebend; legt es beim ersten Mal an). Nur auf dem
+    /// Control-Thread.
+    pub fn open_gui(&mut self, title: &str) -> Result<(), HostError> {
+        if self.gui_shown {
+            return Ok(());
+        }
+        let h = self.instance.plugin_handle();
+        let gui = h
+            .get_extension::<PluginGui>()
+            .ok_or_else(|| HostError::Gui("Das Plugin hat keine Oberfläche".into()))?;
+        if !gui.is_api_supported(&h, gui_config()) {
+            return Err(HostError::Gui(
+                "Das Plugin bietet kein eigenes Fenster an (nur eingebettet)".into(),
+            ));
+        }
+        if !self.gui_created {
+            gui.create(&h, gui_config())
+                .map_err(|e| HostError::Gui(e.to_string()))?;
+            self.gui_created = true;
+        }
+        if let Ok(t) = CString::new(title) {
+            gui.suggest_title(&h, &t);
+        }
+        gui.show(&h).map_err(|e| HostError::Gui(e.to_string()))?;
+        self.gui_shown = true;
+        Ok(())
+    }
+
+    /// Schließt das Fenster (das Plugin behält seine Oberfläche für das nächste Öffnen).
+    pub fn close_gui(&mut self) {
+        if !self.gui_shown {
+            return;
+        }
+        self.gui_shown = false;
+        let h = self.instance.plugin_handle();
+        if let Some(gui) = h.get_extension::<PluginGui>()
+            && let Err(e) = gui.hide(&h)
+        {
+            tracing::debug!(error = %e, "plugin window did not hide");
+        }
+    }
+
+    /// Baut die Oberfläche ganz ab (vor dem Entladen des Plugins).
+    fn destroy_gui(&mut self) {
+        if !self.gui_created {
+            return;
+        }
+        self.close_gui();
+        let h = self.instance.plugin_handle();
+        if let Some(gui) = h.get_extension::<PluginGui>() {
+            gui.destroy(&h);
+        }
+        self.gui_created = false;
+    }
+
+    /// Bedient das Plugin auf dem Control-Thread: `on_main_thread`-Wünsche, Zeitgeber, Dateikennungen
+    /// der Oberfläche, geschlossenes Fenster. In jedem Bild der Oberfläche rufen.
+    pub fn pump(&mut self) {
+        if self.flags.callback.swap(false, Ordering::Relaxed) {
+            self.instance.call_on_main_thread_callback();
+        }
+        let now = Instant::now();
+        let due: Vec<u32> = self.instance.access_handler(|m| {
+            let mut due = Vec::new();
+            for t in m.timers.borrow_mut().iter_mut() {
+                if t.next <= now {
+                    due.push(t.id);
+                    t.next = now + t.period;
+                }
+            }
+            due
+        });
+        if !due.is_empty() {
+            let h = self.instance.plugin_handle();
+            if let Some(t) = h.get_extension::<PluginTimer>() {
+                for id in due {
+                    t.on_timer(&h, TimerId(id));
+                }
+            }
+        }
+        #[cfg(unix)]
+        self.pump_fds();
+        if self.flags.closed.swap(false, Ordering::Relaxed) {
+            self.gui_shown = false;
+            if self.flags.destroyed.swap(false, Ordering::Relaxed) {
+                // Das Plugin hat das Fenster zerstört; der Host bestätigt mit `destroy`.
+                self.destroy_gui();
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    fn pump_fds(&mut self) {
+        let regs: Vec<(std::os::unix::io::RawFd, FdFlags)> =
+            self.instance.access_handler(|m| m.fds.borrow().clone());
+        if regs.is_empty() {
+            return;
+        }
+        let mut polls: Vec<libc::pollfd> = regs
+            .iter()
+            .map(|(fd, f)| {
+                let mut events = 0;
+                if f.contains(FdFlags::READ) {
+                    events |= libc::POLLIN;
+                }
+                if f.contains(FdFlags::WRITE) {
+                    events |= libc::POLLOUT;
+                }
+                libc::pollfd {
+                    fd: *fd,
+                    events,
+                    revents: 0,
+                }
+            })
+            .collect();
+        // SAFETY: `polls` ist eine gültige Liste von `pollfd` in der angegebenen Länge; die
+        // Wartezeit 0 blockiert nie.
+        let n = unsafe { libc::poll(polls.as_mut_ptr(), polls.len() as libc::nfds_t, 0) };
+        if n <= 0 {
+            return;
+        }
+        let h = self.instance.plugin_handle();
+        let Some(ext) = h.get_extension::<PluginPosixFd>() else {
+            return;
+        };
+        for p in &polls {
+            if p.revents == 0 {
+                continue;
+            }
+            let mut fl = FdFlags::empty();
+            if p.revents & (libc::POLLIN | libc::POLLHUP) != 0 {
+                fl |= FdFlags::READ;
+            }
+            if p.revents & libc::POLLOUT != 0 {
+                fl |= FdFlags::WRITE;
+            }
+            if p.revents & (libc::POLLERR | libc::POLLNVAL) != 0 {
+                fl |= FdFlags::ERROR;
+            }
+            ext.on_fd(&h, p.fd, fl);
+        }
+    }
+
+    /// Holt die Reglermeldungen aus dem Audio-Thread ab und macht Bearbeitungen für das Projekt
+    /// daraus (siehe [`crate::feedback`]). Solange das Fenster zu ist, führt es nur die Merkwerte nach.
+    pub fn poll_feedback(&mut self, out: &mut Vec<ParamEdit>) {
+        let mut batch: Vec<ParamChange> = Vec::new();
+        while let Ok(c) = self.feedback_rx.pop() {
+            batch.push(c);
+        }
+        let rescan = self.flags.rescan.swap(false, Ordering::Relaxed);
+        let emit = self.gui_shown || self.feedback.gesture_open();
+        self.feedback.feed(&batch, rescan, emit, out);
+        if rescan {
+            self.refresh_values();
+        }
     }
 
     /// CLAP-Kennung.
@@ -335,8 +714,11 @@ impl ClapInstance {
             .get_extension::<PluginState>()
             .ok_or_else(|| HostError::State("das Plugin kann keinen Zustand laden".into()))?;
         let mut r = bytes;
-        ext.load(&h, &mut r)
-            .map_err(|e| HostError::State(e.to_string()))
+        let res = ext
+            .load(&h, &mut r)
+            .map_err(|e| HostError::State(e.to_string()));
+        self.refresh_values();
+        res
     }
 }
 
@@ -354,6 +736,17 @@ impl std::io::Write for Capped {
 
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
+    }
+}
+
+fn gui_config() -> GuiConfiguration<'static> {
+    GuiConfiguration {
+        api_type: if cfg!(windows) {
+            GuiApiType::WIN32
+        } else {
+            GuiApiType::X11
+        },
+        is_floating: true,
     }
 }
 
@@ -389,6 +782,8 @@ fn read_params(instance: &mut PluginInstance<Host>) -> Vec<ParamDesc> {
 
 impl Drop for ClapInstance {
     fn drop(&mut self) {
+        // Das Fenster zuerst abbauen: ein Plugin darf nach `deactivate` keine Oberfläche mehr haben.
+        self.destroy_gui();
         // Auf den Audio-Thread warten, falls er gerade rechnet (höchstens ein Block).
         let mut spins = 0u32;
         let mut guard = loop {
@@ -561,6 +956,15 @@ impl Inner {
             );
         }
         if start == 0 {
+            // Werte vom Control-Thread (Rücksetzen nach Rückgängig) zuerst.
+            while let Ok((id, v)) = self.sets.pop() {
+                if let Some(cid) = ClapId::from_raw(id)
+                    && (self.ev_in.len() as usize) < EVENT_CAP
+                {
+                    self.ev_in
+                        .push(&ParamValueEvent::new(0, cid, Pckn::match_all(), v));
+                }
+            }
             for (id, v) in pending.drain(..) {
                 if let Some(cid) = ClapId::from_raw(id)
                     && (self.ev_in.len() as usize) < EVENT_CAP
@@ -628,6 +1032,32 @@ impl Inner {
         self.steady = self.steady.wrapping_add(n as u64);
         if result.is_err() {
             return false;
+        }
+
+        // Reglermeldungen der Plugin-Oberfläche nach draußen. Kein Warten: ist die Queue voll,
+        // fallen Meldungen weg.
+        for e in self.ev_out.iter() {
+            let change = match e.as_core_event() {
+                Some(CoreEventSpace::ParamValue(p)) => p.param_id().map(|id| ParamChange {
+                    id: id.get(),
+                    kind: ChangeKind::Value,
+                    value: p.value(),
+                }),
+                Some(CoreEventSpace::ParamGestureBegin(g)) => g.param_id().map(|id| ParamChange {
+                    id: id.get(),
+                    kind: ChangeKind::GestureBegin,
+                    value: 0.0,
+                }),
+                Some(CoreEventSpace::ParamGestureEnd(g)) => g.param_id().map(|id| ParamChange {
+                    id: id.get(),
+                    kind: ChangeKind::GestureEnd,
+                    value: 0.0,
+                }),
+                _ => None,
+            };
+            if let Some(c) = change {
+                let _ = self.feedback.push(c);
+            }
         }
 
         // Ausgang, mit Schutz gegen NaN und Unendlich.

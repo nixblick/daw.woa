@@ -12,13 +12,18 @@ test-plugin = ["dep:clack-plugin", "clack-host/clack-plugin", "clack-extensions/
 
 [dependencies]
 clack-host = "0.2.0"
-clack-extensions = { version = "0.2.0", features = ["clack-host", "params", "state", "audio-ports", "note-ports"] }
+clack-extensions = { version = "0.2.0", features = ["clack-host", "params", "state", "audio-ports", "note-ports", "gui", "timer", "posix-fd"] }
+rtrb = "0.4.1"
 clack-plugin = { version = "0.2.0", optional = true }
 tracing = "0.1.44"
-woa-dsp = { version = "0.26", path = "../dsp" }
-woa-model = { version = "0.26", path = "../model" }
+
+woa-dsp = { version = "0.27", path = "../dsp" }
+woa-model = { version = "0.27", path = "../model" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 assert_no_alloc = "1.1.2"
 tempfile = "3.27.0"
-woa-plugins = { version = "0.26", path = ".", features = ["test-plugin"] }
+woa-plugins = { version = "0.27", path = ".", features = ["test-plugin"] }

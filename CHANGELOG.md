@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.27.0 — 2026-10-30
+
+Paket 32 aus M8: Plugin-Fenster (Abnahme: `docs/abnahme.md`).
+
+- **Fenster:** Im Kanalzug hat jedes geladene Plugin die Taste „Fenster“. Das Plugin öffnet sein eigenes, schwebendes Fenster (CLAP `gui` im schwebenden Modus). Schließen und wieder Öffnen baut nichts neu auf; beim Entfernen oder Beenden wird die Oberfläche vor dem Plugin abgebaut. Bietet ein Plugin kein schwebendes Fenster an, steht ein Hinweis in der Statuszeile.
+- **Host:** Zeitgeber (`timer`), Dateikennungen (`posix-fd`, nur Unix), `request_callback` und Regler-Neuabgleich (`params`) werden bedient, jedes Bild der Oberfläche über `ClapInstance::pump`.
+- **Reglerrückmeldung:** Was im Plugin-Fenster bewegt wird, kommt über eine lock-freie Queue (`rtrb`) aus dem Audio-Thread zurück und wird zu Rückgängig-Schritten: ein gezogener Regler ist ein Schritt, ein Preset-Wechsel (viele Regler auf einmal) ein Schritt mit dem ganzen Zustand. Werte, die der Host selbst setzt, werden nicht zurückgemeldet. Rückgängig und Wiederholen stellen die Regler im laufenden Plugin wieder her.
+- **Tests:** Host- und Rack-Tests mit dem Test-Plugin (Fensterablauf, Zeitgeber, Regler ziehen, Preset-Flut ohne Allokation unter `assert_no_alloc`, Rückgängig/Wiederholen); kein echtes Fenster.
+- **Nicht gebaut:** Automation von Plugin-Reglern, eingebettetes Fenster, Auslagern in einen eigenen Prozess (Paket 33).
+- **Abhängigkeiten:** `rtrb` und `libc` (Unix) in `woa-plugins`; `gui`, `timer`, `posix-fd` in `clack-extensions`.
+
 ## 0.26.0 — 2026-10-30
 
 Paket 31 aus M8: CLAP-Plugins finden und laden (Abnahme: `docs/abnahme.md`).
