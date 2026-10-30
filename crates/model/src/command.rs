@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::automation::{AutoMode, AutoPoint, AutoTarget, AutomationLane};
 use crate::effect::{Insert, InsertId};
 use crate::error::{ModelError, Result};
+use crate::plugin::{PluginParam, PluginRole, PluginSlot};
 use crate::project::{
     Clip, ClipId, FadeCurve, MAX_GAIN_DB, MAX_TEMPO_BPM, MIN_GAIN_DB, MIN_TEMPO_BPM, Project, Send,
     Track, TrackId, TrackKind, check_send_level,
@@ -215,6 +216,55 @@ pub enum Command {
         /// Tap before the fader.
         pre_fader: bool,
     },
+    /// Puts a plugin (Paket 31) on a track: an instrument on a MIDI track (at most one) or an
+    /// effect on an audio or MIDI track.
+    AddPlugin {
+        /// Target track.
+        track: TrackId,
+        /// The plugin; its id must be unused.
+        plugin: PluginSlot,
+        /// Position among the track's plugins (`None`: at the end).
+        index: Option<usize>,
+    },
+    /// Removes a plugin from a track.
+    RemovePlugin {
+        /// Track holding the plugin.
+        track: TrackId,
+        /// The plugin entry.
+        plugin: InsertId,
+    },
+    /// Sets one parameter value of a plugin; the value is applied after the stored state.
+    SetPluginParam {
+        /// Track holding the plugin.
+        track: TrackId,
+        /// The plugin entry.
+        plugin: InsertId,
+        /// CLAP parameter id.
+        param: u32,
+        /// New value in the plugin's range.
+        value: f64,
+    },
+    /// Replaces the stored state and parameter values of a plugin (also used to take over the
+    /// state of the running plugin before saving).
+    SetPluginState {
+        /// Track holding the plugin.
+        track: TrackId,
+        /// The plugin entry.
+        plugin: InsertId,
+        /// New state (base64), `None`: default state.
+        state: Option<String>,
+        /// New parameter values.
+        params: Vec<PluginParam>,
+    },
+    /// Bypasses a plugin or switches it back on.
+    SetPluginBypass {
+        /// Track holding the plugin.
+        track: TrackId,
+        /// The plugin entry.
+        plugin: InsertId,
+        /// New state.
+        bypass: bool,
+    },
     /// Inserts an effect into the chain of a track.
     AddInsert {
         /// Target track.
@@ -309,6 +359,11 @@ impl Command {
             Command::AddSend { .. } => "Add send",
             Command::RemoveSend { .. } => "Remove send",
             Command::SetSend { .. } => "Set send",
+            Command::AddPlugin { .. } => "Add plugin",
+            Command::RemovePlugin { .. } => "Remove plugin",
+            Command::SetPluginParam { .. } => "Set plugin parameter",
+            Command::SetPluginState { .. } => "Set plugin state",
+            Command::SetPluginBypass { .. } => "Bypass plugin",
             Command::AddInsert { .. } => "Add effect",
             Command::RemoveInsert { .. } => "Remove effect",
             Command::SetInsertParam { .. } => "Set effect parameter",
@@ -752,6 +807,128 @@ impl Command {
                     pre_fader: old_pre,
                 })
             }
+            Command::AddPlugin {
+                track,
+                plugin,
+                index,
+            } => {
+                plugin.check()?;
+                crate::project::check_id(plugin.id.0)?;
+                let kind = project
+                    .track(track)
+                    .ok_or(ModelError::TrackNotFound(track))?
+                    .kind;
+                let allowed = match plugin.role {
+                    PluginRole::Instrument => kind == TrackKind::Midi,
+                    PluginRole::Effect => kind != TrackKind::Bus,
+                };
+                if !allowed {
+                    return Err(ModelError::InvalidArgument(format!(
+                        "track {track} cannot take a plugin {}",
+                        match plugin.role {
+                            PluginRole::Instrument => "instrument (MIDI tracks only)",
+                            PluginRole::Effect => "effect (not on buses)",
+                        }
+                    )));
+                }
+                if project.id_in_use(plugin.id.0) {
+                    return Err(ModelError::DuplicateId(plugin.id.0));
+                }
+                let t = find(project, track)?;
+                if plugin.role == PluginRole::Instrument
+                    && t.plugins.iter().any(|p| p.role == PluginRole::Instrument)
+                {
+                    return Err(ModelError::InvalidArgument(format!(
+                        "track {track} already has a plugin instrument"
+                    )));
+                }
+                let id = plugin.id;
+                let at = index
+                    .filter(|&i| i <= t.plugins.len())
+                    .unwrap_or(t.plugins.len());
+                t.plugins.insert(at, plugin);
+                project.bump_next_id(id.0);
+                Ok(Command::RemovePlugin { track, plugin: id })
+            }
+            Command::RemovePlugin { track, plugin } => {
+                let t = find(project, track)?;
+                let at = t
+                    .plugins
+                    .iter()
+                    .position(|p| p.id == plugin)
+                    .ok_or(ModelError::InsertNotFound(plugin))?;
+                let removed = t.plugins.remove(at);
+                Ok(Command::AddPlugin {
+                    track,
+                    plugin: removed,
+                    index: Some(at),
+                })
+            }
+            Command::SetPluginParam {
+                track,
+                plugin,
+                param,
+                value,
+            } => {
+                if !value.is_finite() {
+                    return Err(ModelError::InvalidValue {
+                        field: "plugin parameter",
+                        value,
+                    });
+                }
+                let slot = find_plugin(project, track, plugin)?;
+                let before = (slot.state.clone(), slot.params.clone());
+                match slot.params.iter_mut().find(|p| p.id == param) {
+                    Some(p) => p.value = value,
+                    None => {
+                        if slot.params.len() >= crate::plugin::MAX_PLUGIN_PARAMS {
+                            return Err(ModelError::InvalidArgument(
+                                "too many stored plugin parameters".into(),
+                            ));
+                        }
+                        slot.params.push(PluginParam { id: param, value });
+                    }
+                }
+                Ok(Command::SetPluginState {
+                    track,
+                    plugin,
+                    state: before.0,
+                    params: before.1,
+                })
+            }
+            Command::SetPluginState {
+                track,
+                plugin,
+                state,
+                params,
+            } => {
+                let mut probe = find_plugin(project, track, plugin)?.clone();
+                probe.state = state;
+                probe.params = params;
+                probe.check()?;
+                let slot = find_plugin(project, track, plugin)?;
+                let old_state = std::mem::replace(&mut slot.state, probe.state);
+                let old_params = std::mem::replace(&mut slot.params, probe.params);
+                Ok(Command::SetPluginState {
+                    track,
+                    plugin,
+                    state: old_state,
+                    params: old_params,
+                })
+            }
+            Command::SetPluginBypass {
+                track,
+                plugin,
+                bypass,
+            } => {
+                let slot = find_plugin(project, track, plugin)?;
+                let old = std::mem::replace(&mut slot.bypass, bypass);
+                Ok(Command::SetPluginBypass {
+                    track,
+                    plugin,
+                    bypass: old,
+                })
+            }
             Command::AddInsert {
                 track,
                 insert,
@@ -948,6 +1125,18 @@ impl Command {
             }
         }
     }
+}
+
+fn find_plugin(
+    project: &mut Project,
+    track: TrackId,
+    plugin: InsertId,
+) -> Result<&mut PluginSlot> {
+    find(project, track)?
+        .plugins
+        .iter_mut()
+        .find(|p| p.id == plugin)
+        .ok_or(ModelError::InsertNotFound(plugin))
 }
 
 fn find(project: &mut Project, id: TrackId) -> Result<&mut Track> {

@@ -36,6 +36,7 @@ pub mod effect;
 mod error;
 mod history;
 pub mod midi;
+pub mod plugin;
 mod project;
 mod session;
 pub mod store;
@@ -51,6 +52,7 @@ pub use effect::{
 pub use error::{ModelError, Result};
 pub use history::{History, HistoryEntry};
 pub use midi::{CC_SUSTAIN, Edited, MIN_NOTE_BEATS, MidiCc, MidiData, MidiNote, grid_beats};
+pub use plugin::{PluginParam, PluginRole, PluginSlot};
 pub use project::{
     Clip, ClipId, DEFAULT_TEMPO_BPM, FOLLOW_TEMPO_RANGE, FadeCurve, MAX_GAIN_DB, MAX_ID,
     MAX_SEND_DB, MAX_TEMPO_BPM, MIN_GAIN_DB, MIN_TEMPO_BPM, PITCH_RANGE, Project, ProjectMeta,

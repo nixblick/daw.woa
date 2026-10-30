@@ -8,6 +8,6 @@ repository.workspace = true
 
 [dependencies]
 tracing = "0.1.44"
-woa-radio = { version = "0.25", path = "../../crates/radio" }
-woa-stream = { version = "0.25", path = "../../crates/stream" }
-woa-telemetry = { version = "0.25", path = "../../crates/telemetry" }
+woa-radio = { version = "0.26", path = "../../crates/radio" }
+woa-stream = { version = "0.26", path = "../../crates/stream" }
+woa-telemetry = { version = "0.26", path = "../../crates/telemetry" }

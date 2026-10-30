@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.26.0 — 2026-10-30
+
+Paket 31 aus M8: CLAP-Plugins finden und laden (in Arbeit, Eintrag wird am Ende vervollständigt).
+
+- **Modell:** Plugin-Plätze auf Spuren (`PluginSlot`), fünf Befehle mit Rückgängig, Projektformat 4 nur bei Plugins.
+- **Host (`woa-plugins`):** Suche in den Standardordnern und `CLAP_PATH`, Instanz über `clack-host`, Rechner ohne Sperre und ohne Speicheranforderung im Audio-Thread, Test-Plugin aus `clack-plugin` mit Selbstprüfung.
+
 ## 0.25.0 — 2026-10-30
 
 Paket 30 aus M9: Voice-Tracking-Editor.
