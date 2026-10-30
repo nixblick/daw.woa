@@ -60,7 +60,9 @@ fn main() -> ExitCode {
     match eframe::run_native(
         "WOA",
         options,
-        Box::new(move |_cc| {
+        Box::new(move |cc| {
+            // Schriften vor dem ersten Bild setzen (kein leeres erstes Bild).
+            let _ = woa_gui::theme::install_fonts(&cc.egui_ctx);
             let mut app = WoaApp::new(config, recovery);
             app.set_config_path(config_path);
             app.set_data_dir(data_dir);

@@ -608,9 +608,7 @@ pub fn status_pill(ui: &mut egui::Ui, label: &str, color: Color32, active: bool)
                 );
                 ui.label(
                     egui::RichText::new(label)
-                        .size(11.0)
-                        .strong()
-                        .monospace()
+                        .font(label_font(13.0))
                         .color(text_col),
                 );
             });
@@ -734,6 +732,7 @@ pub fn lcd_show<R>(
 /// Beide egui-Themen bekommen den Stil zum Modus (das dunkle auch im hellen Thema, für LCD-Felder);
 /// aktiv ist das gewählte. Nur bei Änderung von Thema oder Modus nötig.
 pub fn apply(ctx: &egui::Context, theme: Theme, mode: Mode) {
+    let _ = install_fonts(ctx);
     CURRENT.store(palette_index(theme, mode), Ordering::Relaxed);
     for (t, egui_theme) in [
         (Theme::Dunkel, egui::Theme::Dark),
@@ -822,15 +821,159 @@ fn style_for(s: &mut egui::Style, p: &Palette, dark: bool) {
     s.spacing.interact_size.y = 26.0;
     s.spacing.slider_width = 110.0;
     s.text_styles
-        .insert(TextStyle::Body, FontId::proportional(13.5));
+        .insert(TextStyle::Body, FontId::proportional(TYPE_BODY));
     s.text_styles
-        .insert(TextStyle::Button, FontId::proportional(13.5));
+        .insert(TextStyle::Button, FontId::proportional(TYPE_BODY));
     s.text_styles
-        .insert(TextStyle::Monospace, FontId::monospace(13.5));
+        .insert(TextStyle::Monospace, FontId::monospace(TYPE_BODY));
     s.text_styles
-        .insert(TextStyle::Small, FontId::proportional(11.0));
+        .insert(TextStyle::Small, FontId::proportional(TYPE_SMALL));
     s.text_styles
-        .insert(TextStyle::Heading, FontId::proportional(16.0));
+        .insert(TextStyle::Heading, label_font(TYPE_TITLE));
+}
+
+/// Typo-Skala des Design Systems (px): `body`, `small`, `title`.
+pub const TYPE_BODY: f32 = 14.0;
+pub const TYPE_SMALL: f32 = 12.0;
+pub const TYPE_TITLE: f32 = 22.0;
+
+/// Name der Familie für Pult-Beschriftungen (Barlow Condensed, `font-label`).
+pub const FAMILY_LABEL: &str = "label";
+/// Name der Familie für Leuchtziffern (DSEG7 Classic, `font-seg`).
+pub const FAMILY_SEG: &str = "seg";
+
+/// Schrift für Pult-Beschriftungen und Titel (Barlow Condensed SemiBold).
+pub fn label_font(size: f32) -> FontId {
+    FontId::new(size, egui::FontFamily::Name(FAMILY_LABEL.into()))
+}
+
+/// Schrift für Leuchtziffern in LCDs und Uhren (DSEG7 Classic Bold, nur Ziffern und `:`).
+pub fn seg_font(size: f32) -> FontId {
+    FontId::new(size, egui::FontFamily::Name(FAMILY_SEG.into()))
+}
+
+/// Die eingebetteten Schriften (alle SIL OFL 1.1, Lizenztexte in `assets/fonts/`):
+/// (Name, Daten, Familien in der Reihenfolge ihrer Wahl).
+const FONT_FILES: &[(&str, &[u8])] = &[
+    (
+        "Barlow-Regular",
+        include_bytes!("../assets/fonts/Barlow-Regular.ttf"),
+    ),
+    (
+        "Barlow-Medium",
+        include_bytes!("../assets/fonts/Barlow-Medium.ttf"),
+    ),
+    (
+        "Barlow-SemiBold",
+        include_bytes!("../assets/fonts/Barlow-SemiBold.ttf"),
+    ),
+    (
+        "Barlow-Bold",
+        include_bytes!("../assets/fonts/Barlow-Bold.ttf"),
+    ),
+    (
+        "BarlowCondensed-Medium",
+        include_bytes!("../assets/fonts/BarlowCondensed-Medium.ttf"),
+    ),
+    (
+        "BarlowCondensed-SemiBold",
+        include_bytes!("../assets/fonts/BarlowCondensed-SemiBold.ttf"),
+    ),
+    (
+        "BarlowCondensed-Bold",
+        include_bytes!("../assets/fonts/BarlowCondensed-Bold.ttf"),
+    ),
+    (
+        "BarlowCondensed-ExtraBold",
+        include_bytes!("../assets/fonts/BarlowCondensed-ExtraBold.ttf"),
+    ),
+    (
+        "JetBrainsMono-Regular",
+        include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"),
+    ),
+    (
+        "JetBrainsMono-Medium",
+        include_bytes!("../assets/fonts/JetBrainsMono-Medium.ttf"),
+    ),
+    (
+        "JetBrainsMono-Bold",
+        include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf"),
+    ),
+    (
+        "DSEG7Classic-Bold",
+        include_bytes!("../assets/fonts/DSEG7Classic-Bold.ttf"),
+    ),
+];
+
+/// Die Schriftdefinitionen: Barlow als Oberflächenschrift (`Proportional`), JetBrains Mono als
+/// `Monospace`, Barlow Condensed als Familie `label`, DSEG7 als Familie `seg`. Die egui-
+/// Standardschriften bleiben dahinter als Rückfall für Zeichen, die unsere nicht haben
+/// (Pfeile, Symbole).
+pub fn font_definitions() -> egui::FontDefinitions {
+    use egui::{FontData, FontFamily};
+    let mut fd = egui::FontDefinitions::default();
+    for (name, bytes) in FONT_FILES {
+        fd.font_data.insert(
+            (*name).to_owned(),
+            std::sync::Arc::new(FontData::from_static(bytes)),
+        );
+    }
+    let fallback_prop = fd
+        .families
+        .get(&FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+    let fallback_mono = fd
+        .families
+        .get(&FontFamily::Monospace)
+        .cloned()
+        .unwrap_or_default();
+    let with = |first: &str, fallback: &[String]| {
+        let mut v = vec![first.to_owned()];
+        v.extend(fallback.iter().cloned());
+        v
+    };
+    fd.families.insert(
+        FontFamily::Proportional,
+        with("Barlow-Regular", &fallback_prop),
+    );
+    fd.families.insert(
+        FontFamily::Monospace,
+        with("JetBrainsMono-Regular", &fallback_mono),
+    );
+    for (family, first) in [
+        (FAMILY_LABEL, "BarlowCondensed-SemiBold"),
+        (FAMILY_SEG, "DSEG7Classic-Bold"),
+        ("ui-medium", "Barlow-Medium"),
+        ("ui-semibold", "Barlow-SemiBold"),
+        ("ui-bold", "Barlow-Bold"),
+        ("label-medium", "BarlowCondensed-Medium"),
+        ("label-bold", "BarlowCondensed-Bold"),
+        ("label-extrabold", "BarlowCondensed-ExtraBold"),
+        ("mono-medium", "JetBrainsMono-Medium"),
+        ("mono-bold", "JetBrainsMono-Bold"),
+    ] {
+        // Die Leuchtziffern fallen auf Barlow zurück, nicht auf die Standard-Proportionalschrift.
+        let mut v = with(first, &fallback_prop);
+        if family == FAMILY_SEG {
+            v.insert(1, "Barlow-Regular".to_owned());
+        }
+        fd.families.insert(FontFamily::Name(family.into()), v);
+    }
+    fd
+}
+
+/// Setzt die Schriften einmal je egui-Kontext. egui lädt sie erst im nächsten Durchlauf; wer
+/// `label_font`/`seg_font` zeichnet, darf das also erst, wenn die Funktion `false` lieferte.
+/// Liefert `true`, wenn sie gerade erst gesetzt wurden.
+pub fn install_fonts(ctx: &egui::Context) -> bool {
+    let id = egui::Id::new("woa_fonts_installed");
+    if ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false) {
+        return false;
+    }
+    ctx.set_fonts(font_definitions());
+    ctx.data_mut(|d| d.insert_temp(id, true));
+    true
 }
 
 #[cfg(test)]
@@ -933,6 +1076,53 @@ mod tests {
         ] {
             assert_eq!(val("radius", name), f32::from(got), "{name}");
         }
+    }
+
+    #[test]
+    fn fonts_register_all_families_and_render() {
+        let fd = font_definitions();
+        for fam in [
+            FAMILY_LABEL,
+            FAMILY_SEG,
+            "ui-bold",
+            "label-extrabold",
+            "mono-bold",
+        ] {
+            assert!(
+                fd.families
+                    .contains_key(&egui::FontFamily::Name(fam.into())),
+                "Familie {fam} fehlt"
+            );
+        }
+        assert_eq!(
+            fd.families[&egui::FontFamily::Proportional][0],
+            "Barlow-Regular"
+        );
+        assert_eq!(
+            fd.families[&egui::FontFamily::Monospace][0],
+            "JetBrainsMono-Regular"
+        );
+        // Jede Familie muss in egui tatsächlich laden und Text mit Breite liefern.
+        let ctx = egui::Context::default();
+        assert!(install_fonts(&ctx));
+        assert!(!install_fonts(&ctx));
+        let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
+        let mut widths = Vec::new();
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            for font in [
+                FontId::proportional(TYPE_BODY),
+                FontId::monospace(TYPE_BODY),
+                label_font(TYPE_TITLE),
+                seg_font(40.0),
+            ] {
+                let g = ui
+                    .painter()
+                    .layout_no_wrap("88:88".into(), font, Color32::WHITE);
+                widths.push(g.size().x);
+            }
+        });
+        assert_eq!(widths.len(), 4);
+        assert!(widths.iter().all(|w| *w > 5.0), "{widths:?}");
     }
 
     #[test]

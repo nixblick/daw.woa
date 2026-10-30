@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.8 — 2026-10-31
+
+Design D2: Schriften des Design Systems (Barlow, Barlow Condensed, JetBrains Mono, DSEG7 Classic).
+
+- **Eingebettete Schriften:** TTF-Dateien in `crates/gui/assets/fonts/` mit den Lizenztexten (SIL OFL 1.1), Quellen mit Commit in `docs/herkunft.md`. Barlow ist die Oberflächenschrift, JetBrains Mono die Festbreitenschrift; Barlow Condensed (`label`) und DSEG7 Classic (`seg`) sind eigene Familien (`theme::label_font`, `theme::seg_font`).
+- **Typo-Skala:** Fließtext und Tasten 14 px, klein 12 px, Titel 22 px (bisher 13,5 / 11 / 16).
+- **Sichtbar:** Uhrzeit und Restzeit im Radio-Modus als Leuchtziffern (DSEG7), Statuspillen in Barlow Condensed.
+- **Neu:** Einstellungsleiste „Über WOA …“ mit Version, Lizenz und dem Hinweis auf die SIL Open Font License der Schriften.
+
 ## 0.34.7 — 2026-10-31
 
 Design D1: zwei Themen, Hell und Dunkel, mit Modusfarbe (Vorgabe `docs/design/woa-design-system/`).
