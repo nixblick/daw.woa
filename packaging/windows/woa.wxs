@@ -30,6 +30,14 @@
       </Component>
     </ComponentGroup>
 
+    <!-- Nach einem Update aus der App (msiexec ... RESTARTWOA=1): die neue Version starten.
+         Läuft im Benutzerkontext des Aufrufers (nicht erhöht), nur bei Installation, nie bei
+         Deinstallation, und nur mit der Eigenschaft: ein Doppelklick auf das MSI startet nichts. -->
+    <CustomAction Id="WoaNachUpdateStarten" FileRef="woa.exe" ExeCommand="" Return="asyncNoWait" />
+    <InstallExecuteSequence>
+      <Custom Action="WoaNachUpdateStarten" After="InstallFinalize" Condition="RESTARTWOA = &quot;1&quot; AND NOT REMOVE" />
+    </InstallExecuteSequence>
+
     <Feature Id="Haupt" Title="WOA">
       <ComponentGroupRef Id="Programme" />
     </Feature>

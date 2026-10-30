@@ -3081,6 +3081,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
+name = "minisign-verify"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22f9645cb765ea72b8111f36c522475d2daa0d22c957a9826437e97534bc4e9e"
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4841,6 +4847,17 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.3.1",
  "digest 0.11.3",
+]
+
+[[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "digest 0.10.7",
 ]
 
 [[package]]
@@ -6718,7 +6735,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "woa"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "eframe",
  "tracing",
@@ -6731,7 +6748,7 @@ dependencies = [
 
 [[package]]
 name = "woa-agent"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "hound",
  "png",
@@ -6750,7 +6767,7 @@ dependencies = [
 
 [[package]]
 name = "woa-dsp"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "assert_no_alloc",
  "hound",
@@ -6763,7 +6780,7 @@ dependencies = [
 
 [[package]]
 name = "woa-engine"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "arc-swap",
  "assert_no_alloc",
@@ -6784,7 +6801,7 @@ dependencies = [
 
 [[package]]
 name = "woa-guests"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "assert_no_alloc",
  "getrandom 0.4.3",
@@ -6801,7 +6818,7 @@ dependencies = [
 
 [[package]]
 name = "woa-gui"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "assert_no_alloc",
  "eframe",
@@ -6826,11 +6843,12 @@ dependencies = [
  "woa-remote",
  "woa-stream",
  "woa-telemetry",
+ "woa-updater",
 ]
 
 [[package]]
 name = "woa-headless"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -6851,7 +6869,7 @@ dependencies = [
 
 [[package]]
 name = "woa-io"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "assert_no_alloc",
  "hound",
@@ -6870,7 +6888,7 @@ dependencies = [
 
 [[package]]
 name = "woa-library"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "hound",
  "rusqlite",
@@ -6884,7 +6902,7 @@ dependencies = [
 
 [[package]]
 name = "woa-model"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "base64",
  "insta",
@@ -6897,7 +6915,7 @@ dependencies = [
 
 [[package]]
 name = "woa-plugins"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "assert_no_alloc",
  "clack-extensions",
@@ -6915,7 +6933,7 @@ dependencies = [
 
 [[package]]
 name = "woa-radio"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "assert_no_alloc",
  "basedrop",
@@ -6933,7 +6951,7 @@ dependencies = [
 
 [[package]]
 name = "woa-remote"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "getrandom 0.4.3",
  "httparse",
@@ -6947,7 +6965,7 @@ dependencies = [
 
 [[package]]
 name = "woa-stream"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "hound",
  "mp3lame-encoder",
@@ -6961,7 +6979,7 @@ dependencies = [
 
 [[package]]
 name = "woa-streamd"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "tracing",
  "woa-radio",
@@ -6971,7 +6989,7 @@ dependencies = [
 
 [[package]]
 name = "woa-telemetry"
-version = "0.33.6"
+version = "0.33.7"
 dependencies = [
  "base64",
  "serde",
@@ -6986,7 +7004,16 @@ dependencies = [
 
 [[package]]
 name = "woa-updater"
-version = "0.33.6"
+version = "0.33.7"
+dependencies = [
+ "minisign-verify",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "tracing",
+ "ureq",
+]
 
 [[package]]
 name = "writeable"

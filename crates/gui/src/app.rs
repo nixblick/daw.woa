@@ -49,6 +49,12 @@ pub struct WoaApp {
     /// Where `config.json` is saved when the user changes a setting (`None` = not saved).
     config_path: Option<PathBuf>,
     feedback: FeedbackDialog,
+    /// Update-Hinweis (Suche und Download im Hintergrund).
+    update: crate::update::UpdateState,
+    /// Frage „Projekt speichern?“ vor der Installation ist offen.
+    update_confirm: bool,
+    /// Beim ersten Bild automatisch suchen (nur in der echten App, nicht in Tests).
+    update_autostart: bool,
     /// Track being renamed and its edit buffer.
     /// Spur, Eingabe, und ob der Fokus schon gesetzt wurde (nur einmal, sonst kommt man
     /// aus dem Feld nicht mehr heraus, André 30.10.).
@@ -470,6 +476,9 @@ impl WoaApp {
             config,
             config_path: None,
             feedback: FeedbackDialog::default(),
+            update: crate::update::UpdateState::default(),
+            update_confirm: false,
+            update_autostart: open_audio,
             rename: None,
             gain_drag: None,
             fx_drag: None,
@@ -2150,6 +2159,7 @@ impl WoaApp {
                 {
                     self.set_telemetry(on);
                 }
+                self.update_menu(ui);
             });
             if ui
                 .selectable_label(self.library.open, "Bibliothek")
@@ -4696,6 +4706,7 @@ impl eframe::App for WoaApp {
             self.drop_files(ctx);
         }
         self.feedback.poll();
+        self.update_frame(ctx);
         if self.state.autosave_due(Instant::now()) {
             self.capture_plugins();
         }
@@ -4768,6 +4779,8 @@ impl eframe::App for WoaApp {
                     .inner_margin(egui::Margin::symmetric(12, 5)),
             )
             .show(ui, |ui| self.menu(ui, &ctx));
+        self.update_banner(ui);
+        self.update_confirm_window(&ctx);
         if self.config.mode == Mode::Party
             && let Some(radio) = self.radio.as_mut()
         {
@@ -6185,6 +6198,188 @@ fn fade_gain(c: &woa_model::Clip, local: f64) -> f64 {
         ));
     }
     g.clamp(0.0, 1.0)
+}
+
+/// Update-Hinweis (siehe `docs/updater.md`). Netz nur in Hintergrund-Threads.
+impl WoaApp {
+    fn update_wake(ctx: &egui::Context) -> impl Fn() + Send + 'static {
+        let ctx = ctx.clone();
+        move || ctx.request_repaint()
+    }
+
+    /// Jedes Bild: einmal beim Start (höchstens täglich) suchen, Ergebnisse abholen.
+    fn update_frame(&mut self, ctx: &egui::Context) {
+        use crate::update::{Event, check_due, unix_now};
+        if self.update_autostart {
+            self.update_autostart = false;
+            if self.config.auto_update
+                && self.photo.is_none()
+                && check_due(self.config.last_update_check, unix_now())
+            {
+                self.update.start_check(false, Self::update_wake(ctx));
+            }
+        }
+        match self.update.poll() {
+            Event::None => {}
+            Event::Checked { ok, message } => {
+                if ok {
+                    self.config.last_update_check = Some(unix_now());
+                    self.save_config();
+                }
+                if self.update.was_manual() {
+                    self.state.status = if ok {
+                        Status::Info(message)
+                    } else {
+                        Status::Error(message)
+                    };
+                }
+            }
+            #[cfg(windows)]
+            Event::Downloaded(path) => self.update_install(ctx, &path),
+            #[cfg(not(windows))]
+            Event::Downloaded(_) => {}
+        }
+    }
+
+    /// Geprüftes MSI liegt bereit: Projekt sichern, Installer starten, App beenden. Das MSI
+    /// startet die neue Version nach der Installation selbst (`RESTARTWOA=1`).
+    #[cfg(windows)]
+    fn update_install(&mut self, ctx: &egui::Context, msi: &std::path::Path) {
+        if self.state.session().is_dirty() {
+            self.save();
+            if self.state.session().is_dirty() {
+                self.update.back_to_available();
+                self.state.status = Status::Error(
+                    "Update nicht installiert: erst das Projekt speichern, dann noch einmal".into(),
+                );
+                return;
+            }
+        }
+        match woa_updater::launch_installer(msi) {
+            Ok(()) => {
+                tracing::info!("installer started, closing");
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "installer not started");
+                self.update.install_failed(&e.to_string());
+            }
+        }
+    }
+
+    /// Dezenter Streifen unter dem Menü, solange ein Update bereitliegt.
+    fn update_banner(&mut self, ui: &mut egui::Ui) {
+        use crate::update::Phase;
+        if self.update.dismissed {
+            return;
+        }
+        let (a, busy, err) = match self.update.phase.clone() {
+            Phase::Available(a) => (a, false, None),
+            Phase::Downloading(a) | Phase::Ready(a, _) => (a, true, None),
+            Phase::Failed(a, e) => (a, false, Some(e)),
+            Phase::Idle | Phase::Checking => return,
+        };
+        egui::Panel::top("update")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::mix(theme::PANEL_HEADER, theme::ACCENT, 0.15))
+                    .inner_margin(egui::Margin::symmetric(12, 3)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("Update {} verfügbar", a.version))
+                            .small()
+                            .color(theme::TEXT_BRIGHT),
+                    );
+                    if !a.notes.trim().is_empty() {
+                        ui.menu_button("Neuerungen", |ui| {
+                            ui.set_max_width(420.0);
+                            ui.label(&a.notes);
+                        });
+                    }
+                    if let Some(e) = &err {
+                        ui.colored_label(theme::ON_AIR, format!("Fehlgeschlagen: {e}"));
+                    }
+                    if busy {
+                        ui.spinner();
+                        ui.label(egui::RichText::new("Wird geladen und geprüft …").small());
+                        return;
+                    }
+                    #[cfg(windows)]
+                    if ui.small_button("– Jetzt installieren").clicked() {
+                        if self.state.session().is_dirty() {
+                            self.update_confirm = true;
+                        } else {
+                            self.update.start_download(Self::update_wake(ui.ctx()));
+                        }
+                    }
+                    #[cfg(not(windows))]
+                    ui.hyperlink_to("– Zur Release-Seite", woa_updater::RELEASES_PAGE);
+                    if ui.small_button("Später").clicked() {
+                        self.update.dismissed = true;
+                    }
+                });
+            });
+    }
+
+    /// Ungespeichertes Projekt: erst speichern, dann laden und installieren.
+    fn update_confirm_window(&mut self, ctx: &egui::Context) {
+        if !self.update_confirm {
+            return;
+        }
+        let mut go = false;
+        let mut cancel = false;
+        egui::Window::new("Projekt speichern?")
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(
+                    "Das Projekt hat ungespeicherte Änderungen. WOA wird für das Update beendet.",
+                );
+                ui.horizontal(|ui| {
+                    go = ui.button("Speichern und installieren").clicked();
+                    cancel = ui.button("Abbrechen").clicked();
+                });
+            });
+        if go {
+            self.update_confirm = false;
+            self.save();
+            if self.state.session().is_dirty() {
+                self.state.status =
+                    Status::Error("Update abgebrochen: Projekt nicht gespeichert".into());
+            } else {
+                self.update.start_download(Self::update_wake(ctx));
+            }
+        } else if cancel {
+            self.update_confirm = false;
+        }
+    }
+
+    /// Einträge im Menü „Einstellungen“.
+    fn update_menu(&mut self, ui: &mut egui::Ui) {
+        ui.separator();
+        let mut on = self.config.auto_update;
+        if ui
+            .checkbox(&mut on, "Beim Start nach Updates suchen (einmal am Tag)")
+            .changed()
+        {
+            self.config.auto_update = on;
+            self.save_config();
+        }
+        if ui
+            .add_enabled(
+                !self.update.busy(),
+                egui::Button::new("Jetzt nach Updates suchen"),
+            )
+            .clicked()
+        {
+            self.update.dismissed = false;
+            self.update.start_check(true, Self::update_wake(ui.ctx()));
+            self.state.status = Status::Info("Suche nach Updates …".into());
+            ui.close();
+        }
+    }
 }
 
 #[cfg(test)]

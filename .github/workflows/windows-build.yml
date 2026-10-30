@@ -5,6 +5,8 @@ name: Windows-Bau
 # Unsigniert; Windows SmartScreen fragt beim ersten Start nach („Weitere Informationen“ → „Trotzdem ausführen“).
 on:
   workflow_dispatch:
+  # Vom Release-Workflow (release.yml) aufgerufen.
+  workflow_call:
   # Prüft Änderungen am Installer schon im PR.
   pull_request:
     paths:

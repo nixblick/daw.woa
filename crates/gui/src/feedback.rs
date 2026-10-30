@@ -52,6 +52,11 @@ pub struct GuiConfig {
     /// Ausgänge je Gerät: Gerät und Kanalpaar je Quelle. Vorgabe: alles auf Standardgerät, Kanal 1/2.
     #[serde(skip_serializing_if = "woa_radio::routing::OutputMap::is_default")]
     pub outputs: woa_radio::routing::OutputMap,
+    /// Beim Start höchstens einmal am Tag nach einem neuen Release suchen. Vorgabe: an.
+    pub auto_update: bool,
+    /// Unix-Sekunden der letzten erfolgreichen Update-Suche.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_update_check: Option<u64>,
 }
 
 /// Wohin das Vorhören (PFL) geht. Nie auf Kanal 1/2 der Sendung.
@@ -123,6 +128,8 @@ impl Default for GuiConfig {
             controller_maps: std::collections::BTreeMap::new(),
             pfl_output: PflOutput::Aus,
             outputs: woa_radio::routing::OutputMap::default(),
+            auto_update: true,
+            last_update_check: None,
         }
     }
 }
