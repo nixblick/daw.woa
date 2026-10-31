@@ -1,8 +1,15 @@
 # Changelog
 
-## 0.34.51 — 2026-10-31
+## 0.34.52 — 2026-10-31
 
 ### Behoben
+
+- **Stream-Uplink:** Hörerzahl- und Titelabfrage liefen synchron im Sende-Thread und hielten das Senden bis zu 15 s an. Beides läuft jetzt in einem eigenen Thread.
+- **Streamd:** Das Umrechnen von UI- auf Stream-Rate begann je Häppchen neu (Drift, Knackser). Jetzt ein Resampler mit Zustand je Verbindung (Test: 60 s 48k→44,1k, Frame-Bilanz ±1).
+- **Streamd:** Nach Standby oder Hänger wurde der ganze Rückstand auf einmal kodiert und gesendet. Das Aufholen ist jetzt auf 1 s begrenzt, ausgelassene Blöcke werden geloggt (Test).
+- **Stream-Uplink:** Ein Pufferüberlauf schnitt den MP3-Strom an beliebiger Byte-Grenze; jetzt wird bis zum nächsten Sync-Wort verworfen (Test).
+
+## 0.34.51 — 2026-10-31
 
 - **Wunschtitel-Ordner:** Neue Dateien aus dem Wunschordner heißen in der Party-Wunschliste jetzt „Interpret – Titel“ aus den Tags. Fehlt Interpret oder Titel oder ist die Datei nicht lesbar, bleibt es beim Dateinamen ohne Endung. Die Tags werden nur gelesen, nicht dekodiert. Vorhandene Wünsche bleiben, wie sie sind.
 

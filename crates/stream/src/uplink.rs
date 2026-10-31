@@ -113,6 +113,15 @@ fn run(cfg: StreamConfig, kw: Kennwort, rx: Receiver<Msg>, state: Arc<Mutex<Upli
     let mut title: Option<String> = None;
     let mut title_pending = false;
     let mut next_poll = Instant::now();
+    // Titel und Hörerzahl laufen über HTTP mit Fristen bis 15 s: eigener Thread,
+    // damit der Sende-Pfad nie darauf wartet.
+    let (job_tx, job_rx) = channel::<Job>();
+    {
+        let (cfg, kw, st) = (cfg.clone(), kw.clone(), Arc::clone(&state));
+        let _ = std::thread::Builder::new()
+            .name("woa-stream-meta".into())
+            .spawn(move || meta(&cfg, &kw, &job_rx, &st));
+    }
     loop {
         // Eingang sammeln.
         let mut msgs = Vec::new();
@@ -136,10 +145,9 @@ fn run(cfg: StreamConfig, kw: Kennwort, rx: Receiver<Msg>, state: Arc<Mutex<Upli
                 Msg::Quit => return,
             }
         }
-        if buffer.len() > cap {
-            let drop = buffer.len() - cap;
-            buffer.drain(..drop);
-            set(&state, |s| s.bytes_dropped += drop as u64);
+        let dropped = trim_to_cap(&mut buffer, cap);
+        if dropped > 0 {
+            set(&state, |s| s.bytes_dropped += dropped as u64);
         }
 
         // Verbinden.
@@ -211,16 +219,75 @@ fn run(cfg: StreamConfig, kw: Kennwort, rx: Receiver<Msg>, state: Arc<Mutex<Upli
             }
             if title_pending && let Some(t) = title.as_deref() {
                 title_pending = false;
-                if let Err(e) = update_title(&cfg, &kw, t) {
-                    tracing::warn!(error = %e, "title update failed");
-                    set(&state, |s| s.last_error = Some(e.to_string()));
-                }
+                let _ = job_tx.send(Job::Title(t.to_string()));
             }
             if cfg.admin_port.is_some() && Instant::now() >= next_poll {
                 next_poll = Instant::now() + LISTENER_POLL;
-                let n = listeners(&cfg);
-                set(&state, |s| s.listeners = n);
+                let _ = job_tx.send(Job::Listeners);
             }
         }
+    }
+}
+
+enum Job {
+    Title(String),
+    Listeners,
+}
+
+/// Arbeitet Titel- und Hörerabfragen ab; endet, wenn der Uplink-Thread endet.
+fn meta(cfg: &StreamConfig, kw: &Kennwort, rx: &Receiver<Job>, state: &Mutex<UplinkState>) {
+    while let Ok(job) = rx.recv() {
+        // Aufgestaute Hörerabfragen zusammenfassen, Titel nur den neuesten.
+        let (mut title, mut poll) = (None, false);
+        for j in std::iter::once(job).chain(rx.try_iter()) {
+            match j {
+                Job::Title(t) => title = Some(t),
+                Job::Listeners => poll = true,
+            }
+        }
+        if let Some(t) = title
+            && let Err(e) = update_title(cfg, kw, &t)
+        {
+            tracing::warn!(error = %e, "title update failed");
+            set(state, |s| s.last_error = Some(e.to_string()));
+        }
+        if poll {
+            let n = listeners(cfg);
+            set(state, |s| s.listeners = n);
+        }
+    }
+}
+
+/// Kürzt den Puffer auf `cap` Bytes und verwirft danach bis zum nächsten
+/// MP3-Sync-Wort, damit der Strom an einer Frame-Grenze weitergeht.
+fn trim_to_cap(buffer: &mut VecDeque<u8>, cap: usize) -> usize {
+    if buffer.len() <= cap {
+        return 0;
+    }
+    let mut drop = buffer.len() - cap;
+    while drop + 1 < buffer.len() && !(buffer[drop] == 0xFF && buffer[drop + 1] & 0xE0 == 0xE0) {
+        drop += 1;
+    }
+    if drop + 1 >= buffer.len() {
+        drop = buffer.len();
+    }
+    buffer.drain(..drop);
+    drop
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trim_keeps_frame_boundary() {
+        let mut b: VecDeque<u8> = VecDeque::new();
+        for _ in 0..10 {
+            b.extend([0xFF, 0xFB, 1, 2, 3, 4, 5, 6]);
+        }
+        let dropped = trim_to_cap(&mut b, 75);
+        assert_eq!(dropped, 8);
+        assert_eq!((b[0], b[1]), (0xFF, 0xFB));
+        assert_eq!(trim_to_cap(&mut b, 100), 0);
     }
 }

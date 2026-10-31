@@ -13,7 +13,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use woa_radio::audio::{Stereo, is_supported, load_stereo, resample};
+use woa_guests::resample::StreamResampler;
+use woa_radio::audio::{Stereo, is_supported, load_stereo};
 
 use crate::config::StreamConfig;
 use crate::kennwort::Kennwort;
@@ -253,6 +254,11 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
 
     while !stop.load(Ordering::Relaxed) {
         let due = (started.elapsed().as_secs_f64() * f64::from(rate)) as u64;
+        let (caught, skipped) = catch_up(produced, due, u64::from(rate), block as u64);
+        if skipped > 0 {
+            tracing::warn!(blocks = skipped, "stream stalled, skipping backlog");
+            produced = caught;
+        }
         while produced + block as u64 <= due {
             // Sendemix holen.
             let (live_ok, ui_title) = {
@@ -501,7 +507,9 @@ fn serve(
     tracing::info!("ui connected");
     let _ = s.set_read_timeout(Some(Duration::from_millis(500)));
     let mut samples = Vec::new();
-    let (mut l, mut r) = (Vec::new(), Vec::new());
+    // Ein Resampler je Verbindung: Phase und letzter Frame bleiben über Häppchen erhalten.
+    let mut rs = StreamResampler::new(in_rate, out_rate);
+    let mut resampled = Vec::new();
     while !stop.load(Ordering::Relaxed) && lock(inbox).generation == my_gen {
         let go_on = || !stop.load(Ordering::Relaxed);
         match read_frame_patient(&mut s, &mut buf, MAX_FRAME, &go_on) {
@@ -515,24 +523,9 @@ fn serve(
                 if loud {
                     ib.last_sound = Some(Instant::now());
                 }
-                if in_rate == out_rate {
-                    ib.live.extend(samples.iter().copied());
-                } else {
-                    l.clear();
-                    r.clear();
-                    for f in samples.as_chunks::<2>().0 {
-                        l.push(f[0]);
-                        r.push(f[1]);
-                    }
-                    let (rl, rr) = (
-                        resample(&l, in_rate, out_rate),
-                        resample(&r, in_rate, out_rate),
-                    );
-                    for (a, b) in rl.iter().zip(&rr) {
-                        ib.live.push_back(*a);
-                        ib.live.push_back(*b);
-                    }
-                }
+                resampled.clear();
+                rs.process(&samples, &mut resampled);
+                ib.live.extend(resampled.iter().copied());
                 let max = out_rate as usize * 4;
                 if ib.live.len() > max {
                     let cut = (ib.live.len() - max) & !1;
@@ -563,9 +556,55 @@ fn serve(
     }
 }
 
+/// Begrenzt das Aufholen nach einem Stillstand auf höchstens `max_behind` Frames:
+/// liegt `due` weiter voraus, wird `produced` in ganzen Blöcken vorgezogen.
+/// Gibt den neuen Stand und die Zahl übersprungener Blöcke zurück.
+fn catch_up(produced: u64, due: u64, max_behind: u64, block: u64) -> (u64, u64) {
+    let behind = due.saturating_sub(produced);
+    if block == 0 || behind <= max_behind {
+        return (produced, 0);
+    }
+    let skipped = (behind - block) / block;
+    (produced + skipped * block, skipped)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn catch_up_caps_backlog() {
+        assert_eq!(catch_up(0, 48_000, 48_000, 960), (0, 0));
+        let (p, n) = catch_up(0, 48_000 * 600, 48_000, 960);
+        assert!(n > 0);
+        let rest = 48_000 * 600 - p;
+        assert!((960..2 * 960).contains(&rest), "rest {rest}");
+        assert_eq!(p % 960, 0);
+    }
+
+    #[test]
+    fn resample_per_connection_keeps_frame_balance() {
+        // 60 s 48 kHz in wechselnd langen Häppchen (~20 ms) nach 44,1 kHz.
+        let mut rs = StreamResampler::new(48_000, 44_100);
+        let (mut fed, mut out, mut buf) = (0usize, 0usize, Vec::new());
+        let mut k = 0usize;
+        while fed < 48_000 * 60 {
+            let n = (960 + (k * 37) % 61 - 30).min(48_000 * 60 - fed);
+            k += 1;
+            let chunk: Vec<f32> = (0..n)
+                .flat_map(|i| {
+                    let v = ((fed + i) as f32 * 0.01).sin();
+                    [v, v]
+                })
+                .collect();
+            buf.clear();
+            rs.process(&chunk, &mut buf);
+            out += buf.len() / 2;
+            fed += n;
+        }
+        let want = 44_100 * 60;
+        assert!(out.abs_diff(want) <= 1, "out {out} want {want}");
+    }
 
     #[test]
     fn emergency_loops_and_survives_empty() {
