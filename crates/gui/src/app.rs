@@ -2757,7 +2757,9 @@ impl WoaApp {
                 bottom: 5,
             });
         // Fest reserviertes Rechteck, damit Lineal und Zeitleisten bündig bleiben.
-        let (slot, _) = ui.allocate_exact_size(egui::vec2(HEADER_W, ROW_H), egui::Sense::hover());
+        let (slot, slot_resp) =
+            ui.allocate_exact_size(egui::vec2(HEADER_W, ROW_H), egui::Sense::click());
+        let mut name_resp = None;
         let mut child = ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(slot)
@@ -2810,9 +2812,24 @@ impl WoaApp {
                     {
                         self.armed.insert(id);
                     }
-                    self.track_name(ui, id, name);
+                    name_resp = self.track_name(ui, id, name);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 3.0;
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new(theme::ic::TRASH)
+                                        .size(12.0)
+                                        .color(theme::text_dim()),
+                                )
+                                .fill(theme::well())
+                                .min_size(egui::vec2(20.0, 21.0)),
+                            )
+                            .on_hover_text("Spur löschen (auch per Rechtsklick auf den Spurkopf)")
+                            .clicked()
+                        {
+                            self.delete_track(id);
+                        }
                         let s_btn = egui::Button::new(
                             egui::RichText::new("S").size(11.5).strong().color(if solo {
                                 theme::well()
@@ -2921,52 +2938,12 @@ impl WoaApp {
             })
         };
         let r = resp.response.rect;
-        resp.response.context_menu(|ui| {
-            if ui
-                .button(format!("{} Spur umbenennen", theme::ic::PENCIL_SIMPLE))
-                .clicked()
-            {
-                self.rename = Some((id, name.to_string(), false));
-                ui.close();
-            }
-            if is_midi {
-                if ui
-                    .button(format!(
-                        "{} + Leerer MIDI-Clip (4 Takte)",
-                        theme::ic::PIANO_KEYS
-                    ))
-                    .clicked()
-                {
-                    self.create_midi_clip_at_playhead(Some(id));
-                    ui.close();
-                }
-            } else if ui
-                .button(format!(
-                    "{} Audio-Datei importieren …",
-                    theme::ic::FOLDER_OPEN
-                ))
-                .clicked()
-            {
-                self.selected_track = Some(id);
-                self.import_audio();
-                ui.close();
-            }
-            ui.separator();
-            if ui
-                .button(
-                    egui::RichText::new(format!("{} Spur löschen", theme::ic::TRASH))
-                        .color(theme::on_air()),
-                )
-                .clicked()
-            {
-                self.armed.remove(&id);
-                if self.selected_track == Some(id) {
-                    self.selected_track = None;
-                }
-                self.state.remove_track(id);
-                ui.close();
-            }
-        });
+        // Rechtsklick irgendwo auf den Spurkopf (Hintergrund oder Name) öffnet das Spurmenü.
+        // Der Rahmen selbst meldet nur Hover, deshalb trägt das Slot-Rechteck den Klick.
+        self.track_menu(&slot_resp, id, name);
+        if let Some(nr) = name_resp {
+            self.track_menu(&nr, id, name);
+        }
         ui.painter().rect_filled(
             egui::Rect::from_min_size(r.min, egui::vec2(5.0, r.height())),
             egui::CornerRadius {
@@ -2977,6 +2954,68 @@ impl WoaApp {
             },
             color,
         );
+    }
+
+    /// Entfernt eine Spur samt Aufnahme-Scharfschaltung und Auswahl.
+    fn delete_track(&mut self, id: TrackId) {
+        self.armed.remove(&id);
+        if self.selected_track == Some(id) {
+            self.selected_track = None;
+        }
+        self.state.remove_track(id);
+    }
+
+    /// Kontextmenü einer Spur: umbenennen, Inhalt anlegen, löschen (Audio, MIDI, Bus).
+    fn track_menu(&mut self, resp: &egui::Response, id: TrackId, name: &str) {
+        let kind = self.state.project().track(id).map(|t| t.kind);
+        resp.context_menu(|ui| {
+            if ui
+                .button(format!("{} Spur umbenennen", theme::ic::PENCIL_SIMPLE))
+                .clicked()
+            {
+                self.rename = Some((id, name.to_string(), false));
+                ui.close();
+            }
+            match kind {
+                Some(woa_model::TrackKind::Midi) => {
+                    if ui
+                        .button(format!(
+                            "{} + Leerer MIDI-Clip (4 Takte)",
+                            theme::ic::PIANO_KEYS
+                        ))
+                        .clicked()
+                    {
+                        self.create_midi_clip_at_playhead(Some(id));
+                        ui.close();
+                    }
+                }
+                Some(woa_model::TrackKind::Bus) => {}
+                _ => {
+                    if ui
+                        .button(format!(
+                            "{} Audio-Datei importieren …",
+                            theme::ic::FOLDER_OPEN
+                        ))
+                        .clicked()
+                    {
+                        self.selected_track = Some(id);
+                        self.import_audio();
+                        ui.close();
+                    }
+                }
+            }
+            ui.separator();
+            if ui
+                .button(
+                    egui::RichText::new(format!("{} Spur löschen", theme::ic::TRASH))
+                        .color(theme::on_air()),
+                )
+                .clicked()
+            {
+                self.delete_track(id);
+                ui.close();
+            }
+        });
     }
 
     /// Quellenwahl, Mithören und Stereo-Panorama einer Spur.
@@ -4487,7 +4526,7 @@ impl WoaApp {
         })
     }
 
-    fn track_name(&mut self, ui: &mut egui::Ui, id: TrackId, name: &str) {
+    fn track_name(&mut self, ui: &mut egui::Ui, id: TrackId, name: &str) -> Option<egui::Response> {
         match &mut self.rename {
             Some((rid, buf, focused)) if *rid == id => {
                 let r = ui.add(egui::TextEdit::singleline(buf).desired_width(130.0));
@@ -4502,6 +4541,7 @@ impl WoaApp {
                         self.state.rename_track(id, &new);
                     }
                 }
+                None
             }
             _ => {
                 let r = ui
@@ -4515,6 +4555,7 @@ impl WoaApp {
                 if r.double_clicked() {
                     self.rename = Some((id, name.to_string(), false));
                 }
+                Some(r)
             }
         }
     }
@@ -5473,7 +5514,7 @@ impl WoaApp {
                     // M / S / Aufnahme
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
-                        let key_size = egui::vec2(28.0, 22.0);
+                        let key_size = egui::vec2(21.0, 22.0);
                         let key_font = theme::label_font(13.0);
                         if crate::widgets::Key::new("M", key_size)
                             .font(key_font.clone())
@@ -5505,6 +5546,15 @@ impl WoaApp {
                             && !self.armed.remove(&id)
                         {
                             self.armed.insert(id);
+                        }
+                        if crate::widgets::Key::new(theme::ic::TRASH, key_size)
+                            .font(egui::FontId::proportional(12.0))
+                            .color(theme::on_air())
+                            .ui(ui)
+                            .on_hover_text("Spur löschen")
+                            .clicked()
+                        {
+                            self.delete_track(id);
                         }
                     });
 
@@ -5543,6 +5593,41 @@ impl WoaApp {
                             self.state.set_gain(id, v);
                         }
                     });
+
+                    // Effekte und Plugins dieses Kanals: ein Klick zeigt sie im Insert-Rack.
+                    let fx = self
+                        .state
+                        .project()
+                        .track(id)
+                        .map_or(0, |t| t.inserts.len() + t.plugins.len());
+                    let shown = self.selected_track == Some(id)
+                        || (self.selected_track.is_none() && index == 0);
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new(format!(
+                                    "{} Effekte {fx}",
+                                    theme::ic::SLIDERS_HORIZONTAL
+                                ))
+                                .size(11.0)
+                                .color(if shown {
+                                    theme::text()
+                                } else {
+                                    theme::text_dim()
+                                }),
+                            )
+                            .fill(if shown {
+                                theme::mix(theme::surface(), color, 0.3)
+                            } else {
+                                theme::surface()
+                            })
+                            .min_size(egui::vec2(W, 20.0)),
+                        )
+                        .on_hover_text("Effekte, Plugins, Pan und Routing im Insert-Rack zeigen")
+                        .clicked()
+                    {
+                        self.selected_track = Some(id);
+                    }
                 });
             });
     }
@@ -5550,9 +5635,12 @@ impl WoaApp {
     /// Insert-Rack des gewählten Kanals: Pegel (Gain), Panorama, Ausgang, Sends,
     /// Effektkette und Plugins. Hier leben die Regler, die der Kanalzug nicht mehr trägt.
     fn insert_rack(&mut self, ui: &mut egui::Ui) {
+        // Ohne Auswahl zeigt das Rack den ersten Kanal, damit Effekte und Plugins jeder Spur
+        // ohne Vorbedingung erreichbar sind (vor dem Design lagen sie in jedem Kanalzug).
         let sel = self
             .selected_track
-            .and_then(|id| self.state.project().tracks.iter().position(|t| t.id == id));
+            .and_then(|id| self.state.project().tracks.iter().position(|t| t.id == id))
+            .or_else(|| (!self.state.project().tracks.is_empty()).then_some(0));
         let Some(index) = sel else {
             ui.label(
                 egui::RichText::new("INSERT-RACK")
@@ -5590,6 +5678,8 @@ impl WoaApp {
             );
         });
         ui.label(egui::RichText::new(name).strong().color(theme::text()));
+        self.strip_effects(ui, id, kind);
+        ui.separator();
 
         let mut g = match self.gain_drag {
             Some((d, v)) if d == id => v,
@@ -5655,7 +5745,7 @@ impl WoaApp {
             }
         }
 
-        self.strip_routing(ui, id, kind);
+        self.strip_routing(ui, id);
 
         ui.add_space(4.0);
         if ui
@@ -5710,13 +5800,12 @@ impl WoaApp {
     }
 
     /// Ausgang, Sends und Effektkette eines Mischpult-Zugs.
-    fn strip_routing(&mut self, ui: &mut egui::Ui, id: TrackId, kind: woa_model::TrackKind) {
+    fn strip_routing(&mut self, ui: &mut egui::Ui, id: TrackId) {
         let Some(track) = self.state.project().track(id) else {
             return;
         };
         let output = track.output;
         let sends = track.sends.clone();
-        let inserts = track.inserts.clone();
         let buses: Vec<(TrackId, String)> = self
             .state
             .project()
@@ -5819,7 +5908,21 @@ impl WoaApp {
                 }
             });
         }
+    }
 
+    /// Effektkette und Plugins eines Kanals: hinzufügen, entfernen, umsortieren, Bypass,
+    /// Plugin-Fenster. Steht im Insert-Rack oben, damit sie ohne Scrollen sichtbar sind.
+    fn strip_effects(&mut self, ui: &mut egui::Ui, id: TrackId, kind: woa_model::TrackKind) {
+        let Some(track) = self.state.project().track(id) else {
+            return;
+        };
+        let inserts = track.inserts.clone();
+        let small = |s: &str| {
+            egui::RichText::new(s.to_owned())
+                .size(9.5)
+                .monospace()
+                .color(theme::text_dim())
+        };
         // Effektkette
         ui.label(small("EFFEKTE"));
         for ins in &inserts {
