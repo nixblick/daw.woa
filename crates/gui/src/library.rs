@@ -584,7 +584,7 @@ impl LibraryWindow {
                     egui::Id::new("lib_drag_ghost"),
                 ));
                 let galley = painter.layout_no_wrap(
-                    format!("♪ {name}"),
+                    format!("{} {name}", theme::ic::MUSIC_NOTE),
                     egui::FontId::proportional(13.0),
                     theme::well(),
                 );
@@ -624,7 +624,13 @@ impl LibraryWindow {
             if ui
                 .add_enabled(
                     pfl_available,
-                    egui::Button::new("▶ Vorhören").fill(theme::surface()),
+                    egui::Button::new(theme::fill_label(
+                        theme::icf::PLAY,
+                        "Vorhören",
+                        14.0,
+                        theme::text(),
+                    ))
+                    .fill(theme::surface()),
                 )
                 .on_disabled_hover_text(
                     "Kein Kopfhörer-Ausgang: Radio-Modus und Einstellungen → Vorhören (PFL)",
@@ -634,7 +640,11 @@ impl LibraryWindow {
                 out.preview = Some(PathBuf::from(&t.path));
             }
             if ui
-                .add_enabled(pfl_available, egui::Button::new("■").fill(theme::surface()))
+                .add_enabled(
+                    pfl_available,
+                    egui::Button::new(theme::fill_label(theme::icf::STOP, "", 14.0, theme::text()))
+                        .fill(theme::surface()),
+                )
                 .on_hover_text("Vorhören stoppen")
                 .clicked()
             {
@@ -667,8 +677,10 @@ impl LibraryWindow {
             let mut remove = None;
             for tag in &t.tags {
                 let b = ui.add(
-                    egui::Button::new(egui::RichText::new(format!("{tag}  ✕")).small())
-                        .fill(theme::mix(theme::cue(), theme::surface(), 0.8)),
+                    egui::Button::new(
+                        egui::RichText::new(format!("{tag}  {}", theme::ic::X)).small(),
+                    )
+                    .fill(theme::mix(theme::cue(), theme::surface(), 0.8)),
                 );
                 if b.on_hover_text("Tag entfernen").clicked() {
                     remove = Some(tag.clone());
@@ -932,7 +944,7 @@ mod tests {
         assert!(w.error.is_some());
         assert!(w.results().is_empty());
         // Auch das Zeichnen übersteht den Fehlerfall.
-        let ctx = egui::Context::default();
+        let ctx = crate::theme::test_context();
         w.open = true;
         let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
             let _ = w.show(ui.ctx(), false);
@@ -951,7 +963,7 @@ mod tests {
         let id = w.results()[0].id;
         w.select(Some(id));
         w.open = true;
-        let ctx = egui::Context::default();
+        let ctx = crate::theme::test_context();
         for _ in 0..3 {
             let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
                 let out = w.show(ui.ctx(), true);
@@ -984,7 +996,7 @@ mod tests {
         w.start_import(&music);
         wait_import(&mut w);
         assert!(w.results()[0].analysis.is_none(), "noch nicht analysiert");
-        let ctx = egui::Context::default();
+        let ctx = crate::theme::test_context();
         let t0 = Instant::now();
         loop {
             let _ = ctx.run_ui(egui::RawInput::default(), |ui| {

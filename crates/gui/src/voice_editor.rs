@@ -610,7 +610,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut ed = loaded(dir.path());
         ed.suggest();
-        let ctx = egui::Context::default();
+        let ctx = crate::theme::test_context();
         let mut open = true;
         let mut actions = Vec::new();
         let _ = ctx.run_ui(egui::RawInput::default(), |ui| {

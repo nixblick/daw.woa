@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn dialog_draws_without_a_window() {
-        let ctx = egui::Context::default();
+        let ctx = crate::theme::test_context();
         let mut d = ExportDialog::new();
         d.set_ffmpeg(None);
         d.open = true;

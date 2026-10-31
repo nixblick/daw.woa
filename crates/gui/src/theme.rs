@@ -841,6 +841,52 @@ pub const TYPE_TITLE: f32 = 22.0;
 pub const FAMILY_LABEL: &str = "label";
 /// Name der Familie für Leuchtziffern (DSEG7 Classic, `font-seg`).
 pub const FAMILY_SEG: &str = "seg";
+/// Familie der Phosphor-Symbole im Fill-Stil (Transport). Regular und Fill teilen sich dieselben
+/// Codepunkte; deshalb liegt Fill in einer eigenen Familie und wird nur über [`fill_label`] benutzt.
+pub const FAMILY_ICON_FILL: &str = "icon-fill";
+
+/// Phosphor-Symbole im Fill-Stil, nur für [`fill_label`] und [`fill_icon`].
+pub use egui_phosphor::fill as icf;
+/// Phosphor-Symbole im Regular-Stil (Linie). Sie stehen als Rückfall in allen Textfamilien und
+/// lassen sich direkt in Beschriftungen einsetzen: `format!("{} Text", theme::ic::TRASH)`.
+pub use egui_phosphor::regular as ic;
+
+/// Ein Fill-Symbol allein als `RichText` (Familie [`FAMILY_ICON_FILL`]).
+pub fn fill_icon(glyph: &str, size: f32) -> egui::RichText {
+    egui::RichText::new(glyph)
+        .size(size)
+        .family(egui::FontFamily::Name(FAMILY_ICON_FILL.into()))
+}
+
+/// Beschriftung aus einem Fill-Symbol und optionalem Text, für Knöpfe. Das Symbol kommt aus
+/// [`icf`], der Text läuft in der Oberflächenschrift; beides in `color`.
+pub fn fill_label(glyph: &str, text: &str, size: f32, color: Color32) -> egui::text::LayoutJob {
+    use egui::text::{LayoutJob, TextFormat};
+    let mut job = LayoutJob::default();
+    job.append(
+        glyph,
+        0.0,
+        TextFormat {
+            font_id: FontId::new(size, egui::FontFamily::Name(FAMILY_ICON_FILL.into())),
+            color,
+            valign: egui::Align::Center,
+            ..Default::default()
+        },
+    );
+    if !text.is_empty() {
+        job.append(
+            text,
+            size * 0.4,
+            TextFormat {
+                font_id: FontId::new(size, egui::FontFamily::Name("ui-bold".into())),
+                color,
+                valign: egui::Align::Center,
+                ..Default::default()
+            },
+        );
+    }
+    job
+}
 
 /// Schrift für Pult-Beschriftungen und Titel (Barlow Condensed SemiBold).
 pub fn label_font(size: f32) -> FontId {
@@ -918,6 +964,16 @@ pub fn font_definitions() -> egui::FontDefinitions {
             std::sync::Arc::new(FontData::from_static(bytes)),
         );
     }
+    // Phosphor: Regular als Rückfall hinter der ersten Schrift jeder Textfamilie (wird unten
+    // eingefügt), Fill als eigene Familie.
+    fd.font_data.insert(
+        "phosphor".to_owned(),
+        std::sync::Arc::new(egui_phosphor::Variant::Regular.font_data()),
+    );
+    fd.font_data.insert(
+        "phosphor-fill".to_owned(),
+        std::sync::Arc::new(egui_phosphor::Variant::Fill.font_data()),
+    );
     let fallback_prop = fd
         .families
         .get(&FontFamily::Proportional)
@@ -929,7 +985,7 @@ pub fn font_definitions() -> egui::FontDefinitions {
         .cloned()
         .unwrap_or_default();
     let with = |first: &str, fallback: &[String]| {
-        let mut v = vec![first.to_owned()];
+        let mut v = vec![first.to_owned(), "phosphor".to_owned()];
         v.extend(fallback.iter().cloned());
         v
     };
@@ -960,7 +1016,21 @@ pub fn font_definitions() -> egui::FontDefinitions {
         }
         fd.families.insert(FontFamily::Name(family.into()), v);
     }
+    fd.families.insert(
+        FontFamily::Name(FAMILY_ICON_FILL.into()),
+        vec!["phosphor-fill".to_owned()],
+    );
     fd
+}
+
+/// Kontext für Tests: Schriften gesetzt und einmal durchlaufen, sodass alle Familien (auch
+/// `icon-fill`) beim Zeichnen schon gelten.
+#[cfg(test)]
+pub fn test_context() -> egui::Context {
+    let ctx = egui::Context::default();
+    install_fonts(&ctx);
+    let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
+    ctx
 }
 
 /// Setzt die Schriften einmal je egui-Kontext. egui lädt sie erst im nächsten Durchlauf; wer
@@ -1076,6 +1146,35 @@ mod tests {
         ] {
             assert_eq!(val("radius", name), f32::from(got), "{name}");
         }
+    }
+
+    #[test]
+    fn phosphor_icons_are_registered_and_render() {
+        let fd = font_definitions();
+        for fam in [
+            egui::FontFamily::Proportional,
+            egui::FontFamily::Monospace,
+            egui::FontFamily::Name(FAMILY_LABEL.into()),
+        ] {
+            assert!(fd.families[&fam].iter().any(|f| f == "phosphor"), "{fam:?}");
+        }
+        assert_eq!(
+            fd.families[&egui::FontFamily::Name(FAMILY_ICON_FILL.into())],
+            vec!["phosphor-fill".to_owned()]
+        );
+        let ctx = egui::Context::default();
+        install_fonts(&ctx);
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let job = fill_label(icf::PLAY, "Play", 15.0, Color32::WHITE);
+            let g = ui.painter().layout_job(job);
+            assert!(g.size().x > 15.0);
+            let icon = ui.painter().layout_no_wrap(
+                ic::TRASH.to_owned(),
+                FontId::proportional(14.0),
+                Color32::WHITE,
+            );
+            assert!(icon.size().x > 4.0);
+        });
     }
 
     #[test]

@@ -654,7 +654,7 @@ impl ClockEditor {
         for (i, c) in self.schedule.clocks.iter().enumerate() {
             let col = theme::track_color(i);
             ui.horizontal(|ui| {
-                ui.colored_label(col, "■");
+                ui.label(theme::fill_icon(theme::icf::SQUARE, 14.0).color(col));
                 if ui
                     .add(egui::Button::selectable(i == self.selected, &c.name))
                     .clicked()
@@ -699,13 +699,13 @@ impl ClockEditor {
                 ui.label(format!("{}", k + 1));
                 changed |= tag_field(ui, &mut cat, &tags, 70.0);
                 changed |= tag_field(ui, &mut fb, &tags, 70.0);
-                if ui.small_button("↑").clicked() {
+                if ui.small_button(theme::ic::ARROW_UP).clicked() {
                     act = Some((k, -1));
                 }
-                if ui.small_button("↓").clicked() {
+                if ui.small_button(theme::ic::ARROW_DOWN).clicked() {
                     act = Some((k, 1));
                 }
-                if ui.small_button("✕").clicked() {
+                if ui.small_button(theme::ic::X).clicked() {
                     act = Some((k, 0));
                 }
             });
@@ -784,7 +784,7 @@ fn tag_field(ui: &mut egui::Ui, value: &mut String, tags: &[String], width: f32)
         .add(egui::TextEdit::singleline(value).desired_width(width))
         .changed();
     if !tags.is_empty() {
-        ui.menu_button("▾", |ui| {
+        ui.menu_button(theme::ic::CARET_DOWN, |ui| {
             for t in tags {
                 if ui.button(t).clicked() {
                     *value = t.clone();
@@ -981,7 +981,7 @@ mod tests {
     fn window_draws_without_a_display() {
         let (mut e, _dir) = editor();
         e.toggle();
-        let ctx = egui::Context::default();
+        let ctx = crate::theme::test_context();
         let _ = ctx.run_ui(egui::RawInput::default(), |ui| e.show(ui.ctx()));
         assert!(e.open);
     }

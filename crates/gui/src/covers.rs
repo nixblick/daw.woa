@@ -237,7 +237,7 @@ pub fn paint_square(
             painter.text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
-                "♪",
+                crate::theme::ic::MUSIC_NOTE,
                 egui::FontId::proportional(size * 0.45),
                 c,
             );
@@ -268,7 +268,7 @@ mod tests {
     /// (sonst Dauer-Repaint, 100 % CPU im UI-Thread).
     #[test]
     fn missing_cover_does_not_restart_fade() {
-        let ctx = egui::Context::default();
+        let ctx = crate::theme::test_context();
         let mut c = Covers::new(&ctx);
         let p = PathBuf::from("/kein/cover.mp3");
         c.slots.insert(p.clone(), Slot::Missing);
