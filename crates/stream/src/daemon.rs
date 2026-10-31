@@ -7,7 +7,6 @@
 //! er leer, wird mit Stille aufgefüllt, wird er zu voll (Uhren driften), wird gekürzt.
 //! Wechsel zwischen Sendemix und Notfall-Playlist werden über 1 s überblendet.
 
-use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -17,6 +16,7 @@ use woa_guests::resample::StreamResampler;
 use woa_radio::audio::{Stereo, is_supported, load_stereo};
 
 use crate::config::StreamConfig;
+use crate::jitter::LiveBuffer;
 use crate::kennwort::Kennwort;
 use crate::link::{
     HANDSHAKE, KIND_AUDIO, KIND_STOP, KIND_TITLE, LocalListener, LocalStream, MAX_FRAME,
@@ -30,10 +30,8 @@ use crate::uplink::{Phase, Uplink};
 const SILENCE: f32 = 1e-4;
 /// Überblendzeit Sendemix ↔ Notfall-Playlist.
 const FADE_SECONDS: f32 = 1.0;
-/// Vorlauf des Sendemix-Puffers nach einem Leerlauf.
-const PREFILL_SECONDS: f32 = 0.1;
-/// Mehr als so viel Puffer: auf den Vorlauf kürzen (Uhren-Drift).
-const MAX_LIVE_SECONDS: f32 = 0.5;
+/// Unterläufe und Kürzungen höchstens so oft ins Log.
+const JITTER_LOG_EVERY: Duration = Duration::from_secs(10);
 const BLOCK_MS: u32 = 20;
 const STATUS_EVERY: Duration = Duration::from_millis(250);
 /// Höchstens so viele lokale Verbindungen gleichzeitig vor der Anmeldung. Kommt eine
@@ -42,13 +40,24 @@ const STATUS_EVERY: Duration = Duration::from_millis(250);
 const MAX_PENDING: usize = 4;
 
 /// Was die Oberfläche geschickt hat.
-#[derive(Default)]
 struct Inbox {
-    live: VecDeque<f32>,
+    live: LiveBuffer,
     last_sound: Option<Instant>,
     ui_connected: bool,
     title: Option<String>,
     generation: u64,
+}
+
+impl Inbox {
+    fn new(rate: u32) -> Self {
+        Self {
+            live: LiveBuffer::new(rate),
+            last_sound: None,
+            ui_connected: false,
+            title: None,
+            generation: 0,
+        }
+    }
 }
 
 /// Notfall-Playlist: Dateien der Reihe nach, endlos.
@@ -218,7 +227,7 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
         .map_err(|e| fail(format!("{}: {e}", link.display())))?;
 
     let rate = cfg.sample_rate;
-    let inbox = Arc::new(Mutex::new(Inbox::default()));
+    let inbox = Arc::new(Mutex::new(Inbox::new(rate)));
     {
         let inbox = Arc::clone(&inbox);
         let stop = Arc::clone(&stop);
@@ -239,18 +248,17 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
 
     let block = (rate * BLOCK_MS / 1000) as usize;
     let fade_step = 1.0 / (FADE_SECONDS * rate as f32);
-    let prefill = (PREFILL_SECONDS * rate as f32) as usize * 2;
-    let max_live = (MAX_LIVE_SECONDS * rate as f32) as usize * 2;
     let silence = Duration::from_secs_f64(cfg.silence_seconds.max(0.1));
     let (mut ll, mut lr) = (vec![0.0f32; block], vec![0.0f32; block]);
     let (mut el, mut er) = (vec![0.0f32; block], vec![0.0f32; block]);
     let mut gain_live = 0.0f32;
-    let mut buffering = true;
     let mut produced: u64 = 0;
     let mut sent_title = String::new();
     let mut next_status = Instant::now();
     let mut live_now = false;
-    let mut live_underruns: u32 = 0;
+    let (mut live_underruns, mut live_trims) = (0u32, 0u32);
+    let mut logged = (0u32, 0u32);
+    let mut next_jitter_log = Instant::now();
 
     while !stop.load(Ordering::Relaxed) {
         let due = (started.elapsed().as_secs_f64() * f64::from(rate)) as u64;
@@ -269,28 +277,10 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
                 let live_ok = ib
                     .last_sound
                     .map_or(started.elapsed() < silence, |t| t.elapsed() < silence);
-                if ib.live.len() > max_live {
-                    let cut = (ib.live.len() - prefill) & !1;
-                    ib.live.drain(..cut);
-                }
-                if buffering && ib.live.len() >= prefill {
-                    buffering = false;
-                }
-                if !buffering && ib.live.len() < block * 2 {
-                    buffering = true;
-                    if ib.ui_connected {
-                        live_underruns = live_underruns.saturating_add(1);
-                    }
-                }
-                if buffering {
-                    ll.fill(0.0);
-                    lr.fill(0.0);
-                } else {
-                    for i in 0..block {
-                        ll[i] = ib.live.pop_front().unwrap_or(0.0);
-                        lr[i] = ib.live.pop_front().unwrap_or(0.0);
-                    }
-                }
+                let connected = ib.ui_connected;
+                ib.live.pull(&mut ll, &mut lr, connected);
+                live_underruns = ib.live.underruns;
+                live_trims = ib.live.trims;
                 (live_ok, ib.title.clone())
             };
             live_now = live_ok;
@@ -330,11 +320,24 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
             }
         }
 
+        if (live_underruns, live_trims) != logged && Instant::now() >= next_jitter_log {
+            next_jitter_log = Instant::now() + JITTER_LOG_EVERY;
+            let level_ms = lock(&inbox).live.millis(rate);
+            tracing::warn!(
+                underruns = live_underruns - logged.0,
+                trims = live_trims - logged.1,
+                total_underruns = live_underruns,
+                level_ms,
+                "sendemix buffer gap"
+            );
+            logged = (live_underruns, live_trims);
+        }
         if Instant::now() >= next_status {
             next_status = Instant::now() + STATUS_EVERY;
             let ui = inbox.lock().map(|i| i.ui_connected).unwrap_or(false);
             let mut s = build_status(&cfg, &uplink, started, live_now, ui, &sent_title, "");
             s.live_underruns = live_underruns;
+            s.live_trims = live_trims;
             if let Err(e) = status::write(&status_path, &s) {
                 tracing::warn!(error = %e, "status not written");
             }
@@ -347,6 +350,7 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
     }
     let mut s = build_status(&cfg, &uplink, started, false, false, &sent_title, "beendet");
     s.live_underruns = live_underruns;
+    s.live_trims = live_trims;
     drop(uplink);
     let _ = std::fs::remove_file(&link);
     if !info.socket.as_os_str().is_empty() {
@@ -399,6 +403,7 @@ fn build_status(
         bytes_sent: u.bytes_sent,
         bytes_dropped: u.bytes_dropped,
         live_underruns: 0,
+        live_trims: 0,
     }
 }
 
@@ -501,7 +506,7 @@ fn serve(
         let mut ib = lock(inbox);
         ib.generation += 1;
         ib.ui_connected = true;
-        ib.live.clear();
+        // Puffer nicht leeren: Nach kurzem Abriss geht der Sendemix nahtlos weiter.
         ib.generation
     };
     tracing::info!("ui connected");
@@ -516,6 +521,9 @@ fn serve(
             Ok(KIND_AUDIO) => {
                 decode_audio(&buf, &mut samples);
                 let loud = samples.iter().any(|x| x.abs() > SILENCE);
+                // Umrechnen ohne Sperre: der Sende-Takt wartet sonst darauf.
+                resampled.clear();
+                rs.process(&samples, &mut resampled);
                 let mut ib = lock(inbox);
                 if ib.generation != my_gen {
                     break;
@@ -523,14 +531,7 @@ fn serve(
                 if loud {
                     ib.last_sound = Some(Instant::now());
                 }
-                resampled.clear();
-                rs.process(&samples, &mut resampled);
-                ib.live.extend(resampled.iter().copied());
-                let max = out_rate as usize * 4;
-                if ib.live.len() > max {
-                    let cut = (ib.live.len() - max) & !1;
-                    ib.live.drain(..cut);
-                }
+                ib.live.push(&resampled);
             }
             Ok(KIND_TITLE) => {
                 lock(inbox).title = Some(String::from_utf8_lossy(&buf).into_owned());
