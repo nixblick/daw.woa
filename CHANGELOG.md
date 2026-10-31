@@ -1,8 +1,20 @@
 # Changelog
 
+## 0.34.32 — 2026-10-31
+
+KI & MCP, Teil 2: ein eigener Assistent in WOA mit frei wählbarem Anbieter und beliebigen MCP-Servern als Werkzeugen (André: „irgendein Server mit irgendeinem MCP bzw. LLM“). Nichts ist auf einen bestimmten Server festgelegt.
+
+- **Neuer Reiter „Assistent“** im Fenster Einstellungen → „KI & MCP …“. Anbieter anlegen: Format (Anthropic oder OpenAI-kompatibel), Adresse, Modellname (frei eintippbar, „Modelle holen“ füllt eine Auswahlliste, wenn der Server eine nennt), Schlüssel. Voreinstellungen zum Antippen: Anthropic, OpenAI, OpenRouter, Ollama und LM Studio (lokal); „Eigener Server“ beginnt leer (vLLM und jeder andere OpenAI-kompatible Server). Die Adresse darf mit oder ohne `/v1` enden.
+- **Schlüssel** liegen im Schlüsselbund des Systems (Eintrag `woa / ki-<Kennung>`), sonst in einer Datei mit Modus 0600; `config.json` kennt nur die Kennung. Im Feld sind sie maskiert, in Fehlermeldungen und im Log stehen sie nie. Lokale Server brauchen keinen.
+- **Externe MCP-Server als Werkzeuge:** Liste beliebig vieler Server, je lokal gestartet (Befehl, Argumente, Umgebung) oder über Adresse (HTTP, Kopfzeilen). Eine geheime Kopfzeile (z. B. `Authorization`) oder Umgebungsvariable liegt ebenfalls im Schlüsselbund. Einzeln ein- und ausschaltbar.
+- **„Verbindung testen“** je Anbieter und je Server, im Hintergrund, mit einer Meldung in einem Satz: verbunden, Modell nicht in der Liste, Schlüssel abgelehnt, Adresse nicht erreichbar, Server nicht gestartet.
+- **Chat-Fenster:** Einstellungen → „Assistent (Chat) …“. Das Modell ruft WOAs eigene Werkzeuge (über `woa-headless mcp` auf dem offenen Projektordner) und die eingetragenen Server auf, bis es antwortet; höchstens 10 Runden je Eingabe. Gleichnamige Werkzeuge verschiedener Server bekommen den Servernamen vorangestellt. Läuft im Hintergrund-Thread, die Oberfläche steht nie.
+- **Grenze:** Wie in Teil 1 arbeiten WOAs Werkzeuge auf der Projektdatei im Ordner, nicht auf dem offenen Fenster. Der Chat spricht nicht gestreamt, die Antwort erscheint auf einmal.
+- **Tests (mit HTTP-Mock):** beide Formate mit einer Werkzeug-Runde (Anthropic `tool_use`/`tool_result`, OpenAI `tool_calls`/`tool`), Schlüssel als `x-api-key` bzw. `Bearer` bzw. gar nicht, Adress-Normalisierung, Texte des Testknopfs, Server ohne Modellliste, MCP-Client über HTTP (JSON und Ereignisstrom) und Stdio, Chat-Schleife von Modell über Werkzeug zurück zum Modell, Fehler lassen den Verlauf sauber, Fenster zeichnen.
+
 ## 0.34.31 — 2026-10-31
 
-KI & MCP, Teil 1: WOA als MCP-Server für beliebige Clients (André: „nicht nur mein Server muss funktionieren, sondern irgendein Server mit irgendeinem MCP bzw. LLM“). Teil 2, der eigene Assistent mit frei wählbarem Anbieter, folgt.
+KI & MCP, Teil 1: WOA als MCP-Server für beliebige Clients (André: „nicht nur mein Server muss funktionieren, sondern irgendein Server mit irgendeinem MCP bzw. LLM“). Teil 2 (0.34.32): der eigene Assistent.
 
 - **Neues Fenster:** Einstellungen → „KI & MCP …“. Dort steht der Hintergrund-Server (an/aus), der Projektordner, wer ihn erreicht (nur dieser Rechner oder das Netz), der Port und das Zugriffstoken.
 - **Einträge zum Kopieren:** fertig für Claude Code, Claude Desktop und andere Clients, je für Stdio (der Client startet `woa-headless`) und für HTTP. Sie entstehen zur Laufzeit aus dem Pfad des laufenden Programms und der Einstellung; im Fenster ist das Token maskiert, erst „Kopieren“ setzt es ein.
@@ -11,6 +23,7 @@ KI & MCP, Teil 1: WOA als MCP-Server für beliebige Clients (André: „nicht nu
 - **Neue Crates:** `woa-secrets` (die Schlüsselbund-Ablage aus dem Stream-Kennwort, jetzt für beliebig viele Einträge mit stabiler Kennung; `woa-stream` nutzt sie unverändert weiter) und `woa-assistant` (Einstellungen, Einträge, Hintergrund-Prozess).
 - **Grenze:** Der Server arbeitet auf der Projektdatei im Ordner, nicht auf dem offenen Fenster. Das steht im Fenster und in `docs/agent.md`.
 - Tests: HTTP ohne/falsches/richtiges Token, falscher `Origin`, fremder Pfad, leeres Token; Einträge sind gültiges JSON und zeigen das Token nie maskiert; Pfade mit Leerzeichen; Schlüsselbund-Ersatzdatei mit 0600 und Kennung als Dateiname; Fenster zeichnet.
+
 ## 0.34.30 — 2026-10-31
 
 Bibliothek: Analyse hängt nicht mehr an langen Titeln, läuft im Hintergrund weiter, Titel lassen sich entfernen und Spalten sortieren (#122, #123, #124, #120).
