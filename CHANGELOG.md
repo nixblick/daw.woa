@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.34.72 — 2026-10-31
+## 0.34.73 — 2026-10-31
 
 - **Playlist: Griff und Nummer eintippen (#92):** Vor der Nummer jeder Zeile der Sende-Playlist steht ein Griff-Symbol (sechs Punkte); gezogen wird wie bisher die ganze Zeile (#166). Ein Klick auf die Nummer macht sie zum Eingabefeld: neue Nummer eintippen, Enter verschiebt den Titel dorthin (zu groß: ans Ende), Esc oder Wegklicken lässt alles, wie es ist. Pfeile, Entfernen, Doppelklick und Kontextmenü bleiben unverändert. Test: `typed_position` in `crates/gui/src/radio.rs`.
+
+## 0.34.72 — 2026-10-31
+
+- **QR-Code zum Spenden (#231):** Im Fenster „Über WOA“ steht unter den Knöpfen PayPal und Ko-fi ein QR-Code, der den PayPal-Link kodiert; mit dem Handy scannen genügt. Lokal erzeugt mit demselben Baustein wie der Code der Fernbedienung, ohne neue Abhängigkeit.
 
 ## 0.34.71 — 2026-10-31
 
