@@ -740,11 +740,12 @@ impl Controller {
                 // Zeit-Event: schon geladen und gemessen.
                 Some(buf) => Ok(buf.clone()),
                 None => load_stereo(&path, self.rate).map(|s| {
-                    let m = measure(&s, self.rate);
+                    // Nur messen, was noch keine Messung hat: das läuft im Control-Thread
+                    // direkt vor dem Abspielen (#120).
                     if let Some(e) = self.show.playlist.get_mut(index)
                         && !e.is_measured()
                     {
-                        e.set_measured(m);
+                        e.set_measured(measure(&s, self.rate));
                     }
                     Shared::new(&self.collector.handle(), s)
                 }),

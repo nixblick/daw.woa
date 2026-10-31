@@ -236,6 +236,44 @@ pub struct NewTrack {
     pub kind: Kind,
 }
 
+/// Spalte, nach der die Trefferliste sortiert wird (#124).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SortBy {
+    /// Mit Suchtext nach Treffergüte, sonst nach Titel.
+    #[default]
+    Relevance,
+    Title,
+    Bpm,
+    Key,
+    Lufs,
+    Kind,
+    Duration,
+}
+
+impl SortBy {
+    /// Feste ORDER-BY-Ausdrücke, nie aus Eingaben zusammengesetzt. Titel ohne Messwert stehen
+    /// in beiden Richtungen am Ende.
+    fn order(self, desc: bool) -> Option<String> {
+        let dir = if desc { "DESC" } else { "ASC" };
+        let col = match self {
+            Self::Relevance => return None,
+            Self::Title => return Some(format!("t.title COLLATE NOCASE {dir}, t.id")),
+            Self::Kind => return Some(format!("t.kind {dir}, t.title COLLATE NOCASE, t.id")),
+            Self::Duration => {
+                return Some(format!("t.duration {dir}, t.title COLLATE NOCASE, t.id"));
+            }
+            Self::Bpm => "t.bpm",
+            Self::Key => "t.key",
+            Self::Lufs => "t.lufs",
+        };
+        // Messwerte gelten nur zum aktuellen Inhalt (wie in der Anzeige).
+        Some(format!(
+            "({col} IS NULL OR t.analyzed_hash IS NULL OR t.analyzed_hash != t.hash), \
+             {col} {dir}, t.title COLLATE NOCASE, t.id"
+        ))
+    }
+}
+
 /// Suchanfrage. Leerer Text liefert alles (nach Titel sortiert).
 #[derive(Debug, Clone)]
 pub struct Query {
@@ -243,6 +281,9 @@ pub struct Query {
     pub tag: Option<String>,
     pub kind: Option<Kind>,
     pub limit: usize,
+    pub sort: SortBy,
+    /// Absteigend sortieren.
+    pub desc: bool,
 }
 
 impl Default for Query {
@@ -252,6 +293,8 @@ impl Default for Query {
             tag: None,
             kind: None,
             limit: 200,
+            sort: SortBy::Relevance,
+            desc: false,
         }
     }
 }
@@ -602,6 +645,20 @@ impl Library {
         })
     }
 
+    /// Nimmt einen Titel aus der Bibliothek (mit Tags und Suchindex). Die Datei auf der Platte
+    /// bleibt, die Spielhistorie auch (#124).
+    pub fn remove_track(&self, id: i64) -> Result<()> {
+        self.transaction(|lib| {
+            let n = lib.conn.execute("DELETE FROM tracks WHERE id = ?1", [id])?;
+            if n == 0 {
+                return Err(Error::NotFound(id));
+            }
+            lib.conn
+                .execute("DELETE FROM tracks_fts WHERE rowid = ?1", [id])?;
+            Ok(())
+        })
+    }
+
     /// Alle Tags mit der Zahl der Titel, häufigste zuerst.
     pub fn all_tags(&self) -> Result<Vec<(String, usize)>> {
         let mut st = self.conn.prepare(
@@ -643,6 +700,8 @@ impl Library {
                 args.len()
             ));
         }
+        let custom = q.sort.order(q.desc).map(|o| format!("ORDER BY {o}"));
+        let order = custom.as_deref().unwrap_or(order);
         if !conds.is_empty() {
             sql.push_str(" WHERE ");
             sql.push_str(&conds.join(" AND "));
@@ -891,5 +950,84 @@ mod tests {
         assert!(r.is_err());
         assert_eq!(lib.count().unwrap(), 0);
         assert_eq!(lib.search(&q("a")).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn removed_track_leaves_search_tags_and_count() {
+        let lib = Library::open_in_memory().unwrap();
+        let a = id_of(lib.add_track(&nt("/m/a.wav", "ha", "Sommer")).unwrap());
+        let b = id_of(lib.add_track(&nt("/m/b.wav", "hb", "Winter")).unwrap());
+        lib.add_tag(a, "Hit").unwrap();
+        lib.remove_track(a).unwrap();
+        assert_eq!(lib.count().unwrap(), 1);
+        assert!(lib.search(&q("sommer")).unwrap().is_empty());
+        assert!(lib.all_tags().unwrap().is_empty());
+        assert_eq!(lib.search(&q("")).unwrap()[0].id, b);
+        assert!(matches!(lib.remove_track(a), Err(Error::NotFound(_))));
+        // Wieder importierbar wie neu.
+        assert!(matches!(
+            lib.add_track(&nt("/m/a.wav", "ha", "Sommer")).unwrap(),
+            AddOutcome::Added(_)
+        ));
+    }
+
+    #[test]
+    fn sort_by_columns_with_unmeasured_last() {
+        let lib = Library::open_in_memory().unwrap();
+        let mut ids = Vec::new();
+        for (p, h, t, d) in [
+            ("/a", "1", "Bravo", 30.0),
+            ("/b", "2", "alpha", 10.0),
+            ("/c", "3", "Charlie", 20.0),
+        ] {
+            let mut n = nt(p, h, t);
+            n.duration = d;
+            ids.push(id_of(lib.add_track(&n).unwrap()));
+        }
+        let with_bpm = |bpm| Analysis {
+            bpm: Some(bpm),
+            ..Analysis::default()
+        };
+        lib.set_analysis(ids[0], "1", &with_bpm(120.0)).unwrap();
+        lib.set_analysis(ids[2], "3", &with_bpm(90.0)).unwrap();
+        let titles = |sort, desc| -> Vec<String> {
+            lib.search(&Query {
+                sort,
+                desc,
+                ..Query::default()
+            })
+            .unwrap()
+            .into_iter()
+            .map(|t| t.title)
+            .collect()
+        };
+        assert_eq!(
+            titles(SortBy::Relevance, false),
+            ["alpha", "Bravo", "Charlie"]
+        );
+        assert_eq!(titles(SortBy::Title, true), ["Charlie", "Bravo", "alpha"]);
+        assert_eq!(
+            titles(SortBy::Duration, false),
+            ["alpha", "Charlie", "Bravo"]
+        );
+        assert_eq!(titles(SortBy::Bpm, false), ["Charlie", "Bravo", "alpha"]);
+        assert_eq!(titles(SortBy::Bpm, true), ["Bravo", "Charlie", "alpha"]);
+        // Mit Suchtext gewinnt die gewählte Spalte über die Treffergüte.
+        let hits: Vec<String> = lib
+            .search(&Query {
+                text: "a".into(),
+                sort: SortBy::Duration,
+                desc: true,
+                ..Query::default()
+            })
+            .unwrap()
+            .into_iter()
+            .map(|t| t.title)
+            .collect();
+        assert_eq!(
+            hits,
+            ["Bravo", "alpha"],
+            "Pfad /a und Titel alpha, nach Dauer absteigend"
+        );
     }
 }

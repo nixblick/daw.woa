@@ -79,8 +79,12 @@ pub fn analyze_file(path: &Path) -> std::result::Result<Analysis, String> {
     if d.frames() == 0 {
         return Err("leere Audiodatei".into());
     }
+    let rate = d.rate;
     let (l, r) = d.stereo();
-    Ok(to_analysis(&track::analyze(&l, &r, d.rate)))
+    // Das verschachtelte Original wird nicht mehr gebraucht: ein 30-Minuten-Titel belegt
+    // sonst doppelt Speicher, solange die Messung läuft.
+    drop(d);
+    Ok(to_analysis(&track::analyze(&l, &r, rate)))
 }
 
 /// Analysiert alle offenen Titel von `lib` (synchron; der Hintergrund-Thread ruft das auf).
