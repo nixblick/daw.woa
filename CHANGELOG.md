@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.34.12 — 2026-10-31
+
+Design D4: Bausteine des Design Systems, eingesetzt in den drei Layouts.
+
+- **Neue Bausteine** in `crates/gui/src/widgets/`: beleuchtete Taste (`Key`: erhaben, eingerastet, aktiv, voll an), Fader (senkrecht als Kanalfader, waagerecht für die Radio-Pegel, Doppelklick setzt zurück), VU-Meter, Studio-Uhr, ON-AIR-Lampe, Cart-Pad und Jogwheel.
+- **Pegelansicht (Produzent):** Neue Einstellung „Pegelansicht“ unter „Erscheinungsbild“: Analog (VU-Zeiger mit hinterleuchtetem Skalenblatt), Modern (Balken mit Messwert) oder Aus. Gespeichert in `config.json` als `vu_view`, Vorgabe Analog. Gezeigt wird in der Transportleiste der höchste Pegel der sichtbaren Spuren (noch kein echter Summenpegel, kein Peak-Hold).
+- **Radio:** Studio-Uhr mit 60 Sekunden-LEDs neben dem Cover, ON-AIR-Lampe in der Deck-Kopfzeile (leuchtet bei Sendung oder offenem Mikro), Cart-Wall mit den neuen Pads (das laufende Pad leuchtet in der Modusfarbe und blinkt), Pegel der Zweige als waagerechte Fader.
+- **Produzent:** Kanaltasten M, S und Aufnahme als beleuchtete Tasten, dazu ein Kanalfader neben der LED-Kette (gleicher Gain wie das Zahlenfeld).
+- **Party:** Jogwheel im Now-Playing-LCD, es dreht sich, solange ein Titel läuft; Großtasten als beleuchtete Tasten.
+- **Bewegung:** Anzeigen stehen still, wenn die egui-Animationen aus sind (`animation_time` 0) oder `WOA_REDUCED_MOTION=1` gesetzt ist.
+- **Für Entwickler:** LED-Schwellen (−12 und −3 dB) liegen nur noch in `widgets::vu::zone_for_db`; Zeigerwinkel, Zeigerträgheit, Uhr-LEDs, Jog-Drehzahl und Fader-Abbildung sind einzeln getestet.
+
 ## 0.34.11 — 2026-10-31
 
 Design D3: Icons statt Emojis.
