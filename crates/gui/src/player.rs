@@ -137,7 +137,8 @@ fn load_cached(
             Some(s)
         }
         Err(e) => {
-            tracing::warn!(file = %file.display(), error = %e, "clip load failed");
+            tracing::warn!(error = %e, "clip load failed");
+            tracing::warn!(target: woa_telemetry::LOCAL_TARGET, datei = %file.display(), "clip load failed");
             None
         }
     }
@@ -239,7 +240,7 @@ impl Player {
                 total,
                 buffer_frames = ?self.buffer_frames,
                 rate = self.rate,
-                device = %self.device,
+                device = %woa_telemetry::short_device(&self.device),
                 suspended = self.suspended,
                 playing = self.is_playing(),
                 "output underruns (last minute)"

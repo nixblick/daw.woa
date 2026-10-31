@@ -292,6 +292,47 @@ pub fn home_dir() -> Option<std::path::PathBuf> {
         .map(std::path::PathBuf::from)
 }
 
+/// Eine Protokollzeile fürs Ticket: Datum, Uhrzeit und Versatz zu UTC (mitteleuropäische
+/// Zeit), Stufe, Text. Zeilen mit Ziel [`woa_telemetry::LOCAL_TARGET`] (Datei- und
+/// Gerätenamen) gehen nicht ins Ticket.
+pub fn ticket_line(e: &woa_telemetry::Entry) -> Option<String> {
+    if e.ziel == woa_telemetry::LOCAL_TARGET {
+        return None;
+    }
+    let unix = e
+        .zeit
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let zone = woa_engine::localtime::Zone::CENTRAL_EUROPE;
+    let l = zone.local(unix);
+    let off = zone.offset_min(unix);
+    // Tage seit 1970 zu Jahr, Monat, Tag (Howard Hinnant, gemeinfrei).
+    let z = l.day + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    let mut s = format!(
+        "{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02} {}{:02}:{:02} {:<7} {}",
+        l.hour,
+        l.minute,
+        l.second,
+        if off < 0 { '-' } else { '+' },
+        off.abs() / 60,
+        off.abs() % 60,
+        e.stufe.label(),
+        e.text
+    );
+    if e.anzahl > 1 {
+        s.push_str(&format!(" ×{}", e.anzahl));
+    }
+    Some(s)
+}
+
 /// Log lines (oldest first) as text, home folder shortened, newest lines kept so that
 /// the result fits into `budget` characters.
 pub fn log_text(lines: &[String], home: Option<&Path>, budget: usize) -> String {
@@ -758,6 +799,31 @@ mod tests {
         assert!(d.images().is_empty());
         assert!(d.set_image("kaputt.png", b"nope").is_err());
         assert!(d.image.is_none());
+    }
+
+    #[test]
+    fn ticket_line_has_date_zone_and_no_local_lines() {
+        use woa_telemetry::{Entry, LOCAL_TARGET, Stufe};
+        // 2026-10-31 13:05:09 UTC = 14:05:09 MEZ (Winterzeit seit 25.10.).
+        let zeit = std::time::UNIX_EPOCH + Duration::from_secs(1_793_451_909);
+        let mut e = Entry {
+            zeit,
+            stufe: Stufe::Info,
+            ziel: "woa_radio::control".into(),
+            text: "deck start deck=A".into(),
+            datei: None,
+            anzahl: 1,
+        };
+        assert_eq!(
+            ticket_line(&e).unwrap(),
+            format!(
+                "2026-10-31 14:05:09 +01:00 {:<7} deck start deck=A",
+                Stufe::Info.label()
+            )
+        );
+        e.ziel = LOCAL_TARGET.into();
+        e.datei = Some("geheim.mp3".into());
+        assert!(ticket_line(&e).is_none());
     }
 
     #[test]

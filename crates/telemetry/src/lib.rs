@@ -32,7 +32,7 @@ pub use upload::{
     DEFAULT_INGEST_URL, Event, LOG_BURST, LOG_WINDOW, Level, UploadConfig, UploadLayer, Uploader,
     new_install_id,
 };
-pub use watch::{FrameWatch, metric};
+pub use watch::{FrameWatch, METRIC_TARGET, metric};
 
 /// Tage, die Logdateien liegen bleiben (eine Datei je Tag).
 pub const LOG_RETENTION_DAYS: usize = 30;
@@ -116,12 +116,21 @@ pub fn noise_filter() -> Targets {
     Targets::new()
         .with_default(LevelFilter::TRACE)
         .with_target("symphonia_bundle_mp3::layer3", LevelFilter::ERROR)
+        // Lange Adapterliste von egui-wgpu nur auf DEBUG; die Startzeile nennt den Adapter.
+        .with_target("egui_wgpu", LevelFilter::WARN)
+        // „using xing header for duration“ ist Info ohne Aussage: nur Warnungen bleiben.
+        .with_target("symphonia_bundle_mp3::demuxer", LevelFilter::WARN)
+        // Einzelkennzahlen gehen nur in den Upload, Datei und Protokoll bekommen die eine
+        // Zusammenfassung aus `watch`.
+        .with_target(METRIC_TARGET, LevelFilter::OFF)
 }
 
 /// Filter der Upload-Senke: wie [`noise_filter`], dazu bleibt alles mit Ziel
-/// [`LOCAL_TARGET`] (Dateinamen, Pfade) ganz draußen.
+/// [`LOCAL_TARGET`] (Dateinamen, Pfade) ganz draußen; die Einzelkennzahlen kommen an.
 pub fn upload_filter() -> Targets {
-    noise_filter().with_target(LOCAL_TARGET, LevelFilter::OFF)
+    noise_filter()
+        .with_target(LOCAL_TARGET, LevelFilter::OFF)
+        .with_target(METRIC_TARGET, LevelFilter::INFO)
 }
 
 /// Filter des Protokollfensters: Info und höher, ohne das Frame-Rauschen.
@@ -129,6 +138,35 @@ pub fn journal_filter() -> Targets {
     Targets::new()
         .with_default(LevelFilter::INFO)
         .with_target("symphonia_bundle_mp3::layer3", LevelFilter::ERROR)
+        .with_target("egui_wgpu", LevelFilter::WARN)
+        .with_target("symphonia_bundle_mp3::demuxer", LevelFilter::WARN)
+        // „reached probe limit“: das Laden meldet den Fehler ohnehin selbst („load failed“).
+        .with_target("symphonia_core::formats::probe", LevelFilter::OFF)
+        .with_target(METRIC_TARGET, LevelFilter::OFF)
+}
+
+/// Gerätename fürs Log: WASAPI-Kennungen wie `{0.0.0.00000000}.{a1b2c3d4-…}` werden auf die
+/// ersten acht Zeichen jeder GUID gekürzt, der lesbare Teil bleibt.
+pub fn short_device(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut rest = name;
+    while let Some(i) = rest.find('{') {
+        out.push_str(&rest[..i]);
+        let Some(j) = rest[i..].find('}') else {
+            break;
+        };
+        let inner = &rest[i + 1..i + j];
+        if inner.len() >= 32 && inner.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+            out.push('{');
+            out.push_str(&inner[..8]);
+            out.push_str("…}");
+        } else {
+            out.push_str(&rest[i..=i + j]);
+        }
+        rest = &rest[i + j + 1..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Panic-Hook: schreibt den Absturz samt Ort und Backtrace ins Log und erzeugt das
@@ -160,4 +198,17 @@ pub fn install_panic_hook() {
         );
         previous(info);
     }));
+}
+
+#[cfg(test)]
+mod short_device_tests {
+    #[test]
+    fn wasapi_guid_is_shortened() {
+        let n = "Lautsprecher {0.0.0.00000000}.{a1b2c3d4-1111-2222-3333-444455556666}";
+        assert_eq!(
+            super::short_device(n),
+            "Lautsprecher {0.0.0.00000000}.{a1b2c3d4…}"
+        );
+        assert_eq!(super::short_device("default"), "default");
+    }
 }

@@ -579,11 +579,13 @@ impl RadioDesk {
             self.error = Some(e);
             return;
         }
+        tracing::info!("sendung start");
         self.attach_feeder();
     }
 
     /// „Sendung beenden“: woa-streamd meldet sich beim Server ab und endet.
     pub fn go_off_air(&mut self) {
+        tracing::info!("sendung ende");
         self.with(|c| c.set_stream_output(None));
         if let Some(f) = self.feeder.take() {
             f.stop_broadcast();
@@ -698,24 +700,7 @@ impl RadioDesk {
                     total,
                     buffer_frames = ?self.buffer_frames,
                     rate = self.rate,
-                    device = %self.device,
-                    recording = v.recording.is_some(),
-                    player_active,
-                    playing = v.running,
-                    title = ?fields.0,
-                    format = ?fields.1,
-                    last_load_ms = ?line.0,
-                    last_load_format = ?line.1,
-                    "output underruns (last minute)"
-                );
-            } else {
-                tracing::info!(
-                    output = "radio",
-                    underruns = 0,
-                    total,
-                    buffer_frames = ?self.buffer_frames,
-                    rate = self.rate,
-                    device = %self.device,
+                    device = %woa_telemetry::short_device(&self.device),
                     recording = v.recording.is_some(),
                     player_active,
                     playing = v.running,

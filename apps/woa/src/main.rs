@@ -43,10 +43,9 @@ fn main() -> ExitCode {
     if let Some(e) = save_err {
         tracing::warn!(error = %e, "config not saved");
     }
-    tracing::info!(
-        feedback = !config.feedback_url.is_empty(),
-        telemetry = config.telemetry_enabled == Some(true),
-        "woa start"
+    let (feedback, telemetry) = (
+        !config.feedback_url.is_empty(),
+        config.telemetry_enabled == Some(true),
     );
 
     let mut viewport = eframe::egui::ViewportBuilder::default()
@@ -67,6 +66,16 @@ fn main() -> ExitCode {
         Box::new(move |cc| {
             // Schriften vor dem ersten Bild setzen (kein leeres erstes Bild).
             let _ = woa_gui::theme::install_fonts(&cc.egui_ctx);
+            // Eine kurze Startzeile; die lange wgpu-Adapterliste steht nur auf DEBUG.
+            let gpu = cc.wgpu_render_state.as_ref().map(|r| r.adapter.get_info());
+            let line = start_line(
+                gpu.as_ref().map(|i| format!("{:?}", i.backend)).as_deref(),
+                gpu.as_ref().map(|i| i.name.as_str()),
+                gpu.as_ref()
+                    .map(|i| format!("{} {}", i.driver, i.driver_info))
+                    .as_deref(),
+            );
+            tracing::info!(feedback, telemetry, "{line}");
             let mut app = WoaApp::new(config, recovery);
             app.set_config_path(config_path);
             app.set_data_dir(data_dir);
@@ -110,6 +119,29 @@ fn event_loop_hook() -> Option<eframe::EventLoopBuilderHook> {
     None
 }
 
+/// Build-Kennung: kurzer Commit aus der CI (`GITHUB_SHA`), lokal „dev“.
+fn build_id() -> &'static str {
+    option_env!("GITHUB_SHA").map_or("dev", |s| s.get(..8).unwrap_or(s))
+}
+
+/// Startzeile: Version, Build, Betriebssystem, Grafik-Backend, Adapter und Treiber.
+fn start_line(backend: Option<&str>, adapter: Option<&str>, driver: Option<&str>) -> String {
+    let driver = driver
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+        .unwrap_or("-");
+    format!(
+        "woa start {} ({}) {}/{} gpu={} \"{}\" driver=\"{}\"",
+        env!("CARGO_PKG_VERSION"),
+        build_id(),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        backend.unwrap_or("-"),
+        adapter.unwrap_or("-"),
+        driver,
+    )
+}
+
 /// Text für `--version` und `--help`; bei jedem anderen ersten Argument (ein Projektordner) `None`.
 fn info_text(arg: Option<&std::ffi::OsStr>) -> Option<String> {
     let v = env!("CARGO_PKG_VERSION");
@@ -131,6 +163,22 @@ mod tests {
     fn version_flag_prints_package_version() {
         let t = info_text(Some(OsStr::new("--version"))).unwrap_or_default();
         assert_eq!(t, format!("woa {}", env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn start_line_names_version_os_and_gpu() {
+        let l = super::start_line(Some("Vulkan"), Some("Intel UHD 620"), Some("Mesa 24.1"));
+        assert!(l.contains(env!("CARGO_PKG_VERSION")), "{l}");
+        assert!(
+            l.contains(std::env::consts::OS) && l.contains("Vulkan"),
+            "{l}"
+        );
+        assert!(
+            l.contains("Intel UHD 620") && l.contains("Mesa 24.1"),
+            "{l}"
+        );
+        assert!(!l.contains('\n'));
+        assert!(super::start_line(None, None, None).contains("gpu=-"));
     }
 
     #[test]

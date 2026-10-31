@@ -82,28 +82,68 @@ impl FrameWatch {
         let (s, since) = std::mem::replace(&mut *st, (Stats::default(), Instant::now()));
         drop(st);
         let secs = since.elapsed().as_secs().max(1);
-        metric("ui.frames", s.frames);
-        metric("ui.fps", s.frames / secs);
-        metric(
-            "ui.frame_avg_ms",
-            s.total_ms.checked_div(s.frames).unwrap_or(0),
-        );
-        metric("ui.frame_max_ms", s.max_ms);
-        metric("ui.frames_slow", s.slow);
-        metric("app.uptime_s", self.0.started.elapsed().as_secs());
-        if let Some(mb) = rss_mb() {
-            metric("proc.rss_mb", mb);
-        }
-        if let Some(n) = thread_count() {
-            metric("proc.threads", n);
-        }
+        let m = Summary {
+            frames: s.frames,
+            fps: s.frames / secs,
+            avg_ms: s.total_ms.checked_div(s.frames).unwrap_or(0),
+            max_ms: s.max_ms,
+            slow: s.slow,
+            uptime_s: self.0.started.elapsed().as_secs(),
+            rss_mb: rss_mb(),
+            threads: thread_count(),
+        };
+        m.emit();
         true
     }
 }
 
+/// Ziel der Einzelkennzahlen: nur der Upload sieht sie, Datei und Protokoll bekommen die
+/// eine Zeile `ui summary`.
+pub const METRIC_TARGET: &str = "woa_metric";
+
 /// Eine Kennzahl als Upload-Ereignis (`art`, Zahl), Stufe info.
 pub fn metric(art: &'static str, wert: u64) {
-    tracing::info!(art, wert, "metric");
+    tracing::info!(target: METRIC_TARGET, art, wert, "metric");
+}
+
+/// Zusammenfassung eines Zeitraums: eine Logzeile, dazu je Wert ein Upload-Ereignis.
+struct Summary {
+    frames: u64,
+    fps: u64,
+    avg_ms: u64,
+    max_ms: u64,
+    slow: u64,
+    uptime_s: u64,
+    rss_mb: Option<u64>,
+    threads: Option<u64>,
+}
+
+impl Summary {
+    fn emit(&self) {
+        tracing::info!(
+            frames = self.frames,
+            fps = self.fps,
+            avg_ms = self.avg_ms,
+            max_ms = self.max_ms,
+            slow = self.slow,
+            uptime_s = self.uptime_s,
+            rss_mb = ?self.rss_mb,
+            threads = ?self.threads,
+            "ui summary"
+        );
+        metric("ui.frames", self.frames);
+        metric("ui.fps", self.fps);
+        metric("ui.frame_avg_ms", self.avg_ms);
+        metric("ui.frame_max_ms", self.max_ms);
+        metric("ui.frames_slow", self.slow);
+        metric("app.uptime_s", self.uptime_s);
+        if let Some(mb) = self.rss_mb {
+            metric("proc.rss_mb", mb);
+        }
+        if let Some(n) = self.threads {
+            metric("proc.threads", n);
+        }
+    }
 }
 
 /// Erste Zahl hinter `key` in einem `/proc/self/status`-Text (z. B. `VmRSS:  1234 kB`).
@@ -220,6 +260,44 @@ mod tests {
         drop(w.frame());
         std::thread::sleep(Duration::from_millis(30));
         assert_eq!(w.0.busy_since.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn summary_is_one_line_in_file_and_journal() {
+        use crate::{Journal, JournalLayer, journal_filter, noise_filter};
+        use tracing_subscriber::Layer;
+        use tracing_subscriber::layer::SubscriberExt;
+        static J: std::sync::OnceLock<Journal> = std::sync::OnceLock::new();
+        let j = J.get_or_init(Journal::default);
+        struct Count(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+        impl<S: tracing::Subscriber> Layer<S> for Count {
+            fn on_event(
+                &self,
+                _e: &tracing::Event<'_>,
+                _c: tracing_subscriber::layer::Context<'_, S>,
+            ) {
+                self.0.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        let n = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sub = tracing_subscriber::registry()
+            .with(JournalLayer::new(j).with_filter(journal_filter()))
+            .with(Count(n.clone()).with_filter(noise_filter()));
+        tracing::subscriber::with_default(sub, || {
+            Summary {
+                frames: 10,
+                fps: 1,
+                avg_ms: 2,
+                max_ms: 3,
+                slow: 0,
+                uptime_s: 120,
+                rss_mb: Some(80),
+                threads: Some(12),
+            }
+            .emit();
+        });
+        assert_eq!(j.len(), 1);
+        assert_eq!(n.load(Ordering::Relaxed), 1);
     }
 
     #[test]
