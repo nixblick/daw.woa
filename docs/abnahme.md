@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## KI & MCP, Teil 2: Assistent mit freiem Anbieter (0.34.33, offen)
+## KI & MCP, Teil 2: Assistent mit freiem Anbieter (0.34.34, offen)
 
 1. Einstellungen → „KI & MCP …“ → Reiter „Assistent“. „Neu …“ zeigt Anthropic, OpenAI, OpenRouter, Ollama (lokal), LM Studio (lokal) und „Eigener Server (leer)“.
 2. Für den eigenen Server: „Eigener Server“, Format „OpenAI-kompatibel“, Adresse eintragen (mit oder ohne `/v1`), Schlüssel leer lassen, wenn er keinen braucht. „Modelle holen“ füllt die Liste „Liste“; ein Modell wählen oder von Hand eintippen. „Verbindung testen“ meldet „Verbunden, Modell … ist da“. Mit falschem Modellnamen: „steht nicht in der Liste“. Mit falscher Adresse: „Keine Verbindung … Firewall“.
@@ -939,6 +939,17 @@ Offen für André: Pan doppelt (Spurkopf und Rack; `HEADER_PAN = false` in `crat
 
 Selbst geprüft von Claude: fünf neue Tests in `crates/gui/tests/design_system_2.rs`, alle Tests und Clippy von `woa-gui` grün.
 
+## Studio-Uhr, Quellen, Cart-Wall (0.34.33, offen)
+
+Tickets #172, #163, #97. Kein Ton nötig.
+
+1. Radio-Modus: Die Digitalzeit der Studio-Uhr berührt die Stundenpunkte nicht mehr, auch nicht bei 3 und 9 Uhr (#172).
+2. Unter Windows: Spurkopf → Quelle aufklappen. Neben „Standard-Eingang (Mikrofon)“ stehen alle Eingabegeräte („Eingang: …“). Eins wählen, kurz aufnehmen: der Clip kommt von diesem Gerät, die Spur zeigt seinen Namen (#163).
+3. Cart-Wall: belegte Pads grün, leere grau, laufendes Pad wie bisher in der Modusfarbe mit Blinken. Große Nummer vorn, Titel daneben höchstens zweizeilig (#97).
+
+Abhakliste (nichts entfallen): Uhr mit Sekunden-LEDs, Stundenpunkten, „STUDIO-UHR“; Quelle Standard-Eingang, PipeWire-Quellen unter Linux, Mithören; Cart: Tastenschild, „?“ beim Tastenlernen, Status-LED, Spurfarben-Balken, Rechtsklick (Belegen, Lernen, Vorhören, Taste, Schneiden, Leeren).
+
+Selbst geprüft von Claude: drei neue Tests in `woa-gui`, alle Tests und Clippy von `woa-gui` grün. Der Windows-Zweig der Quellen ist unter Linux nicht gebaut worden; geprüft ist die Umsetzung der Geräteliste in Einträge.
 ## Feedback: Bildschirmfoto auf Klick, eigenes Bild, Protokoll (0.34.32, offen)
 
 Tickets #173, #174.

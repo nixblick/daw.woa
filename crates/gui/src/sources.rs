@@ -1,5 +1,6 @@
 //! Aufnahmequellen je Spur: Standard-Eingang über cpal (mit gemessener Latenz) und unter
-//! Linux alles, was PipeWire anbietet (Eingänge, Systemklang, einzelne Programme).
+//! Linux alles, was PipeWire anbietet (Eingänge, Systemklang, einzelne Programme). Auf
+//! Windows und macOS stehen alle Eingabegeräte des Systems in der Liste (#163).
 
 use std::path::Path;
 use std::time::Duration;
@@ -8,6 +9,9 @@ use woa_engine::record::{InputConfig, RecordStats, Recorder, start_recording};
 
 /// Schlüssel des Standard-Eingangs (cpal). Jede Spur ohne Wahl nimmt ihn.
 pub const DEFAULT_KEY: &str = "";
+
+/// Präfix der Schlüssel für ein bestimmtes Eingabegerät (cpal), `dev:<Geräte-ID>`.
+pub const DEVICE_PREFIX: &str = "dev:";
 
 /// Eine Quelle in der Auswahlliste.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,7 +44,29 @@ pub fn list() -> Vec<SourceEntry> {
         })),
         Err(e) => tracing::warn!(error = %e, "listing pipewire sources failed"),
     }
+    // Ohne PipeWire kannte die Liste nur den Standard-Eingang (#163): alle Eingabegeräte
+    // des Systems dazu. Unter Linux kommen sie schon über PipeWire.
+    #[cfg(not(target_os = "linux"))]
+    match woa_engine::record::list_input_devices() {
+        Ok(list) => out.extend(device_entries(list)),
+        Err(e) => tracing::warn!(error = %e, "listing input devices failed"),
+    }
     out
+}
+
+/// Eingabegeräte als Einträge, ohne das Standardgerät (das steht schon oben).
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+pub fn device_entries(
+    devices: Vec<woa_engine::device::OutputDeviceInfo>,
+) -> impl Iterator<Item = SourceEntry> {
+    devices
+        .into_iter()
+        .filter(|d| !d.is_default)
+        .map(|d| SourceEntry {
+            key: format!("{DEVICE_PREFIX}{}", d.id),
+            label: format!("Eingang: {}", d.name),
+            can_monitor: false,
+        })
 }
 
 /// Hinweis in der Auswahl, wenn kein Programm Ton abspielt.
@@ -55,10 +81,22 @@ pub fn has_apps(list: &[SourceEntry]) -> bool {
 pub fn short_label(key: &str) -> String {
     match key.split_once(':') {
         None => "Mikrofon".to_string(),
+        Some(("dev", _)) => "Eingang".to_string(),
         Some(("sys", _)) => "Systemklang".to_string(),
         Some(("app", name)) => app_name(name),
         Some((_, name)) => format!("Eingang {}", name.rsplit('.').next().unwrap_or(name)),
     }
+}
+
+/// Name für die Spur: bei einem Eingabegerät der Gerätename aus `list`, sonst
+/// [`short_label`].
+pub fn track_label(key: &str, list: &[SourceEntry]) -> String {
+    if key.starts_with(DEVICE_PREFIX)
+        && let Some(s) = list.iter().find(|s| s.key == key)
+    {
+        return s.label.trim_start_matches("Eingang: ").to_string();
+    }
+    short_label(key)
 }
 
 /// „PipeWire ALSA [vlc]“ → „vlc“, sonst unverändert.
@@ -81,6 +119,17 @@ impl Take {
     pub fn start(key: &str, path: &Path, monitor: bool) -> Result<Self, String> {
         if key == DEFAULT_KEY {
             return start_recording(&InputConfig::default(), path, |e| {
+                tracing::warn!(error = %e, "input stream error");
+            })
+            .map(Take::Device)
+            .map_err(|e| e.to_string());
+        }
+        if let Some(id) = key.strip_prefix(DEVICE_PREFIX) {
+            let config = InputConfig {
+                device_id: Some(id.to_string()),
+                ..InputConfig::default()
+            };
+            return start_recording(&config, path, |e| {
                 tracing::warn!(error = %e, "input stream error");
             })
             .map(Take::Device)
@@ -188,6 +237,31 @@ mod tests {
         assert_eq!(short_label("sys:alsa_output.pci.monitor"), "Systemklang");
         assert_eq!(short_label("app:PipeWire ALSA [vlc]"), "vlc");
         assert_eq!(short_label("app:Firefox"), "Firefox");
+    }
+
+    /// #163: Auf Windows stand nur der Standard-Eingang in der Liste. Jedes weitere
+    /// Eingabegerät wird ein eigener Eintrag mit Gerätekennung im Schlüssel.
+    #[test]
+    fn every_input_device_becomes_a_source() {
+        use woa_engine::device::OutputDeviceInfo;
+        let dev = |id: &str, name: &str, is_default| OutputDeviceInfo {
+            id: id.into(),
+            name: name.into(),
+            is_default,
+        };
+        let list: Vec<_> = device_entries(vec![
+            dev("wasapi:mic", "Mikrofon (USB)", true),
+            dev("wasapi:line", "Line-In", false),
+            dev("wasapi:mix", "Stereomix", false),
+        ])
+        .collect();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].key, "dev:wasapi:line");
+        assert_eq!(list[0].label, "Eingang: Line-In");
+        assert_eq!(list[1].label, "Eingang: Stereomix");
+        assert_eq!(short_label(&list[0].key), "Eingang");
+        assert_eq!(track_label(&list[0].key, &list), "Line-In");
+        assert_eq!(track_label("", &list), "Mikrofon");
     }
 
     #[test]

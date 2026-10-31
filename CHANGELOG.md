@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.33 — 2026-10-31
+## 0.34.34 — 2026-10-31
 
 KI & MCP, Teil 2: ein eigener Assistent in WOA mit frei wählbarem Anbieter und beliebigen MCP-Servern als Werkzeugen (André: „irgendein Server mit irgendeinem MCP bzw. LLM“). Nichts ist auf einen bestimmten Server festgelegt.
 
@@ -15,6 +15,15 @@ KI & MCP, Teil 2: ein eigener Assistent in WOA mit frei wählbarem Anbieter und 
 - **Kennwort nicht gespeichert:** Scheitert die Ablage im Schlüsselbund, öffnet sich das Fenster „Sendung: Stream-Server“ wieder und nennt den Grund, statt es nur ins Log zu schreiben.
 - **Tests (mit HTTP-Mock):** beide Formate mit einer Werkzeug-Runde (Anthropic `tool_use`/`tool_result`, OpenAI `tool_calls`/`tool`), Schlüssel als `x-api-key` bzw. `Bearer` bzw. gar nicht, Adress-Normalisierung, Texte des Testknopfs, Server ohne Modellliste, MCP-Client über HTTP (JSON und Ereignisstrom) und Stdio, Chat-Schleife von Modell über Werkzeug zurück zum Modell, Fehler lassen den Verlauf sauber, Fenster zeichnen.
 
+## 0.34.33 — 2026-10-31
+
+Studio-Uhr, Quellen unter Windows und Cart-Wall (#172, #163, #97).
+
+- **Studio-Uhr (#172):** Die Digitalzeit hatte eine feste Größe und war in DSEG7 breiter als der Kreis der Stundenpunkte; bei 3 und 9 Uhr lagen Ziffern und Punkte übereinander. Die Schrift wird jetzt gemessen und so weit verkleinert, dass rundum Abstand zu den Punkten bleibt. Sekunden-LEDs, Stundenpunkte und „STUDIO-UHR“ bleiben wie sie waren.
+- **Quellen je Spur (#163):** Unter Windows und macOS stand nur „Standard-Eingang (Mikrofon)“ in der Liste, weil weitere Quellen nur über PipeWire (Linux) gesucht wurden. Jetzt stehen dort alle Eingabegeräte des Systems („Eingang: …“), die Spur zeigt den Gerätenamen. Der Hinweis „Programm spielt gerade keinen Ton?“ erscheint nur noch unter Linux, wo es Programme als Quelle gibt. Linux unverändert.
+- **Cart-Wall (#97):** Belegte Pads sind freundlich grün, leere grau, das laufende leuchtet wie bisher in der Modusfarbe. Die Nummer steht groß vorn (fast padhoch), der Titel daneben auf höchstens zwei Zeilen, Rest mit „…“. Tastenschild jetzt rechts oben neben der LED; Spurfarben-LED und -Balken, Rechtsklick-Menü und Tasten unverändert.
+- **Tests:** Digitalzeit hält Abstand zu den Stundenpunkten (mit echter Schrift gemessen, alte Größe als Gegenprobe), jedes Eingabegerät wird ein Eintrag, Pad-Farben je Zustand und zweizeiliger Titel (`woa-gui`).
+
 ## 0.34.32 — 2026-10-31
 
 Feedback: Bildschirmfoto erst auf Klick, eigenes Bild anhängen, Protokoll auf Wunsch mitsenden (#173, #174).
@@ -28,7 +37,7 @@ Feedback: Bildschirmfoto erst auf Klick, eigenes Bild anhängen, Protokoll auf W
 
 ## 0.34.31 — 2026-10-31
 
-KI & MCP, Teil 1: WOA als MCP-Server für beliebige Clients (André: „nicht nur mein Server muss funktionieren, sondern irgendein Server mit irgendeinem MCP bzw. LLM“). Teil 2 (0.34.33): der eigene Assistent.
+KI & MCP, Teil 1: WOA als MCP-Server für beliebige Clients (André: „nicht nur mein Server muss funktionieren, sondern irgendein Server mit irgendeinem MCP bzw. LLM“). Teil 2 (0.34.34): der eigene Assistent.
 
 - **Neues Fenster:** Einstellungen → „KI & MCP …“. Dort steht der Hintergrund-Server (an/aus), der Projektordner, wer ihn erreicht (nur dieser Rechner oder das Netz), der Port und das Zugriffstoken.
 - **Einträge zum Kopieren:** fertig für Claude Code, Claude Desktop und andere Clients, je für Stdio (der Client startet `woa-headless`) und für HTTP. Sie entstehen zur Laufzeit aus dem Pfad des laufenden Programms und der Einstellung; im Fenster ist das Token maskiert, erst „Kopieren“ setzt es ein.

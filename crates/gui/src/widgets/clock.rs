@@ -28,6 +28,35 @@ pub fn fmt_hms(h: u32, m: u32, s: u32) -> String {
     format!("{h:02}:{m:02}:{s:02}")
 }
 
+/// Platz der Digitalzeit: halbe Breite, die sie höchstens haben darf, damit sie mit
+/// Abstand innerhalb der Stundenpunkte bleibt (#172).
+pub fn digits_half_room(diameter: f32) -> f32 {
+    let hour_ring = diameter / 2.0 - diameter * 0.15;
+    let hour_dot = (diameter * 0.014).max(1.6);
+    hour_ring - hour_dot - diameter * 0.05
+}
+
+/// Schriftgröße der Digitalzeit: Wunschgröße `0.15 · diameter`, verkleinert, bis die
+/// gemessene Breite von „88:88:88“ in [`digits_half_room`] passt.
+pub fn digits_size(ui: &egui::Ui, diameter: f32) -> f32 {
+    let base = diameter * 0.15;
+    let width = ui
+        .painter()
+        .layout_no_wrap(
+            "88:88:88".to_string(),
+            theme::seg_font(base),
+            egui::Color32::WHITE,
+        )
+        .size()
+        .x;
+    let room = 2.0 * digits_half_room(diameter);
+    if width > room && width > 0.0 {
+        base * room / width
+    } else {
+        base
+    }
+}
+
 /// Zeichnet die Uhr mit Durchmesser `diameter` für die Uhrzeit `h:m:s`.
 pub fn studio_clock(ui: &mut egui::Ui, diameter: f32, h: u32, m: u32, s: u32) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(diameter, diameter), Sense::hover());
@@ -56,7 +85,7 @@ pub fn studio_clock(ui: &mut egui::Ui, diameter: f32, h: u32, m: u32, s: u32) ->
         p.circle_filled(pos, (diameter * 0.014).max(1.6), theme::lcd_text());
     }
     // Digitalzeit: Geister-Segmente dahinter, dann die Ziffern.
-    let size = diameter * 0.15;
+    let size = digits_size(ui, diameter);
     let font = theme::seg_font(size);
     p.text(
         c,
@@ -73,7 +102,7 @@ pub fn studio_clock(ui: &mut egui::Ui, diameter: f32, h: u32, m: u32, s: u32) ->
         theme::lcd_ink(),
     );
     p.text(
-        c + egui::vec2(0.0, size * 1.25),
+        c + egui::vec2(0.0, diameter * 0.15 * 1.25),
         Align2::CENTER_CENTER,
         "STUDIO-UHR",
         theme::label_font((diameter * 0.065).max(9.0)),
@@ -109,6 +138,49 @@ mod tests {
         assert!((bottom.y - 150.0).abs() < 1e-3);
         let left = led_pos(c, 50.0, 45);
         assert!((left.x - 50.0).abs() < 1e-3);
+    }
+
+    /// #172: Die Digitalzeit darf die Stundenpunkte nicht berühren, mit echter Schrift
+    /// gemessen. Die alte feste Größe (0.15 · Durchmesser) lief in die Punkte bei 3 und 9.
+    #[test]
+    fn digital_time_keeps_distance_to_the_hour_dots() {
+        let ctx = egui::Context::default();
+        theme::install_fonts(&ctx);
+        let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
+        {
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                for d in [120.0_f32, 152.0, 220.0] {
+                    let w = |size: f32| {
+                        ui.painter()
+                            .layout_no_wrap(
+                                "88:88:88".into(),
+                                theme::seg_font(size),
+                                egui::Color32::WHITE,
+                            )
+                            .size()
+                            .x
+                    };
+                    let room = digits_half_room(d);
+                    let size = digits_size(ui, d);
+                    assert!(w(size) / 2.0 <= room + 0.5, "d={d}");
+                    assert!(size >= d * 0.09, "d={d}: Zeit zu klein ({size})");
+                    // Innerhalb der Stundenpunkte: Abstand zum Punkt bei 3 Uhr.
+                    let hour_ring = d / 2.0 - d * 0.15;
+                    assert!(w(size) / 2.0 < hour_ring - (d * 0.014).max(1.6));
+                }
+                // Ursache belegt: die alte Größe passte bei 152 px nicht.
+                let old = ui
+                    .painter()
+                    .layout_no_wrap(
+                        "88:88:88".into(),
+                        theme::seg_font(22.8),
+                        egui::Color32::WHITE,
+                    )
+                    .size()
+                    .x;
+                assert!(old / 2.0 > digits_half_room(152.0));
+            });
+        }
     }
 
     #[test]
