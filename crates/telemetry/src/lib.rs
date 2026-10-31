@@ -10,6 +10,7 @@
 //! Erfassen eines Ereignisses ist ein `try_send` auf eine begrenzte Queue.
 
 pub mod feedback;
+pub mod journal;
 pub mod scrub;
 pub mod upload;
 pub mod watch;
@@ -24,6 +25,9 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
 pub use feedback::{FeedbackError, FeedbackMeta, FeedbackType, submit_feedback};
+pub use journal::{
+    Entry, FaultCounter, Journal, JournalLayer, LOCAL_TARGET, Stufe, journal, take_decoder_faults,
+};
 pub use upload::{
     DEFAULT_INGEST_URL, Event, LOG_BURST, LOG_WINDOW, Level, UploadConfig, UploadLayer, Uploader,
     new_install_id,
@@ -81,13 +85,17 @@ pub fn init(log_dir: &Path, upload: Option<UploadConfig>) -> Result<Telemetry, I
     let file_layer = tracing_subscriber::fmt::layer()
         .json()
         .with_writer(writer)
+        .with_filter(noise_filter())
         .with_filter(filter);
 
     let uploader = upload.and_then(Uploader::start);
-    let upload_layer = uploader.as_ref().map(|u| u.layer());
+    let upload_layer = uploader
+        .as_ref()
+        .map(|u| u.layer().with_filter(upload_filter()));
 
     tracing_subscriber::registry()
-        .with(noise_filter())
+        .with(FaultCounter.with_filter(FaultCounter::filter()))
+        .with(JournalLayer::default().with_filter(journal_filter()))
         .with(file_layer)
         .with(upload_layer)
         .try_init()
@@ -100,13 +108,26 @@ pub fn init(log_dir: &Path, upload: Option<UploadConfig>) -> Result<Telemetry, I
     })
 }
 
-/// Globaler Filter vor Datei und Upload: stellt Meldungen fremder Crates still, die bei
+/// Filter vor Datei und Upload (je Layer, der Fehlerzähler sieht die Warnungen noch): stellt Meldungen fremder Crates still, die bei
 /// beschädigten Dateien je Frame kommen und nichts sagen. Der MP3-Dekoder meldet
 /// „invalid main_data_begin“ für jeden Frame, dessen Bit-Reservoir fehlt, und dekodiert
 /// trotzdem weiter; eine kaputte MP3 erzeugt so tausende Warnungen. Fehler bleiben.
 pub fn noise_filter() -> Targets {
     Targets::new()
         .with_default(LevelFilter::TRACE)
+        .with_target("symphonia_bundle_mp3::layer3", LevelFilter::ERROR)
+}
+
+/// Filter der Upload-Senke: wie [`noise_filter`], dazu bleibt alles mit Ziel
+/// [`LOCAL_TARGET`] (Dateinamen, Pfade) ganz draußen.
+pub fn upload_filter() -> Targets {
+    noise_filter().with_target(LOCAL_TARGET, LevelFilter::OFF)
+}
+
+/// Filter des Protokollfensters: Info und höher, ohne das Frame-Rauschen.
+pub fn journal_filter() -> Targets {
+    Targets::new()
+        .with_default(LevelFilter::INFO)
         .with_target("symphonia_bundle_mp3::layer3", LevelFilter::ERROR)
 }
 
