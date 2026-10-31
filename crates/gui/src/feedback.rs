@@ -482,7 +482,7 @@ mod tests {
     fn old_stream_settings_are_migrated_and_never_hold_a_password() {
         let tmp = tempfile::tempdir().unwrap();
         let p = tmp.path().join("config.json");
-        // Stand bis 0.34.25: Quell-Port in `port`, Kennwortdatei eingetragen.
+        // Stand bis 0.34.26: Quell-Port in `port`, Kennwortdatei eingetragen.
         std::fs::write(
             &p,
             r#"{"stream":{"host":"radio.example","port":8001,"password_file":"/x/kw.pass"}}"#,
