@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.34.68 — 2026-10-31
+## 0.34.69 — 2026-10-31
 
 - **QR-Code zum Spenden (#231):** Im Fenster „Über WOA“ steht unter den Knöpfen PayPal und Ko-fi ein QR-Code, der den PayPal-Link kodiert; mit dem Handy scannen genügt. Lokal erzeugt mit demselben Baustein wie der Code der Fernbedienung, ohne neue Abhängigkeit.
+
+## 0.34.68 — 2026-10-31
+
+- **Auto-Weiter abschaltbar (#148):** Im Kopf der Sende-Playlist steht neben „Gespielte ausblenden“ der Umschalter „Auto-Weiter“ (Vorgabe an, wie bisher). Aus: Nach jedem Titel hält die Playlist an, der nächste Titel steht als Cue bereit und startet mit „Play“; „Weiter“ springt sofort zum nächsten. Ausschalten mitten im Titel verwirft den schon bereitgelegten nächsten, der laufende spielt zu Ende. Gespeichert mit der Sendung (`auto_next`, alte Dateien laden unverändert). Decks, Party und Stopp-Verhalten bleiben unverändert. Test: `crates/radio/tests/auto_next.rs` unter `assert_no_alloc`.
 
 ## 0.34.67 — 2026-10-31
 
