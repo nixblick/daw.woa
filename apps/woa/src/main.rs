@@ -49,10 +49,14 @@ fn main() -> ExitCode {
         "woa start"
     );
 
+    let mut viewport = eframe::egui::ViewportBuilder::default()
+        .with_title("WOA")
+        .with_inner_size([900.0, 600.0]);
+    if let Some(icon) = woa_gui::theme::app_icon() {
+        viewport = viewport.with_icon(icon);
+    }
     let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default()
-            .with_title("WOA")
-            .with_inner_size([900.0, 600.0]),
+        viewport,
         event_loop_builder: event_loop_hook(),
         ..Default::default()
     };

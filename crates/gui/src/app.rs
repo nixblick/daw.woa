@@ -2134,19 +2134,7 @@ impl WoaApp {
 
     fn menu_items(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         {
-            egui::Frame::new()
-                .fill(theme::accent())
-                .corner_radius(4)
-                .inner_margin(egui::Margin::symmetric(8, 2))
-                .show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new("WOA")
-                            .size(12.5)
-                            .strong()
-                            .monospace()
-                            .color(theme::well()),
-                    );
-                });
+            theme::logo_mark(ui, 20.0).on_hover_text("WOA - Wir on Air");
             ui.add_space(2.0);
             ui.menu_button("Datei", |ui| {
                 if ui.button("Neu (Strg+N)").clicked() {

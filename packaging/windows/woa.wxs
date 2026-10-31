@@ -7,6 +7,10 @@
     <MajorUpgrade DowngradeErrorMessage="Eine neuere Version von WOA ist bereits installiert." />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- App-Icon (aus docs/design/woa-design-system/assets/Logos/): Startmenü-Verknüpfung und Eintrag unter „Apps“. -->
+    <Icon Id="woa.ico" SourceFile="packaging\windows\woa.ico" />
+    <Property Id="ARPPRODUCTICON" Value="woa.ico" />
+
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="WOA" />
     </StandardDirectory>
@@ -16,7 +20,7 @@
       <Component>
         <File Id="woa.exe" Source="$(var.Bin)\woa.exe" KeyPath="yes">
           <Shortcut Id="StartMenuWoa" Directory="ProgramMenuFolder" Name="WOA - Wir on Air"
-                    WorkingDirectory="INSTALLFOLDER" Advertise="yes" />
+                    WorkingDirectory="INSTALLFOLDER" Advertise="yes" Icon="woa.ico" />
         </File>
       </Component>
       <Component>
