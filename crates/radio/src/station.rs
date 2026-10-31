@@ -87,6 +87,8 @@ pub struct View {
     /// Auto-Weiter in der Sende-Playlist (#148).
     pub auto_next: bool,
     pub duck_db: f64,
+    /// Carts senken die Musik ab (#149).
+    pub cart_duck: bool,
     /// Sendebus-Processing an.
     pub bus_processing: bool,
     /// Mikro-Kette an.
@@ -414,6 +416,7 @@ fn run(
             stop_fade_seconds: c.show().stop_fade_seconds,
             auto_next: c.show().auto_next,
             duck_db: c.show().duck_db,
+            cart_duck: c.show().cart_duck,
             bus_processing: c.show().bus_processing,
             mic_processing: c.show().mic_processing,
             target_lufs: c.show().target_lufs,
