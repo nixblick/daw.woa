@@ -5925,7 +5925,7 @@ impl eframe::App for WoaApp {
                         .fill(theme::bg())
                         .inner_margin(egui::Margin::symmetric(14, 12)),
                 )
-                .show(ui, |ui| cmds = self.party.ui(ui, radio));
+                .show(ui, |ui| cmds = self.party.ui(ui, radio, &mut self.library));
             self.party.run(cmds, radio, &ctx);
             return;
         }

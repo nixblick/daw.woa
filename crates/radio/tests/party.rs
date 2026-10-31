@@ -441,14 +441,14 @@ fn layout_shows_the_active_modes() {
     let mut view = View::default();
     let state = PartyState::default();
     let t = layout(&view, &state).to_text();
-    assert!(t.contains("🔁 Aus |") || t.contains("🔁 Aus\n"), "{t}");
+    assert!(t.contains("Wdh. aus |") || t.contains("Wdh. aus\n"), "{t}");
     view.repeat = Repeat::One;
     view.shuffle = true;
     let l = layout(&view, &state);
     let t = l.to_text();
-    assert!(t.contains("🔂 Titel*") && t.contains("🔀 Zufall*"), "{t}");
+    assert!(t.contains("Titel*") && t.contains("Zufall*"), "{t}");
     view.repeat = Repeat::All;
-    assert!(layout(&view, &state).to_text().contains("🔁 Playlist*"));
+    assert!(layout(&view, &state).to_text().contains("Playlist*"));
 }
 
 #[test]
