@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.40 — 2026-10-31
+## 0.34.43 — 2026-10-31
 
 Party mit zwei Decks (André: „als dj auf einer party die man streamt, fehlt bei party das zweite deck … und alle symbole die steuern einheitlich bitte mit symbol und wort“).
 
@@ -13,6 +13,33 @@ Party mit zwei Decks (André: „als dj auf einer party die man streamt, fehlt b
 - **Bibliothekssuche in der Party:** Ein Suchfeld mit Treffern zum Ziehen oder „→ Playlist“ (hinter den laufenden Titel). Es nutzt dieselbe Suche wie das Fenster „Bibliothek“.
 - **Wunschliste:** Neben der Playlist. „+ Wunsch“ nimmt freien Text an („Wer: Titel“). Je Wunsch gibt es „Suchen“ (füllt die Suche vor), „→ Playlist“, „Erledigt“ (bleibt durchgestrichen stehen) und „Entfernen“. Ein über „→ Playlist“ eingereihter Wunsch wird erledigt, sobald sein Titel läuft. Die Liste wird gespeichert (`party_wishes.json` im Datenordner). Wünsche vom Handy landen in derselben Liste; das Handy zeigt nur offene.
 - **Einheitliche Steuerknöpfe:** Alle Party-Knöpfe haben jetzt Symbol und Wort, eine Höhe (44 px) und eine Mindestbreite (neuer Baustein `widgets::ctl_key`). Play leuchtet grün (`ok`), Pause bernstein (`warn`), in Hell und Dunkel.
+
+## 0.34.42 — 2026-10-31
+
+### Behoben
+
+- **Vorhören (PFL):** Die Wahl unter Einstellungen → Vorhören (PFL) wirkte nicht, solange etwas lief (auch nur die Playlist), und nichts sagte das. Jetzt merkt sich WOA die Wahl, zeigt im Menü „Wirkt, sobald nichts mehr läuft“ und öffnet die Ausgabe automatisch neu, sobald die Wiedergabe steht. Die laufende Sendung wird nie unterbrochen. Läuft nichts, greift die Wahl sofort.
+- **Vorhören (PFL):** Fehler beim Öffnen des Kopfhörer-Ausgangs (zu wenige Kanäle, Gerät geht nicht, Kanalzahl nicht lesbar) stehen jetzt im Menü, im Protokoll und als Tooltip an den deaktivierten Vorhören-Knöpfen von Deck, Cart und Playlist. Ist das Vorhören aus, sagt der Tooltip „Vorhören ist aus: Einstellungen → Vorhören (PFL)“.
+
+## 0.34.41 — 2026-10-31
+
+### Behoben
+
+- **Bibliothek:** Nach dem Wechsel des Datenordners blieb ein Fehler des alten Ordners stehen, die neue Datenbank wurde nie geöffnet. Der Fehler wird jetzt beim Wechsel zurückgesetzt (Test).
+- **Stream-Test:** Solange der Verbindungstest lief, zeichnete das Fenster jeden Frame neu. Jetzt weckt nur der Test-Thread das Fenster, wenn er fertig ist.
+- **Stream-Test:** Das gespeicherte Kennwort wurde im UI-Thread aus dem Schlüsselbund gelesen; das geschieht jetzt im Test-Thread.
+- **KI-Fenster:** Ein Prüffehler beim Speichern im Reiter „Assistent“ war unsichtbar; er steht jetzt unter dem Speichern-Knopf.
+
+## 0.34.40 — 2026-10-31
+
+### Behoben
+
+- **Neu und Öffnen:** Strg+N, Strg+O, „Datei → Neu“ und „DAWproject öffnen“ verwarfen ungespeicherte Änderungen ohne Rückfrage. Jetzt wird vorher gespeichert; bleibt das Projekt ungespeichert, bricht der Schritt mit einer Statusmeldung ab (Test mit Strg+N).
+- **Radio:** Das Speichern von `radio.json` überschrieb eine kurz vorher von außen (Agenten-Werkzeug `build_playlist`) geschriebene Datei. Vor dem Speichern wird jetzt der Dateistand geprüft; bei fremder Änderung wird sie übernommen und der Konflikt gemeldet.
+- **Tastenkürzel:** Strg+X, Strg+C/V, Strg+D, Leertaste, Pos1, S und Strg+E wirkten hinter offenen Dialogen (Über, Export, Feedback); nur Entf beachtete sie. Jetzt gilt die Prüfung für alle (kittest: Strg+X bei offenem Export).
+- **Verwalten → Titel:** Die Liste zeichnete bis zu 500 Zeilen je Frame und suchte die Auswahl linear je Zeile und je Frame. Jetzt nur die sichtbaren Zeilen (`show_rows`), die Auswahl als Menge, das Bereinigen der Auswahl nur nach einer neuen Suche.
+- **Verwalten → Titel:** Der Anker für Umschalt-Klick war ein Index und zeigte nach einer neuen Suche auf einen anderen Titel. Er ist jetzt die Track-ID (Test).
+- **Protokoll:** Das Fenster holte das ganze Journal in jedem Frame und baute für jede sichtbare Zeile den Hover-Text. Jetzt höchstens einmal je Sekunde (oder bei Filterwechsel), der Hover-Text erst beim Hover.
 
 ## 0.34.39 — 2026-10-31
 

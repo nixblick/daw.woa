@@ -1005,7 +1005,7 @@ Gern mit laufender Sendung, aber kein Ton nötig.
 
 Selbst geprüft von Claude: 11 neue Tests in `woa-library` und `woa-gui`, Clippy und Tests beider Crates grün. Windows-Sperre (Punkt 7) ist nur über die Fehlernummer und den CI-Lauf unter Windows geprüft, nicht am Gerät.
 
-## Party mit zwei Decks (0.34.40, offen)
+## Party mit zwei Decks (0.34.43, offen)
 
 Ohne Ton möglich (Lautstärke auf Null), am besten mit drei kurzen Titeln und 5 s Crossfade.
 

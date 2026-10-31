@@ -245,6 +245,8 @@ pub struct WoaApp {
     event_editor: crate::event_editor::EventEditor,
     /// Sendeablauf; läuft weiter, auch wenn das Produzent-Layout zu sehen ist.
     radio: Option<RadioDesk>,
+    /// Neue Vorhören-Wahl, die erst greift, sobald nichts mehr läuft.
+    pfl_switch: PflSwitch,
     /// MIDI-Eingang (Paket 11), spielt das Instrument der scharfen MIDI-Spur.
     midi: woa_io::midi::MidiIn,
     /// Letzter gesehener Event-Zähler und wann er sich zuletzt geändert hat (Lampe).
@@ -588,6 +590,7 @@ impl WoaApp {
             clock_editor: crate::clock_editor::ClockEditor::new(woa_radio::data_dir()),
             event_editor: crate::event_editor::EventEditor::new(woa_radio::data_dir()),
             radio: None,
+            pfl_switch: PflSwitch::default(),
             frames: (0, Instant::now()),
         }
     }
@@ -1050,15 +1053,37 @@ impl WoaApp {
                 tracing::info!(?choice, "pfl output chosen");
                 self.config.pfl_output = choice;
                 self.save_config();
-                if self.radio.as_ref().is_some_and(|r| !r.is_on_air()) {
-                    self.radio = None;
-                    if self.config.mode.uses_desk() {
-                        self.ensure_radio();
-                    }
+                let running = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
+                if self.radio.is_some() && self.pfl_switch.choose(running) {
+                    self.reopen_radio_for_pfl();
                 }
-                ui.close();
+            }
+            if self.pfl_switch.pending {
+                ui.label(
+                    egui::RichText::new("Wirkt, sobald nichts mehr läuft")
+                        .small()
+                        .color(theme::on_air()),
+                );
+            } else if let Some(note) = self.radio.as_ref().and_then(RadioDesk::pfl_note)
+                && note != crate::radio::PFL_OFF
+            {
+                ui.label(egui::RichText::new(note).small().color(theme::on_air()));
             }
         });
+    }
+
+    /// Öffnet die Radio-Ausgabe neu, damit die Vorhören-Wahl greift. Nur ohne laufende Sendung.
+    fn reopen_radio_for_pfl(&mut self) {
+        tracing::info!(choice = ?self.config.pfl_output, "pfl: reopening radio output");
+        self.radio = None;
+        if self.config.mode.uses_desk() {
+            self.ensure_radio();
+        }
+        if let Some(note) = self.radio.as_ref().and_then(RadioDesk::pfl_note)
+            && note != crate::radio::PFL_OFF
+        {
+            tracing::warn!(note, "pfl output not available");
+        }
     }
 
     /// Untermenü „MIDI-Eingang“: Aus oder ein Gerät; gespeichert in `config.json`.
@@ -2034,6 +2059,9 @@ impl WoaApp {
     /// Liest eine `.dawproject`-Datei in einen neuen Projektordner `<name>.woa` neben der
     /// Datei und öffnet ihn.
     fn open_dawproject(&mut self) {
+        if !self.save_before_replace("DAWproject öffnen") {
+            return;
+        }
         let Some(file) = rfd::FileDialog::new()
             .set_title("DAWproject öffnen")
             .add_filter("DAWproject", &["dawproject"])
@@ -2075,7 +2103,31 @@ impl WoaApp {
         self.state.open(dir);
     }
 
+    /// Vor Neu/Öffnen: ungespeicherte Änderungen erst sichern (wie vor dem Update).
+    /// `false` heißt: das Projekt blieb ungespeichert, der Aufrufer bricht ab.
+    fn save_before_replace(&mut self, what: &str) -> bool {
+        if self.state.session().is_dirty() {
+            self.save();
+            if self.state.session().is_dirty() {
+                self.state.status = Status::Error(format!(
+                    "{what} abgebrochen: erst das Projekt speichern, dann noch einmal"
+                ));
+                return false;
+            }
+        }
+        true
+    }
+
+    fn new_project(&mut self) {
+        if self.save_before_replace("Neues Projekt") {
+            self.state.new_project();
+        }
+    }
+
     fn open(&mut self) {
+        if !self.save_before_replace("Öffnen") {
+            return;
+        }
         if let Some(dir) = rfd::FileDialog::new()
             .set_title("Projektordner (.woa) öffnen")
             .pick_folder()
@@ -2158,7 +2210,8 @@ impl WoaApp {
         if record {
             self.toggle_record();
         }
-        if !ctx.egui_wants_keyboard_input() {
+        // Offene Dialoge (Über, Export, Feedback, Popups) schlucken die Bearbeitungs-Kürzel.
+        if !ctx.egui_wants_keyboard_input() && !self.overlay_open(ctx) {
             let (copy, cut, paste, dup) = ctx.input_mut(|i| {
                 let has =
                     |i: &egui::InputState, f: fn(&egui::Event) -> bool| i.events.iter().any(f);
@@ -2203,7 +2256,7 @@ impl WoaApp {
             if home {
                 self.rewind();
             }
-            if del && !self.overlay_open(ctx) {
+            if del {
                 if self.selected_clip.is_none() && self.selected_clips.is_empty() {
                     if let Some(t) = self.marked_track() {
                         self.delete_track(t);
@@ -2227,7 +2280,7 @@ impl WoaApp {
             self.open();
         }
         if new {
-            self.state.new_project();
+            self.new_project();
         }
     }
 
@@ -2455,7 +2508,7 @@ impl WoaApp {
         ui.add_space(4.0);
         ui.menu_button("Datei", |ui| {
             if ui.button("Neu (Strg+N)").clicked() {
-                self.state.new_project();
+                self.new_project();
             }
             if ui.button("Öffnen … (Strg+O)").clicked() {
                 self.open();
@@ -5701,6 +5754,10 @@ impl eframe::App for WoaApp {
         if self.config.mode.uses_desk() {
             self.ensure_radio();
         }
+        let running = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
+        if self.pfl_switch.poll(running) && self.radio.is_some() {
+            self.reopen_radio_for_pfl();
+        }
         // Im Radio-Modus spielt nur der Sendemixer; der Player-Strom ruht (#51).
         if let Some(p) = self.player.as_mut() {
             p.set_suspended(self.config.mode.uses_desk());
@@ -7909,5 +7966,54 @@ mod tests {
         let p = ride(&mut state, t, &[]).unwrap();
         assert!(!p.keep);
         assert!(state.project().track(t).unwrap().gain_db < -20.0);
+    }
+}
+
+/// Wann eine neue Vorhören-Wahl greift: sofort, wenn nichts läuft, sonst nach dem Stopp.
+/// Die laufende Sendung wird nie für das Vorhören unterbrochen.
+#[derive(Debug, Default)]
+struct PflSwitch {
+    pending: bool,
+}
+
+impl PflSwitch {
+    /// Neue Wahl. `true` heißt: jetzt neu öffnen.
+    fn choose(&mut self, running: bool) -> bool {
+        self.pending = running;
+        !running
+    }
+
+    /// Je Frame. `true` heißt: die wartende Wahl jetzt anwenden.
+    fn poll(&mut self, running: bool) -> bool {
+        if self.pending && !running {
+            self.pending = false;
+            return true;
+        }
+        false
+    }
+}
+
+#[cfg(test)]
+mod pfl_switch_tests {
+    use super::PflSwitch;
+
+    #[test]
+    fn choice_while_running_waits_until_stop() {
+        let mut s = PflSwitch::default();
+        assert!(!s.choose(true));
+        assert!(s.pending);
+        assert!(!s.poll(true));
+        assert!(s.pending);
+        assert!(s.poll(false));
+        assert!(!s.pending);
+        assert!(!s.poll(false));
+    }
+
+    #[test]
+    fn choice_while_idle_applies_now() {
+        let mut s = PflSwitch::default();
+        assert!(s.choose(false));
+        assert!(!s.pending);
+        assert!(!s.poll(false));
     }
 }

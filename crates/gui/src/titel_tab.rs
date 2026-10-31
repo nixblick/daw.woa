@@ -38,20 +38,26 @@ pub fn titel_tab(ui: &mut egui::Ui, library: &mut LibraryWindow, target: &str) -
     ui.add_space(4.0);
     let mut click: Option<(usize, egui::Modifiers)> = None;
     ui.columns(2, |cols| {
+        let marked: std::collections::HashSet<i64> = library.marked().iter().copied().collect();
+        let results = library.results();
+        let row_h = cols[0].spacing().interact_size.y;
         egui::ScrollArea::vertical()
             .id_salt("titel_tab")
             .auto_shrink([false, false])
-            .show(&mut cols[0], |ui| {
-                for (i, t) in library.results().iter().enumerate() {
+            .show_rows(&mut cols[0], row_h, results.len(), |ui, range| {
+                for i in range {
+                    let t = &results[i];
                     ui.horizontal(|ui| {
                         if ui
                             .small_button(theme::ic::PLUS)
-                            .on_hover_text(format!("In „{target}“"))
+                            .on_hover_ui(|ui| {
+                                ui.label(format!("In „{target}“"));
+                            })
                             .clicked()
                         {
                             out.push(PathBuf::from(&t.path));
                         }
-                        let sel = library.marked().contains(&t.id);
+                        let sel = marked.contains(&t.id);
                         let r = ui.selectable_label(sel, &t.title).on_hover_text(&t.path);
                         if r.clicked() {
                             click = Some((i, ui.input(|inp| inp.modifiers)));
