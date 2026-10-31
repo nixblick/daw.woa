@@ -27,6 +27,78 @@ pub fn crossfade(t: f32) -> (f32, f32) {
     (x.cos(), x.sin())
 }
 
+/// Crossfader der Party (0 = links, 1 = rechts): Constant-Power wie [`crossfade`], aber mit
+/// exakten Endpunkten (ganz links ist rechts wirklich stumm und umgekehrt).
+pub fn fader_gains(x: f32) -> (f32, f32) {
+    if x <= 0.0 {
+        (1.0, 0.0)
+    } else if x >= 1.0 {
+        (0.0, 1.0)
+    } else {
+        crossfade(x)
+    }
+}
+
+/// So lange braucht der Fader von Hand höchstens für den ganzen Weg (gegen Knacken).
+pub const FADER_HAND_SECONDS: f32 = 0.01;
+
+/// Stellung des Party-Crossfaders im Audio-Thread: fährt linear und sample-genau auf ihr Ziel,
+/// je Frame höchstens um `step`. So springt die Stellung nie, auch wenn die Hand ruckt, und das
+/// Ziel wird exakt erreicht (anders als beim [`Smoother`]).
+#[derive(Debug, Clone, Copy)]
+pub struct Fader {
+    pos: f32,
+    target: f32,
+    step: f32,
+    /// Schritt einer Handbewegung (ganzer Weg in [`FADER_HAND_SECONDS`]).
+    hand_step: f32,
+}
+
+impl Fader {
+    pub fn new(pos: f32, rate: f32) -> Self {
+        let pos = pos.clamp(0.0, 1.0);
+        let hand_step = 1.0 / (FADER_HAND_SECONDS * rate).max(1.0);
+        Self {
+            pos,
+            target: pos,
+            step: hand_step,
+            hand_step,
+        }
+    }
+
+    /// Ziel setzen. `frames == 0`: von Hand (fährt schnell, aber ohne Sprung); sonst fährt der
+    /// Fader in genau so vielen Frames hin (Automatik). Ein neues Ziel ersetzt das alte.
+    pub fn set(&mut self, target: f32, frames: usize) {
+        self.target = target.clamp(0.0, 1.0);
+        self.step = if frames == 0 {
+            self.hand_step
+        } else {
+            ((self.target - self.pos).abs() / frames as f32).max(f32::MIN_POSITIVE)
+        };
+    }
+
+    pub fn pos(&self) -> f32 {
+        self.pos
+    }
+
+    pub fn target(&self) -> f32 {
+        self.target
+    }
+
+    /// Ein Frame weiter; gibt die Stellung zurück.
+    #[inline]
+    pub fn tick(&mut self) -> f32 {
+        let d = self.target - self.pos;
+        // Kleine Rundungsreste der Fahrt nicht als eigenen Schritt stehen lassen.
+        if d.abs() <= self.step + 1e-6 {
+            self.pos = self.target;
+        } else {
+            self.pos += self.step.copysign(d);
+        }
+        self.pos
+    }
+}
+
 /// Einpoliger Glätter gegen Zipper-Noise: nähert sich dem Ziel mit Zeitkonstante `tau`.
 #[derive(Debug, Clone, Copy)]
 pub struct Smoother {
@@ -72,6 +144,52 @@ impl Smoother {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fader_gains_constant_power_with_exact_ends() {
+        assert_eq!(fader_gains(0.0), (1.0, 0.0));
+        assert_eq!(fader_gains(1.0), (0.0, 1.0));
+        assert_eq!(fader_gains(-0.5), (1.0, 0.0));
+        assert_eq!(fader_gains(2.0), (0.0, 1.0));
+        for i in 0..=1000 {
+            let (a, b) = fader_gains(i as f32 / 1000.0);
+            assert!((a * a + b * b - 1.0).abs() < 1e-5, "power at {i}");
+        }
+        let (a, b) = fader_gains(0.5);
+        assert!((a - b).abs() < 1e-6, "no hole in the middle: both -3 dB");
+    }
+
+    #[test]
+    fn fader_moves_without_jumps_and_reaches_target() {
+        let rate = 48_000.0;
+        let mut f = Fader::new(0.0, rate);
+        // Hand reißt von ganz links nach ganz rechts: kein Sprung, Ende exakt.
+        f.set(1.0, 0);
+        let max = 1.0 / (FADER_HAND_SECONDS * rate);
+        let mut last = f.pos();
+        let mut gl = fader_gains(last);
+        for _ in 0..2000 {
+            let p = f.tick();
+            assert!((p - last).abs() <= max + 1e-6, "step too big");
+            let g = fader_gains(p);
+            assert!(
+                (g.0 - gl.0).abs() < 0.01 && (g.1 - gl.1).abs() < 0.01,
+                "gain jump"
+            );
+            last = p;
+            gl = g;
+        }
+        assert_eq!(f.pos(), 1.0);
+        // Automatik: in genau 100 Frames zurück.
+        f.set(0.0, 100);
+        for _ in 0..98 {
+            f.tick();
+        }
+        assert!(f.pos() > 0.0);
+        f.tick();
+        f.tick();
+        assert_eq!(f.pos(), 0.0);
+    }
 
     #[test]
     fn crossfade_keeps_constant_power() {

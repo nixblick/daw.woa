@@ -44,6 +44,8 @@ pub use woa_engine::pairs::PairBuf;
 pub const CARTS: usize = 16;
 /// Zahl der Decks (A, B, C).
 pub const DECKS: usize = 3;
+/// Seiten der Party (links, rechts): eigene Abspieler neben den Radio-Decks.
+pub const PARTY_SIDES: usize = 2;
 /// Name der Datei im Datenordner.
 pub const RADIO_FILE: &str = "radio.json";
 /// Unterordner im Datenordner für Mitschnitte.

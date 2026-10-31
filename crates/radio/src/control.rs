@@ -16,9 +16,12 @@ use crate::cues::{CueEdit, CueHistory, Cues};
 use crate::events::{Action, EventClock, EventTable, MissedWhy};
 use crate::level::db_to_gain;
 use crate::mixer::{Cmd, Mixer, NONE, Status};
+
+mod duo;
 use crate::pfl::{PflCmd, PflHandle};
 use crate::show::{CartEntry, PlaylistEntry, RadioShow};
 use crate::{CARTS, RECORDINGS_DIR};
+pub use duo::{PartyDuoView, PartySideView};
 
 /// Kommandos im Flug zum Audio-Thread.
 const QUEUE: usize = 256;
@@ -196,6 +199,8 @@ pub struct Controller {
     deck_done_seen: [u32; crate::DECKS],
     /// „Zurück zur Playlist“ hat für diesen Deck-Lauf schon ausgelöst.
     deck_return_fired: [bool; crate::DECKS],
+    /// Party mit zwei Decks (`None`: aus).
+    duo: Option<duo::Duo>,
 }
 
 /// Ein Zeit-Event in der Playlist.
@@ -255,6 +260,7 @@ impl Controller {
             guests,
             deck_done_seen: [0; crate::DECKS],
             deck_return_fired: [false; crate::DECKS],
+            duo: None,
         };
         c.replace_show(show);
         (c, mixer)
@@ -1433,6 +1439,7 @@ impl Controller {
         self.resume_tick();
         self.event_tick(now);
         self.deck_return_tick();
+        self.party_tick();
     }
 
     fn pump_queue(&mut self) {

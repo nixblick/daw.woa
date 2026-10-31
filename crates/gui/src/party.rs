@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui;
 use woa_io::controller::Bus;
-use woa_radio::party::{Decks, Effect, PartyCommand, PartyLayout, PartyState, Side};
+use woa_radio::party::{Effect, PartyCommand, PartyLayout, PartyState, Side};
 
 use crate::radio::RadioDesk;
 use crate::theme;
@@ -17,9 +17,7 @@ pub struct PartyView {
     pub state: PartyState,
     /// Fernbedienung im WLAN (Paket 36).
     pub remote: crate::remote::RemoteView,
-    /// Zwei Decks über der Sende-Playlist (links/rechts im Wechsel).
-    pub decks: Decks,
-    /// Crossfader wird gerade von Hand gezogen: seine Stellung.
+    /// Crossfader wird gerade von Hand gezogen: die zuletzt geschickte Stellung.
     fader_drag: Option<f32>,
     /// Eingabe „+ Wunsch“.
     wish_input: String,
@@ -170,17 +168,18 @@ impl PartyView {
         self.keep_wishes();
         let view = desk.view().clone();
         let layout = woa_radio::party::layout(&view, &self.state);
-        let now = ui.input(|i| i.time);
+        self.take_folder_wishes(desk);
         let cur_path = view
             .current
             .and_then(|i| view.playlist.get(i))
             .map(|e| e.path.clone());
-        self.decks.track(cur_path.as_deref(), now);
         if let Some(p) = &cur_path {
             self.state.wishes.mark_played(p);
         }
         let xf = view.crossfade_seconds;
-        if self.decks.fading(now, xf) {
+        let duo = view.party.clone().unwrap_or_default();
+        if duo.sides.iter().any(|s| s.playing) {
+            // Fader und Plattenteller folgen dem Mixer.
             ui.ctx().request_repaint();
         }
         let mut cmds = Vec::new();
@@ -188,11 +187,11 @@ impl PartyView {
         // Oben: zwei Decks.
         ui.columns(2, |cols| {
             for (k, side) in [Side::Left, Side::Right].into_iter().enumerate() {
-                self.deck_card(&mut cols[k], side, &layout, &view, now);
+                self.deck_card(&mut cols[k], desk, side, &layout, &view, &duo);
             }
         });
         ui.add_space(8.0);
-        self.crossfader(ui, now, xf, view.running, &mut cmds);
+        self.crossfader(ui, desk, &duo, xf);
         ui.add_space(8.0);
         folder |= buttons_row(ui, &layout, view.running, view.repeat, &mut cmds);
         ui.add_space(10.0);
@@ -234,19 +233,29 @@ impl PartyView {
         }
     }
 
+    /// Neue Dateien im Wunschtitel-Ordner (#134) werden Wünsche: einmal je Datei, ohne
+    /// Stimme, und ein entfernter Wunsch kommt nicht wieder. Die Datei bleibt immer stehen.
+    fn take_folder_wishes(&mut self, desk: &RadioDesk) {
+        let Some(list) = desk.wish_folder_list() else {
+            return;
+        };
+        folder_wishes(list, &mut self.state.wishes);
+    }
+
     fn deck_card(
         &self,
         ui: &mut egui::Ui,
+        desk: &RadioDesk,
         side: Side,
         l: &PartyLayout,
         v: &woa_radio::station::View,
-        now: f64,
+        duo: &woa_radio::control::PartyDuoView,
     ) {
-        let live = side == self.decks.live;
-        let xf = v.crossfade_seconds;
-        let playing = l.now.as_ref().is_some_and(|n| n.playing);
-        let spin = self.decks.spinning(side, playing, now, xf);
-        let fading_out = !live && self.decks.fading(now, xf);
+        use crate::widgets::{Tone, ctl_key};
+        let k = side_index(side);
+        let s = &duo.sides[k];
+        let live = k == duo.live;
+        let spin = s.playing;
         theme::lcd_show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.set_min_height(200.0);
@@ -260,17 +269,7 @@ impl PartyView {
                 } else {
                     "DECK B · RECHTS"
                 };
-                let (badge, col) = if live {
-                    match &l.now {
-                        Some(n) if n.playing => ("JETZT", theme::ok()),
-                        Some(n) if n.paused => ("PAUSE", theme::warn()),
-                        _ => ("BEREIT", theme::cue()),
-                    }
-                } else if fading_out {
-                    ("BLENDET AUS", theme::text_dim())
-                } else {
-                    ("VORGELADEN", theme::cue())
-                };
+                let (badge, col) = deck_badge(live, s.playing, l);
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new(name)
@@ -290,27 +289,46 @@ impl PartyView {
                 if live {
                     now_texts(ui, l);
                 } else {
-                    let title = if fading_out {
-                        self.decks
-                            .previous
-                            .as_deref()
-                            .map(woa_radio::show::title_of)
-                    } else {
-                        l.next.clone()
-                    };
+                    let title = s
+                        .index
+                        .and_then(|i| v.playlist.get(i))
+                        .map(|e| e.title.clone());
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new(title.unwrap_or_else(|| "– leer –".into()))
                                 .size(28.0)
                                 .strong()
-                                .color(if fading_out {
-                                    theme::text_dim()
-                                } else {
-                                    theme::text()
-                                }),
+                                .color(theme::text()),
                         )
                         .truncate(),
                     );
+                    if s.playing {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "noch {}",
+                                woa_radio::party::clock((s.end - s.position).max(0.0))
+                            ))
+                            .size(16.0)
+                            .color(theme::text_dim()),
+                        );
+                    }
+                }
+                ui.add_space(6.0);
+                let (icon, word, tone) = if s.playing {
+                    (theme::ic::PAUSE, "Pause", Tone::Pause)
+                } else {
+                    (theme::ic::PLAY, "Play", Tone::Play)
+                };
+                let r = ui.add_enabled_ui(s.index.is_some(), |ui| {
+                    ctl_key(ui, icon, word, tone, s.playing, 0.0)
+                });
+                if r.inner
+                    .on_hover_text(
+                        "Startet bzw. hält nur dieses Deck; geblendet wird mit dem Crossfader",
+                    )
+                    .clicked()
+                {
+                    desk.party_side(k, !s.playing);
                 }
             });
             let jog_rect = egui::Rect::from_min_size(
@@ -323,40 +341,40 @@ impl PartyView {
                 "party-jog-r"
             });
             ui.scope_builder(egui::UiBuilder::new().max_rect(jog_rect), |ui| {
-                crate::widgets::jog(ui, id, d, spin).on_hover_text(
-                    "Der Plattenteller dreht sich nur am Deck, das gerade zu hören ist",
-                );
+                crate::widgets::jog(ui, id, d, spin)
+                    .on_hover_text("Der Plattenteller dreht sich, solange dieses Deck spielt");
             });
         });
     }
 
-    /// Crossfader: läuft beim Übergang von selbst; von Hand über die Mitte gezogen heißt „Weiter“.
+    /// Crossfader: freie, stufenlose Blende von Hand (Constant-Power im Mixer). Mit
+    /// „Auto-Übergang“ fährt er am Titelende von selbst; die Hand gewinnt immer.
     fn crossfader(
         &mut self,
         ui: &mut egui::Ui,
-        now: f64,
+        desk: &RadioDesk,
+        duo: &woa_radio::control::PartyDuoView,
         xf: f64,
-        running: bool,
-        cmds: &mut Vec<PartyCommand>,
     ) {
+        use crate::widgets::{Tone, ctl_key};
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("A").size(18.0).strong().color(theme::text_dim()));
-            let w = (ui.available_width() - 30.0).max(100.0);
-            let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 30.0), egui::Sense::drag());
-            let to_pos = |x: f32| ((x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-            if resp.dragged()
+            let w = (ui.available_width() - 30.0 - crate::widgets::CTL_MIN_WIDTH - 60.0).max(100.0);
+            let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 30.0), egui::Sense::click_and_drag());
+            if (resp.dragged() || resp.clicked())
                 && let Some(p) = resp.interact_pointer_pos()
             {
-                self.fader_drag = Some(to_pos(p.x));
+                let pos = fader_pos_at(p.x, rect.left(), rect.width());
+                if self.fader_drag != Some(pos) {
+                    self.fader_drag = Some(pos);
+                    desk.party_fader(pos);
+                }
             }
-            if resp.drag_stopped()
-                && let Some(pos) = self.fader_drag.take()
-                && running
-                && (pos - self.decks.live.pos()).abs() > 0.5
-            {
-                cmds.push(PartyCommand::Next);
+            let held = resp.dragged();
+            if !held {
+                self.fader_drag = None;
             }
-            let pos = self.fader_drag.unwrap_or_else(|| self.decks.fader(now, xf));
+            let pos = self.fader_drag.unwrap_or(duo.fader);
             let p = ui.painter();
             let track = egui::Rect::from_center_size(rect.center(), egui::vec2(rect.width(), 6.0));
             p.rect_filled(track, 3, theme::well());
@@ -366,9 +384,21 @@ impl PartyView {
             p.rect_filled(knob, 4, theme::accent());
             p.rect_stroke(knob, 4, egui::Stroke::new(1.0, theme::border_strong()), egui::StrokeKind::Inside);
             resp.on_hover_text(format!(
-                "Crossfader: blendet beim Übergang in {xf:.0} s von selbst. Über die Mitte ziehen: Weiter zum anderen Deck."
+                "Crossfader: freie Blende zwischen Deck A und B, in der Mitte beide gleich laut. \
+                 Mit Auto-Übergang fährt er am Titelende in {xf:.0} s von selbst; anfassen hält ihn."
             ));
             ui.label(egui::RichText::new("B").size(18.0).strong().color(theme::text_dim()));
+            ui.add_space(12.0);
+            let (icon, word) = auto_label(duo.auto);
+            if ctl_key(ui, icon, word, Tone::Normal, duo.auto, 0.0)
+                .on_hover_text(
+                    "An: kurz vor dem Titelende startet das andere Deck und der Fader fährt hinüber. \
+                     Aus: jedes Deck selbst starten und von Hand blenden.",
+                )
+                .clicked()
+            {
+                desk.set_party_auto(!duo.auto);
+            }
         });
     }
 
@@ -746,6 +776,58 @@ fn playlist_card(ui: &mut egui::Ui, desk: &RadioDesk, v: &woa_radio::station::Vi
 }
 
 /// Titel, Künstler, Restzeit im Deck mit dem laufenden Titel.
+/// Übernimmt die fertig kopierten Dateien des Wunschordners in die Wunschliste; gibt die Zahl
+/// der neuen Wünsche zurück.
+pub fn folder_wishes(
+    list: crate::wishes::WishList,
+    wishes: &mut woa_radio::party::Wishlist,
+) -> usize {
+    list.files
+        .into_iter()
+        .filter(|f| !f.copying)
+        .filter(|f| wishes.add_folder_file(f.path.clone(), &f.name))
+        .count()
+}
+
+/// Index der Seite im Mixer (0 links, 1 rechts).
+fn side_index(side: Side) -> usize {
+    match side {
+        Side::Left => 0,
+        Side::Right => 1,
+    }
+}
+
+/// Stellung des Crossfaders unter dem Zeiger (0 links, 1 rechts), auf Hundertstel gerundet,
+/// damit nicht jedes Pixelzittern einen Befehl schickt.
+fn fader_pos_at(x: f32, left: f32, width: f32) -> f32 {
+    let p = ((x - left) / width.max(1.0)).clamp(0.0, 1.0);
+    (p * 100.0).round() / 100.0
+}
+
+/// Beschriftung des Schalters „Auto-Übergang“ (Symbol und Wort).
+fn auto_label(on: bool) -> (&'static str, &'static str) {
+    if on {
+        (theme::ic::ARROWS_LEFT_RIGHT, "Auto-Übergang an")
+    } else {
+        (theme::ic::HAND, "Auto-Übergang aus")
+    }
+}
+
+/// Anzeige oben am Deck: hörbar (JETZT, PAUSE, BEREIT) oder nicht (LÄUFT MIT, VORGELADEN).
+fn deck_badge(live: bool, playing: bool, l: &PartyLayout) -> (&'static str, egui::Color32) {
+    if live {
+        match &l.now {
+            Some(n) if n.playing => ("JETZT", theme::ok()),
+            Some(n) if n.paused => ("PAUSE", theme::warn()),
+            _ => ("BEREIT", theme::cue()),
+        }
+    } else if playing {
+        ("LÄUFT MIT", theme::warn())
+    } else {
+        ("VORGELADEN", theme::cue())
+    }
+}
+
 fn now_texts(ui: &mut egui::Ui, l: &PartyLayout) {
     match &l.now {
         Some(n) => {
@@ -943,5 +1025,54 @@ mod tests {
         assert_eq!(names(1), ["a.WAV", "b.mp3", "s/c.flac"]);
         assert_eq!(names(2).len(), 4);
         assert!(audio_files_in(&d.join("fehlt"), 3).is_empty());
+    }
+
+    #[test]
+    fn wish_folder_files_become_wishes_without_duplicates_and_stay_on_disk() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path();
+        std::fs::write(d.join("Gast - Lied.mp3"), b"x").unwrap();
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(10);
+        let list = |now| crate::wishes::WishList {
+            files: crate::wishes::scan(d, now).unwrap(),
+            ..Default::default()
+        };
+        // Wird noch kopiert: noch kein Wunsch.
+        let mut w = woa_radio::party::Wishlist::default();
+        assert_eq!(folder_wishes(list(std::time::SystemTime::now()), &mut w), 0);
+        assert_eq!(folder_wishes(list(later), &mut w), 1);
+        assert_eq!(w.items()[0].title, "Gast - Lied");
+        assert!(
+            !woa_radio::party::is_free_wish(&w.items()[0].path),
+            "direkt einreihbar"
+        );
+        assert_eq!(folder_wishes(list(later), &mut w), 0, "keine Doppelten");
+        let p = w.items()[0].path.clone();
+        assert!(w.take(&p).is_some());
+        assert!(p.exists(), "Entfernen löscht nie die Datei");
+        assert_eq!(
+            folder_wishes(list(later), &mut w),
+            0,
+            "entfernt bleibt entfernt"
+        );
+        std::fs::write(d.join("Neu.wav"), b"x").unwrap();
+        assert_eq!(
+            folder_wishes(list(later), &mut w),
+            1,
+            "eine neue Datei kommt dazu"
+        );
+    }
+
+    #[test]
+    fn crossfader_and_auto_switch() {
+        assert_eq!(fader_pos_at(0.0, 10.0, 100.0), 0.0);
+        assert_eq!(fader_pos_at(60.0, 10.0, 100.0), 0.5);
+        assert_eq!(fader_pos_at(500.0, 10.0, 100.0), 1.0);
+        assert_eq!(fader_pos_at(33.333, 0.0, 100.0), 0.33);
+        for on in [true, false] {
+            let (icon, word) = auto_label(on);
+            assert!(!icon.is_empty() && word.starts_with("Auto-Übergang"));
+        }
+        assert_ne!(auto_label(true), auto_label(false));
     }
 }
