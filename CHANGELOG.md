@@ -11,6 +11,8 @@ KI & MCP, Teil 1: WOA als MCP-Server für beliebige Clients (André: „nicht nu
 - **Neue Crates:** `woa-secrets` (die Schlüsselbund-Ablage aus dem Stream-Kennwort, jetzt für beliebig viele Einträge mit stabiler Kennung; `woa-stream` nutzt sie unverändert weiter) und `woa-assistant` (Einstellungen, Einträge, Hintergrund-Prozess).
 - **Grenze:** Der Server arbeitet auf der Projektdatei im Ordner, nicht auf dem offenen Fenster. Das steht im Fenster und in `docs/agent.md`.
 - Tests: HTTP ohne/falsches/richtiges Token, falscher `Origin`, fremder Pfad, leeres Token; Einträge sind gültiges JSON und zeigen das Token nie maskiert; Pfade mit Leerzeichen; Schlüsselbund-Ersatzdatei mit 0600 und Kennung als Dateiname; Fenster zeichnet.
+## 0.34.30 — 2026-10-31
+
 Bibliothek: Analyse hängt nicht mehr an langen Titeln, läuft im Hintergrund weiter, Titel lassen sich entfernen und Spalten sortieren (#122, #123, #124, #120).
 
 - **Lautheitsmessung linear (#122, #120):** Die integrierte Lautheit wurde mit jedem 100-ms-Schritt über alle bisherigen Blöcke neu gegatet, die Rechenzeit wuchs mit dem Quadrat der Länge. Ein 30-Minuten-Titel brauchte so sehr lange; zwei Stunden Material dauerten im Test 104 s, jetzt 0,6 s. Das traf die Bibliotheks-Analyse, das Messen beim Einfügen in die Playlist und das Laden zum Abspielen.
