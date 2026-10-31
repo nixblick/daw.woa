@@ -1,9 +1,7 @@
-//! Reiter „Titel“ im Fenster „Verwalten“ ([`crate::manage`]).
-//!
-//! Schnittstelle für den Tag-Editor der Bibliothek: [`titel_tab`] zeichnet den Reiter und gibt
-//! Dateien zurück, die in die gewählte Playlist sollen. Bis der Tag-Editor eingehängt ist,
-//! zeigt der Reiter die Trefferliste der Bibliothek (Suche wie im Bibliotheksfenster) mit
-//! „+“ je Titel.
+//! Reiter „Titel“ im Fenster „Verwalten“ ([`crate::manage`]): links die Titel der Bibliothek
+//! mit Suche und Mehrfachauswahl (Klick wählt, Strg-Klick nimmt hinzu oder heraus, Umschalt-
+//! Klick wählt einen Bereich), rechts die Titelinfos der Auswahl ([`crate::tag_editor`]).
+//! „+“ legt einen Titel in die gewählte Playlist; die Dateien gibt [`titel_tab`] zurück.
 
 use std::path::PathBuf;
 
@@ -15,37 +13,66 @@ use crate::theme;
 /// Zeichnet den Reiter. `target` ist der Name der Playlist, in die „+“ legt.
 pub fn titel_tab(ui: &mut egui::Ui, library: &mut LibraryWindow, target: &str) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    ui.label(
-        egui::RichText::new(format!(
-            "{} Titel in der Bibliothek · „+“ legt in „{target}“",
-            library.total()
-        ))
-        .small()
-        .color(theme::text_dim()),
-    );
+    ui.horizontal(|ui| {
+        let mut q = library.query().to_string();
+        if ui
+            .add(
+                egui::TextEdit::singleline(&mut q)
+                    .hint_text("Suchen: Titel, Interpret, Tag, Ordner")
+                    .desired_width(260.0),
+            )
+            .changed()
+        {
+            library.set_query(&q);
+        }
+        ui.label(
+            egui::RichText::new(format!(
+                "{} Titel · {} gewählt · „+“ legt in „{target}“",
+                library.total(),
+                library.marked().len()
+            ))
+            .small()
+            .color(theme::text_dim()),
+        );
+    });
     ui.add_space(4.0);
-    egui::ScrollArea::vertical()
-        .id_salt("titel_tab")
-        .show(ui, |ui| {
-            for t in library.results() {
-                ui.horizontal(|ui| {
-                    if ui
-                        .small_button(theme::ic::PLUS)
-                        .on_hover_text(format!("In „{target}“"))
-                        .clicked()
-                    {
-                        out.push(PathBuf::from(&t.path));
-                    }
-                    ui.label(&t.title);
-                    if !t.tags.is_empty() {
-                        ui.label(
-                            egui::RichText::new(t.tags.join(", "))
-                                .small()
-                                .color(theme::text_dim()),
-                        );
-                    }
-                });
-            }
-        });
+    let mut click: Option<(usize, egui::Modifiers)> = None;
+    ui.columns(2, |cols| {
+        egui::ScrollArea::vertical()
+            .id_salt("titel_tab")
+            .auto_shrink([false, false])
+            .show(&mut cols[0], |ui| {
+                for (i, t) in library.results().iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        if ui
+                            .small_button(theme::ic::PLUS)
+                            .on_hover_text(format!("In „{target}“"))
+                            .clicked()
+                        {
+                            out.push(PathBuf::from(&t.path));
+                        }
+                        let sel = library.marked().contains(&t.id);
+                        let r = ui.selectable_label(sel, &t.title).on_hover_text(&t.path);
+                        if r.clicked() {
+                            click = Some((i, ui.input(|inp| inp.modifiers)));
+                        }
+                    });
+                }
+            });
+        let right = &mut cols[1];
+        if library.marked().is_empty() {
+            right.label(
+                egui::RichText::new(
+                    "Links einen oder mehrere Titel wählen, um Titelinfos zu bearbeiten.",
+                )
+                .color(theme::text_dim()),
+            );
+        } else if let Some(ed) = library.tab_editor() {
+            ed.ui(right);
+        }
+    });
+    if let Some((i, m)) = click {
+        library.mark_click(i, m.command || m.ctrl, m.shift);
+    }
     out
 }

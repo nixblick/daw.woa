@@ -13,6 +13,7 @@ use woa_library::analysis::Job as AnalysisJob;
 use woa_library::import::{self, Import, Progress};
 use woa_library::{Analysis, Kind, Library, Query, SortBy, Track};
 
+use crate::tag_editor::{Item as TagItem, TagEditor};
 use crate::theme;
 
 /// Datei der Bibliothek im Datenordner.
@@ -61,6 +62,15 @@ pub struct LibraryWindow {
     /// Sortierung der Liste (Klick auf einen Spaltenkopf, #124).
     sort: SortBy,
     desc: bool,
+    /// Titelinfos bearbeiten (Doppelklick oder Kontextmenü); bleibt nach dem Schließen,
+    /// solange gesperrte Dateien noch gespeichert werden.
+    tag_editor: Option<TagEditor>,
+    tag_editor_open: bool,
+    /// Auswahl im Reiter „Verwalten → Titel“ (Ids) und Anker für Umschalt-Klick.
+    marked: Vec<i64>,
+    mark_anchor: Option<usize>,
+    /// Der Reiter hat den Editor seit dem letzten Bild benutzt (dann bleibt er).
+    tab_seen: bool,
 }
 
 impl LibraryWindow {
@@ -89,6 +99,11 @@ impl LibraryWindow {
             dragging: None,
             sort: SortBy::Relevance,
             desc: false,
+            tag_editor: None,
+            tag_editor_open: false,
+            marked: Vec::new(),
+            mark_anchor: None,
+            tab_seen: false,
         }
     }
 
@@ -210,6 +225,116 @@ impl LibraryWindow {
             Err(e) => self.note = Some(e.to_string()),
         }
         self.dirty = true;
+    }
+
+    /// Öffnet die Titelinfos der Titel `ids` (läuft noch ein Speichern, bleibt der alte Editor).
+    pub fn edit_tags(&mut self, ids: &[i64]) {
+        if self.tag_editor.as_ref().is_some_and(TagEditor::busy) {
+            self.tag_editor_open = true;
+            return;
+        }
+        let items: Vec<TagItem> = ids
+            .iter()
+            .filter_map(|id| self.results.iter().find(|t| t.id == *id))
+            .map(|t| TagItem {
+                id: t.id,
+                path: PathBuf::from(&t.path),
+            })
+            .collect();
+        if items.is_empty() {
+            return;
+        }
+        self.tag_editor = Some(TagEditor::open(self.db_path.clone(), items));
+        self.tag_editor_open = true;
+    }
+
+    /// Suchtext der Trefferliste.
+    pub fn query(&self) -> &str {
+        &self.query
+    }
+
+    /// Gewählte Titel im Reiter „Verwalten → Titel“.
+    pub fn marked(&self) -> &[i64] {
+        &self.marked
+    }
+
+    /// Klick auf Treffer `i`: allein wählen, mit `toggle` hinzu/heraus, mit `range` von der
+    /// letzten Wahl bis hier.
+    pub fn mark_click(&mut self, i: usize, toggle: bool, range: bool) {
+        let Some(id) = self.results.get(i).map(|t| t.id) else {
+            return;
+        };
+        match (range, self.mark_anchor) {
+            (true, Some(a)) => {
+                let (lo, hi) = (a.min(i), a.max(i).min(self.results.len() - 1));
+                for t in &self.results[lo..=hi] {
+                    if !self.marked.contains(&t.id) {
+                        self.marked.push(t.id);
+                    }
+                }
+            }
+            _ if toggle => {
+                if let Some(k) = self.marked.iter().position(|m| *m == id) {
+                    self.marked.remove(k);
+                } else {
+                    self.marked.push(id);
+                }
+                self.mark_anchor = Some(i);
+            }
+            _ => {
+                self.marked = vec![id];
+                self.mark_anchor = Some(i);
+            }
+        }
+    }
+
+    /// Editor für die Auswahl des Reiters (derselbe wie im Fenster „Titelinfos“). Wechselt
+    /// die Auswahl, liest er neu; solange er noch speichert, bleibt der alte.
+    pub fn tab_editor(&mut self) -> Option<&mut TagEditor> {
+        self.tab_seen = true;
+        self.marked
+            .retain(|id| self.results.iter().any(|t| t.id == *id));
+        if self.marked.is_empty() {
+            return None;
+        }
+        let same = self
+            .tag_editor
+            .as_ref()
+            .is_some_and(|e| e.ids() == self.marked);
+        if !same && !self.tag_editor.as_ref().is_some_and(TagEditor::busy) {
+            let open = self.tag_editor_open;
+            let ids = self.marked.clone();
+            self.edit_tags(&ids);
+            self.tag_editor_open = open;
+        }
+        self.tag_editor.as_mut()
+    }
+
+    /// Fenster der Titelinfos zeichnen und Hintergrundarbeit abholen.
+    fn tag_editor_window(&mut self, ctx: &egui::Context) {
+        let Some(ed) = self.tag_editor.as_mut() else {
+            return;
+        };
+        let mut changed = false;
+        if self.tag_editor_open {
+            let mut open = true;
+            egui::Window::new("Titelinfos")
+                .open(&mut open)
+                .default_width(460.0)
+                .resizable(false)
+                .frame(theme::card_frame())
+                .show(ctx, |ui| changed = ed.ui(ui));
+            self.tag_editor_open = open;
+        } else {
+            ed.tick(ctx);
+            changed = ed.take_changed();
+        }
+        if changed {
+            self.dirty = true;
+        }
+        if !self.tag_editor_open && !ed.busy() && !std::mem::take(&mut self.tab_seen) {
+            self.tag_editor = None;
+        }
     }
 
     /// Klick auf einen Spaltenkopf: dieselbe Spalte dreht die Richtung, eine neue sortiert
@@ -341,6 +466,7 @@ impl LibraryWindow {
     pub fn show(&mut self, ctx: &egui::Context, pfl_available: bool) -> Output {
         let mut out = Output::default();
         self.tick(ctx);
+        self.tag_editor_window(ctx);
         if !self.open {
             return out;
         }
@@ -576,6 +702,7 @@ impl LibraryWindow {
         }
         let mut clicked = None;
         let mut remove = None;
+        let mut edit_tags = None;
         let mut started = None;
         let mut stopped = None;
         egui::ScrollArea::vertical()
@@ -673,7 +800,14 @@ impl LibraryWindow {
                         // Fokus auf die Zeile: Entf gilt dann ihr, nicht dem Studio.
                         resp.request_focus();
                     }
+                    if resp.double_clicked() {
+                        edit_tags = Some(t.id);
+                    }
                     resp.context_menu(|ui| {
+                        if ui.button("Titelinfos bearbeiten …").clicked() {
+                            edit_tags = Some(t.id);
+                            ui.close();
+                        }
                         if ui
                             .button(format!("{} Aus der Bibliothek entfernen", theme::ic::TRASH))
                             .on_hover_text("Die Datei auf der Platte bleibt (Taste: Entf)")
@@ -708,6 +842,9 @@ impl LibraryWindow {
         }
         if let Some(id) = remove {
             self.remove(id);
+        }
+        if let Some(id) = edit_tags {
+            self.edit_tags(&[id]);
         }
         if let Some(p) = started {
             self.dragging = Some(p);
@@ -1109,6 +1246,9 @@ mod tests {
         let id = w.results()[0].id;
         w.select(Some(id));
         w.open = true;
+        // Titelinfos öffnen sich und zeichnen mit (Doppelklick oder Kontextmenü).
+        w.edit_tags(&[id]);
+        assert!(w.tag_editor.is_some());
         let ctx = crate::theme::test_context();
         for _ in 0..3 {
             let _ = ctx.run_ui(egui::RawInput::default(), |ui| {

@@ -508,6 +508,28 @@ impl Library {
         Ok(n > 0)
     }
 
+    /// Nach dem Schreiben neuer Titelinfos: neuer Inhalt `new_hash`, neuer Anzeigetitel. Die
+    /// Audiodaten sind unverändert (nur die Tags wurden geschrieben), deshalb bleibt eine
+    /// Analyse zum alten Inhalt gültig und zieht mit, statt den Titel neu messen zu lassen.
+    pub fn retagged(&self, id: i64, old_hash: &str, new_hash: &str, title: &str) -> Result<()> {
+        self.transaction(|l| {
+            let n = l.conn.execute(
+                "UPDATE tracks SET hash = ?3, title = ?4, \
+                 analyzed_hash = CASE WHEN analyzed_hash = ?2 THEN ?3 ELSE analyzed_hash END \
+                 WHERE id = ?1",
+                params![id, old_hash, new_hash, title],
+            )?;
+            if n == 0 {
+                return Err(Error::NotFound(id));
+            }
+            l.conn.execute(
+                "UPDATE tracks_fts SET title = ?1 WHERE rowid = ?2",
+                params![title, id],
+            )?;
+            Ok(())
+        })
+    }
+
     /// Verwirft die Analyse eines Titels (er wird beim nächsten Lauf neu gemessen).
     pub fn clear_analysis(&self, id: i64) -> Result<()> {
         let n = self

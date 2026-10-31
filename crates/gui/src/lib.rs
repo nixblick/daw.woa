@@ -30,6 +30,7 @@ pub mod remote;
 mod sources;
 pub mod state;
 mod stream_ui;
+pub mod tag_editor;
 pub mod theme;
 pub mod timeline;
 pub mod titel_tab;
