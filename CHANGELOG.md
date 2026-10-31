@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.64 — 2026-10-31
+
+- **CI stabiler:** Drei Windows-Tests schlugen zufällig fehl (3 von 15 Läufen auf main). Die Titelinfos-Tests warten jetzt bis zu 10 s auf den Thread, der die Tags liest, statt fest 5 Bilder. Der WebRTC-Test lässt am Pult -16 statt -14 dB zu; gemessen wurden -14,02 dB.
+
 ## 0.34.62 — 2026-10-31
 
 ### Geändert
