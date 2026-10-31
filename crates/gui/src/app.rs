@@ -37,6 +37,12 @@ use crate::widgets::topbar::{
 pub const ABOUT_TAGLINE: &str = "WOA – built with love, coffee and AI";
 /// Andrés PayPal-Spendenlink, derselbe wie in bretteins.desktop und fotobrett.desktop (`app/ui/app-info.js`).
 pub const DONATE_PAYPAL: &str = "https://www.paypal.com/qrcodes/p2pqrc/KUND7JXYHRGDN";
+/// QR-Code des PayPal-Links für „Über WOA“ (#231), einmal gebaut.
+pub fn donate_qr() -> Option<&'static woa_remote::qr::QrMatrix> {
+    static QR: std::sync::OnceLock<Option<woa_remote::qr::QrMatrix>> = std::sync::OnceLock::new();
+    QR.get_or_init(|| woa_remote::qr::qr(DONATE_PAYPAL))
+        .as_ref()
+}
 /// Andrés Ko-fi-Seite, wie in bretteins.desktop und fotobrett.desktop.
 pub const DONATE_KOFI: &str = "https://ko-fi.com/nixblick";
 /// Höhe einer Spur (Design `TrackHeader`: 64 px, zwei Zeilen).
@@ -5597,6 +5603,19 @@ impl WoaApp {
                             ui.ctx().open_url(egui::OpenUrl::new_tab(DONATE_KOFI));
                         }
                     });
+                    // #231: zum Scannen mit dem Handy, kodiert den PayPal-Link.
+                    if let Some(m) = donate_qr() {
+                        ui.add_space(8.0);
+                        crate::remote::draw_qr(ui, m, 140.0)
+                            .on_hover_text(DONATE_PAYPAL)
+                            .widget_info(|| {
+                                egui::WidgetInfo::labeled(
+                                    egui::WidgetType::Image,
+                                    true,
+                                    "Spenden-QR-Code",
+                                )
+                            });
+                    }
                 });
                 ui.add_space(12.0);
                 ui.separator();

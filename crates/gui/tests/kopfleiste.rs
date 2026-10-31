@@ -198,6 +198,19 @@ fn about_shows_tagline_thanks_and_real_donation_links() {
     rig.click_text("Über WOA");
     assert!(!rig.find("built with love, coffee and AI").is_empty());
     assert!(!rig.find("Danke an alle Lizenzgeber").is_empty());
+    // #231: QR-Code unter dem Spendentext, kodiert den PayPal-Link.
+    let qr = rig.find("Spenden-QR-Code");
+    assert_eq!(qr.len(), 1, "donation QR shown");
+    assert!(qr[0].width() >= 100.0 && (qr[0].width() - qr[0].height()).abs() < 1.0);
+    assert!(
+        qr[0].top() > rig.find("Kaffee · PayPal")[0].bottom() - 1.0,
+        "below the buttons"
+    );
+    assert_eq!(
+        woa_gui::app::donate_qr(),
+        woa_remote::qr::qr(woa_gui::app::DONATE_PAYPAL).as_ref(),
+        "QR encodes the PayPal link"
+    );
     assert!(
         !rig.find("SIL Open Font License").is_empty(),
         "licence list kept"
