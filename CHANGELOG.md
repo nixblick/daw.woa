@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.67 — 2026-10-31
+
+- **Spur exportieren (#229):** Im Kontextmenü des Spurkopfs (Produzent) steht „Spur exportieren …“. Ein kleines Fenster fragt Dateiname (Vorgabe: Spurname), Format WAV oder MP3 sowie Titel, Interpret und Kommentar. Die Datei enthält nur diese Spur, genau wie ihr Stem (nach Fader und Pan, mit Plugins, ohne Master). Die Tags stehen in WAV als `LIST/INFO`, in MP3 als ID3v2.3; MP3 nutzt den eingebauten Encoder des Mixdown-Exports. Gerechnet und geschrieben wird in einem eigenen Thread, die Oberfläche bleibt bedienbar; die Statuszeile meldet das Ende. Eine stumme Spur meldet „kein Ton“.
+
 ## 0.34.66 — 2026-10-31
 
 - **KI live ohne Token (#232):** Die App startet den Live-Server jetzt bei jedem Start selbst, auch wenn kein Zugriffstoken erzeugt wurde. Sie nutzt dann einen eigenen Schlüssel je Start (nur 127.0.0.1, Origin-Prüfung, Lock-Datei 0600, nie angezeigt). `woa-headless mcp` reicht so an das offene Fenster durch, statt daneben auf der Datei zu arbeiten. Kann der Server nicht starten, steht „KI aus“ in der Kopfleiste.
