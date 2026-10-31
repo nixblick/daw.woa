@@ -126,8 +126,22 @@ impl Assistant {
         let start = self.history.len();
         self.history.push(Message::User(text.to_string()));
         let result = self.run_rounds(on_tool);
-        if result.is_err() {
-            self.history.truncate(start);
+        if let Err(e) = &result {
+            // Werkzeuge, die schon liefen, haben das Projekt geändert: Ihre Runden bleiben im
+            // Verlauf, nur der unvollständige Rest danach fällt weg, und eine Notiz schließt ab.
+            match self.history[start..]
+                .iter()
+                .rposition(|m| matches!(m, Message::Tool { .. }))
+            {
+                None => self.history.truncate(start),
+                Some(i) => {
+                    self.history.truncate(start + i + 1);
+                    self.history.push(Message::Assistant {
+                        text: format!("(Zug abgebrochen: {e})"),
+                        calls: Vec::new(),
+                    });
+                }
+            }
         }
         result
     }
@@ -328,6 +342,36 @@ mod tests {
         assert!(matches!(&got[0], Ev::Notice(n) if n.contains("kaputt")));
         assert!(got.contains(&Ev::Ready(0)));
         assert_eq!(got.last(), Some(&Ev::Reply("Hallo!".into())));
+    }
+
+    #[test]
+    fn failure_in_round_two_keeps_executed_tool_calls() {
+        let mcp = mcp_mock();
+        let llm = MockServer::start(vec![
+            json!({"choices":[{"message":{"content":null,"tool_calls":[
+                {"id":"c1","type":"function","function":{"name":"add_track","arguments":"{}"}}]}}]})
+            .to_string(),
+            "{}".into(),
+        ]);
+        let client = McpClient::connect(&Spec::Http {
+            url: mcp.url(),
+            headers: vec![],
+        })
+        .unwrap();
+        let (mut a, _) = Assistant::new(
+            Provider::new(Kind::OpenAiCompat, llm.url(), "m", None),
+            vec![("WOA".into(), client)],
+        );
+        assert!(a.turn("Lege eine Spur an", &mut |_| {}).is_err());
+        assert!(matches!(&a.history[0], Message::User(t) if t == "Lege eine Spur an"));
+        assert!(matches!(&a.history[1], Message::Assistant { calls, .. } if calls.len() == 1));
+        assert!(
+            matches!(&a.history[2], Message::Tool { content, .. } if content.contains("Spur 4"))
+        );
+        assert!(
+            matches!(&a.history[3], Message::Assistant { text, calls } if calls.is_empty() && text.contains("abgebrochen"))
+        );
+        assert_eq!(a.history.len(), 4);
     }
 
     #[test]

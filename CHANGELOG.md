@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.34.53 — 2026-10-31
+
+### Behoben
+
+- **Agent (MCP):** `analyze`, `spectrogram_png`, `export` und `build_playlist` renderten bzw. maßen synchron im einzigen Thread des MCP-Servers und hielten so alle anderen Anfragen an. Die Arbeit läuft jetzt im Blocking-Pool von tokio.
+- **Assistent:** Scheiterte ein Chat-Zug nach ausgeführten Werkzeugen (z. B. LLM-Fehler in Runde 2), löschte er auch diese Aufrufe aus dem Verlauf, obwohl sie das Projekt schon geändert hatten. Die vollständigen Runden bleiben jetzt, dazu eine Abbruch-Notiz (Test).
+
 ## 0.34.52 — 2026-10-31
 
 ### Behoben

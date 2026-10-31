@@ -898,6 +898,17 @@ fn run_order_json(show: &woa_radio::RadioShow, radio: &Path) -> serde_json::Valu
     })
 }
 
+/// Rendering and measuring block for seconds; they run on tokio's blocking pool so the
+/// single-threaded MCP runtime keeps answering other requests meanwhile.
+async fn off_runtime<F>(f: F) -> Result<CallToolResult, McpError>
+where
+    F: FnOnce() -> Result<CallToolResult, McpError> + Send + 'static,
+{
+    tokio::task::spawn_blocking(f).await.map_err(|e| {
+        McpError::internal_error(format!("Hintergrundarbeit abgebrochen: {e}"), None)
+    })?
+}
+
 fn lock_err() -> McpError {
     McpError::internal_error("Sitzung nicht verfügbar (vergiftete Sperre)", None)
 }
@@ -2171,6 +2182,11 @@ impl WoaAgent {
         &self,
         Parameters(p): Parameters<AnalyzeParams>,
     ) -> Result<CallToolResult, McpError> {
+        let me = self.clone();
+        off_runtime(move || me.analyze_blocking(p)).await
+    }
+
+    fn analyze_blocking(&self, p: AnalyzeParams) -> Result<CallToolResult, McpError> {
         let project = self.lock()?.project().clone();
         let mix = match self.render_for(&project, p.track) {
             Ok(m) => m,
@@ -2212,6 +2228,11 @@ impl WoaAgent {
         &self,
         Parameters(p): Parameters<SpectrogramParams>,
     ) -> Result<CallToolResult, McpError> {
+        let me = self.clone();
+        off_runtime(move || me.spectrogram_png_blocking(p)).await
+    }
+
+    fn spectrogram_png_blocking(&self, p: SpectrogramParams) -> Result<CallToolResult, McpError> {
         if !p.path.to_lowercase().ends_with(".png") {
             return Ok(fail("Endung muss .png sein"));
         }
@@ -2248,6 +2269,11 @@ impl WoaAgent {
         &self,
         Parameters(p): Parameters<ExportParams>,
     ) -> Result<CallToolResult, McpError> {
+        let me = self.clone();
+        off_runtime(move || me.export_blocking(p)).await
+    }
+
+    fn export_blocking(&self, p: ExportParams) -> Result<CallToolResult, McpError> {
         let project = self.lock()?.project().clone();
         if woa_engine::export::ExportFormat::from_path(Path::new(&p.path)).is_none() {
             return Ok(fail(woa_engine::export::EXTENSION_HINT));
@@ -2311,6 +2337,11 @@ impl WoaAgent {
         &self,
         Parameters(p): Parameters<BuildPlaylistParams>,
     ) -> Result<CallToolResult, McpError> {
+        let me = self.clone();
+        off_runtime(move || me.build_playlist_blocking(p)).await
+    }
+
+    fn build_playlist_blocking(&self, p: BuildPlaylistParams) -> Result<CallToolResult, McpError> {
         // Write target: the default file, or a relative path under the same rules as export.
         let (radio, created) = match p.radio_json.as_deref() {
             None => (woa_radio::default_radio_path(), Vec::new()),
