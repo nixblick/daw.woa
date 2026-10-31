@@ -635,6 +635,8 @@ pub fn build_project_graph_plugins(
         let own_latency = chain.as_ref().map_or(0, |c| c.latency);
         let head = chain.as_mut().and_then(|c| c.head.take());
         let stereo_head = head.is_some();
+        // Ab dem ersten Hall läuft eine Mono-Kette in Stereo, sonst wäre der Hall mono.
+        let mut chain_stereo = stereo_head;
         let src = match head {
             Some((_, node)) => b.add_stereo(node),
             None => {
@@ -661,8 +663,10 @@ pub fn build_project_graph_plugins(
             let key = ins
                 .sidechain
                 .filter(|&s| ins.kind.supports_sidechain() && project.track(s).is_some());
-            let n = if stereo_head {
-                // Ab dem Plugin-Instrument läuft die Kette in Stereo (ohne Sidechain).
+            let widen = !chain_stereo && key.is_none() && ins.kind == EffectKind::Reverb;
+            let n = if chain_stereo || widen {
+                // Ab dem Plugin-Instrument oder dem ersten Hall läuft die Kette in Stereo
+                // (ohne Sidechain).
                 let mut fx =
                     FxStereoNode::with_context(fx_kind(ins.kind), &ins.params, ins.bypass, ctx);
                 fx.set_lanes(lanes);
@@ -671,7 +675,8 @@ pub fn build_project_graph_plugins(
                 }
                 let n = b.add_stereo(Box::new(fx));
                 b.connect_ch(tail, 0, n, 0);
-                b.connect_ch(tail, 1, n, 1);
+                b.connect_ch(tail, if widen { 0 } else { 1 }, n, 1);
+                chain_stereo = true;
                 n
             } else if let Some(source) = key {
                 // Sidechain: Kanal 0 Signal, Kanal 1 Schlüssel (siehe `KeyedFxNode`).
@@ -704,8 +709,9 @@ pub fn build_project_graph_plugins(
         // Plugin-Effekte: Stereo, nach den eingebauten Effekten. Eine Mono-Kette speist beide
         // Eingänge des ersten Plugins.
         let effects = chain.map(|c| c.effects).unwrap_or_default();
-        let stereo = stereo_head || !effects.is_empty();
-        let mut tail_is_mono = !stereo_head;
+        let plugin_stereo = stereo_head || !effects.is_empty();
+        let stereo = chain_stereo || !effects.is_empty();
+        let mut tail_is_mono = !chain_stereo;
         for (id, node) in effects {
             let n = b.add_stereo(node);
             if tail_is_mono {
@@ -734,7 +740,7 @@ pub fn build_project_graph_plugins(
             }
         }
         let gain_lane = lane_curve(t, AutoTarget::Gain, tempo);
-        let pan_lane = if stereo {
+        let pan_lane = if plugin_stereo {
             None
         } else {
             lane_curve(t, AutoTarget::Pan, tempo)
