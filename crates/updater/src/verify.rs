@@ -143,7 +143,10 @@ mod tests {
     fn updater_pub_is_placeholder_or_valid_key() {
         let text = PUBLIC_KEY;
         if text.starts_with("PLATZHALTER:") {
-            assert!(!key_configured(text), "Platzhalter darf nicht als Schlüssel gelten");
+            assert!(
+                !key_configured(text),
+                "Platzhalter darf nicht als Schlüssel gelten"
+            );
         } else {
             assert!(
                 key_configured(text),
