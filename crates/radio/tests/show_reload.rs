@@ -77,7 +77,10 @@ fn reload_keeps_unchanged_deck_running() {
     show.carts[0] = Some(CartEntry::new(file));
     c.replace_show(show);
     blocks(&mut c, &mut m, 10);
-    assert_eq!(c.status().deck_state[0].load(Ordering::Acquire), DECK_PLAYING);
+    assert_eq!(
+        c.status().deck_state[0].load(Ordering::Acquire),
+        DECK_PLAYING
+    );
     assert!(c.status().deck_pos[0].load(Ordering::Acquire) > before);
 }
 
@@ -89,7 +92,10 @@ fn dropped_record_samples_are_reported() {
     // 4800 Frames = 100 ms.
     c.status().record_dropped.fetch_add(9600, Ordering::Relaxed);
     c.pump();
-    assert_eq!(c.take_message().as_deref(), Some("Mitschnitt: 100 ms verloren"));
+    assert_eq!(
+        c.take_message().as_deref(),
+        Some("Mitschnitt: 100 ms verloren")
+    );
     c.pump();
     assert!(c.take_message().is_none(), "nur neue Verluste melden");
 }
