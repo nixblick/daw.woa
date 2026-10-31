@@ -4,6 +4,15 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Entf nur für die markierte Spur (0.34.25, offen)
+
+1. Projekt mit drei Spuren öffnen, nichts anklicken: keine Spur ist farbig hervorgehoben, Entf tut nichts.
+2. Spurkopf anklicken: die Spur leuchtet in ihrer Farbe. Dann in die leere Zeitleiste klicken: die Hervorhebung ist weg, Entf tut nichts.
+3. Spur markieren, Rechtsklick (Menü offen) oder „Spur umbenennen“ oder „Feedback“ öffnen, Entf drücken: die Spur bleibt.
+4. Clip anklicken, Entf: nur der Clip ist weg. Spurkopf anklicken, Entf: die Spur ist weg.
+
+Selbst geprüft von Claude: fünf neue Tests in `crates/gui/tests/design_regressions.rs`, Tests und Clippy von `woa-gui` grün.
+
 ## Sicherheit #136: Updater Stufe B vorbereitet (0.34.24, offen)
 
 Nur Test und Doku, kein Verhalten geändert. Schlüssel fehlt noch (Handgriffe in #136).

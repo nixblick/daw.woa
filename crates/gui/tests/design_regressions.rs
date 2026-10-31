@@ -395,3 +395,76 @@ fn inspector_trash_icon_deletes_the_clip() {
     assert!(rig.app.state().project().clip(c).is_none());
     assert!(rig.has(m));
 }
+
+// André 31.10.2026: „Entf darf nur aktiv sein wenn es sinnvoll was zu löschen gibt. Also eine
+// Spur markiert ist.“ Markierung (Hervorhebung) und Ziel für Entf sind ein Zustand.
+
+#[test]
+fn entf_without_marking_does_nothing_even_though_rack_shows_first_track() {
+    let mut rig = Rig::new();
+    let [a, _m, _b] = three_kinds(&mut rig);
+    assert!(rig.rack_shows(a), "rack shows the first track");
+    assert_eq!(rig.app.marked_track(), None, "first track is not marked");
+    rig.key(egui::Key::Delete);
+    assert_eq!(rig.app.state().project().tracks.len(), 3);
+}
+
+#[test]
+fn entf_target_is_exactly_the_marked_track() {
+    let mut rig = Rig::new();
+    let [a, m, _b] = three_kinds(&mut rig);
+    rig.click(rig.header_bg(m), egui::PointerButton::Primary);
+    assert_eq!(rig.app.marked_track(), Some(m));
+    // Klick in die leere Zeitleiste hebt die Markierung auf, Entf tut dann nichts.
+    let row = rig.row(a);
+    rig.click(
+        egui::pos2(row.left() + 8.0 * rig.app.zoom(), row.center().y),
+        egui::PointerButton::Primary,
+    );
+    assert_eq!(rig.app.marked_track(), None, "timeline click unmarks");
+    rig.key(egui::Key::Delete);
+    assert_eq!(rig.app.state().project().tracks.len(), 3);
+    // Wieder markieren: Entf löscht genau die markierte Spur.
+    rig.click(rig.header_bg(m), egui::PointerButton::Primary);
+    rig.key(egui::Key::Delete);
+    assert!(!rig.has(m));
+    assert!(rig.has(a));
+    assert_eq!(rig.app.marked_track(), None);
+}
+
+#[test]
+fn entf_ignored_while_track_menu_is_open() {
+    let mut rig = Rig::new();
+    let [a, _m, _b] = three_kinds(&mut rig);
+    rig.click(rig.header_bg(a), egui::PointerButton::Primary);
+    rig.click(rig.header_bg(a), egui::PointerButton::Secondary);
+    assert!(!rig.find("Spur löschen").is_empty(), "menu open");
+    rig.key(egui::Key::Delete);
+    assert!(rig.has(a), "Entf with open menu keeps the track");
+}
+
+#[test]
+fn entf_ignored_while_renaming_a_track() {
+    let mut rig = Rig::new();
+    let [a, _m, _b] = three_kinds(&mut rig);
+    rig.click(rig.header_bg(a), egui::PointerButton::Primary);
+    let at = rig.header_bg(a);
+    rig.click(at, egui::PointerButton::Secondary);
+    let item = menu_item(&rig, "Spur umbenennen", at);
+    rig.click(item.center(), egui::PointerButton::Primary);
+    rig.idle();
+    assert!(rig.ctx.egui_wants_keyboard_input(), "rename field has focus");
+    rig.key(egui::Key::Delete);
+    assert!(rig.has(a), "Entf in the rename field keeps the track");
+}
+
+#[test]
+fn entf_ignored_while_feedback_dialog_is_open() {
+    let mut rig = Rig::new();
+    let [a, _m, _b] = three_kinds(&mut rig);
+    rig.click(rig.header_bg(a), egui::PointerButton::Primary);
+    let btn = *rig.find("Feedback").first().expect("feedback button");
+    rig.click(btn.center(), egui::PointerButton::Primary);
+    rig.key(egui::Key::Delete);
+    assert!(rig.has(a), "Entf with feedback dialog keeps the track");
+}

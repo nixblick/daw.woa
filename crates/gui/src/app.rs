@@ -574,7 +574,24 @@ impl WoaApp {
         self.track_focus = true;
     }
 
-    /// Die Spur, die das Insert-Rack zeigt und die hervorgehoben ist: die gewählte, sonst die erste.
+    /// Die markierte Spur: hervorgehoben in Spurkopf und Kanalzug und zugleich das Ziel für Entf.
+    /// Ein Zustand für beides, damit Entf nie eine Spur löscht, die nicht sichtbar markiert ist.
+    /// Ein Klick auf einen Clip oder die Zeitleiste hebt die Markierung auf.
+    pub fn marked_track(&self) -> Option<TrackId> {
+        self.selected_track
+            .filter(|id| self.track_focus && self.state.project().track(*id).is_some())
+    }
+
+    /// Ein Dialog, Menü oder Popup ist offen: Entf und Co. gehören dann nicht der Zeitleiste.
+    fn overlay_open(&self, ctx: &egui::Context) -> bool {
+        egui::Popup::is_any_open(ctx)
+            || ctx.any_popup_open()
+            || self.about_open
+            || self.export_dialog.open
+            || self.feedback.phase != crate::feedback::Phase::Closed
+    }
+
+    /// Die Spur, deren Inhalt das Insert-Rack zeigt: die gewählte, sonst die erste (nicht markiert).
     fn rack_track(&self) -> Option<TrackId> {
         let p = self.state.project();
         self.selected_track
@@ -2052,11 +2069,9 @@ impl WoaApp {
             if home {
                 self.rewind();
             }
-            if del {
+            if del && !self.overlay_open(ctx) {
                 if self.selected_clip.is_none() && self.selected_clips.is_empty() {
-                    if self.track_focus
-                        && let Some(t) = self.selected_track
-                    {
+                    if let Some(t) = self.marked_track() {
                         self.delete_track(t);
                     }
                 } else {
@@ -2838,7 +2853,7 @@ impl WoaApp {
             self.armed.contains(&id)
         };
         // Gewählt = Spurfarbe (Fläche und Rand), wie im Kanalzug; scharf zeigt nur der Punkt.
-        let is_selected = self.rack_track() == Some(id);
+        let is_selected = self.marked_track() == Some(id);
         let frame = egui::Frame::new()
             .fill(if is_selected {
                 theme::mix(theme::panel(), color, 0.16)
@@ -5698,7 +5713,7 @@ impl WoaApp {
         } else {
             self.armed.contains(&id)
         };
-        let is_sel = self.rack_track() == Some(id);
+        let is_sel = self.marked_track() == Some(id);
         let level = self.track_levels.get(&id).copied().unwrap_or(0.0);
         let fx = self
             .state
