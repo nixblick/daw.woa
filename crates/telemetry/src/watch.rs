@@ -106,19 +106,31 @@ pub fn metric(art: &'static str, wert: u64) {
     tracing::info!(art, wert, "metric");
 }
 
+/// Erste Zahl hinter `key` in einem `/proc/self/status`-Text (z. B. `VmRSS:  1234 kB`).
+fn status_field(status: &str, key: &str) -> Option<u64> {
+    status
+        .lines()
+        .find_map(|l| l.strip_prefix(key))
+        .and_then(|v| v.split_whitespace().next())
+        .and_then(|v| v.parse().ok())
+}
+
+/// Belegter Arbeitsspeicher in MB aus `VmRSS` (kB, unabhängig von der Seitengröße).
+fn rss_mb_from(status: &str) -> Option<u64> {
+    status_field(status, "VmRSS:").map(|kb| kb / 1024)
+}
+
 /// Belegter Arbeitsspeicher in MB (Linux über `/proc`, sonst `None`).
 fn rss_mb() -> Option<u64> {
-    let s = std::fs::read_to_string("/proc/self/statm").ok()?;
-    let pages: u64 = s.split_whitespace().nth(1)?.parse().ok()?;
-    Some(pages * 4096 / (1024 * 1024))
+    rss_mb_from(&std::fs::read_to_string("/proc/self/status").ok()?)
 }
 
 /// Anzahl Threads des Prozesses (Linux über `/proc`, sonst `None`).
 fn thread_count() -> Option<u64> {
-    let s = std::fs::read_to_string("/proc/self/status").ok()?;
-    s.lines()
-        .find_map(|l| l.strip_prefix("Threads:"))
-        .and_then(|v| v.trim().parse().ok())
+    status_field(
+        &std::fs::read_to_string("/proc/self/status").ok()?,
+        "Threads:",
+    )
 }
 
 impl Inner {
@@ -193,6 +205,14 @@ fn watchdog(busy_since: &AtomicU64, epoch: Instant) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rss_from_status_in_kb() {
+        let st = "Name:\twoa\nVmRSS:\t  204800 kB\nThreads:\t7\n";
+        assert_eq!(rss_mb_from(st), Some(200));
+        assert_eq!(status_field(st, "Threads:"), Some(7));
+        assert_eq!(rss_mb_from("Name: x\n"), None);
+    }
 
     #[test]
     fn idle_between_frames_is_not_a_hang() {

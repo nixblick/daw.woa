@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.54 — 2026-10-31
+
+### Behoben
+
+- **Telemetrie:** Ohne Netz versuchte der Upload ab 100 gepufferten Ereignissen bei jedem neuen Ereignis eine HTTP-Anfrage. Nach einem Fehlschlag wartet er jetzt bis zum nächsten Intervall (Test).
+- **Telemetrie:** Der volle Upload-Puffer verwarf das älteste Ereignis mit `Vec::remove(0)` (2000 Elemente verschieben); jetzt `VecDeque` (Test).
+- **Telemetrie:** `proc.rss_mb` rechnete fest mit 4-KiB-Seiten; jetzt `VmRSS` aus `/proc/self/status` (Test).
+- **Geheimnisse:** Fiel das Speichern auf die Ersatzdatei zurück, verdeckte ein alter Schlüsselbund-Eintrag beim Lesen den neuen Wert. Der alte Eintrag wird jetzt vorher entfernt (Test).
+
 ## 0.34.53 — 2026-10-31
 
 ### Behoben

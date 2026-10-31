@@ -163,6 +163,8 @@ pub fn save_with(
         }
         Err(e) => {
             tracing::warn!(error = %e, account, "keyring unavailable, using protected file");
+            // Ein älterer Schlüsselbund-Eintrag ginge beim Lesen vor und verdeckte den neuen Wert.
+            let _ = store.loeschen();
             write_fallback(data_dir, account, wert)?;
             Ok(Ort::Datei)
         }
@@ -227,6 +229,7 @@ mod tests {
     struct Mem {
         v: RefCell<Option<String>>,
         kaputt: bool,
+        schreib_kaputt: bool,
     }
 
     impl Speicher for Mem {
@@ -237,7 +240,7 @@ mod tests {
             Ok(self.v.borrow().clone())
         }
         fn schreiben(&self, wert: &str) -> Result<(), String> {
-            if self.kaputt {
+            if self.kaputt || self.schreib_kaputt {
                 return Err("kein Dienst".into());
             }
             *self.v.borrow_mut() = Some(wert.to_string());
@@ -261,6 +264,24 @@ mod tests {
         let m = Mem::default();
         let tmp = tempfile::tempdir().unwrap();
         assert!(save_with(&m, tmp.path(), "../x", "w").is_err());
+    }
+
+    #[test]
+    fn fallback_save_is_not_shadowed_by_old_keyring_value() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kb = Mem {
+            v: RefCell::new(Some("alt".into())),
+            schreib_kaputt: true,
+            ..Mem::default()
+        };
+        assert_eq!(
+            save_with(&kb, tmp.path(), "mcp-token", "neu").unwrap(),
+            Ort::Datei
+        );
+        assert_eq!(
+            reveal_with(&kb, tmp.path(), "mcp-token").as_deref(),
+            Some("neu")
+        );
     }
 
     #[test]
