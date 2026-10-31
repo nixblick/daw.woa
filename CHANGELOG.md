@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.57 — 2026-10-31
+## 0.34.58 — 2026-10-31
 
 ### Behoben
 
@@ -8,6 +8,10 @@
 - **Streamd:** Meldet sich die Oberfläche neu an, wird der Puffer nicht mehr geleert. Das Umrechnen auf die Stream-Rate läuft außerhalb der Sperre, die der Sende-Takt braucht. Unterläufe und Kürzungen stehen jetzt im Log („sendemix buffer gap“ mit Pufferstand, höchstens alle 10 s), und die Kürzungen zählt `live_trims` in `streamd-status.json`.
 - **Abriss der Verbindung zu woa-streamd:** Der Feeder verwarf den Sendemix, solange keine Verbindung stand. Jetzt hält er bis zu 0,4 s zurück, versucht nach einem Schreibfehler sofort neu zu verbinden und schreibt „streamd link restored“ mit der Ausfallzeit ins Log. Unter „Auf Sendung“ steht „Verbindung zu woa-streamd unterbrochen, verbinde neu …“, danach, wie oft neu verbunden wurde und wie viele Lücken es gab (Test: echter Feeder unter Last mit Verbindungsabriss ergibt keinen Unterlauf).
 - **Radio-Ausgabe:** Ohne Angabe in `config.json` läuft sie jetzt mit einem festen Puffer von 1024 Frames statt mit der Treibervorgabe. Lehnt das Gerät den Puffer ab, öffnet sie mit der Treibervorgabe, und eine Warnung steht im Log. Unter Windows entscheidet weiterhin der Treiber.
+
+## 0.34.57 — 2026-10-31
+
+- **Playlist umbenennen hielt fest:** Das Namensfeld im Fenster „Verwalten“ holte sich in jedem Bild den Fokus zurück, man kam nicht mehr heraus (André, 31.10.). Wie bei den Spuren (0.33.3) wird der Fokus nur beim Öffnen gesetzt; Enter oder ein Klick daneben übernimmt den Namen, Esc verwirft ihn. Test: Klick daneben schließt das Feld und benennt um.
 
 ## 0.34.56 — 2026-10-31
 
