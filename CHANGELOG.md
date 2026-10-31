@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.34.47 — 2026-10-31
+
+### Behoben
+
+- **Hall:** Auf einer Mono-Spur lief der Hall mono, selbst bei Mix 100 % (Korrelation 1). Die Kette einer Mono-Spur läuft jetzt ab dem ersten Hall in Stereo, die versetzten Kammfilter wirken auf beide Seiten (Test: Korrelation < 0,9). Gilt für GUI, Export und Agent, alle bauen denselben Graphen.
+- **Agent:** `generate_notes` und `generate_drums` ließen ihre WAV in `aufnahmen/` liegen, wenn das Projekt nie gespeichert wurde. Beim Beenden entfernt der Agent jetzt die von ihm selbst erzeugten Takes, auf die weder das gespeicherte Projekt noch die Autosicherung verweist, und nur, wenn niemand sonst (GUI) die Sitzung hält. Während der Sitzung wird nichts gelöscht, Undo bleibt möglich (Tests).
+- **Agent:** Pfade in den Antworten (`export`, `spectrogram_png`, `save` u. a.) tragen unter Windows nicht mehr die Vorsilbe `\\?\` (Test der Hilfsfunktion).
+- **Agent:** `undo` und `redo` nennen jetzt den eben ausgeführten Schritt (`undone` bzw. `redone`) und beide nächsten Schritte (`undo`, `redo`); die bisherigen Felder bleiben (Test).
+- **Agent:** `analyze` führt MIDI-Spuren in der Liste der Spurpegel (Test).
+
 ## 0.34.46 — 2026-10-31
 
 Fehlerbehebung nach dem Test unter Windows (André: „bibliothek noch langsam. selbst bei 4 tracks“, „titelinfos ändert geht nicht. egal wo ich doppelt klicke“, „rechtsklick funktioniert auch nicht“).
