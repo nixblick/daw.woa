@@ -23,6 +23,8 @@ use crate::xrun::XrunLog;
 use woa_engine::localtime::Zone;
 
 const NO_PFL: &str = "Kein Kopfhörer-Ausgang: Einstellungen → Vorhören (PFL)";
+/// Tooltip, wenn das Vorhören in den Einstellungen aus ist.
+pub const PFL_OFF: &str = "Vorhören ist aus: Einstellungen → Vorhören (PFL)";
 
 type Stream = Box<dyn std::any::Any>;
 
@@ -107,7 +109,7 @@ pub struct RadioDesk {
     buffer_frames: Option<u32>,
     device: String,
     /// Pegel Musik, Carts, Mikro in dB (Paket 14); nicht gespeichert, Start bei 0 dB.
-    levels_db: [f64; 3],
+    levels_db: [f64; 4],
     /// „MIDI lernen“ per Rechtsklick gewählt; die App holt es ab.
     pub learn: Option<Target>,
     /// Fläche der Playlist und der Cart-Pads im letzten Bild (Ziel für Ziehen aus der Bibliothek).
@@ -133,6 +135,8 @@ pub struct RadioDesk {
     manage: crate::manage::ManageWindow,
     /// Eigener Strom für das Vorhören auf einem zweiten Gerät.
     _pfl_output: Option<woa_engine::device::ManagedOutput>,
+    /// Warum das Vorhören keinen Ausgang hat (aus oder Fehler beim Öffnen); `None` = offen.
+    pfl_note: Option<String>,
 }
 
 fn level_bus(b: Bus) -> LevelBus {
@@ -140,6 +144,7 @@ fn level_bus(b: Bus) -> LevelBus {
         Bus::Music => LevelBus::Music,
         Bus::Carts => LevelBus::Carts,
         Bus::Mic => LevelBus::Mic,
+        Bus::Decks => LevelBus::Decks,
     }
 }
 
@@ -148,6 +153,7 @@ fn bus_index(b: Bus) -> usize {
         Bus::Music => 0,
         Bus::Carts => 1,
         Bus::Mic => 2,
+        Bus::Decks => 3,
     }
 }
 
@@ -201,6 +207,122 @@ pub fn spawn_streamd(data_dir: &Path) -> Result<(), String> {
 
 fn mtime(p: &Path) -> Option<SystemTime> {
     std::fs::metadata(p).and_then(|m| m.modified()).ok()
+}
+
+/// Reihenfolge und Namen der senkrechten Pegelregler neben den Decks.
+pub(crate) const FADER_BUSES: [(Bus, &str); 4] = [
+    (Bus::Music, "Playlist"),
+    (Bus::Carts, "Carts"),
+    (Bus::Decks, "Decks"),
+    (Bus::Mic, "Mikro"),
+];
+
+/// Senkrechte Pegelregler (wie der Kanal-Gain der Spuren): Name oben, Fader mit dB-Skala,
+/// Wert darunter. `dbs` in der Reihenfolge von [`FADER_BUSES`]. Liefert je Regler die Antwort
+/// (`changed()`, wenn der Wert sich geändert hat; Doppelklick = 0 dB).
+pub(crate) fn level_faders(ui: &mut egui::Ui, dbs: &mut [f32; 4]) -> Vec<egui::Response> {
+    let mut out = Vec::with_capacity(4);
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        for ((_, name), db) in FADER_BUSES.iter().zip(dbs.iter_mut()) {
+            ui.vertical(|ui| {
+                ui.set_width(40.0);
+                ui.label(
+                    egui::RichText::new(*name)
+                        .font(theme::label_font(11.0))
+                        .color(theme::text_dim()),
+                );
+                let r = crate::widgets::fader(
+                    ui,
+                    db,
+                    woa_radio::mixer::LEVEL_MIN_DB as f32..=woa_radio::mixer::LEVEL_MAX_DB as f32,
+                    0.0,
+                    egui::vec2(40.0, 150.0),
+                    crate::widgets::Orient::Vertical,
+                );
+                let label = format!("Pegel {name}");
+                let value = f64::from(*db);
+                r.widget_info(|| egui::WidgetInfo::slider(true, value, &label));
+                ui.label(
+                    egui::RichText::new(crate::widgets::vu::fmt_db(*db))
+                        .font(theme::label_font(11.0))
+                        .monospace()
+                        .color(theme::text()),
+                );
+                out.push(r.on_hover_text(format!(
+                    "Pegel {name}. Doppelklick: 0 dB. Rechtsklick: MIDI lernen. Ganz unten = aus."
+                )));
+            });
+        }
+    });
+    out
+}
+
+/// Knöpfe „Deck A/B/C starten“ im Playlist-Player: das Deck löst die Playlist ab.
+/// Klick: mit Blende (eingestellter Crossfade), Umschalt+Klick oder Kontextmenü „Sofort“:
+/// harter Schnitt. Leere Decks sind aus und sagen, warum. Liefert (Deck, mit Blende).
+pub(crate) fn deck_take_buttons(
+    ui: &mut egui::Ui,
+    decks: &[woa_radio::station::DeckView],
+    crossfade: f64,
+) -> Option<(usize, bool)> {
+    let mut hit = None;
+    for (k, d) in decks.iter().enumerate().take(woa_radio::DECKS) {
+        let name = woa_radio::show::deck_name(k);
+        let loaded = d.title.is_some();
+        let r = ui
+            .add_enabled(
+                loaded,
+                egui::Button::new(
+                    egui::RichText::new(format!("{} Deck {name}", theme::icf::PLAY))
+                        .size(14.0)
+                        .strong(),
+                )
+                .min_size(egui::vec2(70.0, 38.0)),
+            )
+            .on_hover_text(format!(
+                "Deck {name} starten und die Playlist ablösen: Die Playlist blendet aus und \
+                 pausiert, das Deck blendet ein ({crossfade:.1} s Crossfade).\n\
+                 Umschalt+Klick oder Rechtsklick „Sofort“: harter Schnitt ohne Blende."
+            ))
+            .on_disabled_hover_text(format!(
+                "Deck {name} ist leer: erst einen Titel aufs Deck laden (Rechtsklick auf \
+                 einen Titel, „Auf Deck laden“)"
+            ));
+        if r.clicked() {
+            let shift = ui.input(|i| i.modifiers.shift);
+            hit = Some((k, !shift));
+        }
+        r.context_menu(|ui| {
+            if ui
+                .button(format!("Mit Blende ({crossfade:.1} s)"))
+                .clicked()
+            {
+                hit = Some((k, true));
+                ui.close();
+            }
+            if ui.button("Sofort (ohne Blende)").clicked() {
+                hit = Some((k, false));
+                ui.close();
+            }
+        });
+    }
+    hit
+}
+
+/// Umschalter „Zurück zur Playlist“ an einem Deck. Liefert die Antwort (`clicked()`).
+pub(crate) fn deck_return_toggle(ui: &mut egui::Ui, deck: usize, on: bool) -> egui::Response {
+    let name = woa_radio::show::deck_name(deck);
+    ui.add(
+        egui::Button::selectable(on, egui::RichText::new("↩ Playlist").strong())
+            .min_size(egui::vec2(84.0, 30.0)),
+    )
+    .on_hover_text(format!(
+        "Zurück zur Playlist ({}): Ist das an, läuft nach Deck {name} die Playlist mit dem \
+         eingestellten Crossfade weiter (pausiert: ab der Pausenstelle). Aus: Nach dem Deck \
+         bleibt es still, etwa zum Reden oder Telefonieren.",
+        if on { "an" } else { "aus" }
+    ))
 }
 
 /// `mm:ss`, ab einer Stunde `h:mm:ss`.
@@ -274,8 +396,12 @@ impl RadioDesk {
         let counter = Arc::clone(&underruns);
         // Vorhören (Paket 15): Kanal 3/4 im selben Callback oder ein eigener Strom.
         // Der PFL-Spieler hat keinen Weg in den Mixer, den Mitschnitt oder den Sende-Ring.
+        let mut pfl_note: Option<String> = None;
         let (aux, pfl_output) = match pfl {
-            PflOutput::Aus => (None, None),
+            PflOutput::Aus => {
+                pfl_note = Some(PFL_OFF.into());
+                (None, None)
+            }
             PflOutput::Kanal34 => match woa_engine::device::output_channels(&config) {
                 Ok(n) if n >= 4 => {
                     let (h, mut player) = woa_radio::pfl::channel(rate);
@@ -287,13 +413,16 @@ impl RadioDesk {
                 }
                 Ok(n) => {
                     tracing::warn!(channels = n, "pfl: device has too few channels");
-                    error = Some(format!(
+                    pfl_note = Some(format!(
                         "Vorhören aus: Das Gerät hat nur {n} Kanäle, Kanal 3/4 gibt es nicht"
                     ));
+                    error.clone_from(&pfl_note);
                     (None, None)
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "pfl: channel count");
+                    pfl_note = Some(format!("Vorhören aus: Kanalzahl nicht lesbar ({e})"));
+                    error.clone_from(&pfl_note);
                     (None, None)
                 }
             },
@@ -318,7 +447,8 @@ impl RadioDesk {
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, device = %id, "pfl output failed");
-                        error = Some(format!("Vorhören aus: Kopfhörer-Gerät geht nicht ({e})"));
+                        pfl_note = Some(format!("Vorhören aus: Kopfhörer-Gerät geht nicht ({e})"));
+                        error.clone_from(&pfl_note);
                         (None, None)
                     }
                 }
@@ -385,7 +515,7 @@ impl RadioDesk {
             xruns: XrunLog::new(Instant::now()),
             buffer_frames,
             device,
-            levels_db: [0.0; 3],
+            levels_db: [0.0; 4],
             learn: None,
             playlist_rect: egui::Rect::NOTHING,
             cart_rects: Vec::new(),
@@ -399,6 +529,7 @@ impl RadioDesk {
             cue_seen: std::collections::HashMap::new(),
             manage: crate::manage::ManageWindow::default(),
             _pfl_output: pfl_output,
+            pfl_note,
         }
         .reattach()
     }
@@ -1452,6 +1583,15 @@ impl RadioDesk {
             }
             self.learn_menu(&r, Target::Stop);
 
+            // Deck startet und löst die Playlist ab (mit Blende, Umschalt: sofort).
+            if let Some((k, fade)) = deck_take_buttons(ui, &v.decks, v.crossfade_seconds) {
+                self.with(move |c| {
+                    if let Err(e) = c.deck_take_over(k, fade) {
+                        c.report(e);
+                    }
+                });
+            }
+
             // Weitere Transportknöpfe: derselbe Weg wie im Party-Modus und am Handy
             // (`PartyState::apply` und die Effekte in `party_effect`).
             let mut state = woa_radio::party::PartyState::default();
@@ -1716,38 +1856,7 @@ impl RadioDesk {
                 self.with(move |c| c.set_duck(duck));
             }
         });
-        for b in Bus::ALL {
-            let mut db = self.level_db(b) as f32;
-            let r = ui
-                .horizontal(|ui| {
-                    let r = crate::widgets::fader(
-                        ui,
-                        &mut db,
-                        woa_radio::mixer::LEVEL_MIN_DB as f32
-                            ..=woa_radio::mixer::LEVEL_MAX_DB as f32,
-                        0.0,
-                        egui::vec2((ui.available_width() - 150.0).clamp(80.0, 260.0), 28.0),
-                        crate::widgets::Orient::Horizontal,
-                    );
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Pegel {} {}",
-                            b.label(),
-                            crate::widgets::vu::fmt_db(db)
-                        ))
-                        .font(theme::label_font(14.0))
-                        .color(theme::text()),
-                    );
-                    r
-                })
-                .inner
-                .on_hover_text("Doppelklick: 0 dB. Rechtsklick: MIDI lernen. Ganz links = aus.");
-            if r.changed() {
-                self.set_level(b, f64::from(db));
-            }
-            self.learn_menu(&r, Target::Level(b));
-        }
-
+        // Die Pegelregler stehen senkrecht neben den Decks (`level_faders`).
         ui.add_space(4.0);
         self.processing_row(ui);
     }
@@ -2638,6 +2747,7 @@ impl RadioDesk {
                         capturing: self.key_capture == Some(slot),
                         playing,
                         color: theme::track_color(slot),
+                        remaining: v.cart_remaining.get(slot).copied().filter(|r| *r > 0.0),
                     }
                     .ui(ui, egui::vec2(w, 68.0));
                     if self.cart_rects.len() <= slot {
@@ -2663,7 +2773,7 @@ impl RadioDesk {
                         if label.is_some()
                             && ui
                                 .add_enabled(v.pfl_available, egui::Button::new("Vorhören"))
-                                .on_disabled_hover_text(NO_PFL)
+                                .on_disabled_hover_text(self.pfl_hint())
                                 .clicked()
                         {
                             self.with(move |c| {
@@ -2725,7 +2835,7 @@ impl RadioDesk {
             }
             if ui
                 .add_enabled(v.pfl_available, egui::Button::new(label))
-                .on_disabled_hover_text(NO_PFL)
+                .on_disabled_hover_text(self.pfl_hint())
                 .clicked()
             {
                 self.with(move |c| {
@@ -3080,6 +3190,16 @@ impl RadioDesk {
         }
     }
 
+    /// Warum das Vorhören aus ist: Einstellung „Aus“ oder der Fehler beim Öffnen.
+    pub fn pfl_note(&self) -> Option<&str> {
+        self.pfl_note.as_deref()
+    }
+
+    /// Tooltip für deaktivierte Vorhören-Knöpfe.
+    pub fn pfl_hint(&self) -> String {
+        pfl_hint_for(self.pfl_note.as_deref())
+    }
+
     /// Ob das Vorhören (PFL) einen Ausgang hat.
     pub fn pfl_available(&self) -> bool {
         self.view.pfl_available
@@ -3164,6 +3284,29 @@ impl RadioDesk {
                 .color(theme::text_dim()),
         );
         ui.add_space(4.0);
+        // Decks links, die senkrechten Pegelregler als eine Gruppe rechts daneben.
+        ui.horizontal_top(|ui| {
+            let w = (ui.available_width() - 190.0).max(260.0);
+            ui.allocate_ui(egui::vec2(w, 0.0), |ui| {
+                ui.vertical(|ui| self.deck_rows(ui, v));
+            });
+            self.level_fader_group(ui);
+        });
+    }
+
+    /// Pegel Playlist, Carts, Decks, Mikro als senkrechte Fader (Werte wie bisher).
+    fn level_fader_group(&mut self, ui: &mut egui::Ui) {
+        let mut dbs = FADER_BUSES.map(|(b, _)| self.level_db(b) as f32);
+        let rs = level_faders(ui, &mut dbs);
+        for ((r, (b, _)), db) in rs.iter().zip(FADER_BUSES).zip(dbs) {
+            if r.changed() {
+                self.set_level(b, f64::from(db));
+            }
+            self.learn_menu(r, Target::Level(b));
+        }
+    }
+
+    fn deck_rows(&mut self, ui: &mut egui::Ui, v: &View) {
         for k in 0..woa_radio::DECKS {
             let d = v.decks.get(k).cloned().unwrap_or_default();
             let name = woa_radio::show::deck_name(k);
@@ -3276,7 +3419,7 @@ impl RadioDesk {
                                     loaded && v.pfl_available,
                                     egui::Button::new("Vorhören").min_size(egui::vec2(70.0, 30.0)),
                                 )
-                                .on_disabled_hover_text(NO_PFL)
+                                .on_disabled_hover_text(self.pfl_hint())
                                 .clicked()
                             {
                                 self.with(move |c| {
@@ -3284,6 +3427,10 @@ impl RadioDesk {
                                         c.report(e);
                                     }
                                 });
+                            }
+                            if deck_return_toggle(ui, k, d.back_to_playlist).clicked() {
+                                let on = !d.back_to_playlist;
+                                self.with(move |c| c.set_deck_return(k, on));
                             }
                         });
                     });
@@ -3387,11 +3534,230 @@ mod tests {
         );
     }
 
+    /// Ein Bild mit `f`, Rückgabe: (Beschriftung, Rechteck, deaktiviert) je Bedienelement.
+    fn frame(
+        ctx: &eframe::egui::Context,
+        n: u32,
+        events: Vec<eframe::egui::Event>,
+        mut f: impl FnMut(&mut eframe::egui::Ui),
+    ) -> Vec<(String, eframe::egui::Rect, bool)> {
+        use eframe::egui;
+        let mut input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            time: Some(f64::from(n) * 0.05),
+            events,
+            ..Default::default()
+        };
+        if let Some(egui::Event::PointerButton { modifiers, .. }) = input.events.get(1) {
+            input.modifiers = *modifiers;
+        }
+        if n == 0 {
+            crate::theme::install_fonts(ctx);
+        }
+        input.viewports.entry(egui::ViewportId::ROOT).or_default();
+        let out = ctx.run_ui(input, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| f(ui));
+        });
+        let mut nodes = Vec::new();
+        if let Some(u) = out.platform_output.accesskit_update {
+            for (_, node) in u.nodes {
+                let label = node.label().map(str::to_string).unwrap_or_default();
+                if let Some(b) = node.bounds() {
+                    let r = egui::Rect::from_min_max(
+                        egui::pos2(b.x0 as f32, b.y0 as f32),
+                        egui::pos2(b.x1 as f32, b.y1 as f32),
+                    );
+                    nodes.push((label, r, node.is_disabled()));
+                }
+            }
+        }
+        nodes
+    }
+
+    fn click_at(p: eframe::egui::Pos2, shift: bool) -> Vec<eframe::egui::Event> {
+        use eframe::egui::{Event, Modifiers, PointerButton};
+        let modifiers = if shift {
+            Modifiers::SHIFT
+        } else {
+            Modifiers::NONE
+        };
+        vec![
+            Event::PointerMoved(p),
+            Event::PointerButton {
+                pos: p,
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers,
+            },
+            Event::PointerButton {
+                pos: p,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers,
+            },
+        ]
+    }
+
+    fn find<'a>(
+        nodes: &'a [(String, eframe::egui::Rect, bool)],
+        text: &str,
+    ) -> &'a (String, eframe::egui::Rect, bool) {
+        nodes
+            .iter()
+            .find(|(l, _, _)| l.contains(text))
+            .unwrap_or_else(|| panic!("„{text}“ fehlt: {nodes:?}"))
+    }
+
+    #[test]
+    fn deck_buttons_take_over_with_fade_or_hard_and_empty_is_off() {
+        use woa_radio::station::DeckView;
+        let ctx = eframe::egui::Context::default();
+        ctx.enable_accesskit();
+        let decks = vec![
+            DeckView {
+                title: Some("Jingle".into()),
+                ..DeckView::default()
+            },
+            DeckView::default(),
+            DeckView {
+                title: Some("Bett".into()),
+                ..DeckView::default()
+            },
+        ];
+        let hit = std::cell::Cell::new(None);
+        let mut ui = |ui: &mut eframe::egui::Ui| {
+            ui.horizontal(|ui| {
+                if let Some(h) = super::deck_take_buttons(ui, &decks, 3.0) {
+                    hit.set(Some(h));
+                }
+            });
+        };
+        frame(&ctx, 0, vec![], &mut ui);
+        let nodes = frame(&ctx, 1, vec![], &mut ui);
+        assert!(!find(&nodes, "Deck A").2, "A geladen: an");
+        assert!(find(&nodes, "Deck B").2, "B leer: aus");
+        let a = find(&nodes, "Deck A").1.center();
+        let c = find(&nodes, "Deck C").1.center();
+        let b = find(&nodes, "Deck B").1.center();
+        let _ = frame(&ctx, 2, click_at(a, false), &mut ui);
+        assert_eq!(hit.take(), Some((0, true)), "Klick: mit Blende");
+        let _ = frame(&ctx, 3, vec![], &mut ui);
+        let _ = frame(&ctx, 4, click_at(c, true), &mut ui);
+        assert_eq!(hit.take(), Some((2, false)), "Umschalt+Klick: sofort");
+        let _ = frame(&ctx, 5, vec![], &mut ui);
+        let _ = frame(&ctx, 6, click_at(b, false), &mut ui);
+        assert_eq!(hit.take(), None, "leeres Deck startet nichts");
+    }
+
+    #[test]
+    fn back_to_playlist_toggle_is_there_and_clicks() {
+        let ctx = eframe::egui::Context::default();
+        ctx.enable_accesskit();
+        let mut clicked = false;
+        let mut ui = |ui: &mut eframe::egui::Ui| {
+            clicked |= super::deck_return_toggle(ui, 0, false).clicked();
+        };
+        frame(&ctx, 0, vec![], &mut ui);
+        let nodes = frame(&ctx, 1, vec![], &mut ui);
+        let p = find(&nodes, "↩ Playlist").1.center();
+        let _ = frame(&ctx, 2, click_at(p, false), &mut ui);
+        assert!(clicked);
+    }
+
+    #[test]
+    fn vertical_faders_are_there_and_set_the_level() {
+        let ctx = eframe::egui::Context::default();
+        ctx.enable_accesskit();
+        let dbs = std::cell::RefCell::new([0.0f32; 4]);
+        let changed = std::cell::RefCell::new(Vec::new());
+        let mut ui = |ui: &mut eframe::egui::Ui| {
+            for (k, r) in super::level_faders(ui, &mut dbs.borrow_mut())
+                .iter()
+                .enumerate()
+            {
+                if r.changed() {
+                    changed.borrow_mut().push(k);
+                }
+            }
+        };
+        frame(&ctx, 0, vec![], &mut ui);
+        let nodes = frame(&ctx, 1, vec![], &mut ui);
+        for name in [
+            "Pegel Playlist",
+            "Pegel Carts",
+            "Pegel Decks",
+            "Pegel Mikro",
+        ] {
+            let r = find(&nodes, name).1;
+            assert!(
+                r.height() > 2.0 * r.width(),
+                "{name} steht senkrecht: {r:?}"
+            );
+        }
+        // Klick unten auf den Deck-Fader: Pegel sinkt.
+        let r = find(&nodes, "Pegel Decks").1;
+        let p = eframe::egui::pos2(r.center().x, r.bottom() - 15.0);
+        let _ = frame(&ctx, 2, click_at(p, false), &mut ui);
+        assert_eq!(*changed.borrow(), vec![2]);
+        assert!(dbs.borrow()[2] < -30.0, "Decks leise: {}", dbs.borrow()[2]);
+        assert_eq!(dbs.borrow()[0], 0.0);
+        // Doppelklick: zurück auf 0 dB.
+        let _ = frame(&ctx, 3, vec![], &mut ui);
+        let mut ev = click_at(p, false);
+        ev.extend(click_at(p, false));
+        let _ = frame(&ctx, 4, ev, &mut ui);
+        assert_eq!(dbs.borrow()[2], 0.0, "Doppelklick: 0 dB");
+    }
+
+    #[test]
+    fn running_cart_shows_its_countdown() {
+        assert_eq!(crate::widgets::pad::countdown(12.2), "-13 s");
+        assert_eq!(crate::widgets::pad::countdown(9.43), "-9,4 s");
+        let ctx = eframe::egui::Context::default();
+        ctx.enable_accesskit();
+        let mut ui = |ui: &mut eframe::egui::Ui| {
+            crate::widgets::CartPad {
+                number: 3,
+                title: Some("Station-ID"),
+                key: None,
+                capturing: false,
+                playing: true,
+                color: eframe::egui::Color32::RED,
+                remaining: Some(12.0),
+            }
+            .ui(ui, eframe::egui::vec2(200.0, 68.0));
+        };
+        frame(&ctx, 0, vec![], &mut ui);
+        let nodes = frame(&ctx, 1, vec![], &mut ui);
+        find(&nodes, "Cart 3: Station-ID -12 s");
+    }
+
     #[test]
     fn clock_format() {
         assert_eq!(super::clock(0.0), "00:00");
         assert_eq!(super::clock(83.4), "01:23");
         assert_eq!(super::clock(3725.0), "1:02:05");
         assert_eq!(super::clock(-3.0), "00:00");
+    }
+}
+
+/// Tooltip-Text: der Grund, falls bekannt, sonst der allgemeine Hinweis.
+pub fn pfl_hint_for(note: Option<&str>) -> String {
+    note.map_or_else(|| NO_PFL.to_string(), str::to_string)
+}
+
+#[cfg(test)]
+mod pfl_hint_tests {
+    use super::*;
+
+    #[test]
+    fn hint_shows_open_error() {
+        let e = "Vorhören aus: Kopfhörer-Gerät geht nicht (busy)";
+        assert_eq!(pfl_hint_for(Some(e)), e);
+        assert_eq!(pfl_hint_for(Some(PFL_OFF)), PFL_OFF);
+        assert_eq!(pfl_hint_for(None), NO_PFL);
     }
 }

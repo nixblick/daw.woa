@@ -85,17 +85,17 @@ impl StreamUi {
 
     fn start_test(&mut self, ctx: &egui::Context, data_dir: &Path) {
         self.take_server();
-        let wert = if self.kw_dirty {
-            Some(self.kw_text.clone())
-        } else {
-            kennwort::reveal(data_dir)
-        };
+        // Der Schlüsselbund (D-Bus/Credential-Manager) wird erst im Test-Thread gelesen,
+        // nicht im UI-Thread.
+        let getippt = self.kw_dirty.then(|| self.kw_text.clone());
+        let data_dir = data_dir.to_path_buf();
         let cfg = self.draft.clone();
         let (tx, rx) = channel();
         let ctx = ctx.clone();
         self.result = None;
         self.testing = Some(rx);
         std::thread::spawn(move || {
+            let wert = getippt.or_else(|| kennwort::reveal(&data_dir));
             let befund = match wert {
                 Some(w) if !w.is_empty() => probe::run(&cfg, &Kennwort::from_value(w)),
                 _ => Befund {
@@ -127,7 +127,8 @@ impl StreamUi {
                     self.testing = None;
                 }
                 Err(TryRecvError::Disconnected) => self.testing = None,
-                Err(TryRecvError::Empty) => ctx.request_repaint(),
+                // Der Test-Thread weckt das Fenster selbst, wenn er fertig ist.
+                Err(TryRecvError::Empty) => {}
             }
         }
         let mut applied = None;

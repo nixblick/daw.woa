@@ -114,16 +114,19 @@ pub enum Bus {
     Music,
     Carts,
     Mic,
+    /// Decks A, B, C zusammen.
+    Decks,
 }
 
 impl Bus {
-    pub const ALL: [Bus; 3] = [Bus::Music, Bus::Carts, Bus::Mic];
+    pub const ALL: [Bus; 4] = [Bus::Music, Bus::Carts, Bus::Mic, Bus::Decks];
 
     pub fn label(&self) -> &'static str {
         match self {
             Bus::Music => "Musik",
             Bus::Carts => "Carts",
             Bus::Mic => "Mikro",
+            Bus::Decks => "Decks",
         }
     }
 }

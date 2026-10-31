@@ -62,6 +62,18 @@ pub struct CartPad<'a> {
     pub capturing: bool,
     pub playing: bool,
     pub color: Color32,
+    /// Restzeit in Sekunden, solange das Pad läuft (Countdown rechts).
+    pub remaining: Option<f64>,
+}
+
+/// Countdown eines laufenden Carts: „-12 s“, unter 10 s mit einer Nachkommastelle („-9,4 s“).
+pub fn countdown(secs: f64) -> String {
+    let s = secs.max(0.0);
+    if s < 10.0 {
+        format!("-{:.1} s", s).replace('.', ",")
+    } else {
+        format!("-{:.0} s", s.ceil())
+    }
 }
 
 impl CartPad<'_> {
@@ -134,8 +146,23 @@ impl CartPad<'_> {
         let num_pos = egui::pos2(rect.left() + 8.0, body_mid - number.size().y / 2.0);
         let text_left = num_pos.x + number.size().x + 8.0;
         p.galley(num_pos, number, ink);
+        // Countdown rechts, groß; der Titel rückt dafür nur zusammen (bleibt zweizeilig).
+        let mut text_right = rect.right() - 8.0;
+        let count = self
+            .remaining
+            .filter(|_| state == PadState::Playing)
+            .map(countdown);
+        if let Some(t) = &count {
+            let g = p.layout_no_wrap(t.clone(), theme::label_font(18.0), ink);
+            let at = egui::pos2(
+                rect.right() - 8.0 - g.size().x,
+                rect.bottom() - 8.0 - g.size().y,
+            );
+            text_right = at.x - 6.0;
+            p.galley(at, g, ink);
+        }
         let shown = self.title.unwrap_or("leer");
-        let title = p.layout_job(title_job(shown, rect.right() - 8.0 - text_left, ink));
+        let title = p.layout_job(title_job(shown, text_right - text_left, ink));
         let title_pos = egui::pos2(text_left, body_mid - title.size().y / 2.0 + 4.0);
         p.with_clip_rect(rect.shrink(2.0))
             .galley(title_pos, title, ink);
@@ -195,6 +222,11 @@ impl CartPad<'_> {
                 },
             );
         }
+        let label = match &count {
+            Some(t) => format!("Cart {}: {} {t}", self.number, shown),
+            None => format!("Cart {}: {}", self.number, shown),
+        };
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
         resp
     }
 }

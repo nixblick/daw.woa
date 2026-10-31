@@ -58,6 +58,8 @@ pub struct DeckView {
     pub remaining: f64,
     /// Länge von Cue-In bis Cue-Out in Sekunden.
     pub length: f64,
+    /// „Zurück zur Playlist“ an (gilt auch für ein leeres Deck).
+    pub back_to_playlist: bool,
 }
 
 /// Schnappschuss für die Oberfläche.
@@ -102,6 +104,8 @@ pub struct View {
     /// Start und Ende je Cart.
     pub cart_cues: Vec<crate::Cues>,
     pub carts_playing: u32,
+    /// Restzeit je Cart in Sekunden (0 = steht).
+    pub cart_remaining: Vec<f64>,
     /// Die Decks A bis C.
     pub decks: Vec<DeckView>,
     pub mic_open: bool,
@@ -272,7 +276,10 @@ fn deck_view(c: &Controller, k: usize) -> DeckView {
     let entry = c.show().decks.get(k).and_then(Option::as_ref);
     let state = st.deck_state[k].load(Ordering::Acquire);
     if entry.is_none() || state == crate::mixer::DECK_EMPTY {
-        return DeckView::default();
+        return DeckView {
+            back_to_playlist: c.deck_return(k),
+            ..DeckView::default()
+        };
     }
     let (pos, end) = (
         st.deck_pos[k].load(Ordering::Acquire),
@@ -286,6 +293,7 @@ fn deck_view(c: &Controller, k: usize) -> DeckView {
         playing: state == crate::mixer::DECK_PLAYING,
         remaining: end.saturating_sub(pos) as f64 / rate,
         length: (end as f64 / rate - start).max(0.0),
+        back_to_playlist: c.deck_return(k),
     }
 }
 
@@ -398,6 +406,11 @@ fn run(
                 })
                 .collect(),
             carts_playing: st.carts.load(Ordering::Acquire),
+            cart_remaining: st
+                .cart_rest
+                .iter()
+                .map(|r| r.load(Ordering::Acquire) as f64 / f64::from(c.rate()))
+                .collect(),
             decks: (0..crate::DECKS).map(|k| deck_view(&c, k)).collect(),
             mic_open: st.mic_open.load(Ordering::Acquire),
             phone_on: st.phone_on.load(Ordering::Acquire),

@@ -137,6 +137,10 @@ fn decks_empty(v: &[Option<CartEntry>]) -> bool {
     v.iter().all(Option::is_none)
 }
 
+fn all_false(v: &[bool]) -> bool {
+    !v.contains(&true)
+}
+
 fn all_empty(v: &[String]) -> bool {
     v.iter().all(String::is_empty)
 }
@@ -193,6 +197,10 @@ pub struct RadioShow {
     /// Genau [`DECKS`] Decks (A, B, C), `null` = leer. Nur Cue-In und Cue-Out zählen.
     #[serde(default, skip_serializing_if = "decks_empty")]
     pub decks: Vec<Option<CartEntry>>,
+    /// „Zurück zur Playlist“ je Deck (A, B, C): endet das Deck, läuft die Playlist weiter.
+    /// Vorgabe aus. Genau [`DECKS`] Felder.
+    #[serde(default, skip_serializing_if = "all_false")]
+    pub deck_return: Vec<bool>,
 }
 
 impl Default for RadioShow {
@@ -212,6 +220,7 @@ impl Default for RadioShow {
             carts: vec![None; CARTS],
             cart_keys: vec![String::new(); CARTS],
             decks: vec![None; DECKS],
+            deck_return: vec![false; DECKS],
         }
     }
 }
@@ -236,6 +245,7 @@ impl RadioShow {
         self.target_lufs = self.target_lufs.clamp(-40.0, -5.0);
         self.carts.resize(CARTS, None);
         self.decks.resize(DECKS, None);
+        self.deck_return.resize(DECKS, false);
         for e in self.decks.iter_mut().flatten() {
             if e.cues.validate(None).is_err() {
                 e.cues = Cues::default();
