@@ -318,3 +318,17 @@ fn edit_clip_validates_and_undoes() {
         (8.0, 0.0, 0.0)
     );
 }
+
+/// Undo senkt `next_id` nicht: Die Id einer rückgängig gemachten Spur wird nie neu
+/// vergeben (#243, gewollt, siehe `Project::next_id`).
+#[test]
+fn undo_never_reuses_an_id() {
+    let mut s = Session::new("Ids");
+    let a = s.new_track_id();
+    s.apply(Command::add_track(a, "A", TrackKind::Audio))
+        .unwrap();
+    s.undo().unwrap();
+    assert!(s.project().track(a).is_none());
+    let b = s.new_track_id();
+    assert_ne!(a, b);
+}

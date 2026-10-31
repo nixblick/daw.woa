@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.34.76 — 2026-11-01
+## 0.34.77 — 2026-11-01
 
 - **Regler für die Ausgänge (#96):** Neben den Pegelreglern stehen zwei weitere senkrechte Fader im selben Stil, „Notebook“ (Wiedergabe Notebook, der Abhörausgang) und „Stream“ (Stream senden an woa-streamd), darunter je ein roter Stumm-Knopf „M“. Der Gain je Ausgang wird im Audio-Thread geglättet, lockfrei und ohne Allokation; der Mitschnitt bekommt weiter die volle Sendung. Die Einstellung steht in `radio.json` (`out_monitor`, `out_stream`); alte Dateien laden mit 0 dB, nicht stumm. Tests: `output_faders_scale_monitor_and_stream_separately` und `output_levels_default_to_full_and_round_trip` in `crates/radio/tests/rt.rs`, `output_faders_have_level_and_mute` in `crates/gui/src/radio.rs`.
+
+## 0.34.76 — 2026-10-31
+
+- **`next_id` beim Rückgängig (#243):** geprüft und als gewollt dokumentiert. Der Zähler steigt nur: Eine neue Id wird schon vor dem Befehl vergeben, und Rückgängig senkt den Zähler nicht. So bekommt kein neues Objekt die Id einer rückgängig gemachten Spur, und ein Agent mit einer alten Id trifft nicht stillschweigend etwas anderes. Kommentar an `Project::next_id`, Test `undo_never_reuses_an_id`.
 
 ## 0.34.75 — 2026-10-31
 
