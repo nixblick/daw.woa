@@ -148,10 +148,16 @@ impl CartPad<'_> {
         p.galley(num_pos, number, ink);
         // Countdown rechts, groß; der Titel rückt dafür nur zusammen (bleibt zweizeilig).
         let mut text_right = rect.right() - 8.0;
-        let count = self.remaining.filter(|_| state == PadState::Playing).map(countdown);
+        let count = self
+            .remaining
+            .filter(|_| state == PadState::Playing)
+            .map(countdown);
         if let Some(t) = &count {
             let g = p.layout_no_wrap(t.clone(), theme::label_font(18.0), ink);
-            let at = egui::pos2(rect.right() - 8.0 - g.size().x, rect.bottom() - 8.0 - g.size().y);
+            let at = egui::pos2(
+                rect.right() - 8.0 - g.size().x,
+                rect.bottom() - 8.0 - g.size().y,
+            );
             text_right = at.x - 6.0;
             p.galley(at, g, ink);
         }

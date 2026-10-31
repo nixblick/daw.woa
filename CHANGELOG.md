@@ -10,7 +10,7 @@ Decks und Playlist greifen ineinander, steuerbar und ohne Automatik (André: „
 - **Ereignis „Deck fertig“:** Der Mixer zählt je Deck einen Zähler hoch, wenn es bis Cue-Out durchläuft (Atomic, keine Allokation im Audio-Thread). Der Controller schaltet daran und an der Restzeit die Rückkehr.
 - **Senkrechte Pegelregler neben den Decks:** Playlist, Carts, Decks und Mikro als Fader-Gruppe, gleiches Widget wie der Kanal-Gain der Spuren (dB-Skala, Doppelklick = 0 dB, Rechtsklick = MIDI lernen). Die waagerechten Regler unter dem Rack sind weg. Neu ist der Regler „Decks“ (alle drei Decks zusammen, auch per MIDI als `decks` lernbar).
 - **Cart-Restzeit:** Ein laufendes Cart-Pad zeigt groß rechts unten den Countdown („-12 s“, unter 10 s „-9,4 s“). Der Titel rückt dafür zusammen und bleibt zweizeilig.
-- Tests ohne Ton: `radio/tests/deck_handover.rs` (Blende mit Pegelkurve, Stille ohne Umschalter, harter Schnitt, Laden startet nichts, Deck-Start bleibt parallel, leeres Deck), Oberflächentests für Deck-Knöpfe (Klick, Umschalt+Klick, leer), Umschalter, Fader (senkrecht, setzen, Doppelklick) und Cart-Countdown.
+- Tests ohne Ton (CI-fest formatiert): `radio/tests/deck_handover.rs` (Blende mit Pegelkurve, Stille ohne Umschalter, harter Schnitt, Laden startet nichts, Deck-Start bleibt parallel, leeres Deck), Oberflächentests für Deck-Knöpfe (Klick, Umschalt+Klick, leer), Umschalter, Fader (senkrecht, setzen, Doppelklick) und Cart-Countdown.
 
 ## 0.34.40 — 2026-10-31
 

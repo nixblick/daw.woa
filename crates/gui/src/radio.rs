@@ -3567,7 +3567,10 @@ mod tests {
         let dbs = std::cell::RefCell::new([0.0f32; 4]);
         let changed = std::cell::RefCell::new(Vec::new());
         let mut ui = |ui: &mut eframe::egui::Ui| {
-            for (k, r) in super::level_faders(ui, &mut dbs.borrow_mut()).iter().enumerate() {
+            for (k, r) in super::level_faders(ui, &mut dbs.borrow_mut())
+                .iter()
+                .enumerate()
+            {
                 if r.changed() {
                     changed.borrow_mut().push(k);
                 }
@@ -3575,9 +3578,17 @@ mod tests {
         };
         frame(&ctx, 0, vec![], &mut ui);
         let nodes = frame(&ctx, 1, vec![], &mut ui);
-        for name in ["Pegel Playlist", "Pegel Carts", "Pegel Decks", "Pegel Mikro"] {
+        for name in [
+            "Pegel Playlist",
+            "Pegel Carts",
+            "Pegel Decks",
+            "Pegel Mikro",
+        ] {
             let r = find(&nodes, name).1;
-            assert!(r.height() > 2.0 * r.width(), "{name} steht senkrecht: {r:?}");
+            assert!(
+                r.height() > 2.0 * r.width(),
+                "{name} steht senkrecht: {r:?}"
+            );
         }
         // Klick unten auf den Deck-Fader: Pegel sinkt.
         let r = find(&nodes, "Pegel Decks").1;

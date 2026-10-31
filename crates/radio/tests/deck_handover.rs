@@ -87,7 +87,10 @@ fn deck_with_fade_takes_over_and_playlist_returns_with_fade() {
     // Die Blende: Playlist fällt, Deck steigt, nach 1 s nur noch das Deck.
     let v = run(&mut c, &mut m, 1.2);
     let half = v[v.len() * 5 / 12];
-    assert!(half > DECK && half < mu + DECK, "mitten in der Blende: {half}");
+    assert!(
+        half > DECK && half < mu + DECK,
+        "mitten in der Blende: {half}"
+    );
     let early = v[10];
     assert!(early > half, "Playlist fällt zuerst: {early} > {half}");
     assert!((last(&v) - DECK).abs() < 1e-3, "nur das Deck: {}", last(&v));
@@ -98,10 +101,18 @@ fn deck_with_fade_takes_over_and_playlist_returns_with_fade() {
     assert!(!c.is_paused() && c.is_running(), "Playlist läuft wieder");
     // Pegelkurve der Rückkehr: über die letzte Sekunde steigt der Anteil der Musik stetig.
     let ramp: Vec<f32> = v.iter().copied().filter(|x| *x > DECK + 0.02).collect();
-    assert!(ramp.len() > 50, "es gibt eine Blende ({} Blöcke)", ramp.len());
+    assert!(
+        ramp.len() > 50,
+        "es gibt eine Blende ({} Blöcke)",
+        ramp.len()
+    );
     assert!((last(&v) - mu).abs() < 1e-3, "Playlist voll: {}", last(&v));
     assert_eq!(c.status().deck_state[0].load(Acquire), DECK_READY);
-    assert_eq!(c.status().deck_done[0].load(Acquire), 1, "Ereignis Deck fertig");
+    assert_eq!(
+        c.status().deck_done[0].load(Acquire),
+        1,
+        "Ereignis Deck fertig"
+    );
 }
 
 #[test]
