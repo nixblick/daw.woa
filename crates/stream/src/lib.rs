@@ -10,11 +10,13 @@
 //!   und begrenztem Puffer.
 //! - [`link`]: lokale Verbindung Oberfläche → `woa-streamd` (TCP 127.0.0.1, Token-Datei)
 //!   und der [`link::Feeder`] auf Seite der Oberfläche.
+//! - [`jitter::LiveBuffer`]: Jitter-Puffer mit Uhrenausgleich für den Sendemix.
 //! - [`daemon`]: der Kern von `woa-streamd` (Sendemix oder Notfall-Playlist, Takt, Status).
 //! - [`status::StreamStatus`]: Zustand als JSON im Datenordner, für Oberfläche und Agent.
 
 pub mod config;
 pub mod daemon;
+pub mod jitter;
 pub mod kennwort;
 pub mod link;
 pub mod mp3;

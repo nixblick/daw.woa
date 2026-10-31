@@ -42,6 +42,8 @@ pub struct StreamStatus {
     pub bytes_dropped: u64,
     /// So oft war bei verbundener Oberfläche kein Sendemix im Puffer (Unterlauf).
     pub live_underruns: u32,
+    /// So oft lief der Sendemix-Puffer über und wurde hart gekürzt (Ton fehlt).
+    pub live_trims: u32,
 }
 
 impl StreamStatus {

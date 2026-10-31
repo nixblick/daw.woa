@@ -708,7 +708,21 @@ impl ManagedOutput {
             default_checked: Instant::now(),
             reopens: 0,
         };
-        me.stream = Some(me.build()?);
+        me.stream = Some(match me.build() {
+            Ok(s) => s,
+            // Fester Puffer passt nicht zum Gerät: mit der Vorgabe des Treibers weiter.
+            Err(e) if me.config.buffer_frames.is_some() => {
+                tracing::warn!(
+                    error = %e,
+                    label,
+                    frames = ?me.config.buffer_frames,
+                    "fixed buffer refused, falling back to driver default"
+                );
+                me.config.buffer_frames = None;
+                me.build()?
+            }
+            Err(e) => return Err(e),
+        });
         me.opened_at = Instant::now();
         if me.config.device_id.is_none() {
             me.default_id = default_output_id();
