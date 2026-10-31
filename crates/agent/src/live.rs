@@ -526,15 +526,23 @@ pub fn forward(
                     .get("content-type")
                     .and_then(|v| v.to_str().ok())
                     .is_some_and(|c| c.starts_with("text/event-stream"));
-                let body = resp
-                    .body_mut()
-                    .with_config()
-                    .limit(MAX_REPLY)
-                    .read_to_string()
-                    .unwrap_or_default();
                 match status {
                     202 => Ok(Vec::new()),
-                    200 => Ok(json_messages(&body, sse)),
+                    200 if sse => Ok(read_sse_until_reply(
+                        std::io::BufReader::new(
+                            resp.body_mut().with_config().limit(MAX_REPLY).reader(),
+                        ),
+                        id.as_ref(),
+                    )),
+                    200 => Ok(json_messages(
+                        &resp
+                            .body_mut()
+                            .with_config()
+                            .limit(MAX_REPLY)
+                            .read_to_string()
+                            .unwrap_or_default(),
+                        false,
+                    )),
                     s => Err(format!("WOA-App antwortet mit HTTP {s}")),
                 }
             }
@@ -573,6 +581,30 @@ pub fn forward(
     Ok(())
 }
 
+/// Liest einen Event-Stream zeilenweise, bis die Antwort auf `id` da ist (oder der Strom
+/// endet). Der Server darf den Strom danach offen halten; darauf wartet niemand.
+fn read_sse_until_reply(reader: impl BufRead, id: Option<&serde_json::Value>) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        let Some(data) = line.strip_prefix("data:").map(str::trim) else {
+            continue;
+        };
+        if data.is_empty() {
+            continue;
+        }
+        let done = serde_json::from_str::<serde_json::Value>(data).is_ok_and(|v| {
+            (v.get("result").is_some() || v.get("error").is_some())
+                && id.is_none_or(|id| v.get("id") == Some(id))
+        });
+        out.push(data.to_string());
+        if done {
+            break;
+        }
+    }
+    out
+}
+
 /// Die JSON-Nachrichten einer Antwort: der Körper selbst oder die `data:`-Zeilen eines
 /// Event-Streams (leere Zeilen sind Verbindungs-Pings).
 fn json_messages(body: &str, sse: bool) -> Vec<String> {
@@ -605,6 +637,102 @@ pub fn forward_stdio(port: u16, token: &str) -> Result<(), AgentError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Wie die App unter Windows: Die SSE-Antwort auf `initialize` bleibt nach der Nachricht
+    /// offen. Die Weiterleitung darf darauf nicht warten, muss die Session-Id übernehmen und
+    /// jede Zeile als `application/json` schicken.
+    #[test]
+    fn forward_does_not_wait_for_an_open_sse_stream_and_keeps_the_session() {
+        use std::io::{BufReader, Read};
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        {
+            let seen = seen.clone();
+            std::thread::spawn(move || {
+                for (n, conn) in listener.incoming().enumerate() {
+                    let Ok(conn) = conn else { return };
+                    let seen = seen.clone();
+                    std::thread::spawn(move || {
+                        let mut r = BufReader::new(conn.try_clone().unwrap());
+                        let mut head = String::new();
+                        let mut len = 0usize;
+                        loop {
+                            let mut l = String::new();
+                            if r.read_line(&mut l).unwrap_or(0) == 0 {
+                                return;
+                            }
+                            if let Some(v) = l.to_ascii_lowercase().strip_prefix("content-length:")
+                            {
+                                len = v.trim().parse().unwrap_or(0);
+                            }
+                            if l == "\r\n" {
+                                break;
+                            }
+                            head.push_str(&l.to_ascii_lowercase());
+                        }
+                        let mut body = vec![0; len];
+                        r.read_exact(&mut body).unwrap();
+                        let body = String::from_utf8(body).unwrap();
+                        seen.lock().unwrap().push(format!("{head}\n{body}"));
+                        let mut w = conn;
+                        if body.contains("\"initialize\"") {
+                            let _ = w.write_all(
+                                b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                                  mcp-session-id: sitzung-42\r\n\r\n\
+                                  data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-03-26\"}}\n\n",
+                            );
+                            let _ = w.flush();
+                            // Strom bleibt offen.
+                            std::thread::sleep(Duration::from_secs(30));
+                        } else if body.contains("\"id\"") {
+                            let reply = r#"{"jsonrpc":"2.0","id":2,"result":{"content":[]}}"#;
+                            let _ = write!(
+                                w,
+                                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{reply}",
+                                reply.len()
+                            );
+                        } else {
+                            let _ =
+                                w.write_all(b"HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\n\r\n");
+                        }
+                        let _ = n;
+                    });
+                }
+            });
+        }
+        let input = concat!(
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+            "\n",
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            "\n",
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"project_info","arguments":{}}}"#,
+            "\n",
+        );
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut out = Vec::new();
+            let r = forward(port, "geheim-im-test", input.as_bytes(), &mut out);
+            let _ = tx.send(r.map(|()| String::from_utf8(out).unwrap()));
+        });
+        let out = rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("Weiterleitung hängt am offenen SSE-Strom")
+            .unwrap();
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 2, "{out}");
+        assert!(lines[0].contains("protocolVersion"), "{out}");
+        assert!(lines[1].contains("\"id\":2"), "{out}");
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 3, "{seen:?}");
+        for (i, req) in seen.iter().enumerate() {
+            assert!(req.contains("content-type: application/json"), "{req}");
+            assert!(req.contains("text/event-stream"), "Accept fehlt: {req}");
+            if i > 0 {
+                assert!(req.contains("mcp-session-id: sitzung-42"), "{req}");
+            }
+        }
+    }
 
     #[test]
     fn sse_and_json_bodies() {
