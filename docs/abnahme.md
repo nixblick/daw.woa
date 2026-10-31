@@ -4,6 +4,13 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Sicherheit #127: AppImage-Werkzeuge mit Prüfsumme (0.34.21, offen)
+
+1. Der CI-Lauf `linux-build` ist grün (AppImage wird gebaut).
+2. Optional lokal: `WOA_TOOLS_DIR=/tmp/t packaging/linux/build-appimage.sh /tmp/o` zweimal; die Werkzeuge in `/tmp/t` ändern (etwa ein Byte anhängen), der nächste Bau bricht mit „Prüfsumme falsch“ ab.
+
+Selbst geprüft von Claude: Cache-Datei manipuliert, Bau bricht ab; unveränderte Datei besteht die Prüfung.
+
 ## Sicherheit #119: Gast-Rückweg und Gastnamen (0.34.18, offen)
 
 1. Gast-Zugang einschalten, mit dem Handy als Gast anmelden und etwas sprechen, dann abmelden.
