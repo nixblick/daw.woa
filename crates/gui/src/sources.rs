@@ -180,6 +180,15 @@ impl Take {
         }
     }
 
+    /// Ob die Aufnahme vorzeitig abgebrochen ist (Schreibfehler); `stop` liefert dann den Fehler.
+    pub fn failed(&self) -> bool {
+        match self {
+            Take::Device(r) => r.writer_failed(),
+            #[cfg(target_os = "linux")]
+            Take::Pulse(..) => false,
+        }
+    }
+
     /// Abtastrate der Aufnahme, Bezug für die Wellenform-Punkte.
     pub fn sample_rate(&self) -> u32 {
         match self {

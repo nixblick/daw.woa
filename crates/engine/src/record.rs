@@ -158,6 +158,14 @@ impl Recorder {
         self.meters.overruns.load(Ordering::Relaxed)
     }
 
+    /// Ob der Schreib-Thread vorzeitig aufgehört hat (Schreibfehler, z. B. Platte voll). Der
+    /// Fehler selbst kommt aus [`Recorder::stop`]; die GUI fragt dies in ihrem Takt ab und
+    /// beendet die Aufnahme sofort, statt bis zum Stopp still weiterzuzählen.
+    pub fn writer_failed(&self) -> bool {
+        !self.meters.stop.load(Ordering::Acquire)
+            && self.writer.as_ref().is_some_and(JoinHandle::is_finished)
+    }
+
     /// Beendet die Aufnahme, wartet auf den Schreib-Thread und liefert das Ergebnis.
     pub fn stop(mut self) -> Result<RecordStats, RecordError> {
         // Erst den Stream schließen, dann kommen keine Samples mehr nach.
