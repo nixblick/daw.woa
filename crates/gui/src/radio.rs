@@ -622,7 +622,7 @@ impl RadioDesk {
         self.underruns.load(Ordering::Relaxed)
     }
 
-    fn with(&self, f: impl FnOnce(&mut Controller) + Send + 'static) {
+    pub(crate) fn with(&self, f: impl FnOnce(&mut Controller) + Send + 'static) {
         if let Some(s) = &self.station {
             s.with(f);
         }

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.44 — 2026-10-31
+## 0.34.46 — 2026-10-31
 
 Fehlerbehebung nach dem Test unter Windows (André: „bibliothek noch langsam. selbst bei 4 tracks“, „titelinfos ändert geht nicht. egal wo ich doppelt klicke“, „rechtsklick funktioniert auch nicht“).
 
@@ -9,6 +9,20 @@ Fehlerbehebung nach dem Test unter Windows (André: „bibliothek noch langsam. 
 - **Analyse etwa dreimal schneller:** Drei Viertel der Analysezeit gingen in die True-Peak-Messung. Sie rechnet das Filter jetzt nur dort, wo eine neue Spitze überhaupt möglich ist, und das Ergebnis bleibt exakt gleich. Gemessen im Release-Build (`examples/analyse_zeit.rs`): ein 3:17-Titel 0,9 s → 0,27 s, ein 5:21-Titel 1,5 s → 0,53 s.
 - **Tests:** `crates/gui/tests/titelinfos.rs` klickt in der echten App (Doppelklick schnell, langsam, nach vorherigem Klick; Kontextmenü); `true_peak_skip_is_exact` vergleicht mit dem vollen Filter.
 - **Analyse nur noch einen Titel nach dem anderen, unter 16 Threads:** Mit zwei gleichzeitig dauerte ein Dekodieren auf dem Notebook 1,3–2,8 s statt 0,3–0,4 s.
+
+## 0.34.44 — 2026-10-31
+
+Party mit zwei Decks (André: „als dj auf einer party die man streamt, fehlt bei party das zweite deck … und alle symbole die steuern einheitlich bitte mit symbol und wort“).
+
+### Neu
+
+- **Zwei Decks links und rechts:** Die Sende-Playlist bleibt das Modell. Jeder Titelwechsel legt den neuen Titel auf die andere Seite; auf der freien Seite steht der nächste Titel als „VORGELADEN“. Keine zweite Wiedergabe: es spielt weiter der Sendemixer mit Crossfade und Pause.
+- **Crossfader:** Beim Übergang wandert er über die eingestellte Crossfade-Länge von einem Deck zum anderen. Von Hand über die Mitte gezogen heißt das „Weiter“ zum anderen Deck.
+- **Plattenteller:** Er dreht sich nur am Deck, das gerade zu hören ist (beim Überblenden kurz beide). Pausiert oder vorgeladen steht er still.
+- **Playlist in der Party:** Die aktive Playlist mit Auswahl, „läuft“ und „nächster“. Zeilen lassen sich zum Umordnen ziehen, Treffer der Bibliothekssuche lassen sich hineinziehen. Verwaltet wird weiter im Fenster „Verwalten“.
+- **Bibliothekssuche in der Party:** Ein Suchfeld mit Treffern zum Ziehen oder „→ Playlist“ (hinter den laufenden Titel). Es nutzt dieselbe Suche wie das Fenster „Bibliothek“.
+- **Wunschliste:** Neben der Playlist. „+ Wunsch“ nimmt freien Text an („Wer: Titel“). Je Wunsch gibt es „Suchen“ (füllt die Suche vor), „→ Playlist“, „Erledigt“ (bleibt durchgestrichen stehen) und „Entfernen“. Ein über „→ Playlist“ eingereihter Wunsch wird erledigt, sobald sein Titel läuft. Die Liste wird gespeichert (`party_wishes.json` im Datenordner). Wünsche vom Handy landen in derselben Liste; das Handy zeigt nur offene.
+- **Einheitliche Steuerknöpfe:** Alle Party-Knöpfe haben jetzt Symbol und Wort, eine Höhe (44 px) und eine Mindestbreite (neuer Baustein `widgets::ctl_key`). Play leuchtet grün (`ok`), Pause bernstein (`warn`), in Hell und Dunkel.
 
 ## 0.34.43 — 2026-10-31
 
