@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.35 — 2026-10-31
+## 0.34.36 — 2026-10-31
 
 Bibliothek: Ordner hinzufügen geht wieder schnell (André: „es dauert gerade wieder ewig“).
 
@@ -9,6 +9,18 @@ Bibliothek: Ordner hinzufügen geht wieder schnell (André: „es dauert gerade 
 - **Analyse (Lautheit, Cue-Punkte, Tempo, Tonart) startet schon während des Imports**, im Hintergrund, mit Fortschritt und Abbruch wie bisher. Sie misst höchstens zwei Titel gleichzeitig, auf Rechnern mit weniger als vier Kernen einen; jeder dekodierte Titel liegt ganz im Speicher. Sie trägt auch die genaue Länge nach, wenn der Kopf keine nennt.
 - **Produzent:** Ein Titel aus der Bibliothek oder vom Desktop auf die Timeline gezogen wird nicht mehr zusätzlich im UI-Thread dekodiert, nur um seine Länge zu kennen. Das Laden des Clips für die Wiedergabe dekodiert weiterhin einmal im UI-Thread (offen).
 - **Tests:** Import von 40 Dateien füllt die Liste ohne ein einziges Dekodieren (Zähler in `woa-engine`), Längen stimmen aus dem Kopf, Analyse kommt danach; die bisherigen Import- und Analyse-Tests laufen unverändert.
+
+## 0.34.35 — 2026-10-31
+
+Radio-Studio: mehrere Playlisten und ein Fenster „Verwalten“ (André: „playlisten verwalten, löschen, neu, anders … das muss einfach gehen“).
+
+- **Mehrere benannte Playlisten je Sendung.** Im Kopf der Sende-Playlist steht nur eine Auswahl der aktiven Playlist und „⋯“ (Neue Playlist, Playlisten verwalten …).
+- **Fenster „Verwalten“** mit zwei Reitern. **Playlisten:** links die Listen (Neu, M3U importieren; Rechtsklick oder „⋯“: Aktiv setzen, Umbenennen, Duplizieren, M3U exportieren, Leeren, Löschen; Doppelklick benennt um), rechts die Titel der gewählten Liste (↑/↓, ×, „+ Titel …“, Entf nimmt nur den markierten Titel heraus). **Titel:** zeigt die Bibliothek mit „+“ in die gewählte Playlist; hier hängt später der Tag-Editor ein (`crate::titel_tab::titel_tab`).
+- **Löschen mit Rückgängig:** Hinweis unten 8 s mit ablaufendem Strich, wie beim Löschen einer Spur.
+- **Auf Sendung:** Die laufende Playlist lässt sich nicht löschen (Knopf gesperrt mit Grund). Ein Wechsel fragt nach; der laufende Titel, die Decks und Carts spielen weiter, danach geht es mit der neuen Playlist weiter.
+- **Speichern** in `radio.json` (`playlists`, `active`); alte Dateien werden verlustfrei zu „Playlist 1“. Die aktive Playlist steht wie bisher in `playlist`, AutoDJ, Voice-Tracking, Crossfade, Notfall-Playlist und die MCP-Werkzeuge arbeiten unverändert auf ihr. `read_playlist` nennt zusätzlich Namen der aktiven und aller Playlisten.
+- **M3U/M3U8:** Import (Kommentare übersprungen, relative Pfade ab dem Ordner der Datei, keine Netzadressen) und Export als M3U8 mit `#EXTINF`.
+- **Tests:** neu, umbenennen (leer und doppelt abgelehnt), duplizieren, leeren, löschen und Rückgängig (auch die aktive und die letzte), Migration alter Dateien, M3U hin und zurück, Wechsel und Löschen während der Sendung ohne Abbruch, Rückfrage beim Wechsel auf Sendung.
 
 ## 0.34.34 — 2026-10-31
 
