@@ -142,13 +142,13 @@ mod tests {
     #[test]
     fn updater_pub_is_placeholder_or_valid_key() {
         let text = PUBLIC_KEY;
-        if text.starts_with("untrusted comment:") {
+        if text.starts_with("PLATZHALTER:") {
+            assert!(!key_configured(text), "Platzhalter darf nicht als Schlüssel gelten");
+        } else {
             assert!(
                 key_configured(text),
-                "packaging/windows/updater.pub sieht nach minisign aus, ist aber kein gültiger Schlüssel"
+                "packaging/windows/updater.pub ist weder Platzhalter noch gültiger minisign-Schlüssel"
             );
-        } else {
-            assert!(!key_configured(text), "Platzhalter darf nicht als Schlüssel gelten");
         }
     }
 

@@ -116,7 +116,7 @@ Der Code ist fertig (Pflicht-Signatur sobald `updater.pub` ein echter Schlüssel
 signiert, sobald das Secret `WOA_UPDATER_KEY` existiert). Es fehlt nur der Schlüssel, und den erzeugt
 und hinterlegt nur der Maintainer:
 
-1. `minisign -G -p updater.pub -s updater.key` (Passwort leer lassen, das Secret ist unverschlüsselt).
+1. `minisign -G -W -p updater.pub -s updater.key` (`-W`: ohne Passwort, der Workflow signiert unbeaufsichtigt).
 2. Inhalt von `updater.key` als Actions-Secret `WOA_UPDATER_KEY` setzen, `updater.key` danach in den Vault, nie ins Repo.
 3. `updater.pub` nach `packaging/windows/updater.pub` kopieren, committen. Der Test
    `updater_pub_is_placeholder_or_valid_key` meldet einen beschädigten Schlüssel.
