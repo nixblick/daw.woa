@@ -6593,7 +6593,7 @@ impl WoaApp {
             for v in crate::widgets::VuView::ALL {
                 if ui
                     .radio_value(&mut self.config.vu_view, v, v.label())
-                    .on_hover_text("Anzeige des Summenpegels in der Transportleiste")
+                    .on_hover_text("Pegelanzeige in der Transportleiste (höchster Spurpegel)")
                     .changed()
                 {
                     self.save_config();
