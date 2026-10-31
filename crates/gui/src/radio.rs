@@ -81,6 +81,12 @@ fn row_drop_target(
 }
 
 /// Anzahl gespielter Titel am Anfang der Playlist (vor dem laufenden bzw. nächsten).
+/// Eingetippte Playlist-Nummer (#92, 1-basiert) als Zielindex, auf die Liste begrenzt.
+fn typed_position(text: &str, len: usize) -> Option<usize> {
+    let n: usize = text.trim().parse().ok()?;
+    (len > 0).then(|| n.clamp(1, len) - 1)
+}
+
 pub(crate) fn played_count(v: &View) -> usize {
     v.first_open.min(v.playlist.len())
 }
@@ -151,6 +157,8 @@ pub struct RadioDesk {
     row_rects: Vec<egui::Rect>,
     /// Gezogene Playlist-Zeile (Index), solange die Maus gedrückt ist (#166).
     row_drag: Option<usize>,
+    /// Nummer einer Playlist-Zeile wird gerade eingetippt (#92): Zeile und Text.
+    pos_edit: Option<(usize, String)>,
     /// Cart, das die nächste gedrückte Taste als neue Taste bekommt.
     key_capture: Option<usize>,
     /// Ortszeit für die Uhrzeit-Anzeige (von der Stundenuhr).
@@ -617,6 +625,7 @@ impl RadioDesk {
             deck_rects: [egui::Rect::NOTHING; woa_radio::DECKS],
             row_rects: Vec::new(),
             row_drag: None,
+            pos_edit: None,
             key_capture: None,
             zone: Zone::CENTRAL_EUROPE,
             cue_editor: None,
@@ -2736,18 +2745,59 @@ impl RadioDesk {
                 let resp = frame.show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
+                        // Griff zum Ziehen (#92): die ganze Zeile lässt sich ziehen (#166).
                         ui.label(
-                            egui::RichText::new(format!("{:>2}", i + 1))
-                                .monospace()
-                                .strong()
-                                .color(if on_air {
-                                    theme::on_air()
-                                } else if is_cue {
-                                    theme::cue()
-                                } else {
-                                    theme::text_dim()
-                                }),
-                        );
+                            egui::RichText::new(theme::ic::DOTS_SIX_VERTICAL)
+                                .color(theme::text_dim()),
+                        )
+                        .on_hover_text("Ziehen zum Verschieben");
+                        // Nummer eintippen (#92): Klick, Zahl, Enter verschiebt den Titel.
+                        let editing = self.pos_edit.as_ref().is_some_and(|(k, _)| *k == i);
+                        if editing {
+                            let len = v.playlist.len();
+                            let mut done = None;
+                            if let Some((_, text)) = self.pos_edit.as_mut() {
+                                let r = ui.add(
+                                    egui::TextEdit::singleline(text)
+                                        .desired_width(26.0)
+                                        .font(egui::TextStyle::Monospace),
+                                );
+                                r.request_focus();
+                                if r.lost_focus() {
+                                    let enter = ui.input(|inp| inp.key_pressed(egui::Key::Enter));
+                                    done = Some(enter.then(|| typed_position(text, len)).flatten());
+                                }
+                            }
+                            if let Some(target) = done {
+                                self.pos_edit = None;
+                                if let Some(to) = target.filter(|&to| to != i) {
+                                    self.with(move |c| {
+                                        c.move_entry(i, to);
+                                    });
+                                }
+                            }
+                        } else {
+                            let r = ui
+                                .add(
+                                    egui::Label::new(
+                                        egui::RichText::new(format!("{:>2}", i + 1))
+                                            .monospace()
+                                            .strong()
+                                            .color(if on_air {
+                                                theme::on_air()
+                                            } else if is_cue {
+                                                theme::cue()
+                                            } else {
+                                                theme::text_dim()
+                                            }),
+                                    )
+                                    .sense(egui::Sense::click()),
+                                )
+                                .on_hover_text("Klicken und neue Nummer eintippen (Enter)");
+                            if r.clicked() {
+                                self.pos_edit = Some((i, (i + 1).to_string()));
+                            }
+                        }
                         let thumb = self.covers.as_mut().and_then(|c| c.thumb(&e.path));
                         crate::covers::paint_square(ui, 34.0, thumb.as_ref(), None, 1.0);
                         crate::protokoll::damage_badge(ui, &e.path);
@@ -3711,6 +3761,18 @@ impl RadioDesk {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn typed_position_moves_within_the_playlist() {
+        // Eingetippte Nummer (#92): 1-basiert, auf die Liste begrenzt, Unsinn tut nichts.
+        assert_eq!(super::typed_position(" 3 ", 5), Some(2));
+        assert_eq!(super::typed_position("1", 5), Some(0));
+        assert_eq!(super::typed_position("99", 5), Some(4));
+        assert_eq!(super::typed_position("0", 5), Some(0));
+        assert_eq!(super::typed_position("abc", 5), None);
+        assert_eq!(super::typed_position("", 5), None);
+        assert_eq!(super::typed_position("2", 0), None);
+    }
+
     #[test]
     fn time_of_day_follows_the_zone() {
         use woa_engine::localtime::Zone;
