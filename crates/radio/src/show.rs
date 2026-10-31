@@ -153,6 +153,14 @@ fn default_crossfade() -> f64 {
     3.0
 }
 
+fn default_stop_fade() -> f64 {
+    3.0
+}
+
+fn is_default_stop_fade(v: &f64) -> bool {
+    *v == default_stop_fade()
+}
+
 fn default_duck() -> f64 {
     -12.0
 }
@@ -212,6 +220,16 @@ pub struct RadioShow {
     /// nichts. Vorgabe aus.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_played: bool,
+    /// Stopp mit Ausblenden (#227): Stopp am Sende-Player und an den Decks blendet über
+    /// [`Self::stop_fade_seconds`] aus statt hart abzubrechen. Vorgabe aus.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stop_fade: bool,
+    /// Dauer des Ausblendens beim Stopp (Sekunden).
+    #[serde(
+        default = "default_stop_fade",
+        skip_serializing_if = "is_default_stop_fade"
+    )]
+    pub stop_fade_seconds: f64,
 }
 
 impl Default for RadioShow {
@@ -234,6 +252,8 @@ impl Default for RadioShow {
             deck_return: vec![false; DECKS],
             party_auto: true,
             hide_played: false,
+            stop_fade: false,
+            stop_fade_seconds: default_stop_fade(),
         }
     }
 }
@@ -248,6 +268,10 @@ impl RadioShow {
             self.crossfade_seconds = default_crossfade();
         }
         self.crossfade_seconds = self.crossfade_seconds.clamp(0.0, MAX_CROSSFADE);
+        if !self.stop_fade_seconds.is_finite() {
+            self.stop_fade_seconds = default_stop_fade();
+        }
+        self.stop_fade_seconds = self.stop_fade_seconds.clamp(0.1, MAX_CROSSFADE);
         if !self.duck_db.is_finite() {
             self.duck_db = default_duck();
         }

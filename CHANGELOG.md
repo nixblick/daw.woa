@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.34.63 — 2026-10-31
+
+### Neu
+
+- **Stopp mit Ausblenden (#227):** Im Radio-Modus steht bei Crossfade und Ducking der Schalter „Stopp blendet aus“ mit der „Ausblenddauer“ (0,5–10 s, Vorgabe 3 s). Ist er an, blenden Stopp am Sende-Player und Stopp an den Decks A/B/C über diese Dauer aus, etwa um mitten im Titel auszusteigen; aus bleibt der Stopp hart wie bisher. Kein neuer Knopf, Pause und Deck-Übergaben bleiben unverändert. Schalter und Dauer werden mit der Sendung gespeichert (Test unter `assert_no_alloc`).
+
 ## 0.34.62 — 2026-10-31
 
 ### Geändert

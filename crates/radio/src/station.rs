@@ -81,6 +81,9 @@ pub struct View {
     pub paused: Option<(f64, f64)>,
     pub remaining_total: f64,
     pub crossfade_seconds: f64,
+    /// Stopp mit Ausblenden an (#227) und seine Dauer (Sekunden).
+    pub stop_fade: bool,
+    pub stop_fade_seconds: f64,
     pub duck_db: f64,
     /// Sendebus-Processing an.
     pub bus_processing: bool,
@@ -405,6 +408,8 @@ fn run(
             },
             remaining_total: c.remaining_total(),
             crossfade_seconds: c.show().crossfade_seconds,
+            stop_fade: c.show().stop_fade,
+            stop_fade_seconds: c.show().stop_fade_seconds,
             duck_db: c.show().duck_db,
             bus_processing: c.show().bus_processing,
             mic_processing: c.show().mic_processing,
