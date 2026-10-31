@@ -1,0 +1,21 @@
+<!-- @dsCard group="Produzent" height=300 subtitle="Spur löschen: ein Papierkorb im Spurkopf, keine Rückfrage, 8 s Rückgängig-Hinweis" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}.cap{font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0 0 6px}</style></head>
+<body>
+
+<div style="display:grid;grid-template-columns:280px 1fr;gap:28px;align-items:start">
+ <div><p class="cap">Der eine Papierkorb</p><div style="border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden"><div class="woa-tk is-sel-track" style="--t:var(--track-4)">
+ <div class="woa-tk__r1"><button class="woa-arm" aria-pressed="false" data-woa-icon="rec" data-tip="Aufnahme scharf" data-kbd="Umschalt+R"></button><span class="woa-tk__n" data-tip="Umbenennen" data-hint="Doppelklick">Jingle-Stimme</span><button class="woa-key woa-key--sm woa-key--sq woa-key--rec" data-tip="Stumm" data-kbd="M">M</button><button class="woa-key woa-key--sm woa-key--sq woa-key--warn" data-tip="Solo" data-kbd="S">S</button><button class="woa-ib woa-ib--sm woa-ib--danger woa-tk__del" data-woa-icon="trash" data-tip="Spur löschen" data-kbd="Entf" data-hint="Rückgängig mit Strg+Z"></button></div>
+ <div class="woa-tk__r2"><span class="woa-select" role="button" data-tip="Eingang"><span data-woa-icon="mic" style="display:contents"></span><span>In 1 · Mikro</span><span data-woa-icon="down" style="display:contents"></span></span><span class="woa-num" data-tip="Pegel (= Fader)" data-hint="Ziehen · Doppelklick = Standard · Klick = eintippen" data-fmt="db" data-min="-60" data-max="6" data-step="0.1" data-default="0" data-value="0.0"><span class="woa-num__v"></span><span class=woa-num__u>dB</span></span><span class="woa-num woa-num--s" data-tip="Panorama" data-hint="Ziehen · Doppelklick = Standard · Klick = eintippen" data-fmt="pan" data-min="-100" data-max="100" data-step="1" data-default="0" data-value="0"><span class="woa-num__v"></span></span></div>
+ <div class="woa-meter" data-ch="2" data-segs="16" data-level="0.6"></div>
+</div></div>
+  <p class="woa-dim" style="font-size:12px;margin:8px 0 0">Sichtbar bei Hover und an der gewählten Spur. Außerdem: Rechtsklick → „Spur löschen“ (Spurkopf, Kanalzug) und Entf bei gewählter Spur.</p></div>
+ <div><p class="cap">Danach: Rückgängig statt Rückfrage</p>
+  <div class="woa-toast" role="status"><span data-woa-icon="trash" style="display:contents"></span><span>Spur „Jingle-Stimme“ gelöscht</span><button class="woa-toast__undo" data-woa-icon="undo">Rückgängig <span class="woa-kbd"><kbd>Strg</kbd><kbd>Z</kbd></span></button><button class="woa-ib woa-ib--sm" data-woa-icon="x" data-tip="Schließen" data-kbd="Esc"></button></div>
+  <p class="woa-dim" style="font-size:12px;margin:10px 0 0;max-width:460px">Unten mittig über der Zeitleiste, 8 s, Strich läuft ab. Mehrere Löschungen: „3 Spuren gelöscht“. Clips, Effekte und Sends kommen mit Rückgängig vollständig zurück.</p></div>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>

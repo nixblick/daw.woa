@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.27 — 2026-10-31
+## 0.34.28 — 2026-10-31
 
 Bibliothek: Analyse hängt nicht mehr an langen Titeln, läuft im Hintergrund weiter, Titel lassen sich entfernen und Spalten sortieren (#122, #123, #124, #120).
 
@@ -11,6 +11,20 @@ Bibliothek: Analyse hängt nicht mehr an langen Titeln, läuft im Hintergrund we
 - **Entfernen (#124):** Rechtsklick auf einen Titel → „Aus der Bibliothek entfernen“, oder Titel anklicken und Entf. Die Datei auf der Platte bleibt. Entf wirkt nur auf den markierten Eintrag und nie in einem Textfeld.
 - **Sortieren (#124):** Klick auf einen Spaltenkopf (Titel, BPM, Tonart, LUFS, Art, Dauer) sortiert, ein zweiter Klick dreht die Richtung; Pfeil zeigt die aktive Spalte. Sortiert wird in der Datenbank, nicht nur in den angezeigten 500 Zeilen; Titel ohne Messwert stehen am Ende.
 - **Tests:** Lautheit über zwei Stunden in linearer Zeit (`woa-dsp`), Entfernen und Sortieren (`woa-library`), geschlossenes Fenster importiert und analysiert, Entfernen und Sortieren über den Fensterzustand (`woa-gui`).
+
+## 0.34.27 — 2026-10-31
+
+Design System Fassung 2 (Claude Design schließt die Lücken aus `docs/design/luecken.md`).
+
+- **Doku:** Neues Paket unter `docs/design/woa-design-system/` und als ZIP, Herkunft und Phosphor-Lizenz in `docs/herkunft.md`, alle Lücken in `docs/design/luecken.md` als geschlossen markiert.
+- **Auswahl:** eine Farbe an drei Stellen (Spurkopf, Kanalzug, Rack-Kopf: 14 % Spurfarbe, 1 px Rand), Zeitleiste der gewählten Spur 6 % getönt.
+- **Spurkopf:** 64 statt 92 px, zwei Zeilen; Mithören steckt im Quellmenü. Pan steht vorerst auch hier (`HEADER_PAN`).
+- **Spur löschen:** Hinweis „Spur „X“ gelöscht · Rückgängig (Strg+Z)“ für 8 s; Strg+Z holt die Spur samt Routing zurück. Im Rack wandert „Spur löschen“ ins ⋯-Menü (rot, zuletzt).
+- **Insert-Rack:** Kopf mit Art und Menü, Leer-Zustand ohne Spur, Gruppen EINGANG (Quelle, Trim) · INSERTS · SENDS · AUSGANG, Effekt-Slots mit Power-Bypass und aufklappbaren Reglern, „+ Effekt“ mit Suche.
+- **Mixer:** „fx n“ am Kanalzug (rot bei fehlendem oder abgestürztem Plugin), „+ Bus“ als Platzhalter statt Namensfeld.
+- **Clip-Inspektor:** 44 px, Zustände leer, Audio, MIDI (Raster, Quantisieren, Velocity) und „n Clips“ mit „—“ für ungleiche Werte; Start und Länge als Takt.Schlag.Sechzehntel. Tooltips nach 0,5 s.
+- **Nicht gebaut** (Engine kann es nicht): Effekte umsortieren, Umkehren, Loop, Stumm, Zusammenfügen, „lädt …“, Stereo-Pegel.
+- **Tests:** `crates/gui/tests/design_system_2.rs` (Rückgängig-Hinweis, Auswahlfarbe, Inspektor-Zustände, Rack-Leer-Zustände).
 
 ## 0.34.26 — 2026-10-31
 
