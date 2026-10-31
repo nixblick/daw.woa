@@ -26,6 +26,7 @@ use woa_model::{
 };
 
 pub mod audio;
+pub mod http;
 
 use audio::{AgentNote, AgentWaveform};
 

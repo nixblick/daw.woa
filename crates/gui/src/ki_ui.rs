@@ -1,0 +1,457 @@
+//! Fenster „KI & MCP“: WOA als MCP-Server für beliebige Clients (Claude Desktop, Claude Code,
+//! andere). Das Zugriffstoken liegt im Schlüsselbund des Systems, nie in `config.json`
+//! ([`woa_secrets`]); im Fenster ist es maskiert, „Kopieren“ legt es in die Zwischenablage.
+
+use std::path::{Path, PathBuf};
+
+use eframe::egui;
+use woa_assistant::KiConfig;
+use woa_assistant::server::{
+    self, McpServerConfig, Reach, ServerProcess, Snippet, TOKEN_ACCOUNT, Transport,
+};
+use woa_secrets::Ort;
+
+use crate::theme;
+
+/// Platzhalter für den Namen dieses Rechners in Schnipseln für Clients im Netz.
+const NETWORK_HOST: &str = "<IP-dieses-Rechners>";
+
+#[derive(Default)]
+pub struct KiUi {
+    open: bool,
+    draft: KiConfig,
+    token: Option<Ort>,
+    /// Das Token im Klartext, nur solange „Anzeigen“ an ist.
+    token_text: Option<String>,
+    snippet_transport: Transport,
+    note: Option<String>,
+    proc: Option<ServerProcess>,
+    proc_error: Option<String>,
+}
+
+impl KiUi {
+    /// Öffnet das Fenster mit dem gespeicherten Stand.
+    pub fn open(&mut self, saved: &KiConfig, data_dir: &Path) {
+        self.open = true;
+        self.draft = saved.clone();
+        self.snippet_transport = saved.mcp_server.transport;
+        self.token = woa_secrets::stored(data_dir, TOKEN_ACCOUNT);
+        self.token_text = None;
+        self.note = None;
+    }
+
+    fn close(&mut self) {
+        self.open = false;
+        // Das Token bleibt nicht im Fensterzustand liegen.
+        self.token_text = None;
+    }
+
+    /// Bringt den Hintergrundprozess in Einklang mit `cfg`: läuft, wenn eingeschaltet und
+    /// alles da ist, sonst nicht. Beim Start der Oberfläche und nach „Speichern“ aufrufen.
+    pub fn apply(&mut self, cfg: &KiConfig, data_dir: &Path) {
+        self.proc = None;
+        self.proc_error = None;
+        let c = &cfg.mcp_server;
+        if !c.enabled {
+            return;
+        }
+        let Some(exe) = server::headless_exe() else {
+            self.proc_error = Some("woa-headless liegt nicht neben WOA".into());
+            return;
+        };
+        if woa_secrets::stored(data_dir, TOKEN_ACCOUNT).is_none() {
+            self.proc_error = Some("Erst ein Zugriffstoken erzeugen".into());
+            return;
+        }
+        match ServerProcess::start(&exe, c) {
+            Ok(p) => {
+                tracing::info!(addr = %p.addr, "mcp http server started");
+                self.proc = Some(p);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "mcp http server not started");
+                self.proc_error = Some(e);
+            }
+        }
+    }
+
+    /// Meldet ein vorzeitiges Ende des Hintergrundprozesses.
+    fn check_proc(&mut self) {
+        if let Some(p) = &mut self.proc
+            && let Err(e) = p.poll()
+        {
+            tracing::warn!("mcp http server ended");
+            self.proc_error = Some(e);
+            self.proc = None;
+        }
+    }
+
+    fn running(&self) -> Option<&str> {
+        self.proc.as_ref().map(|p| p.addr.as_str())
+    }
+
+    /// Zeichnet das Fenster. `project`: der Ordner des offenen Projekts. Gibt den Stand
+    /// zurück, wenn „Speichern“ gedrückt wurde und die Werte gültig sind.
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        data_dir: &Path,
+        project: Option<&Path>,
+    ) -> Option<KiConfig> {
+        self.check_proc();
+        if !self.open {
+            return None;
+        }
+        let mut open = true;
+        let mut save = false;
+        egui::Window::new("KI & MCP")
+            .open(&mut open)
+            .collapsible(false)
+            .default_width(600.0)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(560.0)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        self.server_tab(ui, data_dir, project, &mut save);
+                    });
+            });
+        let mut applied = None;
+        if save {
+            match self.draft.mcp_server.check() {
+                Ok(()) => {
+                    self.draft.mcp_server.transport = self.snippet_transport;
+                    applied = Some(self.draft.clone());
+                }
+                Err(e) => self.note = Some(e),
+            }
+        }
+        if !open || applied.is_some() {
+            self.close();
+        }
+        applied
+    }
+
+    fn server_tab(
+        &mut self,
+        ui: &mut egui::Ui,
+        data_dir: &Path,
+        project: Option<&Path>,
+        save: &mut bool,
+    ) {
+        ui.label(
+            egui::RichText::new(
+                "WOA als MCP-Server: Claude Desktop, Claude Code oder jeder andere MCP-Client \
+                 kann WOA bedienen (Spuren, Effekte, Export, Analyse). Du wählst, ob der \
+                 Client WOA selbst startet (Stdio) oder WOA im Hintergrund wartet (HTTP mit \
+                 Zugriffstoken).",
+            )
+            .small()
+            .color(theme::text_dim()),
+        );
+        ui.add_space(6.0);
+        let mut cfg = self.draft.mcp_server.clone();
+        ui.checkbox(
+            &mut cfg.enabled,
+            "HTTP-Server im Hintergrund, solange WOA offen ist",
+        )
+        .on_hover_text(
+            "Aus: nichts hört auf einem Port. Die Stdio-Schnipsel unten brauchen den Server nicht.",
+        );
+        egui::Grid::new("ki-server-grid")
+            .num_columns(2)
+            .spacing([12.0, 8.0])
+            .show(ui, |ui| {
+                self.server_fields(ui, &mut cfg, data_dir, project);
+            });
+        self.draft.mcp_server = cfg;
+        if self.draft.mcp_server.reach == Reach::Network {
+            ui.label(
+                egui::RichText::new(
+                    "Achtung: Jeder Rechner im Netz kann sich mit dem Token verbinden. Wer das \
+                     Token hat, darf Dateien des Projekts schreiben und lesen. Nur in einem \
+                     Netz, dem du traust, und nie unverschlüsselt über das Internet.",
+                )
+                .small()
+                .color(theme::warn()),
+            );
+        }
+        ui.label(
+            egui::RichText::new(
+                "Der Server arbeitet auf der Projektdatei im Ordner, nicht auf dem offenen \
+                 Fenster. Änderungen siehst du nach erneutem Öffnen; speichere im Fenster nicht \
+                 gleichzeitig, sonst gewinnt der letzte Schreiber.",
+            )
+            .small()
+            .color(theme::text_dim()),
+        );
+        ui.add_space(6.0);
+        self.status_line(ui);
+        ui.add_space(8.0);
+        ui.separator();
+        ui.label(egui::RichText::new("Eintrag für deinen Client").strong());
+        ui.horizontal(|ui| {
+            ui.selectable_value(
+                &mut self.snippet_transport,
+                Transport::Stdio,
+                "Stdio (Client startet WOA)",
+            );
+            ui.selectable_value(
+                &mut self.snippet_transport,
+                Transport::Http,
+                "HTTP (WOA läuft im Hintergrund)",
+            );
+        });
+        self.snippets(ui, data_dir);
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            if ui.button("Speichern").clicked() {
+                *save = true;
+            }
+        });
+        if let Some(n) = &self.note {
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(n).small().color(theme::warn()));
+        }
+    }
+
+    fn server_fields(
+        &mut self,
+        ui: &mut egui::Ui,
+        cfg: &mut McpServerConfig,
+        data_dir: &Path,
+        project: Option<&Path>,
+    ) {
+        ui.label("Projektordner");
+        ui.horizontal(|ui| {
+            let text = cfg
+                .project
+                .as_ref()
+                .map_or("keiner gewählt".to_string(), |p| p.display().to_string());
+            ui.label(egui::RichText::new(text).monospace());
+            if ui.button("Wählen …").clicked()
+                && let Some(dir) = rfd::FileDialog::new().pick_folder()
+            {
+                cfg.project = Some(dir);
+            }
+            if let Some(p) = project
+                && ui
+                    .button("Offenes Projekt")
+                    .on_hover_text("Den Ordner des gerade offenen Projekts nehmen")
+                    .clicked()
+            {
+                cfg.project = Some(PathBuf::from(p));
+            }
+        });
+        ui.end_row();
+
+        ui.label("Erreichbar");
+        egui::ComboBox::from_id_salt("ki-reach")
+            .selected_text(match cfg.reach {
+                Reach::Local => "nur dieser Rechner",
+                Reach::Network => "auch andere Rechner im Netz",
+            })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut cfg.reach, Reach::Local, "nur dieser Rechner");
+                ui.selectable_value(
+                    &mut cfg.reach,
+                    Reach::Network,
+                    "auch andere Rechner im Netz",
+                );
+            });
+        ui.end_row();
+
+        ui.label("Port");
+        ui.add(egui::DragValue::new(&mut cfg.port).range(1024..=65_535));
+        ui.end_row();
+
+        ui.label("Zugriffstoken");
+        ui.horizontal(|ui| {
+            let shown = match (&self.token_text, self.token) {
+                (Some(t), _) => t.clone(),
+                (None, Some(_)) => server::MASK.to_string(),
+                (None, None) => "noch keins".to_string(),
+            };
+            ui.label(egui::RichText::new(shown).monospace());
+            if self.token.is_some() {
+                let label = if self.token_text.is_some() {
+                    "Verbergen"
+                } else {
+                    "Anzeigen"
+                };
+                if ui.button(label).clicked() {
+                    self.token_text = if self.token_text.is_some() {
+                        None
+                    } else {
+                        woa_secrets::reveal(data_dir, TOKEN_ACCOUNT)
+                    };
+                }
+                if ui.button("Kopieren").clicked()
+                    && let Some(t) = woa_secrets::reveal(data_dir, TOKEN_ACCOUNT)
+                {
+                    ui.ctx().copy_text(t);
+                }
+            }
+            let new_label = if self.token.is_some() {
+                "Neu erzeugen"
+            } else {
+                "Erzeugen"
+            };
+            if ui
+                .button(new_label)
+                .on_hover_text(
+                    "Ein altes Token gilt danach nicht mehr; Clients brauchen den neuen Eintrag",
+                )
+                .clicked()
+            {
+                self.new_token(data_dir);
+            }
+        });
+        ui.end_row();
+        if let Some(ort) = self.token {
+            ui.label("");
+            ui.label(
+                egui::RichText::new(format!("Token liegt {}", ort.label()))
+                    .small()
+                    .color(theme::text_dim()),
+            );
+            ui.end_row();
+        }
+    }
+
+    fn new_token(&mut self, data_dir: &Path) {
+        let result =
+            server::new_token().and_then(|t| woa_secrets::save(data_dir, TOKEN_ACCOUNT, &t));
+        match result {
+            Ok(ort) => {
+                self.token = Some(ort);
+                self.token_text = None;
+                self.note = Some(
+                    "Neues Token gespeichert. Mit „Speichern“ startet der Server damit neu.".into(),
+                );
+                // Ein laufender Server kennt noch das alte Token.
+                self.proc = None;
+            }
+            Err(e) => self.note = Some(format!("Token nicht gespeichert: {e}")),
+        }
+    }
+
+    fn status_line(&self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
+            if let Some(addr) = self.running() {
+                ui.label(egui::RichText::new("läuft").strong().color(theme::ok()));
+                ui.label(format!("auf {addr}"));
+            } else if let Some(e) = &self.proc_error {
+                ui.label(
+                    egui::RichText::new("gestoppt")
+                        .strong()
+                        .color(theme::on_air()),
+                );
+                ui.label(e);
+            } else {
+                ui.label(egui::RichText::new("Server aus").color(theme::text_dim()));
+            }
+        });
+    }
+
+    fn snippets(&mut self, ui: &mut egui::Ui, data_dir: &Path) {
+        let exe = server::headless_exe();
+        let list = server::snippets(&self.draft.mcp_server, exe.as_deref(), NETWORK_HOST);
+        let mut any = false;
+        for s in list
+            .iter()
+            .filter(|s| s.transport == self.snippet_transport)
+        {
+            any = true;
+            snippet_card(ui, s, data_dir);
+        }
+        if !any {
+            ui.label(
+                egui::RichText::new(
+                    "woa-headless liegt nicht neben WOA, deshalb gibt es keinen Stdio-Eintrag. \
+                     Nimm HTTP oder installiere WOA vollständig.",
+                )
+                .small()
+                .color(theme::warn()),
+            );
+        }
+        if self.draft.mcp_server.project.is_none() {
+            ui.label(
+                egui::RichText::new("Wähle oben einen Projektordner; er steht in den Einträgen.")
+                    .small()
+                    .color(theme::text_dim()),
+            );
+        }
+    }
+}
+
+fn snippet_card(ui: &mut egui::Ui, s: &Snippet, data_dir: &Path) {
+    theme::card_frame().show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(s.client).strong());
+            ui.label(
+                egui::RichText::new(s.target)
+                    .small()
+                    .color(theme::text_dim()),
+            );
+        });
+        ui.label(egui::RichText::new(s.masked()).monospace().small());
+        if ui.button("Kopieren").clicked() {
+            let text = if s.uses_token() {
+                match woa_secrets::reveal(data_dir, TOKEN_ACCOUNT) {
+                    Some(t) => s.with_token(&t),
+                    // Ohne Token bleibt die Maske stehen; der Hinweis steht im Fenster.
+                    None => s.masked(),
+                }
+            } else {
+                s.masked()
+            };
+            ui.ctx().copy_text(text);
+        }
+    });
+    ui.add_space(4.0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn window_draws_and_closing_forgets_the_token() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = theme::test_context();
+        let mut ui = KiUi::default();
+        ui.open(&KiConfig::default(), tmp.path());
+        let _ = ctx.run_ui(egui::RawInput::default(), |u| {
+            assert!(
+                ui.show(u.ctx(), tmp.path(), Some(Path::new("/x")))
+                    .is_none()
+            );
+        });
+        assert!(ui.open);
+        ui.token_text = Some("geheim".into());
+        ui.close();
+        assert!(ui.token_text.is_none());
+    }
+
+    #[test]
+    fn disabled_server_starts_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut ui = KiUi::default();
+        ui.apply(&KiConfig::default(), tmp.path());
+        assert!(ui.running().is_none());
+        assert!(ui.proc_error.is_none());
+    }
+
+    #[test]
+    fn enabled_server_without_token_says_why() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut cfg = KiConfig::default();
+        cfg.mcp_server.enabled = true;
+        let mut ui = KiUi::default();
+        ui.apply(&cfg, tmp.path());
+        assert!(ui.running().is_none());
+        assert!(ui.proc_error.is_some());
+    }
+}
