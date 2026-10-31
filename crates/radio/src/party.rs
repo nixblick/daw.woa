@@ -27,14 +27,32 @@ pub const SEEK_STEP_SECONDS: f64 = 10.0;
 pub const LOG_CAP: usize = 200;
 
 /// Ein Wunsch der Gäste.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Wish {
+    /// Datei des Wunsches; freier Text hat den Platzhalter `wunsch:<text>`.
     pub path: PathBuf,
     pub title: String,
     /// Wie oft er gewünscht wurde.
     pub votes: u32,
     /// Reihenfolge des ersten Eingangs.
+    #[serde(default)]
     order: u64,
+    /// Erledigt: bleibt stehen, durchgestrichen und abgeblendet.
+    #[serde(default)]
+    pub done: bool,
+    /// Per „→ Playlist“ eingereiht: diese Datei. Läuft sie, ist der Wunsch erledigt.
+    #[serde(default)]
+    pub queued: Option<PathBuf>,
+}
+
+/// Freier Text ohne Datei (Platzhalter-Pfad wie bei der Fernbedienung).
+pub fn free_wish_path(text: &str) -> PathBuf {
+    PathBuf::from(format!("wunsch:{}", text.trim().to_lowercase()))
+}
+
+/// Ist das ein freier Wunsch ohne Datei?
+pub fn is_free_wish(path: &std::path::Path) -> bool {
+    path.to_string_lossy().starts_with("wunsch:")
 }
 
 /// Vergleichsschlüssel: Titel ohne Groß-/Kleinschreibung und doppelte Leerzeichen; fehlt der
@@ -49,9 +67,10 @@ fn key_of(path: &std::path::Path, title: &str) -> String {
 }
 
 /// Wunschliste: sortiert (Stimmen absteigend, dann der Eingang), ohne Doppelte.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Wishlist {
     items: Vec<Wish>,
+    #[serde(default)]
     counter: u64,
 }
 
@@ -65,6 +84,7 @@ impl Wishlist {
             .find(|w| key_of(&w.path, &w.title) == key)
         {
             w.votes = w.votes.saturating_add(1);
+            w.done = false;
             self.sort();
             return false;
         }
@@ -74,14 +94,86 @@ impl Wishlist {
             title: title.trim().to_string(),
             votes: 1,
             order: self.counter,
+            done: false,
+            queued: None,
         });
         self.sort();
         true
     }
 
     fn sort(&mut self) {
-        self.items
-            .sort_by(|a, b| b.votes.cmp(&a.votes).then(a.order.cmp(&b.order)));
+        // Offene zuerst, dann Stimmen, dann Eingang.
+        self.items.sort_by(|a, b| {
+            a.done
+                .cmp(&b.done)
+                .then(b.votes.cmp(&a.votes))
+                .then(a.order.cmp(&b.order))
+        });
+    }
+
+    /// Wunsch erledigt (bzw. wieder offen). `true`, wenn es ihn gibt.
+    pub fn set_done(&mut self, path: &std::path::Path, done: bool) -> bool {
+        let Some(w) = self.items.iter_mut().find(|w| w.path == path) else {
+            return false;
+        };
+        w.done = done;
+        self.sort();
+        true
+    }
+
+    /// Wunsch `path` wurde mit der Datei `file` eingereiht.
+    pub fn set_queued(&mut self, path: &std::path::Path, file: PathBuf) -> bool {
+        let Some(w) = self.items.iter_mut().find(|w| w.path == path) else {
+            return false;
+        };
+        w.queued = Some(file);
+        true
+    }
+
+    /// Die Datei `playing` läuft: eingereihte Wünsche mit ihr sind erledigt. `true` bei Änderung.
+    pub fn mark_played(&mut self, playing: &std::path::Path) -> bool {
+        let mut changed = false;
+        for w in &mut self.items {
+            if !w.done && w.queued.as_deref() == Some(playing) {
+                w.done = true;
+                changed = true;
+            }
+        }
+        if changed {
+            self.sort();
+        }
+        changed
+    }
+
+    /// Liest die Liste; fehlt die Datei oder ist sie kaputt, eine leere.
+    pub fn load(path: &std::path::Path) -> Self {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return Self::default();
+        };
+        match serde_json::from_str::<Self>(&text) {
+            Ok(mut l) => {
+                l.counter = l.items.iter().map(|w| w.order).max().unwrap_or(0);
+                l.sort();
+                l
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "party: wishes not readable");
+                Self::default()
+            }
+        }
+    }
+
+    /// Schreibt die Liste (über eine Zwischendatei).
+    pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
+        if let Some(d) = path.parent() {
+            std::fs::create_dir_all(d)?;
+        }
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(
+            &tmp,
+            serde_json::to_vec_pretty(self).map_err(std::io::Error::other)?,
+        )?;
+        std::fs::rename(tmp, path)
     }
 
     /// Wünsche in Anzeigereihenfolge (nach jedem Eingriff sortiert).
@@ -137,8 +229,19 @@ pub enum PartyCommand {
         path: PathBuf,
         title: String,
     },
-    /// Diesen Wunsch als Nächstes spielen: aus der Liste nehmen, hinter dem laufenden Titel einreihen.
+    /// Diesen Wunsch als Nächstes spielen: hinter dem laufenden Titel einreihen; der Wunsch
+    /// bleibt stehen und ist erledigt, sobald der Titel läuft.
     PlayWish(PathBuf),
+    /// Wunsch `wish` mit der Datei `file` (Treffer der Bibliothek) als Nächstes einreihen.
+    QueueWish {
+        wish: PathBuf,
+        file: PathBuf,
+    },
+    /// Wunsch erledigt bzw. wieder offen.
+    MarkWish {
+        path: PathBuf,
+        done: bool,
+    },
     /// Wunsch verwerfen.
     DropWish(PathBuf),
     ToggleFullscreen,
@@ -164,6 +267,12 @@ impl PartyCommand {
             PartyCommand::Wish { title, .. } => format!("wish {title}"),
             PartyCommand::PlayWish(p) => format!("play_wish {}", crate::show::title_of(p)),
             PartyCommand::DropWish(p) => format!("drop_wish {}", crate::show::title_of(p)),
+            PartyCommand::QueueWish { file, .. } => {
+                format!("queue_wish {}", crate::show::title_of(file))
+            }
+            PartyCommand::MarkWish { path, done } => {
+                format!("mark_wish {} {done}", crate::show::title_of(path))
+            }
             PartyCommand::ToggleFullscreen => "toggle_fullscreen".into(),
         }
     }
@@ -253,10 +362,21 @@ impl PartyState {
                 self.wishes.add(path, &title);
                 Vec::new()
             }
-            PartyCommand::PlayWish(path) => match self.wishes.take(&path) {
-                Some(w) => vec![Effect::InsertNext(w.path)],
-                None => Vec::new(),
-            },
+            PartyCommand::PlayWish(path) => {
+                // Freier Text hat keine Datei: erst über die Bibliothek einen Titel wählen.
+                if is_free_wish(&path) || !self.wishes.set_queued(&path, path.clone()) {
+                    return Vec::new();
+                }
+                vec![Effect::InsertNext(path)]
+            }
+            PartyCommand::QueueWish { wish, file } => {
+                self.wishes.set_queued(&wish, file.clone());
+                vec![Effect::InsertNext(file)]
+            }
+            PartyCommand::MarkWish { path, done } => {
+                self.wishes.set_done(&path, done);
+                Vec::new()
+            }
             PartyCommand::DropWish(path) => {
                 self.wishes.take(&path);
                 Vec::new()
@@ -371,11 +491,11 @@ pub fn buttons(running: bool, repeat: Repeat, shuffle: bool, muted: bool) -> Vec
         vec![
             b("Zurück", PartyCommand::Previous, false),
             b(
-                if running { "⏸ Pause" } else { "▶ Play" },
+                if running { "Pause" } else { "Play" },
                 PartyCommand::PlayPause,
                 false,
             ),
-            b("■ Stopp", PartyCommand::Stop, false),
+            b("Stopp", PartyCommand::Stop, false),
             b("Weiter", PartyCommand::Next, false),
         ],
         vec![
@@ -387,12 +507,12 @@ pub fn buttons(running: bool, repeat: Repeat, shuffle: bool, muted: bool) -> Vec
         vec![
             b("Leiser", PartyCommand::VolumeDown, false),
             b("Lauter", PartyCommand::VolumeUp, false),
-            b("🔀 Zufall", PartyCommand::ToggleShuffle, shuffle),
+            b("Zufall", PartyCommand::ToggleShuffle, shuffle),
             b(
                 match repeat {
-                    Repeat::One => "🔂 Titel",
-                    Repeat::All => "🔁 Playlist",
-                    Repeat::Off => "🔁 Aus",
+                    Repeat::One => "Titel",
+                    Repeat::All => "Playlist",
+                    Repeat::Off => "Wdh. aus",
                 },
                 PartyCommand::CycleRepeat,
                 repeat != Repeat::Off,
@@ -519,6 +639,99 @@ impl PartyLayout {
     }
 }
 
+/// Seite eines Party-Decks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Side {
+    #[default]
+    Left,
+    Right,
+}
+
+impl Side {
+    pub fn other(self) -> Self {
+        match self {
+            Side::Left => Side::Right,
+            Side::Right => Side::Left,
+        }
+    }
+
+    /// Stellung des Crossfaders ganz auf dieser Seite (0 = links, 1 = rechts).
+    pub fn pos(self) -> f32 {
+        match self {
+            Side::Left => 0.0,
+            Side::Right => 1.0,
+        }
+    }
+}
+
+/// Zwei Decks über der einen Sende-Playlist: Die Playlist bleibt das Modell (laufender und
+/// nächster Titel); hier steht nur, auf welcher Seite der laufende liegt. Jeder Titelwechsel
+/// legt den neuen Titel auf die andere Seite, der nächste ist auf der freien Seite vorgeladen.
+/// Der Mixer wechselt den laufenden Titel zu Beginn der Überblendung, darum läuft der
+/// Crossfader ab diesem Wechsel über die eingestellte Crossfade-Länge.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Decks {
+    /// Seite des laufenden (bzw. als Nächstes startenden) Titels.
+    pub live: Side,
+    last: Option<PathBuf>,
+    /// Der vorige Titel (blendet nach einem Wechsel noch aus).
+    pub previous: Option<PathBuf>,
+    /// Zeitpunkt des letzten Wechsels (Sekunden), `None` vor dem ersten.
+    since: Option<f64>,
+}
+
+impl Decks {
+    /// Nimmt den laufenden Titel aus dem Schnappschuss. `true`, wenn die Seite gewechselt hat.
+    pub fn track(&mut self, current: Option<&std::path::Path>, now: f64) -> bool {
+        let Some(cur) = current else {
+            // Stopp: keine Überblendung mehr, die Seite bleibt.
+            if self.last.take().is_some() {
+                self.since = None;
+            }
+            return false;
+        };
+        let flip = self.last.as_deref().is_some_and(|l| l != cur);
+        if flip {
+            self.live = self.live.other();
+            self.previous = self.last.take();
+            self.since = Some(now);
+        }
+        self.last = Some(cur.to_path_buf());
+        flip
+    }
+
+    /// Crossfader-Stellung (0 = links, 1 = rechts) zur Zeit `now` bei `xf` Sekunden
+    /// Überblendung: gleichmäßig von der alten zur neuen Seite.
+    pub fn fader(&self, now: f64, xf: f64) -> f32 {
+        crossfader_pos(self.live, self.since.map(|s| now - s), xf)
+    }
+
+    /// Blendet gerade über (der vorige Titel ist noch zu hören)?
+    pub fn fading(&self, now: f64, xf: f64) -> bool {
+        self.since.is_some_and(|s| xf > 0.0 && now - s < xf)
+    }
+
+    /// Dreht der Plattenteller dieser Seite? Nur das hörbare Deck: das laufende, und während
+    /// der Überblendung noch das ausblendende. Pausiert oder vorgeladen steht er still.
+    pub fn spinning(&self, side: Side, playing: bool, now: f64, xf: f64) -> bool {
+        playing && (side == self.live || self.fading(now, xf))
+    }
+}
+
+/// Crossfader-Kurve beim Auto-Übergang: `elapsed` Sekunden nach dem Wechsel auf `to`, linear
+/// über `xf` Sekunden. Ohne Wechsel (oder ohne Überblendung) steht er auf `to`.
+pub fn crossfader_pos(to: Side, elapsed: Option<f64>, xf: f64) -> f32 {
+    let target = to.pos();
+    match elapsed {
+        Some(e) if xf > 0.0 => {
+            let t = (e / xf).clamp(0.0, 1.0) as f32;
+            let from = 1.0 - target;
+            from + (target - from) * t
+        }
+        _ => target,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -588,7 +801,8 @@ mod tests {
             s.apply(PartyCommand::PlayWish("/m/x.wav".into()), true),
             vec![Effect::InsertNext("/m/x.wav".into())]
         );
-        assert!(s.wishes.is_empty());
+        assert_eq!(s.wishes.len(), 1, "bleibt stehen, bis der Titel läuft");
+        assert!(s.wishes.items()[0].queued.is_some());
         assert_eq!(
             s.log(),
             [
@@ -641,9 +855,9 @@ mod tests {
             l.to_text(),
             "jetzt: Abba – Waterloo [läuft] rest 0:50 fortschritt 75%\n\
              nächster: Queen – Radio Ga Ga\n\
-             tasten: Zurück | ⏸ Pause | ■ Stopp | Weiter\n\
+             tasten: Zurück | Pause | Stopp | Weiter\n\
              tasten: Von vorn | −10 s | +10 s | Stumm\n\
-             tasten: Leiser | Lauter | 🔀 Zufall | 🔁 Aus\n\
+             tasten: Leiser | Lauter | Zufall | Wdh. aus\n\
              pegel: +0 dB, vollbild: aus\n\
              wünsche:\n  1. Mr. Brightside (×2)\n  2. Wonderwall\n"
         );
@@ -656,7 +870,7 @@ mod tests {
         };
         let t = layout(&idle, &PartyState::default()).to_text();
         assert!(t.starts_with("jetzt: Queen – Radio Ga Ga [bereit] rest 3:00 fortschritt 0%\n"));
-        assert!(t.contains("nächster: Solo\n") && t.contains("tasten: Zurück | ▶ Play |"));
+        assert!(t.contains("nächster: Solo\n") && t.contains("tasten: Zurück | Play |"));
         assert!(
             layout(&View::default(), &PartyState::default())
                 .to_text()
@@ -671,5 +885,111 @@ mod tests {
         assert_eq!(clock(59.0), "0:59");
         assert_eq!(clock(61.5), "1:02");
         assert_eq!(clock(3600.0), "1:00:00");
+    }
+
+    #[test]
+    fn three_titles_alternate_left_right_left() {
+        let mut d = Decks::default();
+        let p = |n: &str| PathBuf::from(n);
+        assert!(!d.track(Some(&p("1.mp3")), 0.0));
+        assert_eq!(d.live, Side::Left);
+        assert!(d.track(Some(&p("2.mp3")), 10.0));
+        assert_eq!(d.live, Side::Right);
+        assert_eq!(d.previous, Some(p("1.mp3")));
+        assert!(d.track(Some(&p("3.mp3")), 20.0));
+        assert_eq!(d.live, Side::Left);
+        // Gleicher Titel im nächsten Bild: kein Wechsel.
+        assert!(!d.track(Some(&p("3.mp3")), 21.0));
+        assert_eq!(d.live, Side::Left);
+    }
+
+    #[test]
+    fn crossfader_moves_over_the_crossfade_length() {
+        assert_eq!(crossfader_pos(Side::Right, None, 5.0), 1.0);
+        assert_eq!(crossfader_pos(Side::Right, Some(0.0), 5.0), 0.0);
+        assert!((crossfader_pos(Side::Right, Some(2.5), 5.0) - 0.5).abs() < 1e-6);
+        assert_eq!(crossfader_pos(Side::Right, Some(9.0), 5.0), 1.0);
+        assert!((crossfader_pos(Side::Left, Some(1.0), 4.0) - 0.75).abs() < 1e-6);
+        assert_eq!(crossfader_pos(Side::Left, Some(1.0), 0.0), 0.0);
+        let mut d = Decks::default();
+        d.track(Some(std::path::Path::new("a")), 0.0);
+        d.track(Some(std::path::Path::new("b")), 100.0);
+        let mut last = -1.0;
+        for k in 0..=10 {
+            let f = d.fader(100.0 + f64::from(k) * 0.5, 5.0);
+            assert!(f >= last, "monoton");
+            last = f;
+        }
+        assert_eq!(last, 1.0);
+    }
+
+    #[test]
+    fn only_the_audible_deck_spins() {
+        let mut d = Decks::default();
+        d.track(Some(std::path::Path::new("a")), 0.0);
+        assert!(d.spinning(Side::Left, true, 1.0, 5.0));
+        assert!(!d.spinning(Side::Right, true, 1.0, 5.0), "vorgeladen steht");
+        assert!(!d.spinning(Side::Left, false, 1.0, 5.0), "pausiert steht");
+        d.track(Some(std::path::Path::new("b")), 10.0);
+        assert!(d.spinning(Side::Right, true, 11.0, 5.0));
+        assert!(d.spinning(Side::Left, true, 11.0, 5.0), "blendet noch aus");
+        assert!(
+            !d.spinning(Side::Left, true, 16.0, 5.0),
+            "nach der Blende still"
+        );
+    }
+
+    #[test]
+    fn wishes_queue_done_drop_and_save() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut s = PartyState::default();
+        let free = free_wish_path("Tina: Queen");
+        s.apply(
+            PartyCommand::Wish {
+                path: free.clone(),
+                title: "Tina: Queen".into(),
+            },
+            true,
+        );
+        // Freier Text lässt sich ohne Titel nicht direkt einreihen.
+        assert!(
+            s.apply(PartyCommand::PlayWish(free.clone()), true)
+                .is_empty()
+        );
+        let file = PathBuf::from("/m/Queen - Radio.mp3");
+        let fx = s.apply(
+            PartyCommand::QueueWish {
+                wish: free.clone(),
+                file: file.clone(),
+            },
+            true,
+        );
+        assert_eq!(fx, vec![Effect::InsertNext(file.clone())]);
+        assert_eq!(s.wishes.len(), 1, "bleibt stehen");
+        assert!(!s.wishes.items()[0].done);
+        assert!(s.wishes.mark_played(&file));
+        assert!(s.wishes.items()[0].done);
+        s.apply(
+            PartyCommand::MarkWish {
+                path: free.clone(),
+                done: false,
+            },
+            true,
+        );
+        assert!(!s.wishes.items()[0].done);
+        s.apply(
+            PartyCommand::MarkWish {
+                path: free.clone(),
+                done: true,
+            },
+            true,
+        );
+        let f = tmp.path().join("w/party_wishes.json");
+        s.wishes.save(&f).unwrap();
+        let back = Wishlist::load(&f);
+        assert_eq!(back, s.wishes);
+        s.apply(PartyCommand::DropWish(free), true);
+        assert!(s.wishes.is_empty());
+        assert!(Wishlist::load(&tmp.path().join("fehlt.json")).is_empty());
     }
 }
