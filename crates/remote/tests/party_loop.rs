@@ -118,7 +118,11 @@ fn wish_from_the_phone_reaches_the_list_and_back() {
     let cmds = remote.poll();
     let effects = state.apply(cmds[0].command.clone(), true);
     assert_eq!(effects, vec![Effect::InsertNext("/musik/queen.mp3".into())]);
-    assert!(state.wishes.is_empty());
+    // Der Wunsch bleibt eingereiht stehen und ist erledigt, sobald der Titel läuft.
+    assert_eq!(
+        state.wishes.items()[0].queued.as_deref(),
+        Some(std::path::Path::new("/musik/queen.mp3"))
+    );
 }
 
 fn remote_search_id(a: SocketAddr, token: &str, q: &str) -> String {

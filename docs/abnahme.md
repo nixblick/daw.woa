@@ -1005,6 +1005,23 @@ Gern mit laufender Sendung, aber kein Ton nötig.
 
 Selbst geprüft von Claude: 11 neue Tests in `woa-library` und `woa-gui`, Clippy und Tests beider Crates grün. Windows-Sperre (Punkt 7) ist nur über die Fehlernummer und den CI-Lauf unter Windows geprüft, nicht am Gerät.
 
+## Party mit zwei Decks (0.34.40, offen)
+
+Ohne Ton möglich (Lautstärke auf Null), am besten mit drei kurzen Titeln und 5 s Crossfade.
+
+1. Party-Ansicht öffnen: oben Deck A links und Deck B rechts, dazwischen der Crossfader, darunter die Knöpfe, unten links die Playlist und rechts Bibliothekssuche und Wunschliste.
+2. „Play“ (grün): Titel 1 läuft auf Deck A, nur dieser Plattenteller dreht sich, Deck B zeigt Titel 2 als „VORGELADEN“ und steht still. Der Knopf heißt jetzt „Pause“ (bernstein).
+3. Titel 1 läuft aus: Der Crossfader wandert in etwa 5 s nach rechts, Titel 2 läuft auf Deck B, Deck A steht nach der Blende still und zeigt danach Titel 3 als vorgeladen. Beim nächsten Übergang geht es wieder nach links.
+4. „Pause“: beide Plattenteller stehen.
+5. Crossfader von Hand über die Mitte zum anderen Deck ziehen: Übergang zum nächsten Titel wie „Weiter“.
+6. Alle Knöpfe haben Symbol und Wort und sind gleich hoch.
+7. Playlist: eine andere benannte Playlist wählen, eine Zeile an eine andere Stelle ziehen. „läuft“ und „nächster“ stimmen.
+8. Bibliothek: im Suchfeld einen Titel suchen, Treffer in die Playlist ziehen bzw. „→ Playlist“.
+9. Wunschliste: „Tina: Queen“ eintippen, Enter. „Suchen“ füllt die Suche mit „Queen“, beim Treffer „→ Playlist“. Läuft der Titel, ist der Wunsch durchgestrichen. „Offen“/„Erledigt“ und „Entfernen“ probieren. WOA neu starten: die Liste ist noch da.
+10. Handy-Fernsteuerung: ein Wunsch vom Handy erscheint in der Wunschliste, Play/Weiter vom Handy wechseln die Decks wie oben, der angezeigte Titel stimmt.
+
+Selbst geprüft von Claude: neue Tests ohne Ton für den Wechsel links/rechts über drei Titel, die Crossfader-Kurve, den Plattenteller nur am hörbaren Deck, Wünsche (anlegen, einreihen, erledigt, entfernen, speichern) und die Knöpfe (Symbol und Wort, eine Höhe, über AccessKit). Clippy und Tests von `woa-radio`, `woa-remote` und `woa-gui` grün. Nicht am Gerät gesehen.
+
 ## Abgenommen
 
 - Paket 10 Dauertest (0.5.0): 30.10.2026, André „2 abgenommen“ (Sammelabnahme Pakete 5, 9, 10 und Nachtrag #43).
