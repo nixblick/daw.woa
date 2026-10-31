@@ -4,6 +4,19 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Kopfleiste aus einem Guss und REC für alle Modi (0.34.55, offen)
+
+1. Oben rechts: MIDI, ON AIR, REC (und KI, wenn der Live-Server läuft), dann Produzent · Party · Radio, ganz rechts Feedback. Alles gleich hoch, gleiche Schrift, sichtbar mehr Luft, Gruppen mit größerem Abstand.
+2. Aktiver Modus in der Akzentfarbe (nicht rot), auch während der Sendung. Rot nur ON AIR, wenn live, und REC, wenn der Mitschnitt läuft.
+3. Fenster schmal ziehen (unter ca. 1100 px): nur noch Symbole, nichts überlappt; Tooltip nennt das Wort.
+4. REC in Radio, Party und Produzent klicken: startet, Tooltip zeigt Dauer und Ziel; erneut klicken stoppt. Während der Aufnahme den Modus wechseln: REC läuft weiter.
+5. Im Sendepult gibt es keinen Mitschnitt-Knopf mehr.
+6. Hell und Dunkel umschalten (Ansicht → Erscheinungsbild).
+
+Bekannte Grenze: Im Produzent-Modus schneidet REC die Sendesumme mit (derselbe Weg wie in Radio und Party), nicht die Zeitleiste; die gibt es weiter über Datei → Exportieren → Mixdown. Das sagt auch der Tooltip.
+
+Selbst geprüft von Claude: Clippy und Tests von woa-gui grün, darunter neue Oberflächentests (gleiche Höhe, Abstände ≥ Token, kein Überlappen bei 1280 und 900 px, REC in allen Modi, Moduswechsel bricht REC nicht ab, kein alter Knopf). Bilder der Kopfleiste vorher/nachher in Hell und Dunkel lokal angesehen. Nicht selbst geprüft: Mitschnitt mit Ton am Gerät.
+
 ## Radio: Deck und Playlist, Fader, Cart-Restzeit (0.34.43, offen)
 
 1. Titel aufs Deck A laden (Rechtsklick in der Playlist → „Auf Deck laden“). Es startet nichts, die Playlist läuft unverändert weiter.

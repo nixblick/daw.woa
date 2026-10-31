@@ -118,24 +118,27 @@ impl McpLive {
         }
     }
 
-    /// Kleine Anzeige in der Statusleiste.
-    pub fn badge(&self, ui: &mut egui::Ui) {
+    /// Pille „KI“ in der Status-Gruppe der Kopfleiste: grün leuchtend, wenn Claude live
+    /// verbunden ist, ruhig, wenn sie bereit ist; aus, wenn der Live-Server nicht läuft.
+    pub fn chip(&self, ui: &mut egui::Ui, compact: bool) {
         use crate::theme;
-        let (text, color, hint) = match self.status() {
+        use crate::widgets::{ChipLook, topbar_chip};
+        let (icon, word, look, hint) = match self.status() {
             LiveStatus::Off => return,
             LiveStatus::Ready => (
-                format!("{} KI bereit", theme::ic::PLUGS),
-                theme::text_dim(),
-                "Claude kann sich verbinden: `woa-headless mcp` reicht an diese App durch",
+                theme::ic::PLUGS,
+                "KI bereit",
+                ChipLook::Quiet,
+                "KI bereit – Claude kann sich verbinden: `woa-headless mcp` reicht an diese App durch",
             ),
             LiveStatus::Connected => (
-                format!("{} KI verbunden", theme::ic::PLUGS_CONNECTED),
-                theme::ok(),
-                "Claude arbeitet live auf diesem Projekt; jeder Schritt ist rückgängig zu machen",
+                theme::ic::PLUGS_CONNECTED,
+                "KI verbunden",
+                ChipLook::Lit(theme::ok()),
+                "KI verbunden – Claude arbeitet live auf diesem Projekt; jeder Schritt ist rückgängig zu machen",
             ),
         };
-        ui.label(egui::RichText::new(text).small().color(color))
-            .on_hover_text(hint);
+        topbar_chip(ui, icon, word, look, compact, false).on_hover_text(hint);
     }
 }
 

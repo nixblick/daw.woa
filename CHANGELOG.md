@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.34.55 — 2026-10-31
+
+### Geändert
+
+- **Kopfleiste aus einem Guss:** MIDI, ON AIR, REC, KI, Modus-Umschalter und Feedback sind jetzt gleich hohe Pillen (24 px) mit gleicher Schrift, Symbolgröße, Radius und Innenabstand (Design-System-Tokens). Abstände aus den Tokens: 16 px in der Gruppe, 24 px zwischen Status, Modus und Feedback. Rot nur für ON AIR, wenn live; der aktive Modus in der Akzentfarbe, auch während der Sendung. Unter 760 px freier Breite zeigen die Pillen nur ihr Symbol, das Wort steht im Tooltip (Tests bei 1280 und 900 px).
+- **REC in der Kopfleiste:** Der Mitschnitt hat einen Knopf für alle Modi (Radio, Party, Produzent) und leuchtet rot, solange er läuft; der Tooltip nennt Dauer und Ziel. Ein Moduswechsel bricht ihn nicht ab. Der alte Mitschnitt-Knopf im Sendepult entfällt (Tests).
+- **KI-Anzeige** („KI bereit“/„KI verbunden“) wandert aus der Statusleiste in die Status-Gruppe der Kopfleiste.
+
 ## 0.34.54 — 2026-10-31
 
 ### Behoben

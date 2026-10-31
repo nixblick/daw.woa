@@ -117,6 +117,8 @@ pub struct View {
     /// Spitze des Telefon-Eingangs seit der letzten Ansicht (0..1).
     pub phone_peak: f32,
     pub recording: Option<PathBuf>,
+    /// Mitschnitt läuft (auch bevor die erste Datei offen ist).
+    pub recording_on: bool,
     pub messages: Vec<String>,
     /// Wird gerade gemessen.
     pub measuring: usize,
@@ -442,6 +444,7 @@ fn run(
             phone_on: st.phone_on.load(Ordering::Acquire),
             phone_peak: st.take_phone_peak(),
             recording: c.recording_file().map(|p| p.to_path_buf()),
+            recording_on: c.is_recording(),
             messages: messages.clone(),
             measuring: measuring.load(Ordering::Relaxed),
             revision,
