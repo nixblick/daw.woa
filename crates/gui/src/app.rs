@@ -793,6 +793,7 @@ impl WoaApp {
         if self.config.mode == mode {
             return;
         }
+        tracing::info!(from = ?self.config.mode, to = ?mode, "mode");
         self.config.mode = mode;
         if mode.uses_desk() {
             if let Some(p) = self.player.as_mut()
@@ -5851,7 +5852,7 @@ fn feedback_log_lines() -> Vec<String> {
     woa_telemetry::journal()
         .snapshot()
         .iter()
-        .map(crate::protokoll::line_text)
+        .filter_map(crate::feedback::ticket_line)
         .collect()
 }
 

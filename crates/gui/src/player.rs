@@ -137,7 +137,9 @@ fn load_cached(
             Some(s)
         }
         Err(e) => {
-            tracing::warn!(file = %file.display(), error = %e, "clip load failed");
+            // Ticket: nur die Meldung; Fehlertext (kann den Pfad tragen) und Datei nur lokal.
+            tracing::warn!("clip load failed");
+            tracing::warn!(target: woa_telemetry::LOCAL_TARGET, datei = %file.display(), error = %e, "clip load failed");
             None
         }
     }
@@ -239,7 +241,7 @@ impl Player {
                 total,
                 buffer_frames = ?self.buffer_frames,
                 rate = self.rate,
-                device = %self.device,
+                device = %woa_telemetry::short_device(&self.device),
                 suspended = self.suspended,
                 playing = self.is_playing(),
                 "output underruns (last minute)"
@@ -379,7 +381,8 @@ impl Player {
             let isolation = plugin_isolation(&self.plugin_logs);
             let catalog = Arc::new(scan_plugins(&isolation, &mut self.blocklist));
             for p in catalog.problems() {
-                tracing::warn!(file = %p.path.display(), error = %p.reason, "plugin scan problem");
+                tracing::warn!("plugin scan problem");
+                tracing::warn!(target: woa_telemetry::LOCAL_TARGET, datei = %p.path.display(), error = %p.reason, "plugin scan problem");
             }
             tracing::info!(found = catalog.plugins().len(), "plugin scan done");
             self.rack = Some(
