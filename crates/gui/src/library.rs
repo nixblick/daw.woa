@@ -68,7 +68,8 @@ pub struct LibraryWindow {
     tag_editor_open: bool,
     /// Auswahl im Reiter „Verwalten → Titel“ (Ids) und Anker für Umschalt-Klick.
     marked: Vec<i64>,
-    mark_anchor: Option<usize>,
+    /// Anker für Umschalt-Klick als Track-ID: Indizes gelten nach einer neuen Suche nicht mehr.
+    mark_anchor: Option<i64>,
     /// Der Reiter hat den Editor seit dem letzten Bild benutzt (dann bleibt er).
     tab_seen: bool,
 }
@@ -117,6 +118,8 @@ impl LibraryWindow {
             self.pending = 0;
             self.lib = None;
             self.results.clear();
+            self.marked.clear();
+            self.mark_anchor = None;
             self.selected = None;
             self.dirty = true;
         }
@@ -156,7 +159,13 @@ impl LibraryWindow {
             desc: self.desc,
         };
         match lib.search(&q) {
-            Ok(r) => self.results = r,
+            Ok(r) => {
+                self.results = r;
+                // Auswahl auf die neuen Treffer beschränken (einmal je Suche, nicht je Frame).
+                let ids: std::collections::HashSet<i64> =
+                    self.results.iter().map(|t| t.id).collect();
+                self.marked.retain(|id| ids.contains(id));
+            }
             Err(e) => {
                 tracing::warn!(error = %e, "library search failed");
                 self.note = Some(format!("Suche: {e}"));
@@ -264,7 +273,10 @@ impl LibraryWindow {
         let Some(id) = self.results.get(i).map(|t| t.id) else {
             return;
         };
-        match (range, self.mark_anchor) {
+        let anchor = self
+            .mark_anchor
+            .and_then(|a| self.results.iter().position(|t| t.id == a));
+        match (range, anchor) {
             (true, Some(a)) => {
                 let (lo, hi) = (a.min(i), a.max(i).min(self.results.len() - 1));
                 for t in &self.results[lo..=hi] {
@@ -279,11 +291,11 @@ impl LibraryWindow {
                 } else {
                     self.marked.push(id);
                 }
-                self.mark_anchor = Some(i);
+                self.mark_anchor = Some(id);
             }
             _ => {
                 self.marked = vec![id];
-                self.mark_anchor = Some(i);
+                self.mark_anchor = Some(id);
             }
         }
     }
@@ -292,8 +304,6 @@ impl LibraryWindow {
     /// die Auswahl, liest er neu; solange er noch speichert, bleibt der alte.
     pub fn tab_editor(&mut self) -> Option<&mut TagEditor> {
         self.tab_seen = true;
-        self.marked
-            .retain(|id| self.results.iter().any(|t| t.id == *id));
         if self.marked.is_empty() {
             return None;
         }
@@ -1140,6 +1150,37 @@ fn import_summary(p: &Progress) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn track(id: i64) -> Track {
+        Track {
+            id,
+            path: format!("/t/{id}.wav"),
+            hash: String::new(),
+            title: format!("T{id}"),
+            duration: 1.0,
+            kind: Kind::Music,
+            added: 0,
+            tags: Vec::new(),
+            analysis: None,
+        }
+    }
+
+    #[test]
+    fn shift_anchor_follows_track_after_new_search() {
+        let mut w = LibraryWindow::new(PathBuf::from("/nonexistent/lib.db"));
+        w.results = (1..=5).map(track).collect();
+        w.mark_click(3, false, false); // Anker: Titel 4
+        // Neue Suche: Titel 4 steht jetzt vorn.
+        w.results = vec![track(4), track(9), track(8), track(7)];
+        w.mark_click(2, false, true);
+        assert_eq!(w.marked(), &[4, 9, 8]);
+        // Anker nicht mehr in den Treffern: Umschalt-Klick wählt nur den Titel.
+        w.results = vec![track(20), track(21), track(22)];
+        w.marked = vec![21];
+        w.mark_anchor = Some(4);
+        w.mark_click(2, false, true);
+        assert_eq!(w.marked(), &[22]);
+    }
 
     fn write_wav(path: &Path, hz: f32) {
         let spec = hound::WavSpec {

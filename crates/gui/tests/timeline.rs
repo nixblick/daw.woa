@@ -543,3 +543,43 @@ fn alt_drag_on_the_edge_stretches_and_plain_drag_still_trims() {
     let k = rig.app.state().project().clip(c.id).expect("c").1.clone();
     assert_eq!((k.length_beats, k.stretch), (6.0, 1.0));
 }
+
+// ---- Durchsicht 31.10.: Overlay und ungespeicherte Änderungen ------------------------------
+
+#[test]
+fn cut_is_ignored_while_export_dialog_is_open() {
+    let mut rig = Rig::new();
+    let t = rig.app.state_mut().add_track().expect("track");
+    rig.step(Vec::new(), Vec::new());
+    let a = wav(&rig.dir, "eins.wav", 4.0);
+    let at = egui::pos2(rig.x_of(t, 4.0) + 1.0, rig.row(t).center().y);
+    rig.drop_files(&[&a], at);
+    let (_, c) = first_clip(&rig.app);
+    // Clip anklicken (wählen).
+    let y = rig.row(t).center().y + 8.0;
+    let p = egui::pos2(rig.x_of(t, 6.0), y);
+    rig.drag(p, p);
+    assert_eq!(rig.app.selected_clip(), Some(c.id));
+    // Strg+E öffnet den Export, Strg+X darf dahinter nichts löschen.
+    rig.key(egui::Key::E, egui::Modifiers::COMMAND);
+    rig.step(vec![egui::Event::Cut], Vec::new());
+    rig.step(Vec::new(), Vec::new());
+    assert!(
+        rig.app.state().project().clip(c.id).is_some(),
+        "cut behind an open dialog must not delete"
+    );
+}
+
+#[test]
+fn new_project_saves_unsaved_changes_first() {
+    let mut rig = Rig::new();
+    let proj = rig.dir.join("song.woa");
+    assert!(rig.app.state_mut().save_as(&proj));
+    rig.app.state_mut().add_track().expect("track");
+    assert!(rig.app.state().session().is_dirty());
+    rig.key(egui::Key::N, egui::Modifiers::COMMAND);
+    assert!(rig.app.state().project().tracks.is_empty(), "new project");
+    let mut again = AppState::new(rig.dir.join("rec2"), Instant::now());
+    assert!(again.open(&proj));
+    assert_eq!(again.project().tracks.len(), 1, "change saved before Neu");
+}

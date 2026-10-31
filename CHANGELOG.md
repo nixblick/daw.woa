@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.34.40 — 2026-10-31
+
+### Behoben
+
+- **Neu und Öffnen:** Strg+N, Strg+O, „Datei → Neu“ und „DAWproject öffnen“ verwarfen ungespeicherte Änderungen ohne Rückfrage. Jetzt wird vorher gespeichert; bleibt das Projekt ungespeichert, bricht der Schritt mit einer Statusmeldung ab (Test mit Strg+N).
+- **Radio:** Das Speichern von `radio.json` überschrieb eine kurz vorher von außen (Agenten-Werkzeug `build_playlist`) geschriebene Datei. Vor dem Speichern wird jetzt der Dateistand geprüft; bei fremder Änderung wird sie übernommen und der Konflikt gemeldet.
+- **Tastenkürzel:** Strg+X, Strg+C/V, Strg+D, Leertaste, Pos1, S und Strg+E wirkten hinter offenen Dialogen (Über, Export, Feedback); nur Entf beachtete sie. Jetzt gilt die Prüfung für alle (kittest: Strg+X bei offenem Export).
+- **Verwalten → Titel:** Die Liste zeichnete bis zu 500 Zeilen je Frame und suchte die Auswahl linear je Zeile und je Frame. Jetzt nur die sichtbaren Zeilen (`show_rows`), die Auswahl als Menge, das Bereinigen der Auswahl nur nach einer neuen Suche.
+- **Verwalten → Titel:** Der Anker für Umschalt-Klick war ein Index und zeigte nach einer neuen Suche auf einen anderen Titel. Er ist jetzt die Track-ID (Test).
+- **Protokoll:** Das Fenster holte das ganze Journal in jedem Frame und baute für jede sichtbare Zeile den Hover-Text. Jetzt höchstens einmal je Sekunde (oder bei Filterwechsel), der Hover-Text erst beim Hover.
+
 ## 0.34.39 — 2026-10-31
 
 ### Behoben
