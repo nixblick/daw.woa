@@ -357,6 +357,87 @@ pub(crate) fn level_faders(
     out
 }
 
+/// Die zwei Ausgänge mit eigenem Regler (#96), Reihenfolge wie in [`output_faders`].
+const OUTPUTS: [(woa_radio::show::Output, &str, &str); 2] = [
+    (
+        woa_radio::show::Output::Monitor,
+        "Notebook",
+        "Wiedergabe Notebook",
+    ),
+    (woa_radio::show::Output::Stream, "Stream", "Stream senden"),
+];
+
+/// Regler für die Ausgänge „Wiedergabe Notebook“ (Abhören) und „Stream senden“ (#96), im
+/// Stil der Pegelregler, darunter je ein roter Stumm-Knopf. Liefert je Ausgang, ob sich Pegel
+/// oder Stumm geändert hat.
+pub(crate) fn output_faders(
+    ui: &mut egui::Ui,
+    outs: &mut [woa_radio::show::OutLevel; 2],
+) -> [bool; 2] {
+    let mut changed = [false; 2];
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        for (((_, short, name), o), ch) in OUTPUTS.iter().zip(outs.iter_mut()).zip(&mut changed) {
+            ui.vertical(|ui| {
+                ui.set_width(52.0);
+                ui.label(
+                    egui::RichText::new(*short)
+                        .font(theme::label_font(11.0))
+                        .color(theme::text_dim()),
+                );
+                let mut db = o.db as f32;
+                let r = crate::widgets::fader(
+                    ui,
+                    &mut db,
+                    woa_radio::mixer::LEVEL_MIN_DB as f32..=woa_radio::mixer::LEVEL_MAX_DB as f32,
+                    0.0,
+                    egui::vec2(40.0, 150.0),
+                    crate::widgets::Orient::Vertical,
+                );
+                let label = format!("Pegel {name}");
+                let value = f64::from(db);
+                r.widget_info(|| egui::WidgetInfo::slider(true, value, &label));
+                let r = r.on_hover_text(format!(
+                    "Pegel {name}. Doppelklick: 0 dB. Ganz unten = aus."
+                ));
+                if r.changed() {
+                    o.db = f64::from(db);
+                    *ch = true;
+                }
+                let red = theme::on_air();
+                let m = egui::Button::new(egui::RichText::new("M").strong().color(if o.mute {
+                    theme::well()
+                } else {
+                    theme::text_dim()
+                }))
+                .fill(if o.mute { red } else { theme::well() })
+                .stroke(egui::Stroke::new(
+                    1.0,
+                    if o.mute { red } else { theme::border() },
+                ))
+                .min_size(egui::vec2(40.0, 21.0));
+                let label = format!("Stumm {name}");
+                let mute = o.mute;
+                let b = ui.add(m);
+                b.widget_info(|| {
+                    egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, mute, &label)
+                });
+                if b.on_hover_text(format!("{name} stumm schalten")).clicked() {
+                    o.mute = !o.mute;
+                    *ch = true;
+                }
+                ui.label(
+                    egui::RichText::new(crate::widgets::vu::fmt_db(db))
+                        .font(theme::label_font(11.0))
+                        .monospace()
+                        .color(theme::text()),
+                );
+            });
+        }
+    });
+    changed
+}
+
 /// Knöpfe „Deck A/B/C starten“ im Playlist-Player: das Deck löst die Playlist ab.
 /// Klick: mit Blende (eingestellter Crossfade), Umschalt+Klick oder Kontextmenü „Sofort“:
 /// harter Schnitt. Leere Decks sind aus und sagen, warum. Liefert (Deck, mit Blende).
@@ -3578,7 +3659,7 @@ impl RadioDesk {
         ui.add_space(4.0);
         // Decks links, die senkrechten Pegelregler als eine Gruppe rechts daneben.
         ui.horizontal_top(|ui| {
-            let w = (ui.available_width() - 270.0).max(260.0);
+            let w = (ui.available_width() - 390.0).max(260.0);
             ui.allocate_ui(egui::vec2(w, 0.0), |ui| {
                 ui.vertical(|ui| self.deck_rows(ui, v));
             });
@@ -3595,6 +3676,19 @@ impl RadioDesk {
                 self.set_level(b, f64::from(db));
             }
             self.learn_menu(r, Target::Level(b));
+        }
+        ui.separator();
+        let mut outs = [self.view.out_monitor, self.view.out_stream];
+        let ch = output_faders(ui, &mut outs);
+        for ((out, _, _), (o, c)) in OUTPUTS.iter().zip(outs.into_iter().zip(ch)) {
+            if c {
+                match out {
+                    woa_radio::show::Output::Monitor => self.view.out_monitor = o,
+                    woa_radio::show::Output::Stream => self.view.out_stream = o,
+                }
+                let out = *out;
+                self.with(move |c| c.set_output(out, o));
+            }
         }
     }
 
@@ -4032,6 +4126,30 @@ mod tests {
         ev.extend(click_at(p, false));
         let _ = frame(&ctx, 4, ev, &mut ui);
         assert_eq!(dbs.borrow()[2], 0.0, "Doppelklick: 0 dB");
+    }
+
+    #[test]
+    fn output_faders_have_level_and_mute() {
+        let ctx = eframe::egui::Context::default();
+        ctx.enable_accesskit();
+        let outs = std::cell::RefCell::new([woa_radio::show::OutLevel::default(); 2]);
+        let changed = std::cell::RefCell::new(Vec::new());
+        let mut ui = |ui: &mut eframe::egui::Ui| {
+            let ch = super::output_faders(ui, &mut outs.borrow_mut());
+            changed.borrow_mut().push(ch);
+        };
+        frame(&ctx, 0, vec![], &mut ui);
+        let nodes = frame(&ctx, 1, vec![], &mut ui);
+        for name in ["Pegel Wiedergabe Notebook", "Pegel Stream senden"] {
+            let r = find(&nodes, name).1;
+            assert!(r.height() > 2.0 * r.width(), "{name} senkrecht: {r:?}");
+        }
+        let p = find(&nodes, "Stumm Stream senden").1.center();
+        let _ = frame(&ctx, 2, click_at(p, false), &mut ui);
+        assert_eq!(changed.borrow().last(), Some(&[false, true]));
+        assert!(outs.borrow()[1].mute, "Stream stumm");
+        assert!(!outs.borrow()[0].mute);
+        assert_eq!(outs.borrow()[1].db, 0.0, "Pegel bleibt beim Stummschalten");
     }
 
     #[test]

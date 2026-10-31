@@ -348,6 +348,14 @@ impl Controller {
             bus: self.show.bus_processing,
             mic: self.show.mic_processing,
         });
+        self.send(Cmd::SetLevel {
+            bus: crate::mixer::LevelBus::Monitor,
+            gain: self.show.out_monitor.gain(),
+        });
+        self.send(Cmd::SetLevel {
+            bus: crate::mixer::LevelBus::Stream,
+            gain: self.show.out_stream.gain(),
+        });
     }
 
     pub fn show(&self) -> &RadioShow {
@@ -666,6 +674,17 @@ impl Controller {
     /// und zählt nicht zu [`Self::remaining_total`].
     pub fn first_open_index(&self) -> usize {
         self.current_index().unwrap_or_else(|| self.cue_index())
+    }
+
+    /// Regler eines Ausgangs (#96): „Wiedergabe Notebook“ oder „Stream senden“, mit Stumm;
+    /// gespeichert in der Sendung, im Audio-Thread geglättet.
+    pub fn set_output(&mut self, out: crate::show::Output, level: crate::show::OutLevel) {
+        match out {
+            crate::show::Output::Monitor => self.show.out_monitor = level,
+            crate::show::Output::Stream => self.show.out_stream = level,
+        }
+        self.show.sanitize();
+        self.apply_settings();
     }
 
     /// Sendebus- und Mikro-Processing an/aus.
