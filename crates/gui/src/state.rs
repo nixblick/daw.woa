@@ -37,11 +37,20 @@ pub struct AppState {
     pub status: Status,
 }
 
+/// Undo depth of the GUI session; every undo/redo replays a copy of the project,
+/// so an unbounded history grows memory and time without limit.
+pub const UNDO_LIMIT: usize = 500;
+
+fn limited(mut session: Session) -> Session {
+    session.set_history(woa_model::History::with_limit(UNDO_LIMIT));
+    session
+}
+
 impl AppState {
     /// A fresh, empty project. `recovery_dir` receives autosaves of unsaved projects.
     pub fn new(recovery_dir: PathBuf, now: Instant) -> Self {
         Self {
-            session: Session::new("Neues Projekt"),
+            session: limited(Session::new("Neues Projekt")),
             recovery_dir,
             last_autosave: now,
             status: Status::Idle,
@@ -1158,7 +1167,7 @@ impl AppState {
 
     /// Starts a new, empty project.
     pub fn new_project(&mut self) {
-        self.session = Session::new("Neues Projekt");
+        self.session = limited(Session::new("Neues Projekt"));
         self.status = Status::Info("Neues Projekt".into());
     }
 
@@ -1166,7 +1175,7 @@ impl AppState {
     pub fn open(&mut self, dir: &Path) -> bool {
         match Session::open(dir) {
             Ok(session) => {
-                self.session = session;
+                self.session = limited(session);
                 self.status = Status::Info(format!("Geöffnet: {}", dir.display()));
                 true
             }
@@ -1268,6 +1277,23 @@ mod tests {
     fn state(dir: &Path) -> (AppState, Instant) {
         let now = Instant::now();
         (AppState::new(dir.join("recovery"), now), now)
+    }
+
+    #[test]
+    fn undo_history_is_bounded() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        let id = s.add_track().unwrap();
+        for i in 0..(UNDO_LIMIT + 20) {
+            assert!(s.set_gain(id, -((i % 40) as f64) - 0.5));
+        }
+        assert_eq!(s.session().history().undo_entries().len(), UNDO_LIMIT);
+        s.new_project();
+        let id = s.add_track().unwrap();
+        for i in 0..(UNDO_LIMIT + 5) {
+            assert!(s.set_gain(id, -((i % 40) as f64) - 0.5));
+        }
+        assert_eq!(s.session().history().undo_entries().len(), UNDO_LIMIT);
     }
 
     #[test]

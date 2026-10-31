@@ -155,10 +155,13 @@ pub fn analyze_pending(lib: &Library, progress: &Progress) -> Result<()> {
                         (Analysis::default(), 0.0)
                     }
                 };
-                lib.set_analysis(id, &hash, &a)?;
-                if secs > 0.0 {
-                    lib.set_duration(id, &hash, secs)?;
-                }
+                lib.transaction(|l| {
+                    l.set_analysis(id, &hash, &a)?;
+                    if secs > 0.0 {
+                        l.set_duration(id, &hash, secs)?;
+                    }
+                    Ok(())
+                })?;
                 progress.done.fetch_add(1, Ordering::Relaxed);
                 written += 1;
             }
