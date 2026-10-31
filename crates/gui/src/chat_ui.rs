@@ -173,6 +173,11 @@ impl ChatUi {
                 restart = true;
             }
         });
+        ui.label(
+            egui::RichText::new(calls_sentence(cfg))
+                .small()
+                .color(theme::text_dim()),
+        );
         egui::ScrollArea::vertical()
             .max_height(height)
             .auto_shrink([false, false])
@@ -275,6 +280,17 @@ impl ChatUi {
     }
 }
 
+/// Ein Satz unter dem Chat: wen dieser Chat aufruft.
+fn calls_sentence(cfg: &KiConfig) -> String {
+    let name = cfg
+        .active_provider()
+        .map_or("des gewählten Anbieters", |p| p.name.as_str());
+    format!(
+        "Dieser Chat ruft selbst die API von {name} auf, nicht Claude Code. Claude Code oder \
+         Claude Desktop sprichst du dort an; sie arbeiten über „KI bereit“ live in WOA."
+    )
+}
+
 fn line(ui: &mut egui::Ui, l: &Line) {
     match l {
         Line::You(t) => {
@@ -351,5 +367,21 @@ mod tests {
             c.dock(u, &cfg, tmp.path(), None);
         });
         assert!(c.problem.as_deref().unwrap().contains("Claude Desktop"));
+    }
+
+    #[test]
+    fn chat_says_whom_it_calls() {
+        let mut cfg = KiConfig::default();
+        cfg.providers.push(woa_assistant::ProviderConfig {
+            id: "a1".into(),
+            name: "Ollama".into(),
+            ..Default::default()
+        });
+        cfg.active = Some("a1".into());
+        let s = calls_sentence(&cfg);
+        assert!(
+            s.contains("Ollama") && s.contains("nicht Claude Code"),
+            "{s}"
+        );
     }
 }

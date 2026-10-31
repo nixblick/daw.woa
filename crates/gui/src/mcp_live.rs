@@ -10,7 +10,7 @@ use woa_agent::live::LiveServer;
 
 use crate::state::AppState;
 
-/// So oft versucht die App den Start erneut, solange kein Token da ist (Schlüsselbund lesen).
+/// So oft prüft die App den Schlüsselbund auf ein neues oder gelöschtes Token.
 const RETRY: Duration = Duration::from_secs(30);
 /// So lange nach dem letzten Kontakt gilt die KI als verbunden.
 const CONNECTED_FOR: u64 = 300;
@@ -30,6 +30,9 @@ pub struct McpLive {
     /// Abdruck des Tokens, mit dem der Server läuft (nie das Token selbst).
     token_hash: Option<u64>,
     tried: Option<Instant>,
+    /// Schlüssel dieses App-Starts, wenn der Nutzer kein Token angelegt hat: Der Live-Server
+    /// läuft trotzdem (nur 127.0.0.1, Lock-Datei 0600). Nie gespeichert, nie angezeigt.
+    own_key: Option<String>,
 }
 
 fn hash(token: &str) -> u64 {
@@ -48,10 +51,11 @@ impl McpLive {
             server: None,
             token_hash: None,
             tried: None,
+            own_key: None,
         }
     }
 
-    /// Startet den Server, sobald ein Token da ist; bedient dann die wartenden Aufrufe.
+    /// Startet den Server (mit Nutzertoken oder dem Schlüssel dieses Starts); bedient dann die wartenden Aufrufe.
     /// Gibt die Zahl der Agent-Schritte dieses Bildes zurück.
     pub fn frame(&mut self, ctx: &egui::Context, state: &mut AppState) -> usize {
         if !self.enabled {
@@ -80,7 +84,9 @@ impl McpLive {
     }
 
     /// Läuft der Server mit `token`? Sonst beenden (Lock-Datei weg) und neu starten.
+    /// Ohne Nutzertoken gilt der Schlüssel dieses App-Starts.
     pub fn sync_token(&mut self, ctx: &egui::Context, token: Option<String>) {
+        let token = token.filter(|t| !t.is_empty()).or_else(|| self.own_key());
         let want = token.as_deref().map(hash);
         if self.server.is_some() && self.token_hash == want {
             return;
@@ -108,6 +114,16 @@ impl McpLive {
         }
     }
 
+    fn own_key(&mut self) -> Option<String> {
+        if self.own_key.is_none() {
+            match woa_agent::live::new_secret() {
+                Ok(k) => self.own_key = Some(k),
+                Err(e) => tracing::warn!(error = %e, "mcp live key not created"),
+            }
+        }
+        self.own_key.clone()
+    }
+
     pub fn status(&self) -> LiveStatus {
         match &self.server {
             None => LiveStatus::Off,
@@ -119,12 +135,21 @@ impl McpLive {
     }
 
     /// Pille „KI“ in der Status-Gruppe der Kopfleiste: grün leuchtend, wenn Claude live
-    /// verbunden ist, ruhig, wenn sie bereit ist; aus, wenn der Live-Server nicht läuft.
+    /// verbunden ist, ruhig, wenn sie bereit ist; „KI aus“, wenn der Live-Server nicht starten konnte.
     pub fn chip(&self, ui: &mut egui::Ui, compact: bool) {
         use crate::theme;
         use crate::widgets::{ChipLook, topbar_chip};
+        if !self.enabled {
+            return;
+        }
         let (icon, word, look, hint) = match self.status() {
-            LiveStatus::Off => return,
+            LiveStatus::Off => (
+                theme::ic::PLUGS,
+                "KI aus",
+                ChipLook::Quiet,
+                "Live-Modus nicht gestartet (siehe Protokoll). Claude arbeitet dann nur auf der \
+                 gespeicherten Projektdatei, nicht live in diesem Fenster",
+            ),
             LiveStatus::Ready => (
                 theme::ic::PLUGS,
                 "KI bereit",
@@ -171,9 +196,24 @@ mod tests {
         let port = live.server.as_ref().unwrap().port();
         assert!(status_for(port, "alt-aaa").contains("HTTP 401"));
         assert!(!status_for(port, "neu-bbb").contains("401"));
-        // Gelöscht: Server aus, Lock-Datei weg.
+        // Gelöscht: Server läuft mit dem Schlüssel dieses Starts weiter, das alte Token gilt nicht.
         live.sync_token(&ctx, None);
-        assert_eq!(live.status(), LiveStatus::Off);
-        assert!(!tmp.path().join(woa_agent::live::LOCK_FILE).exists());
+        let port = live.server.as_ref().unwrap().port();
+        assert!(status_for(port, "neu-bbb").contains("HTTP 401"));
+    }
+
+    #[test]
+    fn live_server_starts_without_a_user_token() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = egui::Context::default();
+        let mut live = McpLive::new(tmp.path().to_path_buf(), true);
+        live.sync_token(&ctx, None);
+        assert_eq!(live.status(), LiveStatus::Ready);
+        // woa-headless findet die App über die Lock-Datei und kommt mit dem Live-Schlüssel durch.
+        let app = woa_agent::live::running_app(tmp.path()).expect("Lock-Datei der App");
+        assert!(!status_for(app.port, &app.key).contains("401"));
+        // Kein Neustart je Prüfung: gleicher Port beim nächsten Abgleich.
+        live.sync_token(&ctx, None);
+        assert_eq!(live.server.as_ref().unwrap().port(), app.port);
     }
 }

@@ -1056,7 +1056,7 @@ Selbst geprüft von Claude: neue Tests ohne Ton für den Wechsel links/rechts ü
 Kein Ton nötig. Voraussetzung: unter Einstellungen → KI & MCP ist ein Zugriffstoken erzeugt.
 
 1. WOA starten (Produzent). Unten rechts steht „KI bereit“.
-2. In Claude Desktop (unverändert eingerichtet, `woa-headless mcp …`) sagen: „Leg eine Audiospur ‚Test‘ an.“ Die Spur erscheint sofort in WOA, unten rechts steht „KI verbunden“.
+2. In Claude Desktop (unverändert eingerichtet, `woa-headless mcp …`) sagen: „Leg eine Audiospur ‚Test‘ an.“ Die Spur erscheint sofort in WOA, in der Kopfleiste (Status-Gruppe) steht „KI verbunden“.
 3. Bearbeiten → „Rückgängig Agent: add_track“: die Spur ist wieder weg. „Wiederholen“: sie ist zurück.
 4. Claude einen Drum-Loop erzeugen lassen (`generate_drums`): Spur und Clip erscheinen, die Wiedergabe läuft dabei ohne Aussetzer weiter.
 5. Claude „speichern“ lassen, solange das Projekt noch nie gespeichert war: Claude meldet „in der App Speichern unter …“; es entsteht kein fremder Ordner.

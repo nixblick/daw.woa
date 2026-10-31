@@ -239,9 +239,11 @@ impl KiUi {
         }
         ui.label(
             egui::RichText::new(
-                "Der Server arbeitet auf der Projektdatei im Ordner, nicht auf dem offenen \
-                 Fenster. Änderungen siehst du nach erneutem Öffnen; speichere im Fenster nicht \
-                 gleichzeitig, sonst gewinnt der letzte Schreiber.",
+                "Dieser Hintergrund-Server (HTTP, eigener Port) arbeitet nur auf der Projektdatei \
+                 im Ordner, nicht live im offenen Fenster. Live arbeitet Claude über den \
+                 Stdio-Eintrag (`woa-headless mcp`), der an die laufende App durchreicht \
+                 („KI bereit“ in der Kopfleiste). Speichere nicht gleichzeitig im Fenster, sonst \
+                 gewinnt der letzte Schreiber.",
             )
             .small()
             .color(theme::text_dim()),
