@@ -14,6 +14,8 @@
 //! - 2xx heißt: Server hat gespeichert, Puffer leeren. Alles andere: Puffer behalten,
 //!   später erneut versuchen (der Server antwortet 503, wenn er nicht speichern konnte).
 
+use std::collections::HashMap;
+use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -21,6 +23,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use tracing::field::{Field, Visit};
 use tracing::span;
+use tracing_log::NormalizeEvent;
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::registry::LookupSpan;
@@ -262,6 +265,7 @@ impl Uploader {
     pub fn layer(&self) -> UploadLayer {
         UploadLayer {
             tx: self.tx.clone(),
+            throttle: Mutex::new(Throttle::default()),
         }
     }
 }
@@ -357,6 +361,59 @@ fn send_batch(agent: &ureq::Agent, cfg: &UploadConfig, buf: &mut Vec<Event>) -> 
 /// Siehe [`Uploader::layer`].
 pub struct UploadLayer {
     tx: Option<SyncSender<Msg>>,
+    throttle: Mutex<Throttle>,
+}
+
+/// Höchstens so viele gleiche Warnungen/Fehler ohne eigenes `art` je [`LOG_WINDOW`].
+/// Fremde Crates (z. B. der MP3-Dekoder) melden sonst je Frame eine Zeile, tausende pro
+/// Minute, und das frisst auf einem schwachen Rechner CPU und Netz.
+pub const LOG_BURST: u32 = 20;
+/// Fenster der Drosselung; was darin verworfen wurde, geht danach als `log.dropped` raus.
+pub const LOG_WINDOW: Duration = Duration::from_secs(60);
+/// Obergrenze der gemerkten Schlüssel (modul, art), damit die Tabelle nie wächst.
+const THROTTLE_KEYS: usize = 512;
+
+/// Zählt gleiche Meldungen je Fenster. Rein, damit die Tests die Zeit vorgeben können.
+#[derive(Default)]
+struct Throttle {
+    keys: HashMap<(String, String), (Instant, u32)>,
+    swept: Option<Instant>,
+}
+
+impl Throttle {
+    /// Darf die Meldung `key` jetzt raus? Dazu die abgelaufenen Fenster mit verworfenen
+    /// Meldungen: (modul, Zahl verworfen).
+    fn admit(&mut self, key: (String, String), now: Instant) -> (bool, Vec<(String, u32)>) {
+        let mut dropped = Vec::new();
+        let sweep = self
+            .swept
+            .is_none_or(|t| now.duration_since(t) >= LOG_WINDOW);
+        if sweep || self.keys.len() >= THROTTLE_KEYS {
+            self.swept = Some(now);
+            self.keys.retain(|(m, _), (start, n)| {
+                if now.duration_since(*start) < LOG_WINDOW {
+                    return true;
+                }
+                if *n > LOG_BURST {
+                    dropped.push((m.clone(), *n - LOG_BURST));
+                }
+                false
+            });
+        }
+        let full = self.keys.len() >= THROTTLE_KEYS;
+        let pass = match self.keys.get_mut(&key) {
+            Some((_, n)) => {
+                *n = n.saturating_add(1);
+                *n <= LOG_BURST
+            }
+            None if !full => {
+                self.keys.insert(key, (now, 1));
+                true
+            }
+            None => false,
+        };
+        (pass, dropped)
+    }
 }
 
 #[derive(Default)]
@@ -432,10 +489,14 @@ where
 
     fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
         let Some(tx) = &self.tx else { return };
-        let meta = event.metadata();
+        // Meldungen über das `log`-Crate (Abhängigkeiten wie symphonia) tragen als Ziel nur
+        // `log`; das echte Ziel, Datei und Zeile stehen in den normalisierten Metadaten.
+        let normalized = event.normalized_metadata();
+        let meta = normalized.as_ref().unwrap_or_else(|| event.metadata());
         let mut f = Fields::default();
         event.record(&mut f);
         let stufe = Level::from_tracing(meta.level());
+        let own_art = f.art.is_some();
         let art = match f.art {
             Some(a) => a,
             None => match stufe {
@@ -445,12 +506,37 @@ where
                 _ => return,
             },
         };
-        let Some(modul) = module_from_target(meta.target()) else {
+        let Some(modul) = module_from_target(&upload_target(meta.target(), normalized.is_some()))
+        else {
             return;
         };
+        if !own_art {
+            let (pass, dropped) = match self.throttle.lock() {
+                Ok(mut t) => t.admit((modul.clone(), art.clone()), Instant::now()),
+                Err(_) => (true, Vec::new()),
+            };
+            for (m, n) in dropped {
+                if let Some(e) = Event::new(Level::Info, &m, "log.dropped", i64::from(n)) {
+                    let _ = tx.try_send(Msg::Event(e));
+                }
+            }
+            if !pass {
+                return;
+            }
+        }
         if let Some(e) = Event::new(stufe, &modul, &art, f.wert) {
             let _ = tx.try_send(Msg::Event(e));
         }
+    }
+}
+
+/// Ziel für den Upload: bei Meldungen aus dem `log`-Crate nur der Crate-Name (erstes
+/// Segment), nie der volle Modulpfad; eigenes tracing bleibt wie es ist.
+fn upload_target(target: &str, from_log: bool) -> String {
+    if from_log {
+        target.split("::").next().unwrap_or("log").to_string()
+    } else {
+        target.to_string()
     }
 }
 
@@ -471,5 +557,55 @@ fn source_art(prefix: &str, file: Option<&str>, line: Option<u32>) -> String {
         (false, Some(l)) => format!("{prefix}.{stem}.{l}"),
         (false, None) => format!("{prefix}.{stem}"),
         _ => prefix.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(m: &str) -> (String, String) {
+        (m.to_string(), "log.warn".to_string())
+    }
+
+    #[test]
+    fn throttle_lets_a_burst_through_then_counts_the_rest() {
+        let mut t = Throttle::default();
+        let t0 = Instant::now();
+        let passed = (0..1084)
+            .filter(|_| t.admit(key("symphonia_core"), t0).0)
+            .count();
+        assert_eq!(passed, LOG_BURST as usize);
+        // Anderer Schlüssel hat sein eigenes Kontingent.
+        assert!(t.admit(key("cpal"), t0).0);
+        // Nach dem Fenster: wieder frei, und die Zahl der verworfenen kommt mit.
+        let (pass, dropped) = t.admit(key("symphonia_core"), t0 + LOG_WINDOW);
+        assert!(pass);
+        assert_eq!(
+            dropped,
+            vec![("symphonia_core".to_string(), 1084 - LOG_BURST)]
+        );
+    }
+
+    #[test]
+    fn throttle_table_stays_bounded() {
+        let mut t = Throttle::default();
+        let t0 = Instant::now();
+        for i in 0..(THROTTLE_KEYS + 50) {
+            t.admit(key(&format!("m{i}")), t0);
+        }
+        assert!(t.keys.len() <= THROTTLE_KEYS);
+    }
+
+    #[test]
+    fn log_targets_shrink_to_the_crate() {
+        assert_eq!(
+            upload_target("symphonia_bundle_mp3::layer3", true),
+            "symphonia_bundle_mp3"
+        );
+        assert_eq!(
+            upload_target("woa_engine::graph", false),
+            "woa_engine::graph"
+        );
     }
 }

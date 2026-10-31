@@ -143,6 +143,8 @@ pub struct Station {
     thread: Option<JoinHandle<()>>,
     rate: u32,
     measuring: Arc<AtomicUsize>,
+    /// Warteschlange des einen Mess-Threads (siehe [`Self::measure`]).
+    measure_tx: Mutex<Option<Sender<PathBuf>>>,
 }
 
 impl Station {
@@ -165,6 +167,7 @@ impl Station {
             thread: Some(thread),
             rate,
             measuring,
+            measure_tx: Mutex::new(None),
         })
     }
 
@@ -196,19 +199,45 @@ impl Station {
         self.measure(todo);
     }
 
+    /// Misst nacheinander in einem einzigen Hintergrund-Thread. Früher bekam jede Datei einen
+    /// eigenen Thread; elf Titel auf einmal dekodierten dann elf Threads parallel und ließen
+    /// auf einem schwachen Notebook der Oberfläche keine CPU mehr (Hänger beim Hinzufügen).
     fn measure(&self, paths: Vec<PathBuf>) {
-        let rate = self.rate;
+        if paths.is_empty() {
+            return;
+        }
+        let Ok(mut guard) = self.measure_tx.lock() else {
+            return;
+        };
         for p in paths {
-            let tx = self.tx.clone();
             self.measuring.fetch_add(1, Ordering::Relaxed);
+            let p = match guard.as_ref() {
+                Some(q) => match q.send(p) {
+                    Ok(()) => continue,
+                    Err(e) => e.0,
+                },
+                None => p,
+            };
+            // Kein Mess-Thread (noch keiner oder beendet): einen starten.
+            let (qtx, qrx) = channel::<PathBuf>();
+            let _ = qtx.send(p);
+            let (tx, rate) = (self.tx.clone(), self.rate);
             let spawned = std::thread::Builder::new()
                 .name("woa-radio-measure".into())
                 .spawn(move || {
-                    let r = measure_file(&p, rate);
-                    let _ = tx.send(Msg::Measured(p, r));
+                    for p in qrx {
+                        let r = measure_file(&p, rate);
+                        if tx.send(Msg::Measured(p, r)).is_err() {
+                            return;
+                        }
+                    }
                 });
-            if let Err(e) = spawned {
-                tracing::warn!(error = %e, "measure thread failed");
+            match spawned {
+                Ok(_) => *guard = Some(qtx),
+                Err(e) => {
+                    self.measuring.fetch_sub(1, Ordering::Relaxed);
+                    tracing::warn!(error = %e, "measure thread failed");
+                }
             }
         }
     }
