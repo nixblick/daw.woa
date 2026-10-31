@@ -1,8 +1,14 @@
 # Changelog
 
-## 0.34.71 — 2026-10-31
+## 0.34.72 — 2026-10-31
 
 - **BOM vor der ersten Zeile (#243):** Die stdio-Weiterleitung an die offene App (`woa-headless mcp` bei laufender App) verwirft ein führendes UTF-8-BOM, wie es etwa der StreamWriter von .NET schreibt; vorher ging `initialize` still verloren. Der Headless-stdio-Modus ohne App vertrug es schon, ein Test hält das jetzt fest (`crates/agent/tests/mcp.rs`).
+
+## 0.34.71 — 2026-10-31
+
+### Behoben
+
+- **ON AIR nur bei Sendung (#225):** Die ON-AIR-Pille oben rechts leuchtete auch, wenn nur das Mikro offen war. Sie leuchtet jetzt nur noch bei „Auf Sendung“ (Stream läuft); das Mikro hat seine eigene Anzeige am Mikro-Knopf.
 
 ## 0.34.70 — 2026-10-31
 
