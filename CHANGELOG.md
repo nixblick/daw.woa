@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.34.61 — 2026-10-31
+
+### Geändert
+
+- **Logs:** Eine kurze Startzeile mit Version, Build, Betriebssystem, Grafik-Backend, Adapter und Treiber; die lange wgpu-Adapterliste steht nur noch auf DEBUG (Test).
+- **Logs:** Die Zwei-Minuten-Kennzahlen stehen in Datei und Protokoll als eine Zeile `ui summary`; der Upload bekommt sie weiter einzeln (Test).
+- **Logs:** Die Unterlauf-Minutenzeile kommt nur noch bei Unterläufen; WASAPI-GUIDs in Gerätenamen sind gekürzt (Test).
+- **Logs:** symphonia „using xing header“ fällt weg, „reached probe limit“ steht nicht mehr im Protokoll (das Laden meldet den Fehler selbst). Bei „clip/clap load failed“ und „plugin scan problem“ stehen Dateiname und Fehlertext nur noch in der lokalen Senke, im Ticket nur die Meldung (Test).
+- **Logs:** Bedienaktionen als Info-Zeilen: Modus-Wechsel, Playlist und Deck A/B/C Start/Pause/Stop, Cartwall, PFL, Mitschnitt, Sendung Start und Ende. Datei- und Gerätenamen nur lokal, im Ticket nur Deck oder Slot (Test).
+- **Ticket-Protokoll:** Zeitstempel mit Datum und Zeitzone (`2026-10-31 14:05:09 +01:00`); lokale Zeilen mit Dateinamen gehen nicht mehr ins Ticket (Test).
 ## 0.34.60 — 2026-10-31
 
 - **Leere Kästchen statt Pfeilen (#218):** Hoch/Runter in „Verwalten“ sind jetzt Phosphor-Symbole statt „↑/↓“, die in Barlow fehlten. JetBrains Mono (liegt schon bei) dient als Rückfallschrift für Pfeile wie „→“ und „↩“ in allen Textfamilien. Vollbreiten-Zeichen in Titeln („｜“, „（“) werden in „Verwalten“ schmal angezeigt. Test: jedes Nicht-ASCII-Zeichen im GUI-Quelltext hat eine Glyphe.

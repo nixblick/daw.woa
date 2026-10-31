@@ -836,6 +836,7 @@ impl Controller {
         self.failed.clear();
         self.played.clear();
         self.running = true;
+        tracing::info!(title = from + 1, "playlist start");
         if self.queue_index(from) {
             if self.shuffle {
                 let uid = self.show.playlist[from].uid;
@@ -856,6 +857,7 @@ impl Controller {
         }
         self.running = false;
         self.pending = None;
+        tracing::info!("playlist stop");
         self.send(Cmd::Stop);
     }
 
@@ -879,6 +881,7 @@ impl Controller {
             self.set_cue(i);
         }
         self.running = false;
+        tracing::info!("playlist pause");
         self.send(cmd);
         self.paused = Some((cur, pos, end));
     }
@@ -1089,17 +1092,20 @@ impl Controller {
     pub fn deck_play(&mut self, deck: usize) {
         if self.decks.get(deck).is_some_and(Option::is_some) {
             self.deck_return_fired[deck] = false;
+            tracing::info!(deck = %crate::show::deck_name(deck), "deck start");
             self.send(Cmd::DeckPlay(deck));
         }
     }
 
     /// Deck anhalten (die Stelle bleibt).
     pub fn deck_stop(&mut self, deck: usize) {
+        tracing::info!(deck = %crate::show::deck_name(deck), "deck pause");
         self.send(Cmd::DeckStop(deck));
     }
 
     /// Deck anhalten und an den Anfang stellen.
     pub fn deck_cue(&mut self, deck: usize) {
+        tracing::info!(deck = %crate::show::deck_name(deck), "deck stop");
         self.send(Cmd::DeckCue(deck));
     }
 
@@ -1284,10 +1290,12 @@ impl Controller {
     /// Spielt Cart `slot` (überlagert die Musik); läuft er schon, hält er an.
     pub fn trigger_cart(&mut self, slot: usize) {
         if self.status.carts.load(Ordering::Acquire) & (1 << slot) != 0 {
+            tracing::info!(slot = slot + 1, "cart stop");
             self.send(Cmd::CartStop(slot));
             return;
         }
         if let Some(Some(buf)) = self.carts.get(slot) {
+            tracing::info!(slot = slot + 1, "cart start");
             let buf = buf.clone();
             let cues = self
                 .show
@@ -1423,6 +1431,7 @@ impl Controller {
             files: Vec::new(),
         });
         let owned = Owned::new(&self.collector.handle(), producer);
+        tracing::info!("mitschnitt start");
         self.send(Cmd::Record(Some(owned)));
     }
 
@@ -1432,6 +1441,7 @@ impl Controller {
         let Some(mut r) = self.recording.take() else {
             return Vec::new();
         };
+        tracing::info!("mitschnitt stop");
         if let Err(e) = r.drain().and_then(|()| r.close_file()) {
             tracing::warn!(error = %e, "mitschnitt failed");
             self.message = Some(e);
@@ -1674,7 +1684,8 @@ impl Controller {
             return Err("Vorhören: Warteschlange voll".into());
         }
         self.pfl_source = None;
-        tracing::info!(file = %path.display(), from, "pfl play");
+        tracing::info!(from, "pfl start");
+        tracing::info!(target: woa_telemetry::LOCAL_TARGET, datei = %path.display(), "pfl start");
         Ok(())
     }
 
@@ -1760,6 +1771,9 @@ impl Controller {
 
     /// Hält das Vorhören an.
     pub fn pfl_stop(&mut self) {
+        if self.pfl_playing() {
+            tracing::info!("pfl stop");
+        }
         self.pfl_source = None;
         if let Some(h) = self.pfl.as_mut()
             && h.cmds.push(PflCmd::Stop).is_err()
