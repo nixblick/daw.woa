@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.34.75 — 2026-10-31
+## 0.34.76 — 2026-10-31
 
 - **Einheitliche Modulköpfe (#246):** Alle Kartenköpfe in Radio, Party, Fernbedienung, Bibliothek, Analyse, Export, Automation und Uhren-Editor („SENDE-PLAYLIST“, „CART-WALL“, „WUNSCHLISTE“ …) stehen jetzt einheitlich als `panel-label` des Design-Systems: Barlow Condensed Bold, 12 px, leicht gesperrt, `text-dim`. Bisher mischten sich Barlow 11,5 px fett, 10 px und `small`. Das Pianoroll nimmt für Noten im Dunkeln die Spurfarbe 1 statt eines eigenen Blaus. Neu in `theme.rs`: `panel_label()` und `danger_text()` (Fehlertext mit WCAG-AA-Kontrast). Rein optisch, keine Bedienung geändert.
+
+## 0.34.75 — 2026-10-31
+
+- **Fenstertitel (#243):** Heißt das Projekt noch „Neues Projekt“ oder hat es keinen Namen, zeigt der Titel nach dem Speichern oder Öffnen den Dateinamen des Projekts (ohne `.woa`). Ein selbst vergebener Name bleibt wie bisher.
 
 ## 0.34.74 — 2026-10-31
 
