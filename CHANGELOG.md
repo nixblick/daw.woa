@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.22 — 2026-10-31
+
+Sicherheit #136: Updater Stufe B vorbereitet, es fehlt nur noch der Schlüssel.
+
+- **Updater:** Neuer Test wacht über `packaging/windows/updater.pub`: Die Datei ist entweder der Platzhalter oder ein gültiger minisign-Schlüssel. Ein beschädigt eingefügter Schlüssel würde sonst stillschweigend auf die schwächere Prüfsummen-Stufe zurückfallen; jetzt bricht der Test (und damit die CI) ab.
+- **Doku:** `docs/updater.md` führt die Schritte zum Einschalten von Stufe B einzeln auf.
+
+Nicht erledigt: Der Schlüssel selbst (nur André), #136 bleibt offen.
+
 ## 0.34.21 — 2026-10-31
 
 Sicherheit #127: AppImage-Werkzeuge werden vor dem Ausführen per SHA-256 geprüft.

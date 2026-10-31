@@ -136,6 +136,31 @@ mod tests {
         verify_package(&read("test.pub"), &payload(), sig, manifest, current)
     }
 
+    /// Ein halb eingefügter oder beschädigter Schlüssel in `updater.pub` würde den Updater
+    /// stillschweigend auf Stufe A zurückfallen lassen. Darum: Die Datei ist entweder der
+    /// Platzhalter (keine minisign-Kopfzeile) oder ein gültiger Schlüssel, nie etwas dazwischen.
+    #[test]
+    fn updater_pub_is_placeholder_or_valid_key() {
+        let text = PUBLIC_KEY;
+        if text.starts_with("untrusted comment:") {
+            assert!(
+                key_configured(text),
+                "packaging/windows/updater.pub sieht nach minisign aus, ist aber kein gültiger Schlüssel"
+            );
+        } else {
+            assert!(!key_configured(text), "Platzhalter darf nicht als Schlüssel gelten");
+        }
+    }
+
+    #[test]
+    fn broken_key_text_is_not_configured() {
+        let good = read("test.pub");
+        assert!(key_configured(&good));
+        let cut: String = good.lines().take(1).collect::<Vec<_>>().join("\n");
+        assert!(!key_configured(&cut));
+        assert!(!key_configured(""));
+    }
+
     #[test]
     fn good_signature_passes() {
         assert_eq!(verify(&read("payload.minisig"), "0.34.0", "0.33.4"), Ok(()));

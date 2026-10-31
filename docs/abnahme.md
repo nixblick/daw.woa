@@ -4,6 +4,15 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Sicherheit #136: Updater Stufe B vorbereitet (0.34.22, offen)
+
+Nur Test und Doku, kein Verhalten geändert. Schlüssel fehlt noch (Handgriffe in #136).
+
+1. `cargo test -p woa-updater`: grün, darunter `updater_pub_is_placeholder_or_valid_key`.
+2. Probe: in `packaging/windows/updater.pub` zwei Zeilen `untrusted comment: x` / `abc` eintragen, Test muss rot werden; Datei zurücksetzen.
+
+Selbst geprüft von Claude: Tests und Clippy des Crates grün.
+
 ## Sicherheit #127: AppImage-Werkzeuge mit Prüfsumme (0.34.21, offen)
 
 1. Der CI-Lauf `linux-build` ist grün (AppImage wird gebaut).
