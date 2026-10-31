@@ -35,6 +35,12 @@
   .meter { height: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
     overflow: hidden; margin-top: 10px; }
   .meter > i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .08s linear; }
+  .badge { display: block; text-align: center; font-size: 1.3rem; font-weight: 700; letter-spacing: .04em;
+    padding: 14px; border-radius: 8px; margin-bottom: 8px; background: var(--surface); color: var(--text); }
+  .badge.air { background: var(--air); color: #fff; }
+  .badge.muted { background: var(--surface); color: var(--accent); border: 2px solid var(--accent); }
+  .badge.wait { background: var(--surface); color: var(--dim); border: 2px dashed var(--border); }
+  button.on { background: var(--accent); color: #1b1206; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -51,8 +57,10 @@
   </section>
 
   <section class="card" id="status" hidden>
+    <p class="badge" id="air" role="status" aria-live="polite" hidden></p>
     <p class="state" id="msg" role="status" aria-live="polite"></p>
     <div class="meter" id="meterbox" hidden aria-hidden="true"><i id="meter"></i></div>
+    <button class="quiet" id="selfmute" type="button" hidden aria-pressed="false">&#x1F399; Mikro stumm schalten</button>
     <button class="hang" id="leave" type="button">Auflegen</button>
   </section>
 
@@ -64,6 +72,33 @@
   var $ = function (id) { return document.getElementById(id); };
   var invite = new URLSearchParams(location.search).get('i') || '';
   var pc = null, stream = null, ticket = '', timer = 0, statsTimer = 0, ctx = null, answered = false, over = false;
+  var live = false, air = 'wait', selfMuted = false;
+
+  // Sendestand gut sichtbar: Auf Sendung, Stumm (Moderator), Warteraum, selbst stumm.
+  function renderAir() {
+    if (!live || over) return;
+    var b = $('air'); b.hidden = false;
+    var text, cls, msg;
+    if (air === 'wait') { text = '\u23F8 Warteraum'; cls = 'wait'; msg = 'Du hörst die Sendung. Der Moderator holt dich gleich auf Sendung.'; }
+    else if (air === 'muted') { text = '\u{1F507} Stumm'; cls = 'muted'; msg = 'Der Moderator hat dich stumm geschaltet. Du hörst die Sendung weiter.'; }
+    else { text = '\u25CF Auf Sendung'; cls = 'air'; msg = 'Du bist zu hören. Sprich los.'; }
+    if (selfMuted) msg = 'Dein Mikrofon ist aus. Niemand hört dich, bis du es wieder einschaltest.';
+    b.textContent = text; b.className = 'badge ' + cls;
+    var m = $('msg'); m.textContent = msg; m.className = 'state';
+    var sm = $('selfmute'); sm.hidden = false;
+    sm.textContent = selfMuted ? '\u{1F399} Mikro wieder an' : '\u{1F399} Mikro stumm schalten';
+    sm.className = selfMuted ? 'on' : 'quiet';
+    sm.setAttribute('aria-pressed', selfMuted ? 'true' : 'false');
+  }
+
+  function toggleSelfMute() {
+    if (!stream || !ticket || over) return;
+    selfMuted = !selfMuted;
+    // Im Browser abschalten: dann geht wirklich kein Ton mehr hinaus.
+    stream.getAudioTracks().forEach(function (t) { t.enabled = !selfMuted; });
+    post('/gast/mute', { t: ticket, on: selfMuted }).catch(function () {});
+    renderAir();
+  }
 
   // Der Titel trägt den Stand; Testläufe lesen ihn aus.
   function setTitle(s) { document.title = 'WOA-GAST ' + s; }
@@ -85,7 +120,7 @@
     if (pc) { try { pc.close(); } catch (e) {} pc = null; }
     if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
     if (ctx) { try { ctx.close(); } catch (e) {} ctx = null; }
-    $('meterbox').hidden = true; $('leave').hidden = true;
+    $('meterbox').hidden = true; $('leave').hidden = true; $('selfmute').hidden = true; $('air').hidden = true;
     show(text, cls); setTitle(title || 'ende');
   }
 
@@ -130,6 +165,7 @@
   function poll() {
     get('/gast/state?t=' + encodeURIComponent(ticket)).then(function (s) {
       if (over) return;
+      if (s.state === 'accepted' && s.air && s.air !== air) { air = s.air; renderAir(); }
       if (s.state === 'accepted' && !answered) {
         answered = true;
         setTitle('annahme');
@@ -164,7 +200,7 @@
       pc.onconnectionstatechange = function () {
         if (over) return;
         if (pc.connectionState === 'connected') {
-          show('Du bist auf Sendung geschaltet. Sprich los.', 'ok'); setTitle('verbunden rx=0');
+          live = true; show(''); renderAir(); setTitle('verbunden rx=0');
           statsTimer = setInterval(stats, 1000);
         }
         else if (pc.connectionState === 'failed') finish('Verbindung fehlgeschlagen. Seid ihr im selben WLAN?', 'bad', 'fehler');
@@ -191,6 +227,7 @@
   $('join').addEventListener('click', join);
   $('name').addEventListener('keydown', function (e) { if (e.key === 'Enter') join(); });
   $('leave').addEventListener('click', leave);
+  $('selfmute').addEventListener('click', toggleSelfMute);
   window.addEventListener('pagehide', function () {
     if (ticket && !over) { try { navigator.sendBeacon('/gast/leave', new Blob([JSON.stringify({ t: ticket })], { type: 'application/json' })); } catch (e) {} }
   });

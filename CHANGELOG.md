@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.45 — 2026-10-31
+## 0.34.46 — 2026-10-31
 
 ### Behoben
 
@@ -9,6 +9,17 @@
 - **Bibliothek:** Bei geänderter Datei am gleichen Pfad blieben Titel und Suchindex alt. Beides folgt jetzt den neuen Tags (Test).
 - **AutoDJ:** Eine Kategorie wurde still bei 5000 Titeln (alphabetisch) abgeschnitten. Sie lädt jetzt alle Titel des Tags (Test).
 - **Analyse:** Je Titel wurden Analyse und Dauer in zwei Autocommits geschrieben; jetzt in einer Transaktion.
+
+## 0.34.45 — 2026-10-31
+
+Gäste im Browser: Moderator-Funktionen (André: „so das man die person auch einfach mal muten kann und vielleicht man ja auch mehrere hat“).
+
+- **Warteraum:** Ein angenommener Browser-Gast kommt erst in den Warteraum. Er hört die Sendung (Mix-Minus), ist aber nicht zu hören, bis der Moderator ihn mit „Warteraum → Auf Sendung“ holt. Testgäste und Dateigäste sind wie bisher sofort auf Sendung.
+- **Je Gast eine Zeile:** Name, Pegel vor dem Fader (zeigt auch im Warteraum und stumm, ob der Gast spricht), „Auf Sendung“/„Warteraum“, „Stumm“ (Symbol und Wort, hört weiter die Sendung), Lautstärke wie der Kanal-Gain (ziehen, Doppelklick = 0 dB), Rückweg abhören, „Trennen“ mit Bestätigung (zweiter Klick binnen 3 s). Darunter Leitung gut/mäßig/schlecht mit RTT und Verlust.
+- **Mehrere Gäste:** bis zu 8 gleichzeitig (wie bisher), jeder mit eigenem Rückweg ohne sich selbst.
+- **Browser-Seite des Gastes:** großes Schild „Auf Sendung“, „Stumm“ oder „Warteraum“, dazu „Mikro stumm schalten“. Selbst-Stumm schaltet das Mikrofon im Browser ab und meldet es dem Moderator („hat sich selbst stumm geschaltet“). Jede Seite steuert nur ihr eigenes Ticket; Einladung, PIN und Zugang sind unverändert.
+- **Log ohne Gastnamen:** Gastnamen stehen nicht mehr im Log (nur Kanalnummern).
+- **Tests:** Warteraum, Stumm, Lautstärke, Trennen, Mix-Minus mit zwei und vier Gästen, Selbst-Stumm nur mit eigenem angenommenem Ticket, Sendestand über HTTPS im Loopback-Test.
 
 ## 0.34.44 — 2026-10-31
 
