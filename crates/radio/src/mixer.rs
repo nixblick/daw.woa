@@ -118,6 +118,9 @@ pub enum Cmd {
     Seek(i64),
     /// Crossfade-Länge in Frames.
     SetCrossfade(usize),
+    /// Stopp mit Ausblenden (#227): so viele Frames blenden [`Cmd::Stop`] und
+    /// [`Cmd::DeckStop`] aus; 0 = aus (kurzer harter Stopp).
+    SetStopFade(usize),
     /// Absenkung der Musik bei offenem Mikro (linear).
     SetDuck(f32),
     /// Mikro auf/zu.
@@ -578,6 +581,8 @@ pub struct Mixer {
     rate_hz: u32,
     playing: bool,
     stop_len: usize,
+    /// Ausblenden beim Stopp (Frames), 0 = aus: dann gilt `stop_len`.
+    stop_fade: usize,
     stopping: Option<usize>,
     /// Länge der laufenden Musik-Ausblendung (Frames).
     stop_total: usize,
@@ -623,6 +628,16 @@ pub struct Mixer {
 }
 
 impl Mixer {
+    /// Länge eines Stopps in Frames: mit Ausblenden (#227) die eingestellte Dauer, sonst kurz.
+    #[inline]
+    fn stop_frames(&self) -> usize {
+        if self.stop_fade > 0 {
+            self.stop_fade
+        } else {
+            self.stop_len
+        }
+    }
+
     /// Legt den Mixer an (im Control-Thread, danach in den Audio-Thread verschieben).
     pub fn new(
         cmds: rtrb::Consumer<Cmd>,
@@ -645,6 +660,7 @@ impl Mixer {
             rate_hz: rate.max(1),
             playing: false,
             stop_len: (STOP_SECONDS * r).max(1.0) as usize,
+            stop_fade: 0,
             stopping: None,
             stop_total: (STOP_SECONDS * r).max(1.0) as usize,
             fade_in: None,
@@ -735,11 +751,12 @@ impl Mixer {
                     self.pausing = false;
                 }
                 Cmd::Stop => {
+                    let len = self.stop_frames();
                     if self.held {
                         self.clear_music();
                     } else if self.playing && self.stopping.is_none() {
-                        self.stopping = Some(self.stop_len);
-                        self.stop_total = self.stop_len;
+                        self.stopping = Some(len);
+                        self.stop_total = len;
                     }
                     self.pausing = false;
                 }
@@ -764,6 +781,7 @@ impl Mixer {
                 Cmd::Next => self.skip(),
                 Cmd::Seek(delta) => self.seek(delta),
                 Cmd::SetCrossfade(f) => self.xf_frames = f,
+                Cmd::SetStopFade(f) => self.stop_fade = f,
                 Cmd::SetDuck(g) => {
                     self.duck_lin = g.clamp(0.0, 1.0);
                     self.retarget_duck();
@@ -829,8 +847,9 @@ impl Mixer {
                     }
                 }
                 Cmd::DeckStop(deck) => {
+                    let len = self.stop_frames();
                     if let Some(Some(d)) = self.decks.get_mut(deck) {
-                        d.fade_out(self.stop_len);
+                        d.fade_out(len);
                     }
                 }
                 Cmd::DeckPlayFade(deck, frames) => {

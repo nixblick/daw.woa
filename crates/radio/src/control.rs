@@ -335,6 +335,12 @@ impl Controller {
     fn apply_settings(&mut self) {
         let frames = (self.show.crossfade_seconds * f64::from(self.rate)) as usize;
         self.send(Cmd::SetCrossfade(frames));
+        let stop = if self.show.stop_fade {
+            (self.show.stop_fade_seconds * f64::from(self.rate)) as usize
+        } else {
+            0
+        };
+        self.send(Cmd::SetStopFade(stop));
         self.send(Cmd::SetDuck(db_to_gain(self.show.duck_db)));
         self.send(Cmd::SetTarget(self.show.target_lufs));
         self.send(Cmd::SetProcessing {
@@ -621,6 +627,15 @@ impl Controller {
 
     pub fn set_duck(&mut self, db: f64) {
         self.show.duck_db = db;
+        self.show.sanitize();
+        self.apply_settings();
+    }
+
+    /// Stopp mit Ausblenden (#227) an oder aus und seine Dauer (Sekunden), gespeichert in
+    /// der Sendung. Gilt für Stopp am Sende-Player und an den Decks.
+    pub fn set_stop_fade(&mut self, on: bool, seconds: f64) {
+        self.show.stop_fade = on;
+        self.show.stop_fade_seconds = seconds;
         self.show.sanitize();
         self.apply_settings();
     }

@@ -1997,6 +1997,32 @@ impl RadioDesk {
                 self.view.duck_db = duck;
                 self.with(move |c| c.set_duck(duck));
             }
+            // Stopp mit Ausblenden (#227): kein eigener Knopf, die Stopp-Knöpfe bleiben.
+            let (mut on, mut secs) = (v.stop_fade, v.stop_fade_seconds);
+            let mut changed = false;
+            ui.horizontal(|ui| {
+                changed |= ui
+                    .checkbox(&mut on, "Stopp blendet aus")
+                    .on_hover_text(
+                        "An: Stopp am Sende-Player und an den Decks A/B/C blendet über die \
+                         eingestellte Dauer aus (etwa um mitten im Titel auszusteigen). \
+                         Aus: Stopp bricht sofort ab.",
+                    )
+                    .changed();
+                changed |= ui
+                    .add_enabled(
+                        on,
+                        egui::Slider::new(&mut secs, 0.5..=10.0)
+                            .suffix(" s")
+                            .text("Ausblenddauer"),
+                    )
+                    .changed();
+            });
+            if changed {
+                self.view.stop_fade = on;
+                self.view.stop_fade_seconds = secs;
+                self.with(move |c| c.set_stop_fade(on, secs));
+            }
         });
         // Die Pegelregler stehen senkrecht neben den Decks (`level_faders`).
         ui.add_space(4.0);

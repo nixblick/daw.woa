@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.34.65 — 2026-10-31
+
+### Neu
+
+- **Stopp mit Ausblenden (#227):** Im Radio-Modus steht bei Crossfade und Ducking der Schalter „Stopp blendet aus“ mit der „Ausblenddauer“ (0,5–10 s, Vorgabe 3 s). Ist er an, blenden Stopp am Sende-Player und Stopp an den Decks A/B/C über diese Dauer aus, etwa um mitten im Titel auszusteigen; aus bleibt der Stopp hart wie bisher. Kein neuer Knopf, Pause und Deck-Übergaben bleiben unverändert. Schalter und Dauer werden mit der Sendung gespeichert (Test unter `assert_no_alloc`).
+
 ## 0.34.64 — 2026-10-31
 
 - **CI stabiler:** Drei Windows-Tests schlugen zufällig fehl (3 von 15 Läufen auf main). Die Titelinfos-Tests warten jetzt bis zu 10 s auf den Thread, der die Tags liest, statt fest 5 Bilder. Der WebRTC-Test lässt am Pult -16 statt -14 dB zu; gemessen wurden -14,02 dB.
