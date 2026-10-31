@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.56 — 2026-10-31
+## 0.34.57 — 2026-10-31
 
 ### Behoben
 
@@ -8,6 +8,14 @@
 - **Streamd:** Meldet sich die Oberfläche neu an, wird der Puffer nicht mehr geleert. Das Umrechnen auf die Stream-Rate läuft außerhalb der Sperre, die der Sende-Takt braucht. Unterläufe und Kürzungen stehen jetzt im Log („sendemix buffer gap“ mit Pufferstand, höchstens alle 10 s), und die Kürzungen zählt `live_trims` in `streamd-status.json`.
 - **Abriss der Verbindung zu woa-streamd:** Der Feeder verwarf den Sendemix, solange keine Verbindung stand. Jetzt hält er bis zu 0,4 s zurück, versucht nach einem Schreibfehler sofort neu zu verbinden und schreibt „streamd link restored“ mit der Ausfallzeit ins Log. Unter „Auf Sendung“ steht „Verbindung zu woa-streamd unterbrochen, verbinde neu …“, danach, wie oft neu verbunden wurde und wie viele Lücken es gab (Test: echter Feeder unter Last mit Verbindungsabriss ergibt keinen Unterlauf).
 - **Radio-Ausgabe:** Ohne Angabe in `config.json` läuft sie jetzt mit einem festen Puffer von 1024 Frames statt mit der Treibervorgabe. Lehnt das Gerät den Puffer ab, öffnet sie mit der Treibervorgabe, und eine Warnung steht im Log. Unter Windows entscheidet weiterhin der Treiber.
+
+## 0.34.56 — 2026-10-31
+
+### Geändert
+
+- **Kopfleiste aus einem Guss:** MIDI, ON AIR, REC, KI, Modus-Umschalter und Feedback sind jetzt gleich hohe Pillen (24 px) mit gleicher Schrift, Symbolgröße, Radius und Innenabstand (Design-System-Tokens). Abstände aus den Tokens: 16 px in der Gruppe, 24 px zwischen Status, Modus und Feedback. Rot nur für ON AIR, wenn live; der aktive Modus in der Akzentfarbe, auch während der Sendung. Unter 760 px freier Breite zeigen die Pillen nur ihr Symbol, das Wort steht im Tooltip (Tests bei 1280 und 900 px).
+- **REC in der Kopfleiste:** Der Mitschnitt hat einen Knopf für alle Modi (Radio, Party, Produzent) und leuchtet rot, solange er läuft; der Tooltip nennt Dauer und Ziel. Ein Moduswechsel bricht ihn nicht ab. Der alte Mitschnitt-Knopf im Sendepult entfällt (Tests).
+- **KI-Anzeige** („KI bereit“/„KI verbunden“) wandert aus der Statusleiste in die Status-Gruppe der Kopfleiste.
 
 ## 0.34.55 — 2026-10-31
 
