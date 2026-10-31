@@ -53,6 +53,10 @@ pub enum LevelBus {
     Mic,
     /// Decks A, B, C zusammen.
     Decks,
+    /// Ausgang „Wiedergabe Notebook“ (Abhörmix im Hauptausgang, #96).
+    Monitor,
+    /// Ausgang „Stream senden“ (nur der Ring an woa-streamd, #96).
+    Stream,
 }
 
 impl LevelBus {
@@ -62,6 +66,8 @@ impl LevelBus {
             LevelBus::Carts => 1,
             LevelBus::Mic => 2,
             LevelBus::Decks => 3,
+            LevelBus::Monitor => 4,
+            LevelBus::Stream => 5,
         }
     }
 }
@@ -625,8 +631,8 @@ pub struct Mixer {
     bus_on: bool,
     mic_chain: MicChain,
     mic_chain_on: bool,
-    /// Pegel Musik, Carts, Mikro, Decks (geglättet).
-    levels: [Smoother; 4],
+    /// Pegel Musik, Carts, Mikro, Decks, Abhören, Stream (geglättet).
+    levels: [Smoother; 6],
     /// Gast-Kanäle mit Mix-Minus (Paket 37).
     guests: GuestBank,
     /// Wohin die Cart-Wall geht (0 = in den Hauptausgang).
@@ -1284,7 +1290,8 @@ impl Mixer {
             let pg = self.phone_gain.tick();
             pl *= pg;
             pr *= pg;
-            let [lm, lc, li, _] = &mut self.levels;
+            let [lm, lc, li, _, lo, ls] = &mut self.levels;
+            let (out_mon, out_stream) = (lo.tick(), ls.tick());
             let (lm, lc) = (lm.tick(), lc.tick());
             let mg = self.mic_gain.tick() * li.tick();
             let duck = self.duck.tick() * lm * vduck;
@@ -1345,8 +1352,8 @@ impl Mixer {
             }
             if let Some(p) = self.stream.as_mut() {
                 if p.slots() >= 2 {
-                    let _ = p.push(sl);
-                    let _ = p.push(sr);
+                    let _ = p.push(sl * out_stream);
+                    let _ = p.push(sr * out_stream);
                 } else {
                     self.status.stream_dropped.fetch_add(2, Ordering::Relaxed);
                 }
@@ -1369,6 +1376,8 @@ impl Mixer {
                     right[i] -= xr * gain_out;
                 }
             }
+            left[i] *= out_mon;
+            right[i] *= out_mon;
             if let Some(d) = ret_dest {
                 extra[d].l[i] += tl;
                 extra[d].r[i] += tr;
