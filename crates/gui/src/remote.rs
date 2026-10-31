@@ -264,8 +264,8 @@ impl RemoteView {
 }
 
 /// Zeichnet den QR-Code mit hellem Rand (ohne ihn lesen Kameras schlecht).
-pub(crate) fn draw_qr(ui: &mut egui::Ui, m: &QrMatrix, side: f32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+pub(crate) fn draw_qr(ui: &mut egui::Ui, m: &QrMatrix, side: f32) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 4.0, egui::Color32::WHITE);
     let quiet = 4.0;
@@ -283,4 +283,5 @@ pub(crate) fn draw_qr(ui: &mut egui::Ui, m: &QrMatrix, side: f32) {
             }
         }
     }
+    resp
 }
