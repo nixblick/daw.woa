@@ -37,6 +37,8 @@ pub struct AssistantTab {
     running: Option<Receiver<Done>>,
     running_key: Option<String>,
     note: Option<String>,
+    /// Liegt ein Schlüssel? Im Hintergrund nachgesehen, nie je Bild im UI-Thread.
+    keys: crate::ki_setup::KeyStatus,
 }
 
 fn kind_label(k: Kind) -> &'static str {
@@ -202,7 +204,7 @@ impl AssistantTab {
         {
             let p = &mut draft.providers[idx];
             let b = self.bufs.entry(format!("ki-{}", p.id)).or_default();
-            let stored = woa_secrets::stored(data_dir, &p.secret_account());
+            let stored = self.keys.get(data_dir, &p.secret_account()).flatten();
             egui::Grid::new("ki-provider-grid")
                 .num_columns(2)
                 .spacing([12.0, 8.0])
@@ -262,7 +264,10 @@ impl AssistantTab {
                             .clicked()
                         {
                             match woa_secrets::save(data_dir, &p.secret_account(), &b.secret) {
-                                Ok(_) => b.secret.clear(),
+                                Ok(ort) => {
+                                    b.secret.clear();
+                                    self.keys.set(&p.secret_account(), Some(ort));
+                                }
                                 Err(e) => {
                                     self.note = Some(format!("Schlüssel nicht gespeichert: {e}"))
                                 }
@@ -270,6 +275,7 @@ impl AssistantTab {
                         }
                         if stored.is_some() && ui.button("Entfernen").clicked() {
                             let _ = woa_secrets::clear(data_dir, &p.secret_account());
+                            self.keys.set(&p.secret_account(), None);
                         }
                     });
                     ui.end_row();

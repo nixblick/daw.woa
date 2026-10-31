@@ -19,6 +19,7 @@ enum StudioDockTab {
     Mixer,
     PianoRoll,
     Automation,
+    Chat,
 }
 
 /// Pixel je Beat in der Zeitleiste.
@@ -761,8 +762,12 @@ impl WoaApp {
             .session()
             .path()
             .map(std::path::Path::to_path_buf);
-        self.chat_ui
-            .show(ctx, &self.config.ki, &self.data_dir, project.as_deref());
+        if self
+            .chat_ui
+            .show(ctx, &self.config.ki, &self.data_dir, project.as_deref())
+        {
+            self.ki_ui.open(&self.config.ki, &self.data_dir);
+        }
         let applied = self.ki_ui.show(ctx, &self.data_dir, project.as_deref());
         if self.ki_ui.take_token_changed() {
             // Der Live-Server nimmt sonst weiter das alte Token an.
@@ -776,8 +781,11 @@ impl WoaApp {
             port = applied.mcp_server.port,
             "ki settings applied"
         );
+        let server_changed = applied.mcp_server != self.config.ki.mcp_server;
         self.config.ki = applied;
-        self.ki_ui.apply(&self.config.ki, &self.data_dir);
+        if server_changed {
+            self.ki_ui.apply(&self.config.ki, &self.data_dir);
+        }
         self.save_config();
     }
 
@@ -2676,9 +2684,9 @@ impl WoaApp {
                 ui.close();
             }
             if ui
-                .button("KI & MCP …")
+                .button("KI …")
                 .on_hover_text(
-                    "WOA als MCP-Server für Claude Desktop, Claude Code und andere Clients",
+                    "Anbieter wählen: Claude Desktop/Code über MCP oder ein Sprachmodell für den KI-Chat",
                 )
                 .clicked()
             {
@@ -2695,8 +2703,13 @@ impl WoaApp {
                     .session()
                     .path()
                     .map(std::path::Path::to_path_buf);
-                self.chat_ui
-                    .open(&self.config.ki, &self.data_dir, project.as_deref());
+                if self.config.mode == Mode::Produzent {
+                    // Im Produzenten wohnt der Chat im Studio-Dock.
+                    self.studio_dock = StudioDockTab::Chat;
+                } else {
+                    self.chat_ui
+                        .open(&self.config.ki, &self.data_dir, project.as_deref());
+                }
                 ui.close();
             }
             if ui.button("Telefon (Eingang für den Anrufer) …").clicked() {
@@ -6402,6 +6415,34 @@ impl WoaApp {
                     };
                 }
 
+                let chat_active = self.studio_dock == StudioDockTab::Chat;
+                let chat_btn = egui::Button::new(
+                    egui::RichText::new(format!("{} KI-Chat", theme::ic::CHAT_CIRCLE))
+                        .small()
+                        .strong()
+                        .color(if chat_active {
+                            theme::well()
+                        } else {
+                            theme::accent()
+                        }),
+                )
+                .fill(if chat_active {
+                    theme::accent()
+                } else {
+                    theme::well()
+                });
+                if ui
+                    .add(chat_btn)
+                    .on_hover_text("Mit der gewählten KI sprechen; sie bedient das offene Projekt")
+                    .clicked()
+                {
+                    self.studio_dock = if chat_active {
+                        StudioDockTab::Closed
+                    } else {
+                        StudioDockTab::Chat
+                    };
+                }
+
                 let an_btn = egui::Button::new(
                     egui::RichText::new(format!("{} Analyse", theme::ic::CHART_BAR))
                         .small()
@@ -6481,6 +6522,19 @@ impl WoaApp {
                 StudioDockTab::Mixer => self.mixer_console(ui),
                 StudioDockTab::PianoRoll => self.docked_piano_roll(ui),
                 StudioDockTab::Automation => self.docked_automation(ui),
+                StudioDockTab::Chat => {
+                    let project = self
+                        .state
+                        .session()
+                        .path()
+                        .map(std::path::Path::to_path_buf);
+                    if self
+                        .chat_ui
+                        .dock(ui, &self.config.ki, &self.data_dir, project.as_deref())
+                    {
+                        self.ki_ui.open(&self.config.ki, &self.data_dir);
+                    }
+                }
             }
         });
     }
