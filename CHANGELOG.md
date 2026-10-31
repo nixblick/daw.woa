@@ -1,11 +1,14 @@
 # Changelog
 
-## 0.34.58 — 2026-10-31
+## 0.34.59 — 2026-10-31
 
 ### Neu
 
 - **Gespielte ausblenden (#215):** Neben dem Titelzähler der Sende-Playlist schaltet ein kleines Auge-Symbol die gespielten Titel (alle vor dem laufenden bzw. nächsten) aus der Liste. Sie werden nur ausgeblendet, nicht gelöscht; der Zähler zeigt dann „offen, gespielt“. „bis Playlist-Ende“ zählt nur die offenen Titel. Die Einstellung gilt je Sendung und steht in radio.json (Vorgabe aus). Tests: Restzeit nur der offenen Titel, Speichern und Laden.
 - **LED-Meter an den Fadern (#216):** Neben jedem der vier Fader (Playlist, Carts, Decks, Mikro) steht ein schmales senkrechtes LED-Meter nach dem Fader, dazu eine fünfte Spalte „Master“ ohne Fader: der Sendemix, der wirklich rausgeht. Grün bis -18 dBFS, Gelb bis -6, Rot darüber, Blau unter -40 („zu leise“); die Spitze hält 1,5 s. Der Audio-Thread schreibt nur drei weitere Spitzenwerte in Atomics, ohne Lock. Tests: Farbstufen, Spitze halten, fünf Meter vorhanden, Pegel je Zweig.
+
+## 0.34.58 — 2026-10-31
+
 ### Behoben
 
 - **Aussetzer im Sendestream:** Der Puffer für den Sendemix in woa-streamd hatte nur 0,1 s Vorlauf. Fiel er unter 20 ms, gab es 0,1 s Stille; stieg er über 0,5 s, wurden 0,4 s Ton weggeschnitten. Zittern der Lieferung (Feeder alle 20 ms, Treiberpuffer, alter Windows-Rechner) und die Uhrendifferenz zwischen Soundkarte und Systemuhr lösten das regelmäßig aus: Am 30.10. waren es 28 Unterläufe in 36 Minuten (`streamd-status.json`). Neu ist ein Jitter-Puffer mit 0,5 s Zielstand. Verlässt der Stand das Band von ±0,1 s, wird je 20-ms-Block ein einzelner Frame weggelassen oder wiederholt. Das gleicht bis etwa 1100 ppm Uhrendifferenz aus und kostet praktisch keine Rechenzeit. Hart gekürzt wird nur noch über 2 s. Tests: 10 Minuten Fake-Quelle mit ±1000 ppm, Häppchen von 20 bis 100 ms und 200-ms-Hängern ergeben keine Lücke und keinen Sprung; mit den alten Werten scheitern dieselben Tests.
