@@ -4,6 +4,7 @@
 //! steckt in kleinen reinen Funktionen und ist ohne Fenster getestet.
 
 pub mod clock;
+pub mod ctl;
 pub mod fader;
 pub mod jog;
 pub mod key;
@@ -12,6 +13,7 @@ pub mod pad;
 pub mod vu;
 
 pub use clock::studio_clock;
+pub use ctl::{CTL_HEIGHT, CTL_MIN_WIDTH, Tone, ctl_key};
 pub use fader::{Orient, fader};
 pub use jog::jog;
 pub use key::Key;

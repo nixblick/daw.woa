@@ -24,6 +24,8 @@ pub fn snapshot(layout: &PartyLayout, state: &PartyState) -> PartySnapshot {
             .wishes
             .items()
             .iter()
+            // Erledigte Wünsche bleiben in der App stehen, das Handy zeigt nur offene.
+            .filter(|w| !w.done)
             .map(|w| WishSnap {
                 title: w.title.clone(),
                 votes: w.votes,
