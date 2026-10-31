@@ -761,6 +761,14 @@ Abnahmekriterium (#1): Projekt-Roundtrip, Feedback erzeugt GitHub-Issue, Logs ko
 
 Selbst geprüft von Claude: Workspace-Tests grün, darunter Opt-in gegen lokalen Fake-Server (`crates/gui/tests/telemetry_optin.rs`: ohne Ja geht nichts raus, mit Ja kommt der Code an und der Puffer wird geleert) und die Roundtrip-Tests (`apps/woa-headless/tests/cli.rs`, `crates/model/tests/model.rs`).
 
+## Sicherheit #112: Plugin-Suche und Shared Memory privat (0.34.16)
+
+1. Ein Plugin laden und spielen (Linux). In einem zweiten Terminal während es läuft: `ls -l ${TMPDIR:-/tmp}/woa-plugin-*.shm` zeigt `-rw-------` (nur Besitzer).
+2. Plugin-Suche starten (die Suche beim Start bzw. im Plugin-Dialog). Währenddessen zeigt `ls -ld ${TMPDIR:-/tmp}/woa-scan-*` ein Verzeichnis `drwx------`; danach ist es weg und es liegt keine `woa-scan-*.txt` mehr im Temp-Ordner.
+3. Die gefundenen Plugins erscheinen wie vorher.
+
+Selbst geprüft von Claude: Tests `shared_memory_file_is_mode_0600` und `private_dir_is_mode_0700_unique_and_removed`, Tests und Clippy des Crates grün.
+
 ## Abgenommen
 
 - Paket 10 Dauertest (0.5.0): 30.10.2026, André „2 abgenommen“ (Sammelabnahme Pakete 5, 9, 10 und Nachtrag #43).

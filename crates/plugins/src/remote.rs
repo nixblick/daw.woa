@@ -1103,13 +1103,13 @@ fn scan_one(
     host: &HostConfig,
     timeout: Duration,
 ) -> Result<Vec<PluginInfo>, ScanFail> {
-    let out = std::env::temp_dir().join(format!(
-        "woa-scan-{}-{}.txt",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos())
-    ));
+    // Ergebnis in einem privaten Verzeichnis (0700, neu angelegt), nicht als vorhersehbare Datei im
+    // gemeinsamen Temp-Ordner; das Verzeichnis verschwindet beim Verlassen der Funktion.
+    let dir = crate::shm::PrivateDir::create(&std::env::temp_dir()).map_err(|e| ScanFail {
+        reason: format!("Suchprozess: privater Ordner: {e}"),
+        blockable: false,
+    })?;
+    let out = dir.path().join("scan.txt");
     let mut cmd = host.command();
     cmd.arg("--scan")
         .arg(file)
@@ -1132,7 +1132,6 @@ fn scan_one(
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                let _ = std::fs::remove_file(&out);
                 return Err(ScanFail {
                     reason: "Laden dauert zu lange (Plugin hängt)".into(),
                     blockable: true,
@@ -1147,7 +1146,6 @@ fn scan_one(
         }
     };
     let text = std::fs::read_to_string(&out).unwrap_or_default();
-    let _ = std::fs::remove_file(&out);
     if !status.success() {
         return Err(ScanFail {
             reason: format!("Plugin ist beim Laden abgestürzt ({status})"),
