@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.34.67 — 2026-10-31
+
+### Behoben
+
+- **ON AIR nur bei Sendung (#225):** Die ON-AIR-Pille oben rechts leuchtete auch, wenn nur das Mikro offen war. Sie leuchtet jetzt nur noch bei „Auf Sendung“ (Stream läuft); das Mikro hat seine eigene Anzeige am Mikro-Knopf.
+
 ## 0.34.66 — 2026-10-31
 
 - **KI live ohne Token (#232):** Die App startet den Live-Server jetzt bei jedem Start selbst, auch wenn kein Zugriffstoken erzeugt wurde. Sie nutzt dann einen eigenen Schlüssel je Start (nur 127.0.0.1, Origin-Prüfung, Lock-Datei 0600, nie angezeigt). `woa-headless mcp` reicht so an das offene Fenster durch, statt daneben auf der Datei zu arbeiten. Kann der Server nicht starten, steht „KI aus“ in der Kopfleiste.

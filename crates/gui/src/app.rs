@@ -2555,7 +2555,7 @@ impl WoaApp {
         let resp = topbar_chip(ui, theme::ic::BROADCAST, "ON AIR", look, compact, false);
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, word));
         resp.on_hover_text(if live {
-            "ON AIR – Live: Sendung läuft oder das Mikro ist offen"
+            "ON AIR – Auf Sendung: der Stream läuft"
         } else {
             "ON AIR – Nicht auf Sendung"
         });
