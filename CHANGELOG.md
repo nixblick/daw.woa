@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.50 — 2026-10-31
+## 0.34.51 — 2026-10-31
 
 ### Behoben
 
@@ -8,6 +8,17 @@
 - **Streamd:** Das Umrechnen von UI- auf Stream-Rate begann je Häppchen neu (Drift, Knackser). Jetzt ein Resampler mit Zustand je Verbindung (Test: 60 s 48k→44,1k, Frame-Bilanz ±1).
 - **Streamd:** Nach Standby oder Hänger wurde der ganze Rückstand auf einmal kodiert und gesendet. Das Aufholen ist jetzt auf 1 s begrenzt, ausgelassene Blöcke werden geloggt (Test).
 - **Stream-Uplink:** Ein Pufferüberlauf schnitt den MP3-Strom an beliebiger Byte-Grenze; jetzt wird bis zum nächsten Sync-Wort verworfen (Test).
+
+## 0.34.50 — 2026-10-31
+
+### Neu
+
+- **KI live in der App:** Läuft WOA, arbeitet Claude auf dem Projekt, das in der App offen ist. Neue Spuren und Clips erscheinen sofort, und jeder Werkzeugaufruf steht als „Agent: <werkzeug>“ im Rückgängig-Verlauf (Bearbeiten → Rückgängig). Die App hostet dafür einen MCP-Server nur auf 127.0.0.1, mit dem vorhandenen Zugriffstoken und der Origin-Prüfung; der Port steht in `mcp-live.json` im Datenordner (ohne Token). `woa-headless mcp` (so startet Claude Desktop) erkennt die laufende App und reicht durch, sonst arbeitet es wie bisher headless. In Claude Desktop ist nichts umzustellen. Die Werkzeuge laufen zwischen zwei Bildern im GUI-Thread auf derselben Sitzung, die Wiedergabe läuft weiter. `save` speichert nur in den Ordner der App. Unten rechts steht „KI bereit“ bzw. „KI verbunden“. Sicherheit: Die Lock-Datei (Modus 0600) enthält statt des Tokens einen Live-Schlüssel, der je App-Start neu entsteht. Durchgereicht wird nur mit diesem Schlüssel und nur, wenn der Prozess der App noch lebt. Wird das Token im KI-Fenster neu erzeugt oder gelöscht, startet der Server neu bzw. endet, und das alte Token gilt nicht mehr.
+- **Fenster „Produktionen“:** Knopf „Produktionen“ in der Clip-Leiste des Produzenten-Modus. Er zeigt alle Audio-Dateien des Projektordners (`aufnahmen/`, Exporte, von Claude erzeugte Dateien), die neuesten oben, mit Länge und Alter. Mit dem Kopfhörer-Knopf hörst du vor (PFL wie in der Bibliothek). Ziehst du eine Datei auf eine Spur, liegt sie an dieser Stelle. Gelesen wird beim Öffnen, auf „Neu einlesen“ und nach jedem Agent-Schritt, sonst nicht.
+
+### Tests
+
+- Test für den Lock-Weiterleiter liest die Anfrage vollständig, bevor er antwortet (unter Windows sonst Verbindungsabbruch statt Antwort). Formatierung.
 
 ## 0.34.49 — 2026-10-31
 
