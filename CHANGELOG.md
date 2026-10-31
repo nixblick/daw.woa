@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.34.24 — 2026-10-31
+
+Sicherheit #136: Updater Stufe B vorbereitet, es fehlt nur noch der Schlüssel.
+
+- **Updater:** Neuer Test wacht über `packaging/windows/updater.pub`: Die Datei ist entweder der Platzhalter oder ein gültiger minisign-Schlüssel. Ein beschädigt eingefügter Schlüssel würde sonst stillschweigend auf die schwächere Prüfsummen-Stufe zurückfallen; jetzt bricht der Test (und damit die CI) ab.
+- **Doku:** `docs/updater.md` führt die Schritte zum Einschalten von Stufe B einzeln auf. Der Schlüssel entsteht mit `minisign -G -W` (ohne Passwort, weil der Workflow unbeaufsichtigt signiert).
+- **Updater:** Der Platzhalter gilt nur noch, wenn die Datei mit `PLATZHALTER:` beginnt. Ein Schlüssel, dem die Kommentarzeile fehlt, fällt jetzt im Test auf.
+
+Nicht erledigt: Der Schlüssel selbst (nur André), #136 bleibt offen.
+
 ## 0.34.23 — 2026-10-31
 
 Eine Auswahl, ein ruhiger Clip-Inspektor (André 31.10.: „mehr buttons sind nie die lösung … KISS“).
