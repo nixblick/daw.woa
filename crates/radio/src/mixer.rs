@@ -51,6 +51,8 @@ pub enum LevelBus {
     Music,
     Carts,
     Mic,
+    /// Decks A, B, C zusammen.
+    Decks,
 }
 
 impl LevelBus {
@@ -59,6 +61,7 @@ impl LevelBus {
             LevelBus::Music => 0,
             LevelBus::Carts => 1,
             LevelBus::Mic => 2,
+            LevelBus::Decks => 3,
         }
     }
 }
@@ -103,6 +106,11 @@ pub enum Cmd {
     Pause,
     /// Nach [`Cmd::Pause`] an der gehaltenen Stelle weiter (ohne neu zu laden).
     Resume,
+    /// Wie [`Cmd::Pause`], aber über so viele Frames ausgeblendet (Deck löst die Playlist ab).
+    PauseFade(usize),
+    /// Die Musik blendet über so viele Frames ein, sobald sie (wieder) läuft; vor
+    /// [`Cmd::Resume`] oder [`Cmd::Play`] geschickt (Rückkehr vom Deck zur Playlist).
+    FadeIn(usize),
     /// Jetzt zum nächsten Titel überblenden (oder ausblenden, wenn keiner bereitliegt).
     Next,
     /// Im laufenden Titel um so viele Frames springen (negativ: zurück); bleibt zwischen
@@ -161,6 +169,10 @@ pub enum Cmd {
     },
     /// Deck starten (am Ende: von vorn).
     DeckPlay(usize),
+    /// Deck starten und über so viele Frames einblenden (0 = sofort voll).
+    DeckPlayFade(usize, usize),
+    /// Deck über so viele Frames ausblenden und anhalten (Übergabe an die Playlist).
+    DeckFadeOut(usize, usize),
     /// Deck kurz ausblenden und anhalten; die Stelle bleibt.
     DeckStop(usize),
     /// Deck anhalten und an den Anfang (Cue-In) stellen.
@@ -183,12 +195,17 @@ pub struct Status {
     pub playing: AtomicBool,
     /// Bit je laufendem Cart.
     pub carts: AtomicU32,
+    /// Restliche Frames je Cart (0 = steht).
+    pub cart_rest: [AtomicU64; CARTS],
     /// Zustand je Deck: [`DECK_EMPTY`], [`DECK_READY`] oder [`DECK_PLAYING`].
     pub deck_state: [AtomicU32; DECKS],
     /// Stelle im Deck (Frames).
     pub deck_pos: [AtomicU64; DECKS],
     /// Ende im Deck (Frames, Cue-Out).
     pub deck_end: [AtomicU64; DECKS],
+    /// Ereignis „Deck fertig“: zählt je Deck, wie oft es bis Cue-Out durchgelaufen ist
+    /// (nicht beim Anhalten). Der Controller vergleicht mit seinem letzten Stand.
+    pub deck_done: [AtomicU32; DECKS],
     pub mic_open: AtomicBool,
     /// Telefon auf Sendung.
     pub phone_on: AtomicBool,
@@ -230,9 +247,11 @@ impl Default for Status {
             plays: AtomicU32::new(0),
             playing: AtomicBool::new(false),
             carts: AtomicU32::new(0),
+            cart_rest: std::array::from_fn(|_| AtomicU64::new(0)),
             deck_state: std::array::from_fn(|_| AtomicU32::new(DECK_EMPTY)),
             deck_pos: std::array::from_fn(|_| AtomicU64::new(0)),
             deck_end: std::array::from_fn(|_| AtomicU64::new(0)),
+            deck_done: std::array::from_fn(|_| AtomicU32::new(0)),
             mic_open: AtomicBool::new(false),
             phone_on: AtomicBool::new(false),
             phone_peak: AtomicU32::new(0),
@@ -376,6 +395,10 @@ struct DeckPlay {
     playing: bool,
     /// Restliche Frames der Ausblendung beim Anhalten.
     stopping: Option<usize>,
+    /// Länge der laufenden Ausblendung (Frames).
+    stop_total: usize,
+    /// Einblenden: (gespielte Frames, Länge).
+    fade_in: Option<(usize, usize)>,
 }
 
 struct Voice {
@@ -423,6 +446,10 @@ pub struct Mixer {
     playing: bool,
     stop_len: usize,
     stopping: Option<usize>,
+    /// Länge der laufenden Musik-Ausblendung (Frames).
+    stop_total: usize,
+    /// Einblenden der Musik: (gespielte Frames, Länge).
+    fade_in: Option<(usize, usize)>,
     /// Die laufende Ausblendung ist eine Pause: am Ende bleibt der Titel stehen.
     pausing: bool,
     /// Pausiert: der Titel steht und wird nicht weitergespielt.
@@ -451,8 +478,8 @@ pub struct Mixer {
     bus_on: bool,
     mic_chain: MicChain,
     mic_chain_on: bool,
-    /// Pegel Musik, Carts, Mikro (geglättet).
-    levels: [Smoother; 3],
+    /// Pegel Musik, Carts, Mikro, Decks (geglättet).
+    levels: [Smoother; 4],
     /// Gast-Kanäle mit Mix-Minus (Paket 37).
     guests: GuestBank,
     /// Wohin die Cart-Wall geht (0 = in den Hauptausgang).
@@ -483,6 +510,8 @@ impl Mixer {
             playing: false,
             stop_len: (STOP_SECONDS * r).max(1.0) as usize,
             stopping: None,
+            stop_total: (STOP_SECONDS * r).max(1.0) as usize,
+            fade_in: None,
             pausing: false,
             held: false,
             carts: std::array::from_fn(|_| None),
@@ -572,14 +601,27 @@ impl Mixer {
                         self.clear_music();
                     } else if self.playing && self.stopping.is_none() {
                         self.stopping = Some(self.stop_len);
+                        self.stop_total = self.stop_len;
                     }
                     self.pausing = false;
                 }
                 Cmd::Pause => {
                     if self.playing && self.stopping.is_none() {
                         self.stopping = Some(self.stop_len);
+                        self.stop_total = self.stop_len;
                         self.pausing = true;
                     }
+                }
+                Cmd::PauseFade(frames) => {
+                    if self.playing && self.stopping.is_none() {
+                        let f = frames.max(1);
+                        self.stopping = Some(f);
+                        self.stop_total = f;
+                        self.pausing = true;
+                    }
+                }
+                Cmd::FadeIn(frames) => {
+                    self.fade_in = (frames > 0).then_some((0, frames));
                 }
                 Cmd::Next => self.skip(),
                 Cmd::Seek(delta) => self.seek(delta),
@@ -641,6 +683,8 @@ impl Mixer {
                             gain,
                             playing: false,
                             stopping: None,
+                            stop_total: 1,
+                            fade_in: None,
                         });
                     }
                 }
@@ -659,6 +703,7 @@ impl Mixer {
                             d.pos = d.start;
                         }
                         d.stopping = None;
+                        d.fade_in = None;
                         d.playing = d.pos < d.end;
                     }
                 }
@@ -668,6 +713,27 @@ impl Mixer {
                         && d.stopping.is_none()
                     {
                         d.stopping = Some(self.stop_len);
+                        d.stop_total = self.stop_len;
+                    }
+                }
+                Cmd::DeckPlayFade(deck, frames) => {
+                    if let Some(Some(d)) = self.decks.get_mut(deck) {
+                        if d.pos >= d.end {
+                            d.pos = d.start;
+                        }
+                        d.stopping = None;
+                        d.fade_in = (frames > 0).then_some((0, frames));
+                        d.playing = d.pos < d.end;
+                    }
+                }
+                Cmd::DeckFadeOut(deck, frames) => {
+                    if let Some(Some(d)) = self.decks.get_mut(deck)
+                        && d.playing
+                        && d.stopping.is_none()
+                    {
+                        let f = frames.max(1);
+                        d.stopping = Some(f);
+                        d.stop_total = f;
                     }
                 }
                 Cmd::DeckCue(deck) => {
@@ -906,6 +972,17 @@ impl Mixer {
                     self.outgoing = None;
                 }
             }
+            if let Some((p, len)) = self.fade_in
+                && self.playing
+                && !self.held
+                && self.current.is_some()
+            {
+                // Rückkehr vom Deck: die Musik blendet ein.
+                let g = crossfade(p as f32 / len as f32).1;
+                ml *= g;
+                mr *= g;
+                self.fade_in = (p + 1 < len).then_some((p + 1, len));
+            }
             if self.current.as_ref().is_some_and(Deck::done) {
                 self.current = None;
                 if self.next.is_none() {
@@ -915,7 +992,7 @@ impl Mixer {
                 }
             }
             if let Some(k) = self.stopping {
-                let g = k as f32 / self.stop_len as f32;
+                let g = k as f32 / self.stop_total.max(1) as f32;
                 ml *= g;
                 mr *= g;
                 if k <= 1 {
@@ -952,14 +1029,15 @@ impl Mixer {
 
             // Decks.
             let mut deck_out = [(0.0f32, 0.0f32); DECKS];
-            for (slot, out) in self.decks.iter_mut().zip(deck_out.iter_mut()) {
+            let ldg = self.levels[3].tick();
+            for (k, (slot, out)) in self.decks.iter_mut().zip(deck_out.iter_mut()).enumerate() {
                 if let Some(d) = slot
                     && d.playing
                 {
                     if d.pos < d.end {
                         let mut g = d.gain;
                         if let Some(n) = d.stopping {
-                            g *= n as f32 / self.stop_len as f32;
+                            g *= n as f32 / d.stop_total.max(1) as f32;
                             if n <= 1 {
                                 d.playing = false;
                                 d.stopping = None;
@@ -967,12 +1045,19 @@ impl Mixer {
                                 d.stopping = Some(n - 1);
                             }
                         }
-                        *out = (d.buf.left[d.pos] * g, d.buf.right[d.pos] * g);
+                        if let Some((p, len)) = d.fade_in {
+                            g *= crossfade(p as f32 / len as f32).1;
+                            d.fade_in = (p + 1 < len).then_some((p + 1, len));
+                        }
+                        *out = (d.buf.left[d.pos] * g * ldg, d.buf.right[d.pos] * g * ldg);
                         d.pos += 1;
                     }
                     if d.pos >= d.end {
                         d.playing = false;
                         d.stopping = None;
+                        d.fade_in = None;
+                        // Ereignis „Deck fertig“: nur ein Zähler, keine Allokation.
+                        self.status.deck_done[k].fetch_add(1, Ordering::Release);
                     }
                 }
             }
@@ -1025,7 +1110,7 @@ impl Mixer {
             let pg = self.phone_gain.tick();
             pl *= pg;
             pr *= pg;
-            let [lm, lc, li] = &mut self.levels;
+            let [lm, lc, li, _] = &mut self.levels;
             let (lm, lc) = (lm.tick(), lc.tick());
             let mg = self.mic_gain.tick() * li.tick();
             let duck = self.duck.tick() * lm * vduck;
@@ -1157,6 +1242,8 @@ impl Mixer {
             if v.is_some() {
                 mask |= 1 << i;
             }
+            let rest = v.as_ref().map_or(0, |v| v.end.saturating_sub(v.pos) as u64);
+            s.cart_rest[i].store(rest, Ordering::Release);
         }
         s.carts.store(mask, Ordering::Release);
         for (k, d) in self.decks.iter().enumerate() {

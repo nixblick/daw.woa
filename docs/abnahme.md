@@ -4,6 +4,22 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Radio: Deck und Playlist, Fader, Cart-Restzeit (0.34.43, offen)
+
+1. Titel aufs Deck A laden (Rechtsklick in der Playlist → „Auf Deck laden“). Es startet nichts, die Playlist läuft unverändert weiter.
+2. Playlist läuft. Im Player „▶ Deck A“ klicken: Die Playlist blendet über den eingestellten Crossfade aus und pausiert, Deck A blendet ein.
+3. „↩ Playlist“ an Deck A ist aus (Vorgabe): Nach dem Deck ist es still. Play im Player macht an der Pausenstelle weiter.
+4. „↩ Playlist“ an Deck A einschalten, wieder „▶ Deck A“: In den letzten Sekunden (Crossfade-Länge) blendet das Deck aus und die Playlist an der Pausenstelle ein.
+5. Umschalt+Klick auf „▶ Deck A“ (oder Rechtsklick → „Sofort (ohne Blende)“): harter Schnitt.
+6. Leeres Deck B: Knopf ausgegraut, Tooltip sagt „Deck B ist leer …“.
+7. Start am Deck selbst: Deck läuft parallel zur Playlist, nichts pausiert.
+8. WOA neu starten: „↩ Playlist“ steht noch so wie vorher.
+9. Neben den Decks stehen vier senkrechte Fader: Playlist, Carts, Decks, Mikro. Ziehen ändert den Pegel, Doppelklick setzt 0 dB, Rechtsklick lernt MIDI. Unter dem Rack gibt es keine waagerechten Pegelregler mehr.
+10. Cart abspielen: Das Pad zeigt rechts unten den Countdown („-12 s“, unter 10 s mit Nachkommastelle).
+
+Selbst geprüft von Claude: Tests und Clippy von woa-radio, woa-io und woa-gui grün, darunter Offline-Mixer-Tests (Blende mit Pegelkurve, Stille, Schnitt, Laden startet nichts) unter `assert_no_alloc` und Oberflächentests der Knöpfe und Fader. Nicht selbst geprüft: das Ganze mit Ton am Gerät, das Aussehen der Fader-Gruppe im Fenster.
+
+
 ## KI & MCP, Teil 2: Assistent mit freiem Anbieter (0.34.34, offen)
 
 1. Einstellungen → „KI & MCP …“ → Reiter „Assistent“. „Neu …“ zeigt Anthropic, OpenAI, OpenRouter, Ollama (lokal), LM Studio (lokal) und „Eigener Server (leer)“.
