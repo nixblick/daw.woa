@@ -342,6 +342,7 @@ impl Controller {
         };
         self.send(Cmd::SetStopFade(stop));
         self.send(Cmd::SetDuck(db_to_gain(self.show.duck_db)));
+        self.send(Cmd::SetCartDuck(self.show.cart_duck));
         self.send(Cmd::SetTarget(self.show.target_lufs));
         self.send(Cmd::SetProcessing {
             bus: self.show.bus_processing,
@@ -622,6 +623,12 @@ impl Controller {
     pub fn set_crossfade(&mut self, seconds: f64) {
         self.show.crossfade_seconds = seconds;
         self.show.sanitize();
+        self.apply_settings();
+    }
+
+    /// Carts senken die Musik ab (#149), gespeichert in der Sendung.
+    pub fn set_cart_duck(&mut self, on: bool) {
+        self.show.cart_duck = on;
         self.apply_settings();
     }
 
