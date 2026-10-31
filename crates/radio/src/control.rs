@@ -647,6 +647,16 @@ impl Controller {
         self.apply_settings();
     }
 
+    /// Auto-Weiter in der Sende-Playlist an oder aus (#148), gespeichert in der Sendung.
+    /// Aus verwirft den schon bereitgelegten nächsten Titel; der laufende spielt zu Ende.
+    pub fn set_auto_next(&mut self, on: bool) {
+        self.show.auto_next = on;
+        tracing::info!(on, "playlist auto next");
+        if !on && self.pending.take().is_some() {
+            self.send(Cmd::ClearNext);
+        }
+    }
+
     /// Gespielte Titel ausblenden (#215), gespeichert in der Sendung.
     pub fn set_hide_played(&mut self, on: bool) {
         self.show.hide_played = on;
@@ -831,6 +841,14 @@ impl Controller {
                     self.jump_to(t);
                     return;
                 }
+            }
+            if !self.show.auto_next {
+                // Nichts bereitgelegt: den nächsten Titel holen und überblenden.
+                match self.current_index().and_then(|i| self.show.next_music(i)) {
+                    Some(t) => self.jump_to(t),
+                    None => self.stop(),
+                }
+                return;
             }
             self.send(Cmd::Next);
         } else {
@@ -1561,9 +1579,12 @@ impl Controller {
             Some(i) => i + 1,
             None if cur == NONE => {
                 if self.status.playing.load(Ordering::Acquire) {
-                    // Musik zu Ende, nichts mehr bereit: Sendung endet.
+                    // Musik zu Ende, nichts mehr bereit: Sendung endet. Ohne Auto-Weiter
+                    // bleibt der nächste Titel als Cue stehen.
                     self.running = false;
-                    self.cue = None;
+                    if self.show.auto_next {
+                        self.cue = None;
+                    }
                     self.send(Cmd::Stop);
                 }
                 return;
@@ -1572,6 +1593,13 @@ impl Controller {
             None => self.cue_index(),
         };
         let cur_idx = self.index_of(cur);
+        if !self.show.auto_next {
+            // Ohne Auto-Weiter nichts bereitlegen: der nächste Titel wird Cue für „Play“.
+            if let Some(i) = cur_idx {
+                self.cue = self.show.next_music(i).map(|k| self.show.playlist[k].uid);
+            }
+            return;
+        }
         for i in self.candidates(cur_idx, after, true) {
             let uid = self.show.playlist[i].uid;
             if self.failed.contains(&uid) {

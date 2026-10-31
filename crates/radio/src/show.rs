@@ -233,6 +233,10 @@ pub struct RadioShow {
         skip_serializing_if = "is_default_stop_fade"
     )]
     pub stop_fade_seconds: f64,
+    /// Auto-Weiter in der Sende-Playlist (#148). Aus: nach jedem Titel hält die Playlist an,
+    /// der nächste steht als Cue bereit und startet mit „Play“. Vorgabe an.
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub auto_next: bool,
 }
 
 impl Default for RadioShow {
@@ -258,6 +262,7 @@ impl Default for RadioShow {
             hide_played: false,
             stop_fade: false,
             stop_fade_seconds: default_stop_fade(),
+            auto_next: true,
         }
     }
 }
