@@ -78,7 +78,11 @@ fn pause_holds_the_title_and_play_resumes_without_reloading() {
     step(&mut c, &mut m, secs(2.0));
     let held_at = c.status().position.load(Acquire);
     assert_eq!(step(&mut c, &mut m, secs(2.0)), 0.0, "pausiert ist still");
-    assert_eq!(c.status().current.load(Acquire), uid, "Titel bleibt gehalten");
+    assert_eq!(
+        c.status().current.load(Acquire),
+        uid,
+        "Titel bleibt gehalten"
+    );
     assert_eq!(c.status().position.load(Acquire), held_at, "Stelle steht");
     assert!(c.is_paused() && !c.is_running());
 
@@ -86,7 +90,11 @@ fn pause_holds_the_title_and_play_resumes_without_reloading() {
     // Sofort wieder Ton, kein Neuladen (derselbe Titel, kein neuer Start im Mixer).
     assert!(step(&mut c, &mut m, 2) > 0.05, "Play spielt sofort weiter");
     assert_eq!(c.status().current.load(Acquire), uid);
-    assert_eq!(c.status().plays.load(Acquire), plays, "kein Neustart des Titels");
+    assert_eq!(
+        c.status().plays.load(Acquire),
+        plays,
+        "kein Neustart des Titels"
+    );
     assert!(c.status().position.load(Acquire) >= held_at);
     assert!(c.is_running() && !c.is_paused());
 }
@@ -114,6 +122,12 @@ fn stop_after_pause_drops_the_title_and_start_begins_fresh() {
     c.pause();
     step(&mut c, &mut m, secs(2.0));
     c.start();
-    assert!(step(&mut c, &mut m, secs(0.5)) > 0.1, "Start nach Pause spielt");
-    assert!(c.status().position.load(Acquire) < u64::from(SR), "von vorn");
+    assert!(
+        step(&mut c, &mut m, secs(0.5)) > 0.1,
+        "Start nach Pause spielt"
+    );
+    assert!(
+        c.status().position.load(Acquire) < u64::from(SR),
+        "von vorn"
+    );
 }
