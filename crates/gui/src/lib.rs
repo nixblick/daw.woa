@@ -13,6 +13,7 @@ pub mod cue_editor;
 pub mod event_editor;
 pub mod export_dialog;
 pub mod feedback;
+mod ki_ui;
 pub mod library;
 mod outputs;
 mod outputs_ui;

@@ -37,6 +37,9 @@ pub struct GuiConfig {
     pub vu_view: crate::widgets::VuView,
     /// Sendung an den eigenen Shoutcast (liest auch woa-streamd). Ohne Kennwort.
     pub stream: woa_stream::StreamConfig,
+    /// KI & MCP: WOA als MCP-Server (später der Assistent). Ohne Geheimnisse.
+    #[serde(skip_serializing_if = "woa_assistant::KiConfig::is_default")]
+    pub ki: woa_assistant::KiConfig,
     /// Puffergröße der Radio-Ausgabe in Frames. Fehlt oder 0 = Vorgabe des Treibers
     /// ([`woa_engine::RADIO_BUFFER_FRAMES`]).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,6 +137,7 @@ impl Default for GuiConfig {
             theme: crate::theme::Theme::default(),
             vu_view: crate::widgets::VuView::default(),
             stream: woa_stream::StreamConfig::default(),
+            ki: woa_assistant::KiConfig::default(),
             radio_buffer_frames: None,
             midi_input: None,
             controller_input: None,
