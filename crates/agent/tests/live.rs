@@ -29,17 +29,28 @@ fn agent_call_lands_in_the_app_session_and_undo_removes_it() {
     let server = LiveServer::start(&data, TOKEN.into(), 0, Arc::new(|| {})).unwrap();
 
     // Die Lock-Datei verrät die App; stdio würde jetzt durchreichen.
-    assert_eq!(live::running_app(&data), Some(server.port()));
+    let app = live::running_app(&data).expect("App erkannt");
+    assert_eq!(app.port, server.port());
     let lock = std::fs::read_to_string(data.join(live::LOCK_FILE)).unwrap();
     assert!(!lock.contains(TOKEN), "Token nie in der Lock-Datei");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(data.join(live::LOCK_FILE))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
 
     let port = server.port();
+    let key = app.key.clone();
     let done = Arc::new(AtomicBool::new(false));
     let client = {
         let done = done.clone();
         std::thread::spawn(move || {
             let mut out = Vec::new();
-            let r = live::forward(port, TOKEN, LINES.as_bytes(), &mut out);
+            let r = live::forward(port, &key, LINES.as_bytes(), &mut out);
             done.store(true, Ordering::SeqCst);
             r.map(|()| String::from_utf8(out).unwrap())
         })
@@ -90,7 +101,7 @@ fn agent_call_lands_in_the_app_session_and_undo_removes_it() {
 
     drop(server);
     assert!(!data.join(live::LOCK_FILE).exists(), "Lock-Datei weg");
-    assert_eq!(live::running_app(&data), None);
+    assert!(live::running_app(&data).is_none());
 }
 
 #[test]
@@ -108,4 +119,24 @@ fn wrong_token_reaches_nothing() {
     let out = String::from_utf8(out).unwrap();
     assert!(out.contains("HTTP 401"), "{out}");
     assert!(LiveServer::start(tmp.path(), String::new(), 0, Arc::new(|| {})).is_err());
+}
+
+#[test]
+fn after_token_change_the_old_token_gets_401() {
+    let tmp = tempfile::tempdir().unwrap();
+    let init = LINES.lines().next().unwrap();
+    let old = LiveServer::start(tmp.path(), "alt-token-1".into(), 0, Arc::new(|| {})).unwrap();
+    let old_key = live::running_app(tmp.path()).unwrap().key;
+    drop(old);
+    let new = LiveServer::start(tmp.path(), "neu-token-2".into(), 0, Arc::new(|| {})).unwrap();
+    for (bearer, ok) in [
+        ("alt-token-1", false),
+        (old_key.as_str(), false),
+        ("neu-token-2", true),
+    ] {
+        let mut out = Vec::new();
+        live::forward(new.port(), bearer, init.as_bytes(), &mut out).unwrap();
+        let out = String::from_utf8(out).unwrap();
+        assert_eq!(!out.contains("HTTP 401"), ok, "{out}");
+    }
 }

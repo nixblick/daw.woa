@@ -49,6 +49,7 @@ async fn token_is_required_and_initialize_works() {
         HttpOptions {
             token: "geheim-token-123".into(),
             reachable_from_network: false,
+            live_secret: None,
             cancel: cancel.clone(),
         },
     ));
@@ -110,6 +111,7 @@ async fn empty_token_never_starts() {
         HttpOptions {
             token: String::new(),
             reachable_from_network: false,
+            live_secret: None,
             cancel: CancellationToken::new(),
         },
     )

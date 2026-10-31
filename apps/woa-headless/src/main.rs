@@ -467,18 +467,14 @@ fn mcp_token() -> Option<String> {
 /// nicht. `WOA_MCP_HEADLESS=1` erzwingt den eigenen Prozess.
 fn cmd_mcp_stdio(path: &std::path::Path) -> Result<(), String> {
     if std::env::var_os("WOA_MCP_HEADLESS").is_none()
-        && let Some(port) = woa_agent::live::running_app(&woa_radio::data_dir())
+        && let Some(app) = woa_agent::live::running_app(&woa_radio::data_dir())
     {
-        match mcp_token() {
-            Some(token) => {
-                eprintln!(
-                    "WOA MCP: die App läuft, Werkzeuge arbeiten live auf ihrem Projekt ({} gilt nicht)",
-                    path.display()
-                );
-                return woa_agent::live::forward_stdio(port, &token).map_err(|e| e.to_string());
-            }
-            None => eprintln!("WOA MCP: App läuft, aber kein Zugriffstoken; arbeite headless"),
-        }
+        // Durchgereicht wird mit dem Live-Schlüssel dieses App-Starts, nie mit dem Token.
+        eprintln!(
+            "WOA MCP: die App läuft, Werkzeuge arbeiten live auf ihrem Projekt ({} gilt nicht)",
+            path.display()
+        );
+        return woa_agent::live::forward_stdio(app.port, &app.key).map_err(|e| e.to_string());
     }
     woa_agent::run_stdio(path).map_err(|e| e.to_string())
 }

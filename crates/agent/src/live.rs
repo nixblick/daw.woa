@@ -2,11 +2,13 @@
 //! offen ist (docs/konzept.md: GUI und Agent schicken Commands an dieselbe Schicht).
 //!
 //! Die App hostet dafür einen MCP-HTTP-Server nur auf `127.0.0.1`, mit dem Zugriffstoken
-//! aus dem Schlüsselbund und der Origin-Prüfung aus [`crate::http`]. Den Port schreibt sie
-//! in die Lock-Datei [`LOCK_FILE`] im Datenordner (nur Port und Prozessnummer, nie das
-//! Token). `woa-headless mcp` (stdio, so startet Claude Desktop) findet die Datei, prüft den
-//! Port und reicht jede Zeile an die App durch ([`forward`]); sonst arbeitet es wie bisher
-//! auf einem eigenen Projekt.
+//! aus dem Schlüsselbund und der Origin-Prüfung aus [`crate::http`]. Port, Prozessnummer und
+//! ein zufälliges **Live-Geheimnis je Start** schreibt sie in die Lock-Datei [`LOCK_FILE`]
+//! im Datenordner (unter Unix Modus 0600), nie das dauerhafte Token. `woa-headless mcp`
+//! (stdio, so startet Claude Desktop) findet die Datei, prüft Prozess und Port und reicht
+//! jede Zeile mit dem Live-Geheimnis an die App durch ([`forward`]). Ein fremder Prozess
+//! auf dem Port bekommt so höchstens ein Geheimnis, das mit der App stirbt. Sonst arbeitet
+//! `woa-headless` wie bisher auf einem eigenen Projekt.
 //!
 //! Es gibt nur einen Projektzustand: Für jeden Werkzeugaufruf **leiht** der GUI-Thread seine
 //! [`Session`] her ([`LiveDesk::serve_pending`]), wartet, bis das Werkzeug fertig ist, und
@@ -317,9 +319,11 @@ impl LiveServer {
             .port();
         let (agent, desk) = LiveAgent::new(wake);
         let cancel = CancellationToken::new();
+        let secret = new_secret()?;
         let opts = HttpOptions {
             token,
             reachable_from_network: false,
+            live_secret: Some(secret.clone()),
             cancel: cancel.clone(),
         };
         std::thread::Builder::new()
@@ -345,10 +349,15 @@ impl LiveServer {
             })
             .map_err(|e| AgentError::Transport(e.to_string()))?;
         let lock = data_dir.join(LOCK_FILE);
-        let body = serde_json::json!({ "port": port, "pid": std::process::id() }).to_string();
+        let body = serde_json::json!({
+            "port": port,
+            "pid": std::process::id(),
+            "secret": secret,
+        })
+        .to_string();
         let tmp = data_dir.join(format!("{LOCK_FILE}.tmp"));
         let written = std::fs::create_dir_all(data_dir)
-            .and_then(|()| std::fs::write(&tmp, body))
+            .and_then(|()| write_private(&tmp, body.as_bytes()))
             .and_then(|()| std::fs::rename(&tmp, &lock));
         if let Err(e) = written {
             cancel.cancel();
@@ -387,22 +396,83 @@ impl Drop for LiveServer {
     }
 }
 
-fn lock_port(lock: &Path) -> Option<u16> {
-    let text = std::fs::read_to_string(lock).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
-    u16::try_from(v.get("port")?.as_u64()?).ok()
+/// 32 Zufallsbytes als Hex, je App-Start neu.
+fn new_secret() -> Result<String, AgentError> {
+    let mut buf = [0u8; 32];
+    getrandom::fill(&mut buf)
+        .map_err(|e| AgentError::Transport(format!("Zufallsgenerator: {e}")))?;
+    Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// Port der laufenden App, wenn ihre Lock-Datei in `data_dir` liegt und der Port antwortet.
-/// Eine verwaiste Datei (App abgestürzt) ergibt `None`.
-pub fn running_app(data_dir: &Path) -> Option<u16> {
-    let port = lock_port(&data_dir.join(LOCK_FILE))?;
+/// Schreibt eine Datei, die nur der Benutzer lesen darf (Unix 0600; unter Windows liegt der
+/// Datenordner im Benutzerprofil).
+fn write_private(path: &Path, data: &[u8]) -> std::io::Result<()> {
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+    }
+    let mut f = o.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    f.write_all(data)
+}
+
+fn read_lock(lock: &Path) -> Option<serde_json::Value> {
+    serde_json::from_str(&std::fs::read_to_string(lock).ok()?).ok()
+}
+
+fn lock_port(lock: &Path) -> Option<u16> {
+    u16::try_from(read_lock(lock)?.get("port")?.as_u64()?).ok()
+}
+
+/// Lebt der Prozess noch? Unter Linux über `/proc`, sonst nicht prüfbar (dann `true`, der
+/// Port muss trotzdem antworten).
+fn pid_alive(pid: u64) -> bool {
+    if cfg!(target_os = "linux") {
+        Path::new(&format!("/proc/{pid}")).exists()
+    } else {
+        true
+    }
+}
+
+/// Die laufende App: Port und Live-Geheimnis dieses Starts.
+#[derive(Clone, PartialEq, Eq)]
+pub struct RunningApp {
+    pub port: u16,
+    pub key: String,
+}
+
+impl std::fmt::Debug for RunningApp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RunningApp")
+            .field("port", &self.port)
+            .field("key", &"***")
+            .finish()
+    }
+}
+
+/// Die laufende App, wenn ihre Lock-Datei in `data_dir` liegt, ihr Prozess lebt und der
+/// Port antwortet. Eine verwaiste Datei (App abgestürzt, PID tot) ergibt `None`.
+pub fn running_app(data_dir: &Path) -> Option<RunningApp> {
+    let v = read_lock(&data_dir.join(LOCK_FILE))?;
+    let port = u16::try_from(v.get("port")?.as_u64()?).ok()?;
+    let secret = v.get("secret")?.as_str()?.to_string();
+    if secret.is_empty() || !pid_alive(v.get("pid")?.as_u64()?) {
+        return None;
+    }
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     TcpStream::connect_timeout(&addr, Duration::from_millis(500)).ok()?;
-    Some(port)
+    Some(RunningApp { port, key: secret })
 }
 
-/// Reicht JSON-RPC-Zeilen von `input` an die App auf `port` durch und schreibt ihre
+/// Reicht JSON-RPC-Zeilen von `input` mit dem Bearer `token` (das Live-Geheimnis aus
+/// [`running_app`]) an die App auf `port` durch und schreibt ihre
 /// Antworten zeilenweise nach `output`, bis `input` endet. So spricht ein stdio-Client
 /// (Claude Desktop) mit der offenen App, ohne dass er etwas umstellen muss.
 pub fn forward(
@@ -544,21 +614,71 @@ mod tests {
         assert_eq!(json_messages(sse, true), vec!["{\"id\":1}"]);
     }
 
+    fn lock(dir: &Path, port: u16, pid: u64, secret: &str) {
+        let v = serde_json::json!({ "port": port, "pid": pid, "secret": secret });
+        std::fs::write(dir.join(LOCK_FILE), v.to_string()).unwrap();
+    }
+
     #[test]
     fn stale_lock_is_not_a_running_app() {
         let tmp = tempfile::tempdir().unwrap();
         assert_eq!(running_app(tmp.path()), None);
+        let me = u64::from(std::process::id());
         // Port, auf dem niemand hört: erst binden, Port merken, wieder freigeben.
         let port = std::net::TcpListener::bind("127.0.0.1:0")
             .unwrap()
             .local_addr()
             .unwrap()
             .port();
-        std::fs::write(tmp.path().join(LOCK_FILE), format!("{{\"port\":{port}}}")).unwrap();
+        lock(tmp.path(), port, me, "s");
         assert_eq!(running_app(tmp.path()), None);
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();
-        std::fs::write(tmp.path().join(LOCK_FILE), format!("{{\"port\":{port}}}")).unwrap();
-        assert_eq!(running_app(tmp.path()), Some(port));
+        // Ohne Geheimnis (alte Lock-Datei) nie.
+        std::fs::write(
+            tmp.path().join(LOCK_FILE),
+            format!("{{\"port\":{port},\"pid\":{me}}}"),
+        )
+        .unwrap();
+        assert_eq!(running_app(tmp.path()), None);
+        if cfg!(target_os = "linux") {
+            // Toter Prozess: veraltet, auch wenn jemand auf dem Port hört.
+            lock(tmp.path(), port, 4_000_000_000, "s");
+            assert_eq!(running_app(tmp.path()), None);
+        }
+        lock(tmp.path(), port, me, "s");
+        assert_eq!(
+            running_app(tmp.path()),
+            Some(RunningApp {
+                port,
+                key: "s".into()
+            })
+        );
+    }
+
+    #[test]
+    fn foreign_listener_gets_only_the_live_secret() {
+        use std::io::Read;
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        let seen = std::thread::spawn(move || {
+            let (mut c, _) = l.accept().unwrap();
+            c.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+            let mut buf = vec![0u8; 8192];
+            let n = c.read(&mut buf).unwrap_or(0);
+            let _ = c.write_all(b"HTTP/1.1 500 x\r\ncontent-length: 0\r\n\r\n");
+            String::from_utf8_lossy(&buf[..n]).into_owned()
+        });
+        let mut out = Vec::new();
+        forward(
+            port,
+            "nur-live",
+            &b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n"[..],
+            &mut out,
+        )
+        .unwrap();
+        let req = seen.join().unwrap();
+        assert!(req.contains("Bearer nur-live"), "{req}");
+        assert!(String::from_utf8(out).unwrap().contains("HTTP 500"));
     }
 }

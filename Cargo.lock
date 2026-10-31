@@ -7222,6 +7222,7 @@ name = "woa-agent"
 version = "0.34.47"
 dependencies = [
  "bytes",
+ "getrandom 0.3.4",
  "hound",
  "http",
  "http-body-util",

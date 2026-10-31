@@ -27,7 +27,16 @@ pub struct McpLive {
     enabled: bool,
     data_dir: PathBuf,
     server: Option<LiveServer>,
+    /// Abdruck des Tokens, mit dem der Server läuft (nie das Token selbst).
+    token_hash: Option<u64>,
     tried: Option<Instant>,
+}
+
+fn hash(token: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    token.hash(&mut h);
+    h.finish()
 }
 
 impl McpLive {
@@ -37,6 +46,7 @@ impl McpLive {
             enabled,
             data_dir,
             server: None,
+            token_hash: None,
             tried: None,
         }
     }
@@ -47,9 +57,11 @@ impl McpLive {
         if !self.enabled {
             return 0;
         }
-        if self.server.is_none() && self.tried.is_none_or(|t| t.elapsed() >= RETRY) {
+        if self.tried.is_none_or(|t| t.elapsed() >= RETRY) {
             self.tried = Some(Instant::now());
-            self.start(ctx);
+            // Auch bei laufendem Server: gelöschtes oder neues Token beendet bzw. startet neu.
+            let token = woa_secrets::reveal(&self.data_dir, woa_assistant::server::TOKEN_ACCOUNT);
+            self.sync_token(ctx, token);
         }
         let Some(server) = &self.server else {
             return 0;
@@ -62,9 +74,22 @@ impl McpLive {
         n
     }
 
-    fn start(&mut self, ctx: &egui::Context) {
-        let Some(token) = woa_secrets::reveal(&self.data_dir, woa_assistant::server::TOKEN_ACCOUNT)
-        else {
+    /// Token im Schlüsselbund neu erzeugt (Hook aus dem KI-Fenster): sofort neu prüfen.
+    pub fn restart(&mut self) {
+        self.tried = None;
+    }
+
+    /// Läuft der Server mit `token`? Sonst beenden (Lock-Datei weg) und neu starten.
+    pub fn sync_token(&mut self, ctx: &egui::Context, token: Option<String>) {
+        let want = token.as_deref().map(hash);
+        if self.server.is_some() && self.token_hash == want {
+            return;
+        }
+        if self.server.take().is_some() {
+            tracing::info!("mcp live server stopped (token changed)");
+        }
+        self.token_hash = None;
+        let Some(token) = token else {
             return;
         };
         let wake_ctx = ctx.clone();
@@ -77,6 +102,7 @@ impl McpLive {
             Ok(s) => {
                 tracing::info!(port = s.port(), "mcp live server started");
                 self.server = Some(s);
+                self.token_hash = want;
             }
             Err(e) => tracing::warn!(error = %e, "mcp live server not started"),
         }
@@ -110,5 +136,41 @@ impl McpLive {
         };
         ui.label(egui::RichText::new(text).small().color(color))
             .on_hover_text(hint);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn init() -> &'static str {
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"#
+    }
+
+    fn status_for(port: u16, bearer: &str) -> String {
+        let mut out = Vec::new();
+        woa_agent::live::forward(port, bearer, init().as_bytes(), &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn token_change_restarts_and_the_old_token_gets_401() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = egui::Context::default();
+        let mut live = McpLive::new(tmp.path().to_path_buf(), true);
+        live.sync_token(&ctx, Some("alt-aaa".into()));
+        let first = live.server.as_ref().unwrap().port();
+        assert!(!status_for(first, "alt-aaa").contains("401"));
+        // Gleiches Token: nichts passiert.
+        live.sync_token(&ctx, Some("alt-aaa".into()));
+        assert_eq!(live.server.as_ref().unwrap().port(), first);
+        live.sync_token(&ctx, Some("neu-bbb".into()));
+        let port = live.server.as_ref().unwrap().port();
+        assert!(status_for(port, "alt-aaa").contains("HTTP 401"));
+        assert!(!status_for(port, "neu-bbb").contains("401"));
+        // Gelöscht: Server aus, Lock-Datei weg.
+        live.sync_token(&ctx, None);
+        assert_eq!(live.status(), LiveStatus::Off);
+        assert!(!tmp.path().join(woa_agent::live::LOCK_FILE).exists());
     }
 }

@@ -742,7 +742,12 @@ impl WoaApp {
             .map(std::path::Path::to_path_buf);
         self.chat_ui
             .show(ctx, &self.config.ki, &self.data_dir, project.as_deref());
-        let Some(applied) = self.ki_ui.show(ctx, &self.data_dir, project.as_deref()) else {
+        let applied = self.ki_ui.show(ctx, &self.data_dir, project.as_deref());
+        if self.ki_ui.take_token_changed() {
+            // Der Live-Server nimmt sonst weiter das alte Token an.
+            self.mcp_live.restart();
+        }
+        let Some(applied) = applied else {
             return;
         };
         tracing::info!(

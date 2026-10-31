@@ -105,16 +105,19 @@ fn mcp_call_shows_up_in_the_app_project_and_undo_removes_it() {
     let data = tmp.path().join("daten");
     let server =
         woa_agent::live::LiveServer::start(&data, TOKEN.into(), 0, Arc::new(|| {})).unwrap();
-    assert_eq!(woa_agent::live::running_app(&data), Some(server.port()));
+    let app = woa_agent::live::running_app(&data).expect("App erkannt");
+    assert_eq!(app.port, server.port());
     let mut state = AppState::new(tmp.path().join("rec"), Instant::now());
     std::fs::create_dir_all(state.project_dir()).unwrap();
     let before = state.project().tracks.len();
 
     let port = server.port();
+    let key = app.key;
     let done = Arc::new(AtomicBool::new(false));
     let client = {
         let done = done.clone();
         std::thread::spawn(move || {
+            let key = key;
             let lines = concat!(
                 r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"#,
                 "\n",
@@ -124,7 +127,7 @@ fn mcp_call_shows_up_in_the_app_project_and_undo_removes_it() {
                 "\n",
             );
             let mut out = Vec::new();
-            woa_agent::live::forward(port, TOKEN, lines.as_bytes(), &mut out).unwrap();
+            woa_agent::live::forward(port, &key, lines.as_bytes(), &mut out).unwrap();
             done.store(true, Ordering::SeqCst);
             String::from_utf8(out).unwrap()
         })

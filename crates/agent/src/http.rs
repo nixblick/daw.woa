@@ -83,6 +83,9 @@ pub struct HttpOptions {
     /// `true`, wenn der Server auf mehr als der eigenen Maschine hört. Dann prüft rmcp den
     /// `Host` nicht mehr (der Client nennt die Adresse, unter der er uns erreicht).
     pub reachable_from_network: bool,
+    /// Zweites, kurzlebiges Geheimnis je App-Start (Live-Modus, `woa-headless mcp` reicht
+    /// damit durch statt mit dem dauerhaften Token). `None`: nur `token`.
+    pub live_secret: Option<String>,
     /// Beendet den Server.
     pub cancel: CancellationToken,
 }
@@ -125,7 +128,10 @@ where
         Arc::new(LocalSessionManager::default()),
         config,
     );
-    let token: Arc<str> = Arc::from(opts.token.as_str());
+    let token: Arc<(String, Option<String>)> = Arc::new((
+        opts.token.clone(),
+        opts.live_secret.clone().filter(|s| !s.is_empty()),
+    ));
     loop {
         let (stream, _peer) = tokio::select! {
             () = opts.cancel.cancelled() => return Ok(()),
@@ -147,12 +153,14 @@ where
                 async move {
                     let resp: http::Response<Body> = if req.uri().path() != MCP_PATH {
                         plain(404, "nicht gefunden")
-                    } else if !bearer_matches(
-                        req.headers()
+                    } else if !{
+                        let h = req
+                            .headers()
                             .get(http::header::AUTHORIZATION)
-                            .and_then(|v| v.to_str().ok()),
-                        &token,
-                    ) {
+                            .and_then(|v| v.to_str().ok());
+                        bearer_matches(h, &token.0)
+                            || token.1.as_deref().is_some_and(|s| bearer_matches(h, s))
+                    } {
                         plain(401, "Zugriffstoken fehlt oder stimmt nicht")
                     } else {
                         match service.call(req).await {
@@ -205,6 +213,7 @@ pub fn run_http(
             HttpOptions {
                 token,
                 reachable_from_network: !addr.ip().is_loopback(),
+                live_secret: None,
                 cancel: CancellationToken::new(),
             },
         )

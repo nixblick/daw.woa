@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 png = "0.18.1"
 bytes = "1"
+getrandom = "0.3"
 http = "1"
 http-body-util = "0.1"
 hyper = { version = "1", default-features = false, features = ["http1", "server"] }
