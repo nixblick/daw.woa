@@ -786,6 +786,18 @@ Selbst geprüft von Claude: Workspace-Tests grün, darunter Opt-in gegen lokalen
 
 Selbst geprüft von Claude: Tests `shared_memory_file_is_mode_0600` und `private_dir_is_mode_0700_unique_and_removed`, Tests und Clippy des Crates grün.
 
+## Design-Nachbesserung: Spur löschen, Effekte im Mixer (0.34.18, offen)
+
+1. Produzent-Modus, je eine Audio-, MIDI- und Bus-Spur anlegen.
+2. Rechtsklick auf den freien Bereich eines Spurkopfs: Menü mit „Spur umbenennen“ und „Spur löschen“ geht auf. Dasselbe per Rechtsklick auf den Spurnamen. „Spur löschen“ entfernt die Spur; bei allen drei Spurarten probieren.
+3. Papierkorb rechts oben im Spurkopf: löscht die Spur sofort.
+4. Studio-Mixer im Dock: jeder Kanalzug hat M, S, Aufnahme und Papierkorb, darunter „Effekte n“.
+5. Ohne einen Kanal anzuklicken steht rechts das Insert-Rack des ersten Kanals, „EFFEKTE“, „+ Effekt“ und „+ Plugin“ sind ohne Scrollen zu sehen.
+6. „Effekte n“ eines anderen Kanals klicken: das Rack zeigt diesen Kanal. „+ Effekt“ → EQ anlegen, Bypass-Taste aus und an, Reihenfolge ändern, mit X entfernen. Ein Plugin laden, Fenster öffnen und schließen, Bypass, entfernen.
+7. Gain, Pan, Ausgang und Sends stehen im Rack unter den Effekten und wirken wie vorher.
+
+Selbst geprüft von Claude: Tests in `crates/gui/tests/design_regressions.rs` (fünf, alle grün; der Rechtsklick-Test schlägt mit dem alten Hover-Rahmen fehl), Tests und Clippy von `woa-gui` grün.
+
 ## Abgenommen
 
 - Paket 10 Dauertest (0.5.0): 30.10.2026, André „2 abgenommen“ (Sammelabnahme Pakete 5, 9, 10 und Nachtrag #43).
