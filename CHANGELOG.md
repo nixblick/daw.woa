@@ -1,7 +1,6 @@
 # Changelog
 
-
-## 0.34.42 — 2026-10-31
+## 0.34.43 — 2026-10-31
 
 Decks und Playlist greifen ineinander, steuerbar und ohne Automatik (André: „nur wenn der aktiv ist, dann spielt mit fading die playlist weiter … denn das deck darf das nicht automatisch machen, falls man vorhören will“).
 
@@ -12,6 +11,13 @@ Decks und Playlist greifen ineinander, steuerbar und ohne Automatik (André: „
 - **Senkrechte Pegelregler neben den Decks:** Playlist, Carts, Decks und Mikro als Fader-Gruppe, gleiches Widget wie der Kanal-Gain der Spuren (dB-Skala, Doppelklick = 0 dB, Rechtsklick = MIDI lernen). Die waagerechten Regler unter dem Rack sind weg. Neu ist der Regler „Decks“ (alle drei Decks zusammen, auch per MIDI als `decks` lernbar).
 - **Cart-Restzeit:** Ein laufendes Cart-Pad zeigt groß rechts unten den Countdown („-12 s“, unter 10 s „-9,4 s“). Der Titel rückt dafür zusammen und bleibt zweizeilig.
 - Tests ohne Ton (CI-fest formatiert): `radio/tests/deck_handover.rs` (Blende mit Pegelkurve, Stille ohne Umschalter, harter Schnitt, Laden startet nichts, Deck-Start bleibt parallel, leeres Deck), Oberflächentests für Deck-Knöpfe (Klick, Umschalt+Klick, leer), Umschalter, Fader (senkrecht, setzen, Doppelklick) und Cart-Countdown.
+
+## 0.34.42 — 2026-10-31
+
+### Behoben
+
+- **Vorhören (PFL):** Die Wahl unter Einstellungen → Vorhören (PFL) wirkte nicht, solange etwas lief (auch nur die Playlist), und nichts sagte das. Jetzt merkt sich WOA die Wahl, zeigt im Menü „Wirkt, sobald nichts mehr läuft“ und öffnet die Ausgabe automatisch neu, sobald die Wiedergabe steht. Die laufende Sendung wird nie unterbrochen. Läuft nichts, greift die Wahl sofort.
+- **Vorhören (PFL):** Fehler beim Öffnen des Kopfhörer-Ausgangs (zu wenige Kanäle, Gerät geht nicht, Kanalzahl nicht lesbar) stehen jetzt im Menü, im Protokoll und als Tooltip an den deaktivierten Vorhören-Knöpfen von Deck, Cart und Playlist. Ist das Vorhören aus, sagt der Tooltip „Vorhören ist aus: Einstellungen → Vorhören (PFL)“.
 
 ## 0.34.41 — 2026-10-31
 

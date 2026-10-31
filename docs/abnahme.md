@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Radio: Deck und Playlist, Fader, Cart-Restzeit (0.34.42, offen)
+## Radio: Deck und Playlist, Fader, Cart-Restzeit (0.34.43, offen)
 
 1. Titel aufs Deck A laden (Rechtsklick in der Playlist → „Auf Deck laden“). Es startet nichts, die Playlist läuft unverändert weiter.
 2. Playlist läuft. Im Player „▶ Deck A“ klicken: Die Playlist blendet über den eingestellten Crossfade aus und pausiert, Deck A blendet ein.
