@@ -10,6 +10,7 @@ pub mod jog;
 pub mod key;
 pub mod lamp;
 pub mod pad;
+pub mod topbar;
 pub mod vu;
 
 pub use clock::studio_clock;
@@ -19,6 +20,7 @@ pub use jog::jog;
 pub use key::Key;
 pub use lamp::onair_lamp;
 pub use pad::CartPad;
+pub use topbar::{ChipLook, topbar_chip};
 pub use vu::{VuView, vu_meter};
 
 use eframe::egui::{self, Color32};
