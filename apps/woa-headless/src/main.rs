@@ -759,7 +759,7 @@ fn cmd_feedback_test(url: &str, text: &str, timeout: u64) -> Outcome {
         timeout: Duration::from_secs(timeout),
         ..FeedbackMeta::default()
     };
-    match submit_feedback(text, None, &meta) {
+    match submit_feedback(text, vec![], &meta) {
         Ok(Some(issue)) => {
             println!("feedback-test: Issue #{issue}");
             Ok(())

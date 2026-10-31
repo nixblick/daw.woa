@@ -86,6 +86,8 @@ pub struct WoaApp {
     /// Where `config.json` is saved when the user changes a setting (`None` = not saved).
     config_path: Option<PathBuf>,
     feedback: FeedbackDialog,
+    /// Fehler beim Anhängen eines eigenen Bildes (Feedback).
+    image_error: Option<String>,
     /// Update-Hinweis (Suche und Download im Hintergrund).
     update: crate::update::UpdateState,
     /// Frage „Projekt speichern?“ vor der Installation ist offen.
@@ -546,6 +548,7 @@ impl WoaApp {
             config,
             config_path: None,
             feedback: FeedbackDialog::default(),
+            image_error: None,
             update: crate::update::UpdateState::default(),
             update_confirm: false,
             update_autostart: open_audio,
@@ -2301,6 +2304,13 @@ impl WoaApp {
         if self.feedback.phase != Phase::Capturing {
             return;
         }
+        // The dialog vanished last frame; take the shot now, so it is not in the picture.
+        if !self.feedback.capture_requested {
+            self.feedback.capture_requested = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+            ctx.request_repaint();
+            return;
+        }
         let image = ctx.input(|i| {
             i.raw.events.iter().find_map(|e| match e {
                 egui::Event::Screenshot { image, .. } => Some(image.clone()),
@@ -2423,8 +2433,9 @@ impl WoaApp {
             .on_hover_text("Fehler gefunden, Idee gehabt? Schreib uns direkt aus WOA.")
             .clicked()
         {
+            let _ = ctx;
             self.feedback.open();
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+            self.image_error = None;
         }
     }
 
@@ -5446,13 +5457,91 @@ impl WoaApp {
                                 .hint_text("Schreib einfach los …"),
                         );
                         ui.add_space(8.0);
-                        let has = self.feedback.screenshot.is_some();
-                        ui.add_enabled(
-                            has,
-                            egui::Checkbox::new(
-                                &mut self.feedback.attach,
+                        // Bildschirmfoto erst auf Klick: Haken setzen blendet das Fenster
+                        // aus und nimmt auf; Haken weg wirft das Bild weg.
+                        let mut shot = self.feedback.attach;
+                        if ui
+                            .checkbox(
+                                &mut shot,
                                 "Bildschirmfoto mitsenden (zeigt uns, was du siehst)",
-                            ),
+                            )
+                            .on_hover_text("Das Fenster verschwindet kurz, dann wird aufgenommen.")
+                            .changed()
+                        {
+                            if shot {
+                                self.feedback.request_screenshot();
+                            } else {
+                                self.feedback.remove_screenshot();
+                            }
+                        }
+                        ui.horizontal(|ui| {
+                            match self.feedback.image.as_ref().map(|(n, _)| n.clone()) {
+                                None => {
+                                    if ui
+                                        .button(format!("{} Eigenes Bild anhängen …", theme::ic::FOLDER_OPEN))
+                                        .on_hover_text("PNG oder JPEG, z. B. ein Bildschirmfoto, das du selbst gemacht hast")
+                                        .clicked()
+                                        && let Some(p) = rfd::FileDialog::new()
+                                            .add_filter("Bild", &["png", "jpg", "jpeg"])
+                                            .pick_file()
+                                    {
+                                        let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                                        let res = std::fs::read(&p)
+                                            .map_err(|e| e.to_string())
+                                            .and_then(|b| self.feedback.set_image(&name, &b));
+                                        if let Err(e) = res {
+                                            self.image_error = Some(e);
+                                        } else {
+                                            self.image_error = None;
+                                        }
+                                    }
+                                }
+                                Some(name) => {
+                                    ui.label(format!("{} {name}", theme::ic::PAPERCLIP));
+                                    if ui.small_button("Entfernen").clicked() {
+                                        self.feedback.remove_image();
+                                    }
+                                }
+                            }
+                        });
+                        if let Some(e) = &self.image_error {
+                            ui.label(egui::RichText::new(e).color(theme::on_air()));
+                        }
+                        ui.checkbox(
+                            &mut self.feedback.send_log,
+                            "Protokoll mitsenden (Meldungen dieser Sitzung, wie unter Hilfe → Protokoll)",
+                        );
+                        let log_lines = feedback_log_lines();
+                        if self.feedback.send_log {
+                            egui::CollapsingHeader::new(format!(
+                                "Protokoll ansehen ({} Zeilen)",
+                                log_lines.len()
+                            ))
+                            .id_salt("feedback-log")
+                            .show(ui, |ui| {
+                                let mut shown = crate::feedback::log_text(
+                                    &log_lines,
+                                    crate::feedback::home_dir().as_deref(),
+                                    usize::MAX,
+                                );
+                                egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
+                                    ui.add(
+                                        egui::TextEdit::multiline(&mut shown)
+                                            .interactive(false)
+                                            .font(egui::TextStyle::Monospace)
+                                            .desired_width(f32::INFINITY),
+                                    );
+                                });
+                            });
+                        }
+                        ui.add_space(8.0);
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Geht mit: {}",
+                                self.feedback.outgoing(log_lines.len()).join(" · ")
+                            ))
+                            .size(theme::TYPE_SMALL)
+                            .color(theme::text_dim()),
                         );
                         ui.add_space(16.0);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -5467,7 +5556,7 @@ impl WoaApp {
                             .fill(theme::ok())
                             .min_size(egui::vec2(132.0, 34.0));
                             if ui.add(send).clicked() {
-                                self.feedback.send(&self.config);
+                                self.feedback.send(&self.config, &feedback_log_lines());
                             }
                             let cancel = egui::Button::new("Lieber später")
                                 .min_size(egui::vec2(110.0, 34.0));
@@ -5543,6 +5632,15 @@ impl WoaApp {
             self.feedback.close();
         }
     }
+}
+
+/// Zeilen des Protokoll-Fensters (älteste zuerst), wie „Kopieren“ sie liefert.
+fn feedback_log_lines() -> Vec<String> {
+    woa_telemetry::journal()
+        .snapshot()
+        .iter()
+        .map(crate::protokoll::line_text)
+        .collect()
 }
 
 impl WoaApp {

@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## KI & MCP, Teil 2: Assistent mit freiem Anbieter (0.34.32, offen)
+## KI & MCP, Teil 2: Assistent mit freiem Anbieter (0.34.33, offen)
 
 1. Einstellungen → „KI & MCP …“ → Reiter „Assistent“. „Neu …“ zeigt Anthropic, OpenAI, OpenRouter, Ollama (lokal), LM Studio (lokal) und „Eigener Server (leer)“.
 2. Für den eigenen Server: „Eigener Server“, Format „OpenAI-kompatibel“, Adresse eintragen (mit oder ohne `/v1`), Schlüssel leer lassen, wenn er keinen braucht. „Modelle holen“ füllt die Liste „Liste“; ein Modell wählen oder von Hand eintippen. „Verbindung testen“ meldet „Verbunden, Modell … ist da“. Mit falschem Modellnamen: „steht nicht in der Liste“. Mit falscher Adresse: „Keine Verbindung … Firewall“.
@@ -938,6 +938,18 @@ Abweichungen vom Design: Papierkorb im Spurkopf immer sichtbar (nicht nur bei Ho
 Offen für André: Pan doppelt (Spurkopf und Rack; `HEADER_PAN = false` in `crates/gui/src/app.rs` nimmt ihn aus dem Spurkopf) und Name Gain/Trim.
 
 Selbst geprüft von Claude: fünf neue Tests in `crates/gui/tests/design_system_2.rs`, alle Tests und Clippy von `woa-gui` grün.
+
+## Feedback: Bildschirmfoto auf Klick, eigenes Bild, Protokoll (0.34.32, offen)
+
+Tickets #173, #174.
+
+1. Feedback öffnen: kein Haken bei „Bildschirmfoto mitsenden“, „Protokoll mitsenden“ ist aus. Zeile „Geht mit:“ nennt nur Text sowie Version, System, Installationskennung.
+2. „Bildschirmfoto mitsenden“ anhaken: das Fenster verschwindet kurz und kommt mit Haken zurück. „Geht mit:“ nennt „Bildschirmfoto“. In der fertigen Meldung ist das Feedback-Fenster nicht auf dem Bild.
+3. Haken wieder weg: „Bildschirmfoto“ steht nicht mehr in „Geht mit:“.
+4. „Eigenes Bild anhängen …“, ein JPEG wählen: Dateiname mit Büroklammer und „Entfernen“ erscheinen, „Geht mit:“ nennt das Bild mit Größe. „Entfernen“ nimmt es wieder ab. Eine Nicht-Bild-Datei ergibt eine rote Meldung.
+5. „Protokoll mitsenden“ anhaken, „Protokoll ansehen“ aufklappen: Pfade beginnen mit `~`, der Benutzername steht nirgends.
+6. Abschicken mit Bildschirmfoto, eigenem Bild und Protokoll: das Ticket zeigt beide Bilder und unter dem Text „--- Protokoll ---“.
+7. Abschicken ohne Haken: das Ticket hat weder Bild noch Protokoll.
 
 ## Abgenommen
 

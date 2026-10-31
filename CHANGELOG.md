@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.32 — 2026-10-31
+## 0.34.33 — 2026-10-31
 
 KI & MCP, Teil 2: ein eigener Assistent in WOA mit frei wählbarem Anbieter und beliebigen MCP-Servern als Werkzeugen (André: „irgendein Server mit irgendeinem MCP bzw. LLM“). Nichts ist auf einen bestimmten Server festgelegt.
 
@@ -15,9 +15,20 @@ KI & MCP, Teil 2: ein eigener Assistent in WOA mit frei wählbarem Anbieter und 
 - **Kennwort nicht gespeichert:** Scheitert die Ablage im Schlüsselbund, öffnet sich das Fenster „Sendung: Stream-Server“ wieder und nennt den Grund, statt es nur ins Log zu schreiben.
 - **Tests (mit HTTP-Mock):** beide Formate mit einer Werkzeug-Runde (Anthropic `tool_use`/`tool_result`, OpenAI `tool_calls`/`tool`), Schlüssel als `x-api-key` bzw. `Bearer` bzw. gar nicht, Adress-Normalisierung, Texte des Testknopfs, Server ohne Modellliste, MCP-Client über HTTP (JSON und Ereignisstrom) und Stdio, Chat-Schleife von Modell über Werkzeug zurück zum Modell, Fehler lassen den Verlauf sauber, Fenster zeichnen.
 
+## 0.34.32 — 2026-10-31
+
+Feedback: Bildschirmfoto erst auf Klick, eigenes Bild anhängen, Protokoll auf Wunsch mitsenden (#173, #174).
+
+- **Bildschirmfoto auf Klick (#173):** WOA fotografiert beim Öffnen des Feedback-Fensters nicht mehr. Wer „Bildschirmfoto mitsenden“ anhakt, sieht das Fenster kurz verschwinden, dann wird ohne Fenster aufgenommen. Haken weg: das Bild ist verworfen. Vorgabe: aus.
+- **Eigenes Bild (#174):** „Eigenes Bild anhängen …“ öffnet die Dateiauswahl (PNG oder JPEG). Das Bild wird als PNG geschickt und bei Bedarf verkleinert, damit es unter der Server-Grenze von 3 MB bleibt; „Entfernen“ nimmt es wieder ab. Höchstens zwei Bilder je Meldung.
+- **Protokoll mitsenden:** neuer Haken, Vorgabe aus. Er hängt die Zeilen des Protokoll-Fensters (Hilfe → Protokoll) unter den Text. Der Heimordner (`/home/<name>`, `C:\Users\<name>`) wird zu `~` gekürzt. Der Text samt Protokoll bleibt unter 20 000 Zeichen; bei mehr gehen die neuesten Zeilen mit. Unter dem Haken lässt sich das Protokoll vorher ansehen.
+- **Was mitgeht:** Über „Abschicken“ steht, was gesendet wird (Text, Bilder, Protokoll, Version und System). Es geht nur mit, was angehakt oder angehängt ist.
+- **Sendeweg unverändert:** `POST https://feedback.wironair.de/api/feedback`, Bilder im Feld `images`. `woa-headless feedback-test` nutzt dieselbe Funktion.
+- **Tests:** Bildschirmfoto und eigenes Bild setzen und entfernen, Pfadkürzung, ohne Haken kein Protokoll, Längengrenze (`woa-gui`); mehrere Bilder und Obergrenze (`woa-telemetry`).
+
 ## 0.34.31 — 2026-10-31
 
-KI & MCP, Teil 1: WOA als MCP-Server für beliebige Clients (André: „nicht nur mein Server muss funktionieren, sondern irgendein Server mit irgendeinem MCP bzw. LLM“). Teil 2 (0.34.32): der eigene Assistent.
+KI & MCP, Teil 1: WOA als MCP-Server für beliebige Clients (André: „nicht nur mein Server muss funktionieren, sondern irgendein Server mit irgendeinem MCP bzw. LLM“). Teil 2 (0.34.33): der eigene Assistent.
 
 - **Neues Fenster:** Einstellungen → „KI & MCP …“. Dort steht der Hintergrund-Server (an/aus), der Projektordner, wer ihn erreicht (nur dieser Rechner oder das Netz), der Port und das Zugriffstoken.
 - **Einträge zum Kopieren:** fertig für Claude Code, Claude Desktop und andere Clients, je für Stdio (der Client startet `woa-headless`) und für HTTP. Sie entstehen zur Laufzeit aus dem Pfad des laufenden Programms und der Einstellung; im Fenster ist das Token maskiert, erst „Kopieren“ setzt es ein.
