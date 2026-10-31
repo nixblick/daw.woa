@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.15 — 2026-10-31
+
+Design D1–D6: gesammelte Abnahme in `docs/abnahme.md` (Thema Hell/Dunkel, Schriften, Icons, Bausteine, Mixer, Logo).
+
 ## 0.34.14 — 2026-10-31
 
 Design D6: neues App-Logo.

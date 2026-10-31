@@ -4,6 +4,27 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design D1–D6: Neues Aussehen (0.34.15, offen)
+
+Start wie immer. Die sechs Design-Pakete (0.34.7, 0.34.10–0.34.14) werden hier zusammen abgenommen. Vorgabe ist `docs/design/woa-design-system/` (README und `tokens.json`).
+
+1. **Thema und Modusfarbe:** Beim ersten Start ist das Fenster dunkel, im Produzent amber, in Radio rot, in Party magenta. Akzent, aktive Tasten und Leuchtziffern wechseln mit dem Modus.
+2. **Hell:** Einstellungen, „Erscheinungsbild“, Hell wählen. Fenster, Menüs, Karten und Zeitleiste werden hell, Spurfarben dunkler, Clip-Namen lesbar. Uhr, Restzeit, LED-Pegel, LUFS-Anzeige, Lampe und VU bleiben dunkel mit leuchtenden Ziffern. Alle drei Modi durchklicken. Im Piano-Roll sind Raster, Noten und die weiße Auswahlkontur sichtbar.
+3. **Merken:** App schließen und öffnen, Hell bleibt. Danach zurück auf Dunkel.
+4. **Schriften:** Fließtext in Barlow (etwas größer als vorher), Zahlen in Analyse und Bibliothek in JetBrains Mono, Statuspillen und Überschriften in Barlow Condensed. In Radio stehen Uhr und Restzeit als 7-Segment-Ziffern; unter 10 s wird die Restzeit rot, das Minuszeichen sieht sauber aus. Beim Umschalten Hell/Dunkel ist nichts abgeschnitten.
+5. **Icons:** In Radio (Tastenreihe unter den Decks), im Transport des Produzenten, im Spur-Rechtsklick, in den Dock-Kopfzeilen und in der Bibliothek stehen Phosphor-Icons statt Emojis. Play wechselt auf Pause. Alle Icons nehmen die Textfarbe an, auch in Hell. Gesperrte Knöpfe (Play ohne Audioausgabe, Vorhören) sehen blasser aus.
+6. **Bausteine Produzent:** Beim Abspielen läuft in der Transportleiste das VU mit Zeiger. Erscheinungsbild, „Pegelansicht“: „Modern (Balken)“ und „Aus“ wirken und bleiben nach dem Neustart. Im Spurkopf rasten M, S und Aufnahme ein und leuchten; Fader ziehen, Doppelklick setzt 0 dB.
+7. **Bausteine Radio und Party:** Die Studio-Uhr läuft mit Sekunden-Kette, ON AIR leuchtet bei Sendung oder offenem Mikro. Ein Cart-Pad leuchtet in der Modusfarbe und blinkt. Pegel-Fader ziehen, Doppelklick 0 dB, Rechtsklick öffnet weiter das MIDI-Lernen. In Party dreht sich das Jogwheel beim Spielen und steht bei Pause; die Großtasten leuchten bei aktiven Funktionen.
+8. **Mixer:** Dock „Mixer“: jeder Kanalzug zeigt nur Namensstreifen, M/S/Aufnahme, LED-Kette und Fader. Klick auf den Namensstreifen färbt den Rand und öffnet rechts das Insert-Rack (Pegel, Pan, Ausgang, Sends, Effektkette, Plugins, „Spur löschen“). Rack und Fader folgen einander; Doppelklick auf Pan setzt Mitte. Effekt schalten und Send ändern verhalten sich wie vorher. Viele Spuren scrollen waagerecht, das Rack bleibt stehen.
+9. **Logo:** Links oben in der Kopfleiste steht die Bildmarke (Säulen als W, rote Lampe). Die Säulen wechseln mit dem Modus, im hellen Thema sind sie dunkler. Fensterleiste, Alt-Tab und die AppImage im Dateimanager zeigen die neue Kachel. Unter Windows nach dem MSI-Installieren: Startmenü „WOA - Wir on Air“ und „Apps“ zeigen das Icon.
+10. **Über WOA:** Einstellungen, „Über WOA …“ zeigt die Version, GPL-3.0-only, die OFL-Nennung der vier Schriften und Phosphor Icons (MIT).
+
+Selbst geprüft von Claude (Code und Tests, ohne Fenster): Zuordnung der drei Modi zu den sechs Paletten; alte Einstellungen ohne Thema starten dunkel; alle zwölf Schriftschnitte aus `tokens.json` eingebunden, Absturz bei fehlenden Schriften im ersten Bild abgefangen; keine verlorenen Funktionen in Kanalzug, Rack, Cart-Menü und MIDI-Lernen; Logo-Koordinaten im Feld, `app_icon()` ohne Absturzpfad; Herkunft und Lizenzen in `docs/herkunft.md`; clippy und Tests von `woa-gui` grün, CI je Paket grün.
+
+Nicht selbst geprüft: Die App wurde nie gestartet, es gibt keine Screenshots. Farben, Kontraste, Schriftgrößen und Layout sind nur nach Code und `tokens.json` geprüft. Ob gesperrte Icons blasser werden, ist eine Vermutung. Der MSI-Pfad zu `woa.ico` ist erst im nächsten regulären Windows-Build zu sehen.
+
+Offen für André (noch nicht gebaut): Icon in der `woa.exe` selbst (Explorer); Drehregler (Knob) und Reglerkränze in Modusfarbe; Gast-Gain im Radio noch egui-Slider; Geister-Segmente „88:88“ hinter den Leuchtziffern; VU zeigt den höchsten Spurpegel statt Summe, ohne Peak-Hold; einzelne feste Farben in `radio.rs`, `app.rs` und `party.rs` noch ohne Token; feste Schriftgrößen (9–13 px) statt Skala; Emojis in der Handy-/Remote-Textausgabe (`crates/radio/src/party.rs`); kein Crossfader und keine PFL-Taste am Kanalzug; im dunklen Thema wirken inaktive Tasten durch `border_strong` etwas heller umrandet.
+
 ## Silvester Teil 2, Paket 2: drei Decks (0.34.4, offen, #134)
 
 Start wie immer, Modus „Radio“. Die Decks A, B, C stehen rechts über der Cart-Wall.
