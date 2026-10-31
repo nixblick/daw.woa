@@ -27,6 +27,7 @@ pub mod level;
 pub mod mixer;
 pub mod party;
 pub mod pfl;
+pub mod playlists;
 pub mod routing;
 pub mod show;
 pub mod station;

@@ -811,6 +811,8 @@ fn run_order_json(show: &woa_radio::RadioShow, radio: &Path) -> serde_json::Valu
         .collect();
     serde_json::json!({
         "radio_json": radio.display().to_string(),
+        "playlist": show.active_name(),
+        "playlists": show.playlist_names(),
         "titles": titles,
         "count": show.playlist.len(),
         "total_seconds": show.total_seconds_from(0),
@@ -2214,7 +2216,7 @@ impl WoaAgent {
     }
 
     #[tool(
-        description = "Radio mode: build the broadcast playlist in radio.json from audio files (WAV). Replaces the playlist, or appends with append=true. Every title is measured (LUFS, peak, length) so auto-gain can bring it to the target loudness. Returns the run order."
+        description = "Radio mode: build the active broadcast playlist (of several named ones) in radio.json from audio files (WAV). Replaces the playlist, or appends with append=true. Every title is measured (LUFS, peak, length) so auto-gain can bring it to the target loudness. Returns the run order."
     )]
     async fn build_playlist(
         &self,
@@ -2289,7 +2291,7 @@ impl WoaAgent {
     }
 
     #[tool(
-        description = "Radio mode: read the playlist from radio.json and return the run order with each title's length, loudness (LUFS) and auto-gain, plus the total length with crossfades. Changes nothing."
+        description = "Radio mode: read the active playlist from radio.json (plus the names of all playlists) and return the run order with each title's length, loudness (LUFS) and auto-gain, plus the total length with crossfades. Changes nothing."
     )]
     async fn run_order(
         &self,

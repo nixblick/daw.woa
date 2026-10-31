@@ -509,3 +509,43 @@ fn cart_plays_only_between_its_cue_points() {
     };
     assert!(c.set_cart_cues(2, past).is_err());
 }
+
+#[test]
+fn playlists_switch_and_delete_never_stop_the_running_title() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("a.wav");
+    let b = tmp.path().join("b.wav");
+    write_tone(&a, 1.0, 0.0, 0.3);
+    write_tone(&b, 2.0, 0.0, 0.3);
+    let (mut c, mut m) = Controller::new(show_of(std::slice::from_ref(&a), 0.0), SR);
+    let other = c.new_playlist("Abend");
+    assert!(c.playlist_add(other, std::slice::from_ref(&b)));
+    c.start();
+    let mut l = vec![0.0f32; BLOCK];
+    let mut r = vec![0.0f32; BLOCK];
+    for _ in 0..10 {
+        block(&mut c, &mut m, &mut l, &mut r);
+    }
+    let playing = c.status().current.load(Ordering::Acquire);
+    assert_ne!(playing, NONE);
+    // Die laufende Playlist lässt sich auf Sendung nicht löschen.
+    assert!(c.delete_playlist(0).is_err());
+    assert_eq!(c.show().playlists.len(), 2);
+    // Wechsel: der laufende Titel spielt weiter, danach kommt die neue Playlist.
+    assert!(c.select_playlist(other));
+    block(&mut c, &mut m, &mut l, &mut r);
+    assert_eq!(c.status().current.load(Ordering::Acquire), playing);
+    assert!(c.on_air());
+    // Die alte (nicht mehr aktive) darf jetzt weg, ohne Abbruch, und kommt per Undo zurück.
+    let d = c.delete_playlist(0).unwrap();
+    assert_eq!(c.status().current.load(Ordering::Acquire), playing);
+    assert_eq!(c.show().active_name(), "Abend");
+    c.restore_playlist(d);
+    assert_eq!(c.show().playlist_names(), vec!["Playlist 1", "Abend"]);
+    assert_eq!(c.show().active_name(), "Abend");
+    for _ in 0..(SR as usize * 3 / 2 / BLOCK) {
+        block(&mut c, &mut m, &mut l, &mut r);
+    }
+    assert_eq!(c.current_index(), Some(0), "b aus „Abend“ läuft nach a");
+    assert_eq!(c.show().playlist[0].path, b);
+}

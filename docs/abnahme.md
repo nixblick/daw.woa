@@ -939,6 +939,20 @@ Offen für André: Pan doppelt (Spurkopf und Rack; `HEADER_PAN = false` in `crat
 
 Selbst geprüft von Claude: fünf neue Tests in `crates/gui/tests/design_system_2.rs`, alle Tests und Clippy von `woa-gui` grün.
 
+## Playlisten verwalten (0.34.35, offen)
+
+Kein Ticket. Ton nicht nötig für 1–5, für 6 ja.
+
+1. Radio-Modus: Im Kopf der Sende-Playlist steht „Playlist 1“ mit den bisherigen Titeln (alte Sendung übernommen).
+2. „⋯“ → „Neue Playlist“: „Playlist 2“ ist aktiv und leer. Über die Auswahl zurück zu „Playlist 1“.
+3. „⋯“ → „Playlisten verwalten …“: Umbenennen (Doppelklick), Duplizieren, Leeren, Titel mit ↑/↓ sortieren, mit × oder Entf herausnehmen, „+ Titel …“.
+4. Eine Playlist löschen: Hinweis unten mit „Rückgängig“, 8 s. Rückgängig holt sie mit allen Titeln an dieselbe Stelle zurück.
+5. M3U exportieren, dieselbe Datei importieren: neue Playlist mit dem Dateinamen und denselben Titeln. WOA neu starten: alle Playlisten sind noch da.
+6. Sendung läuft: Löschen der aktiven ist gesperrt. Andere Playlist wählen: Rückfrage, „Wechseln“; der Titel und die Decks laufen weiter, danach kommt der erste Titel der neuen.
+7. Reiter „Titel“: Bibliothekstitel mit „+“ in die gewählte Playlist legen.
+
+Selbst geprüft von Claude: neue Tests in `woa-radio` (Modell, Migration, M3U, Sendung) und `woa-gui` (Rückfrage), Clippy und Tests von `woa-radio`, `woa-gui`, `woa-agent` grün.
+
 ## Studio-Uhr, Quellen, Cart-Wall (0.34.33, offen)
 
 Tickets #172, #163, #97. Kein Ton nötig.

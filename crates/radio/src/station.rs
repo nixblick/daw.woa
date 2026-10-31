@@ -64,6 +64,9 @@ pub struct DeckView {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct View {
     pub playlist: Vec<ViewEntry>,
+    /// Namen aller Playlisten und Index der aktiven (crate::playlists).
+    pub playlists: Vec<String>,
+    pub active_playlist: usize,
     pub current: Option<usize>,
     pub cue: usize,
     pub running: bool,
@@ -347,6 +350,8 @@ fn run(
                     }),
                 })
                 .collect(),
+            playlists: c.show().playlist_names(),
+            active_playlist: c.show().active,
             current: c.current_index(),
             cue: c.cue_index(),
             running: c.is_running() && st.current.load(Ordering::Acquire) != NONE,

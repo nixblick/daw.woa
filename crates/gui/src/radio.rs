@@ -127,6 +127,8 @@ pub struct RadioDesk {
     voice_editor: Option<VoiceEditor>,
     /// Zuletzt in den Editor übernommene Cue-Punkte je Titel (erkennt Undo/Redo).
     cue_seen: std::collections::HashMap<usize, woa_radio::Cues>,
+    /// Fenster „Verwalten“ und Auswahl der aktiven Playlist.
+    manage: crate::manage::ManageWindow,
     /// Eigener Strom für das Vorhören auf einem zweiten Gerät.
     _pfl_output: Option<woa_engine::device::ManagedOutput>,
 }
@@ -392,6 +394,7 @@ impl RadioDesk {
             cue_editor: None,
             voice_editor: None,
             cue_seen: std::collections::HashMap::new(),
+            manage: crate::manage::ManageWindow::default(),
             _pfl_output: pfl_output,
         }
         .reattach()
@@ -2193,6 +2196,10 @@ impl RadioDesk {
                     .strong()
                     .color(theme::text_dim()),
             );
+            let acts = self
+                .manage
+                .header(ui, &v.playlists, v.active_playlist, v.running);
+            self.run_actions(acts);
             ui.label(
                 egui::RichText::new(format!("({} Titel)", v.playlist.len()))
                     .small()
@@ -2650,6 +2657,135 @@ impl RadioDesk {
         if v.pfl_playing && ui.button("Vorhören anhalten").clicked() {
             self.with(Controller::pfl_stop);
             ui.close();
+        }
+    }
+
+    /// Fenster „Verwalten“, Rückfrage beim Wechsel und Undo-Hinweis (aus `app.rs` je Bild).
+    pub fn manage_window(
+        &mut self,
+        ctx: &egui::Context,
+        library: &mut crate::library::LibraryWindow,
+    ) {
+        let mut acts = Vec::new();
+        // Neue aktive Playlist: ungemessene Titel im Hintergrund messen.
+        if self.manage.seen_active != Some(self.view.active_playlist)
+            && let Some(st) = &self.station
+        {
+            if self.manage.seen_active.is_some() {
+                st.measure_missing(&st.show());
+            }
+            self.manage.seen_active = Some(self.view.active_playlist);
+        }
+        let names = self.view.playlists.clone();
+        if let Some(a) = self.manage.confirm_ui(ctx, &names) {
+            acts.push(a);
+        }
+        if self.manage.open
+            && let Some(st) = &self.station
+        {
+            let show = st.show();
+            let target = show
+                .playlists
+                .get(self.manage.selected)
+                .map(|p| p.name.clone())
+                .unwrap_or_default();
+            acts.extend(self.manage.window(ctx, &show, self.view.running, |ui| {
+                crate::titel_tab::titel_tab(ui, library, &target)
+            }));
+        }
+        if let Some(a) = self.manage.undo_toast(ctx) {
+            acts.push(a);
+        }
+        self.run_actions(acts);
+    }
+
+    /// Schickt Aufträge aus Kopf und Fenster an den Controller.
+    fn run_actions(&mut self, acts: Vec<crate::manage::Action>) {
+        use crate::manage::{Action, UndoSlot};
+        for a in acts {
+            match a {
+                Action::Select(i) => self.with(move |c| {
+                    c.select_playlist(i);
+                }),
+                Action::New => {
+                    let open = self.manage.open;
+                    self.with(move |c| {
+                        let i = c.new_playlist("");
+                        if !open && !c.on_air() {
+                            c.select_playlist(i);
+                        }
+                    });
+                    // Im Fenster gleich auswählen (neue steht hinten).
+                    self.manage.selected = self.view.playlists.len();
+                    self.manage.marked = None;
+                }
+                Action::Rename(i, name) => self.with(move |c| {
+                    if let Err(e) = c.rename_playlist(i, &name) {
+                        c.report(e);
+                    }
+                }),
+                Action::Duplicate(i) => {
+                    self.manage.selected = i + 1;
+                    self.with(move |c| {
+                        c.duplicate_playlist(i);
+                    });
+                }
+                Action::Clear(i) => self.with(move |c| {
+                    c.clear_playlist(i);
+                }),
+                Action::Delete(i) => {
+                    let slot = self.manage.undo.clone();
+                    self.with(move |c| match c.delete_playlist(i) {
+                        Ok(d) => {
+                            if let Ok(mut s) = slot.lock() {
+                                *s = Some(UndoSlot {
+                                    deleted: d,
+                                    until: None,
+                                });
+                            }
+                        }
+                        Err(e) => c.report(e),
+                    });
+                    self.manage.marked = None;
+                }
+                Action::Undo => {
+                    let taken = self.manage.undo.lock().ok().and_then(|mut s| s.take());
+                    if let Some(u) = taken {
+                        self.manage.selected = u.deleted.index;
+                        self.with(move |c| {
+                            c.restore_playlist(u.deleted);
+                        });
+                    }
+                }
+                Action::Import(p) => self.with(move |c| {
+                    if let Err(e) = c.import_m3u(&p) {
+                        c.report(e);
+                    }
+                }),
+                Action::Export(i, p) => self.with(move |c| {
+                    if let Err(e) = c.export_m3u(i, &p) {
+                        c.report(e);
+                    }
+                }),
+                Action::Add(i, files) => {
+                    if i == self.view.active_playlist
+                        && let Some(s) = &self.station
+                    {
+                        // Wie „+ Titel …“: messen im Hintergrund.
+                        s.add_files(files);
+                    } else {
+                        self.with(move |c| {
+                            c.playlist_add(i, &files);
+                        });
+                    }
+                }
+                Action::Remove(i, k) => self.with(move |c| {
+                    c.playlist_remove(i, k);
+                }),
+                Action::Move(i, from, to) => self.with(move |c| {
+                    c.playlist_move(i, from, to);
+                }),
+            }
         }
     }
 
