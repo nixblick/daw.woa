@@ -137,7 +137,7 @@ Lizenztext gehört zu jeder Weitergabe).
 - DSEG7 Classic Bold: `keshikan/DSEG`, Release v0.46 (Commit
   `a32644015f2c81b98bc6a80e897770780003b15e`), Archiv `fonts-DSEG_v046.zip`,
   `DSEG7-Classic/DSEG7Classic-Bold.ttf`, Lizenztext `DSEG-LICENSE.txt` → `OFL-DSEG.txt`.
-- Der Über-Dialog der App (Einstellungen-Leiste, „Über WOA …“) nennt die OFL.
+- Der Über-Dialog der App (Menü Hilfe, „Über WOA …“) nennt die OFL.
 
 ## Icons (Paket D3)
 

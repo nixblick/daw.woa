@@ -26,6 +26,16 @@ enum StudioDockTab {
 const PX_PER_BEAT: f32 = 24.0;
 /// Breite der Spurköpfe.
 const HEADER_W: f32 = 264.0;
+/// Breite des Feedback-Fensters (vorher 420).
+pub const FEEDBACK_W: f32 = 600.0;
+/// Abstand zwischen den Elementen rechts in der Kopfleiste (André 31.10.: „bisl weiter auseinander“).
+const TOPBAR_GAP: f32 = 14.0;
+/// Widmung im Über-Dialog (André 31.10.2026).
+pub const ABOUT_TAGLINE: &str = "WOA – built with love, coffee and AI";
+/// Andrés PayPal-Spendenlink, derselbe wie in bretteins.desktop und fotobrett.desktop (`app/ui/app-info.js`).
+pub const DONATE_PAYPAL: &str = "https://www.paypal.com/qrcodes/p2pqrc/KUND7JXYHRGDN";
+/// Andrés Ko-fi-Seite, wie in bretteins.desktop und fotobrett.desktop.
+pub const DONATE_KOFI: &str = "https://ko-fi.com/nixblick";
 /// Höhe einer Spur.
 const ROW_H: f32 = 92.0;
 const ZOOM_RANGE: std::ops::RangeInclusive<f32> = 2.0..=160.0;
@@ -1032,8 +1042,7 @@ impl WoaApp {
     }
 
     fn mode_switch(&mut self, ui: &mut egui::Ui) {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            self.midi_lamp(ui);
+        {
             let mut mode = self.config.mode;
             let on_air = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
             egui::Frame::new()
@@ -1122,7 +1131,7 @@ impl WoaApp {
                     }
                 });
             self.set_mode(mode);
-        });
+        }
     }
 
     /// Startet oder beendet die Aufnahme. Jede scharf geschaltete Spur (sonst die
@@ -2158,10 +2167,19 @@ impl WoaApp {
         ctx.request_repaint();
     }
 
+    /// Kopfleiste (TopBar): links Marke und Menüs, in der Mitte die Update-Info (nur wenn ein
+    /// Update da ist), rechts MIDI, ON AIR, Modus-Umschalter und ganz rechts Feedback.
     fn menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         egui::MenuBar::new().ui(ui, |ui| {
-            self.menu_items(ui, ctx);
-            self.mode_switch(ui);
+            self.menu_items(ui);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = TOPBAR_GAP;
+                self.feedback_button(ui, ctx);
+                self.mode_switch(ui);
+                self.onair_lamp(ui);
+                self.midi_lamp(ui);
+                self.update_info(ui);
+            });
         });
         if let Some(t) = self.controls.learning_text() {
             ui.horizontal(|ui| {
@@ -2173,137 +2191,181 @@ impl WoaApp {
         }
     }
 
-    fn menu_items(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+    /// Feedback-Taste: grün und immer ganz rechts (TopBar-README), öffnet das Fenster.
+    fn feedback_button(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let btn = egui::Button::new(
+            egui::RichText::new(format!("{} Feedback", theme::ic::CHAT_CIRCLE_TEXT))
+                .strong()
+                .color(theme::well()),
+        )
+        .fill(theme::ok())
+        .stroke(egui::Stroke::new(1.0, theme::emphasize(theme::ok(), 0.25)))
+        .corner_radius(5)
+        .min_size(egui::vec2(0.0, 24.0));
+        if ui
+            .add(btn)
+            .on_hover_text("Fehler gefunden, Idee gehabt? Schreib uns direkt aus WOA.")
+            .clicked()
         {
-            theme::logo_mark(ui, 20.0).on_hover_text("WOA - Wir on Air");
-            ui.add_space(2.0);
-            ui.menu_button("Datei", |ui| {
-                if ui.button("Neu (Strg+N)").clicked() {
-                    self.state.new_project();
+            self.feedback.open();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+        }
+    }
+
+    /// ON-AIR-Lampe in der Kopfleiste, direkt neben MIDI: leuchtet, solange die Sendung läuft
+    /// oder das Mikro offen ist (vorher im Kopf des Radio-Decks).
+    fn onair_lamp(&mut self, ui: &mut egui::Ui) {
+        let live = self.radio.as_ref().is_some_and(RadioDesk::is_live);
+        crate::widgets::onair_lamp(ui, egui::vec2(68.0, 22.0), live).on_hover_text(if live {
+            "Live: Sendung läuft oder das Mikro ist offen"
+        } else {
+            "Nicht auf Sendung"
+        });
+    }
+
+    fn menu_items(&mut self, ui: &mut egui::Ui) {
+        theme::logo_mark(ui, 20.0).on_hover_text("WOA - Wir on Air");
+        ui.add_space(4.0);
+        ui.menu_button("Datei", |ui| {
+            if ui.button("Neu (Strg+N)").clicked() {
+                self.state.new_project();
+            }
+            if ui.button("Öffnen … (Strg+O)").clicked() {
+                self.open();
+            }
+            if ui.button("Speichern (Strg+S)").clicked() {
+                self.save();
+            }
+            if ui.button("Speichern unter …").clicked() {
+                self.save_as();
+            }
+            ui.separator();
+            ui.menu_button("Importieren", |ui| {
+                if ui.button("Audio-Datei (WAV, FLAC, MP3, OGG) …").clicked() {
+                    self.import_audio();
                 }
-                if ui.button("Öffnen … (Strg+O)").clicked() {
-                    self.open();
-                }
-                if ui.button("Speichern (Strg+S)").clicked() {
-                    self.save();
-                }
-                if ui.button("Speichern unter …").clicked() {
-                    self.save_as();
-                }
-                ui.separator();
-                if ui.button("Exportieren … (Strg+E)").clicked() {
-                    self.export();
-                }
-                if ui.button("Als DAWproject exportieren …").clicked() {
-                    self.export_dawproject();
+                if ui.button("MIDI-Datei (.mid) …").clicked() {
+                    self.import_midi();
                 }
                 if ui.button("DAWproject öffnen …").clicked() {
                     self.open_dawproject();
                 }
-                ui.separator();
-                if ui
-                    .button("Audio-Datei importieren (WAV, FLAC, MP3, OGG) …")
-                    .clicked()
-                {
-                    self.import_audio();
+            });
+            ui.menu_button("Exportieren", |ui| {
+                if ui.button("Mixdown exportieren … (Strg+E)").clicked() {
+                    self.export();
                 }
-                if ui.button("MIDI importieren (.mid) …").clicked() {
-                    self.import_midi();
+                if ui.button("Als DAWproject …").clicked() {
+                    self.export_dawproject();
                 }
-                if ui.button("Leeren MIDI-Clip anlegen (4 Takte)").clicked() {
-                    self.create_midi_clip_at_playhead(self.selected_track);
-                }
-                if ui.button("MIDI-Clip exportieren (.mid) …").clicked() {
+                if ui.button("MIDI-Clip (.mid) …").clicked() {
                     self.export_midi();
                 }
             });
-            ui.menu_button("Bearbeiten", |ui| {
-                let h = self.state.session().history();
-                let undo = format!("Rückgängig {}", h.undo_label().unwrap_or(""));
-                let redo = format!("Wiederholen {}", h.redo_label().unwrap_or(""));
-                if ui.button(undo).clicked() {
-                    self.state.undo();
-                }
-                if ui.button(redo).clicked() {
-                    self.state.redo();
-                }
-            });
-            ui.menu_button("Einstellungen", |ui| {
-                self.midi_menu(ui);
-                if ui.button("Controller und MIDI-Learn …").clicked() {
-                    self.controls.window = true;
-                    ui.close();
-                }
-                self.pfl_menu(ui);
-                if ui.button("Ausgänge (Soundkarten) …").clicked() {
-                    self.outputs_ui.open(&self.config.outputs);
-                    ui.close();
-                }
-                if ui.button("Telefon (Eingang für den Anrufer) …").clicked() {
-                    self.phone_ui.open(&self.config.phone);
-                    ui.close();
-                }
-                if ui
-                    .button("Ausgabe neu verbinden")
-                    .on_hover_text(
-                        "Öffnet Player, Sendeausgänge und Vorhören neu auf dem aktuellen \
-                         Standardgerät, z. B. nach dem Einstecken der Kopfhörer",
-                    )
-                    .clicked()
-                {
-                    if let Some(p) = self.player.as_mut() {
-                        p.reconnect_output();
-                    }
-                    if let Some(r) = self.radio.as_mut() {
-                        r.reconnect_outputs();
-                    }
-                    tracing::info!("output reconnect by button");
-                    ui.close();
-                }
-                ui.separator();
-                self.theme_menu(ui);
-                ui.separator();
-                let mut on = self.config.telemetry_enabled == Some(true);
-                if ui
-                    .checkbox(&mut on, "Fehlercodes anonym senden (ab nächstem Start)")
-                    .on_hover_text(TELEMETRY_HINT)
-                    .changed()
-                {
-                    self.set_telemetry(on);
-                }
-                self.update_menu(ui);
-            });
+        });
+        ui.menu_button("Bearbeiten", |ui| {
+            let h = self.state.session().history();
+            let undo = format!("Rückgängig {}", h.undo_label().unwrap_or(""));
+            let redo = format!("Wiederholen {}", h.redo_label().unwrap_or(""));
+            if ui.button(undo).clicked() {
+                self.state.undo();
+            }
+            if ui.button(redo).clicked() {
+                self.state.redo();
+            }
+            ui.separator();
+            if ui.button("Leeren MIDI-Clip anlegen (4 Takte)").clicked() {
+                self.create_midi_clip_at_playhead(self.selected_track);
+            }
+        });
+        ui.menu_button("Ansicht", |ui| {
             if ui
-                .selectable_label(self.library.open, "Bibliothek")
+                .checkbox(&mut self.library.open, "Bibliothek")
                 .on_hover_text(
                     "Musik, Samples und Jingles suchen, taggen, vorhören und hineinziehen",
                 )
                 .clicked()
             {
-                self.library.open = !self.library.open;
+                ui.close();
             }
+            let mut clock = self.clock_editor.open;
             if ui
-                .selectable_label(self.clock_editor.open, "Stundenuhr")
+                .checkbox(&mut clock, "Stundenuhr")
                 .on_hover_text("Stundenuhren, Wochenplan und AutoDJ für den Radio-Modus")
                 .clicked()
             {
                 self.clock_editor.toggle();
+                ui.close();
             }
+            let mut events = self.event_editor.open;
             if ui
-                .selectable_label(self.event_editor.open, "Zeit-Events")
+                .checkbox(&mut events, "Zeit-Events")
                 .on_hover_text("Nachrichten, Werbung und Stundenjingle zur festen Zeit")
                 .clicked()
             {
                 self.event_editor.toggle();
+                ui.close();
             }
-            if ui.button("Feedback …").clicked() {
-                self.feedback.open();
-                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+            ui.separator();
+            self.theme_menu(ui);
+        });
+        ui.menu_button("Einstellungen", |ui| {
+            ui.label(
+                egui::RichText::new("Audio")
+                    .small()
+                    .color(theme::text_dim()),
+            );
+            if ui.button("Ausgänge (Soundkarten) …").clicked() {
+                self.outputs_ui.open(&self.config.outputs);
+                ui.close();
             }
+            self.pfl_menu(ui);
+            if ui
+                .button("Ausgabe neu verbinden")
+                .on_hover_text(
+                    "Öffnet Player, Sendeausgänge und Vorhören neu auf dem aktuellen \
+                     Standardgerät, z. B. nach dem Einstecken der Kopfhörer",
+                )
+                .clicked()
+            {
+                if let Some(p) = self.player.as_mut() {
+                    p.reconnect_output();
+                }
+                if let Some(r) = self.radio.as_mut() {
+                    r.reconnect_outputs();
+                }
+                tracing::info!("output reconnect by button");
+                ui.close();
+            }
+            if ui.button("Telefon (Eingang für den Anrufer) …").clicked() {
+                self.phone_ui.open(&self.config.phone);
+                ui.close();
+            }
+            ui.separator();
+            ui.label(egui::RichText::new("MIDI").small().color(theme::text_dim()));
+            self.midi_menu(ui);
+            if ui.button("Controller und MIDI-Learn …").clicked() {
+                self.controls.window = true;
+                ui.close();
+            }
+            ui.separator();
+            let mut on = self.config.telemetry_enabled == Some(true);
+            if ui
+                .checkbox(&mut on, "Fehlercodes anonym senden (ab nächstem Start)")
+                .on_hover_text(TELEMETRY_HINT)
+                .changed()
+            {
+                self.set_telemetry(on);
+            }
+        });
+        ui.menu_button("Hilfe", |ui| {
+            self.update_menu(ui);
+            ui.separator();
             if ui.button("Über WOA …").clicked() {
                 self.about_open = true;
+                ui.close();
             }
-        }
+        });
     }
 
     fn tracks(&mut self, ui: &mut egui::Ui) {
@@ -4641,7 +4703,8 @@ impl WoaApp {
         }
     }
 
-    /// „Über WOA“: Version, Lizenz und die eingebetteten Schriften mit ihrer Lizenz (SIL OFL).
+    /// „Über WOA“: Marke, Widmung, Spenden (PayPal, Ko-fi), Version, Lizenz und der Dank an
+    /// alle Lizenzgeber samt eingebetteten Schriften (SIL OFL) und Symbolen (MIT).
     fn about_window(&mut self, ctx: &egui::Context) {
         if !self.about_open {
             return;
@@ -4651,14 +4714,66 @@ impl WoaApp {
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .fixed_size(egui::vec2(440.0, 0.0))
             .show(ctx, |ui| {
-                ui.label(
-                    egui::RichText::new("WIR ON AIR").font(theme::label_font(theme::TYPE_TITLE)),
-                );
-                ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
-                ui.label("Freie Software unter der GPL-3.0-only.");
+                ui.vertical_centered(|ui| {
+                    ui.add_space(6.0);
+                    theme::logo_mark(ui, 72.0);
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new("WIR ON AIR")
+                            .font(theme::label_font(theme::TYPE_TITLE)),
+                    );
+                    ui.label(
+                        egui::RichText::new(ABOUT_TAGLINE)
+                            .size(15.0)
+                            .italics()
+                            .color(theme::text()),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Version {} · freie Software unter der GPL-3.0-only",
+                            env!("CARGO_PKG_VERSION")
+                        ))
+                        .size(theme::TYPE_SMALL)
+                        .color(theme::text_dim()),
+                    );
+                    ui.add_space(12.0);
+                    ui.label("Gefällt dir WOA? Über einen Kaffee freue ich mich sehr.");
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        // Zentriert: Breite der zwei Knöpfe grob vorab abziehen.
+                        ui.add_space(((ui.available_width() - 330.0) / 2.0).max(0.0));
+                        let paypal = egui::Button::new(
+                            egui::RichText::new(format!(
+                                "{} Spendier mir einen Kaffee · PayPal",
+                                theme::ic::COFFEE
+                            ))
+                            .strong()
+                            .color(theme::on_accent()),
+                        )
+                        .fill(theme::accent())
+                        .min_size(egui::vec2(0.0, 30.0));
+                        if ui.add(paypal).on_hover_text(DONATE_PAYPAL).clicked() {
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(DONATE_PAYPAL));
+                        }
+                        let kofi = egui::Button::new(
+                            egui::RichText::new(format!("{} Ko-fi", theme::ic::COFFEE)).strong(),
+                        )
+                        .min_size(egui::vec2(0.0, 30.0));
+                        if ui.add(kofi).on_hover_text(DONATE_KOFI).clicked() {
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(DONATE_KOFI));
+                        }
+                    });
+                });
+                ui.add_space(12.0);
                 ui.separator();
-                ui.label(egui::RichText::new("Schriften").strong());
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Danke an alle Lizenzgeber").strong());
+                    // Das Emoji ❤ fehlt in den Schriften: Phosphor-Herz in Rot.
+                    ui.label(theme::fill_icon(theme::icf::HEART, 16.0).color(theme::on_air_fill()));
+                });
                 ui.label(
                     "Barlow und Barlow Condensed (Jeremy Tribby), JetBrains Mono (JetBrains) \
                      und DSEG7 Classic (keshikan) sind eingebettet. Alle vier stehen unter \
@@ -4666,6 +4781,10 @@ impl WoaApp {
                 );
                 ui.label(
                     "Die Symbole sind Phosphor Icons (MIT-Lizenz), eingebunden über egui-phosphor.",
+                );
+                ui.label(
+                    "Dazu kommen die vielen freien Rust-Crates, auf denen WOA aufbaut, \
+                     unter anderem egui, cpal und symphonia.",
                 );
                 ui.label(
                     egui::RichText::new(
@@ -4730,10 +4849,10 @@ impl WoaApp {
             .resizable(false)
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-            .fixed_size(egui::vec2(420.0, 0.0))
+            .fixed_size(egui::vec2(FEEDBACK_W, 0.0))
             .frame(
                 theme::card_frame()
-                    .inner_margin(egui::Margin::same(20))
+                    .inner_margin(egui::Margin::same(28))
                     .shadow(egui::epaint::Shadow {
                         offset: [0, 8],
                         blur: 28,
@@ -4742,44 +4861,77 @@ impl WoaApp {
                     }),
             )
             .show(ctx, |ui| {
-                ui.label(
-                    egui::RichText::new("Feedback")
-                        .size(20.0)
-                        .strong()
-                        .color(theme::text()),
-                );
-                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(theme::ic::CHAT_CIRCLE_TEXT)
+                            .size(34.0)
+                            .color(theme::ok()),
+                    );
+                    ui.add_space(6.0);
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new("Schön, dass du dich meldest!")
+                                .size(22.0)
+                                .strong()
+                                .color(theme::text()),
+                        );
+                        ui.label(
+                            egui::RichText::new(
+                                "Jede Rückmeldung landet direkt bei uns und macht WOA besser.",
+                            )
+                            .color(theme::text_dim()),
+                        );
+                    });
+                });
+                ui.add_space(14.0);
                 match self.feedback.phase.clone() {
                     Phase::Editing => {
                         ui.label(
-                            egui::RichText::new("Was ist passiert, was wünschst du dir?")
-                                .color(theme::text_dim()),
+                            egui::RichText::new("Was ist passiert, oder was wünschst du dir?")
+                                .strong()
+                                .color(theme::text()),
                         );
-                        ui.add_space(10.0);
+                        ui.label(
+                            egui::RichText::new(
+                                "Ein Fehler, eine Idee, ein Lob: ein, zwei Sätze reichen. \
+                                 Wenn du magst, schreib dazu, was du gerade gemacht hast.",
+                            )
+                            .size(theme::TYPE_SMALL)
+                            .color(theme::text_dim()),
+                        );
+                        ui.add_space(8.0);
                         ui.add(
                             egui::TextEdit::multiline(&mut self.feedback.text)
-                                .desired_rows(6)
+                                .desired_rows(9)
                                 .desired_width(f32::INFINITY)
                                 .hint_text("Schreib einfach los …"),
                         );
-                        ui.add_space(6.0);
+                        ui.add_space(8.0);
                         let has = self.feedback.screenshot.is_some();
                         ui.add_enabled(
                             has,
-                            egui::Checkbox::new(&mut self.feedback.attach, "Screenshot anhängen"),
+                            egui::Checkbox::new(
+                                &mut self.feedback.attach,
+                                "Bildschirmfoto mitsenden (zeigt uns, was du siehst)",
+                            ),
                         );
-                        ui.add_space(12.0);
+                        ui.add_space(16.0);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let send = egui::Button::new(
-                                egui::RichText::new("Senden").strong().color(theme::well()),
+                                egui::RichText::new(format!(
+                                    "{} Abschicken",
+                                    theme::ic::PAPER_PLANE_RIGHT
+                                ))
+                                .strong()
+                                .color(theme::well()),
                             )
-                            .fill(theme::accent())
-                            .min_size(egui::vec2(96.0, 30.0));
+                            .fill(theme::ok())
+                            .min_size(egui::vec2(132.0, 34.0));
                             if ui.add(send).clicked() {
                                 self.feedback.send(&self.config);
                             }
-                            let cancel =
-                                egui::Button::new("Abbrechen").min_size(egui::vec2(96.0, 30.0));
+                            let cancel = egui::Button::new("Lieber später")
+                                .min_size(egui::vec2(110.0, 34.0));
                             if ui.add(cancel).clicked() {
                                 close = true;
                             }
@@ -5057,7 +5209,6 @@ impl eframe::App for WoaApp {
                     .inner_margin(egui::Margin::symmetric(12, 5)),
             )
             .show(ui, |ui| self.menu(ui, &ctx));
-        self.update_banner(ui);
         self.update_confirm_window(&ctx);
         if self.config.mode == Mode::Party
             && let Some(radio) = self.radio.as_mut()
@@ -6654,8 +6805,9 @@ impl WoaApp {
         }
     }
 
-    /// Dezenter Streifen unter dem Menü, solange ein Update bereitliegt.
-    fn update_banner(&mut self, ui: &mut egui::Ui) {
+    /// Update-Info in der Mitte der Kopfleiste, nur solange ein Update bereitliegt.
+    /// `ui` ist der Rest der Leiste zwischen Menüs und rechter Gruppe (rechts-nach-links).
+    fn update_info(&mut self, ui: &mut egui::Ui) {
         use crate::update::Phase;
         if self.update.dismissed {
             return;
@@ -6666,48 +6818,76 @@ impl WoaApp {
             Phase::Failed(a, e) => (a, false, Some(e)),
             Phase::Idle | Phase::Checking => return,
         };
-        egui::Panel::top("update")
-            .frame(
-                egui::Frame::new()
-                    .fill(theme::mix(theme::panel_header(), theme::accent(), 0.15))
-                    .inner_margin(egui::Margin::symmetric(12, 3)),
+        // Mittig im freien Raum: Breite aus dem letzten Bild, damit die Info zentriert sitzt.
+        let id = egui::Id::new("topbar-update-w");
+        let free = ui.available_rect_before_wrap();
+        let w: f32 = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(260.0);
+        let left = (free.center().x - w / 2.0).max(free.left());
+        let slot = egui::Rect::from_min_max(
+            egui::pos2(left, free.top()),
+            egui::pos2(free.right(), free.bottom()),
+        );
+        let used = ui
+            .scope_builder(
+                egui::UiBuilder::new()
+                    .max_rect(slot)
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                |ui| {
+                    egui::Frame::new()
+                        .fill(theme::mix(theme::panel_header(), theme::accent(), 0.18))
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            theme::mix(theme::border(), theme::accent(), 0.5),
+                        ))
+                        .corner_radius(5)
+                        .inner_margin(egui::Margin::symmetric(10, 2))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(format!("Update {} verfügbar", a.version))
+                                        .small()
+                                        .color(theme::text()),
+                                );
+                                if !a.notes.trim().is_empty() {
+                                    ui.menu_button("Neuerungen", |ui| {
+                                        ui.set_max_width(420.0);
+                                        ui.label(&a.notes);
+                                    });
+                                }
+                                if let Some(e) = &err {
+                                    ui.colored_label(
+                                        theme::on_air(),
+                                        format!("Fehlgeschlagen: {e}"),
+                                    );
+                                }
+                                if busy {
+                                    ui.spinner();
+                                    ui.label(
+                                        egui::RichText::new("Wird geladen und geprüft …").small(),
+                                    );
+                                    return;
+                                }
+                                #[cfg(windows)]
+                                if ui.small_button("Jetzt installieren").clicked() {
+                                    if self.state.session().is_dirty() {
+                                        self.update_confirm = true;
+                                    } else {
+                                        self.update.start_download(Self::update_wake(ui.ctx()));
+                                    }
+                                }
+                                #[cfg(not(windows))]
+                                ui.hyperlink_to("Zur Release-Seite", woa_updater::RELEASES_PAGE);
+                                if ui.small_button("Später").clicked() {
+                                    self.update.dismissed = true;
+                                }
+                            });
+                        })
+                },
             )
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(format!("Update {} verfügbar", a.version))
-                            .small()
-                            .color(theme::text()),
-                    );
-                    if !a.notes.trim().is_empty() {
-                        ui.menu_button("Neuerungen", |ui| {
-                            ui.set_max_width(420.0);
-                            ui.label(&a.notes);
-                        });
-                    }
-                    if let Some(e) = &err {
-                        ui.colored_label(theme::on_air(), format!("Fehlgeschlagen: {e}"));
-                    }
-                    if busy {
-                        ui.spinner();
-                        ui.label(egui::RichText::new("Wird geladen und geprüft …").small());
-                        return;
-                    }
-                    #[cfg(windows)]
-                    if ui.small_button("– Jetzt installieren").clicked() {
-                        if self.state.session().is_dirty() {
-                            self.update_confirm = true;
-                        } else {
-                            self.update.start_download(Self::update_wake(ui.ctx()));
-                        }
-                    }
-                    #[cfg(not(windows))]
-                    ui.hyperlink_to("– Zur Release-Seite", woa_updater::RELEASES_PAGE);
-                    if ui.small_button("Später").clicked() {
-                        self.update.dismissed = true;
-                    }
-                });
-            });
+            .response
+            .rect
+            .width();
+        ui.ctx().data_mut(|d| d.insert_temp(id, used));
     }
 
     /// Ungespeichertes Projekt: erst speichern, dann laden und installieren.
@@ -6771,7 +6951,6 @@ impl WoaApp {
 
     /// Einträge im Menü „Einstellungen“.
     fn update_menu(&mut self, ui: &mut egui::Ui) {
-        ui.separator();
         let mut on = self.config.auto_update;
         if ui
             .checkbox(&mut on, "Beim Start nach Updates suchen (einmal am Tag)")

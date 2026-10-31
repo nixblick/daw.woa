@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.22 — 2026-10-31
+## 0.34.23 — 2026-10-31
 
 Eine Auswahl, ein ruhiger Clip-Inspektor (André 31.10.: „mehr buttons sind nie die lösung … KISS“).
 
@@ -10,6 +10,18 @@ Eine Auswahl, ein ruhiger Clip-Inspektor (André 31.10.: „mehr buttons sind ni
 - **Clip-Inspektor in einer Zeile:** Gruppen Fade (Symbole für Ein- und Ausblenden, Länge, Kurve kurz Lin/Pow/S), Gain (dB, Normalisieren als Symbol), Zeit (Dehnung %, Tonhöhe st, Tempo folgen als Metronom-Taste; die Symbole leuchten, wenn der Clip bearbeitet ist) und Bearbeiten (Schneiden, Duplizieren, Kopieren, Löschen als Symbole). Erklärungen und Tastenkürzel stehen im Tooltip, auch der lange Hinweis ohne gewählten Clip.
 - Tests (`crates/gui/tests/design_regressions.rs`): Auswahl über Spurkopf und Kanalzug mit Rack, Effekte für jede Spur per Klick auf den Kanalzug, Spur löschen per Rechtsklick im Kanalzug, ein Papierkorb je Spur, Entf für Clip und Spur, Papierkorb im Inspektor.
 - Neu: `docs/design/luecken.md`, was die Gestaltungsvorlage noch nicht zeigt.
+
+## 0.34.22 — 2026-10-31
+
+Kopfleiste aufgeräumt, Über-WOA persönlicher, Feedback-Fenster einladender (André 31.10.).
+
+- **Menüs links wie in üblichen DAWs:** Datei, Bearbeiten, Ansicht, Einstellungen, Hilfe. Import und Export stehen als Untermenüs in Datei, „Leeren MIDI-Clip anlegen“ in Bearbeiten. Bibliothek, Stundenuhr, Zeit-Events und Erscheinungsbild liegen unter Ansicht, Update-Suche und „Über WOA“ unter Hilfe. Einstellungen sind nach Audio und MIDI gegliedert.
+- **Update-Info in der Mitte der Kopfleiste**, nur wenn ein Update da ist; der eigene Streifen darunter entfällt.
+- **Rechts mehr Abstand.** Die ON-AIR-Lampe sitzt jetzt neben MIDI statt im Kopf des Radio-Decks und leuchtet wie bisher, wenn die Sendung läuft oder das Mikro offen ist.
+- **Feedback** ist eine grüne Taste ganz rechts, ohne „…“.
+- **Über WOA:** Logo, „WOA – built with love, coffee and AI“, Spenden über PayPal und Ko-fi (dieselben Links wie in bretteins und fotobrett) und „Danke an alle Lizenzgeber“ mit rotem Herz. Die Lizenzliste bleibt.
+- **Feedback-Fenster:** 600 statt 420 px breit, mittig, freundlicher Titel und Hinweis, größeres Textfeld, „Bildschirmfoto mitsenden“, grüne Taste „Abschicken“.
+- Tests über die echte Oberfläche: `crates/gui/tests/kopfleiste.rs`.
 
 ## 0.34.21 — 2026-10-31
 
