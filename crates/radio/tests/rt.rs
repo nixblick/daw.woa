@@ -630,3 +630,117 @@ fn cart_ducks_music_and_releases_fast() {
         assert!((after - 1.0).abs() < 0.02, "back to {after}");
     }
 }
+
+/// #96: Regler mit Stumm-Knopf für die Ausgänge „Wiedergabe Notebook“ (Abhören) und
+/// „Stream senden“: je ein eigener, geglätteter Gain, ohne Allokation im Process-Aufruf.
+#[test]
+fn output_faders_scale_monitor_and_stream_separately() {
+    use woa_radio::show::{OutLevel, Output};
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("musik.wav");
+    write_tone(&a, 3.0, 0.0, 0.4);
+    let (mut c, mut m) = Controller::new(show_of(&[a], 0.0), SR);
+    let (producer, mut consumer) = rtrb::RingBuffer::new(BLOCK * 2 * 4);
+    c.set_stream_output(Some(producer));
+    c.start();
+    let mut l = vec![0.0f32; BLOCK];
+    let mut r = vec![0.0f32; BLOCK];
+    let mut last_stream = 0.0f32;
+    let mut run = |c: &mut Controller, m: &mut Mixer, l: &mut [f32], r: &mut [f32], n: usize| {
+        let mut prev = l[BLOCK - 1];
+        let mut max_step = 0.0f32;
+        for _ in 0..n {
+            block(c, m, l, r);
+            for &x in l.iter() {
+                max_step = max_step.max((x - prev).abs());
+                prev = x;
+            }
+            while let Ok(v) = consumer.pop() {
+                last_stream = v;
+            }
+        }
+        (max_step, last_stream)
+    };
+    let (_, s) = run(&mut c, &mut m, &mut l, &mut r, 20);
+    let full = l[BLOCK - 1];
+    assert!(full > 0.1, "{full}");
+    assert!((s - full).abs() < 1e-4, "Stream wie Abhören: {s} {full}");
+
+    // Abhören auf −6 dB: gleitet hin, der Stream bleibt voll.
+    c.set_output(
+        Output::Monitor,
+        OutLevel {
+            db: -6.0206,
+            mute: false,
+        },
+    );
+    let (step, s) = run(&mut c, &mut m, &mut l, &mut r, 40);
+    assert!((l[BLOCK - 1] - full / 2.0).abs() < 2e-3, "{}", l[BLOCK - 1]);
+    assert!(step < 0.002, "Sprung {step}");
+    assert!((s - full).abs() < 1e-4, "Stream unverändert: {s}");
+
+    // Stream stumm: der Stream wird still, das Abhören bleibt.
+    c.set_output(
+        Output::Stream,
+        OutLevel {
+            db: 0.0,
+            mute: true,
+        },
+    );
+    let (_, s) = run(&mut c, &mut m, &mut l, &mut r, 40);
+    assert!(s.abs() < 1e-4, "Stream stumm: {s}");
+    assert!((l[BLOCK - 1] - full / 2.0).abs() < 2e-3, "{}", l[BLOCK - 1]);
+    assert!(c.show().out_stream.mute);
+    assert_eq!(c.show().out_monitor.db, -6.0206);
+
+    // Abhören stumm: still, ohne Sprung.
+    c.set_output(
+        Output::Monitor,
+        OutLevel {
+            db: -6.0206,
+            mute: true,
+        },
+    );
+    let (step, _) = run(&mut c, &mut m, &mut l, &mut r, 40);
+    assert!(l[BLOCK - 1].abs() < 1e-4, "{}", l[BLOCK - 1]);
+    assert!(step < 0.002, "Sprung {step}");
+}
+
+/// #96: Alte radio.json ohne Ausgangsregler laden mit 100 %, nicht stumm; neue Werte bleiben
+/// beim Speichern erhalten.
+#[test]
+fn output_levels_default_to_full_and_round_trip() {
+    use woa_radio::show::OutLevel;
+    let old = RadioShow::from_json(r#"{"version":1}"#).unwrap();
+    assert_eq!(
+        old.out_monitor,
+        OutLevel {
+            db: 0.0,
+            mute: false
+        }
+    );
+    assert_eq!(
+        old.out_stream,
+        OutLevel {
+            db: 0.0,
+            mute: false
+        }
+    );
+    let show = RadioShow {
+        out_monitor: OutLevel {
+            db: -12.0,
+            mute: false,
+        },
+        out_stream: OutLevel {
+            db: 0.0,
+            mute: true,
+        },
+        ..RadioShow::default()
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let p = tmp.path().join("radio.json");
+    show.save(&p).unwrap();
+    let back = RadioShow::load(&p).unwrap();
+    assert_eq!(back.out_monitor, show.out_monitor);
+    assert_eq!(back.out_stream, show.out_stream);
+}
