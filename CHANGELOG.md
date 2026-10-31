@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.34.66 — 2026-10-31
+
+### Behoben
+
+- **ON AIR nur bei Sendung (#225):** Die ON-AIR-Pille oben rechts leuchtete auch, wenn nur das Mikro offen war. Sie leuchtet jetzt nur noch bei „Auf Sendung“ (Stream läuft); das Mikro hat seine eigene Anzeige am Mikro-Knopf.
+
 ## 0.34.65 — 2026-10-31
 
 ### Neu
