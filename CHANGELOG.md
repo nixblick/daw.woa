@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.49 — 2026-10-31
+## 0.34.50 — 2026-10-31
 
 ### Neu
 
@@ -10,6 +10,16 @@
 ### Tests
 
 - Test für den Lock-Weiterleiter liest die Anfrage vollständig, bevor er antwortet (unter Windows sonst Verbindungsabbruch statt Antwort).
+
+## 0.34.49 — 2026-10-31
+
+### Behoben
+
+- **Rückgängig:** Der Verlauf war unbegrenzt, und jedes Rückgängig/Wiederholen spielt eine Kopie des ganzen Projekts nach. Die GUI-Sitzung hält jetzt höchstens 500 Schritte (Test).
+- **Stundenuhr:** Das Speichern lief über einen festen Temp-Namen ohne fsync. Jetzt über `write_atomic` (eigene Temp-Datei, fsync, fsync des Ordners); eine untergeschobene Datei am alten Temp-Namen bleibt unberührt (Test).
+- **Bibliothek:** Bei geänderter Datei am gleichen Pfad blieben Titel und Suchindex alt. Beides folgt jetzt den neuen Tags (Test).
+- **AutoDJ:** Eine Kategorie wurde still bei 5000 Titeln (alphabetisch) abgeschnitten. Sie lädt jetzt alle Titel des Tags (Test).
+- **Analyse:** Je Titel wurden Analyse und Dauer in zwei Autocommits geschrieben; jetzt in einer Transaktion.
 
 ## 0.34.48 — 2026-10-31
 

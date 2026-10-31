@@ -1038,7 +1038,7 @@ Ohne Ton möglich (Lautstärke auf Null), am besten mit drei kurzen Titeln und 5
 
 Selbst geprüft von Claude: neue Tests ohne Ton für den Wechsel links/rechts über drei Titel, die Crossfader-Kurve, den Plattenteller nur am hörbaren Deck, Wünsche (anlegen, einreihen, erledigt, entfernen, speichern) und die Knöpfe (Symbol und Wort, eine Höhe, über AccessKit). Clippy und Tests von `woa-radio`, `woa-remote` und `woa-gui` grün. Nicht am Gerät gesehen.
 
-## KI live in der App und Fenster „Produktionen“ (0.34.49, offen)
+## KI live in der App und Fenster „Produktionen“ (0.34.50, offen)
 
 Kein Ton nötig. Voraussetzung: unter Einstellungen → KI & MCP ist ein Zugriffstoken erzeugt.
 
