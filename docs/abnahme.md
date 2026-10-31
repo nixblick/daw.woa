@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Kopfleiste, Über WOA und Feedback-Fenster (0.34.20, offen)
+## Kopfleiste, Über WOA und Feedback-Fenster (0.34.22, offen)
 
 André 31.10.2026: „header menü leiste struktur und optik verbessern … feedback in grün … über WOA netter, persönlicher, schicker“.
 
@@ -16,6 +16,13 @@ André 31.10.2026: „header menü leiste struktur und optik verbessern … feed
 6. Hilfe → „Über WOA …“: Logo, „WOA – built with love, coffee and AI“, Version und Lizenz, PayPal- und Ko-fi-Knopf (öffnen den Browser), „Danke an alle Lizenzgeber“ mit rotem Herz und die Schriften- und Symbolliste wie bisher.
 
 Selbst geprüft von Claude: `crates/gui/tests/kopfleiste.rs` (vier Tests, grün: ON AIR neben MIDI und Feedback ganz rechts, Feedback-Fenster groß und mittig, Spendenlinks öffnen sich, alle alten Menüeinträge erreichbar), Tests und Clippy von `woa-gui` grün.
+
+## Sicherheit #127: AppImage-Werkzeuge mit Prüfsumme (0.34.21, offen)
+
+1. Der CI-Lauf `linux-build` ist grün (AppImage wird gebaut).
+2. Optional lokal: `WOA_TOOLS_DIR=/tmp/t packaging/linux/build-appimage.sh /tmp/o` zweimal; die Werkzeuge in `/tmp/t` ändern (etwa ein Byte anhängen), der nächste Bau bricht mit „Prüfsumme falsch“ ab.
+
+Selbst geprüft von Claude: Cache-Datei manipuliert, Bau bricht ab; unveränderte Datei besteht die Prüfung.
 
 ## Sicherheit #119: Gast-Rückweg und Gastnamen (0.34.18, offen)
 

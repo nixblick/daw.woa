@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.21 — 2026-10-31
+## 0.34.22 — 2026-10-31
 
 Kopfleiste aufgeräumt, Über-WOA persönlicher, Feedback-Fenster einladender (André 31.10.).
 
@@ -11,6 +11,14 @@ Kopfleiste aufgeräumt, Über-WOA persönlicher, Feedback-Fenster einladender (A
 - **Über WOA:** Logo, „WOA – built with love, coffee and AI“, Spenden über PayPal und Ko-fi (dieselben Links wie in bretteins und fotobrett) und „Danke an alle Lizenzgeber“ mit rotem Herz. Die Lizenzliste bleibt.
 - **Feedback-Fenster:** 600 statt 420 px breit, mittig, freundlicher Titel und Hinweis, größeres Textfeld, „Bildschirmfoto mitsenden“, grüne Taste „Abschicken“.
 - Tests über die echte Oberfläche: `crates/gui/tests/kopfleiste.rs`.
+
+## 0.34.21 — 2026-10-31
+
+Sicherheit #127: AppImage-Werkzeuge werden vor dem Ausführen per SHA-256 geprüft.
+
+- **Bau:** `packaging/linux/build-appimage.sh` kennt für linuxdeploy und appimagetool (feste Versionen, kein `continuous`) je eine SHA-256 und prüft sie vor `chmod +x`, auch bei bereits zwischengespeicherten Dateien. Eine falsche Prüfsumme bricht den Bau ab.
+
+Closes #127.
 
 ## 0.34.20 — 2026-10-31
 
