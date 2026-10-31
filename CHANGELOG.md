@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.34.99 — 2026-10-31
+## 0.34.71 — 2026-10-31
 
 - **QR-Code zum Spenden (#231):** Im Fenster „Über WOA“ steht unter den Knöpfen PayPal und Ko-fi ein QR-Code, der den PayPal-Link kodiert; mit dem Handy scannen genügt. Lokal erzeugt mit demselben Baustein wie der Code der Fernbedienung, ohne neue Abhängigkeit.
+
+## 0.34.70 — 2026-10-31
+
+- **Spur exportieren (#229):** Im Kontextmenü des Spurkopfs (Produzent) steht „Spur exportieren …“. Ein kleines Fenster fragt Dateiname (Vorgabe: Spurname), Format WAV oder MP3 sowie Titel, Interpret und Kommentar. Die Datei enthält nur diese Spur, genau wie ihr Stem (nach Fader und Pan, mit Plugins, ohne Master). Die Tags stehen in WAV als `LIST/INFO`, in MP3 als ID3v2.3; MP3 nutzt den eingebauten Encoder des Mixdown-Exports. Gerechnet und geschrieben wird in einem eigenen Thread, die Oberfläche bleibt bedienbar; die Statuszeile meldet das Ende. Eine stumme Spur meldet „kein Ton“.
 
 ## 0.34.69 — 2026-10-31
 

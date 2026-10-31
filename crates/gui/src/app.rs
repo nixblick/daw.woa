@@ -260,6 +260,9 @@ pub struct WoaApp {
     produktionen: crate::produktionen::ProduktionenWindow,
     /// Export-Fenster (Paket 26).
     export_dialog: crate::export_dialog::ExportDialog,
+    /// „Spur exportieren“ (Ticket 229): offenes Fenster und laufender Export.
+    track_export: Option<crate::track_export::TrackExportDialog>,
+    track_export_job: Option<crate::track_export::TrackExportJob>,
     clock_editor: crate::clock_editor::ClockEditor,
     event_editor: crate::event_editor::EventEditor,
     /// Sendeablauf; läuft weiter, auch wenn das Produzent-Layout zu sehen ist.
@@ -610,6 +613,8 @@ impl WoaApp {
             mcp_live: crate::mcp_live::McpLive::new(woa_radio::data_dir(), open_audio),
             produktionen: crate::produktionen::ProduktionenWindow::default(),
             export_dialog: crate::export_dialog::ExportDialog::new(),
+            track_export: None,
+            track_export_job: None,
             clock_editor: crate::clock_editor::ClockEditor::new(woa_radio::data_dir()),
             event_editor: crate::event_editor::EventEditor::new(woa_radio::data_dir()),
             radio: None,
@@ -3523,6 +3528,13 @@ impl WoaApp {
                 }
             }
         }
+        if ui
+            .button(format!("{} Spur exportieren …", theme::ic::EXPORT))
+            .clicked()
+        {
+            self.track_export = Some(crate::track_export::TrackExportDialog::new(id, name));
+            ui.close();
+        }
         ui.separator();
         if ui
             .button(
@@ -5239,6 +5251,109 @@ impl WoaApp {
     fn export_window(&mut self, ctx: &egui::Context) {
         if let Some(req) = self.export_dialog.show(ctx) {
             self.run_export(req);
+        }
+        self.track_export_window(ctx);
+    }
+
+    /// Fenster und Hintergrund-Export „Spur exportieren“ (Ticket 229).
+    fn track_export_window(&mut self, ctx: &egui::Context) {
+        if let Some(job) = &self.track_export_job {
+            match job.rx.try_recv() {
+                Ok(result) => {
+                    self.state.status = match result {
+                        Ok(secs) => {
+                            tracing::info!(seconds = secs, "track export done");
+                            Status::Info(format!(
+                                "Spur exportiert: {} ({secs:.1} s)",
+                                job.out.display()
+                            ))
+                        }
+                        Err(e) => {
+                            tracing::error!(error = %e, "track export failed");
+                            Status::Error(format!("Export fehlgeschlagen: {e}"))
+                        }
+                    };
+                    self.track_export_job = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(200));
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    tracing::error!("track export thread ended without result");
+                    self.state.status = Status::Error("Export fehlgeschlagen".into());
+                    self.track_export_job = None;
+                }
+            }
+        }
+        let Some(dialog) = self.track_export.as_mut() else {
+            return;
+        };
+        let req = match dialog.show(ctx) {
+            Err(()) => {
+                self.track_export = None;
+                return;
+            }
+            Ok(None) => return,
+            Ok(Some(req)) => req,
+        };
+        if self.track_export_job.is_some() {
+            self.state.status = Status::Error("Es läuft schon ein Spur-Export".into());
+            return;
+        }
+        let ext = req.format.extension();
+        let Some(out) = rfd::FileDialog::new()
+            .set_title("Spur exportieren")
+            .set_file_name(&req.file_name)
+            .add_filter(req.format.label(), &[ext])
+            .save_file()
+        else {
+            return;
+        };
+        self.track_export = None;
+        let out = if out.extension().is_none() {
+            out.with_extension(ext)
+        } else {
+            out
+        };
+        self.capture_plugins();
+        let project = self.state.project().clone();
+        let state = &self.state;
+        let job = match self.player.as_mut() {
+            Some(p) => p.track_export_job(
+                &project,
+                &|rel| state.resolve_audio(rel),
+                req.track,
+                out.clone(),
+                woa_engine::export::ExportSpec::new(req.format),
+                req.tags,
+            ),
+            None => Err("keine Audio-Engine".into()),
+        };
+        let work = match job {
+            Ok(w) => w,
+            Err(e) => {
+                self.state.status = Status::Error(format!("Export fehlgeschlagen: {e}"));
+                return;
+            }
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ctx2 = ctx.clone();
+        let spawned = std::thread::Builder::new()
+            .name("track-export".into())
+            .spawn(move || {
+                let _ = tx.send(work());
+                ctx2.request_repaint();
+            });
+        match spawned {
+            Ok(_) => {
+                self.state.status =
+                    Status::Info(format!("Spur wird exportiert: {}", out.display()));
+                self.track_export_job = Some(crate::track_export::TrackExportJob { out, rx });
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "track export thread not started");
+                self.state.status = Status::Error(format!("Export fehlgeschlagen: {e}"));
+            }
         }
     }
 

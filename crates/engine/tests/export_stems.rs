@@ -387,3 +387,72 @@ fn encoder_without_support_is_reported() {
     std::fs::write(&junk, b"das ist kein opus").expect("write");
     assert!(ff.decode(&junk, RATE).is_err());
 }
+
+/// Ticket 229: eine einzelne Spur als Datei, mit Titel, Interpret und Kommentar.
+#[test]
+fn single_track_export_holds_only_that_track_and_the_tags() {
+    use woa_engine::export::{ExportTags, export_tagged};
+    use woa_engine::stems::render_track;
+    let p = project();
+    let a = p.tracks.iter().find(|t| t.name == "A").expect("a").id;
+    let all = render(&p);
+    let want = all.stems.iter().find(|s| s.name == "A").expect("stem a");
+    let stem = render_track(&p, RATE, 4.0 * 0.5, a, &mut load, &mut |_| {
+        Default::default()
+    })
+    .expect("track");
+    assert_eq!(stem.left, want.left, "nur Spur A, nicht der Mix");
+    assert_ne!(stem.left, all.mix_left);
+    let c = p.tracks.iter().find(|t| t.name == "C").expect("c").id;
+    assert!(render_track(&p, RATE, 1.0, c, &mut load, &mut |_| Default::default()).is_err());
+
+    let tags = ExportTags {
+        title: "Mein Titel".into(),
+        artist: "Wir on Air".into(),
+        comment: "Grüße".into(),
+    };
+    let dir = tempfile::tempdir().expect("dir");
+    let mut spec = ExportSpec::new(ExportFormat::Wav);
+    spec.depth = Some(BitDepth::Float32);
+    let wav = dir.path().join("A.wav");
+    export_tagged(&wav, &spec, &stem.left, &stem.right, RATE, &tags).expect("wav");
+    let bytes = std::fs::read(&wav).expect("read");
+    for needle in [
+        &b"INAM"[..],
+        b"IART",
+        b"ICMT",
+        b"Mein Titel",
+        b"Wir on Air",
+        "Grüße".as_bytes(),
+    ] {
+        assert!(
+            bytes.windows(needle.len()).any(|w| w == needle),
+            "WAV-Tag fehlt"
+        );
+    }
+    let riff = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize;
+    assert_eq!(riff + 8, bytes.len(), "RIFF-Länge stimmt");
+    let (l, _) = decode_file(&wav).expect("decode").stereo();
+    assert_eq!(l, stem.left, "Samples unverändert");
+
+    let mp3 = dir.path().join("A.mp3");
+    export_tagged(
+        &mp3,
+        &ExportSpec::new(ExportFormat::Mp3),
+        &stem.left,
+        &stem.right,
+        RATE,
+        &tags,
+    )
+    .expect("mp3");
+    let bytes = std::fs::read(&mp3).expect("read");
+    assert_eq!(&bytes[..3], b"ID3");
+    for needle in [&b"TIT2"[..], b"TPE1", b"COMM", b"Mein Titel", b"Wir on Air"] {
+        assert!(
+            bytes.windows(needle.len()).any(|w| w == needle),
+            "ID3-Tag fehlt"
+        );
+    }
+    let (l, _) = decode_file(&mp3).expect("decode mp3").stereo();
+    assert!(rms(&l) > 0.05, "MP3 klingt");
+}
