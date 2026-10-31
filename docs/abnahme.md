@@ -4,6 +4,18 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## KI & MCP, Teil 2: Assistent mit freiem Anbieter (0.34.32, offen)
+
+1. Einstellungen → „KI & MCP …“ → Reiter „Assistent“. „Neu …“ zeigt Anthropic, OpenAI, OpenRouter, Ollama (lokal), LM Studio (lokal) und „Eigener Server (leer)“.
+2. Für den eigenen Server: „Eigener Server“, Format „OpenAI-kompatibel“, Adresse eintragen (mit oder ohne `/v1`), Schlüssel leer lassen, wenn er keinen braucht. „Modelle holen“ füllt die Liste „Liste“; ein Modell wählen oder von Hand eintippen. „Verbindung testen“ meldet „Verbunden, Modell … ist da“. Mit falschem Modellnamen: „steht nicht in der Liste“. Mit falscher Adresse: „Keine Verbindung … Firewall“.
+3. Für Anthropic oder einen Dienst mit Schlüssel: Schlüssel ins Feld (Punkte), „Speichern“; das Feld zeigt danach „gespeichert (im Schlüsselbund)“. Testen: grün. Mit falschem Schlüssel: „lehnt den Schlüssel ab“. `grep -ri <schluessel> ~/.config/woa/` findet nichts.
+4. Mit „MCP-Server hinzufügen …“ einen Server eintragen (z. B. lokal: Befehl `npx`, Argumente `-y @modelcontextprotocol/server-everything`; oder HTTP mit Adresse). „Verbindung testen“ nennt die Zahl der Werkzeuge. Mit falschem Befehl: „Start von … fehlgeschlagen“.
+5. „Speichern“, dann Einstellungen → „Assistent (Chat) …“. Das Fenster sagt „Bereit, n Werkzeuge verfügbar“. „Lege eine Spur namens Moderation an“ eingeben: „→ Werkzeug …“ erscheint, danach die Antwort; das Projekt (nach erneutem Öffnen) hat die Spur.
+6. Einen Server ausschalten (Haken weg), „Speichern“, im Chat „Neues Gespräch“: seine Werkzeuge fehlen. Ohne Anbieter sagt der Chat, was fehlt.
+7. Alte Konfiguration ohne `ki`-Abschnitt starten: alles wie vorher, `config.json` bekommt den Abschnitt erst, wenn etwas eingetragen ist.
+
+Selbst geprüft von Claude: Tests und Clippy von woa-assistant und woa-gui grün, darunter beide Anbieter-Formate mit einer Werkzeug-Runde gegen einen HTTP-Mock, MCP-Client über HTTP und Stdio, die ganze Chat-Schleife und das Zeichnen der Fenster. Nicht selbst geprüft: ein echter Anbieter (Anthropic, OpenAI, Ollama …) mit den Fenstern, ein echter externer MCP-Server, der Schlüsselbund unter Windows, das geöffnete Fenster im Screenshot.
+
 ## KI & MCP, Teil 1: WOA als MCP-Server (0.34.31, offen)
 
 1. Einstellungen → „KI & MCP …“. Das Fenster zeigt Projektordner, Erreichbar, Port, Zugriffstoken und Einträge für deinen Client.
