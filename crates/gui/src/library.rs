@@ -991,11 +991,7 @@ impl LibraryWindow {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            ui.label(
-                egui::RichText::new("TAGS")
-                    .size(10.0)
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("TAGS"));
             let mut remove = None;
             for tag in &t.tags {
                 let b = ui.add(
@@ -1023,11 +1019,7 @@ impl LibraryWindow {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            ui.label(
-                egui::RichText::new("ANALYSE")
-                    .size(10.0)
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("ANALYSE"));
             match &t.analysis {
                 Some(a) => {
                     ui.label(

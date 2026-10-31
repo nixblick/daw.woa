@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.77 — 2026-10-31
+
+- **Einheitliche Modulköpfe (#246):** Alle Kartenköpfe in Radio, Party, Fernbedienung, Bibliothek, Analyse, Export, Automation und Uhren-Editor („SENDE-PLAYLIST“, „CART-WALL“, „WUNSCHLISTE“ …) stehen jetzt einheitlich als `panel-label` des Design-Systems: Barlow Condensed Bold, 12 px, leicht gesperrt, `text-dim`. Bisher mischten sich Barlow 11,5 px fett, 10 px und `small`. Das Pianoroll nimmt für Noten im Dunkeln die Spurfarbe 1 statt eines eigenen Blaus. Neu in `theme.rs`: `panel_label()` und `danger_text()` (Fehlertext mit WCAG-AA-Kontrast). Rein optisch, keine Bedienung geändert.
+
 ## 0.34.76 — 2026-10-31
 
 - **`next_id` beim Rückgängig (#243):** geprüft und als gewollt dokumentiert. Der Zähler steigt nur: Eine neue Id wird schon vor dem Befehl vergeben, und Rückgängig senkt den Zähler nicht. So bekommt kein neues Objekt die Id einer rückgängig gemachten Spur, und ein Agent mit einer alten Id trifft nicht stillschweigend etwas anderes. Kommentar an `Project::next_id`, Test `undo_never_reuses_an_id`.
