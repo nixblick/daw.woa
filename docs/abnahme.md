@@ -4,6 +4,13 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Sicherheit #127: AppImage-Werkzeuge mit Prüfsumme (0.34.21, offen)
+
+1. Der CI-Lauf `linux-build` ist grün (AppImage wird gebaut).
+2. Optional lokal: `WOA_TOOLS_DIR=/tmp/t packaging/linux/build-appimage.sh /tmp/o` zweimal; die Werkzeuge in `/tmp/t` ändern (etwa ein Byte anhängen), der nächste Bau bricht mit „Prüfsumme falsch“ ab.
+
+Selbst geprüft von Claude: Cache-Datei manipuliert, Bau bricht ab; unveränderte Datei besteht die Prüfung.
+
 ## Sicherheit #119: Gast-Rückweg und Gastnamen (0.34.18, offen)
 
 1. Gast-Zugang einschalten, mit dem Handy als Gast anmelden und etwas sprechen, dann abmelden.
@@ -791,14 +798,14 @@ Selbst geprüft von Claude: Tests `shared_memory_file_is_mode_0600` und `private
 1. Produzent-Modus, je eine Audio-, MIDI- und Bus-Spur anlegen.
 2. Rechtsklick auf den freien Bereich eines Spurkopfs: Menü mit „Spur umbenennen“ und „Spur löschen“ geht auf. Dasselbe per Rechtsklick auf den Spurnamen. „Spur löschen“ entfernt die Spur; bei allen drei Spurarten probieren.
 3. Papierkorb rechts oben im Spurkopf: löscht die Spur sofort.
-4. Studio-Mixer im Dock: jeder Kanalzug hat M, S und Aufnahme (seit 0.34.21 ohne Papierkorb und ohne „Effekte n“, siehe unten).
+4. Studio-Mixer im Dock: jeder Kanalzug hat M, S und Aufnahme (seit 0.34.22 ohne Papierkorb und ohne „Effekte n“, siehe unten).
 5. Ohne einen Kanal anzuklicken steht rechts das Insert-Rack des ersten Kanals, „EFFEKTE“, „+ Effekt“ und „+ Plugin“ sind ohne Scrollen zu sehen.
 6. Einen anderen Kanalzug anklicken: das Rack zeigt diesen Kanal. „+ Effekt“ → EQ anlegen, Bypass-Taste aus und an, Reihenfolge ändern, mit X entfernen. Ein Plugin laden, Fenster öffnen und schließen, Bypass, entfernen.
 7. Gain, Pan, Ausgang und Sends stehen im Rack unter den Effekten und wirken wie vorher.
 
 Selbst geprüft von Claude: Tests in `crates/gui/tests/design_regressions.rs` (fünf, alle grün; der Rechtsklick-Test schlägt mit dem alten Hover-Rahmen fehl), Tests und Clippy von `woa-gui` grün.
 
-## Auswahl und Clip-Inspektor (0.34.21, offen)
+## Auswahl und Clip-Inspektor (0.34.22, offen)
 
 1. Produzent-Modus, je eine Audio-, MIDI- und Bus-Spur anlegen. Ohne Klick ist die erste Spur im Spurkopf und im Kanalzug in ihrer Farbe hervorgehoben, und das Rack zeigt sie (Farbpunkt und Name oben).
 2. Spurkopf der MIDI-Spur anklicken (auch auf M oder S): Spurkopf, Kanalzug und Rack wechseln auf diese Spur.

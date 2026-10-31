@@ -2,7 +2,7 @@
 
 Was die App bedient, die Vorlage unter `woa-design-system/` aber noch nicht zeigt. Bis es eine
 Vorlage gibt, baut `crates/gui` diese Stellen aus den vorhandenen Tokens und Bausteinen. Gesammelt
-aus den Design-Nachbesserungen 0.34.19 und 0.34.21.
+aus den Design-Nachbesserungen 0.34.19 und 0.34.22.
 
 | Funktion | Wo in der App | Was eine Vorlage zeigen müsste |
 |---|---|---|

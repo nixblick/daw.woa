@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.21 — 2026-10-31
+## 0.34.22 — 2026-10-31
 
 Eine Auswahl, ein ruhiger Clip-Inspektor (André 31.10.: „mehr buttons sind nie die lösung … KISS“).
 
@@ -10,6 +10,14 @@ Eine Auswahl, ein ruhiger Clip-Inspektor (André 31.10.: „mehr buttons sind ni
 - **Clip-Inspektor in einer Zeile:** Gruppen Fade (Symbole für Ein- und Ausblenden, Länge, Kurve kurz Lin/Pow/S), Gain (dB, Normalisieren als Symbol), Zeit (Dehnung %, Tonhöhe st, Tempo folgen als Metronom-Taste; die Symbole leuchten, wenn der Clip bearbeitet ist) und Bearbeiten (Schneiden, Duplizieren, Kopieren, Löschen als Symbole). Erklärungen und Tastenkürzel stehen im Tooltip, auch der lange Hinweis ohne gewählten Clip.
 - Tests (`crates/gui/tests/design_regressions.rs`): Auswahl über Spurkopf und Kanalzug mit Rack, Effekte für jede Spur per Klick auf den Kanalzug, Spur löschen per Rechtsklick im Kanalzug, ein Papierkorb je Spur, Entf für Clip und Spur, Papierkorb im Inspektor.
 - Neu: `docs/design/luecken.md`, was die Gestaltungsvorlage noch nicht zeigt.
+
+## 0.34.21 — 2026-10-31
+
+Sicherheit #127: AppImage-Werkzeuge werden vor dem Ausführen per SHA-256 geprüft.
+
+- **Bau:** `packaging/linux/build-appimage.sh` kennt für linuxdeploy und appimagetool (feste Versionen, kein `continuous`) je eine SHA-256 und prüft sie vor `chmod +x`, auch bei bereits zwischengespeicherten Dateien. Eine falsche Prüfsumme bricht den Bau ab.
+
+Closes #127.
 
 ## 0.34.20 — 2026-10-31
 

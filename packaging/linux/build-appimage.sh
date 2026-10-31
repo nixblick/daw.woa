@@ -14,17 +14,27 @@ arch="x86_64"
 # Feste Versionen, damit ein Bau nicht von "continuous" abhängt.
 linuxdeploy_url="https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20250213-2/linuxdeploy-$arch.AppImage"
 appimagetool_url="https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-$arch.AppImage"
+# SHA-256 der festen Versionen (#127). Neue Version: beide Werte gemeinsam erneuern, Quelle prüfen.
+linuxdeploy_sha256="4648f278ab3ef31f819e67c30d50f462640e5365a77637d7e6f2ad9fd0b4522a"
+appimagetool_sha256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
 
 mkdir -p "$out" "$tools"
 for f in woa woa-headless woa-streamd; do
   [ -x "$bin/$f" ] || { echo "fehlt: $bin/$f (erst cargo build --release)" >&2; exit 1; }
 done
 
-fetch() { # url datei
-  [ -x "$2" ] || { curl -fsSL "$1" -o "$2" && chmod +x "$2"; }
+# Prüft die Datei gegen die SHA-256; bei Abweichung bricht der Bau ab (auch bei zwischengespeicherten Dateien).
+verify() { # datei sha256
+  echo "$2  $1" | sha256sum -c --quiet - >/dev/null 2>&1 \
+    || { echo "Prüfsumme falsch: $1 (erwartet $2). Datei löschen oder Skript prüfen." >&2; exit 1; }
 }
-fetch "$linuxdeploy_url" "$tools/linuxdeploy"
-fetch "$appimagetool_url" "$tools/appimagetool"
+fetch() { # url datei sha256
+  [ -f "$2" ] || curl -fsSL "$1" -o "$2"
+  verify "$2" "$3"
+  chmod +x "$2"
+}
+fetch "$linuxdeploy_url" "$tools/linuxdeploy" "$linuxdeploy_sha256"
+fetch "$appimagetool_url" "$tools/appimagetool" "$appimagetool_sha256"
 
 appdir="$out/WOA.AppDir"
 rm -rf "$appdir"
