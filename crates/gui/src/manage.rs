@@ -59,8 +59,8 @@ pub struct ManageWindow {
     pub selected: usize,
     /// Markierter Titel rechts (Entf nimmt ihn heraus).
     pub marked: Option<usize>,
-    /// Umbenennen läuft: Index und Text.
-    pub renaming: Option<(usize, String)>,
+    /// Umbenennen läuft: Index, Text und ob der Fokus schon gesetzt ist.
+    pub renaming: Option<(usize, String, bool)>,
     /// Wechsel während der Sendung wartet auf Bestätigung.
     pub confirm_switch: Option<usize>,
     /// Vom Controller-Thread gefüllt, wenn eine Playlist gelöscht wurde.
@@ -221,12 +221,16 @@ impl ManageWindow {
                 .show(ui, |ui| {
                     for (i, p) in show.playlists.iter().enumerate() {
                         let count = show.playlist_entries(i).map_or(0, <[_]>::len);
-                        if let Some((k, text)) = &mut self.renaming
+                        if let Some((k, text, focused)) = &mut self.renaming
                             && *k == i
                         {
                             let r = ui.text_edit_singleline(text);
-                            r.request_focus();
-                            if r.lost_focus() {
+                            // Fokus nur beim Öffnen, sonst kommt man nicht mehr heraus.
+                            if !*focused {
+                                r.request_focus();
+                                *focused = true;
+                            }
+                            if r.lost_focus() || r.clicked_elsewhere() {
                                 if ui.input(|i| !i.key_pressed(egui::Key::Escape)) {
                                     out.push(Action::Rename(i, text.clone()));
                                 }
@@ -246,7 +250,7 @@ impl ManageWindow {
                             self.marked = None;
                         }
                         if r.double_clicked() {
-                            self.renaming = Some((i, p.name.clone()));
+                            self.renaming = Some((i, p.name.clone(), false));
                         }
                         r.context_menu(|ui| self.playlist_menu(ui, i, show, on_air, out));
                     }
@@ -358,7 +362,7 @@ impl ManageWindow {
                 .get(i)
                 .map(|p| p.name.clone())
                 .unwrap_or_default();
-            self.renaming = Some((i, name));
+            self.renaming = Some((i, name, false));
             ui.close();
         }
         if ui.button("Duplizieren").clicked() {
@@ -470,5 +474,55 @@ mod tests {
         assert_eq!(w.confirm_switch, Some(1));
         w.request_select(2, false, &mut out);
         assert_eq!(out, vec![Action::Select(2)]);
+    }
+
+    /// Ein Frame mit optionalem Klick an `click`.
+    fn frame(
+        ctx: &egui::Context,
+        w: &mut ManageWindow,
+        show: &RadioShow,
+        click: Option<egui::Pos2>,
+    ) -> Vec<Action> {
+        let mut input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            ..Default::default()
+        };
+        if let Some(pos) = click {
+            for pressed in [true, false] {
+                input.events.push(egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+        }
+        let mut out = Vec::new();
+        let _ = ctx.run_ui(input, |ui| {
+            out = w.window(ui.ctx(), show, false, |_| Vec::new());
+        });
+        out
+    }
+
+    /// André 31.10.: Das Namensfeld hielt den Fokus fest, man kam nicht mehr heraus.
+    #[test]
+    fn rename_field_lets_go_on_click_elsewhere() {
+        let ctx = egui::Context::default();
+        let show = RadioShow::default();
+        let mut w = ManageWindow {
+            open: true,
+            renaming: Some((0, "Neu".into(), false)),
+            ..Default::default()
+        };
+        for _ in 0..3 {
+            assert!(frame(&ctx, &mut w, &show, None).is_empty());
+        }
+        assert!(w.renaming.is_some(), "field stays open without input");
+        let out = frame(&ctx, &mut w, &show, Some(egui::pos2(1190.0, 790.0)));
+        assert!(w.renaming.is_none(), "click elsewhere closes the field");
+        assert_eq!(out, vec![Action::Rename(0, "Neu".into())]);
     }
 }
