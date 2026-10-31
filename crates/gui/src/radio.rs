@@ -85,6 +85,8 @@ pub struct RadioDesk {
     /// Wunschordner: Beobachter. Ohne Wahl liegt er im Datenordner der Sendung.
     wishes: Option<crate::wishes::WishWatcher>,
     wish_chosen: Option<PathBuf>,
+    /// Party-Decks sind an (Party-Modus).
+    party_on: bool,
     rate: u32,
     error: Option<String>,
     view: View,
@@ -497,6 +499,7 @@ impl RadioDesk {
             phone_lost: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             phone_level: 0.0,
             wishes: None,
+            party_on: false,
             wish_chosen: None,
             rate,
             error,
@@ -852,9 +855,77 @@ impl RadioDesk {
     }
 
     /// Wirkung eines Party-Befehls auf die Sendung (Paket 35). Das Vollbild macht die App.
+    /// Party-Decks an (Party-Modus) oder aus. Jeden Frame aufrufen; geschickt wird nur beim
+    /// Wechsel. Beim Betreten übernimmt die linke Seite einen laufenden Titel, beim Verlassen
+    /// die Playlist die hörbare Seite.
+    pub fn set_party_mode(&mut self, on: bool) {
+        if on != self.party_on {
+            self.party_on = on;
+            if on {
+                self.with(|c| c.party_enter());
+            } else {
+                self.with(|c| c.party_leave());
+            }
+        }
+    }
+
+    /// Befehle der Party-Decks (Tasten, Handy) im Party-Modus.
+    fn party_duo_effect(&mut self, e: woa_radio::party::Effect) {
+        use woa_radio::party::Effect;
+        match e {
+            Effect::StartOrNext => self.with(|c| c.party_next()),
+            Effect::Stop | Effect::Pause => self.with(|c| c.party_pause_all()),
+            Effect::Play => self.with(|c| {
+                if !c.party_playing() {
+                    c.party_toggle();
+                }
+            }),
+            Effect::Previous => self.with(|c| c.party_previous()),
+            Effect::Restart => self.with(|c| c.party_restart()),
+            Effect::Seek(s) => self.with(move |c| c.party_seek(s)),
+            Effect::CycleRepeat => self.with(|c| c.cycle_repeat()),
+            Effect::ToggleShuffle => self.with(|c| c.toggle_shuffle()),
+            Effect::MusicLevel(db) => self.set_level(Bus::Music, db),
+            Effect::InsertNext(path) => self.with(move |c| {
+                // Hinter den hörbaren Titel: die freie Seite lädt ihn dann vor.
+                let at = c.party_live_index().map_or(0, |i| i + 1);
+                let at = at.min(c.show().playlist.len());
+                c.add(&[path], Some(at));
+            }),
+            Effect::Fullscreen(_) => {}
+        }
+    }
+
+    /// Crossfader der Party von Hand (0 links, 1 rechts).
+    pub fn party_fader(&self, pos: f32) {
+        self.with(move |c| c.party_fader(pos));
+    }
+
+    /// ▶ Play bzw. Pause an einer Party-Seite.
+    pub fn party_side(&self, side: usize, play: bool) {
+        self.with(move |c| {
+            if play {
+                c.party_play(side);
+            } else {
+                c.party_pause(side);
+            }
+        });
+    }
+
+    /// Schalter „Auto-Übergang“ (wird mit der Sendung gespeichert).
+    pub fn set_party_auto(&self, on: bool) {
+        self.with(move |c| c.set_party_auto(on));
+    }
+
+    /// Stand des Wunschtitel-Ordners (#134), falls einer beobachtet wird.
+    pub fn wish_folder_list(&self) -> Option<crate::wishes::WishList> {
+        self.wishes.as_ref().map(|w| w.list())
+    }
+
     pub fn party_effect(&mut self, e: woa_radio::party::Effect) {
         use woa_radio::party::Effect;
         match e {
+            _ if self.party_on => self.party_duo_effect(e),
             Effect::StartOrNext => self.with(|c| c.start_or_next()),
             Effect::Stop => self.with(|c| c.stop()),
             Effect::Pause => self.with(|c| c.pause()),

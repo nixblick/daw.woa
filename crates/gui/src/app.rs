@@ -5805,6 +5805,7 @@ impl eframe::App for WoaApp {
         self.clock_editor.tick_save();
         self.event_editor.tick_save();
         if let Some(r) = self.radio.as_mut() {
+            r.set_party_mode(self.config.mode == Mode::Party);
             self.party.pump_remote(r, ctx);
         }
         if self.config.mode == Mode::Party {

@@ -205,3 +205,46 @@ fn export_render_with_denoise_is_deterministic_and_matches_the_chain_delay() {
             .fold(0.0f32, f32::max);
     assert!(diff < 1e-6, "block size changes the export by {diff}");
 }
+
+/// Weißes Rauschen aus einem festen Startwert (xorshift), Amplitude 0.3.
+struct Noise(u32);
+
+impl Node for Noise {
+    fn prepare(&mut self, _sample_rate: f32) {}
+    fn set_param(&mut self, _param: u32, _value: f32) {}
+    fn process(&mut self, buffers: woa_dsp::ProcessBuffers<'_>) {
+        for out in buffers.output.iter_mut() {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 17;
+            self.0 ^= self.0 << 5;
+            *out = (self.0 as f32 / u32::MAX as f32 * 2.0 - 1.0) * 0.3;
+        }
+    }
+}
+
+#[test]
+fn reverb_on_a_mono_track_is_stereo() {
+    let mut s = Session::new("hall");
+    let t = track(&mut s, "Rauschen");
+    let id = s.new_insert_id();
+    insert(
+        &mut s,
+        t,
+        Insert::with_values(id, EffectKind::Reverb, &[("mix_pct", 100.0)]).expect("valid"),
+    );
+    let mut src = |tr: &Track| -> Option<Box<dyn Node>> {
+        (tr.kind != TrackKind::Bus).then(|| Box::new(Noise(0x1234_5678)) as Box<dyn Node>)
+    };
+    let (l, r) =
+        render_project(s.project(), &mut src, SR as f32, SR as usize, BLOCK).expect("render");
+    let (l, r) = (&l[SR as usize / 4..], &r[SR as usize / 4..]);
+    let dot = |a: &[f32], b: &[f32]| {
+        a.iter()
+            .zip(b)
+            .map(|(x, y)| f64::from(*x) * f64::from(*y))
+            .sum::<f64>()
+    };
+    let corr = dot(l, r) / (dot(l, l) * dot(r, r)).sqrt();
+    assert!(peak(l) > 0.01, "Hall klingt");
+    assert!(corr < 0.9, "Korrelation {corr}");
+}

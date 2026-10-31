@@ -14,9 +14,9 @@ use woa_guests::GuestBank;
 use crate::audio::Stereo;
 use crate::cues::CueFrames;
 use crate::dynamics::{BusProcessor, MicChain};
-use crate::level::{Smoother, crossfade};
+use crate::level::{Fader, Smoother, crossfade, fader_gains};
 use crate::voicetrack::{EDGE_SECONDS, VoiceFrames, duck_gain, edge_gain};
-use crate::{CARTS, DECKS};
+use crate::{CARTS, DECKS, PARTY_SIDES};
 
 /// Kennung „kein Titel“.
 pub const NONE: u32 = u32::MAX;
@@ -179,6 +179,27 @@ pub enum Cmd {
     DeckCue(usize),
     /// Deck leeren.
     DeckEject(usize),
+    /// Party: Titel auf Seite `side` (0 links, 1 rechts) legen; die Seite steht am Cue-In.
+    PartyLoad {
+        side: usize,
+        buf: Shared<Stereo>,
+        gain: f32,
+        start: usize,
+        end: usize,
+    },
+    /// Party: Seite starten (am Ende: von vorn).
+    PartyPlay(usize),
+    /// Party: Seite kurz ausblenden und anhalten; die Stelle bleibt.
+    PartyStop(usize),
+    /// Party: Seite anhalten und an den Anfang stellen.
+    PartyCue(usize),
+    /// Party: Seite leeren.
+    PartyEject(usize),
+    /// Party: auf Seite `side` um so viele Frames springen.
+    PartySeek(usize, i64),
+    /// Party-Crossfader (0 = links, 1 = rechts). `frames == 0`: von Hand (kurz geglättet),
+    /// sonst fährt er in so vielen Frames hin. Eine Handbewegung ersetzt jede Fahrt.
+    PartyFader { to: f32, frames: usize },
 }
 
 /// Lock-frei lesbarer Zustand des Mixers.
@@ -235,6 +256,13 @@ pub struct Status {
     pub bus_lufs: AtomicU32,
     /// Mikro-Gate offen.
     pub mic_gate_open: AtomicBool,
+    /// Party-Seiten: Zustand, Stelle, Ende und „fertig“-Zähler wie bei den Decks.
+    pub party_state: [AtomicU32; PARTY_SIDES],
+    pub party_pos: [AtomicU64; PARTY_SIDES],
+    pub party_end: [AtomicU64; PARTY_SIDES],
+    pub party_done: [AtomicU32; PARTY_SIDES],
+    /// Stellung des Party-Crossfaders, wie der Mixer sie gerade fährt (f32-Bits).
+    pub party_fader: AtomicU32,
 }
 
 impl Default for Status {
@@ -267,6 +295,11 @@ impl Default for Status {
             bus_reduction_db: AtomicU32::new(0),
             bus_lufs: AtomicU32::new((-70.0f32).to_bits()),
             mic_gate_open: AtomicBool::new(false),
+            party_state: std::array::from_fn(|_| AtomicU32::new(DECK_EMPTY)),
+            party_pos: std::array::from_fn(|_| AtomicU64::new(0)),
+            party_end: std::array::from_fn(|_| AtomicU64::new(0)),
+            party_done: std::array::from_fn(|_| AtomicU32::new(0)),
+            party_fader: AtomicU32::new(0),
         }
     }
 }
@@ -401,6 +434,97 @@ struct DeckPlay {
     fade_in: Option<(usize, usize)>,
 }
 
+impl DeckPlay {
+    fn new(buf: Shared<Stereo>, gain: f32, start: usize, end: usize) -> Self {
+        let end = end.min(buf.frames());
+        let start = start.min(end);
+        Self {
+            buf,
+            pos: start,
+            start,
+            end,
+            gain,
+            playing: false,
+            stopping: None,
+            stop_total: 1,
+            fade_in: None,
+        }
+    }
+
+    /// Starten; `fade` Frames einblenden (0 = sofort voll).
+    fn play(&mut self, fade: usize) {
+        if self.pos >= self.end {
+            self.pos = self.start;
+        }
+        self.stopping = None;
+        self.fade_in = (fade > 0).then_some((0, fade));
+        self.playing = self.pos < self.end;
+    }
+
+    /// Über `frames` ausblenden und anhalten (die Stelle bleibt).
+    fn fade_out(&mut self, frames: usize) {
+        if self.playing && self.stopping.is_none() {
+            let f = frames.max(1);
+            self.stopping = Some(f);
+            self.stop_total = f;
+        }
+    }
+
+    /// Anhalten und an den Anfang.
+    fn cue(&mut self) {
+        self.playing = false;
+        self.stopping = None;
+        self.pos = self.start;
+    }
+
+    /// Ein Frame: das Sample (mit Titel-Gain und Blenden) und ob das Deck gerade bis Cue-Out
+    /// durchgelaufen ist. Steht das Deck, kommt Stille.
+    #[inline]
+    fn tick(&mut self) -> ((f32, f32), bool) {
+        if !self.playing {
+            return ((0.0, 0.0), false);
+        }
+        let mut out = (0.0, 0.0);
+        if self.pos < self.end {
+            let mut g = self.gain;
+            if let Some(n) = self.stopping {
+                g *= n as f32 / self.stop_total.max(1) as f32;
+                if n <= 1 {
+                    self.playing = false;
+                    self.stopping = None;
+                } else {
+                    self.stopping = Some(n - 1);
+                }
+            }
+            if let Some((p, len)) = self.fade_in {
+                g *= crossfade(p as f32 / len as f32).1;
+                self.fade_in = (p + 1 < len).then_some((p + 1, len));
+            }
+            out = (self.buf.left[self.pos] * g, self.buf.right[self.pos] * g);
+            self.pos += 1;
+        }
+        if self.pos >= self.end {
+            self.playing = false;
+            self.stopping = None;
+            self.fade_in = None;
+            return (out, true);
+        }
+        (out, false)
+    }
+
+    /// (Zustand, Stelle, Ende) für [`Status`].
+    fn state(d: Option<&Self>) -> (u32, u64, u64) {
+        match d {
+            None => (DECK_EMPTY, 0, 0),
+            Some(d) => (
+                if d.playing { DECK_PLAYING } else { DECK_READY },
+                d.pos as u64,
+                d.end as u64,
+            ),
+        }
+    }
+}
+
 struct Voice {
     buf: Shared<Stereo>,
     pos: usize,
@@ -456,6 +580,9 @@ pub struct Mixer {
     held: bool,
     carts: [Option<Voice>; CARTS],
     decks: [Option<DeckPlay>; DECKS],
+    /// Party: zwei eigene Seiten über den Crossfader, im Musikzweig.
+    party: [Option<DeckPlay>; PARTY_SIDES],
+    party_fader: Fader,
     voice_pending: Option<VoicePending>,
     voice: Option<VoicePlay>,
     mic: Option<Owned<rtrb::Consumer<f32>>>,
@@ -516,6 +643,8 @@ impl Mixer {
             held: false,
             carts: std::array::from_fn(|_| None),
             decks: std::array::from_fn(|_| None),
+            party: std::array::from_fn(|_| None),
+            party_fader: Fader::new(0.0, r),
             voice_pending: None,
             voice: None,
             mic: None,
@@ -673,19 +802,7 @@ impl Mixer {
                     end,
                 } => {
                     if let Some(slot) = self.decks.get_mut(deck) {
-                        let end = end.min(buf.frames());
-                        let start = start.min(end);
-                        *slot = Some(DeckPlay {
-                            buf,
-                            pos: start,
-                            start,
-                            end,
-                            gain,
-                            playing: false,
-                            stopping: None,
-                            stop_total: 1,
-                            fade_in: None,
-                        });
+                        *slot = Some(DeckPlay::new(buf, gain, start, end));
                     }
                 }
                 Cmd::DeckCues { deck, start, end } => {
@@ -699,48 +816,27 @@ impl Mixer {
                 }
                 Cmd::DeckPlay(deck) => {
                     if let Some(Some(d)) = self.decks.get_mut(deck) {
-                        if d.pos >= d.end {
-                            d.pos = d.start;
-                        }
-                        d.stopping = None;
-                        d.fade_in = None;
-                        d.playing = d.pos < d.end;
+                        d.play(0);
                     }
                 }
                 Cmd::DeckStop(deck) => {
-                    if let Some(Some(d)) = self.decks.get_mut(deck)
-                        && d.playing
-                        && d.stopping.is_none()
-                    {
-                        d.stopping = Some(self.stop_len);
-                        d.stop_total = self.stop_len;
+                    if let Some(Some(d)) = self.decks.get_mut(deck) {
+                        d.fade_out(self.stop_len);
                     }
                 }
                 Cmd::DeckPlayFade(deck, frames) => {
                     if let Some(Some(d)) = self.decks.get_mut(deck) {
-                        if d.pos >= d.end {
-                            d.pos = d.start;
-                        }
-                        d.stopping = None;
-                        d.fade_in = (frames > 0).then_some((0, frames));
-                        d.playing = d.pos < d.end;
+                        d.play(frames);
                     }
                 }
                 Cmd::DeckFadeOut(deck, frames) => {
-                    if let Some(Some(d)) = self.decks.get_mut(deck)
-                        && d.playing
-                        && d.stopping.is_none()
-                    {
-                        let f = frames.max(1);
-                        d.stopping = Some(f);
-                        d.stop_total = f;
+                    if let Some(Some(d)) = self.decks.get_mut(deck) {
+                        d.fade_out(frames);
                     }
                 }
                 Cmd::DeckCue(deck) => {
                     if let Some(Some(d)) = self.decks.get_mut(deck) {
-                        d.playing = false;
-                        d.stopping = None;
-                        d.pos = d.start;
+                        d.cue();
                     }
                 }
                 Cmd::DeckEject(deck) => {
@@ -748,6 +844,45 @@ impl Mixer {
                         *slot = None;
                     }
                 }
+                Cmd::PartyLoad {
+                    side,
+                    buf,
+                    gain,
+                    start,
+                    end,
+                } => {
+                    if let Some(slot) = self.party.get_mut(side) {
+                        *slot = Some(DeckPlay::new(buf, gain, start, end));
+                    }
+                }
+                Cmd::PartyPlay(side) => {
+                    if let Some(Some(d)) = self.party.get_mut(side) {
+                        d.play(0);
+                    }
+                }
+                Cmd::PartyStop(side) => {
+                    if let Some(Some(d)) = self.party.get_mut(side) {
+                        d.fade_out(self.stop_len);
+                    }
+                }
+                Cmd::PartyCue(side) => {
+                    if let Some(Some(d)) = self.party.get_mut(side) {
+                        d.cue();
+                    }
+                }
+                Cmd::PartyEject(side) => {
+                    if let Some(slot) = self.party.get_mut(side) {
+                        *slot = None;
+                    }
+                }
+                Cmd::PartySeek(side, delta) => {
+                    if let Some(Some(d)) = self.party.get_mut(side) {
+                        let last = d.end.saturating_sub(1).max(d.start);
+                        let to = (d.pos as i64).saturating_add(delta).max(d.start as i64);
+                        d.pos = (to as usize).min(last);
+                    }
+                }
+                Cmd::PartyFader { to, frames } => self.party_fader.set(to, frames),
                 Cmd::Record(p) => self.rec = p,
                 Cmd::Stream(p) => self.stream = p,
                 Cmd::SetProcessing { bus, mic } => {
@@ -1011,6 +1146,19 @@ impl Mixer {
                 }
             }
 
+            // Party: zwei Seiten über den Crossfader (Constant-Power), im Musikzweig.
+            let (pa, pb) = fader_gains(self.party_fader.tick());
+            for (k, (slot, g)) in self.party.iter_mut().zip([pa, pb]).enumerate() {
+                if let Some(d) = slot {
+                    let ((l, r), ended) = d.tick();
+                    ml += l * g;
+                    mr += r * g;
+                    if ended {
+                        self.status.party_done[k].fetch_add(1, Ordering::Release);
+                    }
+                }
+            }
+
             // Carts.
             let (mut cl, mut cr) = (0.0f32, 0.0f32);
             for slot in self.carts.iter_mut() {
@@ -1031,31 +1179,10 @@ impl Mixer {
             let mut deck_out = [(0.0f32, 0.0f32); DECKS];
             let ldg = self.levels[3].tick();
             for (k, (slot, out)) in self.decks.iter_mut().zip(deck_out.iter_mut()).enumerate() {
-                if let Some(d) = slot
-                    && d.playing
-                {
-                    if d.pos < d.end {
-                        let mut g = d.gain;
-                        if let Some(n) = d.stopping {
-                            g *= n as f32 / d.stop_total.max(1) as f32;
-                            if n <= 1 {
-                                d.playing = false;
-                                d.stopping = None;
-                            } else {
-                                d.stopping = Some(n - 1);
-                            }
-                        }
-                        if let Some((p, len)) = d.fade_in {
-                            g *= crossfade(p as f32 / len as f32).1;
-                            d.fade_in = (p + 1 < len).then_some((p + 1, len));
-                        }
-                        *out = (d.buf.left[d.pos] * g * ldg, d.buf.right[d.pos] * g * ldg);
-                        d.pos += 1;
-                    }
-                    if d.pos >= d.end {
-                        d.playing = false;
-                        d.stopping = None;
-                        d.fade_in = None;
+                if let Some(d) = slot {
+                    let ((l, r), ended) = d.tick();
+                    *out = (l * ldg, r * ldg);
+                    if ended {
                         // Ereignis „Deck fertig“: nur ein Zähler, keine Allokation.
                         self.status.deck_done[k].fetch_add(1, Ordering::Release);
                     }
@@ -1247,18 +1374,19 @@ impl Mixer {
         }
         s.carts.store(mask, Ordering::Release);
         for (k, d) in self.decks.iter().enumerate() {
-            let (state, pos, end) = match d {
-                None => (DECK_EMPTY, 0, 0),
-                Some(d) => (
-                    if d.playing { DECK_PLAYING } else { DECK_READY },
-                    d.pos as u64,
-                    d.end as u64,
-                ),
-            };
+            let (state, pos, end) = DeckPlay::state(d.as_ref());
             s.deck_state[k].store(state, Ordering::Release);
             s.deck_pos[k].store(pos, Ordering::Release);
             s.deck_end[k].store(end, Ordering::Release);
         }
+        for (k, d) in self.party.iter().enumerate() {
+            let (state, pos, end) = DeckPlay::state(d.as_ref());
+            s.party_state[k].store(state, Ordering::Release);
+            s.party_pos[k].store(pos, Ordering::Release);
+            s.party_end[k].store(end, Ordering::Release);
+        }
+        s.party_fader
+            .store(self.party_fader.pos().to_bits(), Ordering::Release);
         s.mic_open.store(self.mic_open, Ordering::Release);
         s.phone_on.store(self.phone_on, Ordering::Release);
         s.voice.store(self.voice.is_some(), Ordering::Release);
