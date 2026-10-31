@@ -298,7 +298,7 @@ impl AnalysisView {
                 ui.label(
                     egui::RichText::new(format!("{} Frames verpasst", self.lost))
                         .small()
-                        .color(theme::on_air()),
+                        .color(theme::danger_text()),
                 );
             }
         });

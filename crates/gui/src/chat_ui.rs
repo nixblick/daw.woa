@@ -311,7 +311,7 @@ fn line(ui: &mut egui::Ui, l: &Line) {
             ui.label(egui::RichText::new(t).small().color(theme::text_dim()));
         }
         Line::Error(t) => {
-            ui.label(egui::RichText::new(t).color(theme::on_air()));
+            ui.label(egui::RichText::new(t).color(theme::danger_text()));
         }
     }
     ui.add_space(4.0);

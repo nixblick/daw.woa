@@ -401,7 +401,7 @@ impl ManageWindow {
         if ui
             .add_enabled(
                 !blocked,
-                egui::Button::new(egui::RichText::new("Löschen").color(theme::on_air())),
+                egui::Button::new(egui::RichText::new("Löschen").color(theme::danger_text())),
             )
             .on_disabled_hover_text("Läuft gerade auf Sendung. Erst eine andere Playlist wählen.")
             .clicked()

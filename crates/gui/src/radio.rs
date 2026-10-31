@@ -1536,7 +1536,7 @@ impl RadioDesk {
                     ui.label(
                         egui::RichText::new(format!("Aussetzer: {n}"))
                             .small()
-                            .color(theme::on_air()),
+                            .color(theme::danger_text()),
                     )
                     .on_hover_text(
                         "Puffer-Unterläufe der Ausgabe seit dem Öffnen. Steigt die Zahl, \
@@ -2405,7 +2405,7 @@ impl RadioDesk {
                 .is_some_and(|(s, t)| s == slot && t.elapsed() < Duration::from_secs(3));
             let label = if armed {
                 egui::RichText::new(format!("{} Wirklich trennen?", theme::ic::X))
-                    .color(theme::on_air())
+                    .color(theme::danger_text())
             } else {
                 egui::RichText::new(theme::ic::X)
             };
@@ -2471,7 +2471,7 @@ impl RadioDesk {
                         g.underruns, g.overflows
                     ))
                     .small()
-                    .color(theme::on_air()),
+                    .color(theme::danger_text()),
                 );
             }
         });
@@ -2556,7 +2556,7 @@ impl RadioDesk {
                 .filter(|_| running)
                 .and_then(StreamStatus::problem)
             {
-                ui.label(egui::RichText::new(p).small().color(theme::on_air()));
+                ui.label(egui::RichText::new(p).small().color(theme::danger_text()));
             }
             if let Some(line) = link_line(
                 self.feeder
@@ -2564,7 +2564,11 @@ impl RadioDesk {
                     .map(|f| (f.is_connected(), f.reconnects())),
                 st.as_ref().filter(|_| running),
             ) {
-                ui.label(egui::RichText::new(line).small().color(theme::on_air()));
+                ui.label(
+                    egui::RichText::new(line)
+                        .small()
+                        .color(theme::danger_text()),
+                );
             }
         });
     }
@@ -2796,7 +2800,7 @@ impl RadioDesk {
                                     egui::RichText::new("prüfen")
                                         .small()
                                         .strong()
-                                        .color(theme::on_air()),
+                                        .color(theme::danger_text()),
                                 )
                                 .on_hover_text(
                                     "Ein Nachbar hat sich geändert: der Voice-Track geht erst \

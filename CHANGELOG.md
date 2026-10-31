@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.78 — 2026-11-01
+
+- **Lesbare Warnungen und Insert-Rack (#246):** Fehler- und Warntexte (Stream, Gäste, Plugins, Fernbedienung, KI, Feedback) nutzen im dunklen Thema `danger_text()`: `on-air` leicht aufgehellt, damit sie auf `panel` WCAG AA (mindestens 4,5:1 statt rund 4:1) erreichen. Im hellen Thema bleibt alles wie bisher, Lampe und ON-AIR-Schriftzug ebenso. Hinweise, Plugin-Fehler und Log im Insert-Rack stehen jetzt in 12 px statt 9–9,5 px. Die Gruppentitel des Racks („EINGANG“, „AUSGANG“ …) sind Modulköpfe wie überall sonst. Rein optisch, keine Bedienung geändert.
+
 ## 0.34.77 — 2026-10-31
 
 - **Einheitliche Modulköpfe (#246):** Alle Kartenköpfe in Radio, Party, Fernbedienung, Bibliothek, Analyse, Export, Automation und Uhren-Editor („SENDE-PLAYLIST“, „CART-WALL“, „WUNSCHLISTE“ …) stehen jetzt einheitlich als `panel-label` des Design-Systems: Barlow Condensed Bold, 12 px, leicht gesperrt, `text-dim`. Bisher mischten sich Barlow 11,5 px fett, 10 px und `small`. Das Pianoroll nimmt für Noten im Dunkeln die Spurfarbe 1 statt eines eigenen Blaus. Neu in `theme.rs`: `panel_label()` und `danger_text()` (Fehlertext mit WCAG-AA-Kontrast). Rein optisch, keine Bedienung geändert.

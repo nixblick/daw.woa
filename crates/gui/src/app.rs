@@ -1119,12 +1119,16 @@ impl WoaApp {
                 ui.label(
                     egui::RichText::new("Wirkt, sobald nichts mehr läuft")
                         .small()
-                        .color(theme::on_air()),
+                        .color(theme::danger_text()),
                 );
             } else if let Some(note) = self.radio.as_ref().and_then(RadioDesk::pfl_note)
                 && note != crate::radio::PFL_OFF
             {
-                ui.label(egui::RichText::new(note).small().color(theme::on_air()));
+                ui.label(
+                    egui::RichText::new(note)
+                        .small()
+                        .color(theme::danger_text()),
+                );
             }
         });
     }
@@ -3539,7 +3543,7 @@ impl WoaApp {
         if ui
             .button(
                 egui::RichText::new(format!("{} Spur löschen", theme::ic::TRASH))
-                    .color(theme::on_air()),
+                    .color(theme::danger_text()),
             )
             .clicked()
         {
@@ -5852,7 +5856,7 @@ impl WoaApp {
                         });
                         self.feedback_previews(ui);
                         if let Some(e) = &self.image_error {
-                            ui.label(egui::RichText::new(e).color(theme::on_air()));
+                            ui.label(egui::RichText::new(e).color(theme::danger_text()));
                         }
                         ui.checkbox(
                             &mut self.feedback.send_log,
@@ -5959,7 +5963,7 @@ impl WoaApp {
                     }
                     Phase::Done(msg) => {
                         ui.add_space(8.0);
-                        ui.label(egui::RichText::new(msg).color(theme::on_air()));
+                        ui.label(egui::RichText::new(msg).color(theme::danger_text()));
                         ui.add_space(12.0);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
@@ -7062,7 +7066,7 @@ impl WoaApp {
         };
         let small = |s: &str| {
             egui::RichText::new(s.to_owned())
-                .size(9.5)
+                .size(theme::TYPE_SMALL)
                 .monospace()
                 .color(theme::text_dim())
         };
@@ -7158,7 +7162,7 @@ impl WoaApp {
         let inserts = track.inserts.clone();
         let small = |s: &str| {
             egui::RichText::new(s.to_owned())
-                .size(9.5)
+                .size(theme::TYPE_SMALL)
                 .monospace()
                 .color(theme::text_dim())
         };
@@ -7383,7 +7387,7 @@ impl WoaApp {
         let slots = track.plugins.clone();
         let small = |s: &str| {
             egui::RichText::new(s.to_owned())
-                .size(9.5)
+                .size(theme::TYPE_SMALL)
                 .color(theme::text_dim())
         };
         let has_instrument = slots.iter().any(|s| s.role == PluginRole::Instrument);
@@ -7472,8 +7476,8 @@ impl WoaApp {
                                 theme::ic::WARNING,
                                 slot.clap_id
                             ))
-                            .size(9.5)
-                            .color(theme::on_air()),
+                            .size(theme::TYPE_SMALL)
+                            .color(theme::danger_text()),
                         );
                         if ui
                             .small_button("Plugin suchen")
@@ -7490,8 +7494,8 @@ impl WoaApp {
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new(format!("{} {why}", theme::ic::WARNING))
-                                .size(9.5)
-                                .color(theme::on_air()),
+                                .size(theme::TYPE_SMALL)
+                                .color(theme::danger_text()),
                         );
                         let isolated = self
                             .player
@@ -7650,7 +7654,7 @@ impl WoaApp {
     fn plugin_safety_ui(&mut self, ui: &mut egui::Ui) {
         let small = |s: &str| {
             egui::RichText::new(s.to_owned())
-                .size(9.5)
+                .size(theme::TYPE_SMALL)
                 .color(theme::text_dim())
         };
         let Some(p) = self.player.as_mut() else {
@@ -7676,7 +7680,7 @@ impl WoaApp {
             for q in problems.iter().take(8) {
                 ui.label(
                     egui::RichText::new(format!("{}: {}", name(&q.path), q.reason))
-                        .size(9.5)
+                        .size(theme::TYPE_SMALL)
                         .color(theme::text_dim()),
                 );
             }
@@ -7694,8 +7698,8 @@ impl WoaApp {
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(format!("{}: {}", name(&b.file), b.reason))
-                        .size(9.5)
-                        .color(theme::on_air()),
+                        .size(theme::TYPE_SMALL)
+                        .color(theme::danger_text()),
                 )
                 .on_hover_text(b.file.display().to_string());
                 if ui.small_button("Freigeben").clicked() {
@@ -7718,7 +7722,7 @@ impl WoaApp {
     fn plugin_log_ui(&mut self, ui: &mut egui::Ui, clap_id: &str, id: woa_model::InsertId) {
         let small = |s: &str| {
             egui::RichText::new(s.to_owned())
-                .size(9.5)
+                .size(theme::TYPE_SMALL)
                 .color(theme::text_dim())
         };
         let Some(p) = self.player.as_ref().filter(|p| p.plugin_isolated(id)) else {
@@ -7735,7 +7739,7 @@ impl WoaApp {
                     ui.label(
                         egui::RichText::new(l)
                             .monospace()
-                            .size(9.0)
+                            .size(theme::TYPE_SMALL)
                             .color(theme::text_dim()),
                     );
                 }
@@ -8203,12 +8207,9 @@ fn bar_beat(beats: f64, position: bool) -> String {
     format!("{bar}.{beat}.{six}")
 }
 
-/// Gruppentitel im Insert-Rack (klein, Mono, gedimmt).
+/// Gruppentitel im Insert-Rack: Modulkopf wie überall (`panel-label`).
 fn rack_title(s: &str) -> egui::RichText {
-    egui::RichText::new(s.to_owned())
-        .size(9.5)
-        .monospace()
-        .color(theme::text_dim())
+    theme::panel_label(s)
 }
 
 /// Gefahr-Symbolknopf (Design `IconButton --danger`): ohne Fläche, Symbol gedimmt, erst bei Hover
