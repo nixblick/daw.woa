@@ -14,7 +14,7 @@
 //! - 2xx heißt: Server hat gespeichert, Puffer leeren. Alles andere: Puffer behalten,
 //!   später erneut versuchen (der Server antwortet 503, wenn er nicht speichern konnte).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::thread::JoinHandle;
@@ -294,28 +294,29 @@ fn worker(cfg: UploadConfig, rx: Receiver<Msg>) {
         .http_status_as_error(false)
         .build()
         .into();
-    let mut buf: Vec<Event> = Vec::new();
+    let mut buf: VecDeque<Event> = VecDeque::new();
     let mut last = Instant::now();
+    // Nach einem Fehlschlag wartet der Puffer aufs nächste Intervall, statt ohne Netz
+    // bei jedem neuen Ereignis erneut zu senden (der Puffer bleibt dann voll).
+    let mut failed = false;
     loop {
         let wait = cfg.interval.saturating_sub(last.elapsed());
         match rx.recv_timeout(wait) {
             Ok(Msg::Event(e)) => {
-                if buf.len() >= cfg.max_buffer.max(1) {
-                    buf.remove(0);
-                }
-                buf.push(e);
-                if buf.len() >= cfg.batch_size.max(1) {
-                    send_batch(&agent, &cfg, &mut buf);
+                push_bounded(&mut buf, e, cfg.max_buffer);
+                if wants_batch_send(buf.len(), cfg.batch_size, failed) {
+                    failed = !send_batch(&agent, &cfg, &mut buf);
                     last = Instant::now();
                 }
             }
             Ok(Msg::Flush(reply)) => {
                 let ok = send_batch(&agent, &cfg, &mut buf);
+                failed = !ok;
                 last = Instant::now();
                 let _ = reply.send(ok);
             }
             Err(RecvTimeoutError::Timeout) => {
-                send_batch(&agent, &cfg, &mut buf);
+                failed = !send_batch(&agent, &cfg, &mut buf);
                 last = Instant::now();
             }
             Ok(Msg::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
@@ -326,8 +327,21 @@ fn worker(cfg: UploadConfig, rx: Receiver<Msg>) {
     }
 }
 
+/// Hängt an und verwirft bei vollem Puffer das älteste Ereignis (O(1)).
+fn push_bounded(buf: &mut VecDeque<Event>, e: Event, max: usize) {
+    while buf.len() >= max.max(1) {
+        buf.pop_front();
+    }
+    buf.push_back(e);
+}
+
+/// Sofort senden, weil der Stapel voll ist? Nach einem Fehlschlag erst wieder im Intervall.
+fn wants_batch_send(len: usize, batch_size: usize, failed: bool) -> bool {
+    !failed && len >= batch_size.max(1)
+}
+
 /// Sendet den Puffer; leert ihn nur bei 2xx. Liefert `true` bei Erfolg oder leerem Puffer.
-fn send_batch(agent: &ureq::Agent, cfg: &UploadConfig, buf: &mut Vec<Event>) -> bool {
+fn send_batch(agent: &ureq::Agent, cfg: &UploadConfig, buf: &mut VecDeque<Event>) -> bool {
     if buf.is_empty() {
         return true;
     }
@@ -335,7 +349,7 @@ fn send_batch(agent: &ureq::Agent, cfg: &UploadConfig, buf: &mut Vec<Event>) -> 
         install_id: &cfg.install_id,
         app_version: &cfg.app_version,
         os: &cfg.os,
-        ereignisse: buf,
+        ereignisse: buf.make_contiguous(),
     };
     let body = match serde_json::to_string(&batch) {
         Ok(b) => b,
@@ -563,6 +577,23 @@ fn source_art(prefix: &str, file: Option<&str>, line: Option<u32>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn push_bounded_drops_oldest() {
+        let mut b = VecDeque::new();
+        for w in 0..5 {
+            push_bounded(&mut b, Event::new(Level::Info, "m", "a", w).unwrap(), 3);
+        }
+        let w: Vec<i64> = b.iter().map(|e| e.wert).collect();
+        assert_eq!(w, vec![2, 3, 4]);
+    }
+
+    #[test]
+    fn no_batch_send_after_failure_until_interval() {
+        assert!(wants_batch_send(100, 100, false));
+        assert!(!wants_batch_send(99, 100, false));
+        assert!(!wants_batch_send(150, 100, true));
+    }
 
     fn key(m: &str) -> (String, String) {
         (m.to_string(), "log.warn".to_string())
