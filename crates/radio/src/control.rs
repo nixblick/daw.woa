@@ -192,6 +192,10 @@ pub struct Controller {
     preview: Option<std::sync::mpsc::Receiver<Result<Stereo, String>>>,
     /// Gast-Kanäle (Paket 37).
     guests: woa_guests::GuestHub,
+    /// Letzter gesehener Stand von [`Status::deck_done`] je Deck.
+    deck_done_seen: [u32; crate::DECKS],
+    /// „Zurück zur Playlist“ hat für diesen Deck-Lauf schon ausgelöst.
+    deck_return_fired: [bool; crate::DECKS],
 }
 
 /// Ein Zeit-Event in der Playlist.
@@ -249,6 +253,8 @@ impl Controller {
             events_missed: 0,
             preview: None,
             guests,
+            deck_done_seen: [0; crate::DECKS],
+            deck_return_fired: [false; crate::DECKS],
         };
         c.replace_show(show);
         (c, mixer)
@@ -825,6 +831,12 @@ impl Controller {
     /// Pause: blendet aus und hält den Titel an der Stelle fest (der Mixer behält ihn samt
     /// dem bereitgelegten nächsten). [`Self::play`] macht dort ohne Neuladen weiter.
     pub fn pause(&mut self) {
+        self.pause_with(Cmd::Pause);
+    }
+
+    /// Wie [`Self::pause`], mit eigenem Ausblend-Kommando ([`Cmd::Pause`] oder
+    /// [`Cmd::PauseFade`]).
+    fn pause_with(&mut self, cmd: Cmd) {
         let cur = self.status.current.load(Ordering::Acquire);
         if !self.running || cur == NONE {
             return;
@@ -836,7 +848,7 @@ impl Controller {
             self.set_cue(i);
         }
         self.running = false;
-        self.send(Cmd::Pause);
+        self.send(cmd);
         self.paused = Some((cur, pos, end));
     }
 
@@ -1045,6 +1057,7 @@ impl Controller {
     /// Deck starten.
     pub fn deck_play(&mut self, deck: usize) {
         if self.decks.get(deck).is_some_and(Option::is_some) {
+            self.deck_return_fired[deck] = false;
             self.send(Cmd::DeckPlay(deck));
         }
     }
@@ -1114,6 +1127,89 @@ impl Controller {
             .and_then(Option::as_ref)
             .map_or(0.0, |c| c.cues.start());
         self.pfl_deck_at(deck, from)
+    }
+
+    /// Eingestellte Überblendung in Frames.
+    fn crossfade_frames(&self) -> usize {
+        (self.show.crossfade_seconds * f64::from(self.rate)) as usize
+    }
+
+    /// „Zurück zur Playlist“ für Deck `deck` an oder aus (wird mit der Sendung gespeichert).
+    /// An: Endet das Deck, läuft die Playlist mit der eingestellten Überblendung weiter.
+    /// Aus: Nach dem Deck bleibt es still (zum Reden, Telefonieren).
+    pub fn set_deck_return(&mut self, deck: usize, on: bool) {
+        if let Some(v) = self.show.deck_return.get_mut(deck) {
+            *v = on;
+        }
+    }
+
+    /// Ist „Zurück zur Playlist“ für Deck `deck` an?
+    pub fn deck_return(&self, deck: usize) -> bool {
+        self.show.deck_return.get(deck).copied().unwrap_or(false)
+    }
+
+    /// Deck `deck` löst die Playlist ab: Die Playlist pausiert (Stelle bleibt), das Deck
+    /// startet. `fade`: beide blenden über die eingestellte Überblendung, sonst harter
+    /// Schnitt. Läuft das Deck schon, pausiert nur die Playlist.
+    pub fn deck_take_over(&mut self, deck: usize, fade: bool) -> Result<(), String> {
+        if !self.decks.get(deck).is_some_and(Option::is_some) {
+            return Err(format!(
+                "Deck {} ist leer",
+                crate::show::deck_name(deck.min(crate::DECKS - 1))
+            ));
+        }
+        let xf = if fade { self.crossfade_frames() } else { 0 };
+        if self.running {
+            self.pause_with(if xf > 0 {
+                Cmd::PauseFade(xf)
+            } else {
+                Cmd::Pause
+            });
+        }
+        self.deck_return_fired[deck] = false;
+        if self.status.deck_state[deck].load(Ordering::Acquire) != crate::mixer::DECK_PLAYING {
+            self.send(Cmd::DeckPlayFade(deck, xf));
+        }
+        Ok(())
+    }
+
+    /// „Zurück zur Playlist“: in den letzten Sekunden eines Decks (Länge der eingestellten
+    /// Überblendung) oder spätestens beim Ereignis „Deck fertig“ läuft die Playlist weiter.
+    /// Pausiert: ab der Pausenstelle. Sonst „Start“ ab dem Cue-Titel (nach Stopp der Titel,
+    /// der zuletzt lief). Läuft die Playlist schon, passiert nichts.
+    fn deck_return_tick(&mut self) {
+        let xf = self.crossfade_frames();
+        for k in 0..crate::DECKS {
+            let done = self.status.deck_done[k].load(Ordering::Acquire);
+            let ended = done != self.deck_done_seen[k];
+            self.deck_done_seen[k] = done;
+            if !self.deck_return(k) || self.deck_return_fired[k] {
+                continue;
+            }
+            let playing =
+                self.status.deck_state[k].load(Ordering::Acquire) == crate::mixer::DECK_PLAYING;
+            let rest = self.status.deck_end[k]
+                .load(Ordering::Acquire)
+                .saturating_sub(self.status.deck_pos[k].load(Ordering::Acquire))
+                as usize;
+            let fade = if playing && xf > 0 && rest <= xf {
+                rest
+            } else if ended {
+                0
+            } else {
+                continue;
+            };
+            self.deck_return_fired[k] = true;
+            if self.running || (self.paused.is_none() && self.show.playlist.is_empty()) {
+                continue;
+            }
+            if fade > 0 {
+                self.send(Cmd::DeckFadeOut(k, fade));
+            }
+            self.send(Cmd::FadeIn(fade));
+            self.play();
+            tracing::info!(deck = k, fade, "deck ended, back to playlist");
+        }
     }
 
     // ---- Carts -----------------------------------------------------------------------
@@ -1336,6 +1432,7 @@ impl Controller {
         self.pump_queue();
         self.resume_tick();
         self.event_tick(now);
+        self.deck_return_tick();
     }
 
     fn pump_queue(&mut self) {

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.43 — 2026-10-31
+## 0.34.44 — 2026-10-31
 
 Fehlerbehebung nach dem Test unter Windows (André: „bibliothek noch langsam. selbst bei 4 tracks“, „titelinfos ändert geht nicht. egal wo ich doppelt klicke“, „rechtsklick funktioniert auch nicht“).
 
@@ -9,6 +9,18 @@ Fehlerbehebung nach dem Test unter Windows (André: „bibliothek noch langsam. 
 - **Analyse etwa dreimal schneller:** Drei Viertel der Analysezeit gingen in die True-Peak-Messung. Sie rechnet das Filter jetzt nur dort, wo eine neue Spitze überhaupt möglich ist, und das Ergebnis bleibt exakt gleich. Gemessen im Release-Build (`examples/analyse_zeit.rs`): ein 3:17-Titel 0,9 s → 0,27 s, ein 5:21-Titel 1,5 s → 0,53 s.
 - **Tests:** `crates/gui/tests/titelinfos.rs` klickt in der echten App (Doppelklick schnell, langsam, nach vorherigem Klick; Kontextmenü); `true_peak_skip_is_exact` vergleicht mit dem vollen Filter.
 - **Analyse nur noch einen Titel nach dem anderen, unter 16 Threads:** Mit zwei gleichzeitig dauerte ein Dekodieren auf dem Notebook 1,3–2,8 s statt 0,3–0,4 s.
+
+## 0.34.43 — 2026-10-31
+
+Decks und Playlist greifen ineinander, steuerbar und ohne Automatik (André: „nur wenn der aktiv ist, dann spielt mit fading die playlist weiter … denn das deck darf das nicht automatisch machen, falls man vorhören will“).
+
+- **„↩ Playlist“ je Deck:** Umschalter am Deck, Vorgabe aus, wird mit der Sendung gespeichert (`deck_return` in radio.json). An: In den letzten Sekunden des Decks (Länge der eingestellten Crossfade-Blende) blendet das Deck aus und die Playlist ein. War die Playlist pausiert, geht es an der Pausenstelle weiter, sonst mit „Start“ ab dem Cue-Titel (nach Stopp der Titel, der zuletzt lief). Aus: Nach dem Deck bleibt es still, zum Reden oder Telefonieren. Läuft die Playlist schon, passiert nichts.
+- **Deck-Knöpfe im Playlist-Player** („▶ Deck A/B/C“ neben Stopp): Ein Klick startet das Deck und löst die Playlist ab. Die Playlist blendet über den eingestellten Crossfade aus und pausiert, das Deck blendet ein. Umschalt+Klick oder Rechtsklick „Sofort (ohne Blende)“: harter Schnitt. Ein leeres Deck hat einen ausgegrauten Knopf, der Tooltip sagt warum.
+- **Nichts startet von selbst:** Laden aufs Deck startet nie etwas, Vorhören bleibt getrennt. Start am Deck selbst läuft wie bisher parallel zur Playlist.
+- **Ereignis „Deck fertig“:** Der Mixer zählt je Deck einen Zähler hoch, wenn es bis Cue-Out durchläuft (Atomic, keine Allokation im Audio-Thread). Der Controller schaltet daran und an der Restzeit die Rückkehr.
+- **Senkrechte Pegelregler neben den Decks:** Playlist, Carts, Decks und Mikro als Fader-Gruppe, gleiches Widget wie der Kanal-Gain der Spuren (dB-Skala, Doppelklick = 0 dB, Rechtsklick = MIDI lernen). Die waagerechten Regler unter dem Rack sind weg. Neu ist der Regler „Decks“ (alle drei Decks zusammen, auch per MIDI als `decks` lernbar).
+- **Cart-Restzeit:** Ein laufendes Cart-Pad zeigt groß rechts unten den Countdown („-12 s“, unter 10 s „-9,4 s“). Der Titel rückt dafür zusammen und bleibt zweizeilig.
+- Tests ohne Ton (CI-fest formatiert): `radio/tests/deck_handover.rs` (Blende mit Pegelkurve, Stille ohne Umschalter, harter Schnitt, Laden startet nichts, Deck-Start bleibt parallel, leeres Deck), Oberflächentests für Deck-Knöpfe (Klick, Umschalt+Klick, leer), Umschalter, Fader (senkrecht, setzen, Doppelklick) und Cart-Countdown.
 
 ## 0.34.42 — 2026-10-31
 
