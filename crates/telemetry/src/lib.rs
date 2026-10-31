@@ -18,9 +18,9 @@ use std::path::{Path, PathBuf};
 
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::filter::{LevelFilter, Targets};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::filter::{LevelFilter, Targets};
 use tracing_subscriber::{EnvFilter, Layer};
 
 pub use feedback::{FeedbackError, FeedbackMeta, FeedbackType, submit_feedback};

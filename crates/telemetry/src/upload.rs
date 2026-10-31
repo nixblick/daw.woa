@@ -581,7 +581,10 @@ mod tests {
         // Nach dem Fenster: wieder frei, und die Zahl der verworfenen kommt mit.
         let (pass, dropped) = t.admit(key("symphonia_core"), t0 + LOG_WINDOW);
         assert!(pass);
-        assert_eq!(dropped, vec![("symphonia_core".to_string(), 1084 - LOG_BURST)]);
+        assert_eq!(
+            dropped,
+            vec![("symphonia_core".to_string(), 1084 - LOG_BURST)]
+        );
     }
 
     #[test]
@@ -600,6 +603,9 @@ mod tests {
             upload_target("symphonia_bundle_mp3::layer3", true),
             "symphonia_bundle_mp3"
         );
-        assert_eq!(upload_target("woa_engine::graph", false), "woa_engine::graph");
+        assert_eq!(
+            upload_target("woa_engine::graph", false),
+            "woa_engine::graph"
+        );
     }
 }

@@ -35,9 +35,8 @@ fn mock() -> (String, Arc<Mutex<Vec<Value>>>) {
             seen.lock()
                 .unwrap()
                 .push(serde_json::from_slice(&body).unwrap_or(Value::Null));
-            let _ = stream.write_all(
-                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
-            );
+            let _ = stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}");
         }
     });
     (url, bodies)
@@ -78,7 +77,9 @@ fn log_crate_messages_carry_the_crate_are_throttled_and_mp3_noise_is_silenced() 
     // Unterflow-Rauschen kommt gar nicht an, die Junk-Warnung nur gedrosselt, der Fehler einmal.
     let mods: Vec<&str> = ev.iter().map(|e| e["modul"].as_str().unwrap()).collect();
     assert_eq!(
-        mods.iter().filter(|m| **m == "symphonia_bundle_mp3").count(),
+        mods.iter()
+            .filter(|m| **m == "symphonia_bundle_mp3")
+            .count(),
         LOG_BURST as usize,
         "{raw}"
     );
