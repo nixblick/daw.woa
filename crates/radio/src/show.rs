@@ -141,6 +141,10 @@ fn all_false(v: &[bool]) -> bool {
     !v.contains(&true)
 }
 
+fn is_true(v: &bool) -> bool {
+    *v
+}
+
 fn all_empty(v: &[String]) -> bool {
     v.iter().all(String::is_empty)
 }
@@ -201,6 +205,9 @@ pub struct RadioShow {
     /// Vorgabe aus. Genau [`DECKS`] Felder.
     #[serde(default, skip_serializing_if = "all_false")]
     pub deck_return: Vec<bool>,
+    /// Party: Auto-Übergang zwischen den zwei Decks (Vorgabe an).
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub party_auto: bool,
 }
 
 impl Default for RadioShow {
@@ -221,6 +228,7 @@ impl Default for RadioShow {
             cart_keys: vec![String::new(); CARTS],
             decks: vec![None; DECKS],
             deck_return: vec![false; DECKS],
+            party_auto: true,
         }
     }
 }

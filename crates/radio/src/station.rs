@@ -108,6 +108,9 @@ pub struct View {
     pub cart_remaining: Vec<f64>,
     /// Die Decks A bis C.
     pub decks: Vec<DeckView>,
+    /// Party mit zwei Decks (`None`: aus). Dann sind `current`, `running`, `paused` und
+    /// `remaining_title` die der hörbaren Seite.
+    pub party: Option<crate::control::PartyDuoView>,
     pub mic_open: bool,
     /// Telefon auf Sendung.
     pub phone_on: bool,
@@ -339,6 +342,7 @@ fn run(
             }
         }
         let st = c.status();
+        let party = c.party_view();
         let target = c.show().target_lufs;
         let v = View {
             playlist: c
@@ -360,13 +364,34 @@ fn run(
                 .collect(),
             playlists: c.show().playlist_names(),
             active_playlist: c.show().active,
-            current: c.current_index(),
-            cue: c.cue_index(),
-            running: c.is_running() && st.current.load(Ordering::Acquire) != NONE,
-            remaining_title: c.remaining_title(),
+            current: if party.is_some() {
+                party
+                    .as_ref()
+                    .filter(|p| p.sides[p.live].playing)
+                    .and_then(|p| p.sides[p.live].index)
+            } else {
+                c.current_index()
+            },
+            cue: party
+                .as_ref()
+                .and_then(|p| p.sides[p.live].index)
+                .unwrap_or_else(|| c.cue_index()),
+            running: c.party_playing()
+                || (c.is_running() && st.current.load(Ordering::Acquire) != NONE),
+            remaining_title: match &party {
+                Some(p) => (p.sides[p.live].end - p.sides[p.live].position).max(0.0),
+                None => c.remaining_title(),
+            },
             repeat: c.repeat(),
             shuffle: c.shuffle(),
-            paused: c.paused_times(),
+            paused: match &party {
+                Some(p) => {
+                    let s = &p.sides[p.live];
+                    (!c.party_playing() && s.index.is_some() && s.position > 0.0)
+                        .then(|| ((s.end - s.position).max(0.0), s.end))
+                }
+                None => c.paused_times(),
+            },
             remaining_total: c.remaining_total(),
             crossfade_seconds: c.show().crossfade_seconds,
             duck_db: c.show().duck_db,
@@ -412,6 +437,7 @@ fn run(
                 .map(|r| r.load(Ordering::Acquire) as f64 / f64::from(c.rate()))
                 .collect(),
             decks: (0..crate::DECKS).map(|k| deck_view(&c, k)).collect(),
+            party,
             mic_open: st.mic_open.load(Ordering::Acquire),
             phone_on: st.phone_on.load(Ordering::Acquire),
             phone_peak: st.take_phone_peak(),

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.34.48 — 2026-10-31
+
+Party mit echter Zwei-Deck-Blende (André: „ja“ zu freier Blende von Hand mit Schalter „Auto-Übergang“ und zu Wunschtitel-Ordner → Party-Wunschliste).
+
+### Neu
+
+- **Echte Zwei-Deck-Wiedergabe:** Links und rechts sind zwei eigene Abspieler im Sendemixer (neben den Radio-Decks A bis C, die unberührt bleiben). Beide spielen gleichzeitig im Musikzweig, also auf Programm, Mitschnitt und Stream, und hören auf den Regler „Playlist“ (Lauter/Leiser in der Party). Der Crossfader steuert stufenlos eine Constant-Power-Kurve ohne Lautstärkeloch in der Mitte (beide −3 dB), mit exakten Endpunkten. Der Mixer fährt die Stellung sample-genau und linear nach (Handbewegung höchstens 10 ms für den ganzen Weg), darum knackt nichts. Keine Allokation im Audio-Thread.
 ## 0.34.47 — 2026-10-31
 
 ### Behoben

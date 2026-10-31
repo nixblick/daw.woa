@@ -72,6 +72,10 @@ pub struct Wishlist {
     items: Vec<Wish>,
     #[serde(default)]
     counter: u64,
+    /// Dateien aus dem Wunschtitel-Ordner (#134), die schon einmal Wunsch waren. Ein
+    /// entfernter Wunsch kommt so nicht beim nächsten Blick in den Ordner zurück.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    folder_seen: std::collections::BTreeSet<PathBuf>,
 }
 
 impl Wishlist {
@@ -187,6 +191,34 @@ impl Wishlist {
 
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
+    }
+
+    /// Datei aus dem Wunschtitel-Ordner als Wunsch aufnehmen, ohne Stimme zu zählen: steht
+    /// die Datei schon in der Liste (oder war sie schon einmal da und wurde entfernt),
+    /// passiert nichts. `true`, wenn sie neu dazukam.
+    pub fn add_folder_file(&mut self, path: PathBuf, title: &str) -> bool {
+        if self.folder_seen.contains(&path) {
+            return false;
+        }
+        self.folder_seen.insert(path.clone());
+        if self
+            .items
+            .iter()
+            .any(|w| w.path == path || w.queued.as_deref() == Some(path.as_path()))
+        {
+            return false;
+        }
+        self.counter += 1;
+        self.items.push(Wish {
+            title: title.trim().to_string(),
+            votes: 1,
+            order: self.counter,
+            done: false,
+            queued: None,
+            path,
+        });
+        self.sort();
+        true
     }
 
     /// Nimmt den Wunsch mit diesem Pfad heraus.
@@ -553,19 +585,22 @@ pub fn layout(view: &View, state: &PartyState) -> PartyLayout {
             paused: paused.is_some(),
         }
     });
-    let next = idx.and_then(|i| {
-        view.playlist
-            .iter()
-            .skip(i + 1)
-            .find(|e| e.voice.is_none())
-            .map(|e| {
-                let (a, t) = split_title(&e.title);
-                if a.is_empty() {
-                    t
-                } else {
-                    format!("{a} – {t}")
-                }
-            })
+    // Party-Decks: der Nächste ist der Titel auf der anderen Seite.
+    let party_next = view
+        .party
+        .as_ref()
+        .map(|p| p.sides[1 - p.live].index.and_then(|i| view.playlist.get(i)));
+    let next = match party_next {
+        Some(e) => e,
+        None => idx.and_then(|i| view.playlist.iter().skip(i + 1).find(|e| e.voice.is_none())),
+    }
+    .map(|e| {
+        let (a, t) = split_title(&e.title);
+        if a.is_empty() {
+            t
+        } else {
+            format!("{a} – {t}")
+        }
     });
     PartyLayout {
         now,
@@ -747,6 +782,37 @@ mod tests {
             cues: Default::default(),
             voice: None,
         }
+    }
+
+    #[test]
+    fn folder_files_become_wishes_once_and_removed_stay_away() {
+        let tmp = tempfile::tempdir().unwrap();
+        let f = tmp.path().join("Gast - Lied.mp3");
+        std::fs::write(&f, b"x").unwrap();
+        let mut l = Wishlist::default();
+        assert!(l.add_folder_file(f.clone(), "Gast - Lied"));
+        assert!(
+            !l.add_folder_file(f.clone(), "Gast - Lied"),
+            "keine Doppelten"
+        );
+        assert_eq!(l.len(), 1);
+        assert_eq!(
+            l.items()[0].votes,
+            1,
+            "der Blick in den Ordner zählt keine Stimme"
+        );
+        assert!(l.take(&f).is_some());
+        assert!(f.exists(), "Entfernen löscht nie die Datei");
+        assert!(
+            !l.add_folder_file(f.clone(), "Gast - Lied"),
+            "entfernt bleibt entfernt"
+        );
+        let json = serde_json::to_string(&l).unwrap();
+        let mut back: Wishlist = serde_json::from_str(&json).unwrap();
+        assert!(!back.add_folder_file(f, "x"), "auch nach dem Neustart");
+        // Alte Dateien ohne das Feld lesen sich weiter.
+        let old: Wishlist = serde_json::from_str(r#"{"items":[]}"#).unwrap();
+        assert!(old.is_empty());
     }
 
     #[test]
