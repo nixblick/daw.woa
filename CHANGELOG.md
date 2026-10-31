@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.28 — 2026-10-31
+## 0.34.29 — 2026-10-31
 
 Einstellungen: Stream-Server (#121). Unter Einstellungen gibt es jetzt „Sendung: Stream-Server und Kennwort …“, damit man ohne Dateien von Hand den Server und das Kennwort einträgt.
 
@@ -10,6 +10,15 @@ Einstellungen: Stream-Server (#121). Unter Einstellungen gibt es jetzt „Sendun
 - **Port:** In `config.json` steht jetzt der Port des Servers (wie im Server eingestellt); Shoutcast meldet die Quelle auf `port + 1` an. Alte Dateien werden beim Laden einmal umgerechnet (`schema` 2; 8001 wird 8000). Eine bisher eingetragene Kennwortdatei wird beim Start in den Schlüsselbund übernommen und ausgetragen; die Datei selbst bleibt liegen.
 - Die Vorgabe `password_file` ist leer. woa-streamd liest das Kennwort aus dem Schlüsselbund; die Kommandozeile (`stream-test`, `broadcast-test`, `--pass-file`) funktioniert wie bisher mit dem Quell-Port.
 - Tests: Laden und Umrechnen alter Konfigurationen, Zerlegen von Server-Eingaben und Adress-Bau (IPv6), Prüfung typischer Tippfehler, Kennwort-Ablage (Schlüsselbund, Ersatzdatei mit 0600, alte Datei einmal übernehmen), Verbindungstest gegen Test-Server (Shoutcast ok / falsches Kennwort / Webserver, Icecast ok / 401 / belegt / kein HTTP, nicht erreichbar), Fenster zeichnet für jeden Servertyp.
+
+## 0.34.28 — 2026-10-31
+
+Radio-Fehler aus dem Feedback (#168, #169, #166, dazu #95).
+
+- **Crossfade wieder erreichbar (#168):** Die Regler für Crossfade-Blende und Musik-Ducking waren nie entfernt, sie lagen unter dem Fensterrand. Ursache: Im Deck-Kasten nahm der Fortschrittsbalken die ganze Zeilenbreite, der Text „leer: Datei hierher ziehen“ brach daneben Zeichen für Zeichen um, jedes Deck wurde über 400 px hoch. Zusammen mit der Wunschtitel-Karte schob das Rack und Gäste aus dem Bild, und die rechte Spalte rollte nicht. Jetzt hat der Balken eine feste Breite, der Titel kürzt ab, und die rechte Spalte rollt.
+- **Pause pausiert (#169, #95):** Pause war intern ein Stopp. Der Mixer warf den Titel weg, Play lud die ganze Datei neu und sprang dann an die Stelle. Bei langen Titeln (30 min) dauerte das, und jeder Klick wartete dahinter. Jetzt blendet Pause aus und hält den Titel samt dem nächsten an der Stelle fest. Play macht sofort dort weiter, ohne Neuladen. Stopp nach Pause verwirft den Titel, Start beginnt neu.
+- **Ziehen in der Playlist (#166):** Eine Playlist-Zeile lässt sich auf Deck A, B oder C ziehen (lädt den Titel mit seinen Cue-Punkten) oder an eine andere Stelle der Playlist (verschiebt ihn). Aufs Fenster gezogene Dateien gehen nicht mehr verloren, wenn gerade ein Textfeld den Fokus hat.
+- **Tests:** `crates/radio/tests/pause.rs` (neu, scheitert mit dem alten Code), `party.rs` angepasst, Ablageziel beim Ziehen in `crates/gui/src/radio.rs`.
 
 ## 0.34.27 — 2026-10-31
 

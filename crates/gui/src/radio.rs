@@ -27,6 +27,40 @@ const NO_PFL: &str = "Kein Kopfhörer-Ausgang: Einstellungen → Vorhören (PFL)
 type Stream = Box<dyn std::any::Any>;
 
 /// Tasten, die schon etwas anderes tun und keinem Cart gehören können.
+/// Breite der Restzeit-Spalte eines Decks (Uhr und Fortschrittsbalken).
+const DECK_CLOCK_WIDTH: f32 = 110.0;
+
+/// Wohin eine gezogene Playlist-Zeile fällt (#166).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RowDrop {
+    /// Auf Deck `k` laden.
+    Deck(usize),
+    /// In der Playlist an diese Stelle verschieben.
+    Row(usize),
+    /// Daneben oder auf sich selbst: nichts.
+    Nothing,
+}
+
+/// Ziel einer von Zeile `from` gezogenen Playlist-Zeile, losgelassen bei `pos`.
+fn row_drop_target(
+    pos: egui::Pos2,
+    from: usize,
+    decks: &[egui::Rect],
+    playlist: egui::Rect,
+    rows: &[egui::Rect],
+) -> RowDrop {
+    if let Some(k) = decks.iter().position(|r| r.contains(pos)) {
+        return RowDrop::Deck(k);
+    }
+    if !playlist.contains(pos) {
+        return RowDrop::Nothing;
+    }
+    match rows.iter().position(|r| r.contains(pos)) {
+        Some(to) if to != from => RowDrop::Row(to),
+        _ => RowDrop::Nothing,
+    }
+}
+
 const RESERVED_KEYS: [egui::Key; 2] = [egui::Key::M, egui::Key::Space];
 
 /// Die laufende Sendung samt Gerät.
@@ -79,6 +113,10 @@ pub struct RadioDesk {
     cart_rects: Vec<egui::Rect>,
     /// Flächen der Decks A bis C (Ziel für gezogene Dateien).
     deck_rects: [egui::Rect; woa_radio::DECKS],
+    /// Zeilen der Playlist im letzten Bild (Ziel beim Umsortieren per Ziehen, #166).
+    row_rects: Vec<egui::Rect>,
+    /// Gezogene Playlist-Zeile (Index), solange die Maus gedrückt ist (#166).
+    row_drag: Option<usize>,
     /// Cart, das die nächste gedrückte Taste als neue Taste bekommt.
     key_capture: Option<usize>,
     /// Ortszeit für die Uhrzeit-Anzeige (von der Stundenuhr).
@@ -347,6 +385,8 @@ impl RadioDesk {
             playlist_rect: egui::Rect::NOTHING,
             cart_rects: Vec::new(),
             deck_rects: [egui::Rect::NOTHING; woa_radio::DECKS],
+            row_rects: Vec::new(),
+            row_drag: None,
             key_capture: None,
             zone: Zone::CENTRAL_EUROPE,
             cue_editor: None,
@@ -948,6 +988,8 @@ impl RadioDesk {
 
     /// Tasten im Radio-Modus (nur, wenn kein Textfeld den Fokus hat).
     pub fn shortcuts(&mut self, ctx: &egui::Context) {
+        // Abgelegte Dateien zuerst: ein Textfeld mit Fokus darf sie nicht schlucken (#166).
+        self.drop_os_files(ctx);
         if ctx.egui_wants_keyboard_input() {
             return;
         }
@@ -1026,6 +1068,10 @@ impl RadioDesk {
                 self.party_effect(e);
             }
         }
+    }
+
+    /// Aufs Fenster gezogene Dateien: auf ein Deck die erste, sonst alle in die Playlist.
+    fn drop_os_files(&mut self, ctx: &egui::Context) {
         let dropped: Vec<PathBuf> = ctx.input(|i| {
             i.raw
                 .dropped_files
@@ -1087,21 +1133,29 @@ impl RadioDesk {
                 })
                 .response
                 .rect;
-            theme::card_frame().show(&mut cols[1], |ui| {
-                self.deck_card(ui, &v);
-            });
-            theme::card_frame().show(&mut cols[1], |ui| {
-                self.wish_card(ui);
-            });
-            theme::card_frame().show(&mut cols[1], |ui| {
-                self.cart_wall(ui, &v);
-            });
-            theme::card_frame().show(&mut cols[1], |ui| {
-                self.processing_rack(ui);
-            });
-            theme::card_frame().show(&mut cols[1], |ui| {
-                self.guests_card(ui);
-            });
+            // Die rechte Spalte rollt: sonst liegen Rack (Crossfade, Ducking) und Gäste
+            // unter dem Fensterrand und sind nicht erreichbar (#168).
+            egui::ScrollArea::vertical()
+                .id_salt("radio_right_column")
+                .auto_shrink([false, false])
+                .show(&mut cols[1], |ui| {
+                    ui.spacing_mut().item_spacing.y = 10.0;
+                    theme::card_frame().show(ui, |ui| {
+                        self.deck_card(ui, &v);
+                    });
+                    theme::card_frame().show(ui, |ui| {
+                        self.wish_card(ui);
+                    });
+                    theme::card_frame().show(ui, |ui| {
+                        self.cart_wall(ui, &v);
+                    });
+                    theme::card_frame().show(ui, |ui| {
+                        self.processing_rack(ui);
+                    });
+                    theme::card_frame().show(ui, |ui| {
+                        self.guests_card(ui);
+                    });
+                });
         });
     }
 
@@ -2224,6 +2278,8 @@ impl RadioDesk {
                 });
         }
 
+        let mut released: Option<(usize, egui::Pos2)> = None;
+        self.row_rects.clear();
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 3.0;
             for (i, e) in v.playlist.iter().enumerate() {
@@ -2351,6 +2407,42 @@ impl RadioDesk {
                         });
                     });
                 });
+                // Ziehen (#166): Zeile auf ein Deck (laden) oder an eine andere Stelle der
+                // Playlist (verschieben). Nur Ziehen: Klick, Doppelklick und Kontextmenü auf dem
+                // Titel und die Knöpfe bleiben, wie sie sind.
+                let row = resp.response.rect;
+                self.row_rects.push(row);
+                let drag = ui
+                    .interact(row, ui.id().with(("playlist_row", i)), egui::Sense::drag())
+                    .on_hover_cursor(egui::CursorIcon::Grab);
+                if drag.drag_started() {
+                    self.row_drag = Some(i);
+                }
+                if drag.dragged() && self.row_drag == Some(i) {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                    if let Some(p) = ui.ctx().pointer_latest_pos() {
+                        egui::Area::new(egui::Id::new("playlist_drag_ghost"))
+                            .order(egui::Order::Tooltip)
+                            .fixed_pos(p + egui::vec2(12.0, 8.0))
+                            .interactable(false)
+                            .show(ui.ctx(), |ui| {
+                                theme::card_frame().show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new(&e.title).strong().color(theme::text()),
+                                    );
+                                });
+                            });
+                    }
+                }
+                if drag.drag_stopped() && self.row_drag == Some(i) {
+                    self.row_drag = None;
+                    if let Some(p) = drag
+                        .interact_pointer_pos()
+                        .or(ui.ctx().pointer_latest_pos())
+                    {
+                        released = Some((i, p));
+                    }
+                }
                 // Farbiger Indikator-Streifen am linken Zeilenrand bei aktivem oder gecuetem Track
                 if on_air || is_cue {
                     let r = resp.response.rect;
@@ -2372,6 +2464,25 @@ impl RadioDesk {
                 }
             }
         });
+        if let Some((from, pos)) = released {
+            match row_drop_target(
+                pos,
+                from,
+                &self.deck_rects,
+                self.playlist_rect,
+                &self.row_rects,
+            ) {
+                RowDrop::Deck(k) => self.with(move |c| {
+                    if let Err(e) = c.deck_load_title(k, from) {
+                        c.report(e);
+                    }
+                }),
+                RowDrop::Row(to) => self.with(move |c| {
+                    c.move_entry(from, to);
+                }),
+                RowDrop::Nothing => {}
+            }
+        }
     }
 
     fn cart_wall(&mut self, ui: &mut egui::Ui, v: &View) {
@@ -2852,7 +2963,7 @@ impl RadioDesk {
                             .color(theme::text()),
                     );
                     ui.vertical(|ui| {
-                        ui.set_min_width(110.0);
+                        ui.set_min_width(DECK_CLOCK_WIDTH);
                         ui.label(
                             egui::RichText::new(if loaded {
                                 clock(d.remaining)
@@ -2873,7 +2984,13 @@ impl RadioDesk {
                         } else {
                             0.0
                         };
-                        ui.add(egui::ProgressBar::new(frac).desired_height(4.0));
+                        // Feste Breite: sonst nimmt der Balken die ganze Zeile und der Titel
+                        // daneben bricht Zeichen für Zeichen um (#168).
+                        ui.add(
+                            egui::ProgressBar::new(frac)
+                                .desired_width(DECK_CLOCK_WIDTH)
+                                .desired_height(4.0),
+                        );
                     });
                     ui.vertical(|ui| {
                         title_r = Some(
@@ -2891,6 +3008,7 @@ impl RadioDesk {
                                         theme::text_dim()
                                     }),
                                 )
+                                .truncate()
                                 .sense(egui::Sense::click()),
                             ),
                         );
@@ -3007,6 +3125,33 @@ mod tests {
         }
         assert_eq!(super::cart_number_key(9).as_deref(), Some("0"));
         assert_eq!(super::cart_number_key(10), None);
+    }
+
+    #[test]
+    fn dragged_row_lands_on_deck_row_or_nowhere() {
+        use super::{RowDrop, row_drop_target};
+        use eframe::egui::{Rect, pos2, vec2};
+        let decks = [
+            Rect::from_min_size(pos2(1000.0, 100.0), vec2(400.0, 80.0)),
+            Rect::from_min_size(pos2(1000.0, 190.0), vec2(400.0, 80.0)),
+            Rect::from_min_size(pos2(1000.0, 280.0), vec2(400.0, 80.0)),
+        ];
+        let playlist = Rect::from_min_size(pos2(0.0, 400.0), vec2(900.0, 500.0));
+        let rows: Vec<Rect> = (0..5)
+            .map(|k| Rect::from_min_size(pos2(10.0, 450.0 + 50.0 * k as f32), vec2(880.0, 46.0)))
+            .collect();
+        let t = |p| row_drop_target(p, 1, &decks, playlist, &rows);
+        assert_eq!(t(pos2(1200.0, 220.0)), RowDrop::Deck(1));
+        assert_eq!(t(pos2(500.0, 620.0)), RowDrop::Row(3));
+        // Auf sich selbst, in die Lücke oder außerhalb der Playlist: nichts.
+        assert_eq!(t(pos2(500.0, 520.0)), RowDrop::Nothing);
+        assert_eq!(t(pos2(500.0, 548.0)), RowDrop::Nothing);
+        assert_eq!(t(pos2(950.0, 50.0)), RowDrop::Nothing);
+        // Zeilen, die aus der Playlist gerollt sind, zählen nicht.
+        assert_eq!(
+            row_drop_target(pos2(500.0, 620.0), 1, &decks, Rect::NOTHING, &rows),
+            RowDrop::Nothing
+        );
     }
 
     #[test]

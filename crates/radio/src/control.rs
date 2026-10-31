@@ -622,6 +622,10 @@ impl Controller {
             self.message = Some("Playlist ist leer".into());
             return;
         }
+        if self.paused.take().is_some() {
+            // Der Mixer hält den pausierten Titel noch: verwerfen, dann neu starten.
+            self.send(Cmd::Stop);
+        }
         self.send(Cmd::ClearNext);
         self.pending = None;
         self.failed.clear();
@@ -650,7 +654,8 @@ impl Controller {
         self.send(Cmd::Stop);
     }
 
-    /// Pause: blendet aus und merkt sich die Stelle. [`Self::play`] macht dort weiter.
+    /// Pause: blendet aus und hält den Titel an der Stelle fest (der Mixer behält ihn samt
+    /// dem bereitgelegten nächsten). [`Self::play`] macht dort ohne Neuladen weiter.
     pub fn pause(&mut self) {
         let cur = self.status.current.load(Ordering::Acquire);
         if !self.running || cur == NONE {
@@ -658,7 +663,12 @@ impl Controller {
         }
         let pos = self.status.position.load(Ordering::Acquire);
         let end = self.status.end.load(Ordering::Acquire);
-        self.stop();
+        self.resume_at = None;
+        if let Some(i) = self.current_index() {
+            self.set_cue(i);
+        }
+        self.running = false;
+        self.send(Cmd::Pause);
         self.paused = Some((cur, pos, end));
     }
 
@@ -683,15 +693,14 @@ impl Controller {
         };
         let Some(i) = self.index_of(uid) else {
             // Der Titel ist nicht mehr in der Playlist: normal starten.
-            self.paused = None;
             self.start();
             return;
         };
-        self.paused = None;
         if self.status.current.load(Ordering::Acquire) == uid {
-            // Die Ausblendung läuft noch: Play nimmt sie zurück, der Titel läuft einfach weiter.
+            // Der Mixer hält den Titel (oder blendet ihn noch aus): dort weiter, ohne Neuladen.
+            self.paused = None;
             self.running = true;
-            self.send(Cmd::Play);
+            self.send(Cmd::Resume);
             return;
         }
         let plays = self.status.plays.load(Ordering::Acquire);

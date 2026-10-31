@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Einstellungen: Stream-Server (0.34.28, offen)
+## Einstellungen: Stream-Server (0.34.29, offen)
 
 1. Einstellungen → „Sendung: Stream-Server und Kennwort …“. Das Fenster zeigt Servertyp, Server, Port, Kennwort, Sendername und Format.
 2. Servertyp „Icecast 2“ wählen: Mountpoint und Benutzer erscheinen. Auf „Shoutcast v2“: Stream-ID. Auf „Shoutcast v1“: keins von beiden.
@@ -12,10 +12,19 @@ eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt,
 4. Kennwort eintippen: Punkte, „Anzeigen“ zeigt es, „Verbergen“ maskiert wieder. „Speichern“, Fenster wieder öffnen: Feld leer mit dem Hinweis „gespeichert“; „Anzeigen“ holt es zurück. `grep -ri <kennwort> ~/.config/woa/` findet nichts.
 5. „Verbindung testen“ mit eigenem Server: grüne Meldung „Verbunden“. Mit falschem Kennwort: Meldung, dass das Kennwort nicht stimmt. Mit falschem Port: Meldung „Keine Verbindung … Firewall“. Servertyp Icecast gegen einen Shoutcast-Port: Meldung, dass der Server nicht wie Icecast antwortet.
 6. Auf Sendung gehen: Der Test-Knopf ist grau, die Sendung läuft mit den neuen Angaben (bei laufender Sendung gelten sie erst ab der nächsten).
-7. Alte Konfiguration: eine `config.json` von vor 0.34.28 mit `"port": 8001` und `password_file` starten. Im Fenster steht Port 8000 (Hinweis: „meldet sich auf 8001 an“), das Kennwort ist gespeichert; `config.json` hat `"schema": 2`.
+7. Alte Konfiguration: eine `config.json` von vor 0.34.29 mit `"port": 8001` und `password_file` starten. Im Fenster steht Port 8000 (Hinweis: „meldet sich auf 8001 an“), das Kennwort ist gespeichert; `config.json` hat `"schema": 2`.
 8. Windows: Eintrag „woa / stream-source“ in der Anmeldeinformationsverwaltung. Linux ohne Secret Service: Datei `stream-source.pass` im Datenordner, `ls -l` zeigt `-rw-------`.
 
 Selbst geprüft von Claude: Tests und Clippy von woa-stream, woa-gui, woa-headless grün, darunter Umrechnen alter Konfigurationen, Kennwort-Ablage (Schlüsselbund und Ersatzdatei mit Modus 0600), Verbindungstest gegen Test-Server und Zeichnen des Fensters für alle drei Servertypen. Nicht selbst geprüft: echter Schlüsselbund unter Windows und echter Shoutcast-/Icecast-Server mit dem Fenster (hier nur Test-Server), das geöffnete Fenster im Screenshot.
+
+## Radio: Crossfade, Pause, Ziehen (0.34.28, offen)
+
+1. Radio-Modus bei 1920 × 1080: die Decks A–C sind flach, „leer: Datei hierher ziehen“ steht in einer Zeile. Rechte Spalte nach unten rollen: „Crossfade-Blende“ und „Musik-Ducking“ sind da und wirken.
+2. Playlist starten, nach einer Minute Pause: die Musik blendet aus, die Restzeit steht. Play: es geht sofort an derselben Stelle weiter, auch bei einem 30-Minuten-Titel.
+3. Pause, dann Stopp, dann Play: die Sendung beginnt den Cue-Titel von vorn.
+4. Eine Playlist-Zeile auf Deck B ziehen: der Titel liegt auf B. Eine Zeile auf eine andere Zeile ziehen: sie steht jetzt dort. Doppelklick und Rechtsklick auf den Titel gehen wie vorher.
+
+Selbst geprüft von Claude: `crates/radio/tests/pause.rs` (rot mit dem alten Code, grün jetzt), Tests und Clippy von `woa-radio` und `woa-gui` grün. Nicht am Gerät gehört (kein Ton), Ziehen unter Windows nicht selbst geprüft.
 
 ## Entf nur für die markierte Spur (0.34.26, offen)
 
