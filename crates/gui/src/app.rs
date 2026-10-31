@@ -88,6 +88,8 @@ pub struct WoaApp {
     feedback: FeedbackDialog,
     /// Fehler beim Anhängen eines eigenen Bildes (Feedback).
     image_error: Option<String>,
+    /// Vorschau-Texturen im Feedback-Fenster: (Art, Bytes), Textur (#211).
+    feedback_thumbs: Vec<((&'static str, usize), egui::TextureHandle)>,
     /// Update-Hinweis (Suche und Download im Hintergrund).
     update: crate::update::UpdateState,
     /// Frage „Projekt speichern?“ vor der Installation ist offen.
@@ -555,6 +557,7 @@ impl WoaApp {
             config_path: None,
             feedback: FeedbackDialog::default(),
             image_error: None,
+            feedback_thumbs: Vec::new(),
             update: crate::update::UpdateState::default(),
             update_confirm: false,
             update_autostart: open_audio,
@@ -5477,6 +5480,50 @@ impl WoaApp {
         }
     }
 
+    /// Kleine Vorschau von Bildschirmfoto und eigenem Bild, je mit „× Entfernen“ (#211).
+    fn feedback_previews(&mut self, ui: &mut egui::Ui) {
+        let previews: Vec<(&'static str, Vec<u8>)> = self
+            .feedback
+            .previews()
+            .into_iter()
+            .map(|(k, p)| (k, p.to_vec()))
+            .collect();
+        let keys: Vec<_> = previews.iter().map(|(k, p)| (*k, p.len())).collect();
+        self.feedback_thumbs.retain(|(k, _)| keys.contains(k));
+        if previews.is_empty() {
+            return;
+        }
+        ui.horizontal_wrapped(|ui| {
+            for (kind, png) in previews {
+                let key = (kind, png.len());
+                if !self.feedback_thumbs.iter().any(|(k, _)| *k == key)
+                    && let Some(img) = crate::feedback::thumbnail(&png)
+                {
+                    let tex = ui.ctx().load_texture(
+                        format!("feedback-{kind}"),
+                        img,
+                        egui::TextureOptions::LINEAR,
+                    );
+                    self.feedback_thumbs.push((key, tex));
+                }
+                let Some((_, tex)) = self.feedback_thumbs.iter().find(|(k, _)| *k == key) else {
+                    continue;
+                };
+                let tex = tex.clone();
+                ui.vertical(|ui| {
+                    ui.add(egui::Image::new(&tex).fit_to_original_size(1.0));
+                    if ui.small_button("× Entfernen").clicked() {
+                        if kind == "screenshot" {
+                            self.feedback.remove_screenshot();
+                        } else {
+                            self.feedback.remove_image();
+                        }
+                    }
+                });
+            }
+        });
+    }
+
     fn feedback_window(&mut self, ctx: &egui::Context) {
         if matches!(self.feedback.phase, Phase::Closed | Phase::Capturing) {
             return;
@@ -5541,6 +5588,11 @@ impl WoaApp {
                 ui.add_space(14.0);
                 match self.feedback.phase.clone() {
                     Phase::Editing => {
+                        // Strg+Enter sendet mit den gesetzten Haken, wie „Abschicken“ (#211).
+                        // Vor dem Textfeld abgefangen, damit es keine neue Zeile wird.
+                        if ui.ctx().input_mut(crate::feedback::send_shortcut) {
+                            self.feedback.send(&self.config, &feedback_log_lines());
+                        }
                         ui.label(
                             egui::RichText::new("Was ist passiert, oder was wünschst du dir?")
                                 .strong()
@@ -5603,12 +5655,10 @@ impl WoaApp {
                                 }
                                 Some(name) => {
                                     ui.label(format!("{} {name}", theme::ic::PAPERCLIP));
-                                    if ui.small_button("Entfernen").clicked() {
-                                        self.feedback.remove_image();
-                                    }
                                 }
                             }
                         });
+                        self.feedback_previews(ui);
                         if let Some(e) = &self.image_error {
                             ui.label(egui::RichText::new(e).color(theme::on_air()));
                         }
@@ -5660,7 +5710,7 @@ impl WoaApp {
                             )
                             .fill(theme::ok())
                             .min_size(egui::vec2(132.0, 34.0));
-                            if ui.add(send).clicked() {
+                            if ui.add(send).on_hover_text("Strg+Enter").clicked() {
                                 self.feedback.send(&self.config, &feedback_log_lines());
                             }
                             let cancel = egui::Button::new("Lieber später")
