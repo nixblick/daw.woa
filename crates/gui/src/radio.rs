@@ -80,6 +80,11 @@ fn row_drop_target(
     }
 }
 
+/// Anzahl gespielter Titel am Anfang der Playlist (vor dem laufenden bzw. nächsten).
+pub(crate) fn played_count(v: &View) -> usize {
+    v.first_open.min(v.playlist.len())
+}
+
 const RESERVED_KEYS: [egui::Key; 2] = [egui::Key::M, egui::Key::Space];
 
 /// Die laufende Sendung samt Gerät.
@@ -101,6 +106,10 @@ pub struct RadioDesk {
     phone_stats: Option<Arc<woa_engine::pairs::LinkStats>>,
     phone_lost: Arc<std::sync::atomic::AtomicBool>,
     phone_level: f32,
+    /// LED-Meter neben den Fadern und Master (#216).
+    meters: [MeterHold; 5],
+    /// Gespielte ausblenden: lokal sofort, bis der Schnappschuss nachzieht.
+    hide_played: Option<bool>,
     /// Wunschordner: Beobachter. Ohne Wahl liegt er im Datenordner der Sendung.
     wishes: Option<crate::wishes::WishWatcher>,
     wish_chosen: Option<PathBuf>,
@@ -240,29 +249,84 @@ pub(crate) const FADER_BUSES: [(Bus, &str); 4] = [
     (Bus::Mic, "Mikro"),
 ];
 
-/// Senkrechte Pegelregler (wie der Kanal-Gain der Spuren): Name oben, Fader mit dB-Skala,
-/// Wert darunter. `dbs` in der Reihenfolge von [`FADER_BUSES`]. Liefert je Regler die Antwort
-/// (`changed()`, wenn der Wert sich geändert hat; Doppelklick = 0 dB).
-pub(crate) fn level_faders(ui: &mut egui::Ui, dbs: &mut [f32; 4]) -> Vec<egui::Response> {
+/// Anzeige eines LED-Meters: fällt weich, die Spitze steht [`HOLD_S`] Sekunden.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(crate) struct MeterHold {
+    pub level: f32,
+    pub hold: f32,
+    hold_at: f64,
+}
+
+/// So lange bleibt die Spitze stehen (Sekunden).
+const HOLD_S: f64 = 1.5;
+
+impl MeterHold {
+    /// Neue Spitze `peak` (linear) zur Zeit `now` (Sekunden).
+    pub fn step(&mut self, peak: f32, now: f64) {
+        self.level = peak.max(self.level * 0.85);
+        if peak >= self.hold || now - self.hold_at > HOLD_S {
+            self.hold = peak.max(self.level);
+            self.hold_at = now;
+        }
+    }
+}
+
+fn now_s() -> f64 {
+    static T0: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    T0.get_or_init(Instant::now).elapsed().as_secs_f64()
+}
+
+/// Ein schmales LED-Meter mit Namen für die Barrierefreiheit (und die Tests).
+fn meter_strip(ui: &mut egui::Ui, m: MeterHold, name: &str, size: egui::Vec2) {
+    let (rect, r) = ui.allocate_exact_size(size, egui::Sense::hover());
+    theme::bus_meter(ui.painter(), rect, m.level, m.hold);
+    let label = format!("Pegelanzeige {name}");
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ProgressIndicator, true, &label));
+    r.on_hover_text(format!(
+        "{name}: Spitze {} dBFS. Grün bis -18, Gelb bis -6, Rot darüber, Blau = zu leise.",
+        crate::widgets::vu::fmt_db(20.0 * m.hold.max(1e-6).log10())
+    ));
+}
+
+/// Senkrechte Pegelregler (wie der Kanal-Gain der Spuren): Name oben, Fader mit dB-Skala und
+/// LED-Meter daneben, Wert darunter; als fünfte Spalte das Meter „Master“ (Sendemix, ohne
+/// Fader). `dbs` in der Reihenfolge von [`FADER_BUSES`], `meters` dazu plus Master. Liefert je
+/// Regler die Antwort (`changed()`, wenn der Wert sich geändert hat; Doppelklick = 0 dB).
+pub(crate) fn level_faders(
+    ui: &mut egui::Ui,
+    dbs: &mut [f32; 4],
+    meters: &[MeterHold; 5],
+) -> Vec<egui::Response> {
     let mut out = Vec::with_capacity(4);
+    let caption = |ui: &mut egui::Ui, t: &str| {
+        ui.label(
+            egui::RichText::new(t)
+                .font(theme::label_font(11.0))
+                .color(theme::text_dim()),
+        );
+    };
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
-        for ((_, name), db) in FADER_BUSES.iter().zip(dbs.iter_mut()) {
+        for (((_, name), db), m) in FADER_BUSES.iter().zip(dbs.iter_mut()).zip(meters) {
             ui.vertical(|ui| {
-                ui.set_width(40.0);
-                ui.label(
-                    egui::RichText::new(*name)
-                        .font(theme::label_font(11.0))
-                        .color(theme::text_dim()),
-                );
-                let r = crate::widgets::fader(
-                    ui,
-                    db,
-                    woa_radio::mixer::LEVEL_MIN_DB as f32..=woa_radio::mixer::LEVEL_MAX_DB as f32,
-                    0.0,
-                    egui::vec2(40.0, 150.0),
-                    crate::widgets::Orient::Vertical,
-                );
+                ui.set_width(48.0);
+                caption(ui, name);
+                let r = ui
+                    .horizontal_top(|ui| {
+                        ui.spacing_mut().item_spacing.x = 2.0;
+                        let r = crate::widgets::fader(
+                            ui,
+                            db,
+                            woa_radio::mixer::LEVEL_MIN_DB as f32
+                                ..=woa_radio::mixer::LEVEL_MAX_DB as f32,
+                            0.0,
+                            egui::vec2(40.0, 150.0),
+                            crate::widgets::Orient::Vertical,
+                        );
+                        meter_strip(ui, *m, name, egui::vec2(6.0, 150.0));
+                        r
+                    })
+                    .inner;
                 let label = format!("Pegel {name}");
                 let value = f64::from(*db);
                 r.widget_info(|| egui::WidgetInfo::slider(true, value, &label));
@@ -277,6 +341,10 @@ pub(crate) fn level_faders(ui: &mut egui::Ui, dbs: &mut [f32; 4]) -> Vec<egui::R
                 )));
             });
         }
+        ui.vertical(|ui| {
+            caption(ui, "Master");
+            meter_strip(ui, meters[4], "Master", egui::vec2(12.0, 150.0));
+        });
     });
     out
 }
@@ -518,6 +586,8 @@ impl RadioDesk {
             phone_stats: None,
             phone_lost: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             phone_level: 0.0,
+            meters: Default::default(),
+            hide_played: None,
             wishes: None,
             party_on: false,
             wish_chosen: None,
@@ -678,6 +748,12 @@ impl RadioDesk {
         let Some(st) = &self.station else { return };
         self.view = st.view();
         self.phone_level = self.view.phone_peak.max(self.phone_level * 0.9);
+        for (m, v) in self.meters.iter_mut().zip(self.view.meters) {
+            m.step(v, now_s());
+        }
+        if self.hide_played == Some(self.view.hide_played) {
+            self.hide_played = None;
+        }
         if self.phone_lost.swap(false, Ordering::Relaxed) {
             self.phone = None;
             self.phone_stats = None;
@@ -2487,11 +2563,25 @@ impl RadioDesk {
                 .manage
                 .header(ui, &v.playlists, v.active_playlist, v.running);
             self.run_actions(acts);
-            ui.label(
-                egui::RichText::new(format!("({} Titel)", v.playlist.len()))
-                    .small()
-                    .color(theme::text_dim()),
-            );
+            let hide = self.hide_played.unwrap_or(v.hide_played);
+            let played = played_count(v);
+            let count = if hide && played > 0 {
+                format!("({} offen, {played} gespielt)", v.playlist.len() - played)
+            } else {
+                format!("({} Titel)", v.playlist.len())
+            };
+            ui.label(egui::RichText::new(count).small().color(theme::text_dim()));
+            let r = ui
+                .selectable_label(hide, egui::RichText::new(theme::ic::EYE_SLASH).small())
+                .on_hover_text(
+                    "Gespielte ausblenden: Titel vor dem laufenden verschwinden aus der Liste \
+                     (nicht gelöscht). „bis Playlist-Ende“ zählt nur die offenen.",
+                );
+            if r.clicked() {
+                let on = !hide;
+                self.hide_played = Some(on);
+                self.with(move |c| c.set_hide_played(on));
+            }
             if v.measuring > 0 {
                 ui.spinner();
                 ui.label(
@@ -2576,7 +2666,17 @@ impl RadioDesk {
         self.row_rects.clear();
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 3.0;
+            let hide_before = if self.hide_played.unwrap_or(v.hide_played) {
+                played_count(v)
+            } else {
+                0
+            };
             for (i, e) in v.playlist.iter().enumerate() {
+                if i < hide_before {
+                    // Ausgeblendet: Platzhalter, damit die Zeilennummern fürs Ziehen stimmen.
+                    self.row_rects.push(egui::Rect::NOTHING);
+                    continue;
+                }
                 let on_air = v.current == Some(i);
                 let is_cue = i == v.cue && !v.running;
                 let row_fill = if on_air {
@@ -3386,7 +3486,7 @@ impl RadioDesk {
         ui.add_space(4.0);
         // Decks links, die senkrechten Pegelregler als eine Gruppe rechts daneben.
         ui.horizontal_top(|ui| {
-            let w = (ui.available_width() - 190.0).max(260.0);
+            let w = (ui.available_width() - 270.0).max(260.0);
             ui.allocate_ui(egui::vec2(w, 0.0), |ui| {
                 ui.vertical(|ui| self.deck_rows(ui, v));
             });
@@ -3397,7 +3497,7 @@ impl RadioDesk {
     /// Pegel Playlist, Carts, Decks, Mikro als senkrechte Fader (Werte wie bisher).
     fn level_fader_group(&mut self, ui: &mut egui::Ui) {
         let mut dbs = FADER_BUSES.map(|(b, _)| self.level_db(b) as f32);
-        let rs = level_faders(ui, &mut dbs);
+        let rs = level_faders(ui, &mut dbs, &self.meters);
         for ((r, (b, _)), db) in rs.iter().zip(FADER_BUSES).zip(dbs) {
             if r.changed() {
                 self.set_level(b, f64::from(db));
@@ -3775,7 +3875,7 @@ mod tests {
         let dbs = std::cell::RefCell::new([0.0f32; 4]);
         let changed = std::cell::RefCell::new(Vec::new());
         let mut ui = |ui: &mut eframe::egui::Ui| {
-            for (k, r) in super::level_faders(ui, &mut dbs.borrow_mut())
+            for (k, r) in super::level_faders(ui, &mut dbs.borrow_mut(), &Default::default())
                 .iter()
                 .enumerate()
             {
@@ -3811,6 +3911,50 @@ mod tests {
         ev.extend(click_at(p, false));
         let _ = frame(&ctx, 4, ev, &mut ui);
         assert_eq!(dbs.borrow()[2], 0.0, "Doppelklick: 0 dB");
+    }
+
+    #[test]
+    fn five_led_meters_stand_next_to_the_faders() {
+        let ctx = eframe::egui::Context::default();
+        ctx.enable_accesskit();
+        let mut dbs = [0.0f32; 4];
+        let meters: [super::MeterHold; 5] = Default::default();
+        let mut ui = |ui: &mut eframe::egui::Ui| {
+            let _ = super::level_faders(ui, &mut dbs, &meters);
+        };
+        frame(&ctx, 0, vec![], &mut ui);
+        let nodes = frame(&ctx, 1, vec![], &mut ui);
+        for name in ["Playlist", "Carts", "Decks", "Mikro", "Master"] {
+            let r = find(&nodes, &format!("Pegelanzeige {name}")).1;
+            assert!(
+                r.height() > 5.0 * r.width(),
+                "{name} senkrecht und schmal: {r:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn led_meter_colour_steps() {
+        use crate::theme::{BusZone, bus_zone};
+        assert_eq!(bus_zone(-1.0), BusZone::Red);
+        assert_eq!(bus_zone(-5.9), BusZone::Red);
+        assert_eq!(bus_zone(-6.0), BusZone::Yellow);
+        assert_eq!(bus_zone(-12.0), BusZone::Yellow);
+        assert_eq!(bus_zone(-18.0), BusZone::Green);
+        assert_eq!(bus_zone(-30.0), BusZone::Green);
+        assert_eq!(bus_zone(-50.0), BusZone::Blue, "zu leise");
+    }
+
+    #[test]
+    fn meter_peak_holds_then_falls() {
+        let mut m = super::MeterHold::default();
+        m.step(0.8, 0.0);
+        assert_eq!((m.level, m.hold), (0.8, 0.8));
+        m.step(0.0, 1.0);
+        assert!(m.level < 0.8, "fällt");
+        assert_eq!(m.hold, 0.8, "Spitze hält");
+        m.step(0.0, 2.0);
+        assert!(m.hold < 0.8, "nach der Haltezeit fällt die Spitze");
     }
 
     #[test]

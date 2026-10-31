@@ -759,6 +759,68 @@ pub fn led_meter_vertical(painter: &egui::Painter, rect: Rect, level: f32) {
     }
 }
 
+/// Farbstufe eines Sende-Meters (#216): Rot über -6 dBFS, Gelb bis -6, Grün bis -18,
+/// Blau darunter („zu leise“, unter [`BUS_METER_QUIET_DB`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BusZone {
+    Blue,
+    Green,
+    Yellow,
+    Red,
+}
+
+/// Unter diesem Pegel (dBFS) zeigt das Sende-Meter Blau: Signal zu leise.
+pub const BUS_METER_QUIET_DB: f32 = -40.0;
+
+pub fn bus_zone(db: f32) -> BusZone {
+    if db > -6.0 {
+        BusZone::Red
+    } else if db > -18.0 {
+        BusZone::Yellow
+    } else if db > BUS_METER_QUIET_DB {
+        BusZone::Green
+    } else {
+        BusZone::Blue
+    }
+}
+
+fn bus_color(z: BusZone) -> Color32 {
+    match z {
+        BusZone::Blue => Color32::from_rgb(70, 140, 235),
+        BusZone::Green => led_green(),
+        BusZone::Yellow => led_yellow(),
+        BusZone::Red => led_red(),
+    }
+}
+
+/// Schmales senkrechtes LED-Meter der Sende-Fader (-60..0 dBFS) mit gehaltener Spitze `hold`
+/// (linear, ein einzelnes Segment). Billig: nur Rechtecke, keine Texte.
+pub fn bus_meter(painter: &egui::Painter, rect: Rect, level: f32, hold: f32) {
+    painter.rect_filled(rect, 2.0, lcd_bg());
+    let inner = rect.shrink(1.0);
+    if inner.height() <= 8.0 {
+        return;
+    }
+    let frac = |v: f32| ((20.0 * v.max(1e-6).log10() + 60.0) / 60.0).clamp(0.0, 1.0);
+    let (lit, held) = (frac(level), frac(hold));
+    let segments = ((inner.height() / 4.0).floor() as usize).clamp(10, 40);
+    let gap = 1.0f32;
+    let seg_h = (inner.height() - gap * (segments as f32 - 1.0)) / segments as f32;
+    let lit_count = (lit * segments as f32).ceil() as usize;
+    let hold_seg = (held * segments as f32).ceil() as usize;
+    for i in 0..segments {
+        let base = bus_color(bus_zone((i + 1) as f32 / segments as f32 * 60.0 - 60.0));
+        let on = (i < lit_count && lit > 0.005) || (hold_seg > 0 && i + 1 == hold_seg);
+        let col = if on { base } else { mix(base, lcd_bg(), 0.86) };
+        let y0 = inner.bottom() - (i as f32 + 1.0) * seg_h - i as f32 * gap;
+        painter.rect_filled(
+            Rect::from_min_size(egui::pos2(inner.left(), y0), vec2(inner.width(), seg_h)),
+            0.0,
+            col,
+        );
+    }
+}
+
 /// Probe für Fotomodus und Tests: `WOA_THEME=hell` oder `dunkel` schlägt die Einstellung.
 pub fn env_override() -> Option<Theme> {
     static V: std::sync::OnceLock<Option<Theme>> = std::sync::OnceLock::new();

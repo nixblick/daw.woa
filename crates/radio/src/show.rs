@@ -208,6 +208,10 @@ pub struct RadioShow {
     /// Party: Auto-Übergang zwischen den zwei Decks (Vorgabe an).
     #[serde(default = "yes", skip_serializing_if = "is_true")]
     pub party_auto: bool,
+    /// Gespielte Titel in der Sende-Playlist ausblenden (#215). Nur Anzeige, gelöscht wird
+    /// nichts. Vorgabe aus.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hide_played: bool,
 }
 
 impl Default for RadioShow {
@@ -229,6 +233,7 @@ impl Default for RadioShow {
             decks: vec![None; DECKS],
             deck_return: vec![false; DECKS],
             party_auto: true,
+            hide_played: false,
         }
     }
 }
