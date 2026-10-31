@@ -13,129 +13,39 @@ use std::path::{Path, PathBuf};
 
 use crate::config::StreamConfig;
 
-/// Dienstname im Schlüsselbund.
-const SERVICE: &str = "woa";
 /// Eintragsname im Schlüsselbund.
 const ACCOUNT: &str = "stream-source";
 /// Name der Ersatzdatei im Datenordner.
 pub const FALLBACK_FILE: &str = "stream-source.pass";
 
-/// Wo das Kennwort liegt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Ort {
-    Schluesselbund,
-    Datei,
-}
+pub use woa_secrets::{Ort, Speicher};
 
-impl Ort {
-    /// Für die Anzeige.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Schluesselbund => "im Schlüsselbund des Systems",
-            Self::Datei => {
-                "in einer geschützten Datei im Datenordner (kein Schlüsselbund gefunden)"
-            }
-        }
-    }
-}
-
-/// Ein Speicher für das Kennwort. Der echte ist der Schlüsselbund; Tests nehmen einen
-/// im Speicher, damit sie nie den Schlüsselbund des Rechners anfassen.
-pub trait Speicher {
-    /// `Ok(None)`: kein Eintrag. `Err`: Schlüsselbund nicht benutzbar.
-    fn lesen(&self) -> Result<Option<String>, String>;
-    fn schreiben(&self, wert: &str) -> Result<(), String>;
-    fn loeschen(&self) -> Result<(), String>;
-}
-
-/// Schlüsselbund des Betriebssystems.
+/// Schlüsselbund des Betriebssystems für das Quell-Kennwort.
 pub struct Schluesselbund;
-
-impl Schluesselbund {
-    fn eintrag() -> Result<keyring::Entry, String> {
-        keyring::Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())
-    }
-}
 
 impl Speicher for Schluesselbund {
     fn lesen(&self) -> Result<Option<String>, String> {
-        match Self::eintrag()?.get_password() {
-            Ok(v) => Ok(Some(v)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(e.to_string()),
-        }
+        woa_secrets::Schluesselbund::new(ACCOUNT).lesen()
     }
 
     fn schreiben(&self, wert: &str) -> Result<(), String> {
-        Self::eintrag()?
-            .set_password(wert)
-            .map_err(|e| e.to_string())
+        woa_secrets::Schluesselbund::new(ACCOUNT).schreiben(wert)
     }
 
     fn loeschen(&self) -> Result<(), String> {
-        match Self::eintrag()?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(e.to_string()),
-        }
+        woa_secrets::Schluesselbund::new(ACCOUNT).loeschen()
     }
 }
 
 /// Pfad der Ersatzdatei.
 pub fn fallback_path(data_dir: &Path) -> PathBuf {
-    data_dir.join(FALLBACK_FILE)
+    woa_secrets::fallback_path(data_dir, ACCOUNT)
 }
 
-fn read_fallback(data_dir: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(fallback_path(data_dir)).ok()?;
-    let line = text.lines().next()?.trim_end_matches('\r');
-    (!line.is_empty()).then(|| line.to_string())
-}
-
-/// Schreibt die Ersatzdatei: Modus 0600 schon beim Anlegen, nie lesbar für andere.
-fn write_fallback(data_dir: &Path, wert: &str) -> Result<(), String> {
-    use std::io::Write;
-    std::fs::create_dir_all(data_dir)
-        .map_err(|e| format!("Datenordner {} nicht anlegbar: {e}", data_dir.display()))?;
-    let path = fallback_path(data_dir);
-    let tmp = path.with_extension("pass.neu");
-    let _ = std::fs::remove_file(&tmp);
-    let mut opts = std::fs::OpenOptions::new();
-    opts.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600);
-    }
-    let mut f = opts
-        .open(&tmp)
-        .map_err(|e| format!("Kennwortdatei {} nicht anlegbar: {e}", tmp.display()))?;
-    f.write_all(wert.as_bytes())
-        .and_then(|()| f.write_all(b"\n"))
-        .and_then(|()| f.sync_all())
-        .map_err(|e| format!("Kennwortdatei {} nicht schreibbar: {e}", tmp.display()))?;
-    drop(f);
-    std::fs::rename(&tmp, &path)
-        .map_err(|e| format!("Kennwortdatei {} nicht ersetzbar: {e}", path.display()))
-}
-
-/// Speichert das Kennwort: Schlüsselbund, sonst Ersatzdatei. Eine Ersatzdatei, die zu einem
-/// früheren Stand gehört, verschwindet, sobald der Schlüsselbund das neue Kennwort hat.
-/// Der Fehlertext enthält nie das Kennwort.
+/// Speichert das Kennwort: Schlüsselbund, sonst Ersatzdatei. Der Fehlertext enthält nie das
+/// Kennwort.
 pub fn save_with(store: &dyn Speicher, data_dir: &Path, wert: &str) -> Result<Ort, String> {
-    if wert.is_empty() || wert.chars().any(|c| c == '\r' || c == '\n') {
-        return Err("Kennwort darf nicht leer sein und keinen Zeilenumbruch enthalten".into());
-    }
-    match store.schreiben(wert) {
-        Ok(()) => {
-            let _ = std::fs::remove_file(fallback_path(data_dir));
-            Ok(Ort::Schluesselbund)
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "keyring unavailable, using protected file");
-            write_fallback(data_dir, wert)?;
-            Ok(Ort::Datei)
-        }
-    }
+    woa_secrets::save_with(store, data_dir, ACCOUNT, wert)
 }
 
 /// [`save_with`] im Schlüsselbund des Systems.
@@ -145,13 +55,7 @@ pub fn save(data_dir: &Path, wert: &str) -> Result<Ort, String> {
 
 /// Wo liegt ein gespeichertes Kennwort (ohne es zu lesen)?
 pub fn stored_with(store: &dyn Speicher, data_dir: &Path) -> Option<Ort> {
-    if matches!(store.lesen(), Ok(Some(_))) {
-        Some(Ort::Schluesselbund)
-    } else if read_fallback(data_dir).is_some() {
-        Some(Ort::Datei)
-    } else {
-        None
-    }
+    woa_secrets::stored_with(store, data_dir, ACCOUNT)
 }
 
 pub fn stored(data_dir: &Path) -> Option<Ort> {
@@ -160,9 +64,7 @@ pub fn stored(data_dir: &Path) -> Option<Ort> {
 
 /// Entfernt das gespeicherte Kennwort aus Schlüsselbund und Ersatzdatei.
 pub fn clear_with(store: &dyn Speicher, data_dir: &Path) -> Result<(), String> {
-    let kb = store.loeschen();
-    let _ = std::fs::remove_file(fallback_path(data_dir));
-    kb
+    woa_secrets::clear_with(store, data_dir, ACCOUNT)
 }
 
 pub fn clear(data_dir: &Path) -> Result<(), String> {
@@ -171,12 +73,7 @@ pub fn clear(data_dir: &Path) -> Result<(), String> {
 
 /// Das gespeicherte Kennwort selbst (für „Anzeigen“ und „Verbindung testen“).
 pub fn reveal_with(store: &dyn Speicher, data_dir: &Path) -> Option<String> {
-    store
-        .lesen()
-        .ok()
-        .flatten()
-        .filter(|v| !v.is_empty())
-        .or_else(|| read_fallback(data_dir))
+    woa_secrets::reveal_with(store, data_dir, ACCOUNT)
 }
 
 pub fn reveal(data_dir: &Path) -> Option<String> {

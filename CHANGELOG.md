@@ -1,7 +1,16 @@
 # Changelog
 
-## 0.34.30 — 2026-10-31
+## 0.34.31 — 2026-10-31
 
+KI & MCP, Teil 1: WOA als MCP-Server für beliebige Clients (André: „nicht nur mein Server muss funktionieren, sondern irgendein Server mit irgendeinem MCP bzw. LLM“). Teil 2, der eigene Assistent mit frei wählbarem Anbieter, folgt.
+
+- **Neues Fenster:** Einstellungen → „KI & MCP …“. Dort steht der Hintergrund-Server (an/aus), der Projektordner, wer ihn erreicht (nur dieser Rechner oder das Netz), der Port und das Zugriffstoken.
+- **Einträge zum Kopieren:** fertig für Claude Code, Claude Desktop und andere Clients, je für Stdio (der Client startet `woa-headless`) und für HTTP. Sie entstehen zur Laufzeit aus dem Pfad des laufenden Programms und der Einstellung; im Fenster ist das Token maskiert, erst „Kopieren“ setzt es ein.
+- **HTTP-Transport (`woa-headless mcp <Projekt> --http [--bind ADRESSE] [--port N]`):** Streamable HTTP auf `/mcp`. Jede Anfrage braucht `Authorization: Bearer <Token>` (Vergleich in gleichbleibender Zeit), ohne gültiges Token kommt 401. Vorgabe ist `127.0.0.1`; eine andere Adresse ist eine ausdrückliche Wahl und wird im Fenster gewarnt. `Host` (Loopback) und `Origin` (nur lokale Seiten) werden gegen DNS-Rebinding geprüft. Ohne Token startet der Server nicht.
+- **Token:** 256 Bit aus dem Zufallsgenerator des Systems, im Schlüsselbund (Eintrag `woa / mcp-token`), sonst Datei `mcp-token.pass` mit Modus 0600; nie in `config.json`, nie auf der Kommandozeile, nie im Log. Der Hintergrund-Prozess liest es selbst. In Containern geht auch `WOA_MCP_TOKEN`.
+- **Neue Crates:** `woa-secrets` (die Schlüsselbund-Ablage aus dem Stream-Kennwort, jetzt für beliebig viele Einträge mit stabiler Kennung; `woa-stream` nutzt sie unverändert weiter) und `woa-assistant` (Einstellungen, Einträge, Hintergrund-Prozess).
+- **Grenze:** Der Server arbeitet auf der Projektdatei im Ordner, nicht auf dem offenen Fenster. Das steht im Fenster und in `docs/agent.md`.
+- Tests: HTTP ohne/falsches/richtiges Token, falscher `Origin`, fremder Pfad, leeres Token; Einträge sind gültiges JSON und zeigen das Token nie maskiert; Pfade mit Leerzeichen; Schlüsselbund-Ersatzdatei mit 0600 und Kennung als Dateiname; Fenster zeichnet.
 Bibliothek: Analyse hängt nicht mehr an langen Titeln, läuft im Hintergrund weiter, Titel lassen sich entfernen und Spalten sortieren (#122, #123, #124, #120).
 
 - **Lautheitsmessung linear (#122, #120):** Die integrierte Lautheit wurde mit jedem 100-ms-Schritt über alle bisherigen Blöcke neu gegatet, die Rechenzeit wuchs mit dem Quadrat der Länge. Ein 30-Minuten-Titel brauchte so sehr lange; zwei Stunden Material dauerten im Test 104 s, jetzt 0,6 s. Das traf die Bibliotheks-Analyse, das Messen beim Einfügen in die Playlist und das Laden zum Abspielen.
