@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.34.17 — 2026-10-31
+
+Sicherheit #116: DJ-PIN-Sperre ließ sich per Gast-Login umgehen, Gäste konnten DJ-Sitzungen verdrängen.
+
+- **Sperre:** nur noch eine erfolgreiche DJ-Anmeldung setzt den Fehlerzähler einer Adresse zurück. Eine Gast-Anmeldung tut es nicht mehr; die DJ-PIN lässt sich also nicht mehr zwischen Gast-Logins ohne Sperre durchprobieren.
+- **Alle Adressen zusammen:** 50 falsche PINs innerhalb von 10 Minuten erneuern automatisch die DJ-PIN (Anzeige im Fenster zieht nach, laufende Sitzungen bleiben).
+- **Längere DJ-PIN:** acht statt sechs Stellen. Die Gast-PIN im QR-Code bleibt sechsstellig.
+- **Sitzungen:** Gäste und DJs haben je eigene Obergrenzen (256 Gäste, 32 DJs); verdrängt wird nur innerhalb derselben Rolle, ein Gast wirft nie einen DJ hinaus. Eine Adresse hält je Rolle höchstens 16 Sitzungen.
+- Tests: Gast-Login setzt die DJ-Sperre nicht zurück, Gäste verdrängen keine DJ-Sitzung, Obergrenzen je Rolle und Adresse, globale Erneuerung der DJ-PIN.
+
+Closes #116.
+
 ## 0.34.16 — 2026-10-31
 
 Sicherheit #112: Plugin-Suche und gemeinsamer Speicher nur noch für den eigenen Nutzer.

@@ -4,6 +4,15 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Sicherheit #116: DJ-PIN-Sperre und Gast-Sitzungen (0.34.17, offen)
+
+1. Fernbedienung einschalten. Die DJ-PIN im Fenster hat jetzt acht Stellen, die Gast-PIN im QR-Code weiter sechs.
+2. Am Handy fünfmal eine falsche PIN eingeben, dann die Gast-PIN: kommt weiter "Zu viele Versuche" (vorher ließ der Gast-Login die Sperre fallen). Nach einer Minute geht es wieder.
+3. Mit dem Handy als DJ anmelden und es offen lassen; mit mehreren anderen Geräten oder Tabs als Gast anmelden: die DJ-Sitzung bleibt aktiv, Befehle gehen weiter.
+4. Optional: mit Skript 50 falsche PINs von verschiedenen Adressen schicken: die DJ-PIN im Fenster ändert sich von selbst, das angemeldete DJ-Handy läuft weiter.
+
+Selbst geprüft von Claude: Tests in `crates/remote/src/auth.rs` (Sperre, Rollen-Obergrenzen, globale Erneuerung), Tests und Clippy des Crates grün.
+
 ## Design D1–D6: Neues Aussehen (0.34.15, offen)
 
 Start wie immer. Die sechs Design-Pakete (0.34.7, 0.34.10–0.34.14) werden hier zusammen abgenommen. Vorgabe ist `docs/design/woa-design-system/` (README und `tokens.json`).
