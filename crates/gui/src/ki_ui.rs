@@ -36,6 +36,8 @@ pub struct KiUi {
     note: Option<String>,
     proc: Option<ServerProcess>,
     proc_error: Option<String>,
+    /// Das Token wurde neu erzeugt: der Live-Server der App muss neu starten.
+    token_changed: bool,
 }
 
 impl KiUi {
@@ -48,6 +50,11 @@ impl KiUi {
         self.token_text = None;
         self.note = None;
         self.assistant.reset(&self.draft);
+    }
+
+    /// Wurde das Token seit dem letzten Aufruf neu erzeugt? (Hook für den Live-Server.)
+    pub fn take_token_changed(&mut self) -> bool {
+        std::mem::take(&mut self.token_changed)
     }
 
     fn close(&mut self) {
@@ -358,6 +365,7 @@ impl KiUi {
                 );
                 // Ein laufender Server kennt noch das alte Token.
                 self.proc = None;
+                self.token_changed = true;
             }
             Err(e) => self.note = Some(format!("Token nicht gespeichert: {e}")),
         }

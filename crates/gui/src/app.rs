@@ -239,6 +239,10 @@ pub struct WoaApp {
     data_dir: PathBuf,
     /// Bibliotheks-Fenster (Paket 24).
     library: crate::library::LibraryWindow,
+    /// Live-MCP-Server: Claude arbeitet auf diesem Projekt (André 31.10.2026).
+    mcp_live: crate::mcp_live::McpLive,
+    /// Fenster „Produktionen“: Audio-Dateien des Projekts, neueste oben.
+    produktionen: crate::produktionen::ProduktionenWindow,
     /// Export-Fenster (Paket 26).
     export_dialog: crate::export_dialog::ExportDialog,
     clock_editor: crate::clock_editor::ClockEditor,
@@ -586,6 +590,8 @@ impl WoaApp {
             library: crate::library::LibraryWindow::new(
                 woa_radio::data_dir().join(crate::library::DB_FILE),
             ),
+            mcp_live: crate::mcp_live::McpLive::new(woa_radio::data_dir(), open_audio),
+            produktionen: crate::produktionen::ProduktionenWindow::default(),
             export_dialog: crate::export_dialog::ExportDialog::new(),
             clock_editor: crate::clock_editor::ClockEditor::new(woa_radio::data_dir()),
             event_editor: crate::event_editor::EventEditor::new(woa_radio::data_dir()),
@@ -598,6 +604,11 @@ impl WoaApp {
     /// Projektzustand (für Tests und Werkzeuge).
     pub fn state(&self) -> &AppState {
         &self.state
+    }
+
+    /// Ist das Fenster „Produktionen“ offen? (Oberflächentests)
+    pub fn produktionen_open(&self) -> bool {
+        self.produktionen.open
     }
 
     /// Projektzustand zum Ändern (für Tests).
@@ -731,7 +742,12 @@ impl WoaApp {
             .map(std::path::Path::to_path_buf);
         self.chat_ui
             .show(ctx, &self.config.ki, &self.data_dir, project.as_deref());
-        let Some(applied) = self.ki_ui.show(ctx, &self.data_dir, project.as_deref()) else {
+        let applied = self.ki_ui.show(ctx, &self.data_dir, project.as_deref());
+        if self.ki_ui.take_token_changed() {
+            // Der Live-Server nimmt sonst weiter das alte Token an.
+            self.mcp_live.restart();
+        }
+        let Some(applied) = applied else {
             return;
         };
         tracing::info!(
@@ -2771,6 +2787,25 @@ impl WoaApp {
                     .clicked()
                 {
                     self.import_audio();
+                }
+                if ui
+                    .add_sized(
+                        [124.0, 32.0],
+                        egui::Button::new(
+                            egui::RichText::new(format!("{} Produktionen", theme::ic::WAVEFORM))
+                                .small()
+                                .strong()
+                                .color(theme::text()),
+                        )
+                        .fill(theme::well()),
+                    )
+                    .on_hover_text(
+                        "Audio-Dateien des Projekts (Aufnahmen, Exporte, von Claude erzeugt), \
+                         die neuesten oben; auf eine Spur ziehen",
+                    )
+                    .clicked()
+                {
+                    self.produktionen.open_window();
                 }
                 if ui
                     .add_sized(
@@ -5026,6 +5061,19 @@ impl WoaApp {
     fn library_window(&mut self, ctx: &egui::Context) {
         let pfl = self.radio.as_ref().is_some_and(RadioDesk::pfl_available);
         let out = self.library.show(ctx, pfl);
+        self.apply_pick(out);
+    }
+
+    /// Fenster „Produktionen“: gleicher Weg wie die Bibliothek (Vorhören, Ablegen).
+    fn produktionen_window(&mut self, ctx: &egui::Context) {
+        let pfl = self.radio.as_ref().is_some_and(RadioDesk::pfl_available);
+        let root = self.state.project_dir();
+        let out = self.produktionen.show(ctx, &root, pfl);
+        self.apply_pick(out);
+    }
+
+    /// Wünsche aus Bibliothek oder Produktionen: vorhören, stoppen, gezogene Datei ablegen.
+    fn apply_pick(&mut self, out: crate::library::Output) {
         if let Some(path) = out.preview {
             match self.radio.as_ref() {
                 Some(r) => r.preview_file(path),
@@ -5825,6 +5873,10 @@ impl eframe::App for WoaApp {
             self.drop_files(ctx);
         }
         self.feedback.poll();
+        // KI-Werkzeugaufrufe zwischen zwei Bildern, vor dem Abgleich mit dem Player.
+        if self.mcp_live.frame(ctx, &mut self.state) > 0 {
+            self.produktionen.mark_stale();
+        }
         self.update_frame(ctx);
         if self.state.autosave_due(Instant::now()) {
             self.capture_plugins();
@@ -6008,6 +6060,7 @@ impl eframe::App for WoaApp {
                                 .monospace()
                                 .color(theme::text_dim()),
                         );
+                        self.mcp_live.badge(ui);
                     });
                 });
             });
@@ -6023,6 +6076,7 @@ impl eframe::App for WoaApp {
         self.piano_roll_window(&ctx);
         self.analysis_window(&ctx);
         self.library_window(&ctx);
+        self.produktionen_window(&ctx);
         self.clock_editor.show(&ctx);
         self.event_editor
             .show(&ctx, self.radio.as_ref().map(|r| r.view()));

@@ -455,12 +455,33 @@ fn run_broadcast_test(a: BroadcastArgs) -> ExitCode {
 
 /// `mcp --http`: das Token kommt aus der Umgebung oder dem Schlüsselbund, nie von der
 /// Kommandozeile.
-fn cmd_mcp_http(path: &std::path::Path, bind: std::net::IpAddr, port: u16) -> Result<(), String> {
-    let token = std::env::var("WOA_MCP_TOKEN")
+fn mcp_token() -> Option<String> {
+    std::env::var("WOA_MCP_TOKEN")
         .ok()
         .filter(|t| !t.is_empty())
         .or_else(|| woa_secrets::reveal(&woa_radio::data_dir(), "mcp-token"))
-        .ok_or("Kein Zugriffstoken: in WOA unter Einstellungen → KI & MCP erzeugen")?;
+}
+
+/// `mcp` über stdin/stdout. Läuft die WOA-App (Lock-Datei im Datenordner, Port antwortet),
+/// reicht es an sie durch: Claude arbeitet dann live auf dem Projekt der App, `path` gilt
+/// nicht. `WOA_MCP_HEADLESS=1` erzwingt den eigenen Prozess.
+fn cmd_mcp_stdio(path: &std::path::Path) -> Result<(), String> {
+    if std::env::var_os("WOA_MCP_HEADLESS").is_none()
+        && let Some(app) = woa_agent::live::running_app(&woa_radio::data_dir())
+    {
+        // Durchgereicht wird mit dem Live-Schlüssel dieses App-Starts, nie mit dem Token.
+        eprintln!(
+            "WOA MCP: die App läuft, Werkzeuge arbeiten live auf ihrem Projekt ({} gilt nicht)",
+            path.display()
+        );
+        return woa_agent::live::forward_stdio(app.port, &app.key).map_err(|e| e.to_string());
+    }
+    woa_agent::run_stdio(path).map_err(|e| e.to_string())
+}
+
+fn cmd_mcp_http(path: &std::path::Path, bind: std::net::IpAddr, port: u16) -> Result<(), String> {
+    let token =
+        mcp_token().ok_or("Kein Zugriffstoken: in WOA unter Einstellungen → KI & MCP erzeugen")?;
     woa_agent::http::run_http(path, std::net::SocketAddr::new(bind, port), token)
         .map_err(|e| e.to_string())
 }
@@ -475,7 +496,7 @@ fn main() -> ExitCode {
         Cmd::Roundtrip { path } => cmd_roundtrip(&path),
         Cmd::Mcp {
             path, http: false, ..
-        } => woa_agent::run_stdio(&path).map_err(|e| e.to_string()),
+        } => cmd_mcp_stdio(&path),
         Cmd::Mcp {
             path, bind, port, ..
         } => cmd_mcp_http(&path, bind, port),

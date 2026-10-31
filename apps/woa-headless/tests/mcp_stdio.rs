@@ -13,6 +13,8 @@ fn mcp_over_stdio_builds_and_saves() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_woa-headless"))
         .arg("mcp")
         .arg(&dir)
+        // Eine laufende WOA-App auf dieser Maschine darf den Test nicht übernehmen.
+        .env("WOA_MCP_HEADLESS", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
