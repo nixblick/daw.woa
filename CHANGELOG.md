@@ -7,6 +7,20 @@ Party mit echter Zwei-Deck-Blende (André: „ja“ zu freier Blende von Hand mi
 ### Neu
 
 - **Echte Zwei-Deck-Wiedergabe:** Links und rechts sind zwei eigene Abspieler im Sendemixer (neben den Radio-Decks A bis C, die unberührt bleiben). Beide spielen gleichzeitig im Musikzweig, also auf Programm, Mitschnitt und Stream, und hören auf den Regler „Playlist“ (Lauter/Leiser in der Party). Der Crossfader steuert stufenlos eine Constant-Power-Kurve ohne Lautstärkeloch in der Mitte (beide −3 dB), mit exakten Endpunkten. Der Mixer fährt die Stellung sample-genau und linear nach (Handbewegung höchstens 10 ms für den ganzen Weg), darum knackt nichts. Keine Allokation im Audio-Thread.
+- **Schalter „Auto-Übergang“** (Symbol und Wort, neben dem Crossfader, Vorgabe an, wird mit der Sendung gespeichert): An heißt, eine Crossfade-Länge vor dem Ende startet das andere Deck und der Fader fährt hinüber. Aus heißt, der DJ startet jedes Deck mit dessen eigenem „Play“ und blendet von Hand. Ein Deck, das endet, lädt den nächsten Titel vor und startet nicht.
+- **Die Hand gewinnt:** Wer während der automatischen Fahrt den Crossfader anfasst, hält ihn; die Automatik fährt nicht dagegen.
+- **Wunschordner → Party-Wunschliste (#134):** Neue, fertig kopierte Dateien im Wunschtitel-Ordner erscheinen als Wünsche und lassen sich direkt einreihen. Je Datei nur einmal; ein entfernter Wunsch kommt nicht wieder, und die Datei wird nie gelöscht. Es bleibt beim einen Ordner-Beobachter.
+
+### Geändert
+
+- **Crossfader über die Mitte ist kein „Weiter“ mehr:** Er blendet nur. „Weiter“ blendet sofort über die Crossfade-Länge zum anderen Deck.
+- **Playlist bleibt das Modell:** „läuft“ ist das lautere Deck, „nächster“ das vorgeladene; Handy und Radio-Ansicht zeigen das. Beim Verlassen der Party läuft der hörbare Titel an derselben Stelle im Playlist-Abspieler weiter.
+- Die alte, zeitgesteuerte Deck-Anzeige ist entfernt; Decks, Plattenteller und Fader lesen den Zustand des Mixers.
+
+### Tests
+
+- Neue Tests ohne Ton (`crates/radio/tests/party_duo.rs`, Fader in `level.rs`, Wunschordner in `party.rs` und der GUI): Constant Power mit exakten Enden, Glättung ohne Sprung, Auto an und aus, Hand schlägt Automatik, Mitte ist kein Weiter, Ende lädt vor ohne Start, Ein- und Austritt ohne Lücke, jeder Mixer-Block unter `assert_no_alloc`.
+
 ## 0.34.47 — 2026-10-31
 
 ### Behoben

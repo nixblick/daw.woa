@@ -1050,6 +1050,22 @@ Zwei Handys (oder Handy und Notebook-Browser) im selben WLAN, Kopfhörer auf.
 5. Auf dem Handy von A „Mikro stumm schalten“. Erwartung: in der Zeile „hat sich selbst stumm geschaltet“, nichts von A zu hören.
 6. Bei B einmal „×“: Knopf zeigt „Wirklich trennen?“; nach 3 s ohne Klick wieder „×“. Zweimal klicken: B ist getrennt, sein Handy zeigt „Die Verbindung ist beendet.“
 
+## Party: echte Blende, Auto-Übergang, Wunschordner (0.34.48, offen)
+
+Mit drei kurzen Titeln und 5 s Crossfade, Lautstärke nach Wunsch (der Ablauf geht auch ohne Ton, dann nur auf Anzeige und Plattenteller achten).
+
+1. Party öffnen: Rechts neben dem Crossfader steht der Schalter „Auto-Übergang an“ (leuchtet). Jedes Deck hat einen eigenen Knopf „Play“.
+2. „Play“ unten: Deck A spielt, Deck B zeigt den nächsten Titel „VORGELADEN“.
+3. Auto an: Etwa 5 s vor dem Ende startet Deck B von selbst, der Crossfader fährt hinüber, in der Mitte sind beide gleich laut, kein Loch. Danach lädt Deck A den übernächsten Titel und startet nicht.
+4. Während der automatischen Fahrt den Crossfader anfassen und zurückziehen: Er bleibt, wo die Hand ihn lässt.
+5. Crossfader von Hand über die Mitte ziehen und loslassen: Es gibt kein „Weiter“ mehr, nur die Blende.
+6. Schalter auf „Auto-Übergang aus“: Am Titelende hört alles auf, das andere Deck bleibt vorgeladen. Mit „Play“ am Deck starten und von Hand blenden. WOA neu starten: Der Schalter steht noch auf aus.
+7. „Weiter“ blendet sofort über die Crossfade-Länge zum anderen Deck. Das Handy zeigt als „läuft“ den Titel des lauteren Decks.
+8. Wunschordner (#134): Eine Audiodatei hineinkopieren. Nach ein bis zwei Sekunden steht sie in der Wunschliste und lässt sich direkt mit „→ Playlist“ einreihen. Den Wunsch entfernen: Die Datei bleibt im Ordner und der Wunsch kommt nicht wieder.
+9. Party verlassen (Radio-Modus): Der hörbare Titel läuft an derselben Stelle in der Playlist weiter, ohne Lücke.
+
+Selbst geprüft von Claude: Tests ohne Ton für Constant Power, die Glättung des Faders, Auto an und aus, „die Hand gewinnt“, „über die Mitte ist kein Weiter“, das Ende lädt vor, ohne zu starten, Ein- und Austritt ohne Lücke, den Wunschordner (einmal je Datei, entfernt bleibt weg, Datei bleibt) und Mixer-Blöcke unter `assert_no_alloc`. Clippy und Tests von `woa-radio`, `woa-remote` und `woa-gui` grün. Nicht am Gerät gehört.
+
 ## Abgenommen
 
 - Paket 10 Dauertest (0.5.0): 30.10.2026, André „2 abgenommen“ (Sammelabnahme Pakete 5, 9, 10 und Nachtrag #43).

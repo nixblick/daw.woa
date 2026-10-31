@@ -193,8 +193,17 @@ impl Controller {
         self.duo.is_some() && (0..PARTY_SIDES).any(|s| self.party_side_playing(s))
     }
 
+    /// Alle Seiten halten an (die Stelle bleibt; Play macht dort weiter).
+    pub fn party_pause_all(&mut self) {
+        if self.duo.is_some() {
+            for s in 0..PARTY_SIDES {
+                self.send(Cmd::PartyStop(s));
+            }
+        }
+    }
+
     /// Play/Pause der großen Taste: läuft etwas, halten alle Seiten an; sonst startet die
-    /// Seite, auf die der Fader zeigt (sonst die hörbare).
+    /// hörbare Seite (der Fader springt zu ihr).
     pub fn party_toggle(&mut self) {
         if self.duo.is_none() {
             return;
