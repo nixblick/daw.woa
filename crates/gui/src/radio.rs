@@ -929,7 +929,7 @@ impl RadioDesk {
         match t {
             Target::Mic => self.toggle_mic(),
             Target::StartNext => self.with(|c| c.start_or_next()),
-            Target::Stop => self.with(|c| c.stop()),
+            Target::Stop => self.with(|c| c.stop_or_pause()),
             Target::Cart(slot) if slot < CARTS => self.with(move |c| c.trigger_cart(slot)),
             _ => {}
         }
@@ -1746,18 +1746,20 @@ impl RadioDesk {
             }
             self.learn_menu(&r, Target::StartNext);
 
-            let r = ui.add(
-                egui::Button::new(theme::fill_label(
-                    theme::icf::STOP,
-                    "Stopp",
-                    15.0,
-                    theme::text(),
-                ))
-                .fill(theme::surface())
-                .min_size(egui::vec2(88.0, 38.0)),
-            );
+            let r = ui
+                .add(
+                    egui::Button::new(theme::fill_label(
+                        theme::icf::STOP,
+                        "Stopp",
+                        15.0,
+                        theme::text(),
+                    ))
+                    .fill(theme::surface())
+                    .min_size(egui::vec2(88.0, 38.0)),
+                )
+                .on_hover_text("Stopp: 1× hält an wie Pause, 2× stoppt");
             if r.clicked() {
-                self.with(|c| c.stop());
+                self.with(|c| c.stop_or_pause());
             }
             self.learn_menu(&r, Target::Stop);
 

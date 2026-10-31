@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.34.67 — 2026-10-31
+## 0.34.68 — 2026-10-31
 
 - **Ducking auch bei Carts (#149):** Spielt ein Cart, wird die Musik in den Playern auf die eingestellte Ducking-Tiefe abgesenkt und bleibt hörbar; nach dem Cart fährt sie sofort (80 ms Glättung) zurück. Abschaltbar mit dem Häkchen „auch bei Carts“ neben dem Ducking-Regler, Vorgabe an, gespeichert in `radio.json` (Feld `cart_duck`).
+
+## 0.34.67 — 2026-10-31
+
+- **Stopp ist zuerst Pause (#95):** Im Radio-Modus hält der erste Druck auf „Stopp“ am Sende-Player den Titel an der Stelle fest wie „Pause“; „Play“ macht dort weiter. Der zweite Druck stoppt wie bisher. Mit „Stopp blendet aus“ blendet schon der erste Druck über die eingestellte Ausblenddauer aus. Gilt auch für die per MIDI gelernte Stopp-Taste; Decks, Party und Handy bleiben unverändert. Hinweis beim Darüberfahren. Test: `crates/radio/tests/stop_pauses.rs` unter `assert_no_alloc`.
 
 ## 0.34.66 — 2026-10-31
 

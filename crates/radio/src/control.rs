@@ -908,6 +908,25 @@ impl Controller {
         self.paused = Some((cur, pos, end));
     }
 
+    /// Stopp-Knopf (#95): läuft ein Titel, hält der erste Druck an wie Pause (mit „Stopp
+    /// blendet aus“ über dessen Dauer), der zweite stoppt wie [`Self::stop`].
+    pub fn stop_or_pause(&mut self) {
+        if !self.running || self.status.current.load(Ordering::Acquire) == NONE {
+            self.stop();
+            return;
+        }
+        let frames = if self.show.stop_fade {
+            (self.show.stop_fade_seconds * f64::from(self.rate)) as usize
+        } else {
+            0
+        };
+        self.pause_with(if frames > 0 {
+            Cmd::PauseFade(frames)
+        } else {
+            Cmd::Pause
+        });
+    }
+
     /// Pausiert (Stelle gemerkt)?
     pub fn is_paused(&self) -> bool {
         self.paused.is_some()
