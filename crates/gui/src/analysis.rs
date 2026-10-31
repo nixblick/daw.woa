@@ -262,11 +262,7 @@ impl AnalysisView {
     /// gerade etwas läuft.
     pub fn ui(&mut self, ui: &mut egui::Ui, tracks: &[(TrackId, String)], playing: bool) {
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("QUELLE")
-                    .size(10.0)
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("QUELLE"));
             let name = self
                 .source
                 .and_then(|id| tracks.iter().find(|t| t.0 == id))
