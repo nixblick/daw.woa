@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.34.13 — 2026-10-31
+
+Design D5: Kanalzug ohne Drehregler.
+
+- **Kanalzug (Produzent, Mischpult):** nur noch Scribble-Strip mit dem Namen in Spurfarbe, die Tasten M, S und Aufnahme, die LED-Kette und der Fader. Pegel-Zahlenfeld, Panorama, Ausgang, Sends, Effektkette und Plugins sind aus dem Kanalzug heraus.
+- **Insert-Rack:** neues Feld rechts neben den Kanalzügen für den gewählten Kanal (Klick auf den Namen im Kanalzug). Dort liegen Pegel (Gain), Panorama, Ausgang, Sends, Effektkette, Plugins und „Spur löschen“. Die Funktion ist unverändert, auch die Automation von Gain und Pan.
+- Noch offen: eine PFL-Taste am Kanalzug (der Vorhörweg ist bisher nur als Ausgabe-Einstellung da) und ein eigener EQ-Regler (es gibt keinen eingebauten Kanal-EQ, er läuft als Effekt in der Kette).
+
 ## 0.34.12 — 2026-10-31
 
 Design D4: Bausteine des Design Systems, eingesetzt in den drei Layouts.
