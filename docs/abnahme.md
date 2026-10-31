@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Sicherheit #136: Updater Stufe B vorbereitet (0.34.22, offen)
+## Sicherheit #136: Updater Stufe B vorbereitet (0.34.23, offen)
 
 Nur Test und Doku, kein Verhalten geändert. Schlüssel fehlt noch (Handgriffe in #136).
 
@@ -12,6 +12,19 @@ Nur Test und Doku, kein Verhalten geändert. Schlüssel fehlt noch (Handgriffe i
 2. Probe: in `packaging/windows/updater.pub` zwei Zeilen `untrusted comment: x` / `abc` eintragen, Test muss rot werden; Datei zurücksetzen.
 
 Selbst geprüft von Claude: Tests und Clippy des Crates grün.
+
+## Kopfleiste, Über WOA und Feedback-Fenster (0.34.22, offen)
+
+André 31.10.2026: „header menü leiste struktur und optik verbessern … feedback in grün … über WOA netter, persönlicher, schicker“.
+
+1. Kopfleiste links: Marke, dann Datei, Bearbeiten, Ansicht, Einstellungen, Hilfe. Datei hat die Untermenüs „Importieren“ (Audio, MIDI, DAWproject öffnen) und „Exportieren“ (Mixdown, DAWproject, MIDI-Clip). Bibliothek, Stundenuhr und Zeit-Events schalten sich unter „Ansicht“ an und aus, dort steht auch „Erscheinungsbild“.
+2. Einstellungen: oben Audio (Ausgänge, Vorhören, Ausgabe neu verbinden, Telefon), dann MIDI (MIDI-Eingang, Controller und MIDI-Learn), dann Fehlercodes. Hilfe: Update-Suche und „Über WOA …“.
+3. Rechts mit mehr Abstand: MIDI, gleich daneben die ON-AIR-Lampe, dann der Modus-Umschalter, ganz rechts die grüne Taste „Feedback“ (ohne „…“). Radio starten oder das Mikro öffnen: die Lampe oben leuchtet. Im Radio-Deck steht sie nicht mehr.
+4. Liegt ein Update bereit, steht die Info mittig in der Kopfleiste (Neuerungen, Installieren bzw. Release-Seite, Später). Ohne Update ist die Mitte leer.
+5. „Feedback“ klicken: großes Fenster mittig, „Schön, dass du dich meldest!“, Textfeld, „Bildschirmfoto mitsenden“, „Abschicken“ und „Lieber später“. Senden wie bisher: „Danke! Gemeldet als #n“.
+6. Hilfe → „Über WOA …“: Logo, „WOA – built with love, coffee and AI“, Version und Lizenz, PayPal- und Ko-fi-Knopf (öffnen den Browser), „Danke an alle Lizenzgeber“ mit rotem Herz und die Schriften- und Symbolliste wie bisher.
+
+Selbst geprüft von Claude: `crates/gui/tests/kopfleiste.rs` (vier Tests, grün: ON AIR neben MIDI und Feedback ganz rechts, Feedback-Fenster groß und mittig, Spendenlinks öffnen sich, alle alten Menüeinträge erreichbar), Tests und Clippy von `woa-gui` grün.
 
 ## Sicherheit #127: AppImage-Werkzeuge mit Prüfsumme (0.34.21, offen)
 
@@ -50,7 +63,7 @@ Start wie immer. Die sechs Design-Pakete (0.34.7, 0.34.10–0.34.14) werden hier
 7. **Bausteine Radio und Party:** Die Studio-Uhr läuft mit Sekunden-Kette, ON AIR leuchtet bei Sendung oder offenem Mikro. Ein Cart-Pad leuchtet in der Modusfarbe und blinkt. Pegel-Fader ziehen, Doppelklick 0 dB, Rechtsklick öffnet weiter das MIDI-Lernen. In Party dreht sich das Jogwheel beim Spielen und steht bei Pause; die Großtasten leuchten bei aktiven Funktionen.
 8. **Mixer:** Dock „Mixer“: jeder Kanalzug zeigt nur Namensstreifen, M/S/Aufnahme, LED-Kette und Fader. Klick auf den Namensstreifen färbt den Rand und öffnet rechts das Insert-Rack (Pegel, Pan, Ausgang, Sends, Effektkette, Plugins, „Spur löschen“). Rack und Fader folgen einander; Doppelklick auf Pan setzt Mitte. Effekt schalten und Send ändern verhalten sich wie vorher. Viele Spuren scrollen waagerecht, das Rack bleibt stehen.
 9. **Logo:** Links oben in der Kopfleiste steht die Bildmarke (Säulen als W, rote Lampe). Die Säulen wechseln mit dem Modus, im hellen Thema sind sie dunkler. Fensterleiste, Alt-Tab und die AppImage im Dateimanager zeigen die neue Kachel. Unter Windows nach dem MSI-Installieren: Startmenü „WOA - Wir on Air“ und „Apps“ zeigen das Icon.
-10. **Über WOA:** Einstellungen, „Über WOA …“ zeigt die Version, GPL-3.0-only, die OFL-Nennung der vier Schriften und Phosphor Icons (MIT).
+10. **Über WOA:** Hilfe, „Über WOA …“ zeigt die Version, GPL-3.0-only, die OFL-Nennung der vier Schriften und Phosphor Icons (MIT).
 
 Selbst geprüft von Claude (Code und Tests, ohne Fenster): Zuordnung der drei Modi zu den sechs Paletten; alte Einstellungen ohne Thema starten dunkel; alle zwölf Schriftschnitte aus `tokens.json` eingebunden, Absturz bei fehlenden Schriften im ersten Bild abgefangen; keine verlorenen Funktionen in Kanalzug, Rack, Cart-Menü und MIDI-Lernen; Logo-Koordinaten im Feld, `app_icon()` ohne Absturzpfad; Herkunft und Lizenzen in `docs/herkunft.md`; clippy und Tests von `woa-gui` grün, CI je Paket grün.
 
@@ -788,7 +801,7 @@ Noch nicht drin: MIDI-Clips mit Noten im Projekt (die Noten werden sofort zu Aud
 Abnahmekriterium (#1): Projekt-Roundtrip, Feedback erzeugt GitHub-Issue, Logs kommen auf dem Server an.
 
 1. Roundtrip: `cargo run -q -p woa-headless -- new /tmp/m0 && cargo run -q -p woa-headless -- roundtrip /tmp/m0` meldet „roundtrip: gleich“.
-2. Feedback: In WOA „Feedback …“, Text schreiben, Senden: „Danke! Gemeldet als #n“, Issue n steht in daw.woa (Gegenprobe #40).
+2. Feedback: In WOA die grüne Taste „Feedback“ rechts oben, Text schreiben, Senden: „Danke! Gemeldet als #n“, Issue n steht in daw.woa (Gegenprobe #40).
 3. Logs: WOA starten, im Dialog „Fehlercodes senden?“ „Ja, anonym senden“ wählen (sonst „Einstellungen“ → Haken). Unter `~/.config/woa/config.json` steht `"telemetry_enabled": true` und eine `install_id`.
 4. Erst nach dem Ausrollen des Server-PRs (bretteins.infra, `--tags feedback_woa,edge`): `cargo run -q -p woa-headless -- log-test` meldet „Server hat angenommen“ (heute noch 404).
 
