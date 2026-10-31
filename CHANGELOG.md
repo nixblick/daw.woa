@@ -1,10 +1,14 @@
 # Changelog
 
-## 0.34.68 — 2026-10-31
+## 0.34.69 — 2026-10-31
 
 ### Behoben
 
 - **ON AIR nur bei Sendung (#225):** Die ON-AIR-Pille oben rechts leuchtete auch, wenn nur das Mikro offen war. Sie leuchtet jetzt nur noch bei „Auf Sendung“ (Stream läuft); das Mikro hat seine eigene Anzeige am Mikro-Knopf.
+
+## 0.34.68 — 2026-10-31
+
+- **Auto-Weiter abschaltbar (#148):** Im Kopf der Sende-Playlist steht neben „Gespielte ausblenden“ der Umschalter „Auto-Weiter“ (Vorgabe an, wie bisher). Aus: Nach jedem Titel hält die Playlist an, der nächste Titel steht als Cue bereit und startet mit „Play“; „Weiter“ springt sofort zum nächsten. Ausschalten mitten im Titel verwirft den schon bereitgelegten nächsten, der laufende spielt zu Ende. Gespeichert mit der Sendung (`auto_next`, alte Dateien laden unverändert). Decks, Party und Stopp-Verhalten bleiben unverändert. Test: `crates/radio/tests/auto_next.rs` unter `assert_no_alloc`.
 
 ## 0.34.67 — 2026-10-31
 
