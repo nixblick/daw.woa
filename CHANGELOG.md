@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.67 — 2026-10-31
+
+- **QR-Code zum Spenden (#231):** Im Fenster „Über WOA“ steht unter den Knöpfen PayPal und Ko-fi ein QR-Code, der den PayPal-Link kodiert; mit dem Handy scannen genügt. Lokal erzeugt mit demselben Baustein wie der Code der Fernbedienung, ohne neue Abhängigkeit.
+
 ## 0.34.66 — 2026-10-31
 
 - **KI live ohne Token (#232):** Die App startet den Live-Server jetzt bei jedem Start selbst, auch wenn kein Zugriffstoken erzeugt wurde. Sie nutzt dann einen eigenen Schlüssel je Start (nur 127.0.0.1, Origin-Prüfung, Lock-Datei 0600, nie angezeigt). `woa-headless mcp` reicht so an das offene Fenster durch, statt daneben auf der Datei zu arbeiten. Kann der Server nicht starten, steht „KI aus“ in der Kopfleiste.
