@@ -664,10 +664,19 @@ mod tests {
         let seen = std::thread::spawn(move || {
             let (mut c, _) = l.accept().unwrap();
             c.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-            let mut buf = vec![0u8; 8192];
-            let n = c.read(&mut buf).unwrap_or(0);
-            let _ = c.write_all(b"HTTP/1.1 500 x\r\ncontent-length: 0\r\n\r\n");
-            String::from_utf8_lossy(&buf[..n]).into_owned()
+            // Bis der Body da ist lesen: ungelesene Bytes beim Schließen
+            // werden unter Windows zu einem RST statt der Antwort.
+            let mut got = Vec::new();
+            let mut buf = [0u8; 4096];
+            while !String::from_utf8_lossy(&got).contains("\"ping\"") {
+                match c.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => got.extend_from_slice(&buf[..n]),
+                }
+            }
+            let _ = c.write_all(b"HTTP/1.1 500 x\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
+            let _ = c.flush();
+            String::from_utf8_lossy(&got).into_owned()
         });
         let mut out = Vec::new();
         forward(
