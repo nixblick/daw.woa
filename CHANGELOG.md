@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.34.40 — 2026-10-31
+
+### Behoben
+
+- **Vorhören (PFL):** Die Wahl unter Einstellungen → Vorhören (PFL) wirkte nicht, solange etwas lief (auch nur die Playlist), und nichts sagte das. Jetzt merkt sich WOA die Wahl, zeigt im Menü „Wirkt, sobald nichts mehr läuft“ und öffnet die Ausgabe automatisch neu, sobald die Wiedergabe steht. Die laufende Sendung wird nie unterbrochen. Läuft nichts, greift die Wahl sofort.
+- **Vorhören (PFL):** Fehler beim Öffnen des Kopfhörer-Ausgangs (zu wenige Kanäle, Gerät geht nicht, Kanalzahl nicht lesbar) stehen jetzt im Menü, im Protokoll und als Tooltip an den deaktivierten Vorhören-Knöpfen von Deck, Cart und Playlist. Ist das Vorhören aus, sagt der Tooltip „Vorhören ist aus: Einstellungen → Vorhören (PFL)“.
+
 ## 0.34.39 — 2026-10-31
 
 ### Behoben
