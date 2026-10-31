@@ -36,8 +36,35 @@ pub const ABOUT_TAGLINE: &str = "WOA – built with love, coffee and AI";
 pub const DONATE_PAYPAL: &str = "https://www.paypal.com/qrcodes/p2pqrc/KUND7JXYHRGDN";
 /// Andrés Ko-fi-Seite, wie in bretteins.desktop und fotobrett.desktop.
 pub const DONATE_KOFI: &str = "https://ko-fi.com/nixblick";
-/// Höhe einer Spur.
-const ROW_H: f32 = 92.0;
+/// Höhe einer Spur (Design `TrackHeader`: 64 px, zwei Zeilen).
+const ROW_H: f32 = 64.0;
+/// Pan auch im Spurkopf (zusätzlich zum Rack-Ausgang). Offene Entscheidung von André
+/// (31.10.2026): `false` nimmt die Anzeige aus dem Spurkopf.
+const HEADER_PAN: bool = true;
+/// So lange steht der Hinweis „Rückgängig (Strg+Z)“ nach dem Löschen einer Spur.
+const UNDO_TOAST_SECS: f64 = 8.0;
+/// Clip-Inspektor: darunter entfallen Gruppentitel (Tooltips tragen die Namen).
+const INSPECTOR_NARROW: f32 = 1040.0;
+
+/// Hinweis nach dem Löschen einer Spur (Design `DeleteTrack`).
+struct UndoToast {
+    /// Gelöschte Spuren, solange der Hinweis steht.
+    count: usize,
+    /// Name der zuletzt gelöschten Spur.
+    name: String,
+    /// Bis zu dieser Zeit (egui-Zeit in Sekunden) bleibt er stehen.
+    until: f64,
+}
+
+impl UndoToast {
+    fn text(&self) -> String {
+        if self.count > 1 {
+            format!("{} Spuren gelöscht", self.count)
+        } else {
+            format!("Spur „{}“ gelöscht", self.name)
+        }
+    }
+}
 const ZOOM_RANGE: std::ops::RangeInclusive<f32> = 2.0..=160.0;
 
 use crate::controls::{
@@ -77,8 +104,16 @@ pub struct WoaApp {
     plugin_drag: Option<(woa_model::InsertId, u32, f64)>,
     /// Laufende Änderung eines Send-Pegels (Spur, Ziel, dB).
     send_drag: Option<(TrackId, TrackId, f64)>,
-    /// Eingabefeld "+ Bus".
-    new_bus_name: String,
+    /// Hinweis „Rückgängig (Strg+Z)“ nach dem Löschen einer Spur.
+    undo_toast: Option<UndoToast>,
+    /// egui-Zeit dieses Bildes (Sekunden), für den Rückgängig-Hinweis.
+    now: f64,
+    /// Eingebaute Effekte, deren Regler im Slot aufgeklappt sind.
+    fx_open: std::collections::HashSet<woa_model::InsertId>,
+    /// Suchtext in der Liste „+ Effekt“.
+    fx_search: String,
+    /// Raster für „Quantisieren“ im Clip-Inspektor (Teiler: 4 = 1/4 … 32 = 1/32).
+    quantize_div: u32,
     /// Stereo-Panorama beim Ziehen (wird beim Loslassen als ein Undo-Schritt übernommen).
     pan_drag: Option<(TrackId, f64)>,
     /// Tempo beim Ziehen (wird beim Loslassen als ein Undo-Schritt übernommen).
@@ -509,7 +544,11 @@ impl WoaApp {
             fx_drag: None,
             plugin_drag: None,
             send_drag: None,
-            new_bus_name: String::new(),
+            undo_toast: None,
+            now: 0.0,
+            fx_open: std::collections::HashSet::new(),
+            fx_search: String::new(),
+            quantize_div: 16,
             pan_drag: None,
             tempo_drag: None,
             loop_enabled: false,
@@ -2083,6 +2122,7 @@ impl WoaApp {
         }
         if undo {
             self.state.undo();
+            self.undo_toast = None;
         }
         if redo {
             self.state.redo();
@@ -2095,6 +2135,75 @@ impl WoaApp {
         }
         if new {
             self.state.new_project();
+        }
+    }
+
+    /// Hinweis nach dem Löschen einer Spur (Design `DeleteTrack`): unten mittig über der
+    /// Zeitleiste, 8 s mit ablaufendem Strich, „Rückgängig (Strg+Z)“, Schließen mit × oder Esc.
+    fn undo_toast_ui(&mut self, ctx: &egui::Context) {
+        let Some(t) = &self.undo_toast else {
+            return;
+        };
+        let left = t.until - self.now;
+        if left <= 0.0 || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.undo_toast = None;
+            return;
+        }
+        let text = t.text();
+        let mut undo = false;
+        let mut close = false;
+        egui::Area::new(egui::Id::new("undo_toast"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -40.0))
+            .show(ctx, |ui| {
+                let r = egui::Frame::new()
+                    .fill(theme::lcd_bg())
+                    .stroke(egui::Stroke::new(1.0, theme::border_strong()))
+                    .corner_radius(6)
+                    .inner_margin(egui::Margin::symmetric(12, 7))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(&text).color(theme::lcd_text()));
+                            ui.label(egui::RichText::new("·").color(theme::text_dim()));
+                            if ui
+                                .link(
+                                    egui::RichText::new("Rückgängig (Strg+Z)")
+                                        .color(theme::accent()),
+                                )
+                                .clicked()
+                            {
+                                undo = true;
+                            }
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new(theme::ic::X).color(theme::text_dim()),
+                                    )
+                                    .frame_when_inactive(false),
+                                )
+                                .on_hover_text("Schließen (Esc)")
+                                .clicked()
+                            {
+                                close = true;
+                            }
+                        });
+                    })
+                    .response
+                    .rect;
+                let frac = (left / UNDO_TOAST_SECS).clamp(0.0, 1.0) as f32;
+                let bar = egui::Rect::from_min_size(
+                    egui::pos2(r.left() + 6.0, r.bottom() - 3.0),
+                    egui::vec2((r.width() - 12.0) * frac, 2.0),
+                );
+                ui.painter().rect_filled(bar, 1.0, theme::accent());
+            });
+        if undo {
+            self.state.undo();
+            self.undo_toast = None;
+        } else if close {
+            self.undo_toast = None;
+        } else {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
     }
 
@@ -2834,7 +2943,8 @@ impl WoaApp {
         }
     }
 
-    /// Spurkopf: Farbstreifen, Aufnahmeziel, Name, Mute/Solo, Pegel, Gain, Pan.
+    /// Spurkopf (Design `TrackHeader`, 64 px, zwei Zeilen): Zeile 1 Aufnahme scharf, Name, M, S,
+    /// Papierkorb; Zeile 2 Eingang, Gain, Pan; rechts die LED-Kette, links die Spurfarbe.
     #[allow(clippy::too_many_arguments)]
     fn track_header(
         &mut self,
@@ -2858,23 +2968,23 @@ impl WoaApp {
         } else {
             self.armed.contains(&id)
         };
-        // Gewählt = Spurfarbe (Fläche und Rand), wie im Kanalzug; scharf zeigt nur der Punkt.
-        let is_selected = self.marked_track() == Some(id);
+        // Gewählt = Spurfarbe 14 % und 1-px-Rahmen, wie Kanalzug und Rack; scharf zeigt nur der Punkt.
+        let is_selected = self.rack_track() == Some(id);
         let frame = egui::Frame::new()
             .fill(if is_selected {
-                theme::mix(theme::panel(), color, 0.16)
+                theme::selection_fill(color)
             } else {
                 theme::panel()
             })
             .stroke(if is_selected {
-                egui::Stroke::new(1.5, color)
+                theme::selection_stroke(color)
             } else {
                 egui::Stroke::new(1.0, theme::border())
             })
             .corner_radius(5)
             .inner_margin(egui::Margin {
                 left: 12,
-                right: 8,
+                right: 22,
                 top: 5,
                 bottom: 5,
             });
@@ -2890,34 +3000,26 @@ impl WoaApp {
         let resp = {
             let ui = &mut child;
             frame.show(ui, |ui| {
-                ui.set_width(HEADER_W - 20.0);
-                ui.set_max_width(HEADER_W - 20.0);
+                ui.set_width(HEADER_W - 34.0);
+                ui.set_max_width(HEADER_W - 34.0);
                 ui.set_height(ROW_H - 10.0);
-                ui.spacing_mut().item_spacing = egui::vec2(5.0, 5.0);
+                ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+                ui.spacing_mut().interact_size.y = 22.0;
                 ui.horizontal(|ui| {
                     let (dot, arm) =
                         ui.allocate_exact_size(egui::vec2(20.0, 22.0), egui::Sense::click());
-                    ui.painter().rect_filled(
-                        dot.shrink2(egui::vec2(1.0, 2.0)),
-                        3.0,
-                        if armed {
-                            theme::mix(theme::on_air(), theme::well(), 0.35)
-                        } else {
-                            theme::well()
-                        },
-                    );
                     ui.painter().circle(
                         dot.center(),
-                        5.2,
+                        5.5,
                         if armed {
-                            theme::on_air()
+                            theme::on_air_fill()
                         } else {
                             theme::well()
                         },
                         egui::Stroke::new(
                             1.5,
                             if armed {
-                                theme::text()
+                                theme::on_air()
                             } else {
                                 theme::text_dim()
                             },
@@ -2926,7 +3028,7 @@ impl WoaApp {
                     if arm
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text(
-                            "Scharf schalten: nimmt bei der nächsten Aufnahme mit auf. \
+                            "Aufnahme scharf: nimmt bei der nächsten Aufnahme mit auf. \
                              Mehrere Spuren gleichzeitig möglich.",
                         )
                         .clicked()
@@ -2937,17 +3039,7 @@ impl WoaApp {
                     name_resp = self.track_name(ui, id, name);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 3.0;
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new(theme::ic::TRASH)
-                                        .size(12.0)
-                                        .color(theme::text_dim()),
-                                )
-                                .fill(theme::well())
-                                .min_size(egui::vec2(20.0, 21.0)),
-                            )
-                            .on_hover_text("Spur löschen (Entf, wenn die Spur gewählt ist)")
+                        if danger_icon_button(ui, theme::ic::TRASH, 14.0, "Spur löschen (Entf)")
                             .clicked()
                         {
                             self.delete_track(id);
@@ -3008,21 +3100,12 @@ impl WoaApp {
                     });
                 });
                 ui.horizontal(|ui| {
-                    self.track_meter(ui, id, gain, mute);
-                    let mut g = match self.gain_drag {
-                        Some((d, v)) if d == id => v,
-                        _ => self.shown_gain(id, gain),
-                    };
-                    let r = ui
-                        .add(
-                            egui::Slider::new(&mut g, MIN_GAIN_DB..=MAX_GAIN_DB)
-                                .suffix(" dB")
-                                .fixed_decimals(1),
-                        )
-                        .on_hover_text(
-                            "Lautstärke der Spur (Doppelklick: 0 dB, Rechtsklick: MIDI lernen \
-                             für Fader, Pan und Solo)",
-                        );
+                    self.source_combo(ui, id, is_midi, 96.0);
+                    let r = self.gain_field(ui, id, gain, "");
+                    let r = r.on_hover_text(
+                        "Gain der Spur, derselbe Wert wie der Fader. Ziehen · Doppelklick = 0 dB · \
+                         Klick = eintippen · Rechtsklick: MIDI lernen für Fader, Pan und Solo",
+                    );
                     if let Some(i) = self.track_index(id) {
                         let bound = |t| self.controls.mapper.source_of(t).map(|s| s.label());
                         let items = [
@@ -3042,21 +3125,11 @@ impl WoaApp {
                             self.controls.mapper.learn(t);
                         }
                     }
-                    if r.double_clicked() {
-                        g = 0.0;
-                        self.gain_drag = None;
-                        self.state.set_gain(id, g);
-                    } else {
-                        if r.changed() {
-                            self.gain_drag = Some((id, g));
-                        }
-                        if r.drag_stopped() || (r.changed() && !r.dragged()) {
-                            self.gain_drag = None;
-                            self.state.set_gain(id, g);
-                        }
+                    // Pan doppelt (Spurkopf und Rack) ist Andrés offene Entscheidung: `HEADER_PAN`.
+                    if HEADER_PAN {
+                        self.pan_field(ui, id, pan, "");
                     }
                 });
-                self.track_source_row(ui, id, pan);
             })
         };
         let r = resp.response.rect;
@@ -3065,7 +3138,6 @@ impl WoaApp {
             self.select_track(id);
         }
         // Rechtsklick irgendwo auf den Spurkopf (Hintergrund oder Name) öffnet das Spurmenü.
-
         // Der Rahmen selbst meldet nur Hover, deshalb trägt das Slot-Rechteck den Klick.
         self.track_menu(&slot_resp, id, name);
         if let Some(nr) = name_resp {
@@ -3081,177 +3153,250 @@ impl WoaApp {
             },
             color,
         );
+        // LED-Kette rechts, über beide Zeilen.
+        let level = self.track_level(id, gain, mute);
+        let m = egui::Rect::from_min_max(
+            egui::pos2(r.right() - 15.0, r.top() + 7.0),
+            egui::pos2(r.right() - 8.0, r.bottom() - 7.0),
+        );
+        theme::led_meter_vertical(ui.painter(), m, level);
     }
 
-    /// Entfernt eine Spur samt Aufnahme-Scharfschaltung und Auswahl.
+    /// Entfernt eine Spur samt Aufnahme-Scharfschaltung und Auswahl. Alle Wege (Papierkorb,
+    /// Spurmenü, Entf) laufen hierher; danach steht 8 s der Rückgängig-Hinweis.
     fn delete_track(&mut self, id: TrackId) {
+        let name = self
+            .state
+            .project()
+            .track(id)
+            .map(|t| t.name.clone())
+            .unwrap_or_default();
         self.armed.remove(&id);
         if self.selected_track == Some(id) {
             self.selected_track = None;
         }
-        self.state.remove_track(id);
-    }
-
-    /// Kontextmenü einer Spur: umbenennen, Inhalt anlegen, löschen (Audio, MIDI, Bus).
-    fn track_menu(&mut self, resp: &egui::Response, id: TrackId, name: &str) {
-        let kind = self.state.project().track(id).map(|t| t.kind);
-        resp.context_menu(|ui| {
-            if ui
-                .button(format!("{} Spur umbenennen", theme::ic::PENCIL_SIMPLE))
-                .clicked()
-            {
-                self.rename = Some((id, name.to_string(), false));
-                ui.close();
-            }
-            match kind {
-                Some(woa_model::TrackKind::Midi) => {
-                    if ui
-                        .button(format!(
-                            "{} + Leerer MIDI-Clip (4 Takte)",
-                            theme::ic::PIANO_KEYS
-                        ))
-                        .clicked()
-                    {
-                        self.create_midi_clip_at_playhead(Some(id));
-                        ui.close();
-                    }
-                }
-                Some(woa_model::TrackKind::Bus) => {}
-                _ => {
-                    if ui
-                        .button(format!(
-                            "{} Audio-Datei importieren …",
-                            theme::ic::FOLDER_OPEN
-                        ))
-                        .clicked()
-                    {
-                        self.selected_track = Some(id);
-                        self.import_audio();
-                        ui.close();
-                    }
-                }
-            }
-            ui.separator();
-            if ui
-                .button(
-                    egui::RichText::new(format!("{} Spur löschen", theme::ic::TRASH))
-                        .color(theme::on_air()),
-                )
-                .clicked()
-            {
-                self.delete_track(id);
-                ui.close();
-            }
-        });
-    }
-
-    /// Quellenwahl, Mithören und Stereo-Panorama einer Spur.
-    fn track_source_row(&mut self, ui: &mut egui::Ui, id: TrackId, pan: f64) {
-        let busy = self.recording();
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 5.0;
-            let current = self.track_source.get(&id).cloned().unwrap_or_default();
-            let mut chosen = None;
-            let mut opened = false;
-            ui.add_enabled_ui(!busy, |ui| {
-                opened = egui::ComboBox::from_id_salt(("source", id))
-                    .selected_text(
-                        egui::RichText::new(sources::short_label(&current))
-                            .small()
-                            .color(theme::text_dim()),
-                    )
-                    .width(108.0)
-                    .truncate()
-                    .show_ui(ui, |ui| {
-                        let list = self.sources().to_vec();
-                        for s in &list {
-                            if ui.selectable_label(s.key == current, &s.label).clicked() {
-                                chosen = Some(s.key.clone());
-                            }
-                        }
-                        if !sources::has_apps(&list) {
-                            ui.weak(sources::NO_APPS_HINT);
-                        }
-                    })
-                    .response
-                    .on_hover_text(
-                        "Aufnahmequelle der Spur: Mikrofon, Systemklang oder ein Programm",
-                    )
-                    .clicked();
-            });
-            if opened {
-                // Beim Öffnen frisch abfragen, nicht erst nach Ablauf der Sekunde.
-                self.source_list.1 = None;
-            }
-            if let Some(key) = chosen {
-                if key == sources::DEFAULT_KEY {
-                    self.track_source.remove(&id);
-                    self.track_monitor.remove(&id);
-                } else {
-                    self.track_source.insert(id, key);
-                }
-            }
-            let can = self.track_source.contains_key(&id);
-            let mut on = self.track_monitor.contains(&id);
-            let r = ui
-                .add_enabled(
-                    !busy && can,
-                    egui::Checkbox::new(&mut on, egui::RichText::new("hören").small()),
-                )
-                .on_hover_text(
-                    "Quelle beim Aufnehmen über den Ausgang hören. Für Mikrofone und \
-                     Eingänge; Systemklang hört man ohnehin (Rückkopplung!).",
-                )
-                .on_disabled_hover_text("Erst eine Quelle aus der Liste wählen");
-            if r.changed() {
-                if on {
-                    self.track_monitor.insert(id);
-                } else {
-                    self.track_monitor.remove(&id);
-                }
-            }
-            let mut p = match self.pan_drag {
-                Some((d, v)) if d == id => v,
-                _ => pan,
+        if self.state.remove_track(id) {
+            let count = match &self.undo_toast {
+                Some(t) if t.until > self.now => t.count + 1,
+                _ => 1,
             };
-            let mut p_pct = (p * 100.0).round();
-            let pr = ui
-                .add(
-                    egui::DragValue::new(&mut p_pct)
-                        .range(-100.0..=100.0)
-                        .speed(1.0)
-                        .fixed_decimals(0)
-                        .custom_formatter(|v, _| {
-                            let iv = v.round() as i32;
-                            if iv == 0 {
-                                "Pan C".to_string()
-                            } else if iv < 0 {
-                                format!("L{}", -iv)
-                            } else {
-                                format!("R{iv}")
-                            }
-                        }),
-                )
-                .on_hover_text("Stereo-Panorama links/rechts (Doppelklick: Mitte)");
-            if pr.double_clicked() {
-                self.pan_drag = None;
-                self.state.set_pan(id, 0.0);
-            } else {
-                p = (p_pct / 100.0).clamp(-1.0, 1.0);
-                if pr.changed() {
-                    self.pan_drag = Some((id, p));
-                }
-                if pr.drag_stopped() || (pr.changed() && !pr.dragged()) {
-                    self.pan_drag = None;
-                    self.state.set_pan(id, p);
-                }
-            }
-        });
+            self.undo_toast = Some(UndoToast {
+                count,
+                name,
+                until: self.now + UNDO_TOAST_SECS,
+            });
+        }
     }
 
-    /// Pegelanzeige am Spuranfang: Spitzenpegel nach Gain und Mute, dB-Skala -60..0,
-    /// grün, ab -12 dB gelb, ab -3 dB rot; fällt langsam ab.
-    fn track_meter(&mut self, ui: &mut egui::Ui, track: TrackId, gain_db: f64, mute: bool) {
+    /// Kontextmenü einer Spur (Rechtsklick): umbenennen, Inhalt anlegen, zuletzt löschen.
+    fn track_menu(&mut self, resp: &egui::Response, id: TrackId, name: &str) {
+        resp.context_menu(|ui| self.track_menu_items(ui, id, name));
+    }
+
+    /// Einträge des Spurmenüs, auch für „⋯“ im Rack-Kopf. Löschen steht zuletzt und in Rot.
+    fn track_menu_items(&mut self, ui: &mut egui::Ui, id: TrackId, name: &str) {
+        let kind = self.state.project().track(id).map(|t| t.kind);
+        if ui
+            .button(format!("{} Spur umbenennen", theme::ic::PENCIL_SIMPLE))
+            .clicked()
+        {
+            self.rename = Some((id, name.to_string(), false));
+            ui.close();
+        }
+        match kind {
+            Some(woa_model::TrackKind::Midi) => {
+                if ui
+                    .button(format!(
+                        "{} + Leerer MIDI-Clip (4 Takte)",
+                        theme::ic::PIANO_KEYS
+                    ))
+                    .clicked()
+                {
+                    self.create_midi_clip_at_playhead(Some(id));
+                    ui.close();
+                }
+            }
+            Some(woa_model::TrackKind::Bus) => {}
+            _ => {
+                if ui
+                    .button(format!(
+                        "{} Audio-Datei importieren …",
+                        theme::ic::FOLDER_OPEN
+                    ))
+                    .clicked()
+                {
+                    self.selected_track = Some(id);
+                    self.import_audio();
+                    ui.close();
+                }
+            }
+        }
+        ui.separator();
+        if ui
+            .button(
+                egui::RichText::new(format!("{} Spur löschen", theme::ic::TRASH))
+                    .color(theme::on_air()),
+            )
+            .clicked()
+        {
+            self.delete_track(id);
+            ui.close();
+        }
+    }
+
+    /// Eingang einer Spur (Spurkopf und Rack): Quelle aus der Liste, darin „Mithören“.
+    fn source_combo(&mut self, ui: &mut egui::Ui, id: TrackId, is_midi: bool, width: f32) {
+        let busy = self.recording();
+        let current = self.track_source.get(&id).cloned().unwrap_or_default();
+        let mut chosen = None;
+        let mut opened = false;
+        let can = self.track_source.contains_key(&id);
+        let mut on = self.track_monitor.contains(&id);
+        let was_on = on;
+        let icon = if is_midi {
+            theme::ic::PIANO_KEYS
+        } else {
+            theme::ic::MICROPHONE
+        };
+        ui.add_enabled_ui(!busy, |ui| {
+            opened = egui::ComboBox::from_id_salt(("source", id))
+                .selected_text(
+                    egui::RichText::new(format!(
+                        "{icon} {}{}",
+                        sources::short_label(&current),
+                        if on { " · hören" } else { "" }
+                    ))
+                    .small()
+                    .color(theme::text_dim()),
+                )
+                .width(width)
+                .truncate()
+                .show_ui(ui, |ui| {
+                    let list = self.sources().to_vec();
+                    for s in &list {
+                        if ui.selectable_label(s.key == current, &s.label).clicked() {
+                            chosen = Some(s.key.clone());
+                        }
+                    }
+                    if !sources::has_apps(&list) {
+                        ui.weak(sources::NO_APPS_HINT);
+                    }
+                    ui.separator();
+                    ui.add_enabled(can, egui::Checkbox::new(&mut on, "Mithören"))
+                        .on_hover_text(
+                            "Quelle beim Aufnehmen über den Ausgang hören. Für Mikrofone und \
+                             Eingänge; Systemklang hört man ohnehin (Rückkopplung!).",
+                        )
+                        .on_disabled_hover_text("Erst eine Quelle aus der Liste wählen");
+                })
+                .response
+                .on_hover_text(
+                    "Eingang der Spur: Mikrofon, Systemklang oder ein Programm; \
+                     darin „Mithören“",
+                )
+                .clicked();
+        });
+        if opened {
+            // Beim Öffnen frisch abfragen, nicht erst nach Ablauf der Sekunde.
+            self.source_list.1 = None;
+        }
+        if on != was_on {
+            if on {
+                self.track_monitor.insert(id);
+            } else {
+                self.track_monitor.remove(&id);
+            }
+        }
+        if let Some(key) = chosen {
+            if key == sources::DEFAULT_KEY {
+                self.track_source.remove(&id);
+                self.track_monitor.remove(&id);
+            } else {
+                self.track_source.insert(id, key);
+            }
+        }
+    }
+
+    /// Zahlenfeld für den Spur-Gain in dB (Spurkopf und Rack): ziehen, Doppelklick = 0 dB,
+    /// Klick = eintippen. Derselbe Wert wie der Fader.
+    fn gain_field(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: TrackId,
+        gain: f64,
+        prefix: &str,
+    ) -> egui::Response {
+        let mut g = match self.gain_drag {
+            Some((d, v)) if d == id => v,
+            _ => self.shown_gain(id, gain),
+        };
+        let r = ui.add(
+            egui::DragValue::new(&mut g)
+                .range(MIN_GAIN_DB..=MAX_GAIN_DB)
+                .speed(0.2)
+                .fixed_decimals(1)
+                .prefix(prefix)
+                .suffix(" dB"),
+        );
+        if r.double_clicked() {
+            self.gain_drag = None;
+            self.state.set_gain(id, 0.0);
+        } else {
+            if r.changed() {
+                self.gain_drag = Some((id, g));
+            }
+            if r.drag_stopped() || (r.changed() && !r.dragged()) {
+                self.gain_drag = None;
+                self.state.set_gain(id, g);
+            }
+        }
+        r
+    }
+
+    /// Zahlenfeld für das Panorama: C, L1–L100, R1–R100; Doppelklick = Mitte.
+    fn pan_field(&mut self, ui: &mut egui::Ui, id: TrackId, pan: f64, prefix: &'static str) {
+        let mut p = match self.pan_drag {
+            Some((d, v)) if d == id => v,
+            _ => pan,
+        };
+        let mut p_pct = (p * 100.0).round();
+        let pr = ui
+            .add(
+                egui::DragValue::new(&mut p_pct)
+                    .range(-100.0..=100.0)
+                    .speed(1.0)
+                    .fixed_decimals(0)
+                    .custom_formatter(move |v, _| {
+                        let iv = v.round() as i32;
+                        if iv == 0 {
+                            format!("{prefix}C")
+                        } else if iv < 0 {
+                            format!("{prefix}L{}", -iv)
+                        } else {
+                            format!("{prefix}R{iv}")
+                        }
+                    }),
+            )
+            .on_hover_text(
+                "Panorama links/rechts. Ziehen · Doppelklick = Mitte · Klick = eintippen",
+            );
+        if pr.double_clicked() {
+            self.pan_drag = None;
+            self.state.set_pan(id, 0.0);
+        } else {
+            p = (p_pct / 100.0).clamp(-1.0, 1.0);
+            if pr.changed() {
+                self.pan_drag = Some((id, p));
+            }
+            if pr.drag_stopped() || (pr.changed() && !pr.dragged()) {
+                self.pan_drag = None;
+                self.state.set_pan(id, p);
+            }
+        }
+    }
+
+    /// Pegel einer Spur für die LED-Kette: Spitzenpegel nach Gain und Mute, fällt langsam ab.
+    fn track_level(&mut self, track: TrackId, gain_db: f64, mute: bool) -> f32 {
         let raw = self.player.as_ref().map_or(0.0, |p| p.take_level(track));
         let project = self.state.project();
         let solo = project.tracks.iter().any(|t| t.solo);
@@ -3264,9 +3409,7 @@ impl WoaApp {
         let fresh = fresh.max(self.rec_levels.insert(track, 0.0).unwrap_or(0.0));
         let shown = self.track_levels.entry(track).or_insert(0.0);
         *shown = fresh.max(*shown * 0.85);
-        let level = *shown;
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(72.0, 11.0), egui::Sense::hover());
-        level_bar(ui.painter(), rect, level);
+        *shown
     }
 }
 
@@ -3562,7 +3705,13 @@ impl WoaApp {
         let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, ROW_H), egui::Sense::click());
         self.track_rects.push((track, rect));
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 5.0, theme::well());
+        // Gewählte Spur: 6 % Spurfarbe auf `well` (Design `SelectionSync`).
+        let lane = if self.rack_track() == Some(track) {
+            theme::mix(theme::well(), color, 0.06)
+        } else {
+            theme::well()
+        };
+        painter.rect_filled(rect, 5.0, lane);
         painter.rect_stroke(
             rect,
             5.0,
@@ -4035,91 +4184,338 @@ impl WoaApp {
         }
     }
 
-    /// Clip-Inspektor: eine Zeile mit Gruppen (Fade, Gain, Zeit, Bearbeiten). Kurze Beschriftungen
-    /// und Symbole, die Erklärung steht im Tooltip.
+    /// Clip-Inspektor (Design `ClipInspector`, 44 px, eine Zeile): links die Kennung (Spurfarbe,
+    /// Typ, Name), dann Fade bzw. Noten, Gain, Zeit; rechts die Werkzeuge, ganz rechts Löschen.
+    /// Zustände: nichts gewählt, ein Audio-Clip, ein MIDI-Clip, mehrere Clips („n Clips“).
     fn clip_bar(&mut self, ui: &mut egui::Ui) {
-        let Some(id) = self.selected_clip else {
-            ui.horizontal(|ui| {
-                theme::status_pill(ui, "CLIP", theme::text_dim(), false);
+        ui.set_min_height(34.0);
+        let narrow = ui.available_width() < INSPECTOR_NARROW;
+        let ids: Vec<ClipId> = self
+            .selection_ids()
+            .into_iter()
+            .filter(|c| self.state.project().clip(*c).is_some())
+            .collect();
+        if ids.is_empty() {
+            if self.selected_clip.is_some() || !self.selected_clips.is_empty() {
+                self.selected_clip = None;
+                self.selected_clips.clear();
+            }
+            // Leer-Zustand in voller Höhe, damit die Zeitleiste nicht springt.
+            ui.horizontal_centered(|ui| {
                 ui.label(
-                    egui::RichText::new(format!("{} kein Clip gewählt", theme::ic::INFO))
+                    egui::RichText::new(theme::ic::CURSOR_CLICK)
+                        .size(16.0)
+                        .color(theme::text_dim()),
+                );
+                ui.label(egui::RichText::new("Kein Clip gewählt").color(theme::text_dim()))
+                    .on_hover_text(
+                        "Clip anklicken zum Bearbeiten\n\
+                         Doppelklick in MIDI-Spur: neuer MIDI-Clip\n\
+                         S: Schneiden am Kopf · Entf: Löschen\n\
+                         Strg+C / V / D: Kopieren, Einfügen, Verdoppeln\n\
+                         Audio-Datei hineinziehen · Strg+Mausrad: Zoom",
+                    );
+                ui.label(
+                    egui::RichText::new("Clip anklicken, um ihn hier zu bearbeiten")
                         .small()
                         .color(theme::text_dim()),
-                )
-                .on_hover_text(
-                    "Clip anklicken zum Bearbeiten\n\
-                     Doppelklick in MIDI-Spur: neuer MIDI-Clip\n\
-                     S: Schneiden am Kopf · Entf: Löschen\n\
-                     Strg+C / V / D: Kopieren, Einfügen, Verdoppeln\n\
-                     Audio-Datei hineinziehen · Strg+Mausrad: Zoom",
                 );
             });
             return;
-        };
-        let Some((_, c)) = self.state.project().clip(id) else {
-            self.selected_clip = None;
-            self.selected_clips.clear();
+        }
+        let clips: Vec<(usize, woa_model::Clip)> = ids
+            .iter()
+            .filter_map(|c| {
+                let (t, clip) = self.state.project().clip(*c)?;
+                let idx = self.track_index(t.id).unwrap_or(0);
+                Some((idx, clip.clone()))
+            })
+            .collect();
+        let single = clips.len() == 1;
+        let primary = self
+            .selected_clip
+            .and_then(|p| clips.iter().find(|(_, c)| c.id == p))
+            .unwrap_or(&clips[0])
+            .clone();
+        let color = theme::track_color(primary.0);
+        let c = primary.1;
+        let is_midi = single && c.midi.is_some();
+        let all_audio = clips.iter().all(|(_, c)| c.audio.is_some());
+        ui.horizontal_centered(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // Werkzeuge von rechts: Löschen mit Abstand, dann Bearbeiten.
+                let n = clips.len();
+                let tip = if n > 1 {
+                    format!("{n} Clips löschen (Entf)")
+                } else {
+                    "Löschen (Entf)".to_string()
+                };
+                if danger_icon_button(ui, theme::ic::TRASH, 16.0, &tip).clicked() {
+                    self.delete_selected();
+                }
+                ui.add_space(10.0);
+                if is_midi
+                    && icon_button(
+                        ui,
+                        theme::ic::PIANO_KEYS,
+                        theme::text_dim(),
+                        "Piano-Roll öffnen",
+                    )
+                    .clicked()
+                {
+                    self.open_piano_roll(c.id);
+                }
+                if icon_button(ui, theme::ic::COPY, theme::text_dim(), "Kopieren (Strg+C)")
+                    .clicked()
+                {
+                    self.copy_selected();
+                }
+                if icon_button(
+                    ui,
+                    theme::ic::STACK_PLUS,
+                    theme::text_dim(),
+                    "Duplizieren (Strg+D)",
+                )
+                .clicked()
+                {
+                    self.duplicate_selected();
+                }
+                if icon_button(
+                    ui,
+                    theme::ic::SCISSORS,
+                    theme::text_dim(),
+                    "Teilen am Kopf (S)",
+                )
+                .clicked()
+                {
+                    self.split_at_playhead();
+                }
+                ui.separator();
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    // Kennung: Spurfarbe als Kante und 12 % Fläche, Typ-Symbol, Name.
+                    let (icon, title) = if !single {
+                        (theme::ic::STACK, format!("{} Clips", clips.len()))
+                    } else if is_midi {
+                        (theme::ic::PIANO_KEYS, c.name.clone())
+                    } else {
+                        (theme::ic::WAVEFORM, c.name.clone())
+                    };
+                    let id_frame = egui::Frame::new()
+                        .fill(theme::mix(theme::panel(), color, 0.12))
+                        .corner_radius(4)
+                        .inner_margin(egui::Margin {
+                            left: 9,
+                            right: 8,
+                            top: 3,
+                            bottom: 3,
+                        })
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new(icon).color(theme::text()));
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(&title).strong()).truncate(),
+                            );
+                        });
+                    let ir = id_frame.response.rect;
+                    ui.painter().rect_filled(
+                        egui::Rect::from_min_size(ir.min, egui::vec2(4.0, ir.height())),
+                        egui::CornerRadius {
+                            nw: 4,
+                            sw: 4,
+                            ne: 0,
+                            se: 0,
+                        },
+                        color,
+                    );
+                    let group = |ui: &mut egui::Ui, t: &str| {
+                        ui.separator();
+                        if !narrow {
+                            ui.label(rack_title(t));
+                        }
+                    };
+                    if single {
+                        if is_midi {
+                            group(ui, "NOTEN");
+                            self.clip_notes(ui, &c);
+                        }
+                        group(ui, "FADE");
+                        self.clip_fades(ui, &c);
+                        if !is_midi {
+                            group(ui, "GAIN");
+                            self.clip_gain(ui, &c);
+                        }
+                        group(ui, "ZEIT");
+                        self.clip_position(ui, &c);
+                        if !is_midi {
+                            self.clip_time(ui, &c);
+                        }
+                    } else {
+                        let all: Vec<woa_model::Clip> =
+                            clips.iter().map(|(_, c)| c.clone()).collect();
+                        group(ui, "FADE");
+                        self.multi_fades(ui, &all);
+                        if all_audio {
+                            group(ui, "GAIN");
+                            self.multi_gain(ui, &all);
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    /// Start und Länge (Takt.Schlag.Sechzehntel, 4/4), ziehen oder eintippen.
+    fn clip_position(&mut self, ui: &mut egui::Ui, c: &woa_model::Clip) {
+        if let Some(v) = mixed_field(
+            ui,
+            ("clip_start", c.id.0),
+            &[c.start_beats],
+            0.0..=1.0e6,
+            0.05,
+            |b| bar_beat(b, true),
+            "Start (Takt.Schlag.Sechzehntel). Ziehen · Klick = eintippen",
+        ) {
+            self.state.move_clip(c.id, v.value().max(0.0));
+        }
+        if let Some(v) = mixed_field(
+            ui,
+            ("clip_len", c.id.0),
+            &[c.length_beats],
+            0.0625..=1.0e6,
+            0.05,
+            |b| bar_beat(b, false),
+            "Länge (Takte.Schläge.Sechzehntel). Ziehen · Klick = eintippen",
+        ) {
+            self.state
+                .trim_clip(c.id, c.start_beats, v.value().max(0.0625), c.offset_beats);
+        }
+    }
+
+    /// MIDI-Noten im Inspektor: Raster, Quantisieren aller Noten, Velocity aller Noten.
+    fn clip_notes(&mut self, ui: &mut egui::Ui, c: &woa_model::Clip) {
+        let Some(midi) = c.midi.as_ref() else {
             return;
         };
-        let c = c.clone();
-        let is_audio = c.audio.is_some();
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            let (kind, kc) = if c.midi.is_some() {
-                ("MIDI", theme::cue())
-            } else {
-                ("AUDIO", theme::accent())
-            };
-            theme::status_pill(ui, kind, kc, true);
-            ui.strong(&c.name);
-            if c.midi.is_some()
-                && icon_button(ui, theme::ic::PIANO_KEYS, theme::cue(), "Piano-Roll öffnen")
-                    .clicked()
-            {
-                self.open_piano_roll(id);
-            }
-            ui.separator();
-            self.clip_fades(ui, &c);
-            if is_audio {
-                ui.separator();
-                self.clip_gain(ui, &c);
-                ui.separator();
-                self.clip_time(ui, &c);
-            }
-            ui.separator();
-            if icon_button(
-                ui,
-                theme::ic::SCISSORS,
-                theme::text(),
-                "Schneiden am Kopf (S)",
+        egui::ComboBox::from_id_salt(("q_grid", c.id.0))
+            .width(52.0)
+            .selected_text(format!("1/{}", self.quantize_div))
+            .show_ui(ui, |ui| {
+                for d in [4u32, 8, 16, 32] {
+                    ui.selectable_value(&mut self.quantize_div, d, format!("1/{d}"));
+                }
+            })
+            .response
+            .on_hover_text("Raster für Quantisieren");
+        if ui
+            .add(
+                egui::Button::new(egui::RichText::new("Q").strong())
+                    .min_size(egui::vec2(24.0, 22.0)),
             )
+            .on_hover_text("Quantisieren: alle Noten auf das Raster")
             .clicked()
-            {
-                self.split_at_playhead();
-            }
-            if icon_button(
+        {
+            let grid = woa_model::grid_beats(self.quantize_div, false);
+            let (q, _) = midi.quantize(&[], grid, false);
+            self.state.set_notes(c.id, q);
+        }
+        let vel: Vec<f64> = midi.notes.iter().map(|n| f64::from(n.velocity)).collect();
+        if !vel.is_empty()
+            && let Some(v) = mixed_field(
                 ui,
-                theme::ic::STACK_PLUS,
-                theme::text(),
-                "Duplizieren (Strg+D)",
+                ("clip_vel", c.id.0),
+                &vel,
+                1.0..=127.0,
+                0.5,
+                |v| format!("Vel {v:.0}"),
+                "Velocity aller Noten (1–127). Ziehen · Klick = eintippen",
             )
-            .clicked()
-            {
-                self.duplicate_selected();
+        {
+            let all: Vec<usize> = (0..midi.notes.len()).collect();
+            let m = midi.set_velocity(&all, v.value().round().clamp(1.0, 127.0) as u8);
+            self.state.set_notes(c.id, m);
+        }
+    }
+
+    /// Fades mehrerer Clips: gleiche Werte stehen da, unterschiedliche als „—“; Eintippen
+    /// oder Ziehen setzt alle auf den Wert (ein Undo-Schritt).
+    fn multi_fades(&mut self, ui: &mut egui::Ui, clips: &[woa_model::Clip]) {
+        let max = clips
+            .iter()
+            .map(|c| c.length_beats)
+            .fold(f64::MAX, f64::min);
+        for (icon, key, tip, which) in [
+            (
+                theme::ic::TREND_UP,
+                "multi_fi",
+                "Fade-in aller Clips in Beats",
+                0u8,
+            ),
+            (
+                theme::ic::TREND_DOWN,
+                "multi_fo",
+                "Fade-out aller Clips in Beats",
+                1u8,
+            ),
+        ] {
+            ui.label(egui::RichText::new(icon).color(theme::text_dim()))
+                .on_hover_text(tip);
+            let vals: Vec<f64> = clips
+                .iter()
+                .map(|c| {
+                    if which == 0 {
+                        c.fade_in_beats
+                    } else {
+                        c.fade_out_beats
+                    }
+                })
+                .collect();
+            if let Some(v) = mixed_field(
+                ui,
+                (key, 0),
+                &vals,
+                0.0..=max,
+                0.05,
+                |v| format!("{v:.2}"),
+                tip,
+            ) {
+                let v = v.value();
+                self.state.grouped("Fades", |st| {
+                    for c in clips {
+                        let (fi, fo) = if which == 0 {
+                            (v, c.fade_out_beats)
+                        } else {
+                            (c.fade_in_beats, v)
+                        };
+                        st.set_fades(c.id, fi, fo);
+                    }
+                });
             }
-            if icon_button(ui, theme::ic::COPY, theme::text(), "Kopieren (Strg+C)").clicked() {
-                self.copy_selected();
-            }
-            let n = self.selected_clips.len().max(1);
-            let tip = if n > 1 {
-                format!("{n} Clips löschen (Entf)")
-            } else {
-                "Löschen (Entf)".to_string()
-            };
-            if icon_button(ui, theme::ic::TRASH, theme::on_air(), &tip).clicked() {
-                self.delete_selected();
-            }
-        });
+        }
+    }
+
+    /// Gain mehrerer Clips: Eintippen setzt alle, Ziehen verschiebt alle relativ.
+    fn multi_gain(&mut self, ui: &mut egui::Ui, clips: &[woa_model::Clip]) {
+        let vals: Vec<f64> = clips.iter().map(|c| c.gain_db).collect();
+        if let Some(v) = mixed_field(
+            ui,
+            ("multi_gain", 0),
+            &vals,
+            woa_model::MIN_GAIN_DB..=woa_model::MAX_GAIN_DB,
+            0.1,
+            |v| format!("{v:.1} dB"),
+            "Clip-Gain aller Clips. Ziehen verschiebt alle relativ · Doppelklick = 0 dB · \
+             Klick = eintippen setzt alle",
+        ) {
+            self.state.grouped("Clip-Gain", |st| {
+                for c in clips {
+                    let g = match v {
+                        Mixed::Dragged { from, to } => c.gain_db + (to - from),
+                        other => other.value(),
+                    };
+                    st.set_clip_gain(c.id, g);
+                }
+            });
+        }
     }
 
     /// Fade-in und Fade-out: Länge in Beats, bei Audio daneben die Kurve.
@@ -5208,6 +5604,7 @@ impl eframe::App for WoaApp {
             self.report_metrics();
         }
         let ctx = ui.ctx().clone();
+        self.now = ctx.input(|i| i.time);
         self.protokoll
             .show(&ctx, &crate::protokoll::log_dir(&self.data_dir));
         // Die Schriften gelten erst ab dem nächsten Durchlauf (sonst fehlen die Familien
@@ -5323,6 +5720,7 @@ impl eframe::App for WoaApp {
                 });
             });
         self.studio_dock_panel(ui);
+        self.undo_toast_ui(&ctx);
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -5655,24 +6053,7 @@ impl WoaApp {
             .iter()
             .map(|t| (t.id, t.name.clone(), t.gain_db, t.mute, t.solo))
             .collect();
-        if tracks.is_empty() {
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(
-                        "Noch keine Spuren im Mischpult. Lege eine Audio- oder MIDI-Spur an:",
-                    )
-                    .color(theme::text_dim()),
-                );
-                if ui.button("+ Audio-Spur").clicked() {
-                    self.state.add_track();
-                }
-                if ui.button("+ MIDI-Spur").clicked() {
-                    self.state.add_midi_track();
-                }
-            });
-            return;
-        }
-        const RACK_W: f32 = 270.0;
+        const RACK_W: f32 = 300.0;
         let strips_w = (ui.available_width() - RACK_W - 12.0).max(160.0);
         ui.horizontal_top(|ui| {
             egui::ScrollArea::horizontal()
@@ -5682,10 +6063,13 @@ impl WoaApp {
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 8.0;
+                        let empty = tracks.is_empty();
                         for (i, (id, name, gain, mute, solo)) in tracks.into_iter().enumerate() {
                             self.channel_strip(ui, i, id, &name, gain, mute, solo);
                         }
-                        self.add_bus_box(ui);
+                        if !empty {
+                            self.add_bus_box(ui);
+                        }
                     });
                 });
             ui.separator();
@@ -5700,7 +6084,7 @@ impl WoaApp {
     }
 
     /// Ein Kanalzug ohne Drehregler: Scribble-Strip in Spurfarbe, Tasten M, S und Aufnahme,
-    /// LED-Kette und Fader. Gain, Pan, Routing und Effekte liegen im Insert-Rack.
+    /// „fx n“, LED-Kette und Fader. Gain, Pan, Routing und Effekte liegen im Insert-Rack.
     #[allow(clippy::too_many_arguments)]
     fn channel_strip(
         &mut self,
@@ -5721,22 +6105,26 @@ impl WoaApp {
         } else {
             self.armed.contains(&id)
         };
-        let is_sel = self.marked_track() == Some(id);
+        let is_sel = self.rack_track() == Some(id);
         let level = self.track_levels.get(&id).copied().unwrap_or(0.0);
-        let fx = self
-            .state
-            .project()
-            .track(id)
-            .map_or(0, |t| t.inserts.len() + t.plugins.len());
+        let (fx, fx_error) = self.state.project().track(id).map_or((0, false), |t| {
+            let error = t.plugins.iter().any(|s| {
+                matches!(
+                    self.player.as_ref().and_then(|p| p.plugin_status(s.id)),
+                    Some(woa_plugins::SlotStatus::Missing | woa_plugins::SlotStatus::Failed(_))
+                )
+            });
+            (t.inserts.len() + t.plugins.len(), error)
+        });
 
         let strip = egui::Frame::new()
             .fill(if is_sel {
-                theme::mix(theme::well(), color, 0.16)
+                theme::selection_fill(color)
             } else {
                 theme::well()
             })
             .stroke(if is_sel {
-                egui::Stroke::new(1.5, color)
+                theme::selection_stroke(color)
             } else {
                 egui::Stroke::new(1.0, theme::border())
             })
@@ -5746,7 +6134,7 @@ impl WoaApp {
                 ui.set_width(W);
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 4.0;
-                    // Scribble-Strip: Name in Spurfarbe, rechts die Zahl der Effekte und Plugins.
+                    // Scribble-Strip: Name in Spurfarbe.
                     let (bar_rect, bar_resp) =
                         ui.allocate_exact_size(egui::vec2(W, 18.0), egui::Sense::click());
                     ui.painter().rect_filled(bar_rect, 3.0, color);
@@ -5757,15 +6145,6 @@ impl WoaApp {
                         egui::FontId::proportional(11.5),
                         theme::well(),
                     );
-                    if fx > 0 {
-                        ui.painter().text(
-                            bar_rect.right_center() - egui::vec2(4.0, 0.0),
-                            egui::Align2::RIGHT_CENTER,
-                            format!("fx{fx}"),
-                            egui::FontId::monospace(9.0),
-                            theme::well(),
-                        );
-                    }
                     let bar_resp = bar_resp.on_hover_text("Rechtsklick: Spurmenü");
                     bar_resp.widget_info(|| {
                         egui::WidgetInfo::labeled(egui::WidgetType::Label, true, name)
@@ -5810,6 +6189,32 @@ impl WoaApp {
                         }
                     });
 
+                    // „fx n“: Zahl der Effekte und Plugins; Klick wählt die Spur fürs Rack.
+                    let (fx_text, fx_color) = if fx_error {
+                        (format!("{} fx {fx}", theme::ic::WARNING), theme::on_air())
+                    } else if fx == 0 {
+                        (format!("fx {fx}"), theme::text_dim())
+                    } else {
+                        (format!("fx {fx}"), theme::text())
+                    };
+                    let fr = ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new(fx_text)
+                                    .monospace()
+                                    .size(10.0)
+                                    .color(fx_color),
+                            )
+                            .frame_when_inactive(false)
+                            .min_size(egui::vec2(W, 16.0)),
+                        )
+                        .on_hover_text(
+                            "Effekte und Plugins dieser Spur: Klick zeigt das Insert-Rack",
+                        );
+                    if fr.clicked() {
+                        self.select_track(id);
+                    }
+
                     // LED-Kette und Kanalfader (derselbe Gain wie das Zahlenfeld im Rack).
                     ui.horizontal(|ui| {
                         let (m_rect, _) =
@@ -5853,20 +6258,37 @@ impl WoaApp {
         }
     }
 
-    /// Insert-Rack des gewählten Kanals: Pegel (Gain), Panorama, Ausgang, Sends,
-    /// Effektkette und Plugins. Hier leben die Regler, die der Kanalzug nicht mehr trägt.
+    /// Insert-Rack der gewählten Spur (Design `InsertRack`), von oben nach unten im Signalfluss:
+    /// Kopf, Eingang (Quelle, Trim), Inserts, Sends, Ausgang (Ziel, Pan).
     fn insert_rack(&mut self, ui: &mut egui::Ui) {
         // Das Rack zeigt immer die gewählte Spur (ohne Auswahl die erste), wie die Hervorhebung.
         let sel = self
             .rack_track()
             .and_then(|id| self.state.project().tracks.iter().position(|t| t.id == id));
         let Some(index) = sel else {
-            ui.label(
-                egui::RichText::new("INSERT-RACK")
-                    .size(9.5)
-                    .monospace()
-                    .color(theme::text_dim()),
-            );
+            // Leer-Zustand: keine Spur im Projekt.
+            ui.add_space(16.0);
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    egui::RichText::new(theme::ic::FADERS)
+                        .size(32.0)
+                        .color(theme::text_dim()),
+                );
+                ui.label(egui::RichText::new("Keine Spur").strong());
+                ui.label(
+                    egui::RichText::new("Lege eine Spur an, dann stehen hier ihre Effekte.")
+                        .small()
+                        .color(theme::text_dim()),
+                );
+                // Untereinander statt nebeneinander: eine zentrierte Zeile braucht in egui
+                // einen zweiten Durchlauf, und der erste Klick ginge ins Leere.
+                if ui.button("+ Audio-Spur").clicked() {
+                    self.state.add_track();
+                }
+                if ui.button("+ MIDI-Spur").clicked() {
+                    self.state.add_midi_track();
+                }
+            });
             return;
         };
         let (id, name, kind, gain, pan) = {
@@ -5875,145 +6297,116 @@ impl WoaApp {
         };
         let color = theme::track_color(index);
         ui.spacing_mut().item_spacing.y = 4.0;
-        // Kopf: Farbpunkt und Name der Spur, darunter die Art.
-        ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(egui::vec2(12.0, 16.0), egui::Sense::hover());
-            ui.painter().circle_filled(r.center(), 5.0, color);
-            ui.label(egui::RichText::new(name).strong().color(theme::text()));
-        });
-        ui.label(
-            egui::RichText::new(format!(
-                "INSERT-RACK · {}",
-                match kind {
-                    woa_model::TrackKind::Midi => "MIDI-SYNTH",
-                    woa_model::TrackKind::Bus => "BUS",
-                    _ => "AUDIO-KANAL",
-                }
-            ))
-            .size(9.5)
-            .monospace()
-            .color(theme::text_dim()),
-        );
-
-        self.strip_effects(ui, id, kind);
-        ui.separator();
-
-        let mut g = match self.gain_drag {
-            Some((d, v)) if d == id => v,
-            _ => self.shown_gain(id, gain),
-        };
-        let r = ui
-            .add(
-                egui::DragValue::new(&mut g)
-                    .range(MIN_GAIN_DB..=MAX_GAIN_DB)
-                    .speed(0.2)
-                    .fixed_decimals(1)
-                    .prefix("Pegel ")
-                    .suffix(" dB"),
-            )
-            .on_hover_text("Kanal-Gain (Doppelklick: 0 dB)");
-        if r.double_clicked() {
-            self.gain_drag = None;
-            self.state.set_gain(id, 0.0);
-        } else {
-            if r.changed() {
-                self.gain_drag = Some((id, g));
-            }
-            if r.drag_stopped() || (r.changed() && !r.dragged()) {
-                self.gain_drag = None;
-                self.state.set_gain(id, g);
-            }
-        }
-
-        let mut p = match self.pan_drag {
-            Some((d, v)) if d == id => v,
-            _ => pan,
-        };
-        let mut p_pct = (p * 100.0).round();
-        let pr = ui
-            .add(
-                egui::DragValue::new(&mut p_pct)
-                    .range(-100.0..=100.0)
-                    .speed(1.0)
-                    .fixed_decimals(0)
-                    .custom_formatter(|v, _| {
-                        let iv = v.round() as i32;
-                        if iv == 0 {
-                            "Pan Mitte".to_string()
-                        } else if iv < 0 {
-                            format!("Pan L{}", -iv)
-                        } else {
-                            format!("Pan R{iv}")
-                        }
-                    }),
-            )
-            .on_hover_text("Panorama (Doppelklick: Mitte)");
-        if pr.double_clicked() {
-            self.pan_drag = None;
-            self.state.set_pan(id, 0.0);
-        } else {
-            p = (p_pct / 100.0).clamp(-1.0, 1.0);
-            if pr.changed() {
-                self.pan_drag = Some((id, p));
-            }
-            if pr.drag_stopped() || (pr.changed() && !pr.dragged()) {
-                self.pan_drag = None;
-                self.state.set_pan(id, p);
-            }
-        }
-
-        self.strip_routing(ui, id);
-
-        ui.add_space(4.0);
-        if ui
-            .add(
-                egui::Button::new(
-                    egui::RichText::new(format!("{} Spur löschen", theme::ic::TRASH))
-                        .size(10.5)
-                        .color(theme::text_dim()),
-                )
-                .fill(theme::surface()),
-            )
-            .on_hover_text("Spur löschen")
-            .clicked()
-        {
-            self.armed.remove(&id);
-            self.selected_track = None;
-            self.state.remove_track(id);
-        }
-    }
-
-    /// "+ Bus": Name eintragen, Knopf legt die Gruppenspur an.
-    fn add_bus_box(&mut self, ui: &mut egui::Ui) {
-        egui::Frame::new()
-            .fill(theme::panel_header())
-            .stroke(egui::Stroke::new(1.0, theme::border()))
+        // Kopf: wie die Auswahl (14 %, 1-px-Rahmen), dazu eine 3-px-Oberkante in Spurfarbe.
+        let head = egui::Frame::new()
+            .fill(theme::selection_fill(color))
+            .stroke(theme::selection_stroke(color))
             .corner_radius(5)
-            .inner_margin(egui::Margin::symmetric(8, 6))
+            .inner_margin(egui::Margin {
+                left: 8,
+                right: 4,
+                top: 6,
+                bottom: 4,
+            })
             .show(ui, |ui| {
-                ui.set_width(118.0);
-                ui.vertical(|ui| {
-                    ui.label(
-                        egui::RichText::new("NEUER BUS")
-                            .size(9.5)
-                            .monospace()
-                            .color(theme::text_dim()),
-                    );
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.new_bus_name)
-                            .hint_text("Hall")
-                            .desired_width(100.0),
-                    );
-                    if ui
-                        .add(egui::Button::new("+ Bus").fill(theme::surface()))
-                        .on_hover_text("Gruppenspur für Sends und Gruppen anlegen")
-                        .clicked()
-                    {
-                        let name = std::mem::take(&mut self.new_bus_name);
-                        self.state.add_bus(&name);
-                    }
+                ui.horizontal(|ui| {
+                    let (r, _) =
+                        ui.allocate_exact_size(egui::vec2(12.0, 16.0), egui::Sense::hover());
+                    ui.painter().circle_filled(r.center(), 5.0, color);
+                    ui.label(egui::RichText::new(&name).strong().color(theme::text()));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.menu_button(theme::ic::DOTS_THREE, |ui| {
+                            self.track_menu_items(ui, id, &name);
+                        })
+                        .response
+                        .on_hover_text("Spurmenü");
+                        let (icon, art) = match kind {
+                            woa_model::TrackKind::Midi => (theme::ic::PIANO_KEYS, "MIDI"),
+                            woa_model::TrackKind::Bus => (theme::ic::ARROWS_MERGE, "Bus"),
+                            _ => (theme::ic::WAVEFORM, "Audio"),
+                        };
+                        ui.label(
+                            egui::RichText::new(format!("{icon} {art}"))
+                                .small()
+                                .color(theme::text_dim()),
+                        );
+                    });
                 });
             });
+        let hr = head.response.rect;
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(hr.min, egui::vec2(hr.width(), 3.0)),
+            egui::CornerRadius {
+                nw: 5,
+                ne: 5,
+                sw: 0,
+                se: 0,
+            },
+            color,
+        );
+        self.track_menu(&head.response, id, &name);
+
+        // Eingang: Quelle und Trim. Trim ist (noch) der Spur-Gain, derselbe Wert wie der Fader.
+        ui.label(rack_title("EINGANG"));
+        ui.horizontal(|ui| {
+            if kind != woa_model::TrackKind::Bus {
+                self.source_combo(ui, id, kind == woa_model::TrackKind::Midi, 130.0);
+            }
+            self.gain_field(ui, id, gain, "Trim ").on_hover_text(
+                "Trim in dB, derselbe Wert wie Fader und Spurkopf. \
+                 Ziehen · Doppelklick = 0 dB · Klick = eintippen",
+            );
+        });
+
+        self.strip_effects(ui, id, kind);
+        self.strip_routing(ui, id);
+        self.pan_field(ui, id, pan, "Pan ");
+    }
+
+    /// „+ Bus“ (Design `MixerBus`): gestrichelter Platz in voller Kanalzug-Höhe; ein Klick legt
+    /// den Bus an („Bus n“, umbenennen über das Spurmenü).
+    fn add_bus_box(&mut self, ui: &mut egui::Ui) {
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(64.0, 196.0), egui::Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "+ Bus"));
+        let hot = resp.hovered();
+        let stroke = egui::Stroke::new(
+            1.0,
+            if hot {
+                theme::text_dim()
+            } else {
+                theme::border_strong()
+            },
+        );
+        let r = rect.shrink(0.5);
+        for (a, b) in [
+            (r.left_top(), r.right_top()),
+            (r.right_top(), r.right_bottom()),
+            (r.right_bottom(), r.left_bottom()),
+            (r.left_bottom(), r.left_top()),
+        ] {
+            ui.painter()
+                .extend(egui::Shape::dashed_line(&[a, b], stroke, 4.0, 3.0));
+        }
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "+ Bus",
+            egui::FontId::proportional(12.0),
+            if hot {
+                theme::text()
+            } else {
+                theme::text_dim()
+            },
+        );
+        if resp
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text(
+                "Bus anlegen: Gruppenspur für Sends und Gruppen (umbenennen im Spurmenü)",
+            )
+            .clicked()
+        {
+            self.state.add_bus("");
+        }
     }
 
     /// Ausgang, Sends und Effektkette eines Mischpult-Zugs.
@@ -6044,25 +6437,8 @@ impl WoaApp {
                 .color(theme::text_dim())
         };
 
-        ui.separator();
-        // Ausgang
-        let current = output.map_or_else(|| "Master".to_string(), bus_name);
-        egui::ComboBox::from_id_salt(("out", id.0))
-            .selected_text(format!("→ {current}"))
-            .width(100.0)
-            .show_ui(ui, |ui| {
-                if ui.selectable_label(output.is_none(), "Master").clicked() {
-                    self.state.set_output(id, None);
-                }
-                for (b, n) in &buses {
-                    if ui.selectable_label(output == Some(*b), n).clicked() {
-                        self.state.set_output(id, Some(*b));
-                    }
-                }
-            });
-
         // Sends
-        if !buses.is_empty() {
+        if !sends.is_empty() {
             ui.label(small("SENDS"));
         }
         for s in &sends {
@@ -6125,6 +6501,22 @@ impl WoaApp {
                 }
             });
         }
+        // Ausgang
+        ui.label(rack_title("AUSGANG"));
+        let current = output.map_or_else(|| "Master".to_string(), bus_name);
+        egui::ComboBox::from_id_salt(("out", id.0))
+            .selected_text(format!("→ {current}"))
+            .width(100.0)
+            .show_ui(ui, |ui| {
+                if ui.selectable_label(output.is_none(), "Master").clicked() {
+                    self.state.set_output(id, None);
+                }
+                for (b, n) in &buses {
+                    if ui.selectable_label(output == Some(*b), n).clicked() {
+                        self.state.set_output(id, Some(*b));
+                    }
+                }
+            });
     }
 
     /// Effektkette und Plugins eines Kanals: hinzufügen, entfernen, umsortieren, Bypass,
@@ -6140,31 +6532,64 @@ impl WoaApp {
                 .monospace()
                 .color(theme::text_dim())
         };
-        // Effektkette
-        ui.label(small("EFFEKTE"));
+        // Inserts in Signalreihenfolge (Design `EffectSlot`): Bypass, Name (Klick klappt die
+        // Regler auf), Entfernen.
+        let n = inserts.len() + track.plugins.len();
+        ui.label(small(&format!("INSERTS · {n}")));
         for ins in &inserts {
-            let header = ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 3.0;
-                let on = !ins.bypass;
-                let b = egui::Button::new(
-                    egui::RichText::new(ins.kind.label())
-                        .size(10.5)
-                        .color(if on { theme::well() } else { theme::text_dim() }),
-                )
-                .fill(if on { theme::cue() } else { theme::surface() })
-                .min_size(egui::vec2(70.0, 18.0));
-                if ui.add(b).on_hover_text("Ein/Aus (Bypass)").clicked() {
-                    self.state.toggle_insert_bypass(id, ins.id);
-                }
-                if ui
-                    .small_button(theme::ic::X)
-                    .on_hover_text("Effekt entfernen")
-                    .clicked()
-                {
-                    self.state.remove_insert(id, ins.id);
-                }
-            });
-            let _ = header;
+            let open = self.fx_open.contains(&ins.id);
+            egui::Frame::new()
+                .stroke(egui::Stroke::new(
+                    1.0,
+                    if ins.bypass {
+                        theme::border()
+                    } else {
+                        theme::border_strong()
+                    },
+                ))
+                .corner_radius(4)
+                .inner_margin(egui::Margin::symmetric(4, 2))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 3.0;
+                        if bypass_button(ui, !ins.bypass).clicked() {
+                            self.state.toggle_insert_bypass(id, ins.id);
+                        }
+                        let caret = if open {
+                            theme::ic::CARET_DOWN
+                        } else {
+                            theme::ic::CARET_RIGHT
+                        };
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new(format!("{caret} {}", ins.kind.label()))
+                                        .size(11.0)
+                                        .color(if ins.bypass {
+                                            theme::text_dim()
+                                        } else {
+                                            theme::text()
+                                        }),
+                                )
+                                .frame_when_inactive(false),
+                            )
+                            .on_hover_text("Regler auf- oder zuklappen")
+                            .clicked()
+                            && !self.fx_open.remove(&ins.id)
+                        {
+                            self.fx_open.insert(ins.id);
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .small_button(theme::ic::X)
+                                .on_hover_text("Effekt entfernen (rückgängig mit Strg+Z)")
+                                .clicked()
+                            {
+                                self.state.remove_insert(id, ins.id);
+                            }
+                        });
+                    });
+                });
             if ins.kind.supports_sidechain() {
                 let sources: Vec<(TrackId, String)> = self
                     .state
@@ -6227,9 +6652,8 @@ impl WoaApp {
                     crate::automation::reduction_bar(ui, db);
                 });
             }
-            egui::CollapsingHeader::new(small("Regler"))
-                .id_salt(("fx", ins.id.0))
-                .show(ui, |ui| {
+            if open {
+                ui.indent(("fx", ins.id.0), |ui| {
                     ui.menu_button(small(&format!("Preset {}", theme::ic::CARET_DOWN)), |ui| {
                         for pr in ins.kind.presets() {
                             if ui.button(pr.name).clicked() {
@@ -6282,12 +6706,28 @@ impl WoaApp {
                         }
                     }
                 });
+            }
         }
-        let _ = kind;
+        self.strip_plugins(ui, id, kind);
+    }
+
+    /// „+ Effekt“ (Design `InsertRack`): Liste mit Suche, eingebaute Effekte und die Sprachkette.
+    fn add_effect_menu(&mut self, ui: &mut egui::Ui, id: TrackId) {
         ui.menu_button("+ Effekt", |ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut self.fx_search)
+                    .hint_text(format!("{} Suchen", theme::ic::MAGNIFYING_GLASS))
+                    .desired_width(160.0),
+            );
+            let q = self.fx_search.to_lowercase();
+            ui.label(rack_title("EINGEBAUT"));
             for k in woa_model::EffectKind::ALL {
+                if !q.is_empty() && !k.label().to_lowercase().contains(&q) {
+                    continue;
+                }
                 if ui.button(k.label()).clicked() {
                     self.state.add_insert(id, k);
+                    self.fx_search.clear();
                     ui.close();
                 }
             }
@@ -6298,10 +6738,10 @@ impl WoaApp {
                 .clicked()
             {
                 self.state.add_voice_chain(id);
+                self.fx_search.clear();
                 ui.close();
             }
         });
-        self.strip_plugins(ui, id, kind);
     }
 
     /// CLAP-Plugins einer Spur (Paket 31): Instrument und Effekte, Regler, Browser.
@@ -6325,19 +6765,16 @@ impl WoaApp {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 3.0;
                 if slot.role == PluginRole::Effect {
-                    let on = !slot.bypass;
-                    let b = egui::Button::new(
-                        egui::RichText::new(&slot.name).size(10.5).color(if on {
-                            theme::well()
-                        } else {
-                            theme::text_dim()
-                        }),
-                    )
-                    .fill(if on { theme::cue() } else { theme::surface() })
-                    .min_size(egui::vec2(70.0, 18.0));
-                    if ui.add(b).on_hover_text("Ein/Aus (Bypass)").clicked() {
+                    if bypass_button(ui, !slot.bypass).clicked() {
                         self.state.toggle_plugin_bypass(id, slot.id);
                     }
+                    ui.label(egui::RichText::new(&slot.name).size(11.0).color(
+                        if slot.bypass {
+                            theme::text_dim()
+                        } else {
+                            theme::text()
+                        },
+                    ));
                 } else {
                     ui.label(
                         egui::RichText::new(format!("{} {}", theme::ic::MUSIC_NOTE, slot.name))
@@ -6345,19 +6782,24 @@ impl WoaApp {
                             .color(theme::text()),
                     );
                 }
+                ui.label(
+                    egui::RichText::new("CLAP")
+                        .size(9.0)
+                        .monospace()
+                        .color(theme::text_dim()),
+                )
+                .on_hover_text("Plugin-Format");
                 if matches!(status, Some(woa_plugins::SlotStatus::Loaded)) {
                     let open = self
                         .player
                         .as_ref()
                         .is_some_and(|p| p.plugin_gui_open(slot.id));
-                    let b = egui::Button::new(egui::RichText::new("Fenster").size(10.5).color(
-                        if open { theme::well() } else { theme::text() },
-                    ))
-                    .fill(if open { theme::cue() } else { theme::surface() })
-                    .min_size(egui::vec2(52.0, 18.0));
                     if ui
-                        .add(b)
-                        .on_hover_text("Oberfläche des Plugins öffnen oder schließen")
+                        .add(egui::Button::selectable(
+                            open,
+                            egui::RichText::new(theme::ic::ARROW_SQUARE_OUT).size(14.0),
+                        ))
+                        .on_hover_text("Plugin-Fenster öffnen oder schließen")
                         .clicked()
                         && let Some(p) = self.player.as_mut()
                     {
@@ -6393,20 +6835,31 @@ impl WoaApp {
             });
             match &status {
                 Some(woa_plugins::SlotStatus::Missing) => {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "nicht installiert ({}); der Platz bleibt im Projekt",
-                            slot.clap_id
-                        ))
-                        .size(9.5)
-                        .color(theme::on_air()),
-                    );
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{} nicht gefunden ({}); die Spur läuft ohne",
+                                theme::ic::WARNING,
+                                slot.clap_id
+                            ))
+                            .size(9.5)
+                            .color(theme::on_air()),
+                        );
+                        if ui
+                            .small_button("Plugin suchen")
+                            .on_hover_text("Liest die Plugin-Ordner noch einmal")
+                            .clicked()
+                            && let Some(p) = self.player.as_mut()
+                        {
+                            p.rescan_plugins();
+                        }
+                    });
                     continue;
                 }
                 Some(woa_plugins::SlotStatus::Failed(why)) => {
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new(why.as_str())
+                            egui::RichText::new(format!("{} {why}", theme::ic::WARNING))
                                 .size(9.5)
                                 .color(theme::on_air()),
                         );
@@ -6506,52 +6959,60 @@ impl WoaApp {
                     }
                 });
         }
-        ui.menu_button("+ Plugin", |ui| {
-            let list = self
-                .player
-                .as_mut()
-                .map_or_else(Vec::new, |p| p.plugin_list());
-            if list.is_empty() {
-                ui.label(small(
+        ui.horizontal(|ui| {
+            self.add_effect_menu(ui, id);
+            ui.menu_button("+ Plugin", |ui| {
+                let list = self
+                    .player
+                    .as_mut()
+                    .map_or_else(Vec::new, |p| p.plugin_list());
+                if list.is_empty() {
+                    ui.label(small(
                     "Keine CLAP-Plugins gefunden (Ordner ~/.clap, /usr/lib/clap oder CLAP_PATH).",
                 ));
-            }
-            for info in &list {
-                let as_instrument = info.is_instrument();
-                let as_effect = info.is_effect() || !as_instrument;
-                if as_instrument && kind == woa_model::TrackKind::Midi && !has_instrument {
-                    let label = format!("{} {}  {}", theme::ic::MUSIC_NOTE, info.name, info.vendor);
-                    if ui.button(label).on_hover_text("Als Instrument").clicked() {
-                        self.state.add_plugin(
-                            id,
-                            &info.clap_id,
-                            &info.name,
-                            PluginRole::Instrument,
-                        );
-                        ui.close();
+                }
+                for info in &list {
+                    let as_instrument = info.is_instrument();
+                    let as_effect = info.is_effect() || !as_instrument;
+                    if as_instrument && kind == woa_model::TrackKind::Midi && !has_instrument {
+                        let label =
+                            format!("{} {}  {}", theme::ic::MUSIC_NOTE, info.name, info.vendor);
+                        if ui.button(label).on_hover_text("Als Instrument").clicked() {
+                            self.state.add_plugin(
+                                id,
+                                &info.clap_id,
+                                &info.name,
+                                PluginRole::Instrument,
+                            );
+                            ui.close();
+                        }
+                    }
+                    if as_effect && kind != woa_model::TrackKind::Bus {
+                        let label = format!("fx {}  {}", info.name, info.vendor);
+                        if ui.button(label).on_hover_text("Als Effekt").clicked() {
+                            self.state.add_plugin(
+                                id,
+                                &info.clap_id,
+                                &info.name,
+                                PluginRole::Effect,
+                            );
+                            ui.close();
+                        }
                     }
                 }
-                if as_effect && kind != woa_model::TrackKind::Bus {
-                    let label = format!("fx {}  {}", info.name, info.vendor);
-                    if ui.button(label).on_hover_text("Als Effekt").clicked() {
-                        self.state
-                            .add_plugin(id, &info.clap_id, &info.name, PluginRole::Effect);
-                        ui.close();
+                ui.separator();
+                if ui
+                    .button("Neu suchen")
+                    .on_hover_text("Liest die Plugin-Ordner noch einmal")
+                    .clicked()
+                {
+                    if let Some(p) = self.player.as_mut() {
+                        p.rescan_plugins();
                     }
+                    ui.close();
                 }
-            }
-            ui.separator();
-            if ui
-                .button("Neu suchen")
-                .on_hover_text("Liest die Plugin-Ordner noch einmal")
-                .clicked()
-            {
-                if let Some(p) = self.player.as_mut() {
-                    p.rescan_plugins();
-                }
-                ui.close();
-            }
-            self.plugin_safety_ui(ui);
+                self.plugin_safety_ui(ui);
+            });
         });
     }
 
@@ -6998,6 +7459,145 @@ impl WoaApp {
 }
 
 /// Symbol-Knopf ohne Text; was er tut, steht im Tooltip.
+/// Bypass-Schalter eines Slots (Power-Symbol): an = `accent`, umgangen = gedimmt.
+fn bypass_button(ui: &mut egui::Ui, on: bool) -> egui::Response {
+    ui.add(
+        egui::Button::new(
+            egui::RichText::new(theme::ic::POWER)
+                .size(13.0)
+                .color(if on {
+                    theme::accent()
+                } else {
+                    theme::text_dim()
+                }),
+        )
+        .frame_when_inactive(false)
+        .min_size(egui::vec2(20.0, 20.0)),
+    )
+    .on_hover_text(if on {
+        "An: Klick umgeht den Effekt (Bypass)"
+    } else {
+        "Umgangen: Klick schaltet den Effekt wieder ein"
+    })
+}
+
+/// Ergebnis eines Zahlenfelds im Clip-Inspektor, erst beim Loslassen oder nach Enter.
+#[derive(Clone, Copy)]
+enum Mixed {
+    /// Eingetippt oder Standard per Doppelklick.
+    Set(f64),
+    /// Gezogen: von `from` nach `to` (für relative Änderungen).
+    Dragged { from: f64, to: f64 },
+}
+
+impl Mixed {
+    fn value(self) -> f64 {
+        match self {
+            Self::Set(v) | Self::Dragged { to: v, .. } => v,
+        }
+    }
+}
+
+/// Zahlenfeld (Design `NumberField`) für einen oder mehrere Werte: gleiche Werte stehen da,
+/// unterschiedliche als „—“. Ziehen, Klick = eintippen. Liefert den Wert erst, wenn das Ziehen
+/// oder Tippen endet, damit eine Änderung ein Undo-Schritt bleibt.
+fn mixed_field(
+    ui: &mut egui::Ui,
+    key: impl std::hash::Hash + std::fmt::Debug,
+    values: &[f64],
+    range: std::ops::RangeInclusive<f64>,
+    speed: f64,
+    fmt: impl Fn(f64) -> String,
+    tip: &str,
+) -> Option<Mixed> {
+    let id = ui.id().with(key);
+    let first = values.first().copied().unwrap_or(0.0);
+    let mixed = values.iter().any(|v| (v - first).abs() > 1e-9);
+    let edit: Option<(f64, f64, bool)> = ui.data(|d| d.get_temp(id));
+    let mut v = edit.map_or(first, |e| e.1);
+    let dash = mixed && edit.is_none();
+    let r = ui
+        .add(
+            egui::DragValue::new(&mut v)
+                .range(range)
+                .speed(speed)
+                .custom_formatter(move |x, _| if dash { "—".to_string() } else { fmt(x) })
+                .custom_parser(parse_number),
+        )
+        .on_hover_text(tip);
+    if r.changed() || r.dragged() {
+        let (from, _, dragged) = edit.unwrap_or((first, first, false));
+        ui.data_mut(|d| d.insert_temp(id, (from, v, dragged || r.dragged())));
+    }
+    if r.dragged() || r.has_focus() {
+        return None;
+    }
+    let (from, cur, dragged) = ui.data(|d| d.get_temp::<(f64, f64, bool)>(id))?;
+    ui.data_mut(|d| d.remove::<(f64, f64, bool)>(id));
+    if (cur - from).abs() < 1e-9 && !mixed {
+        return None;
+    }
+    Some(if dragged {
+        Mixed::Dragged { from, to: cur }
+    } else {
+        Mixed::Set(cur)
+    })
+}
+
+/// Liest eine Zahl aus getipptem Text, auch „1.2.3“ (Takt.Schlag.Sechzehntel, als Position)
+/// und mit Einheit („-3 dB“).
+fn parse_number(s: &str) -> Option<f64> {
+    let t = s.trim().replace('−', "-").replace(',', ".");
+    let parts: Vec<&str> = t.split('.').collect();
+    if parts.len() == 3 {
+        let n: Vec<f64> = parts.iter().filter_map(|p| p.trim().parse().ok()).collect();
+        if n.len() == 3 {
+            return Some(((n[0] - 1.0) * 4.0 + (n[1] - 1.0) + (n[2] - 1.0) / 4.0).max(0.0));
+        }
+    }
+    let num: String = t
+        .chars()
+        .skip_while(|c| !(c.is_ascii_digit() || *c == '-' || *c == '.'))
+        .take_while(|c| c.is_ascii_digit() || *c == '-' || *c == '.')
+        .collect();
+    num.parse().ok()
+}
+
+/// Beats als Takt.Schlag.Sechzehntel (4/4): Position ab 1.1.1, Länge ab 0.0.0.
+fn bar_beat(beats: f64, position: bool) -> String {
+    let b = beats.max(0.0);
+    let one = u64::from(position);
+    let bar = (b / 4.0).floor() as u64 + one;
+    let beat = (b % 4.0).floor() as u64 + one;
+    let six = ((b.fract()) * 4.0).floor() as u64 + one;
+    format!("{bar}.{beat}.{six}")
+}
+
+/// Gruppentitel im Insert-Rack (klein, Mono, gedimmt).
+fn rack_title(s: &str) -> egui::RichText {
+    egui::RichText::new(s.to_owned())
+        .size(9.5)
+        .monospace()
+        .color(theme::text_dim())
+}
+
+/// Gefahr-Symbolknopf (Design `IconButton --danger`): ohne Fläche, Symbol gedimmt, erst bei Hover
+/// rot. Das Symbol ist die Beschriftung, damit Tests und Bildschirmleser es finden.
+fn danger_icon_button(ui: &mut egui::Ui, icon: &str, size: f32, tip: &str) -> egui::Response {
+    let id = ui.next_auto_id();
+    let hot = ui.ctx().read_response(id).is_some_and(|r| r.hovered());
+    ui.add(
+        egui::Button::new(egui::RichText::new(icon).size(size).color(if hot {
+            theme::on_air()
+        } else {
+            theme::text_dim()
+        }))
+        .frame_when_inactive(false)
+        .min_size(egui::vec2(size + 8.0, size + 8.0)),
+    )
+    .on_hover_text(tip)
+}
+
 fn icon_button(ui: &mut egui::Ui, icon: &str, color: egui::Color32, tip: &str) -> egui::Response {
     ui.add(
         egui::Button::new(egui::RichText::new(icon).size(14.0).color(color))

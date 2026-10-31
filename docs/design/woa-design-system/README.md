@@ -53,9 +53,38 @@ WOA – Wir on Air ist eine DAW mit eingebautem Sendestudio und Party-Player. Ei
 
 ## Ikonografie
 
-- Linien-Icons 24×24, Strich 2 px, runde Enden; Transport-Symbole (Play, Stopp, Rec, Pause) gefüllt. `WOA.icon(name)` liefert sie für die Entwürfe.
-- Für egui: `egui-phosphor` (MIT) im Stil „Regular“/„Fill“ verwenden; die Entwurfs-Icons sind diesem Stil nachgezeichnet, keine Kopie.
-- Icons stehen in `text` auf `surface`, in leuchtenden Tasten in der Tastenfarbe.
+- **Phosphor Icons** (MIT, Version 2.1.1), unverändert. Stil Regular; Transport (Play, Pause, Stopp, Aufnahme) in Fill. `WOA.icon(name)` liefert sie für die Entwürfe; in egui `egui-phosphor` mit denselben Namen.
+- Größen: 14 px in kleinen Knöpfen (24 px), 16 px Standard, 18 px in großen Knöpfen, 32 px in Leer-Zuständen.
+- Symbol statt Text nur, wo es eindeutig ist: Schere (Teilen), Kopie (Duplizieren), Papierkorb (Löschen), Loop, Power (Bypass), Lautsprecher durchgestrichen (stumm), Pfeil-aus-Kasten (Plugin-Fenster). Alles andere bekommt Text.
+- Jedes Symbol ohne Text hat einen Tooltip. Icons stehen in `text-dim`, bei Hover `text`, eingeschaltet `accent`, Gefahr `on-air`.
+
+## Bearbeiten und Auswahl (Produzent)
+
+- **KISS:** eine Auswahl gilt überall, jeder Befehl hat genau einen Knopf, kurze Texte, Erklärungen im Tooltip.
+- **Spurauswahl:** Fläche 14 % Spurfarbe, 1-px-Rahmen in Spurfarbe – im Spurkopf, im Kanalzug und im Rack-Kopf gleich; die Spur in der Zeitleiste 6 %. Nicht gewählt: Spurfarbe nur als Kante. Ein gewählter Clip wählt seine Spur.
+- **Scharf** (Aufnahme bereit) ist Status, keine Auswahl: nur der runde Aufnahmeknopf leuchtet rot.
+- **Clip-Auswahl:** 2-px-Rahmen in `text`.
+- **Reihenfolge:** Clip-Inspektor über der Zeitleiste, Spurköpfe links, Mixer darunter, Insert-Rack und Pegelansicht im Dock rechts.
+- **Felder:** Zahlenwerte sind ziehbare Zahlenfelder (Doppelklick = Standard, Klick = eintippen), keine Drehregler.
+- **Löschen ohne Rückfrage:** Alles ist rückgängig machbar; nach dem Löschen erscheint 8 s ein Hinweis mit „Rückgängig (Strg+Z)“. Gefahr-Befehle stehen zuletzt und sind erst bei Hover rot.
+- **Tastenkürzel** in Tooltips und Menüs mit deutschen Namen: Strg, Umschalt, Alt, Entf, Enter, Esc, Leertaste. Im Klartext: „Löschen (Entf)“.
+- **Tastenkürzel im Produzenten-Modus:**
+
+| Befehl | Taste |
+| --- | --- |
+| Teilen | S |
+| Duplizieren | Strg+D |
+| Umkehren | R |
+| Loop | L |
+| Clip stumm | 0 |
+| Zusammenfügen | Strg+J |
+| Löschen | Entf |
+| Spur anlegen | Strg+T |
+| Bus anlegen | Strg+Umschalt+T |
+| Aufnahme scharf | Umschalt+R |
+| Bypass | B |
+| Alle Inserts umgehen | Umschalt+B |
+| Umbenennen | F2 |
 
 ## Logo
 
@@ -66,13 +95,15 @@ WOA – Wir on Air ist eine DAW mit eingebautem Sendestudio und Party-Player. Ei
 ## Umsetzung in egui
 
 - `crates/gui/src/theme.rs` bleibt die Quelle für die Rust-Konstanten; Studio-dunkel entspricht den heutigen Werten. Neu: ein `Mode`-Parameter für `accent`, `accent-2`, `lcd-ink` und die Flächen, plus `BORDER_STRONG`, `LCD_BG`, `LED_OFF`, `VU_FACE`, `VU_INK`.
-- `card_frame`, `lcd_frame`, `status_pill`, `led_meter` gibt es schon; neu nach diesen Vorlagen: `key`, `knob`, `fader`, `vu_meter`, `studio_clock`, `onair_lamp`, `cart_pad`, `jog`.
+- `card_frame`, `lcd_frame`, `status_pill`, `led_meter` gibt es schon; neu nach diesen Vorlagen: `key`, `knob`, `fader`, `vu_meter`, `studio_clock`, `onair_lamp`, `cart_pad`, `jog`, außerdem `icon_button`, `tooltip`, `number_field`, `select_field`, `context_menu`, `track_header`, `clip_inspector`, `insert_rack`, `fx_slot`, `undo_toast`.
+- Auswahl ist ein einziger Zustand im Modell (gewählte Spur, gewählte Clips); alle Ansichten lesen ihn, keine hält eine eigene Kopie.
 - Die Entwürfe unter „Entwürfe“ sind Zielbilder, keine pixelgenaue Vorgabe; Abstände und Tokens sind verbindlich.
 
 ## Nicht übernommen
 
 - Quelle: `nixblick/daw.woa` (main) – `crates/gui/src/theme.rs`, `docs/konzept.md`, `docs/ui-analyse-und-ziele.md` (Branch `feat/ui-studio-redesign-main`), App-Icon. Konkurrenz-Analysen über mAirList/Ableton hinaus lagen im Repo nicht vor.
 - Komponenten sind HTML/CSS-Nachbauten als Vorlage für egui, keine Rust-Bausteine.
+- Phosphor Icons stammen aus `@phosphor-icons/core` 2.1.1 (MIT); Lizenzhinweis gehört nach `docs/herkunft.md`.
 - Typo-Skala ist neu: `theme.rs` nutzt egui-Standardschriften mit Body/Button/Monospace 13.5 px, Small 11 px, Heading 16 px; hier `body` 14 px, `small` 12 px, `title` 22 px.
 
 

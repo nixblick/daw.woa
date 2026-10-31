@@ -866,6 +866,28 @@ Selbst geprüft von Claude: Tests in `crates/gui/tests/design_regressions.rs` (f
 
 Selbst geprüft von Claude: neun Tests in `crates/gui/tests/design_regressions.rs`, Tests und Clippy von `woa-gui` grün.
 
+## Design System Fassung 2 (0.34.27, offen)
+
+Umsetzung des Pakets vom 31.10.2026 (`docs/design/woa-design-system/`, Abschnitt „Bearbeiten und Auswahl“). Kein Ton nötig.
+
+1. Zwei Spuren anlegen, einen Spurkopf anklicken: Spurkopf, Kanalzug im Mixer und Kopf des Insert-Racks sind gleich gefärbt (14 % Spurfarbe, 1 px Rand), die Zeitleiste der Spur leicht getönt.
+2. Spurkopf ist 64 px hoch: oben Aufnahmepunkt, Name, MIDI-Kennung, M, S, Papierkorb; unten Quelle (Mithören steckt im Aufklappmenü), Gain, Pan.
+3. Papierkorb im Spurkopf: die Spur ist weg, unten erscheint „Spur „X“ gelöscht · Rückgängig (Strg+Z)“. Strg+Z oder der Link holt sie mit Sends zurück; nach 8 s oder mit Esc verschwindet der Hinweis.
+4. Rack: Kopf mit Name, Art und ⋯-Menü (darin „Spur löschen“, rot, zuletzt), dann EINGANG (Quelle, Trim), INSERTS · n, SENDS (nur wenn vorhanden), AUSGANG, Pan. Ein Effekt-Slot: Power-Knopf = Bypass, Klick auf den Namen klappt die Regler auf. „+ Effekt“ hat ein Suchfeld.
+5. Ohne Spur zeigt das Rack „Keine Spur“ und „+ Audio-Spur“ / „+ MIDI-Spur“. Im Mixer steht rechts „+ Bus“ als gestrichelter Platz; ein Klick legt „Bus n“ an.
+6. Kanalzug: „fx n“ unter M/S, rot mit Warnsymbol, wenn ein Plugin fehlt oder abgestürzt ist.
+7. Clip-Inspektor: ohne Clip „Kein Clip gewählt“. Audio-Clip: Kennung, FADE, GAIN, ZEIT (Start/Länge als Takt.Schlag.Sechzehntel, Dehnung, Tonhöhe), rechts Teilen, Duplizieren, Kopieren, Löschen. MIDI-Clip: NOTEN (Raster, Q, Velocity), FADE, ZEIT, Piano-Roll. Mehrere Clips (Umschalt+Klick): „n Clips“, ungleiche Werte als „—“; Eintippen setzt alle, Strg+Z nimmt es in einem Schritt zurück.
+
+Abhakliste (vorher → nachher, nichts entfallen): Spurkopf-Papierkorb, M, S, Rec, MIDI-Learn, Gain, Pan, Quelle, „hören“ (→ Mithören im Quellmenü), Umbenennen, MIDI-Clip/Import im Spurmenü; Rack: „Spur löschen“ (→ ⋯-Menü), Insert-Regler, Preset, Sidechain, Absenkung, Bypass, Entfernen, Sprachkette, „+ Plugin“, Plugin-Fenster, Neu laden, Sperren, Log, Sends PRE/POST/×, Ausgang; Mixer: Busname-Feld (→ „+ Bus“ legt „Bus n“ an, Umbenennen im Menü); Inspektor: Fades mit Kurve, Gain, Normalisieren, Dehnung, Tonhöhe, Metronom, Teilen, Duplizieren, Kopieren, Löschen, Piano-Roll.
+
+Nicht gebaut, weil die Engine es nicht kann (keine Attrappen): Effekte per Ziehen umsortieren, Clip Umkehren, Loop, Stumm, Zusammenfügen, Zustand „Plugin lädt …“, Stereo-Pegel (Pegel ist mono).
+
+Abweichungen vom Design: Papierkorb im Spurkopf immer sichtbar (nicht nur bei Hover) und „+ Plugin“ getrennt von „+ Effekt“, beides wegen bestehender Regressionstests. „Trim“ ist derselbe Wert wie Spur-Gain und Fader.
+
+Offen für André: Pan doppelt (Spurkopf und Rack; `HEADER_PAN = false` in `crates/gui/src/app.rs` nimmt ihn aus dem Spurkopf) und Name Gain/Trim.
+
+Selbst geprüft von Claude: fünf neue Tests in `crates/gui/tests/design_system_2.rs`, alle Tests und Clippy von `woa-gui` grün.
+
 ## Abgenommen
 
 - Paket 10 Dauertest (0.5.0): 30.10.2026, André „2 abgenommen“ (Sammelabnahme Pakete 5, 9, 10 und Nachtrag #43).
