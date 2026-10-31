@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.19 — 2026-10-31
+## 0.34.20 — 2026-10-31
 
 Windows-Notebook mit schwacher CPU: Tausende Dekoder-Warnungen und ein Hänger beim Hinzufügen von Titeln.
 
@@ -9,6 +9,16 @@ Windows-Notebook mit schwacher CPU: Tausende Dekoder-Warnungen und ein Hänger b
 - **Drosselung:** Gleiche Warnungen und Fehler ohne eigenen Code gehen höchstens 20-mal je Minute in die Telemetrie. Wie viele verworfen wurden, steht danach als `log.dropped`.
 - **Herkunft:** Meldungen aus Abhängigkeiten (über das `log`-Crate) tragen in der Telemetrie jetzt den Crate-Namen (z. B. `symphonia_core`) statt `log`, dazu Dateiname und Zeile im Code-Ort. Text und Pfade bleiben weiterhin lokal.
 - Tests: Drosselung, begrenzte Tabelle, Crate-Name statt Modulpfad, Brücke vom `log`-Crate mit 1084 Warnungen ohne Dateinamen auf der Leitung.
+
+## 0.34.19 — 2026-10-31
+
+Design-Nachbesserung: Was D1–D6 unerreichbar gemacht hatten, ist wieder da (André 31.10.: „Spur entfernen ist wichtig“, „Effekte sind weg im Studio-Mixer“).
+
+- **Spur löschen per Rechtsklick:** Rechtsklick auf den Spurkopf (Hintergrund oder Name) öffnet das Spurmenü mit Umbenennen, Inhalt anlegen und Spur löschen, für Audio-, MIDI- und Bus-Spuren. Das Menü hing am Rahmen, der nur Hover meldet, und ging deshalb nie auf.
+- **Sichtbarer Papierkorb:** im Spurkopf rechts und wieder in jedem Kanalzug des Studio-Mixers (vor dem Design war er dort, D5 hatte ihn ins Insert-Rack verschoben).
+- **Effekte und Plugins:** stehen im Insert-Rack jetzt oben, direkt unter dem Kanalnamen, wie im Entwurf ScreenStudio. Vorher lagen „+ Effekt“ und „+ Plugin“ unter dem sichtbaren Rand des Docks. Ohne Auswahl zeigt das Rack den ersten Kanal, und jeder Kanalzug hat einen Knopf „Effekte n“, der seinen Kanal ins Rack holt.
+- Bus-Spuren zeigen im Spurmenü kein „Audio-Datei importieren“ mehr.
+- Tests über die echte Oberfläche ohne Fenster (`crates/gui/tests/design_regressions.rs`): Rechtsklick auf Spurkopf und Name → Spur löschen für alle drei Spurarten, Papierkorb im Spurkopf und im Kanalzug, „+ Effekt“ ohne Scrollen sichtbar und für jede Spur ein Effekt angelegt.
 
 ## 0.34.18 — 2026-10-31
 
