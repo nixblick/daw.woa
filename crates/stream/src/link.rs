@@ -20,7 +20,7 @@ use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -427,6 +427,10 @@ pub fn is_alive(link: &Path) -> bool {
 /// Neuer Versuch zum lokalen woa-streamd: 1 s, verdoppelt bis 10 s.
 const FEED_BACKOFF_MIN: Duration = Duration::from_secs(1);
 const FEED_BACKOFF_MAX: Duration = Duration::from_secs(10);
+/// So viel Sendemix hält der Feeder ohne Verbindung zurück und schickt ihn nach dem
+/// Wiederverbinden nach. Kürzer als der Jitter-Puffer von woa-streamd, dann geht ein kurzer
+/// Abriss ohne Lücke durch.
+const FEED_BACKLOG_SECONDS: f32 = 0.4;
 
 enum FeedMsg {
     Title(String),
@@ -440,6 +444,7 @@ enum FeedMsg {
 pub struct Feeder {
     tx: Sender<FeedMsg>,
     connected: Arc<AtomicBool>,
+    reconnects: Arc<AtomicU32>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -447,14 +452,17 @@ impl Feeder {
     pub fn spawn(consumer: rtrb::Consumer<f32>, rate: u32, link: PathBuf) -> Result<Self, String> {
         let (tx, rx) = channel();
         let connected = Arc::new(AtomicBool::new(false));
+        let reconnects = Arc::new(AtomicU32::new(0));
         let c = Arc::clone(&connected);
+        let n = Arc::clone(&reconnects);
         let thread = std::thread::Builder::new()
             .name("woa-stream-feeder".into())
-            .spawn(move || feed(consumer, rate, link, rx, c))
+            .spawn(move || feed(consumer, rate, link, rx, c, n))
             .map_err(|e| e.to_string())?;
         Ok(Self {
             tx,
             connected,
+            reconnects,
             thread: Some(thread),
         })
     }
@@ -465,6 +473,11 @@ impl Feeder {
 
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Relaxed)
+    }
+
+    /// Wie oft die Verbindung zu woa-streamd abriss und wieder stand.
+    pub fn reconnects(&self) -> u32 {
+        self.reconnects.load(Ordering::Relaxed)
     }
 
     /// Beendet die Sendung (woa-streamd meldet sich ab) und den Feeder.
@@ -492,8 +505,12 @@ fn feed(
     link: PathBuf,
     rx: Receiver<FeedMsg>,
     connected: Arc<AtomicBool>,
+    reconnects: Arc<AtomicU32>,
 ) {
     let mut conn: Option<LocalStream> = None;
+    // Seit wann die Verbindung fehlt (nach einem Abriss, nicht beim ersten Verbinden).
+    let mut lost_at: Option<Instant> = None;
+    let backlog_max = (FEED_BACKLOG_SECONDS * rate as f32) as usize * 2;
     let mut next_try = Instant::now();
     let mut backoff = FEED_BACKOFF_MIN;
     let mut title: Option<String> = None;
@@ -508,6 +525,7 @@ fn feed(
                         && title_frame(s, &t).is_err()
                     {
                         conn = None;
+                        lost_at = Some(Instant::now());
                     }
                     title = Some(t);
                 }
@@ -537,6 +555,14 @@ fn feed(
                     if ok {
                         conn = Some(s);
                         backoff = FEED_BACKOFF_MIN;
+                        if let Some(t) = lost_at.take() {
+                            let n = reconnects.fetch_add(1, Ordering::Relaxed) + 1;
+                            tracing::info!(
+                                down_ms = t.elapsed().as_millis() as u64,
+                                reconnects = n,
+                                "streamd link restored"
+                            );
+                        }
                     }
                 }
                 Err(e) => tracing::debug!(error = %e, "streamd not reachable"),
@@ -548,9 +574,9 @@ fn feed(
         }
         connected.store(conn.is_some(), Ordering::Relaxed);
 
-        // Ring leeren (auch ohne Verbindung, damit er nicht vollläuft).
+        // Ring leeren (auch ohne Verbindung, damit er nicht vollläuft). Was nicht gesendet
+        // werden konnte, bleibt in `samples`, höchstens `backlog_max` (das Neueste).
         let n = consumer.slots() & !1;
-        samples.clear();
         if n > 0
             && let Ok(chunk) = consumer.read_chunk(n)
         {
@@ -560,14 +586,25 @@ fn feed(
             chunk.commit_all();
         }
         if let Some(s) = conn.as_mut() {
+            let mut sent = 0;
             for part in samples.chunks(MAX_AUDIO_SAMPLES) {
                 audio_payload(part, &mut bytes);
                 if let Err(e) = write_frame(s, KIND_AUDIO, &bytes) {
                     tracing::warn!(error = %e, "streamd link lost");
                     conn = None;
+                    lost_at = Some(Instant::now());
+                    connected.store(false, Ordering::Relaxed);
+                    // Sofort neu versuchen: woa-streamd läuft meist noch.
+                    next_try = Instant::now();
                     break;
                 }
+                sent += part.len();
             }
+            samples.drain(..sent);
+        }
+        if samples.len() > backlog_max {
+            let cut = (samples.len() - backlog_max) & !1;
+            samples.drain(..cut);
         }
         std::thread::sleep(Duration::from_millis(20));
     }

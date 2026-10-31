@@ -1,9 +1,18 @@
 # Changelog
 
-## 0.34.58 — 2026-10-31
+## 0.34.59 — 2026-10-31
 
 - **Leere Kästchen statt Pfeilen (#218):** Hoch/Runter in „Verwalten“ sind jetzt Phosphor-Symbole statt „↑/↓“, die in Barlow fehlten. JetBrains Mono (liegt schon bei) dient als Rückfallschrift für Pfeile wie „→“ und „↩“ in allen Textfamilien. Vollbreiten-Zeichen in Titeln („｜“, „（“) werden in „Verwalten“ schmal angezeigt. Test: jedes Nicht-ASCII-Zeichen im GUI-Quelltext hat eine Glyphe.
 - **Spurkopf ragte in die Zeitleiste (#212):** Die Eingangswahl bekommt nur noch den Platz neben Gain und Pan und kürzt lange Gerätenamen; was trotzdem zu breit ist, wird am Spurkopf abgeschnitten. Test: der Spurkopf endet vor Takt 1, auch mit langem Gerätenamen.
+
+## 0.34.58 — 2026-10-31
+
+### Behoben
+
+- **Aussetzer im Sendestream:** Der Puffer für den Sendemix in woa-streamd hatte nur 0,1 s Vorlauf. Fiel er unter 20 ms, gab es 0,1 s Stille; stieg er über 0,5 s, wurden 0,4 s Ton weggeschnitten. Zittern der Lieferung (Feeder alle 20 ms, Treiberpuffer, alter Windows-Rechner) und die Uhrendifferenz zwischen Soundkarte und Systemuhr lösten das regelmäßig aus: Am 30.10. waren es 28 Unterläufe in 36 Minuten (`streamd-status.json`). Neu ist ein Jitter-Puffer mit 0,5 s Zielstand. Verlässt der Stand das Band von ±0,1 s, wird je 20-ms-Block ein einzelner Frame weggelassen oder wiederholt. Das gleicht bis etwa 1100 ppm Uhrendifferenz aus und kostet praktisch keine Rechenzeit. Hart gekürzt wird nur noch über 2 s. Tests: 10 Minuten Fake-Quelle mit ±1000 ppm, Häppchen von 20 bis 100 ms und 200-ms-Hängern ergeben keine Lücke und keinen Sprung; mit den alten Werten scheitern dieselben Tests.
+- **Streamd:** Meldet sich die Oberfläche neu an, wird der Puffer nicht mehr geleert. Das Umrechnen auf die Stream-Rate läuft außerhalb der Sperre, die der Sende-Takt braucht. Unterläufe und Kürzungen stehen jetzt im Log („sendemix buffer gap“ mit Pufferstand, höchstens alle 10 s), und die Kürzungen zählt `live_trims` in `streamd-status.json`.
+- **Abriss der Verbindung zu woa-streamd:** Der Feeder verwarf den Sendemix, solange keine Verbindung stand. Jetzt hält er bis zu 0,4 s zurück, versucht nach einem Schreibfehler sofort neu zu verbinden und schreibt „streamd link restored“ mit der Ausfallzeit ins Log. Unter „Auf Sendung“ steht „Verbindung zu woa-streamd unterbrochen, verbinde neu …“, danach, wie oft neu verbunden wurde und wie viele Lücken es gab (Test: echter Feeder unter Last mit Verbindungsabriss ergibt keinen Unterlauf).
+- **Radio-Ausgabe:** Ohne Angabe in `config.json` läuft sie jetzt mit einem festen Puffer von 1024 Frames statt mit der Treibervorgabe. Lehnt das Gerät den Puffer ab, öffnet sie mit der Treibervorgabe, und eine Warnung steht im Log. Unter Windows entscheidet weiterhin der Treiber.
 
 ## 0.34.57 — 2026-10-31
 

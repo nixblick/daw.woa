@@ -113,6 +113,9 @@ pub fn plan(map: &OutputMap, reserved_main: &[usize]) -> Plan {
 
 /// Öffnet alle Ströme des Plans. `aux`: Vorhören auf Kanal 3/4 des Hauptgeräts (Paar 1).
 /// `xruns` zählt die Aussetzer des Hauptgeräts.
+/// Vorgabe für die Puffergröße der Radio-Ausgabe (21 ms bei 48 kHz).
+pub const RADIO_BUFFER_FRAMES: u32 = 1024;
+
 pub fn open(
     controller: &mut Controller,
     mixer: Mixer,
@@ -198,6 +201,11 @@ pub fn open(
             f(&mut b.l[..frames], &mut b.r[..frames]);
         }
     });
+    // Ohne Angabe ein fester, sicherer Puffer statt der Treibervorgabe (PipeWire/Pulse
+    // wählten teils sehr kleine Perioden, Aussetzer 29.10.2026). Lehnt das Gerät ab,
+    // fällt `ManagedOutput::open` auf den Treiber zurück. Unter Windows entscheidet
+    // ohnehin der Treiber (siehe `woa_engine::device`).
+    let buffer_frames = buffer_frames.or(Some(RADIO_BUFFER_FRAMES));
     let config = OutputConfig {
         device_id: main.open_id.clone(),
         buffer_frames,
