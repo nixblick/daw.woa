@@ -3,7 +3,9 @@
 //! Bei jedem Einschalten der Fernbedienung entstehen zwei neue PINs: die Gast-PIN (steht im
 //! QR-Code) und die DJ-PIN (nur auf dem Bildschirm, zum Eintippen). „Einmal“ heißt: pro
 //! Einschalten; mehrere Gäste scannen denselben Code. Falsch geratene PINs werden je Adresse
-//! gezählt und sperren nach wenigen Fehlversuchen für eine Weile.
+//! gezählt (IPv6 je /64-Netz) und sperren nach wenigen Fehlversuchen für eine Weile. Es gibt
+//! bewusst keine globale Sperre und keinen PIN-Wechsel nach Fehlversuchen: sonst könnte ein
+//! Angreifer den echten DJ aussperren oder ihm die PIN wegwürfeln (#162).
 //!
 //! Alle Zeiten kommen als Parameter herein, damit die Regeln ohne Warten testbar sind.
 
@@ -48,10 +50,6 @@ pub struct Limits {
     pub max_dj_sessions: usize,
     /// So viele Sitzungen darf eine Adresse je Rolle haben; ältere derselben Adresse fliegen raus.
     pub max_sessions_per_ip: usize,
-    /// Falsche PINs über alle Adressen zusammen, bis die DJ-PIN erneuert wird.
-    pub global_failures: u32,
-    /// Zählfenster dafür.
-    pub global_window: Duration,
 }
 
 impl Default for Limits {
@@ -65,8 +63,6 @@ impl Default for Limits {
             max_sessions: 256,
             max_dj_sessions: 32,
             max_sessions_per_ip: 16,
-            global_failures: 50,
-            global_window: Duration::from_secs(600),
         }
     }
 }
@@ -94,6 +90,21 @@ pub fn random_dj_pin() -> Option<String> {
         if v < 18_446_744_073_700_000_000 {
             return Some(format!("{:08}", v % 100_000_000));
         }
+    }
+}
+
+/// Quelle für die Fehlerzählung: IPv4 je Adresse, IPv6 je /64 (ein Anschluss bekommt meist ein
+/// ganzes /64 und könnte sonst mit jeder Adresse neu raten).
+fn source(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V4(_) => ip,
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => {
+                let s = v6.segments();
+                IpAddr::V6(std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0))
+            }
+        },
     }
 }
 
@@ -157,8 +168,6 @@ pub struct Auth {
     dj_pin: String,
     sessions: HashMap<String, Session>,
     fails: HashMap<IpAddr, (u32, Instant)>,
-    /// Falsche PINs aller Adressen im laufenden Zählfenster.
-    global_fails: (u32, Instant),
     wishes: HashMap<IpAddr, Instant>,
     limits: Limits,
 }
@@ -182,7 +191,6 @@ impl Auth {
             dj_pin: random_dj_pin()?,
             sessions: HashMap::new(),
             fails: HashMap::new(),
-            global_fails: (0, Instant::now()),
             wishes: HashMap::new(),
             limits,
         })
@@ -195,7 +203,6 @@ impl Auth {
             dj_pin: dj.into(),
             sessions: HashMap::new(),
             fails: HashMap::new(),
-            global_fails: (0, Instant::now()),
             wishes: HashMap::new(),
             limits,
         }
@@ -222,7 +229,6 @@ impl Auth {
         self.dj_pin = d;
         self.sessions.clear();
         self.fails.clear();
-        self.global_fails.0 = 0;
         true
     }
 
@@ -233,10 +239,11 @@ impl Auth {
         pin: &str,
         now: Instant,
     ) -> Result<(String, Role), LoginError> {
-        if let Some((n, since)) = self.fails.get(&ip).copied() {
+        let src = source(ip);
+        if let Some((n, since)) = self.fails.get(&src).copied() {
             let age = now.duration_since(since);
             if age >= self.limits.lockout {
-                self.fails.remove(&ip);
+                self.fails.remove(&src);
             } else if n >= self.limits.login_failures {
                 let left = self.limits.lockout.saturating_sub(age).as_secs() + 1;
                 return Err(LoginError::Locked(left));
@@ -250,9 +257,8 @@ impl Auth {
         } else if is_guest {
             Role::Guest
         } else {
-            let e = self.fails.entry(ip).or_insert((0, now));
+            let e = self.fails.entry(src).or_insert((0, now));
             e.0 += 1;
-            self.count_global_failure(now);
             if self.fails.len() > 1024 {
                 let lockout = self.limits.lockout;
                 self.fails
@@ -263,7 +269,7 @@ impl Auth {
         // Nur eine DJ-Anmeldung setzt den Zähler zurück. Eine Gast-Anmeldung darf es nicht:
         // sonst ließe sich die DJ-PIN zwischen zwei Gast-Anmeldungen ohne Sperre durchprobieren (#116).
         if role == Role::Dj {
-            self.fails.remove(&ip);
+            self.fails.remove(&src);
         }
         let token = random_token().ok_or(LoginError::NoRandom)?;
         self.make_room(ip, role);
@@ -277,23 +283,6 @@ impl Auth {
             },
         );
         Ok((token, role))
-    }
-
-    /// Zählt eine falsche PIN über alle Adressen; zu viele erneuern die DJ-PIN.
-    /// Bestehende Sitzungen bleiben, nur wer die PIN noch nicht hat, braucht die neue.
-    fn count_global_failure(&mut self, now: Instant) {
-        if now.duration_since(self.global_fails.1) >= self.limits.global_window {
-            self.global_fails = (0, now);
-        }
-        self.global_fails.0 += 1;
-        if self.global_fails.0 >= self.limits.global_failures
-            && let Some(p) = random_dj_pin()
-        {
-            tracing::warn!("remote: zu viele falsche PINs, DJ-PIN erneuert");
-            self.dj_pin = p;
-            // Sperren je Adresse bleiben bestehen, sonst entsperrt der Angreifer sich selbst.
-            self.global_fails = (0, now);
-        }
     }
 
     /// Schafft Platz für eine neue Sitzung: erst je Adresse und Rolle, dann je Rolle.
@@ -493,43 +482,53 @@ mod tests {
     }
 
     #[test]
-    fn many_wrong_pins_from_many_addresses_renew_the_dj_pin() {
-        let mut a = Auth::with_pins(
-            Limits {
-                global_failures: 10,
-                ..Limits::default()
-            },
-            "111111",
-            "222222",
-        );
+    fn many_wrong_pins_from_many_addresses_neither_change_the_pin_nor_lock_out_the_dj() {
+        let mut a = auth();
         let t0 = Instant::now();
         let (td, _) = a.login(ip(1), "222222", t0).unwrap();
-        for i in 0..10 {
-            let _ = a.login(ip(10 + i), "000000", t0);
+        for i in 0..200u32 {
+            let src = IpAddr::V4(std::net::Ipv4Addr::new(
+                198,
+                51,
+                (i / 250) as u8,
+                (i % 250) as u8,
+            ));
+            for _ in 0..5 {
+                let _ = a.login(src, "000000", t0);
+            }
         }
-        assert_ne!(a.dj_pin(), "222222");
-        assert_eq!(a.dj_pin().len(), 8);
-        // Die alte PIN gilt nicht mehr, laufende Sitzungen bleiben.
-        assert_eq!(a.login(ip(99), "222222", t0), Err(LoginError::WrongPin));
+        // Die PIN bleibt, der echte DJ kommt von seiner Adresse sofort wieder herein (#162).
+        assert_eq!(a.dj_pin(), "222222");
+        assert_eq!(a.login(ip(2), "222222", t0).map(|(_, r)| r), Ok(Role::Dj));
         assert_eq!(a.role_of(&td), Some(Role::Dj));
     }
 
     #[test]
-    fn global_failures_expire_with_the_window() {
-        let mut a = Auth::with_pins(
-            Limits {
-                global_failures: 10,
-                ..Limits::default()
-            },
-            "111111",
-            "222222",
-        );
+    fn ipv6_addresses_of_one_network_share_the_lockout() {
+        let mut a = auth();
         let t0 = Instant::now();
-        for i in 0..9 {
-            let _ = a.login(ip(10 + i), "000000", t0);
+        let v6 = |net: u16, host: u16| {
+            IpAddr::V6(std::net::Ipv6Addr::new(
+                0x2001, 0xdb8, 0, net, 0, 0, 0, host,
+            ))
+        };
+        // Ein Angreifer wechselt in seinem /64 die Adresse: das zählt als eine Quelle.
+        let mut wrong = 0;
+        for h in 0..50u16 {
+            if a.login(v6(1, h), "000000", t0) == Err(LoginError::WrongPin) {
+                wrong += 1;
+            }
         }
-        let _ = a.login(ip(50), "000000", t0 + Duration::from_secs(601));
-        assert_eq!(a.dj_pin(), "222222");
+        assert_eq!(wrong, 5);
+        assert!(matches!(
+            a.login(v6(1, 999), "222222", t0),
+            Err(LoginError::Locked(_))
+        ));
+        // Ein anderes Netz (der echte DJ) ist nicht betroffen.
+        assert_eq!(
+            a.login(v6(2, 1), "222222", t0).map(|(_, r)| r),
+            Ok(Role::Dj)
+        );
     }
 
     #[test]

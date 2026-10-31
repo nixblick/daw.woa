@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.67 — 2026-10-31
+
+- **Fernbedienung (WAN, #162):** Falsche PINs würfeln die DJ-PIN nicht mehr neu, und es gibt keine globale Sperre, mit der ein Angreifer den echten DJ aussperren könnte. Fehlversuche zählen je Quelle (IPv4-Adresse, IPv6 je /64-Netz), damit ein Anschluss nicht mit jeder neuen IPv6-Adresse weiterraten kann. PIN und Token werden nie geloggt. Tests für beide Angriffe dazu.
+
 ## 0.34.66 — 2026-10-31
 
 - **KI live ohne Token (#232):** Die App startet den Live-Server jetzt bei jedem Start selbst, auch wenn kein Zugriffstoken erzeugt wurde. Sie nutzt dann einen eigenen Schlüssel je Start (nur 127.0.0.1, Origin-Prüfung, Lock-Datei 0600, nie angezeigt). `woa-headless mcp` reicht so an das offene Fenster durch, statt daneben auf der Datei zu arbeiten. Kann der Server nicht starten, steht „KI aus“ in der Kopfleiste.
