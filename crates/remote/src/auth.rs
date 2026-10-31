@@ -93,19 +93,24 @@ pub fn random_dj_pin() -> Option<String> {
     }
 }
 
-/// Quelle für die Fehlerzählung: IPv4 je Adresse, IPv6 je /64 (ein Anschluss bekommt meist ein
-/// ganzes /64 und könnte sonst mit jeder Adresse neu raten).
+/// Quelle für die Fehlerzählung: jede Adresse für sich, nur globale IPv6-Adressen je /64
+/// (ein Internet-Anschluss bekommt meist ein ganzes /64 und könnte sonst mit jeder Adresse neu
+/// raten). Link-local (fe80::/10), ULA (fc00::/7) und IPv4 zählen je volle Adresse, sonst sperrt
+/// ein Gast im WLAN den echten DJ mit aus.
 fn source(ip: IpAddr) -> IpAddr {
-    match ip {
-        IpAddr::V4(_) => ip,
-        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
-            Some(v4) => IpAddr::V4(v4),
-            None => {
-                let s = v6.segments();
-                IpAddr::V6(std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0))
-            }
-        },
+    let IpAddr::V6(v6) = ip else {
+        return ip;
+    };
+    if let Some(v4) = v6.to_ipv4_mapped() {
+        return IpAddr::V4(v4);
     }
+    let s = v6.segments();
+    let link_local = s[0] & 0xffc0 == 0xfe80;
+    let ula = s[0] & 0xfe00 == 0xfc00;
+    if link_local || ula || v6.is_loopback() || v6.is_unspecified() {
+        return ip;
+    }
+    IpAddr::V6(std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0))
 }
 
 /// 128-Bit-Token als Hex.
@@ -529,6 +534,34 @@ mod tests {
             a.login(v6(2, 1), "222222", t0).map(|(_, r)| r),
             Ok(Role::Dj)
         );
+    }
+
+    #[test]
+    fn lan_neighbour_does_not_lock_out_the_dj() {
+        let t0 = Instant::now();
+        let pairs = [
+            ("fe80::1", "fe80::2"),
+            ("fd00:1:2:3::1", "fd00:1:2:3::2"),
+            ("192.168.1.10", "192.168.1.11"),
+        ];
+        for (guest, dj) in pairs {
+            let mut a = auth();
+            let g: IpAddr = guest.parse().unwrap();
+            let d: IpAddr = dj.parse().unwrap();
+            for _ in 0..10 {
+                let _ = a.login(g, "000000", t0);
+            }
+            assert!(matches!(
+                a.login(g, "222222", t0),
+                Err(LoginError::Locked(_))
+            ));
+            // Der Nachbar im selben Netz (der echte DJ) kommt herein.
+            assert_eq!(
+                a.login(d, "222222", t0).map(|(_, r)| r),
+                Ok(Role::Dj),
+                "{dj}"
+            );
+        }
     }
 
     #[test]
