@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.42 — 2026-10-31
+## 0.34.43 — 2026-10-31
 
 Fehlerbehebung nach dem Test unter Windows (André: „bibliothek noch langsam. selbst bei 4 tracks“, „titelinfos ändert geht nicht. egal wo ich doppelt klicke“, „rechtsklick funktioniert auch nicht“).
 
@@ -9,6 +9,13 @@ Fehlerbehebung nach dem Test unter Windows (André: „bibliothek noch langsam. 
 - **Analyse etwa dreimal schneller:** Drei Viertel der Analysezeit gingen in die True-Peak-Messung. Sie rechnet das Filter jetzt nur dort, wo eine neue Spitze überhaupt möglich ist, und das Ergebnis bleibt exakt gleich. Gemessen im Release-Build (`examples/analyse_zeit.rs`): ein 3:17-Titel 0,9 s → 0,27 s, ein 5:21-Titel 1,5 s → 0,53 s.
 - **Tests:** `crates/gui/tests/titelinfos.rs` klickt in der echten App (Doppelklick schnell, langsam, nach vorherigem Klick; Kontextmenü); `true_peak_skip_is_exact` vergleicht mit dem vollen Filter.
 - **Analyse nur noch einen Titel nach dem anderen, unter 16 Threads:** Mit zwei gleichzeitig dauerte ein Dekodieren auf dem Notebook 1,3–2,8 s statt 0,3–0,4 s.
+
+## 0.34.42 — 2026-10-31
+
+### Behoben
+
+- **Vorhören (PFL):** Die Wahl unter Einstellungen → Vorhören (PFL) wirkte nicht, solange etwas lief (auch nur die Playlist), und nichts sagte das. Jetzt merkt sich WOA die Wahl, zeigt im Menü „Wirkt, sobald nichts mehr läuft“ und öffnet die Ausgabe automatisch neu, sobald die Wiedergabe steht. Die laufende Sendung wird nie unterbrochen. Läuft nichts, greift die Wahl sofort.
+- **Vorhören (PFL):** Fehler beim Öffnen des Kopfhörer-Ausgangs (zu wenige Kanäle, Gerät geht nicht, Kanalzahl nicht lesbar) stehen jetzt im Menü, im Protokoll und als Tooltip an den deaktivierten Vorhören-Knöpfen von Deck, Cart und Playlist. Ist das Vorhören aus, sagt der Tooltip „Vorhören ist aus: Einstellungen → Vorhören (PFL)“.
 
 ## 0.34.41 — 2026-10-31
 
