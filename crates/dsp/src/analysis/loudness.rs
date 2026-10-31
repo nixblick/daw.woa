@@ -231,9 +231,19 @@ const TP_TAPS: usize = 2 * TP_HALF + 1;
 /// läuft [`TP_HALF`] Samples hinter dem Eingang her; [`TruePeak::flush`] holt den Rest.
 #[derive(Clone)]
 pub struct TruePeak {
-    /// Koeffizienten je Phase, in der Reihenfolge der Historie (neuestes Sample zuerst).
+    /// Koeffizienten je Phase, in zeitlicher Reihenfolge (ältestes Sample zuerst).
     phases: [[f64; TP_TAPS]; TP_OVERSAMPLE],
-    hist: [f64; TP_TAPS],
+    /// Ringpuffer, jedes Sample doppelt (bei `pos` und `pos + TP_TAPS`): das Fenster der
+    /// letzten [`TP_TAPS`] Samples liegt so immer zusammenhängend, ohne Umkopieren.
+    ring: [f64; 2 * TP_TAPS],
+    pos: usize,
+    /// Größte Summe der Beträge einer Phase: |Ausgang| ≤ `gain` · größtes |Sample| im Fenster.
+    gain: f64,
+    /// So viele Samples lang kann das Fenster noch eine neue Spitze bringen. Liegt kein
+    /// Sample im Fenster über `peak / gain`, ist die Rechnung überflüssig (exakt, kein
+    /// Näherungswert): bei Musik fällt so der Großteil der Filterarbeit weg (André 31.10.2026,
+    /// Analyse auf dem alten Windows-Notebook drei Viertel der Zeit im True Peak).
+    live: usize,
     peak: f64,
 }
 
@@ -265,22 +275,39 @@ impl TruePeak {
             .collect();
         let mut phases = [[0.0; TP_TAPS]; TP_OVERSAMPLE];
         for (p, taps) in phases.iter_mut().enumerate() {
-            for (j, c) in taps.iter_mut().enumerate() {
+            for (j, c) in taps.iter_mut().rev().enumerate() {
                 *c = h.get(TP_OVERSAMPLE * j + p).copied().unwrap_or(0.0);
             }
         }
+        let gain = phases
+            .iter()
+            .map(|t| t.iter().map(|c| c.abs()).sum::<f64>())
+            .fold(0.0, f64::max);
         Self {
             phases,
-            hist: [0.0; TP_TAPS],
+            ring: [0.0; 2 * TP_TAPS],
+            pos: 0,
+            gain,
+            live: 0,
             peak: 0.0,
         }
     }
 
     fn step(&mut self, x: f64) {
-        self.hist.rotate_right(1);
-        self.hist[0] = x;
+        self.ring[self.pos] = x;
+        self.ring[self.pos + TP_TAPS] = x;
+        self.pos = (self.pos + 1) % TP_TAPS;
+        if x.abs() * self.gain > self.peak {
+            self.live = TP_TAPS;
+        }
+        if self.live == 0 {
+            return;
+        }
+        self.live -= 1;
+        // Ältestes Sample zuerst: das Fenster beginnt beim nächsten Schreibplatz.
+        let w = &self.ring[self.pos..self.pos + TP_TAPS];
         for taps in &self.phases {
-            let y: f64 = taps.iter().zip(&self.hist).map(|(c, h)| c * h).sum();
+            let y: f64 = taps.iter().zip(w).map(|(c, h)| c * h).sum();
             self.peak = self.peak.max(y.abs());
         }
     }
@@ -312,6 +339,8 @@ impl TruePeak {
     /// Setzt die Spitze zurück (Historie bleibt).
     pub fn reset_peak(&mut self) {
         self.peak = 0.0;
+        // Die Historie zählt wieder voll.
+        self.live = TP_TAPS;
     }
 }
 
@@ -400,6 +429,44 @@ mod tests {
 
     /// EBU Tech 3341 sinngemäß: Ein Sinus bei fs/4 mit 45° Phase hat Sample-Spitzen bei
     /// 0,707, die wahre Spitze liegt bei 1,0 (+3 dB).
+    /// Das Überspringen ändert nichts: gleich wie das volle Filter über jedes Sample.
+    #[test]
+    fn true_peak_skip_is_exact() {
+        let reference = |x: &[f32]| {
+            let tp = TruePeak::new();
+            let mut hist = vec![0.0f64; TP_TAPS];
+            let mut peak = 0.0f64;
+            for &s in x.iter().chain(std::iter::repeat_n(&0.0, TP_HALF)) {
+                hist.remove(0);
+                hist.push(f64::from(s));
+                for taps in &tp.phases {
+                    let y: f64 = taps.iter().zip(&hist).map(|(c, h)| c * h).sum();
+                    peak = peak.max(y.abs());
+                }
+            }
+            peak
+        };
+        // Pseudozufällige Musik: leise Strecken, kurze laute Spitzen, Intersample-Spitzen.
+        let mut seed = 12345u32;
+        let x: Vec<f32> = (0..50_000)
+            .map(|i| {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let noise = (seed >> 8) as f32 / (1u32 << 24) as f32 - 0.5;
+                let loud = if i % 7000 < 40 { 1.6 } else { 0.3 };
+                noise * loud + 0.4 * ((i as f32) * 2.9).sin()
+            })
+            .collect();
+        let mut tp = TruePeak::new();
+        tp.push(&x);
+        tp.flush();
+        let want = reference(&x);
+        assert!((tp.peak() - want).abs() < 1e-12, "{} vs {want}", tp.peak());
+        // Nach dem Zurücksetzen zählt die Historie mit.
+        tp.reset_peak();
+        tp.push(&[0.0; 3]);
+        assert!(tp.peak() > 0.0, "Historie nach reset_peak vergessen");
+    }
+
     #[test]
     fn true_peak_finds_intersample_peak() {
         let s: Vec<f32> = (0..4800)
