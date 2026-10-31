@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.34.31 — 2026-10-31
+
+Feedback: Bildschirmfoto erst auf Klick, eigenes Bild anhängen, Protokoll auf Wunsch mitsenden (#173, #174).
+
+- **Bildschirmfoto auf Klick (#173):** WOA fotografiert beim Öffnen des Feedback-Fensters nicht mehr. Wer „Bildschirmfoto mitsenden“ anhakt, sieht das Fenster kurz verschwinden, dann wird ohne Fenster aufgenommen. Haken weg: das Bild ist verworfen. Vorgabe: aus.
+- **Eigenes Bild (#174):** „Eigenes Bild anhängen …“ öffnet die Dateiauswahl (PNG oder JPEG). Das Bild wird als PNG geschickt und bei Bedarf verkleinert, damit es unter der Server-Grenze von 3 MB bleibt; „Entfernen“ nimmt es wieder ab. Höchstens zwei Bilder je Meldung.
+- **Protokoll mitsenden:** neuer Haken, Vorgabe aus. Er hängt die Zeilen des Protokoll-Fensters (Hilfe → Protokoll) unter den Text. Der Heimordner (`/home/<name>`, `C:\Users\<name>`) wird zu `~` gekürzt. Der Text samt Protokoll bleibt unter 20 000 Zeichen; bei mehr gehen die neuesten Zeilen mit. Unter dem Haken lässt sich das Protokoll vorher ansehen.
+- **Was mitgeht:** Über „Abschicken“ steht, was gesendet wird (Text, Bilder, Protokoll, Version und System). Es geht nur mit, was angehakt oder angehängt ist.
+- **Sendeweg unverändert:** `POST https://feedback.wironair.de/api/feedback`, Bilder im Feld `images`.
+- **Tests:** Bildschirmfoto und eigenes Bild setzen und entfernen, Pfadkürzung, ohne Haken kein Protokoll, Längengrenze (`woa-gui`); mehrere Bilder und Obergrenze (`woa-telemetry`).
+
 ## 0.34.30 — 2026-10-31
 
 Bibliothek: Analyse hängt nicht mehr an langen Titeln, läuft im Hintergrund weiter, Titel lassen sich entfernen und Spalten sortieren (#122, #123, #124, #120).

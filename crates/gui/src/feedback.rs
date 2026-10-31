@@ -5,6 +5,7 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use woa_telemetry::feedback::{MAX_SCREENSHOT_BYTES, MAX_TEXT_CHARS};
 use woa_telemetry::{
     DEFAULT_INGEST_URL, FeedbackError, FeedbackMeta, UploadConfig, new_install_id, submit_feedback,
 };
@@ -223,10 +224,16 @@ pub struct FeedbackDialog {
     pub phase: Phase,
     /// The user's text.
     pub text: String,
-    /// Attach the screenshot.
+    /// Attach the screenshot. Ticking it takes the screenshot (dialog hidden meanwhile).
     pub attach: bool,
     /// Captured PNG, if any.
     pub screenshot: Option<Vec<u8>>,
+    /// The viewport screenshot was requested (one frame after the dialog vanished).
+    pub capture_requested: bool,
+    /// Own image chosen by the user: file name and PNG bytes.
+    pub image: Option<(String, Vec<u8>)>,
+    /// Send the session log (Protokoll window). Off by default.
+    pub send_log: bool,
     pending: Option<Receiver<Result<Option<u64>, FeedbackError>>>,
     /// Set when the send succeeded; the dialog closes [`THANKS_VISIBLE`] later.
     thanks_since: Option<Instant>,
@@ -237,29 +244,188 @@ impl Default for FeedbackDialog {
         Self {
             phase: Phase::Closed,
             text: String::new(),
-            attach: true,
+            attach: false,
             screenshot: None,
+            capture_requested: false,
+            image: None,
+            send_log: false,
             pending: None,
             thanks_since: None,
         }
     }
 }
 
+/// Header line between the user's text and the attached log.
+pub const LOG_HEADER: &str = "--- Protokoll ---";
+
+/// Replaces the home folder (`/home/name`, `C:\\Users\\name`) by `~`, in both slash styles.
+pub fn shorten_home(text: &str, home: Option<&Path>) -> String {
+    let Some(home) = home.map(|h| {
+        h.to_string_lossy()
+            .trim_end_matches(['/', '\\'])
+            .to_string()
+    }) else {
+        return text.to_string();
+    };
+    if home.len() < 2 {
+        return text.to_string();
+    }
+    let mut out = text.to_string();
+    for h in [
+        home.clone(),
+        home.replace('\\', "/"),
+        home.replace('/', "\\"),
+    ] {
+        out = out.replace(&h, "~");
+    }
+    out
+}
+
+/// The user's home folder from the environment.
+pub fn home_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .filter(|h| !h.is_empty())
+        .map(std::path::PathBuf::from)
+}
+
+/// Log lines (oldest first) as text, home folder shortened, newest lines kept so that
+/// the result fits into `budget` characters.
+pub fn log_text(lines: &[String], home: Option<&Path>, budget: usize) -> String {
+    let mut kept: Vec<String> = Vec::new();
+    let mut used = 0;
+    for line in lines.iter().rev() {
+        let l = shorten_home(line, home);
+        let n = l.chars().count() + 1;
+        if used + n > budget {
+            break;
+        }
+        used += n;
+        kept.push(l);
+    }
+    kept.reverse();
+    kept.join("\n")
+}
+
+/// Turns any PNG/JPEG into a PNG within the server limit (downscaled if needed).
+pub fn image_to_png(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let img = image::load_from_memory(bytes).map_err(|e| format!("Bild nicht lesbar: {e}"))?;
+    fit_png(img)
+}
+
+fn fit_png(mut img: image::DynamicImage) -> Result<Vec<u8>, String> {
+    for _ in 0..4 {
+        let rgba = img.to_rgba8();
+        let png =
+            encode_png(rgba.width(), rgba.height(), rgba.as_raw()).map_err(|e| e.to_string())?;
+        if png.len() <= MAX_SCREENSHOT_BYTES {
+            return Ok(png);
+        }
+        let (w, h) = (img.width() * 7 / 10, img.height() * 7 / 10);
+        img = img.resize(w.max(1), h.max(1), image::imageops::FilterType::Triangle);
+    }
+    Err("Bild zu groß (höchstens 3 MB)".into())
+}
+
 impl FeedbackDialog {
-    /// Opens the dialog; the UI must request a screenshot and call [`Self::set_screenshot`].
+    /// Opens the dialog for editing. No screenshot yet: it is taken when the user ticks the box.
     pub fn open(&mut self) {
         *self = Self {
-            phase: Phase::Capturing,
+            phase: Phase::Editing,
             ..Self::default()
         };
     }
 
-    /// Stores the captured screenshot (or `None` if capture failed) and starts editing.
+    /// Hides the dialog and asks for a screenshot (the UI sends the viewport command
+    /// on the next frame, see `capture_requested`).
+    pub fn request_screenshot(&mut self) {
+        self.phase = Phase::Capturing;
+        self.capture_requested = false;
+    }
+
+    /// Stores the captured screenshot (or `None` if capture failed) and returns to editing.
     pub fn set_screenshot(&mut self, png: Option<Vec<u8>>) {
+        let png = png.and_then(|p| {
+            if p.len() <= MAX_SCREENSHOT_BYTES {
+                Some(p)
+            } else {
+                image::load_from_memory(&p)
+                    .ok()
+                    .and_then(|i| fit_png(i).ok())
+            }
+        });
+        self.attach = png.is_some();
         self.screenshot = png;
+        self.capture_requested = false;
         if self.phase == Phase::Capturing {
             self.phase = Phase::Editing;
         }
+    }
+
+    /// Unticks the screenshot and drops it.
+    pub fn remove_screenshot(&mut self) {
+        self.attach = false;
+        self.screenshot = None;
+    }
+
+    /// Attaches the user's own image (PNG or JPEG).
+    pub fn set_image(&mut self, name: &str, bytes: &[u8]) -> Result<(), String> {
+        let png = image_to_png(bytes)?;
+        let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
+        let stem = file.rsplit_once('.').map_or(file, |(s, _)| s);
+        let stem = if stem.trim().is_empty() { "bild" } else { stem };
+        self.image = Some((format!("{stem}.png"), png));
+        Ok(())
+    }
+
+    /// Removes the user's own image.
+    pub fn remove_image(&mut self) {
+        self.image = None;
+    }
+
+    /// Images that go out: only what the user ticked or attached.
+    pub fn images(&self) -> Vec<(String, Vec<u8>)> {
+        let mut v = Vec::new();
+        if self.attach
+            && let Some(s) = &self.screenshot
+        {
+            v.push(("screenshot.png".to_string(), s.clone()));
+        }
+        if let Some(i) = &self.image {
+            v.push(i.clone());
+        }
+        v
+    }
+
+    /// Message body: the text, plus the log below [`LOG_HEADER`] only if ticked.
+    /// `log_lines` are the Protokoll lines, oldest first. Fits [`MAX_TEXT_CHARS`].
+    pub fn body(&self, log_lines: &[String], home: Option<&Path>) -> String {
+        let text = self.text.trim().to_string();
+        if !self.send_log || log_lines.is_empty() {
+            return text;
+        }
+        // Room for the install line the payload adds.
+        let budget = MAX_TEXT_CHARS.saturating_sub(text.chars().count() + LOG_HEADER.len() + 200);
+        let log = log_text(log_lines, home, budget);
+        if log.is_empty() {
+            return text;
+        }
+        format!("{text}\n\n{LOG_HEADER}\n{log}")
+    }
+
+    /// Short list of what goes out, for the line above the send button.
+    pub fn outgoing(&self, log_lines: usize) -> Vec<String> {
+        let mut v = vec!["dein Text".to_string()];
+        if self.attach && self.screenshot.is_some() {
+            v.push("Bildschirmfoto".into());
+        }
+        if let Some((name, png)) = &self.image {
+            v.push(format!("Bild {name} ({} KB)", png.len().div_ceil(1024)));
+        }
+        if self.send_log {
+            v.push(format!("Protokoll ({log_lines} Zeilen)"));
+        }
+        v.push("Version, System, Installationskennung".into());
+        v
     }
 
     /// Closes the dialog.
@@ -268,7 +434,7 @@ impl FeedbackDialog {
     }
 
     /// Sends in a background thread. Empty URL: no request, message [`NOT_CONFIGURED`].
-    pub fn send(&mut self, config: &GuiConfig) {
+    pub fn send(&mut self, config: &GuiConfig, log_lines: &[String]) {
         if config.feedback_url.trim().is_empty() {
             self.phase = Phase::Done(NOT_CONFIGURED.into());
             return;
@@ -282,18 +448,14 @@ impl FeedbackDialog {
             install_id: config.install_id.clone(),
             ..FeedbackMeta::default()
         };
-        let text = self.text.clone();
-        let png = if self.attach {
-            self.screenshot.clone()
-        } else {
-            None
-        };
+        let text = self.body(log_lines, home_dir().as_deref());
+        let images = self.images();
         let (tx, rx) = channel();
         let spawned = std::thread::Builder::new()
             .name("woa-feedback".into())
             .spawn(move || {
                 // Receiver gone = dialog closed; nothing to do.
-                let _ = tx.send(submit_feedback(&text, png, &meta));
+                let _ = tx.send(submit_feedback(&text, images, &meta));
             });
         match spawned {
             Ok(_) => {
@@ -414,15 +576,13 @@ mod tests {
     fn empty_url_reports_not_configured_without_request() {
         let mut d = FeedbackDialog::default();
         d.open();
-        assert_eq!(d.phase, Phase::Capturing);
-        d.set_screenshot(None);
         assert_eq!(d.phase, Phase::Editing);
         d.text = "Knopf klemmt".into();
         let off = GuiConfig {
             feedback_url: String::new(),
             ..GuiConfig::default()
         };
-        d.send(&off);
+        d.send(&off, &[]);
         assert_eq!(d.phase, Phase::Done(NOT_CONFIGURED.into()));
     }
 
@@ -440,7 +600,7 @@ mod tests {
             feedback_url: "http://127.0.0.1:9/api/feedback".into(),
             ..GuiConfig::default()
         };
-        d.send(&cfg);
+        d.send(&cfg, &[]);
         assert!(matches!(d.phase, Phase::Done(ref m) if m.contains("Text")));
     }
 
@@ -455,7 +615,7 @@ mod tests {
             feedback_url: "http://127.0.0.1:9/api/feedback".into(),
             ..GuiConfig::default()
         };
-        d.send(&cfg);
+        d.send(&cfg, &[]);
         assert_eq!(d.phase, Phase::Sending);
         for _ in 0..300 {
             d.poll();
@@ -548,6 +708,92 @@ mod tests {
         // Defaults are not pinned in the file.
         assert!(!text.contains("feedback_url"), "{text}");
         assert_eq!(GuiConfig::load(&p), c);
+    }
+
+    #[test]
+    fn screenshot_on_click_set_and_removed() {
+        let mut d = FeedbackDialog::default();
+        d.open();
+        assert!(
+            !d.attach && d.images().is_empty(),
+            "nothing before the click"
+        );
+        d.request_screenshot();
+        assert_eq!(d.phase, Phase::Capturing);
+        d.set_screenshot(Some(encode_png(2, 1, &[255; 8]).unwrap()));
+        assert_eq!(d.phase, Phase::Editing);
+        assert!(d.attach);
+        assert_eq!(d.images()[0].0, "screenshot.png");
+        d.remove_screenshot();
+        assert!(d.images().is_empty());
+    }
+
+    #[test]
+    fn own_image_set_and_removed() {
+        let mut d = FeedbackDialog::default();
+        d.open();
+        // A JPEG becomes a PNG.
+        let mut jpg = Vec::new();
+        image::DynamicImage::new_rgb8(4, 3)
+            .write_to(
+                &mut std::io::Cursor::new(&mut jpg),
+                image::ImageFormat::Jpeg,
+            )
+            .unwrap();
+        d.set_image("C:\\x\\Foto vom Pult.jpg", &jpg).unwrap();
+        let imgs = d.images();
+        assert_eq!(imgs.len(), 1);
+        assert_eq!(imgs[0].0, "Foto vom Pult.png");
+        assert!(imgs[0].1.starts_with(b"\x89PNG"));
+        assert!(
+            d.outgoing(0)
+                .iter()
+                .any(|s| s.starts_with("Bild Foto vom Pult.png"))
+        );
+        d.remove_image();
+        assert!(d.images().is_empty());
+        assert!(d.set_image("kaputt.png", b"nope").is_err());
+        assert!(d.image.is_none());
+    }
+
+    #[test]
+    fn home_paths_are_shortened() {
+        let home = Path::new("/home/robert");
+        assert_eq!(
+            shorten_home("lade /home/robert/Musik/a.mp3 fehlgeschlagen", Some(home)),
+            "lade ~/Musik/a.mp3 fehlgeschlagen"
+        );
+        let win = Path::new("C:\\Users\\Robert");
+        assert_eq!(
+            shorten_home(
+                "[C:\\Users\\Robert\\Music\\b.wav] und C:/Users/Robert/x",
+                Some(win)
+            ),
+            "[~\\Music\\b.wav] und ~/x"
+        );
+        assert_eq!(shorten_home("/home/robert/a", None), "/home/robert/a");
+    }
+
+    #[test]
+    fn log_goes_only_when_ticked() {
+        let home = Path::new("/home/robert");
+        let lines = vec!["12:00 Fehler /home/robert/a.mp3 kaputt".to_string()];
+        let mut d = FeedbackDialog::default();
+        d.open();
+        d.text = "Knackt".into();
+        assert_eq!(d.body(&lines, Some(home)), "Knackt");
+        assert!(!d.outgoing(1).iter().any(|s| s.contains("Protokoll")));
+        d.send_log = true;
+        let b = d.body(&lines, Some(home));
+        assert!(b.contains(LOG_HEADER) && b.contains("~/a.mp3"), "{b}");
+        assert!(!b.contains("robert"), "{b}");
+        // Too long: newest lines kept, whole body within the server limit.
+        let many: Vec<String> = (0..5000)
+            .map(|i| format!("Zeile {i} {}", "x".repeat(40)))
+            .collect();
+        let b = d.body(&many, None);
+        assert!(b.chars().count() <= MAX_TEXT_CHARS);
+        assert!(b.ends_with(&many[4999]));
     }
 
     #[test]

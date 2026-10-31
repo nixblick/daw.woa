@@ -19,6 +19,8 @@ use serde_json::{Value, json};
 
 /// Server-Grenze für Screenshots (bretteins `IMG_MAX_FILE`, 3 MB).
 pub const MAX_SCREENSHOT_BYTES: usize = 3 * 1024 * 1024;
+/// Höchstens so viele Bilder je Meldung (Bildschirmfoto und ein eigenes Bild).
+pub const MAX_IMAGES: usize = 2;
 /// Server-Grenze für den Text (bretteins kürzt bei 20000 Zeichen).
 pub const MAX_TEXT_CHARS: usize = 20_000;
 
@@ -80,6 +82,8 @@ pub enum FeedbackError {
     ScreenshotTooLarge(usize),
     #[error("screenshot is not a PNG")]
     NotPng,
+    #[error("too many images ({0})")]
+    TooManyImages(usize),
     #[error("server answered {0}")]
     Status(u16),
     #[error("transport: {0}")]
@@ -89,9 +93,11 @@ pub enum FeedbackError {
 const PNG_MAGIC: &[u8] = b"\x89PNG\r\n\x1a\n";
 
 /// Baut die Nutzlast (rein, ohne Netz; für Tests sichtbar).
+/// `images`: (Dateiname, PNG-Bytes), höchstens [`MAX_IMAGES`], je höchstens
+/// [`MAX_SCREENSHOT_BYTES`].
 pub fn build_payload(
     text: &str,
-    screenshot_png: Option<&[u8]>,
+    images: &[(String, Vec<u8>)],
     meta: &FeedbackMeta,
 ) -> Result<Value, FeedbackError> {
     let text = text.trim();
@@ -123,7 +129,11 @@ pub fn build_payload(
         "installId": meta.install_id,
         "sentAt": sent_at,
     });
-    if let Some(png) = screenshot_png {
+    if images.len() > MAX_IMAGES {
+        return Err(FeedbackError::TooManyImages(images.len()));
+    }
+    let mut list = Vec::new();
+    for (name, png) in images {
         if png.len() > MAX_SCREENSHOT_BYTES {
             return Err(FeedbackError::ScreenshotTooLarge(png.len()));
         }
@@ -131,7 +141,10 @@ pub fn build_payload(
             return Err(FeedbackError::NotPng);
         }
         let b64 = base64::engine::general_purpose::STANDARD.encode(png);
-        req["images"] = json!([{ "name": "screenshot.png", "content_b64": b64 }]);
+        list.push(json!({ "name": name, "content_b64": b64 }));
+    }
+    if !list.is_empty() {
+        req["images"] = Value::Array(list);
     }
     Ok(req)
 }
@@ -139,13 +152,13 @@ pub fn build_payload(
 /// Schickt eine Meldung ab. Liefert die Issue-Nummer, wenn der Server sie nennt.
 pub fn submit_feedback(
     text: &str,
-    screenshot_png: Option<Vec<u8>>,
+    images: Vec<(String, Vec<u8>)>,
     meta: &FeedbackMeta,
 ) -> Result<Option<u64>, FeedbackError> {
     if meta.url.trim().is_empty() {
         return Err(FeedbackError::NoEndpoint);
     }
-    let payload = build_payload(text, screenshot_png.as_deref(), meta)?;
+    let payload = build_payload(text, &images, meta)?;
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(meta.timeout))
         .http_status_as_error(false)
@@ -192,7 +205,7 @@ mod tests {
 
     #[test]
     fn payload_whitelist() {
-        let p = build_payload("Knackser\nim Kanal 2", None, &meta()).unwrap();
+        let p = build_payload("Knackser\nim Kanal 2", &[], &meta()).unwrap();
         let obj = p.as_object().unwrap();
         let mut keys: Vec<_> = obj.keys().cloned().collect();
         keys.sort();
@@ -219,12 +232,18 @@ mod tests {
     #[test]
     fn rejects_empty_and_non_png() {
         assert!(matches!(
-            build_payload("  ", None, &meta()),
+            build_payload("  ", &[], &meta()),
             Err(FeedbackError::EmptyText)
         ));
         assert!(matches!(
-            build_payload("x", Some(b"GIF89a"), &meta()),
+            build_payload("x", &[("a.gif".into(), b"GIF89a".to_vec())], &meta()),
             Err(FeedbackError::NotPng)
+        ));
+        let png = b"\x89PNG\r\n\x1a\n".to_vec();
+        let three = vec![("a.png".to_string(), png); 3];
+        assert!(matches!(
+            build_payload("x", &three, &meta()),
+            Err(FeedbackError::TooManyImages(3))
         ));
     }
 }
