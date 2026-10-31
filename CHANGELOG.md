@@ -7,6 +7,17 @@
 - **KI live in der App:** Läuft WOA, arbeitet Claude auf dem Projekt, das in der App offen ist. Neue Spuren und Clips erscheinen sofort, und jeder Werkzeugaufruf steht als „Agent: <werkzeug>“ im Rückgängig-Verlauf (Bearbeiten → Rückgängig). Die App hostet dafür einen MCP-Server nur auf 127.0.0.1, mit dem vorhandenen Zugriffstoken und der Origin-Prüfung; der Port steht in `mcp-live.json` im Datenordner (ohne Token). `woa-headless mcp` (so startet Claude Desktop) erkennt die laufende App und reicht durch, sonst arbeitet es wie bisher headless. In Claude Desktop ist nichts umzustellen. Die Werkzeuge laufen zwischen zwei Bildern im GUI-Thread auf derselben Sitzung, die Wiedergabe läuft weiter. `save` speichert nur in den Ordner der App. Unten rechts steht „KI bereit“ bzw. „KI verbunden“. Sicherheit: Die Lock-Datei (Modus 0600) enthält statt des Tokens einen Live-Schlüssel, der je App-Start neu entsteht. Durchgereicht wird nur mit diesem Schlüssel und nur, wenn der Prozess der App noch lebt. Wird das Token im KI-Fenster neu erzeugt oder gelöscht, startet der Server neu bzw. endet, und das alte Token gilt nicht mehr.
 - **Fenster „Produktionen“:** Knopf „Produktionen“ in der Clip-Leiste des Produzenten-Modus. Er zeigt alle Audio-Dateien des Projektordners (`aufnahmen/`, Exporte, von Claude erzeugte Dateien), die neuesten oben, mit Länge und Alter. Mit dem Kopfhörer-Knopf hörst du vor (PFL wie in der Bibliothek). Ziehst du eine Datei auf eine Spur, liegt sie an dieser Stelle. Gelesen wird beim Öffnen, auf „Neu einlesen“ und nach jedem Agent-Schritt, sonst nicht.
 
+## 0.34.45 — 2026-10-31
+
+Gäste im Browser: Moderator-Funktionen (André: „so das man die person auch einfach mal muten kann und vielleicht man ja auch mehrere hat“).
+
+- **Warteraum:** Ein angenommener Browser-Gast kommt erst in den Warteraum. Er hört die Sendung (Mix-Minus), ist aber nicht zu hören, bis der Moderator ihn mit „Warteraum → Auf Sendung“ holt. Testgäste und Dateigäste sind wie bisher sofort auf Sendung.
+- **Je Gast eine Zeile:** Name, Pegel vor dem Fader (zeigt auch im Warteraum und stumm, ob der Gast spricht), „Auf Sendung“/„Warteraum“, „Stumm“ (Symbol und Wort, hört weiter die Sendung), Lautstärke wie der Kanal-Gain (ziehen, Doppelklick = 0 dB), Rückweg abhören, „Trennen“ mit Bestätigung (zweiter Klick binnen 3 s). Darunter Leitung gut/mäßig/schlecht mit RTT und Verlust.
+- **Mehrere Gäste:** bis zu 8 gleichzeitig (wie bisher), jeder mit eigenem Rückweg ohne sich selbst.
+- **Browser-Seite des Gastes:** großes Schild „Auf Sendung“, „Stumm“ oder „Warteraum“, dazu „Mikro stumm schalten“. Selbst-Stumm schaltet das Mikrofon im Browser ab und meldet es dem Moderator („hat sich selbst stumm geschaltet“). Jede Seite steuert nur ihr eigenes Ticket; Einladung, PIN und Zugang sind unverändert.
+- **Log ohne Gastnamen:** Gastnamen stehen nicht mehr im Log (nur Kanalnummern).
+- **Tests:** Warteraum, Stumm, Lautstärke, Trennen, Mix-Minus mit zwei und vier Gästen, Selbst-Stumm nur mit eigenem angenommenem Ticket, Sendestand über HTTPS im Loopback-Test.
+
 ## 0.34.44 — 2026-10-31
 
 Party mit zwei Decks (André: „als dj auf einer party die man streamt, fehlt bei party das zweite deck … und alle symbole die steuern einheitlich bitte mit symbol und wort“).

@@ -86,10 +86,15 @@ pub fn route(
             Response::json(200, &json!({ "ok": ok }))
         }
         ("GET", "/gast/state") => {
-            let st = gate.state(query_id(query, "t"), now);
+            let t = query_id(query, "t");
+            let st = gate.state(t, now);
             let v = match st {
                 TicketState::Waiting => json!({ "state": "waiting" }),
-                TicketState::Accepted(sdp) => json!({ "state": "accepted", "sdp": sdp }),
+                TicketState::Accepted(sdp) => {
+                    let (air, self_muted) = gate.air(t);
+                    json!({ "state": "accepted", "sdp": sdp, "air": air.as_str(),
+                        "self_muted": self_muted })
+                }
                 TicketState::Rejected => json!({ "state": "rejected" }),
                 TicketState::Ended => json!({ "state": "ended" }),
             };
@@ -103,6 +108,18 @@ pub fn route(
             match gate.join(text("invite"), text("name"), text("sdp"), peer, now) {
                 Ok(ticket) => Response::json(200, &json!({ "ticket": ticket })),
                 Err(e) => Response::error(403, e),
+            }
+        }
+        ("POST", "/gast/mute") => {
+            let Ok(v) = serde_json::from_slice::<Value>(body) else {
+                return Response::error(400, "Ungültige Anfrage");
+            };
+            let t = v.get("t").and_then(Value::as_str).unwrap_or("");
+            let on = v.get("on").and_then(Value::as_bool).unwrap_or(false);
+            if gate.set_self_mute(t, on) {
+                Response::json(200, &json!({ "ok": true }))
+            } else {
+                Response::error(403, "Nicht verbunden")
             }
         }
         ("POST", "/gast/leave") => {
@@ -372,6 +389,40 @@ mod tests {
 
     fn body(r: &Response) -> Value {
         serde_json::from_slice(&r.body).expect("json")
+    }
+
+    #[test]
+    fn self_mute_only_for_own_accepted_ticket_and_state_shows_air() {
+        let g = Gate::new();
+        let now = Instant::now();
+        let tok = g.create_invite(now).expect("invite");
+        let ticket = g.join(&tok, "A", OFFER, "x", now).expect("join");
+        let mute = |t: &str, on: bool| {
+            let b = serde_json::to_vec(&json!({ "t": t, "on": on })).unwrap();
+            route(&g, "POST", "/gast/mute", "", &b, "x", now).status
+        };
+        // Wartet noch: kein Selbst-Stumm; fremdes oder erfundenes Ticket: nie.
+        assert_eq!(mute(&ticket, true), 403);
+        assert_eq!(mute(&"0".repeat(32), true), 403);
+        assert_eq!(
+            route(&g, "POST", "/gast/mute", "", b"{", "x", now).status,
+            400
+        );
+        g.take_for_accept(&ticket).expect("take");
+        g.set_answer(&ticket, "v=0 answer".into());
+        let q = format!("t={ticket}");
+        let st = body(&route(&g, "GET", "/gast/state", &q, b"", "x", now));
+        assert_eq!(st["air"], "wait");
+        assert_eq!(st["self_muted"], false);
+        assert_eq!(mute(&ticket, true), 200);
+        assert!(g.self_muted(&ticket));
+        g.set_air(&ticket, crate::gate::Air::OnAir);
+        let st = body(&route(&g, "GET", "/gast/state", &q, b"", "x", now));
+        assert_eq!(st["air"], "air");
+        assert_eq!(st["self_muted"], true);
+        g.set_air(&ticket, crate::gate::Air::Muted);
+        let st = body(&route(&g, "GET", "/gast/state", &q, b"", "x", now));
+        assert_eq!(st["air"], "muted");
     }
 
     #[test]

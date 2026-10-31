@@ -1052,6 +1052,17 @@ Kein Ton nötig. Voraussetzung: unter Einstellungen → KI & MCP ist ein Zugriff
 8. Im Fenster auf den Kopfhörer klicken (Vorhören eingerichtet): die Datei läuft im Kopfhörer, nie auf Sendung.
 
 Selbst geprüft von Claude: Tests in `woa-agent` (Aufruf über die stdio-Weiterleitung landet in der geliehenen Sitzung, Undo entfernt ihn, falsches Token 401, verwaiste Lock-Datei) und `woa-gui` (dasselbe gegen `AppState`, kittest: Knopf öffnet das Fenster, Sortierung neueste oben). Nicht geprüft: echtes Claude Desktop, Windows.
+## Gäste: Moderator-Funktionen (0.34.45, offen)
+
+Zwei Handys (oder Handy und Notebook-Browser) im selben WLAN, Kopfhörer auf.
+
+1. Radio → Gäste → Browser-Zugang an, zwei Einladungen, beide Gäste treten bei, beide annehmen.
+   Erwartung: Beide Zeilen zeigen „Warteraum“, der Pegel bewegt sich beim Sprechen, auf Sendung ist nichts zu hören. Beide Handys zeigen „Warteraum“ und hören die Musik.
+2. Gast A „Auf Sendung“. Erwartung: A ist zu hören, sein Handy zeigt rot „Auf Sendung“. B hört A, A hört sich nicht selbst.
+3. A „Stumm“. Erwartung: A nicht zu hören, Handy zeigt „Stumm“, A hört weiter die Sendung.
+4. Lautstärke von A ziehen, dann Doppelklick. Erwartung: Doppelklick setzt 0,0 dB.
+5. Auf dem Handy von A „Mikro stumm schalten“. Erwartung: in der Zeile „hat sich selbst stumm geschaltet“, nichts von A zu hören.
+6. Bei B einmal „×“: Knopf zeigt „Wirklich trennen?“; nach 3 s ohne Klick wieder „×“. Zweimal klicken: B ist getrennt, sein Handy zeigt „Die Verbindung ist beendet.“
 
 ## Abgenommen
 
