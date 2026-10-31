@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.57 — 2026-10-31
+## 0.34.58 — 2026-10-31
 
 ### Geändert
 
@@ -10,6 +10,10 @@
 - **Logs:** symphonia „using xing header“ fällt weg, „reached probe limit“ steht nicht mehr im Protokoll (das Laden meldet den Fehler selbst). Bei „clip/clap load failed“ und „plugin scan problem“ stehen Dateiname und Fehlertext nur noch in der lokalen Senke, im Ticket nur die Meldung (Test).
 - **Logs:** Bedienaktionen als Info-Zeilen: Modus-Wechsel, Playlist und Deck A/B/C Start/Pause/Stop, Cartwall, PFL, Mitschnitt, Sendung Start und Ende. Datei- und Gerätenamen nur lokal, im Ticket nur Deck oder Slot (Test).
 - **Ticket-Protokoll:** Zeitstempel mit Datum und Zeitzone (`2026-10-31 14:05:09 +01:00`); lokale Zeilen mit Dateinamen gehen nicht mehr ins Ticket (Test).
+
+## 0.34.57 — 2026-10-31
+
+- **Playlist umbenennen hielt fest:** Das Namensfeld im Fenster „Verwalten“ holte sich in jedem Bild den Fokus zurück, man kam nicht mehr heraus (André, 31.10.). Wie bei den Spuren (0.33.3) wird der Fokus nur beim Öffnen gesetzt; Enter oder ein Klick daneben übernimmt den Namen, Esc verwirft ihn. Test: Klick daneben schließt das Feld und benennt um.
 
 ## 0.34.56 — 2026-10-31
 
