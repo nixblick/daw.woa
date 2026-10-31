@@ -189,11 +189,7 @@ impl ExportDialog {
     }
 
     fn body(&mut self, ui: &mut egui::Ui) -> Option<ExportRequest> {
-        ui.label(
-            egui::RichText::new("FORMAT")
-                .small()
-                .color(theme::text_dim()),
-        );
+        ui.label(theme::panel_label("FORMAT"));
         ui.horizontal_wrapped(|ui| {
             for f in ExportFormat::ALL {
                 let ok = self.available(f);

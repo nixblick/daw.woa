@@ -60,7 +60,7 @@ impl Palette {
                 row_black: theme::mix(theme::bg(), Color32::BLACK, 0.25),
                 line: theme::mix(theme::bg(), theme::grid(), 0.6),
                 bar: theme::mix(theme::grid(), theme::text_dim(), 0.35),
-                note: Color32::from_rgb(82, 156, 255),
+                note: theme::track_color(0),
                 note_sel: theme::accent(),
                 text: theme::text_dim(),
                 key_white: Color32::from_rgb(214, 218, 226),

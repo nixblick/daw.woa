@@ -1266,12 +1266,7 @@ impl RadioDesk {
     /// Die Wunschtitel: Liste mit einem Klick in die Playlist oder auf ein Deck.
     fn wish_card(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("WUNSCHTITEL")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("WUNSCHTITEL"));
             if ui
                 .small_button("Ordner wählen …")
                 .on_hover_text("Alles, was hier hineinkommt, erscheint sofort in der Liste")
@@ -1602,10 +1597,7 @@ impl RadioDesk {
         // Modul-Kopfzeile: Status-Badges links, Sendestatus rechts.
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("SENDE-DECK & MASTER-UHR")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
+                theme::panel_label("SENDE-DECK & MASTER-UHR"),
             );
             if v.running {
                 theme::status_pill(ui, "DECK LÄUFT", theme::ok(), true);
@@ -2045,12 +2037,7 @@ impl RadioDesk {
     fn processing_rack(&mut self, ui: &mut egui::Ui) {
         let v = self.view.clone();
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("BROADCAST-PROCESSING & ÜBERGÄNGE")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("BROADCAST-PROCESSING & ÜBERGÄNGE"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 theme::status_pill(
                     ui,
@@ -2196,12 +2183,7 @@ impl RadioDesk {
     fn guests_card(&mut self, ui: &mut egui::Ui) {
         let guests = self.view.guests.clone();
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("GÄSTE & MIX-MINUS")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("GÄSTE & MIX-MINUS"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let full = guests.len() >= woa_guests::MAX_GUESTS;
                 let file = ui
@@ -2260,10 +2242,7 @@ impl RadioDesk {
         let web = self.view.web.clone();
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("BROWSER-GÄSTE")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
+                theme::panel_label("BROWSER-GÄSTE"),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if web.running {
@@ -2673,12 +2652,7 @@ impl RadioDesk {
 
     fn playlist(&mut self, ui: &mut egui::Ui, v: &View) {
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("SENDE-PLAYLIST")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("SENDE-PLAYLIST"));
             let acts = self
                 .manage
                 .header(ui, &v.playlists, v.active_playlist, v.running);
@@ -3054,12 +3028,7 @@ impl RadioDesk {
 
     fn cart_wall(&mut self, ui: &mut egui::Ui, v: &View) {
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("CART-WALL (JINGLES & SOUNDS)")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("CART-WALL (JINGLES & SOUNDS)"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
                     egui::RichText::new(match self.key_capture {
@@ -3650,12 +3619,7 @@ impl RadioDesk {
 
     /// Die drei Decks: große Restzeit, Start und Stopp, Laden per Ziehen oder Menü.
     fn deck_card(&mut self, ui: &mut egui::Ui, v: &View) {
-        ui.label(
-            egui::RichText::new("DECKS A · B · C")
-                .size(11.5)
-                .strong()
-                .color(theme::text_dim()),
-        );
+        ui.label(theme::panel_label("DECKS A · B · C"));
         ui.add_space(4.0);
         // Decks links, die senkrechten Pegelregler als eine Gruppe rechts daneben.
         ui.horizontal_top(|ui| {
