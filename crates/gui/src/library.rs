@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use woa_library::analysis::Job as AnalysisJob;
 use woa_library::import::{self, Import, Progress};
-use woa_library::{Analysis, Kind, Library, Query, Track};
+use woa_library::{Analysis, Kind, Library, Query, SortBy, Track};
 
 use crate::theme;
 
@@ -58,6 +58,9 @@ pub struct LibraryWindow {
     selected: Option<i64>,
     new_tag: String,
     dragging: Option<PathBuf>,
+    /// Sortierung der Liste (Klick auf einen Spaltenkopf, #124).
+    sort: SortBy,
+    desc: bool,
 }
 
 impl LibraryWindow {
@@ -84,6 +87,8 @@ impl LibraryWindow {
             selected: None,
             new_tag: String::new(),
             dragging: None,
+            sort: SortBy::Relevance,
+            desc: false,
         }
     }
 
@@ -132,6 +137,8 @@ impl LibraryWindow {
             tag: self.tag_filter.clone(),
             kind: self.kind_filter,
             limit: SHOW_LIMIT,
+            sort: self.sort,
+            desc: self.desc,
         };
         match lib.search(&q) {
             Ok(r) => self.results = r,
@@ -205,6 +212,41 @@ impl LibraryWindow {
         self.dirty = true;
     }
 
+    /// Klick auf einen Spaltenkopf: dieselbe Spalte dreht die Richtung, eine neue sortiert
+    /// aufsteigend (Messwerte und Dauer zuerst absteigend: das Größte oben).
+    fn sort_by(&mut self, col: SortBy) {
+        if self.sort == col {
+            self.desc = !self.desc;
+        } else {
+            self.sort = col;
+            self.desc = matches!(col, SortBy::Bpm | SortBy::Lufs | SortBy::Duration);
+        }
+        self.dirty = true;
+    }
+
+    /// Nimmt einen Titel aus der Bibliothek; die Datei bleibt auf der Platte (#124).
+    fn remove(&mut self, id: i64) {
+        let Some(lib) = &self.lib else { return };
+        match lib.remove_track(id) {
+            Ok(()) => {
+                let title = self
+                    .results
+                    .iter()
+                    .find(|t| t.id == id)
+                    .map(|t| t.title.clone());
+                self.note = Some(format!(
+                    "„{}“ aus der Bibliothek entfernt (Datei bleibt)",
+                    title.unwrap_or_default()
+                ));
+            }
+            Err(e) => self.note = Some(e.to_string()),
+        }
+        if self.selected == Some(id) {
+            self.selected = None;
+        }
+        self.dirty = true;
+    }
+
     fn untag(&mut self, id: i64, tag: &str) {
         let Some(lib) = &self.lib else { return };
         if let Err(e) = lib.remove_tag(id, tag) {
@@ -273,21 +315,33 @@ impl LibraryWindow {
         self.analysis.is_some()
     }
 
-    /// Zeichnet das Fenster, wenn es offen ist.
-    pub fn show(&mut self, ctx: &egui::Context, pfl_available: bool) -> Output {
-        let mut out = Output::default();
-        if !self.open {
-            return out;
-        }
+    /// Import und Analyse weiterführen, auch bei geschlossenem Fenster (#123): Ordner wählen,
+    /// Fenster zu, die Arbeit läuft im Hintergrund weiter. Gibt zurück, ob etwas läuft.
+    pub fn tick(&mut self, ctx: &egui::Context) -> bool {
         self.ensure_open();
         let running = self.poll();
         let analysing = self.poll_analysis();
-        let running = running || analysing;
-        if self.dirty {
+        if self.dirty && (self.open || self.refreshed.elapsed() >= REFRESH_EVERY) {
             self.refresh();
         }
+        let running = running || analysing;
         if running {
-            ctx.request_repaint_after(Duration::from_millis(150));
+            // Offen flüssig, geschlossen reicht ein Blick je Sekunde.
+            ctx.request_repaint_after(if self.open {
+                Duration::from_millis(150)
+            } else {
+                REFRESH_EVERY
+            });
+        }
+        running
+    }
+
+    /// Zeichnet das Fenster, wenn es offen ist; führt die Hintergrundarbeit immer weiter.
+    pub fn show(&mut self, ctx: &egui::Context, pfl_available: bool) -> Output {
+        let mut out = Output::default();
+        self.tick(ctx);
+        if !self.open {
+            return out;
         }
         let mut open = true;
         let resp = egui::Window::new("Bibliothek")
@@ -452,29 +506,75 @@ impl LibraryWindow {
             return;
         }
         let n = self.results.len();
-        // Spaltenköpfe über der Liste.
+        // Spaltenköpfe über der Liste; ein Klick sortiert, ein zweiter dreht die Richtung (#124).
         {
             let (rect, _) = ui
-                .allocate_exact_size(egui::vec2(ui.available_width(), 14.0), egui::Sense::hover());
+                .allocate_exact_size(egui::vec2(ui.available_width(), 16.0), egui::Sense::hover());
             let cols = Columns::at(rect.right());
-            let painter = ui.painter_at(rect);
-            let head = |x: f32, align: egui::Align2, s: &str| {
-                painter.text(
-                    egui::pos2(x, rect.center().y),
-                    align,
-                    s,
+            let mut sort_click = None;
+            for (col, x, align, label) in [
+                (
+                    SortBy::Title,
+                    rect.left() + 8.0,
+                    egui::Align2::LEFT_CENTER,
+                    "TITEL",
+                ),
+                (SortBy::Bpm, cols.bpm, egui::Align2::RIGHT_CENTER, "BPM"),
+                (SortBy::Key, cols.key, egui::Align2::RIGHT_CENTER, "TONART"),
+                (SortBy::Lufs, cols.lufs, egui::Align2::RIGHT_CENTER, "LUFS"),
+                (SortBy::Kind, cols.kind, egui::Align2::RIGHT_CENTER, "ART"),
+                (
+                    SortBy::Duration,
+                    cols.duration,
+                    egui::Align2::RIGHT_CENTER,
+                    "DAUER",
+                ),
+            ] {
+                let active = self.sort == col;
+                let text = if active {
+                    let arrow = if self.desc {
+                        theme::ic::CARET_DOWN
+                    } else {
+                        theme::ic::CARET_UP
+                    };
+                    format!("{label} {arrow}")
+                } else {
+                    label.to_string()
+                };
+                let galley = ui.painter().layout_no_wrap(
+                    text,
                     egui::FontId::proportional(10.0),
-                    theme::text_dim(),
+                    if active {
+                        theme::accent()
+                    } else {
+                        theme::text_dim()
+                    },
                 );
-            };
-            head(rect.left() + 8.0, egui::Align2::LEFT_CENTER, "TITEL");
-            head(cols.bpm, egui::Align2::RIGHT_CENTER, "BPM");
-            head(cols.key, egui::Align2::RIGHT_CENTER, "TONART");
-            head(cols.lufs, egui::Align2::RIGHT_CENTER, "LUFS");
-            head(cols.kind, egui::Align2::RIGHT_CENTER, "ART");
-            head(cols.duration, egui::Align2::RIGHT_CENTER, "DAUER");
+                let r = align.anchor_size(egui::pos2(x, rect.center().y), galley.size());
+                let resp = ui
+                    .interact(
+                        r.expand(3.0),
+                        ui.id().with(("lib_head", label)),
+                        egui::Sense::click(),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text("Sortieren (noch einmal: andere Richtung)");
+                let color = if active || resp.hovered() {
+                    theme::accent()
+                } else {
+                    theme::text_dim()
+                };
+                ui.painter().galley(r.min, galley, color);
+                if resp.clicked() {
+                    sort_click = Some(col);
+                }
+            }
+            if let Some(col) = sort_click {
+                self.sort_by(col);
+            }
         }
         let mut clicked = None;
+        let mut remove = None;
         let mut started = None;
         let mut stopped = None;
         egui::ScrollArea::vertical()
@@ -482,10 +582,12 @@ impl LibraryWindow {
             .show_rows(ui, ROW_H, n, |ui, range| {
                 for i in range {
                     let t = &self.results[i];
-                    let (rect, resp) = ui.allocate_exact_size(
+                    let (rect, _) = ui.allocate_exact_size(
                         egui::vec2(ui.available_width(), ROW_H),
-                        egui::Sense::click_and_drag(),
+                        egui::Sense::hover(),
                     );
+                    // Feste Kennung je Titel: die Tastatur-Markierung überlebt das Scrollen.
+                    let resp = ui.interact(rect, row_id(t.id), egui::Sense::click_and_drag());
                     let sel = self.selected == Some(t.id);
                     let painter = ui.painter_at(rect);
                     if sel {
@@ -565,9 +667,21 @@ impl LibraryWindow {
                             theme::text_dim(),
                         );
                     }
-                    if resp.clicked() || resp.drag_started() {
+                    if resp.clicked() || resp.drag_started() || resp.secondary_clicked() {
                         clicked = Some(t.id);
+                        // Fokus auf die Zeile: Entf gilt dann ihr, nicht dem Studio.
+                        resp.request_focus();
                     }
+                    resp.context_menu(|ui| {
+                        if ui
+                            .button(format!("{} Aus der Bibliothek entfernen", theme::ic::TRASH))
+                            .on_hover_text("Die Datei auf der Platte bleibt (Taste: Entf)")
+                            .clicked()
+                        {
+                            remove = Some(t.id);
+                            ui.close();
+                        }
+                    });
                     if resp.drag_started() {
                         started = Some(PathBuf::from(&t.path));
                     }
@@ -582,6 +696,17 @@ impl LibraryWindow {
             });
         if let Some(id) = clicked {
             self.selected = Some(id);
+        }
+        // Entf nur auf den markierten Eintrag, wenn die Zeile den Fokus hat (nie im Suchfeld).
+        if let Some(id) = self.selected
+            && ui.ctx().memory(|m| m.has_focus(row_id(id)))
+            && !ui.ctx().text_edit_focused()
+            && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Delete))
+        {
+            remove = Some(id);
+        }
+        if let Some(id) = remove {
+            self.remove(id);
         }
         if let Some(p) = started {
             self.dragging = Some(p);
@@ -628,7 +753,7 @@ impl LibraryWindow {
     ) {
         let Some(t) = sel else {
             ui.label(
-                egui::RichText::new("Titel anklicken: Tags vergeben, vorhören. In die Timeline, Playlist oder auf ein Cart-Pad ziehen.")
+                egui::RichText::new("Titel anklicken: Tags vergeben, vorhören. In die Timeline, Playlist oder auf ein Cart-Pad ziehen. Rechtsklick oder Entf: entfernen.")
                     .small()
                     .color(theme::text_dim()),
             );
@@ -751,6 +876,11 @@ impl LibraryWindow {
             }
         });
     }
+}
+
+/// Kennung einer Listenzeile (für Fokus und Entf).
+fn row_id(track: i64) -> egui::Id {
+    egui::Id::new(("lib_row", track))
 }
 
 /// Rechte Kanten der Spalten (x-Koordinaten, rechtsbündig) einer Zeile, die bei `right` endet.
@@ -1036,6 +1166,74 @@ mod tests {
         let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
             let _ = w.show(ui.ctx(), false);
         });
+    }
+
+    /// #123: Import und Analyse laufen weiter, wenn das Fenster zu ist.
+    #[test]
+    fn closed_window_still_imports_and_analyses() {
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("m");
+        std::fs::create_dir_all(&music).unwrap();
+        write_wav(&music.join("a.wav"), 300.0);
+        write_wav(&music.join("b.wav"), 500.0);
+        let mut w = LibraryWindow::new(dir.path().join(DB_FILE));
+        w.start_import(&music);
+        assert!(!w.open);
+        let ctx = crate::theme::test_context();
+        let t0 = Instant::now();
+        loop {
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let out = w.show(ui.ctx(), false);
+                assert!(out.drop.is_none());
+            });
+            // Geschlossen wird höchstens einmal je Sekunde neu gezählt.
+            if !w.importing() && !w.analysing() && w.total() == 2 && w.pending == 0 {
+                break;
+            }
+            assert!(
+                t0.elapsed() < Duration::from_secs(60),
+                "background work stalls"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(!w.open);
+        let lib = Library::open(&dir.path().join(DB_FILE)).unwrap();
+        assert_eq!(lib.pending_analysis_count().unwrap(), 0);
+    }
+
+    /// #124: Entfernen (Datei bleibt) und Sortieren per Spaltenkopf.
+    #[test]
+    fn remove_and_sort_through_the_window_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("m");
+        std::fs::create_dir_all(&music).unwrap();
+        write_wav(&music.join("Alpha.wav"), 300.0);
+        write_wav(&music.join("Beta.wav"), 500.0);
+        let mut w = LibraryWindow::new(dir.path().join(DB_FILE));
+        w.start_import(&music);
+        wait_import(&mut w);
+        let titles = |w: &LibraryWindow| -> Vec<String> {
+            w.results().iter().map(|t| t.title.clone()).collect()
+        };
+        assert_eq!(titles(&w), ["Alpha", "Beta"]);
+        w.sort_by(SortBy::Title);
+        w.refresh();
+        assert_eq!(titles(&w), ["Alpha", "Beta"]);
+        w.sort_by(SortBy::Title);
+        w.refresh();
+        assert_eq!(titles(&w), ["Beta", "Alpha"], "zweiter Klick dreht");
+        w.sort_by(SortBy::Duration);
+        assert!(w.desc, "Dauer zuerst absteigend");
+
+        let id = w.results().iter().find(|t| t.title == "Beta").unwrap().id;
+        w.select(Some(id));
+        w.remove(id);
+        w.refresh();
+        assert_eq!(w.total(), 1);
+        assert_eq!(titles(&w), ["Alpha"]);
+        assert!(w.selected.is_none());
+        assert!(music.join("Beta.wav").exists(), "Datei bleibt");
+        assert!(w.note.as_deref().is_some_and(|n| n.contains("Beta")));
     }
 
     #[test]

@@ -121,7 +121,6 @@ pub struct LoudnessMeter {
     steps: VecDeque<f64>,
     /// Mittelquadrate aller 400-ms-Blöcke seit dem Zurücksetzen (für die integrierte Lautheit).
     blocks: Vec<f64>,
-    integrated: Option<f64>,
     max_momentary: Option<f64>,
     max_short: Option<f64>,
 }
@@ -138,7 +137,6 @@ impl LoudnessMeter {
             step_acc: 0.0,
             steps: VecDeque::with_capacity(SHORT_STEPS + 1),
             blocks: Vec::new(),
-            integrated: None,
             max_momentary: None,
             max_short: None,
         }
@@ -173,8 +171,9 @@ impl LoudnessMeter {
             return;
         };
         // Ein neuer 400-ms-Block (75 % Überlappung) ist vollständig.
+        // Gegatet wird erst beim Abfragen: hier über alle Blöcke zu gehen, machte die Messung
+        // quadratisch in der Länge (#122, #120).
         self.blocks.push(m);
-        self.integrated = gated_lufs(&self.blocks);
         if let Some(v) = self.momentary() {
             self.max_momentary = Some(self.max_momentary.map_or(v, |o| o.max(v)));
         }
@@ -206,9 +205,9 @@ impl LoudnessMeter {
             .map(lufs_of)
     }
 
-    /// Integrierte Lautheit mit Gating.
+    /// Integrierte Lautheit mit Gating (geht einmal über alle Blöcke, linear).
     pub fn integrated(&self) -> Option<f64> {
-        self.integrated
+        gated_lufs(&self.blocks)
     }
 
     /// Größte momentane Lautheit seit dem Zurücksetzen.
@@ -420,5 +419,23 @@ mod tests {
         let tp = true_peak_dbtp(&s, &s).unwrap();
         assert!((tp + 6.02).abs() < 0.05, "{tp}");
         assert!(true_peak_dbtp(&[0.0; 100], &[0.0; 100]).is_none());
+    }
+
+    /// #122/#120: Die integrierte Lautheit darf nicht mit jedem 100-ms-Schritt über alle bisherigen
+    /// Blöcke neu gegatet werden (quadratisch: ein 30-Minuten-Titel brauchte Minuten). Zwei
+    /// Stunden Material in Stücken müssen in Sekunden durch sein.
+    #[test]
+    fn long_material_is_measured_in_linear_time() {
+        let rate = 4000;
+        let s = sine(440.0, dbfs(-20.0), 1.0, rate);
+        let t0 = std::time::Instant::now();
+        let mut m = LoudnessMeter::new(rate);
+        for _ in 0..2 * 3600 {
+            m.push(&s, &s);
+        }
+        let i = m.integrated().unwrap();
+        let took = t0.elapsed();
+        assert!((i + 20.0).abs() < 0.5, "{i}");
+        assert!(took < std::time::Duration::from_secs(20), "{took:?}");
     }
 }

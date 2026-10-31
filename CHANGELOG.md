@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.34.27 — 2026-10-31
+
+Bibliothek: Analyse hängt nicht mehr an langen Titeln, läuft im Hintergrund weiter, Titel lassen sich entfernen und Spalten sortieren (#122, #123, #124, #120).
+
+- **Lautheitsmessung linear (#122, #120):** Die integrierte Lautheit wurde mit jedem 100-ms-Schritt über alle bisherigen Blöcke neu gegatet, die Rechenzeit wuchs mit dem Quadrat der Länge. Ein 30-Minuten-Titel brauchte so sehr lange; zwei Stunden Material dauerten im Test 104 s, jetzt 0,6 s. Das traf die Bibliotheks-Analyse, das Messen beim Einfügen in die Playlist und das Laden zum Abspielen.
+- **Abspielen ohne doppeltes Messen (#120):** Beim Laden eines Titels wird nur noch gemessen, wenn er noch keine Messung hat. Bisher lief die Messung im Control-Thread jedes Mal und wurde verworfen.
+- **Weniger Speicher bei der Analyse:** Die dekodierte Datei wird nach dem Aufteilen in links/rechts freigegeben.
+- **Hintergrund (#123):** Import und Analyse laufen weiter, wenn das Bibliotheks-Fenster zu ist; liegen beim Start noch unanalysierte Titel vor, beginnt die Analyse sofort.
+- **Entfernen (#124):** Rechtsklick auf einen Titel → „Aus der Bibliothek entfernen“, oder Titel anklicken und Entf. Die Datei auf der Platte bleibt. Entf wirkt nur auf den markierten Eintrag und nie in einem Textfeld.
+- **Sortieren (#124):** Klick auf einen Spaltenkopf (Titel, BPM, Tonart, LUFS, Art, Dauer) sortiert, ein zweiter Klick dreht die Richtung; Pfeil zeigt die aktive Spalte. Sortiert wird in der Datenbank, nicht nur in den angezeigten 500 Zeilen; Titel ohne Messwert stehen am Ende.
+- **Tests:** Lautheit über zwei Stunden in linearer Zeit (`woa-dsp`), Entfernen und Sortieren (`woa-library`), geschlossenes Fenster importiert und analysiert, Entfernen und Sortieren über den Fensterzustand (`woa-gui`).
+
 ## 0.34.26 — 2026-10-31
 
 Entf löscht eine Spur nur, wenn sie sichtbar markiert ist (André 31.10.: „Entf darf nur aktiv sein wenn es sinnvoll was zu löschen gibt“).

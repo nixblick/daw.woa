@@ -444,6 +444,7 @@ fn load_category(lib: &Library, tag: &str) -> Result<Vec<Cand>> {
         tag: Some(tag.to_string()),
         kind: None,
         limit: MAX_RESULTS,
+        ..Query::default()
     })?;
     Ok(tracks
         .into_iter()

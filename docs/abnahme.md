@@ -4,6 +4,16 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Bibliothek: Analyse, Hintergrund, Entfernen, Sortieren (0.34.27, offen)
+
+1. Einen Ordner mit langen Titeln (30 Minuten und mehr) importieren: „analysiert: n von m“ zählt zügig hoch, nicht minutenlang auf 1.
+2. Ordner importieren und das Bibliotheks-Fenster sofort schließen. Nach einer Weile wieder öffnen: Import ist fertig, BPM/Tonart/LUFS sind gefüllt oder die Analyse läuft noch weiter.
+3. Mehrere lange Titel in die Playlist einfügen und den ersten starten: er spielt ohne lange Wartezeit, die übrigen werden nebenher gemessen.
+4. Rechtsklick auf einen Titel → „Aus der Bibliothek entfernen“: der Titel ist weg, die Datei auf der Platte bleibt. Titel anklicken, Entf: ebenso. Im Suchfeld tippen und Entf drücken: es wird nichts entfernt.
+5. Auf „DAUER“ klicken: längste zuerst, Pfeil am Kopf. Noch einmal: kürzeste zuerst. Auf „TITEL“: alphabetisch.
+
+Selbst geprüft von Claude: neue Tests in `crates/dsp/src/analysis/loudness.rs`, `crates/library/src/lib.rs` und `crates/gui/src/library.rs`; Tests und Clippy von dsp, library, radio und gui grün.
+
 ## Entf nur für die markierte Spur (0.34.26, offen)
 
 1. Projekt mit drei Spuren öffnen, nichts anklicken: keine Spur ist farbig hervorgehoben, Entf tut nichts.
