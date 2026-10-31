@@ -181,6 +181,9 @@ pub struct RadioShow {
     pub crossfade_seconds: f64,
     #[serde(default = "default_duck")]
     pub duck_db: f64,
+    /// Musik auch absenken, solange ein Cart spielt (#149).
+    #[serde(default = "yes")]
+    pub cart_duck: bool,
     #[serde(default = "default_target")]
     pub target_lufs: f64,
     /// Sendebus-Processing (Lautheitsregelung auf `target_lufs`, Kompressor, Limiter).
@@ -242,6 +245,7 @@ impl Default for RadioShow {
             version: VERSION,
             crossfade_seconds: default_crossfade(),
             duck_db: default_duck(),
+            cart_duck: true,
             target_lufs: default_target(),
             bus_processing: true,
             mic_processing: true,

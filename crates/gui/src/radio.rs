@@ -2008,6 +2008,15 @@ impl RadioDesk {
                 self.view.duck_db = duck;
                 self.with(move |c| c.set_duck(duck));
             }
+            let mut cart_duck = v.cart_duck;
+            if ui
+                .checkbox(&mut cart_duck, "auch bei Carts")
+                .on_hover_text("Musik leiser, solange ein Cart spielt")
+                .changed()
+            {
+                self.view.cart_duck = cart_duck;
+                self.with(move |c| c.set_cart_duck(cart_duck));
+            }
             // Stopp mit Ausblenden (#227): kein eigener Knopf, die Stopp-Knöpfe bleiben.
             let (mut on, mut secs) = (v.stop_fade, v.stop_fade_seconds);
             let mut changed = false;
