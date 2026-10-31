@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.41 — 2026-10-31
+
+### Behoben
+
+- **Bibliothek:** Nach dem Wechsel des Datenordners blieb ein Fehler des alten Ordners stehen, die neue Datenbank wurde nie geöffnet. Der Fehler wird jetzt beim Wechsel zurückgesetzt (Test).
+- **Stream-Test:** Solange der Verbindungstest lief, zeichnete das Fenster jeden Frame neu. Jetzt weckt nur der Test-Thread das Fenster, wenn er fertig ist.
+- **Stream-Test:** Das gespeicherte Kennwort wurde im UI-Thread aus dem Schlüsselbund gelesen; das geschieht jetzt im Test-Thread.
+- **KI-Fenster:** Ein Prüffehler beim Speichern im Reiter „Assistent“ war unsichtbar; er steht jetzt unter dem Speichern-Knopf.
+
 ## 0.34.40 — 2026-10-31
 
 ### Behoben

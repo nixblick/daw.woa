@@ -117,6 +117,9 @@ impl LibraryWindow {
             self.analysis_blocked = false;
             self.pending = 0;
             self.lib = None;
+            // Ein Fehler des alten Ordners darf den neuen nicht sperren (ensure_open).
+            self.error = None;
+            self.note = None;
             self.results.clear();
             self.marked.clear();
             self.mark_anchor = None;
@@ -1205,6 +1208,20 @@ mod tests {
         }
         w.poll();
         w.refresh();
+    }
+
+    #[test]
+    fn set_db_path_clears_error_of_old_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("datei");
+        std::fs::write(&blocker, b"x").unwrap();
+        let mut w = LibraryWindow::new(blocker.join("sub").join(DB_FILE));
+        w.ensure_open();
+        assert!(w.error.is_some());
+        w.set_db_path(dir.path().join("gut").join(DB_FILE));
+        w.ensure_open();
+        assert!(w.error.is_none(), "{:?}", w.error);
+        assert!(w.lib.is_some());
     }
 
     #[test]
