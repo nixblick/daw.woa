@@ -490,12 +490,10 @@ pub fn forward(
     let auth = format!("Bearer {token}");
     let mut session_id: Option<String> = None;
     let mut protocol: Option<String> = None;
-    for line in input.lines() {
-        let line = line.map_err(io)?;
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
+    // Die Anmeldung des Clients, um sie nach einem Verlust der Sitzung zu wiederholen.
+    let mut init: Option<String> = None;
+    let mut initialized: Option<String> = None;
+    let post = |line: &str, session_id: &mut Option<String>, protocol: &Option<String>| {
         let id = serde_json::from_str::<serde_json::Value>(line)
             .ok()
             .and_then(|v| v.get("id").cloned());
@@ -504,21 +502,21 @@ pub fn forward(
             .header("Authorization", &auth)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream");
-        if let Some(s) = &session_id {
+        if let Some(s) = session_id.as_deref() {
             req = req.header("Mcp-Session-Id", s);
         }
-        if let Some(p) = &protocol {
+        if let Some(p) = protocol {
             req = req.header("MCP-Protocol-Version", p);
         }
-        let replies = match req.send(line) {
-            Err(e) => Err(format!("WOA-App nicht erreichbar: {e}")),
+        match req.send(line) {
+            Err(e) => Err((0, format!("WOA-App nicht erreichbar: {e}"))),
             Ok(mut resp) => {
                 if let Some(s) = resp
                     .headers()
                     .get("mcp-session-id")
                     .and_then(|v| v.to_str().ok())
                 {
-                    session_id = Some(s.to_string());
+                    *session_id = Some(s.to_string());
                 }
                 let status = resp.status().as_u16();
                 let sse = resp
@@ -543,10 +541,45 @@ pub fn forward(
                             .unwrap_or_default(),
                         false,
                     )),
-                    s => Err(format!("WOA-App antwortet mit HTTP {s}")),
+                    s => Err((s, format!("WOA-App antwortet mit HTTP {s}"))),
                 }
             }
-        };
+        }
+    };
+    for line in input.lines() {
+        let line = line.map_err(io)?;
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let msg = serde_json::from_str::<serde_json::Value>(line).ok();
+        let id = msg.as_ref().and_then(|v| v.get("id").cloned());
+        match msg
+            .as_ref()
+            .and_then(|v| v.get("method"))
+            .and_then(|m| m.as_str())
+        {
+            Some("initialize") => init = Some(line.to_string()),
+            Some("notifications/initialized") => initialized = Some(line.to_string()),
+            _ => {}
+        }
+        let mut replies = post(line, &mut session_id, &protocol);
+        // 404 auf eine bekannte Sitzung: Die App hat sie verworfen (Leerlauf, Neustart).
+        // Still neu anmelden und den Aufruf einmal wiederholen.
+        if matches!(replies, Err((404, _)))
+            && session_id.is_some()
+            && let Some(init) = init.as_deref()
+            && init != line
+        {
+            session_id = None;
+            if post(init, &mut session_id, &None).is_ok() && session_id.is_some() {
+                if let Some(n) = initialized.as_deref() {
+                    let _ = post(n, &mut session_id, &protocol);
+                }
+                replies = post(line, &mut session_id, &protocol);
+            }
+        }
+        let replies = replies.map_err(|(_, m)| m);
         let replies = match replies {
             Ok(r) => r,
             Err(msg) => match &id {
@@ -577,6 +610,14 @@ pub fn forward(
             writeln!(output, "{r}").map_err(io)?;
         }
         output.flush().map_err(io)?;
+    }
+    // Client fertig: Sitzung in der App beenden, statt sie liegen zu lassen.
+    if let Some(s) = &session_id {
+        let _ = http
+            .delete(&url)
+            .header("Authorization", &auth)
+            .header("Mcp-Session-Id", s)
+            .call();
     }
     Ok(())
 }
@@ -724,14 +765,128 @@ mod tests {
         assert!(lines[0].contains("protocolVersion"), "{out}");
         assert!(lines[1].contains("\"id\":2"), "{out}");
         let seen = seen.lock().unwrap();
-        assert_eq!(seen.len(), 3, "{seen:?}");
-        for (i, req) in seen.iter().enumerate() {
+        assert_eq!(seen.len(), 4, "{seen:?}");
+        // Zum Schluss beendet die Weiterleitung ihre Sitzung.
+        assert!(seen[3].starts_with("delete "), "{seen:?}");
+        assert!(seen[3].contains("mcp-session-id: sitzung-42"), "{seen:?}");
+        for (i, req) in seen.iter().take(3).enumerate() {
             assert!(req.contains("content-type: application/json"), "{req}");
             assert!(req.contains("text/event-stream"), "Accept fehlt: {req}");
             if i > 0 {
                 assert!(req.contains("mcp-session-id: sitzung-42"), "{req}");
             }
         }
+    }
+
+    /// Die App hat die Sitzung verworfen (rmcp-Leerlauf, Neustart des Live-Servers): Auf
+    /// die alte Session-Id kommt HTTP 404. Die Weiterleitung meldet sich still neu an und
+    /// wiederholt den Aufruf einmal; der Client merkt davon nichts.
+    #[test]
+    fn forward_reinitializes_after_the_app_dropped_the_session() {
+        use std::io::{BufReader, Read};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let inits = Arc::new(AtomicUsize::new(0));
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let valid: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        {
+            let (inits, seen, valid) = (inits.clone(), seen.clone(), valid.clone());
+            std::thread::spawn(move || {
+                for conn in listener.incoming() {
+                    let Ok(conn) = conn else { return };
+                    let (inits, seen, valid) = (inits.clone(), seen.clone(), valid.clone());
+                    std::thread::spawn(move || {
+                        let mut r = BufReader::new(conn.try_clone().unwrap());
+                        let mut w = conn;
+                        loop {
+                            let mut head = String::new();
+                            let mut len = 0usize;
+                            loop {
+                                let mut l = String::new();
+                                if r.read_line(&mut l).unwrap_or(0) == 0 {
+                                    return;
+                                }
+                                let low = l.to_ascii_lowercase();
+                                if let Some(v) = low.strip_prefix("content-length:") {
+                                    len = v.trim().parse().unwrap_or(0);
+                                }
+                                if l == "\r\n" {
+                                    break;
+                                }
+                                head.push_str(&low);
+                            }
+                            let mut body = vec![0; len];
+                            r.read_exact(&mut body).unwrap();
+                            let body = String::from_utf8(body).unwrap();
+                            seen.lock().unwrap().push(format!("{head}\n{body}"));
+                            let mut valid = valid.lock().unwrap();
+                            let known = valid.as_ref().is_some_and(|v| {
+                                head.contains(&format!("mcp-session-id: {v}\r\n"))
+                            });
+                            let (status, sid, reply) = if body.contains("\"initialize\"") {
+                                let n = inits.fetch_add(1, Ordering::SeqCst) + 1;
+                                *valid = Some(format!("sitzung-{n}"));
+                                (
+                                    "200 OK",
+                                    format!("mcp-session-id: sitzung-{n}\r\n"),
+                                    r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26"}}"#
+                                        .to_string(),
+                                )
+                            } else if !known {
+                                ("404 Not Found", String::new(), String::new())
+                            } else if body.contains("\"id\"") {
+                                (
+                                    "200 OK",
+                                    String::new(),
+                                    r#"{"jsonrpc":"2.0","id":2,"result":{"content":[]}}"#
+                                        .to_string(),
+                                )
+                            } else {
+                                // Nach der ersten Anmeldung verwirft die App die Sitzung.
+                                if inits.load(Ordering::SeqCst) == 1 {
+                                    *valid = None;
+                                }
+                                ("202 Accepted", String::new(), String::new())
+                            };
+                            drop(valid);
+                            let _ = write!(
+                                w,
+                                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\n{sid}content-length: {}\r\n\r\n{reply}",
+                                reply.len()
+                            );
+                            let _ = w.flush();
+                        }
+                    });
+                }
+            });
+        }
+        let input = concat!(
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+            "\n",
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            "\n",
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"project_info","arguments":{}}}"#,
+            "\n",
+        );
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut out = Vec::new();
+            let r = forward(port, "geheim-im-test", input.as_bytes(), &mut out);
+            let _ = tx.send(r.map(|()| String::from_utf8(out).unwrap()));
+        });
+        let out = rx.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 2, "{out}");
+        assert!(lines[0].contains("protocolVersion"), "{out}");
+        assert!(lines[1].contains("\"result\""), "{out}");
+        assert!(lines[1].contains("\"id\":2"), "{out}");
+        assert_eq!(
+            inits.load(Ordering::SeqCst),
+            2,
+            "{:?}",
+            seen.lock().unwrap()
+        );
     }
 
     #[test]
