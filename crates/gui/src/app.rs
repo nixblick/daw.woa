@@ -245,6 +245,8 @@ pub struct WoaApp {
     event_editor: crate::event_editor::EventEditor,
     /// Sendeablauf; läuft weiter, auch wenn das Produzent-Layout zu sehen ist.
     radio: Option<RadioDesk>,
+    /// Neue Vorhören-Wahl, die erst greift, sobald nichts mehr läuft.
+    pfl_switch: PflSwitch,
     /// MIDI-Eingang (Paket 11), spielt das Instrument der scharfen MIDI-Spur.
     midi: woa_io::midi::MidiIn,
     /// Letzter gesehener Event-Zähler und wann er sich zuletzt geändert hat (Lampe).
@@ -588,6 +590,7 @@ impl WoaApp {
             clock_editor: crate::clock_editor::ClockEditor::new(woa_radio::data_dir()),
             event_editor: crate::event_editor::EventEditor::new(woa_radio::data_dir()),
             radio: None,
+            pfl_switch: PflSwitch::default(),
             frames: (0, Instant::now()),
         }
     }
@@ -1050,15 +1053,37 @@ impl WoaApp {
                 tracing::info!(?choice, "pfl output chosen");
                 self.config.pfl_output = choice;
                 self.save_config();
-                if self.radio.as_ref().is_some_and(|r| !r.is_on_air()) {
-                    self.radio = None;
-                    if self.config.mode.uses_desk() {
-                        self.ensure_radio();
-                    }
+                let running = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
+                if self.radio.is_some() && self.pfl_switch.choose(running) {
+                    self.reopen_radio_for_pfl();
                 }
-                ui.close();
+            }
+            if self.pfl_switch.pending {
+                ui.label(
+                    egui::RichText::new("Wirkt, sobald nichts mehr läuft")
+                        .small()
+                        .color(theme::on_air()),
+                );
+            } else if let Some(note) = self.radio.as_ref().and_then(RadioDesk::pfl_note)
+                && note != crate::radio::PFL_OFF
+            {
+                ui.label(egui::RichText::new(note).small().color(theme::on_air()));
             }
         });
+    }
+
+    /// Öffnet die Radio-Ausgabe neu, damit die Vorhören-Wahl greift. Nur ohne laufende Sendung.
+    fn reopen_radio_for_pfl(&mut self) {
+        tracing::info!(choice = ?self.config.pfl_output, "pfl: reopening radio output");
+        self.radio = None;
+        if self.config.mode.uses_desk() {
+            self.ensure_radio();
+        }
+        if let Some(note) = self.radio.as_ref().and_then(RadioDesk::pfl_note)
+            && note != crate::radio::PFL_OFF
+        {
+            tracing::warn!(note, "pfl output not available");
+        }
     }
 
     /// Untermenü „MIDI-Eingang“: Aus oder ein Gerät; gespeichert in `config.json`.
@@ -5729,6 +5754,10 @@ impl eframe::App for WoaApp {
         if self.config.mode.uses_desk() {
             self.ensure_radio();
         }
+        let running = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
+        if self.pfl_switch.poll(running) && self.radio.is_some() {
+            self.reopen_radio_for_pfl();
+        }
         // Im Radio-Modus spielt nur der Sendemixer; der Player-Strom ruht (#51).
         if let Some(p) = self.player.as_mut() {
             p.set_suspended(self.config.mode.uses_desk());
@@ -7937,5 +7966,54 @@ mod tests {
         let p = ride(&mut state, t, &[]).unwrap();
         assert!(!p.keep);
         assert!(state.project().track(t).unwrap().gain_db < -20.0);
+    }
+}
+
+/// Wann eine neue Vorhören-Wahl greift: sofort, wenn nichts läuft, sonst nach dem Stopp.
+/// Die laufende Sendung wird nie für das Vorhören unterbrochen.
+#[derive(Debug, Default)]
+struct PflSwitch {
+    pending: bool,
+}
+
+impl PflSwitch {
+    /// Neue Wahl. `true` heißt: jetzt neu öffnen.
+    fn choose(&mut self, running: bool) -> bool {
+        self.pending = running;
+        !running
+    }
+
+    /// Je Frame. `true` heißt: die wartende Wahl jetzt anwenden.
+    fn poll(&mut self, running: bool) -> bool {
+        if self.pending && !running {
+            self.pending = false;
+            return true;
+        }
+        false
+    }
+}
+
+#[cfg(test)]
+mod pfl_switch_tests {
+    use super::PflSwitch;
+
+    #[test]
+    fn choice_while_running_waits_until_stop() {
+        let mut s = PflSwitch::default();
+        assert!(!s.choose(true));
+        assert!(s.pending);
+        assert!(!s.poll(true));
+        assert!(s.pending);
+        assert!(s.poll(false));
+        assert!(!s.pending);
+        assert!(!s.poll(false));
+    }
+
+    #[test]
+    fn choice_while_idle_applies_now() {
+        let mut s = PflSwitch::default();
+        assert!(s.choose(false));
+        assert!(!s.pending);
+        assert!(!s.poll(false));
     }
 }
