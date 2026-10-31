@@ -3705,7 +3705,10 @@ mod tests {
     #[test]
     fn onair_lamp_ignores_the_mic() {
         use super::onair_lamp_lit;
-        assert!(!onair_lamp_lit(false, true), "mic open is not on air (#225)");
+        assert!(
+            !onair_lamp_lit(false, true),
+            "mic open is not on air (#225)"
+        );
         assert!(!onair_lamp_lit(false, false));
         assert!(onair_lamp_lit(true, false));
         assert!(onair_lamp_lit(true, true));
