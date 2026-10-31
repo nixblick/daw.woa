@@ -291,8 +291,8 @@ impl Auth {
         {
             tracing::warn!("remote: zu viele falsche PINs, DJ-PIN erneuert");
             self.dj_pin = p;
+            // Sperren je Adresse bleiben bestehen, sonst entsperrt der Angreifer sich selbst.
             self.global_fails = (0, now);
-            self.fails.clear();
         }
     }
 
