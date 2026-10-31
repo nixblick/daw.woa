@@ -1,7 +1,8 @@
 //! # woa-stream: Sendeprozess
 //!
 //! - [`config::StreamConfig`]: Server, Stream-ID, Bitrate, Notfall-Playlist; das Passwort
-//!   steht nie darin, nur der Pfad zur Datei ([`kennwort::Kennwort`]).
+//!   steht nie darin, sondern im Schlüsselbund des Systems ([`kennwort`]).
+//! - [`probe`]: „Verbindung testen“ für Shoutcast v1/v2 und Icecast, mit verständlichem Befund.
 //! - [`mp3::Mp3Encoder`]: MP3 CBR über LAME.
 //! - [`shoutcast`]: Quellclient für Shoutcast DNAS v2 im v1-kompatiblen Legacy-Modus
 //!   (Port+1, Passwort `pass:#sid`), Titel per `admin.cgi?mode=updinfo`.
@@ -17,6 +18,7 @@ pub mod daemon;
 pub mod kennwort;
 pub mod link;
 pub mod mp3;
+pub mod probe;
 pub mod shoutcast;
 pub mod status;
 pub mod uplink;

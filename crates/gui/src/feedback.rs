@@ -190,10 +190,12 @@ impl GuiConfig {
                 return Self::default();
             }
         };
-        serde_json::from_str(&text).unwrap_or_else(|e| {
+        let mut cfg: Self = serde_json::from_str(&text).unwrap_or_else(|e| {
             tracing::warn!(error = %e, "config invalid, using defaults");
             Self::default()
-        })
+        });
+        cfg.stream = cfg.stream.migrate();
+        cfg
     }
 }
 
@@ -474,6 +476,29 @@ mod tests {
         assert_eq!(GuiConfig::load(&p).feedback_url, "https://x/api/feedback");
         std::fs::write(&p, "kaputt").unwrap();
         assert_eq!(GuiConfig::load(&p), GuiConfig::default());
+    }
+
+    #[test]
+    fn old_stream_settings_are_migrated_and_never_hold_a_password() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("config.json");
+        // Stand bis 0.34.28: Quell-Port in `port`, Kennwortdatei eingetragen.
+        std::fs::write(
+            &p,
+            r#"{"stream":{"host":"radio.example","port":8001,"password_file":"/x/kw.pass"}}"#,
+        )
+        .unwrap();
+        let c = GuiConfig::load(&p);
+        assert_eq!(c.stream.port, 8000);
+        assert_eq!(c.stream.source_port(), 8001);
+        c.save(&p).unwrap();
+        let text = std::fs::read_to_string(&p).unwrap();
+        assert!(text.contains("\"schema\": 2"), "{text}");
+        assert_eq!(
+            GuiConfig::load(&p).stream.port,
+            8000,
+            "stabil nach Speichern"
+        );
     }
 
     #[test]

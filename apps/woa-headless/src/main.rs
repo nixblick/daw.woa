@@ -354,9 +354,13 @@ struct BroadcastArgs {
 fn run_broadcast_test(a: BroadcastArgs) -> ExitCode {
     let protocol = match a.protocol.to_ascii_lowercase().as_str() {
         "icecast" => woa_stream::Protocol::Icecast,
+        "shoutcast" if a.sid > 1 => woa_stream::Protocol::ShoutcastV2,
         "shoutcast" => woa_stream::Protocol::Shoutcast,
+        "shoutcast2" => woa_stream::Protocol::ShoutcastV2,
         p => {
-            eprintln!("woa-headless: Protokoll {p:?} unbekannt (icecast oder shoutcast)");
+            eprintln!(
+                "woa-headless: Protokoll {p:?} unbekannt (icecast, shoutcast oder shoutcast2)"
+            );
             return ExitCode::from(2);
         }
     };
@@ -378,7 +382,13 @@ fn run_broadcast_test(a: BroadcastArgs) -> ExitCode {
             protocol,
             mount: a.mount,
             host: a.host,
-            port: a.port,
+            // Auf der Kommandozeile steht der Quell-Port; die Konfiguration kennt den Port
+            // des Servers (Shoutcast: ein Port darunter).
+            port: if protocol.is_shoutcast() {
+                a.port.saturating_sub(1)
+            } else {
+                a.port
+            },
             stream_id: a.sid,
             password_file: a.pass_file,
             emergency: a.emergency,
@@ -522,8 +532,14 @@ fn main() -> ExitCode {
             seconds,
         } => {
             let cfg = woa_stream::StreamConfig {
+                protocol: if sid > 1 {
+                    woa_stream::Protocol::ShoutcastV2
+                } else {
+                    woa_stream::Protocol::Shoutcast
+                },
                 host,
-                port,
+                // Kommandozeile: Quell-Port; die Konfiguration kennt den Server-Port.
+                port: port.saturating_sub(1),
                 stream_id: sid,
                 admin_port,
                 password_file: pass_file.unwrap_or_else(woa_stream::config::default_password_file),
