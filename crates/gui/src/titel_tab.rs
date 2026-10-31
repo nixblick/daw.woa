@@ -59,10 +59,11 @@ pub fn titel_tab(ui: &mut egui::Ui, library: &mut LibraryWindow, target: &str) -
                             out.push(PathBuf::from(&t.path));
                         }
                         let sel = marked.contains(&t.id);
-                        let r = ui
-                            .selectable_label(sel, &t.title)
-                            .on_hover_text(format!("{}
-Doppelklick: Fenster Titelinfos", t.path));
+                        let r = ui.selectable_label(sel, &t.title).on_hover_text(format!(
+                            "{}
+Doppelklick: Fenster Titelinfos",
+                            t.path
+                        ));
                         if r.clicked() {
                             click = Some((i, ui.input(|inp| inp.modifiers)));
                         } else if r.secondary_clicked() && !sel {
