@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.34.65 — 2026-10-31
+
+- **KI live ohne Token (#232):** Die App startet den Live-Server jetzt bei jedem Start selbst, auch wenn kein Zugriffstoken erzeugt wurde. Sie nutzt dann einen eigenen Schlüssel je Start (nur 127.0.0.1, Origin-Prüfung, Lock-Datei 0600, nie angezeigt). `woa-headless mcp` reicht so an das offene Fenster durch, statt daneben auf der Datei zu arbeiten. Kann der Server nicht starten, steht „KI aus“ in der Kopfleiste.
+- **Kopierte Einträge:** kein Platzhalter `<Projektordner>` mehr; ohne gespeichertes Projekt kommt ein Hinweis. Claude Desktop bekommt nur den Eintrag `"woa": {…}` mit dem Hinweis, wohin er gehört; Claude Code nur `claude mcp add …`.
+- **KI-Chat:** Ein Satz unter dem Chat sagt, dass er selbst die API des gewählten Anbieters aufruft, nicht Claude Code.
+- **Ehrliche Hinweise:** Der HTTP-Server (fester Port) arbeitet nur auf der Datei, live geht es über Stdio; `docs/agent.md` und `docs/abnahme.md` (Anzeige in der Kopfleiste) nachgezogen.
+
 ## 0.34.64 — 2026-10-31
 
 - **CI stabiler:** Drei Windows-Tests schlugen zufällig fehl (3 von 15 Läufen auf main). Die Titelinfos-Tests warten jetzt bis zu 10 s auf den Thread, der die Tags liest, statt fest 5 Bilder. Der WebRTC-Test lässt am Pult -16 statt -14 dB zu; gemessen wurden -14,02 dB.

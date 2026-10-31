@@ -188,12 +188,11 @@ pub fn url(cfg: &McpServerConfig, host_for_network: &str) -> String {
 /// für Clients im Netz. Die Schnipsel entstehen zur Laufzeit; kein Pfad steht fest im Code.
 pub fn snippets(cfg: &McpServerConfig, exe: Option<&Path>, network_host: &str) -> Vec<Snippet> {
     let mut out = Vec::new();
-    let project = cfg.project.as_ref().map_or_else(
-        || "<Projektordner>".to_string(),
-        |p| p.display().to_string(),
-    );
+    // Ohne Projektordner keine Stdio-Schnipsel: ein Platzhalter wie „<Ordner>“ wäre unter
+    // Windows ein ungültiger Pfad im kopierten Text.
+    let project = cfg.project.as_ref().map(|p| p.display().to_string());
     let u = url(cfg, network_host);
-    if let Some(exe) = exe {
+    if let (Some(exe), Some(project)) = (exe, project) {
         let exe = exe.display().to_string();
         // Pfad mit Zeilenumbruch: kein Terminal-Befehl, nur die JSON-Einträge.
         if let (Some(e), Some(p)) = (quote(&exe), quote(&project)) {
@@ -354,6 +353,14 @@ mod tests {
         assert_eq!(a.len(), 64);
         assert!(a.bytes().all(|c| c.is_ascii_hexdigit()));
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn without_project_no_snippet_has_angle_brackets() {
+        let exe = PathBuf::from("/opt/woa/woa-headless");
+        let list = snippets(&McpServerConfig::default(), Some(&exe), "");
+        assert!(list.iter().all(|s| s.transport == Transport::Http));
+        assert!(list.iter().all(|s| !s.masked().contains("<Projekt")));
     }
 
     #[test]

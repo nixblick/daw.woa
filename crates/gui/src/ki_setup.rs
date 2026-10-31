@@ -125,31 +125,56 @@ const ORDER: [Pick; 6] = [
     Pick::Preset(4),
 ];
 
-/// Genau der Text, den „Kopieren“ für `client` in die Zwischenablage legt. Ohne gewählten
-/// Projektordner wird das offene Projekt eingesetzt. `None`: `woa-headless` fehlt.
+/// Genau der Text, den „Kopieren“ für `client` in die Zwischenablage legt: für Claude Code
+/// nur der Befehl `claude mcp add …`, sonst nur der Eintrag `"woa": {…}` (ohne `mcpServers`).
+/// Ohne gewählten Projektordner wird das offene Projekt eingesetzt. `Err`: der Hinweis, warum
+/// es keinen Text gibt (`woa-headless` fehlt, kein Projekt gespeichert).
 pub fn mcp_block(
     cfg: &KiConfig,
     client: McpClient,
     exe: Option<&Path>,
     project: Option<&Path>,
-) -> Option<String> {
+) -> Result<String, String> {
+    let Some(exe) = exe else {
+        return Err(
+            "woa-headless liegt nicht neben WOA. Installiere WOA vollständig, \
+                    dann steht hier der Eintrag."
+                .into(),
+        );
+    };
     let mut c = cfg.mcp_server.clone();
     if c.project.is_none() {
         c.project = project.map(Path::to_path_buf);
     }
-    server::snippets(&c, exe, "")
+    if c.project.is_none() {
+        return Err(
+            "Speichere zuerst dein Projekt (Datei → Speichern), dann steht hier der \
+                    Eintrag mit seinem Ordner."
+                .into(),
+        );
+    }
+    let text = server::snippets(&c, Some(exe), "")
         .into_iter()
         .find(|s| s.transport == Transport::Stdio && s.client == client.snippet_client())
         .map(|s| s.masked())
+        .ok_or_else(|| {
+            "Der Pfad enthält Zeichen, die kein Terminal-Befehl verträgt.".to_string()
+        })?;
+    if client == McpClient::ClaudeCode {
+        return Ok(text);
+    }
+    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let inner = serde_json::to_string_pretty(&v["mcpServers"]["woa"]).map_err(|e| e.to_string())?;
+    Ok(format!("\"woa\": {inner}"))
 }
 
 /// Die drei Sätze Anleitung je Client.
 pub fn mcp_howto(client: McpClient) -> &'static str {
     match client {
         McpClient::ClaudeDesktop => {
-            "1. „Kopieren“ drücken und den Block in Claude Desktop unter Einstellungen → \
-             Entwickler → „Konfiguration bearbeiten“ (claude_desktop_config.json) einfügen; \
-             steht dort schon „mcpServers“, nur den Eintrag „woa“ ergänzen. 2. Claude Desktop \
+            "1. „Kopieren“ drücken und den Eintrag in Claude Desktop unter Einstellungen → \
+             Entwickler → „Konfiguration bearbeiten“ (claude_desktop_config.json) innerhalb \
+             von „mcpServers“ einfügen (fehlt es, „mcpServers“: { … } darum legen). 2. Claude Desktop \
              neu starten, WOA erscheint im Werkzeug-Menü. 3. Solange WOA offen ist, arbeitet \
              Claude live in deinem offenen Projekt, z. B. „Leg eine Bassdrum auf jede Zählzeit“."
         }
@@ -159,8 +184,8 @@ pub fn mcp_howto(client: McpClient) -> &'static str {
              Claude live in deinem offenen Projekt."
         }
         McpClient::Other => {
-            "1. „Kopieren“ drücken und den Block in die MCP-Einstellungen deines Clients \
-             einfügen. 2. Den Client neu starten. 3. Solange WOA offen ist, arbeiten die \
+            "1. „Kopieren“ drücken und den Eintrag in die MCP-Einstellungen deines Clients \
+             innerhalb von „mcpServers“ einfügen. 2. Den Client neu starten. 3. Solange WOA offen ist, arbeiten die \
              Werkzeuge live in deinem offenen Projekt."
         }
     }
@@ -418,7 +443,7 @@ impl KiSetup {
             ui.label(egui::RichText::new(mcp_howto(client)).small());
             ui.add_space(4.0);
             match mcp_block(draft, client, exe, project) {
-                Some(block) => {
+                Ok(block) => {
                     let label = if client == McpClient::ClaudeCode {
                         "Befehl kopieren"
                     } else {
@@ -434,15 +459,8 @@ impl KiSetup {
                             ui.label(egui::RichText::new(block).monospace().small());
                         });
                 }
-                None => {
-                    ui.label(
-                        egui::RichText::new(
-                            "woa-headless liegt nicht neben WOA. Installiere WOA vollständig, \
-                             dann steht hier der Eintrag.",
-                        )
-                        .small()
-                        .color(theme::warn()),
-                    );
+                Err(hint) => {
+                    ui.label(egui::RichText::new(hint).small().color(theme::warn()));
                 }
             }
         });
@@ -462,20 +480,38 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn json_blocks_are_valid_and_carry_the_open_project() {
+    fn copied_text_has_only_the_woa_entry_and_the_open_project() {
         let cfg = KiConfig::default();
         let exe = Path::new("/opt/wir on air/woa-headless");
         let proj = Path::new("/tmp/mein projekt.woa");
         for c in [McpClient::ClaudeDesktop, McpClient::Other] {
             let b = mcp_block(&cfg, c, Some(exe), Some(proj)).unwrap();
-            let v: serde_json::Value = serde_json::from_str(&b).expect("gültiges JSON");
-            let woa = &v["mcpServers"]["woa"];
-            assert_eq!(woa["command"], "/opt/wir on air/woa-headless");
-            assert_eq!(woa["args"][1], "/tmp/mein projekt.woa");
+            assert!(!b.contains("mcpServers"), "{b}");
+            assert!(b.trim_start().starts_with("\"woa\": {"), "{b}");
+            let v: serde_json::Value =
+                serde_json::from_str(&format!("{{{b}}}")).expect("gültiges JSON");
+            assert_eq!(v["woa"]["command"], "/opt/wir on air/woa-headless");
+            assert_eq!(v["woa"]["args"][1], "/tmp/mein projekt.woa");
         }
         let cmd = mcp_block(&cfg, McpClient::ClaudeCode, Some(exe), Some(proj)).unwrap();
         assert!(cmd.starts_with("claude mcp add woa -- "));
-        assert!(mcp_block(&cfg, McpClient::ClaudeDesktop, None, None).is_none());
+        assert!(!cmd.contains('{'));
+        assert!(mcp_block(&cfg, McpClient::ClaudeDesktop, None, Some(proj)).is_err());
+    }
+
+    #[test]
+    fn without_a_project_there_is_a_hint_and_no_angle_brackets() {
+        let cfg = KiConfig::default();
+        let exe = Path::new("/opt/woa/woa-headless");
+        for c in [
+            McpClient::ClaudeDesktop,
+            McpClient::ClaudeCode,
+            McpClient::Other,
+        ] {
+            let e = mcp_block(&cfg, c, Some(exe), None).unwrap_err();
+            assert!(e.contains("Projekt"), "{e}");
+            assert!(!e.contains('<') && !e.contains('>'), "{e}");
+        }
     }
 
     #[test]

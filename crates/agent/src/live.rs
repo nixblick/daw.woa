@@ -397,7 +397,7 @@ impl Drop for LiveServer {
 }
 
 /// 32 Zufallsbytes als Hex, je App-Start neu.
-fn new_secret() -> Result<String, AgentError> {
+pub fn new_secret() -> Result<String, AgentError> {
     let mut buf = [0u8; 32];
     getrandom::fill(&mut buf)
         .map_err(|e| AgentError::Transport(format!("Zufallsgenerator: {e}")))?;

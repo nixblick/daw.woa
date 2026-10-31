@@ -26,8 +26,12 @@ Anfrage braucht `Authorization: Bearer <Token>`. Optionen: `--port N`, `--bind A
 Bequemer geht es in WOA unter **Einstellungen → KI & MCP**: Token erzeugen, Server im Hintergrund
 an- und ausschalten, fertige Einträge für Claude Code, Claude Desktop und andere Clients kopieren.
 
-Alle Sitzungen eines Servers teilen sich ein Projekt. Der Server arbeitet auf der Projektdatei im
-Ordner, nicht auf dem offenen Fenster von WOA; gleichzeitiges Speichern in beiden überschreibt sich.
+Alle Sitzungen eines Servers teilen sich ein Projekt. Läuft die WOA-App, reicht `woa-headless mcp`
+(Stdio) an sie durch: Claude arbeitet live im offenen Fenster, jeder Schritt ist rückgängig zu machen,
+und die Kopfleiste zeigt „KI bereit“ bzw. „KI verbunden“. Die App startet diesen Live-Server bei
+jedem Start selbst, auch ohne erzeugtes Token (nur `127.0.0.1`, eigener Schlüssel je Start).
+Der HTTP-Server `woa-headless mcp --http` dagegen arbeitet nur auf der Projektdatei im Ordner, nicht
+live; gleichzeitiges Speichern in ihm und im Fenster überschreibt sich.
 
 ## Werkzeuge
 
