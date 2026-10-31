@@ -149,10 +149,20 @@ fn note_damage(path: &Path, d: Option<Damage>) {
     }
 }
 
+thread_local! {
+    static DECODES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Wie oft dieser Thread [`decode_file`] aufgerufen hat (für Tests: „hier wird nicht dekodiert“).
+pub fn decodes_on_this_thread() -> u64 {
+    DECODES.with(std::cell::Cell::get)
+}
+
 /// Liest WAV (hound), FLAC oder MP3 (symphonia). Fehlertext ohne Pfad. Beschädigte oder
 /// unlesbare Dateien landen mit Klartext im lokalen Protokoll und in [`damage`].
 #[tracing::instrument(level = "info", skip_all, name = "decode_file")]
 pub fn decode_file(path: &Path) -> Result<Decoded, String> {
+    DECODES.with(|n| n.set(n.get() + 1));
     woa_telemetry::take_decoder_faults();
     let r = decode_inner(path);
     match &r {

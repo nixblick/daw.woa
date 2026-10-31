@@ -1,5 +1,5 @@
 //! Ordner-Import im Hintergrund: sucht lesbare Audiodateien, bildet je Datei die Inhaltskennung,
-//! liest die Dauer und trägt sie ein. Gleiche Inhalte werden erkannt und nicht doppelt gespeichert.
+//! liest Tags und Dauer aus dem Datei-Kopf (ohne zu dekodieren) und trägt sie ein. Gleiche Inhalte werden erkannt und nicht doppelt gespeichert.
 //!
 //! Der Hintergrund-Thread öffnet seine eigene Verbindung zur Datenbank; die Oberfläche liest
 //! den Fortschritt aus [`Progress`] (Atomics) und braucht keine Sperre.
@@ -9,6 +9,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
 
+use std::time::{Duration, Instant};
+
+use crate::tags::{Header, read_header};
 use crate::{AddOutcome, Kind, Library, NewTrack, Result, file_hash};
 
 /// Tiefste Ordnerverschachtelung, die der Import betritt.
@@ -17,6 +20,8 @@ pub const MAX_DEPTH: usize = 16;
 pub const MAX_FILES: usize = 200_000;
 /// So viele Dateien je Transaktion.
 const BATCH: usize = 50;
+/// Spätestens so oft landen gelesene Titel in der Datenbank (und damit in der Liste).
+const COMMIT_EVERY: Duration = Duration::from_millis(250);
 
 /// Fortschritt eines Imports, lock-frei lesbar.
 #[derive(Debug, Default)]
@@ -121,28 +126,37 @@ pub fn title_of(path: &Path) -> String {
     }
 }
 
-/// Liest Kennung und Dauer einer Datei.
+/// Titel für die Liste: „Interpret - Titel“ aus den Tags (so liest auch die Rotation den
+/// Interpreten), sonst der Dateiname.
+pub fn display_title(path: &Path, h: &Header) -> String {
+    match (&h.artist, &h.title) {
+        (Some(a), Some(t)) => format!("{a} - {t}"),
+        (None, Some(t)) => t.clone(),
+        _ => title_of(path),
+    }
+}
+
+/// Liest Kennung, Tags und Länge einer Datei, nur aus dem Kopf; dekodiert wird nicht.
 fn probe(path: &Path, kind: Kind) -> std::result::Result<NewTrack, String> {
     let path_str = path
         .to_str()
         .ok_or("Pfad ist kein gültiger Text")?
         .to_string();
+    let header = read_header(path)?;
     let hash = file_hash(path).map_err(|e| e.to_string())?;
     Ok(NewTrack {
         path: path_str,
         hash,
-        title: title_of(path),
-        duration: 0.0,
+        title: display_title(path, &header),
+        duration: header.duration,
         kind,
     })
 }
 
-fn duration_of(path: &Path) -> std::result::Result<f64, String> {
-    let d = woa_engine::decode::decode_file(path)?;
-    Ok(d.frames() as f64 / f64::from(d.rate.max(1)))
-}
-
-/// Trägt `files` in `lib` ein (synchron; der Hintergrund-Thread ruft das auf).
+/// Trägt `files` in `lib` ein (synchron; der Hintergrund-Thread ruft das auf). Liest nur die
+/// Datei-Köpfe; Messung und Wellenform macht danach die Analyse ([`crate::analysis`]).
+/// Eingetragen wird alle [`BATCH`] Dateien oder spätestens nach [`COMMIT_EVERY`], damit die
+/// Liste gleichmäßig wächst.
 pub fn import_files(
     lib: &Library,
     files: &[PathBuf],
@@ -150,53 +164,14 @@ pub fn import_files(
     progress: &Progress,
 ) -> Result<()> {
     progress.total.store(files.len(), Ordering::Release);
-    for batch in files.chunks(BATCH) {
-        if progress.cancel.load(Ordering::Acquire) {
-            break;
-        }
-        // Dekodieren vor der Transaktion: sie hält die Datenbank nur kurz gesperrt.
-        let mut ready: Vec<NewTrack> = Vec::with_capacity(batch.len());
-        for path in batch {
-            if progress.cancel.load(Ordering::Acquire) {
-                break;
-            }
-            match probe(path, kind) {
-                Ok(mut t) => {
-                    // Schon bekannt (gleicher Pfad und Inhalt)? Dann kein Dekodieren nötig.
-                    match lib.by_path(&t.path)? {
-                        Some(old) if old.hash == t.hash => {
-                            progress.duplicates.fetch_add(1, Ordering::Relaxed);
-                            progress.done.fetch_add(1, Ordering::Relaxed);
-                            continue;
-                        }
-                        _ => {}
-                    }
-                    match duration_of(path) {
-                        Ok(d) if d > 0.0 => {
-                            t.duration = d;
-                            ready.push(t);
-                        }
-                        Ok(_) => {
-                            tracing::warn!("library import: empty audio file skipped");
-                            progress.failed.fetch_add(1, Ordering::Relaxed);
-                            progress.done.fetch_add(1, Ordering::Relaxed);
-                        }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "library import: decode failed");
-                            progress.failed.fetch_add(1, Ordering::Relaxed);
-                            progress.done.fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "library import: file skipped");
-                    progress.failed.fetch_add(1, Ordering::Relaxed);
-                    progress.done.fetch_add(1, Ordering::Relaxed);
-                }
-            }
+    let mut ready: Vec<NewTrack> = Vec::with_capacity(BATCH);
+    let mut since = Instant::now();
+    let flush = |ready: &mut Vec<NewTrack>| -> Result<()> {
+        if ready.is_empty() {
+            return Ok(());
         }
         lib.transaction(|l| {
-            for t in &ready {
+            for t in ready.iter() {
                 match l.add_track(t)? {
                     AddOutcome::Added(_) => progress.added.fetch_add(1, Ordering::Relaxed),
                     AddOutcome::Duplicate(_) => progress.duplicates.fetch_add(1, Ordering::Relaxed),
@@ -206,8 +181,34 @@ pub fn import_files(
             }
             Ok(())
         })?;
+        ready.clear();
+        Ok(())
+    };
+    for path in files {
+        if progress.cancel.load(Ordering::Acquire) {
+            break;
+        }
+        match probe(path, kind) {
+            Ok(t) => match lib.by_path(&t.path)? {
+                // Schon bekannt (gleicher Pfad und Inhalt): nichts zu tun.
+                Some(old) if old.hash == t.hash => {
+                    progress.duplicates.fetch_add(1, Ordering::Relaxed);
+                    progress.done.fetch_add(1, Ordering::Relaxed);
+                }
+                _ => ready.push(t),
+            },
+            Err(e) => {
+                tracing::warn!(error = %e, "library import: file skipped");
+                progress.failed.fetch_add(1, Ordering::Relaxed);
+                progress.done.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        if ready.len() >= BATCH || since.elapsed() >= COMMIT_EVERY {
+            flush(&mut ready)?;
+            since = Instant::now();
+        }
     }
-    Ok(())
+    flush(&mut ready)
 }
 
 /// Startet den Import von `dir` in die Datenbank `db` in einem Hintergrund-Thread.
@@ -333,6 +334,44 @@ mod tests {
         assert_eq!(Progress::get(&again.progress.added), 0);
         assert_eq!(Progress::get(&again.progress.duplicates), 1000);
         assert_eq!(lib.count().unwrap(), 1000);
+    }
+
+    /// Der Import füllt die Liste nur aus den Datei-Köpfen: kein einziges Dekodieren.
+    #[test]
+    fn import_reads_headers_only_and_never_decodes() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a");
+        std::fs::create_dir_all(&a).unwrap();
+        for n in 0..40usize {
+            write_sine(&a.join(format!("lied_{n:02}.wav")), 150.0 + n as f32, 0.5);
+        }
+        let lib = Library::open(&dir.path().join("lib.sqlite3")).unwrap();
+        let files = scan(&a, &AtomicBool::new(false)).unwrap();
+        let before = woa_engine::decode::decodes_on_this_thread();
+        let p = Progress::default();
+        import_files(&lib, &files, Kind::Music, &p).unwrap();
+        assert_eq!(
+            woa_engine::decode::decodes_on_this_thread(),
+            before,
+            "Import hat dekodiert"
+        );
+        assert_eq!(Progress::get(&p.added), 40);
+        let all = lib
+            .search(&Query {
+                limit: 100,
+                ..Query::default()
+            })
+            .unwrap();
+        assert_eq!(all.len(), 40);
+        assert!(
+            all.iter().all(|t| (t.duration - 0.5).abs() < 0.01),
+            "Länge aus dem Kopf"
+        );
+        assert!(
+            all.iter().all(|t| t.analysis.is_none()),
+            "Analyse kommt danach"
+        );
+        assert_eq!(all[0].title, "lied 00");
     }
 
     #[test]

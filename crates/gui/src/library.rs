@@ -284,7 +284,8 @@ impl LibraryWindow {
         true
     }
 
-    /// Startet die Analyse im Hintergrund, sobald Titel darauf warten und kein Import läuft,
+    /// Startet die Analyse im Hintergrund, sobald Titel darauf warten (auch während eines
+    /// Imports: der liest nur die Datei-Köpfe, die Analyse misst hinterher),
     /// und holt ihren Fortschritt ab. Gibt zurück, ob sie läuft.
     fn poll_analysis(&mut self) -> bool {
         if let Some(job) = &self.analysis {
@@ -303,7 +304,7 @@ impl LibraryWindow {
             }
             return true;
         }
-        if self.pending > 0 && !self.analysis_blocked && !self.importing() && self.lib.is_some() {
+        if self.pending > 0 && !self.analysis_blocked && self.lib.is_some() {
             self.analysis = Some(woa_library::analysis::start(&self.db_path));
             return true;
         }

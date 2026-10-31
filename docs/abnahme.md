@@ -976,6 +976,18 @@ Tickets #173, #174.
 6. Abschicken mit Bildschirmfoto, eigenem Bild und Protokoll: das Ticket zeigt beide Bilder und unter dem Text „--- Protokoll ---“.
 7. Abschicken ohne Haken: das Ticket hat weder Bild noch Protokoll.
 
+## Bibliothek: schneller Ordner-Import (0.34.36, offen)
+
+Kein Ton nötig.
+
+1. Bibliothek → „Ordner hinzufügen …“ mit einem großen Musikordner (einige hundert MP3). Die ersten Titel stehen nach einem Augenblick in der Liste, die Liste wächst gleichmäßig, die Oberfläche bleibt bedienbar.
+2. Titel mit Tags heißen „Interpret - Titel“, Titel ohne Tags wie ihr Dateiname.
+3. Noch während des Imports füllen sich nach und nach BPM, Tonart und LUFS (Analyse im Hintergrund, Fortschritt unten sichtbar). „Abbrechen“ hält beides an, schon Eingetragenes bleibt.
+4. Derselbe Ordner ein zweites Mal: nichts kommt doppelt.
+5. Produzent: einen langen Titel aus der Bibliothek auf die Timeline ziehen. Die Oberfläche steht nur noch einmal kurz (Laden für die Wiedergabe), nicht mehr doppelt so lange.
+
+Selbst geprüft von Claude: neuer Test „Import ohne Dekodieren“, alle Tests und Clippy von `woa-library` grün, Clippy von `woa-engine` und `woa-gui` grün.
+
 ## Abgenommen
 
 - Paket 10 Dauertest (0.5.0): 30.10.2026, André „2 abgenommen“ (Sammelabnahme Pakete 5, 9, 10 und Nachtrag #43).
