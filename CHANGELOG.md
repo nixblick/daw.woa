@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.67 — 2026-10-31
+## 0.34.90 — 2026-10-31
 
 - **Fernbedienung (WAN, #162):** Falsche PINs würfeln die DJ-PIN nicht mehr neu, und es gibt keine globale Sperre, mit der ein Angreifer den echten DJ aussperren könnte. Fehlversuche zählen je Adresse; nur globale IPv6-Adressen zählen je /64-Netz, damit ein Internet-Anschluss nicht mit jeder neuen Adresse weiterraten kann. Link-local, ULA und IPv4 bleiben je Adresse, ein Gast im WLAN sperrt den DJ also nicht mit aus. PIN und Token werden nie geloggt. Tests für beide Angriffe dazu.
 
