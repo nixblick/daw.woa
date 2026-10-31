@@ -811,12 +811,24 @@ Selbst geprüft von Claude: Tests `shared_memory_file_is_mode_0600` und `private
 1. Produzent-Modus, je eine Audio-, MIDI- und Bus-Spur anlegen.
 2. Rechtsklick auf den freien Bereich eines Spurkopfs: Menü mit „Spur umbenennen“ und „Spur löschen“ geht auf. Dasselbe per Rechtsklick auf den Spurnamen. „Spur löschen“ entfernt die Spur; bei allen drei Spurarten probieren.
 3. Papierkorb rechts oben im Spurkopf: löscht die Spur sofort.
-4. Studio-Mixer im Dock: jeder Kanalzug hat M, S, Aufnahme und Papierkorb, darunter „Effekte n“.
+4. Studio-Mixer im Dock: jeder Kanalzug hat M, S und Aufnahme (seit 0.34.23 ohne Papierkorb und ohne „Effekte n“, siehe unten).
 5. Ohne einen Kanal anzuklicken steht rechts das Insert-Rack des ersten Kanals, „EFFEKTE“, „+ Effekt“ und „+ Plugin“ sind ohne Scrollen zu sehen.
-6. „Effekte n“ eines anderen Kanals klicken: das Rack zeigt diesen Kanal. „+ Effekt“ → EQ anlegen, Bypass-Taste aus und an, Reihenfolge ändern, mit X entfernen. Ein Plugin laden, Fenster öffnen und schließen, Bypass, entfernen.
+6. Einen anderen Kanalzug anklicken: das Rack zeigt diesen Kanal. „+ Effekt“ → EQ anlegen, Bypass-Taste aus und an, Reihenfolge ändern, mit X entfernen. Ein Plugin laden, Fenster öffnen und schließen, Bypass, entfernen.
 7. Gain, Pan, Ausgang und Sends stehen im Rack unter den Effekten und wirken wie vorher.
 
 Selbst geprüft von Claude: Tests in `crates/gui/tests/design_regressions.rs` (fünf, alle grün; der Rechtsklick-Test schlägt mit dem alten Hover-Rahmen fehl), Tests und Clippy von `woa-gui` grün.
+
+## Auswahl und Clip-Inspektor (0.34.23, offen)
+
+1. Produzent-Modus, je eine Audio-, MIDI- und Bus-Spur anlegen. Ohne Klick ist die erste Spur im Spurkopf und im Kanalzug in ihrer Farbe hervorgehoben, und das Rack zeigt sie (Farbpunkt und Name oben).
+2. Spurkopf der MIDI-Spur anklicken (auch auf M oder S): Spurkopf, Kanalzug und Rack wechseln auf diese Spur.
+3. Im Mixer den Kanalzug der Bus-Spur anklicken: wieder wechseln alle drei. Steht „fx 1“ im Namensstreifen, hat die Spur einen Effekt.
+4. Rechtsklick auf den Namen im Kanalzug: Spurmenü, „Spur löschen“ geht. Papierkorb gibt es einmal je Spur, oben rechts im Spurkopf.
+5. Einen Clip anklicken: der Inspektor oben zeigt eine Zeile mit Fade-Symbolen, Länge und Kurve, dB, Normalisieren, Dehnung %, Tonhöhe st, Metronom, Schneiden, Duplizieren, Kopieren, Papierkorb. Über jedes Feld fahren: der Tooltip erklärt es.
+6. Entf: der Clip ist weg, die Spur bleibt. Noch einmal Entf: nichts passiert. Spurkopf anklicken, Entf: die Spur ist weg. Strg+Z holt sie zurück.
+7. Ohne gewählten Clip steht nur „kein Clip gewählt“; der Tooltip zeigt die Tastenkürzel.
+
+Selbst geprüft von Claude: neun Tests in `crates/gui/tests/design_regressions.rs`, Tests und Clippy von `woa-gui` grün.
 
 ## Abgenommen
 
