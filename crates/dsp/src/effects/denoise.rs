@@ -77,8 +77,13 @@ pub struct Denoiser {
     /// Im Inline-Betrieb: Ergebnis des gerade berechneten Blocks, je Kanal.
     ready: [Frame; 2],
     pos: usize,
-    /// Wartet der Arbeits-Thread noch auf ein Ergebnis?
+    /// Wurde an der letzten Blockgrenze ein Block an den Arbeits-Thread gegeben, dessen
+    /// Ergebnis an der nächsten Grenze gelesen werden soll?
     pending: bool,
+    /// Blöcke beim Arbeits-Thread, deren Ergebnis noch nicht abgeholt ist. Ergebnisse älterer
+    /// Blöcke als des zuletzt gesendeten kamen zu spät und werden verworfen, damit Nass- und
+    /// Trockensignal im Gleichschritt bleiben.
+    in_flight: usize,
     /// Trockener Anteil, um [`LATENCY`] verzögert (Ringpuffer je Kanal).
     dry: [Vec<f32>; 2],
     dry_pos: usize,
@@ -159,6 +164,7 @@ impl Denoiser {
             ready: [[0.0; FRAME_SIZE]; 2],
             pos: 0,
             pending: false,
+            in_flight: 0,
             dry: [Vec::new(), Vec::new()],
             dry_pos: 0,
             underruns: Arc::new(AtomicU32::new(0)),
@@ -174,6 +180,7 @@ impl Denoiser {
         self.engine = None;
         self.pos = 0;
         self.pending = false;
+        self.in_flight = 0;
         self.acc = [[0.0; FRAME_SIZE]; 2];
         self.out = [[0.0; FRAME_SIZE]; 2];
         self.ready = [[0.0; FRAME_SIZE]; 2];
@@ -242,17 +249,29 @@ impl Denoiser {
                 from_worker,
                 ..
             } => {
+                let frame = FRAME_SIZE * ch;
+                // Verspätete Ergebnisse älterer Blöcke verwerfen: gelesen wird nur das des
+                // zuletzt gesendeten Blocks, sonst liefe das Nasssignal dauerhaft hinterher.
+                let stale = self.in_flight - usize::from(self.pending);
+                let drop_n = stale.min(from_worker.slots() / frame);
+                for _ in 0..drop_n * frame {
+                    let _ = from_worker.pop();
+                }
+                self.in_flight -= drop_n;
                 if self.pending {
-                    if from_worker.slots() >= FRAME_SIZE * ch {
+                    if self.in_flight == 1 && from_worker.slots() >= frame {
                         for frame in self.out.iter_mut().take(ch) {
                             for s in frame.iter_mut() {
                                 *s = from_worker.pop().unwrap_or(0.0);
                             }
                         }
+                        self.in_flight = 0;
                     } else {
                         self.out = [[0.0; FRAME_SIZE]; 2];
                         self.underruns.fetch_add(1, Ordering::Relaxed);
                     }
+                } else {
+                    self.out = [[0.0; FRAME_SIZE]; 2];
                 }
                 if to_worker.slots() >= FRAME_SIZE * ch {
                     for frame in self.acc.iter().take(ch) {
@@ -261,6 +280,7 @@ impl Denoiser {
                         }
                     }
                     self.pending = true;
+                    self.in_flight += 1;
                 } else {
                     self.pending = false;
                 }
@@ -304,5 +324,67 @@ impl Denoiser {
                 r
             },
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Denoiser mit Ringen, aber ohne Thread: der Test spielt den Arbeits-Thread selbst und
+    /// kann ihn so beliebig verspäten.
+    fn manual() -> (Denoiser, Consumer<f32>, Producer<f32>) {
+        let mut d = Denoiser::new(1, false, 100.0);
+        d.prepare(1.0); // falsche Rate: Puffer angelegt, kein Netz
+        let n = FRAME_SIZE * 4;
+        let (to_worker, input) = RingBuffer::<f32>::new(n);
+        let (output, from_worker) = RingBuffer::<f32>::new(n);
+        d.engine = Some(Engine::Worker {
+            to_worker,
+            from_worker,
+            stop: Arc::new(AtomicBool::new(false)),
+        });
+        (d, input, output)
+    }
+
+    /// Ein Block durch den Denoiser; liefert das erste Nass-Sample des Blocks.
+    fn block(d: &mut Denoiser, value: f32) -> f32 {
+        let first = d.step(value, 0.0, false).0;
+        for _ in 1..FRAME_SIZE {
+            d.step(value, 0.0, false);
+        }
+        first
+    }
+
+    /// Arbeits-Thread-Ersatz: einen Block abholen und mit seinem Wert zurückgeben.
+    fn work(input: &mut Consumer<f32>, output: &mut Producer<f32>) {
+        let mut v = 0.0;
+        for _ in 0..FRAME_SIZE {
+            v = input.pop().unwrap();
+        }
+        for _ in 0..FRAME_SIZE {
+            output.push(v).unwrap();
+        }
+    }
+
+    #[test]
+    fn late_block_is_dropped_and_sync_returns() {
+        let (mut d, mut input, mut output) = manual();
+        // Block n trägt den Wert n; im Gleichschritt kommt Block n im Block n+2 heraus.
+        block(&mut d, 1.0);
+        work(&mut input, &mut output);
+        block(&mut d, 2.0);
+        // Block 2 kommt zu spät: die Grenze nach Block 3 sieht kein Ergebnis.
+        assert_eq!(block(&mut d, 3.0), 1.0);
+        assert_eq!(d.underruns(), 1);
+        work(&mut input, &mut output); // verspätetes Ergebnis von Block 2
+        work(&mut input, &mut output); // Block 3, pünktlich
+        assert_eq!(block(&mut d, 4.0), 0.0); // stiller Block des Aussetzers
+        work(&mut input, &mut output); // Block 4, pünktlich
+        // Ohne Abgleich käme hier 2.0 und bliebe dauerhaft einen Block versetzt.
+        assert_eq!(block(&mut d, 5.0), 3.0);
+        work(&mut input, &mut output);
+        assert_eq!(block(&mut d, 6.0), 4.0);
+        assert_eq!(d.underruns(), 1);
     }
 }
