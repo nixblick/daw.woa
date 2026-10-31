@@ -84,6 +84,8 @@ const RESERVED_KEYS: [egui::Key; 2] = [egui::Key::M, egui::Key::Space];
 
 /// Die laufende Sendung samt Gerät.
 pub struct RadioDesk {
+    /// Beginn des laufenden Mitschnitts (Dauer im REC-Tooltip).
+    rec_since: Option<std::time::Instant>,
     radio_path: PathBuf,
     data_dir: PathBuf,
     station: Option<Station>,
@@ -503,6 +505,7 @@ impl RadioDesk {
         };
         let known_mtime = mtime(&radio_path);
         Self {
+            rec_since: None,
             radio_path,
             data_dir,
             station,
@@ -1206,8 +1209,26 @@ impl RadioDesk {
         self.wish_chosen.take()
     }
 
-    fn toggle_recording(&mut self) {
-        if self.view.recording.is_some() {
+    /// Laufender Mitschnitt: Ziel-Datei und Beginn (für die REC-Pille der Kopfleiste).
+    pub fn recording(&self) -> Option<(Option<&std::path::Path>, Option<std::time::Instant>)> {
+        (self.view.recording_on || self.view.recording.is_some())
+            .then_some((self.view.recording.as_deref(), self.rec_since))
+    }
+
+    /// Ordner der Mitschnitte.
+    pub fn recordings_dir(&self) -> PathBuf {
+        self.data_dir.join(woa_radio::RECORDINGS_DIR)
+    }
+
+    /// Startet oder beendet den Mitschnitt der Sendesumme (REC in der Kopfleiste).
+    pub fn toggle_recording(&mut self) {
+        let on = self.view.recording_on || self.view.recording.is_some();
+        self.rec_since = if on {
+            None
+        } else {
+            Some(std::time::Instant::now())
+        };
+        if on {
             self.with(|c| {
                 c.stop_recording();
             });
@@ -1845,43 +1866,7 @@ impl RadioDesk {
                 ui.colored_label(theme::on_air(), e);
             }
 
-            let rec_on = v.recording.is_some();
-            let rec = if rec_on {
-                "Mitschnitt läuft"
-            } else {
-                "Mitschnitt"
-            };
-            let rec_color = if rec_on {
-                egui::Color32::WHITE
-            } else {
-                theme::text()
-            };
-            if ui
-                .add(
-                    egui::Button::new(theme::fill_label(theme::icf::RECORD, rec, 15.0, rec_color))
-                        .fill(if rec_on {
-                            theme::on_air()
-                        } else {
-                            theme::surface()
-                        })
-                        .stroke(egui::Stroke::new(
-                            1.0,
-                            if rec_on {
-                                theme::on_air()
-                            } else {
-                                theme::border()
-                            },
-                        ))
-                        .min_size(egui::vec2(126.0, 38.0)),
-                )
-                .on_hover_text(format!(
-                    "Sendung als WAV nach {}",
-                    self.data_dir.join(woa_radio::RECORDINGS_DIR).display()
-                ))
-                .clicked()
-            {
-                self.toggle_recording();
-            }
+            // Mitschnitt: seit 0.34.56 als REC-Pille in der Kopfleiste, in jedem Modus.
         });
 
         ui.add_space(4.0);
