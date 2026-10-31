@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.14 — 2026-10-31
+
+Design D6: neues App-Logo.
+
+- **App-Icon:** die Kachel aus dem Designsystem ersetzt das alte Icon (Linux: SVG und PNG für AppImage, Flatpak und `.DirIcon`; Windows: neue `woa.ico` für Startmenü-Verknüpfung und den Eintrag unter „Apps“ im MSI).
+- **Fenstericon:** die App setzt das Icon selbst (Fensterleiste, Taskleiste, Alt-Tab).
+- **Kopfleiste:** statt der Schrift „WOA“ steht die Bildmarke, die fünf Säulen in der Modusfarbe (Produzent, Radio, Party; Hell und Dunkel), die ON-AIR-Lampe immer rot.
+- Noch offen: das Icon in der `woa.exe` selbst (Explorer, Datei-Symbol) braucht einen Build-Schritt mit zusätzlicher Abhängigkeit und ist nicht enthalten.
+
 ## 0.34.13 — 2026-10-31
 
 Design D5: Kanalzug ohne Drehregler.

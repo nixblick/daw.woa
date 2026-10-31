@@ -521,6 +521,53 @@ getters!(
     mode_party
 );
 
+/// App-Icon (Kachel aus dem Designsystem) als Fensterbild; `None`, wenn das PNG nicht lesbar ist.
+pub fn app_icon() -> Option<egui::IconData> {
+    const PNG: &[u8] = include_bytes!("../../../packaging/linux/icons/de.wironair.woa.png");
+    let img = image::load_from_memory_with_format(PNG, image::ImageFormat::Png)
+        .ok()?
+        .into_rgba8();
+    let (width, height) = img.dimensions();
+    Some(egui::IconData {
+        rgba: img.into_raw(),
+        width,
+        height,
+    })
+}
+
+/// Bildmarke in der Kopfleiste: fünf LED-Säulen, deren Oberkanten ein W zeichnen, darüber die
+/// ON-AIR-Lampe. Die Säulen nehmen die Modusfarbe an, die Lampe bleibt Rot (Logos/README).
+/// `height` ist die Höhe der Fläche; die Marke ist quadratisch (viewBox 184 x 184).
+pub fn logo_mark(ui: &mut egui::Ui, height: f32) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(height, height), egui::Sense::hover());
+    if ui.is_rect_visible(rect) {
+        let k = height / 184.0;
+        let p = |x: f32, y: f32| {
+            egui::Pos2::new(rect.min.x + (x - 36.0) * k, rect.min.y + (y - 28.0) * k)
+        };
+        let painter = ui.painter();
+        // Säulen-x, Anzahl Segmente (von unten, Raster 20, unterste Oberkante y=190).
+        let cols: [(f32, u32); 5] = [(44.0, 7), (80.0, 3), (116.0, 5), (152.0, 3), (188.0, 7)];
+        let base = accent();
+        let cap = emphasize(base, 0.35);
+        for (x, n) in cols {
+            for i in 0..n {
+                let y = 190.0 - 20.0 * i as f32;
+                let color = if i + 1 == n { cap } else { base };
+                painter.rect_filled(
+                    Rect::from_min_max(p(x, y), p(x + 24.0, y + 14.0)),
+                    3.0 * k,
+                    color,
+                );
+            }
+        }
+        let lamp = p(128.0, 54.0);
+        painter.circle_filled(lamp, 22.0 * k, on_air().gamma_multiply(0.22));
+        painter.circle_filled(lamp, 15.0 * k, on_air());
+    }
+    resp
+}
+
 /// Farbe der Spur Nummer `i` (wiederholt sich nach sechs).
 pub fn track_color(i: usize) -> Color32 {
     let t = &pal().track;
@@ -1053,6 +1100,13 @@ pub fn install_fonts(ctx: &egui::Context) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_icon_is_decodable_square() {
+        let icon = app_icon().expect("Icon lesbar");
+        assert_eq!(icon.width, icon.height);
+        assert_eq!(icon.rgba.len(), (icon.width * icon.height * 4) as usize);
+    }
 
     const TOKENS: &str = include_str!("../../../docs/design/woa-design-system/tokens.json");
 
