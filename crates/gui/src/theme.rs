@@ -916,6 +916,24 @@ pub use egui_phosphor::fill as icf;
 /// lassen sich direkt in Beschriftungen einsetzen: `format!("{} Text", theme::ic::TRASH)`.
 pub use egui_phosphor::regular as ic;
 
+/// Text aus Titeln und Dateinamen für die Anzeige: Vollbreiten-ASCII (U+FF01..U+FF5E, z. B.
+/// „｜“) und das ideografische Leerzeichen haben in unseren Schriften kein Zeichen und würden
+/// als leeres Kästchen erscheinen (#218). Sie werden zu ihrem schmalen Gegenstück.
+pub fn display_text(s: &str) -> std::borrow::Cow<'_, str> {
+    let wide = |c: char| ('\u{FF01}'..='\u{FF5E}').contains(&c) || c == '\u{3000}';
+    if !s.chars().any(wide) {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    s.chars()
+        .map(|c| match c {
+            '\u{3000}' => ' ',
+            c if wide(c) => char::from_u32(c as u32 - 0xFEE0).unwrap_or(c),
+            c => c,
+        })
+        .collect::<String>()
+        .into()
+}
+
 /// Ein Fill-Symbol allein als `RichText` (Familie [`FAMILY_ICON_FILL`]).
 pub fn fill_icon(glyph: &str, size: f32) -> egui::RichText {
     egui::RichText::new(glyph)
@@ -1056,6 +1074,11 @@ pub fn font_definitions() -> egui::FontDefinitions {
         .unwrap_or_default();
     let with = |first: &str, fallback: &[String]| {
         let mut v = vec![first.to_owned(), "phosphor".to_owned()];
+        // Barlow hat keine Pfeile (→, ↩); JetBrains Mono liegt ohnehin bei und deckt sie ab,
+        // statt leerer Kästchen (#218).
+        if first != "JetBrainsMono-Regular" {
+            v.push("JetBrainsMono-Regular".to_owned());
+        }
         v.extend(fallback.iter().cloned());
         v
     };

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.34.58 — 2026-10-31
+
+- **Leere Kästchen statt Pfeilen (#218):** Hoch/Runter in „Verwalten“ sind jetzt Phosphor-Symbole statt „↑/↓“, die in Barlow fehlten. JetBrains Mono (liegt schon bei) dient als Rückfallschrift für Pfeile wie „→“ und „↩“ in allen Textfamilien. Vollbreiten-Zeichen in Titeln („｜“, „（“) werden in „Verwalten“ schmal angezeigt. Test: jedes Nicht-ASCII-Zeichen im GUI-Quelltext hat eine Glyphe.
+- **Spurkopf ragte in die Zeitleiste (#212):** Die Eingangswahl bekommt nur noch den Platz neben Gain und Pan und kürzt lange Gerätenamen; was trotzdem zu breit ist, wird am Spurkopf abgeschnitten. Test: der Spurkopf endet vor Takt 1, auch mit langem Gerätenamen.
+
 ## 0.34.57 — 2026-10-31
 
 - **Playlist umbenennen hielt fest:** Das Namensfeld im Fenster „Verwalten“ holte sich in jedem Bild den Fokus zurück, man kam nicht mehr heraus (André, 31.10.). Wie bei den Spuren (0.33.3) wird der Fokus nur beim Öffnen gesetzt; Enter oder ein Klick daneben übernimmt den Namen, Esc verwirft ihn. Test: Klick daneben schließt das Feld und benennt um.
