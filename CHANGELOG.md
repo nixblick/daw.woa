@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.44 — 2026-10-31
+## 0.34.45 — 2026-10-31
 
 Gäste im Browser: Moderator-Funktionen (André: „so das man die person auch einfach mal muten kann und vielleicht man ja auch mehrere hat“).
 
@@ -10,6 +10,20 @@ Gäste im Browser: Moderator-Funktionen (André: „so das man die person auch e
 - **Browser-Seite des Gastes:** großes Schild „Auf Sendung“, „Stumm“ oder „Warteraum“, dazu „Mikro stumm schalten“. Selbst-Stumm schaltet das Mikrofon im Browser ab und meldet es dem Moderator („hat sich selbst stumm geschaltet“). Jede Seite steuert nur ihr eigenes Ticket; Einladung, PIN und Zugang sind unverändert.
 - **Log ohne Gastnamen:** Gastnamen stehen nicht mehr im Log (nur Kanalnummern).
 - **Tests:** Warteraum, Stumm, Lautstärke, Trennen, Mix-Minus mit zwei und vier Gästen, Selbst-Stumm nur mit eigenem angenommenem Ticket, Sendestand über HTTPS im Loopback-Test.
+
+## 0.34.44 — 2026-10-31
+
+Party mit zwei Decks (André: „als dj auf einer party die man streamt, fehlt bei party das zweite deck … und alle symbole die steuern einheitlich bitte mit symbol und wort“).
+
+### Neu
+
+- **Zwei Decks links und rechts:** Die Sende-Playlist bleibt das Modell. Jeder Titelwechsel legt den neuen Titel auf die andere Seite; auf der freien Seite steht der nächste Titel als „VORGELADEN“. Keine zweite Wiedergabe: es spielt weiter der Sendemixer mit Crossfade und Pause.
+- **Crossfader:** Beim Übergang wandert er über die eingestellte Crossfade-Länge von einem Deck zum anderen. Von Hand über die Mitte gezogen heißt das „Weiter“ zum anderen Deck.
+- **Plattenteller:** Er dreht sich nur am Deck, das gerade zu hören ist (beim Überblenden kurz beide). Pausiert oder vorgeladen steht er still.
+- **Playlist in der Party:** Die aktive Playlist mit Auswahl, „läuft“ und „nächster“. Zeilen lassen sich zum Umordnen ziehen, Treffer der Bibliothekssuche lassen sich hineinziehen. Verwaltet wird weiter im Fenster „Verwalten“.
+- **Bibliothekssuche in der Party:** Ein Suchfeld mit Treffern zum Ziehen oder „→ Playlist“ (hinter den laufenden Titel). Es nutzt dieselbe Suche wie das Fenster „Bibliothek“.
+- **Wunschliste:** Neben der Playlist. „+ Wunsch“ nimmt freien Text an („Wer: Titel“). Je Wunsch gibt es „Suchen“ (füllt die Suche vor), „→ Playlist“, „Erledigt“ (bleibt durchgestrichen stehen) und „Entfernen“. Ein über „→ Playlist“ eingereihter Wunsch wird erledigt, sobald sein Titel läuft. Die Liste wird gespeichert (`party_wishes.json` im Datenordner). Wünsche vom Handy landen in derselben Liste; das Handy zeigt nur offene.
+- **Einheitliche Steuerknöpfe:** Alle Party-Knöpfe haben jetzt Symbol und Wort, eine Höhe (44 px) und eine Mindestbreite (neuer Baustein `widgets::ctl_key`). Play leuchtet grün (`ok`), Pause bernstein (`warn`), in Hell und Dunkel.
 
 ## 0.34.43 — 2026-10-31
 
