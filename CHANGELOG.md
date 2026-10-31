@@ -1,15 +1,25 @@
 # Changelog
 
-## 0.34.55 — 2026-10-31
+## 0.34.56 — 2026-10-31
 
 ### Geändert
 
 - **Logs:** Eine kurze Startzeile mit Version, Build, Betriebssystem, Grafik-Backend, Adapter und Treiber; die lange wgpu-Adapterliste steht nur noch auf DEBUG (Test).
 - **Logs:** Die Zwei-Minuten-Kennzahlen stehen in Datei und Protokoll als eine Zeile `ui summary`; der Upload bekommt sie weiter einzeln (Test).
 - **Logs:** Die Unterlauf-Minutenzeile kommt nur noch bei Unterläufen; WASAPI-GUIDs in Gerätenamen sind gekürzt (Test).
-- **Logs:** symphonia „using xing header“ fällt weg, „reached probe limit“ steht nicht mehr im Protokoll (das Laden meldet den Fehler selbst). Bei „load failed“ steht der Dateiname nur noch in der lokalen Senke.
+- **Logs:** symphonia „using xing header“ fällt weg, „reached probe limit“ steht nicht mehr im Protokoll (das Laden meldet den Fehler selbst). Bei „clip/clap load failed“ und „plugin scan problem“ stehen Dateiname und Fehlertext nur noch in der lokalen Senke, im Ticket nur die Meldung (Test).
 - **Logs:** Bedienaktionen als Info-Zeilen: Modus-Wechsel, Playlist und Deck A/B/C Start/Pause/Stop, Cartwall, PFL, Mitschnitt, Sendung Start und Ende. Datei- und Gerätenamen nur lokal, im Ticket nur Deck oder Slot (Test).
 - **Ticket-Protokoll:** Zeitstempel mit Datum und Zeitzone (`2026-10-31 14:05:09 +01:00`); lokale Zeilen mit Dateinamen gehen nicht mehr ins Ticket (Test).
+
+## 0.34.55 — 2026-10-31
+
+### Geändert
+
+- **Feedback (#211):** Der Haken „Protokoll mitsenden“ ist jetzt bei jedem Öffnen an (abwählbar). Nach Bildschirmfoto oder eigenem Bild erscheint eine kleine Vorschau (160 px) mit „× Entfernen“. Strg+Enter schickt mit den gesetzten Haken ab wie „Abschicken“ (Tooltip). Tests mit Fake-Server.
+
+### Behoben
+
+- **Vorhören (#205):** In Playlist, Cartwall und den Decks A/B/C ließ sich das Vorhören nicht über den Knopf beenden. Hört man dieselbe Quelle vor, heißt der Knopf jetzt „⏹ Vorhören stoppen“ (hervorgehoben) und stoppt beim Klick; eine andere Quelle wechselt das Vorhören dorthin (Test).
 
 ## 0.34.54 — 2026-10-31
 

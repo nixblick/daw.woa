@@ -236,7 +236,7 @@ pub struct FeedbackDialog {
     pub capture_requested: bool,
     /// Own image chosen by the user: file name and PNG bytes.
     pub image: Option<(String, Vec<u8>)>,
-    /// Send the session log (Protokoll window). Off by default.
+    /// Send the session log (Protokoll window). On by default, again on every open (#211).
     pub send_log: bool,
     pending: Option<Receiver<Result<Option<u64>, FeedbackError>>>,
     /// Set when the send succeeded; the dialog closes [`THANKS_VISIBLE`] later.
@@ -252,11 +252,39 @@ impl Default for FeedbackDialog {
             screenshot: None,
             capture_requested: false,
             image: None,
-            send_log: false,
+            send_log: true,
             pending: None,
             thanks_since: None,
         }
     }
+}
+
+/// Width of the small preview below the attachments (#211).
+pub const PREVIEW_WIDTH: u32 = 160;
+
+/// Small preview of a PNG, [`PREVIEW_WIDTH`] wide (narrower images keep their size).
+pub fn thumbnail(png: &[u8]) -> Option<eframe::egui::ColorImage> {
+    let img = image::load_from_memory(png).ok()?;
+    let img = if img.width() > PREVIEW_WIDTH {
+        img.resize(
+            PREVIEW_WIDTH,
+            u32::MAX,
+            image::imageops::FilterType::Triangle,
+        )
+    } else {
+        img
+    };
+    let rgba = img.to_rgba8();
+    Some(eframe::egui::ColorImage::from_rgba_unmultiplied(
+        [rgba.width() as usize, rgba.height() as usize],
+        rgba.as_raw(),
+    ))
+}
+
+/// Ctrl+Enter (Cmd+Enter on macOS) in the dialog: send with the ticked boxes (#211).
+/// Consumes the key so the text field does not add a line break.
+pub fn send_shortcut(input: &mut eframe::egui::InputState) -> bool {
+    input.consume_key(eframe::egui::Modifiers::COMMAND, eframe::egui::Key::Enter)
 }
 
 /// Header line between the user's text and the attached log.
@@ -425,6 +453,20 @@ impl FeedbackDialog {
     /// Removes the user's own image.
     pub fn remove_image(&mut self) {
         self.image = None;
+    }
+
+    /// What gets a preview: the ticked screenshot and the own image, as (key, PNG).
+    pub fn previews(&self) -> Vec<(&'static str, &[u8])> {
+        let mut v = Vec::new();
+        if self.attach
+            && let Some(s) = &self.screenshot
+        {
+            v.push(("screenshot", s.as_slice()));
+        }
+        if let Some((_, png)) = &self.image {
+            v.push(("image", png.as_slice()));
+        }
+        v
     }
 
     /// Images that go out: only what the user ticked or attached.
@@ -851,6 +893,7 @@ mod tests {
         let mut d = FeedbackDialog::default();
         d.open();
         d.text = "Knackt".into();
+        d.send_log = false;
         assert_eq!(d.body(&lines, Some(home)), "Knackt");
         assert!(!d.outgoing(1).iter().any(|s| s.contains("Protokoll")));
         d.send_log = true;
@@ -870,5 +913,102 @@ mod tests {
     fn png_encoding_has_magic() {
         let png = encode_png(2, 1, &[255; 8]).unwrap();
         assert!(png.starts_with(b"\x89PNG"));
+    }
+
+    #[test]
+    fn log_box_is_ticked_on_every_open() {
+        let mut d = FeedbackDialog::default();
+        d.open();
+        assert!(d.send_log, "Protokoll an beim Öffnen");
+        d.send_log = false;
+        d.close();
+        d.open();
+        assert!(d.send_log, "nach dem Neuöffnen wieder an");
+    }
+
+    #[test]
+    fn preview_appears_after_image_and_is_small() {
+        let mut d = FeedbackDialog::default();
+        d.open();
+        assert!(d.previews().is_empty());
+        let rgba = vec![200u8; 800 * 400 * 4];
+        let png = encode_png(800, 400, &rgba).unwrap();
+        d.set_screenshot(Some(png.clone()));
+        d.set_image("eigen.jpg", &png).unwrap();
+        let p = d.previews();
+        assert_eq!(
+            p.iter().map(|(k, _)| *k).collect::<Vec<_>>(),
+            ["screenshot", "image"]
+        );
+        let t = thumbnail(p[0].1).unwrap();
+        assert_eq!(t.size, [PREVIEW_WIDTH as usize, 80]);
+        d.remove_screenshot();
+        d.remove_image();
+        assert!(d.previews().is_empty());
+    }
+
+    #[test]
+    fn ctrl_enter_is_the_send_shortcut() {
+        let ctx = eframe::egui::Context::default();
+        let press = |modifiers| eframe::egui::RawInput {
+            events: vec![eframe::egui::Event::Key {
+                key: eframe::egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers,
+            }],
+            modifiers,
+            ..Default::default()
+        };
+        let mut hit = false;
+        let _ = ctx.run_ui(press(eframe::egui::Modifiers::COMMAND), |ui| {
+            hit = ui.ctx().input_mut(send_shortcut);
+        });
+        assert!(hit, "Strg+Enter sendet");
+        let _ = ctx.run_ui(press(eframe::egui::Modifiers::NONE), |ui| {
+            hit = ui.ctx().input_mut(send_shortcut);
+        });
+        assert!(!hit, "Enter allein macht eine neue Zeile");
+    }
+
+    #[test]
+    fn shortcut_send_carries_the_ticked_log_to_a_fake_server() {
+        use std::io::{Read, Write};
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/api/feedback", server.local_addr().unwrap());
+        let got = std::thread::spawn(move || {
+            let (mut s, _) = server.accept().unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 4096];
+            while let Ok(n) = s.read(&mut chunk) {
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&chunk[..n]);
+                if String::from_utf8_lossy(&buf).contains("Zeile eins") {
+                    break;
+                }
+            }
+            let _ = s.write_all(b"HTTP/1.1 500 x\r\ncontent-length: 0\r\n\r\n");
+            String::from_utf8_lossy(&buf).to_string()
+        });
+        let mut d = FeedbackDialog::default();
+        d.open();
+        d.text = "Knopf klemmt".into();
+        let cfg = GuiConfig {
+            feedback_url: url,
+            ..GuiConfig::default()
+        };
+        // What the window does on Ctrl+Enter: the same send as the button.
+        d.send(&cfg, &["Zeile eins".to_string()]);
+        assert_eq!(d.phase, Phase::Sending);
+        let req = got.join().unwrap();
+        assert!(req.contains("Knopf klemmt"), "{req}");
+        assert!(
+            req.contains(LOG_HEADER) && req.contains("Zeile eins"),
+            "{req}"
+        );
     }
 }

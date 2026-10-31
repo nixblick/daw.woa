@@ -139,6 +139,17 @@ impl Recording {
     }
 }
 
+/// Quelle des Vorhörens, damit derselbe Knopf es wieder stoppt (#205).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PflSource {
+    /// Titel der Playlist (Index).
+    Title(usize),
+    /// Cart (Platz).
+    Cart(usize),
+    /// Deck A/B/C (Index).
+    Deck(usize),
+}
+
 /// Steuert einen [`Mixer`].
 pub struct Controller {
     collector: Collector,
@@ -181,6 +192,8 @@ pub struct Controller {
     cue_history: CueHistory,
     /// Vorhören (PFL), falls ein Kopfhörer-Ausgang eingehängt ist.
     pfl: Option<PflHandle>,
+    /// Was gerade vorgehört wird (Titel, Cart, Deck), für den Umschalt-Knopf.
+    pfl_source: Option<PflSource>,
     /// Feste Zeit-Events (Paket 29).
     events: EventClock,
     /// Vorab geladene Event-Dateien (nach Event-Kennung).
@@ -251,6 +264,7 @@ impl Controller {
             last_load: None,
             cue_history: CueHistory::default(),
             pfl: None,
+            pfl_source: None,
             events: EventClock::default(),
             event_files: HashMap::new(),
             event_runs: HashMap::new(),
@@ -1138,7 +1152,9 @@ impl Controller {
             .get(deck)
             .and_then(Option::as_ref)
             .map_or(0.0, |c| c.cues.start());
-        self.pfl_deck_at(deck, from)
+        self.pfl_deck_at(deck, from)?;
+        self.pfl_source = Some(PflSource::Deck(deck));
+        Ok(())
     }
 
     /// Eingestellte Überblendung in Frames.
@@ -1656,6 +1672,7 @@ impl Controller {
         {
             return Err("Vorhören: Warteschlange voll".into());
         }
+        self.pfl_source = None;
         tracing::info!(from, "pfl start");
         tracing::info!(target: woa_telemetry::LOCAL_TARGET, datei = %path.display(), "pfl start");
         Ok(())
@@ -1674,7 +1691,9 @@ impl Controller {
             e.cues.start()
         };
         let path = e.path.clone();
-        self.pfl_play(&path, from)
+        self.pfl_play(&path, from)?;
+        self.pfl_source = Some(PflSource::Title(index));
+        Ok(())
     }
 
     /// Hört Titel `index` ab Sekunde `from` vor (Cue-Editor).
@@ -1711,7 +1730,32 @@ impl Controller {
         let from = self.show.carts[slot]
             .as_ref()
             .map_or(0.0, |c| c.cues.start());
-        self.pfl_play(&path, from)
+        self.pfl_play(&path, from)?;
+        self.pfl_source = Some(PflSource::Cart(slot));
+        Ok(())
+    }
+
+    /// Wird gerade `src` vorgehört? Dann zeigt ihr Knopf „Vorhören stoppen“.
+    pub fn pfl_previewing(&self, src: PflSource) -> bool {
+        self.pfl_playing() && self.pfl_source == Some(src)
+    }
+
+    /// Die gerade vorgehörte Quelle, falls das Vorhören läuft.
+    pub fn pfl_current(&self) -> Option<PflSource> {
+        self.pfl_source.filter(|_| self.pfl_playing())
+    }
+
+    /// Knopf „Vorhören“: Läuft dieselbe Quelle, stoppt er; sonst hört er `src` vor (#205).
+    pub fn pfl_toggle(&mut self, src: PflSource) -> Result<(), String> {
+        if self.pfl_previewing(src) {
+            self.pfl_stop();
+            return Ok(());
+        }
+        match src {
+            PflSource::Title(i) => self.pfl_title(i, false),
+            PflSource::Cart(s) => self.pfl_cart(s),
+            PflSource::Deck(d) => self.pfl_deck(d),
+        }
     }
 
     /// Hält das Vorhören an.
@@ -1719,6 +1763,7 @@ impl Controller {
         if self.pfl_playing() {
             tracing::info!("pfl stop");
         }
+        self.pfl_source = None;
         if let Some(h) = self.pfl.as_mut()
             && h.cmds.push(PflCmd::Stop).is_err()
         {
@@ -2168,6 +2213,7 @@ impl Controller {
     }
 
     fn pfl_stereo(&mut self, s: Stereo) -> Result<(), String> {
+        self.pfl_source = None;
         let buf = Shared::new(&self.collector.handle(), s);
         let Some(h) = self.pfl.as_mut() else {
             return Err("Kein Kopfhörer-Ausgang für das Vorhören eingestellt".into());

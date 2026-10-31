@@ -147,9 +147,10 @@ impl Catalog {
         let entry = match unsafe { PluginEntry::load(file) } {
             Ok(e) => e,
             Err(e) => {
-                tracing::warn!(error = %e, "clap load failed");
-                // Pfad nur lokal (Ziel `woa_telemetry::LOCAL_TARGET`, ohne Abhängigkeit).
-                tracing::warn!(target: "woa_lokal", datei = %file.display(), "clap load failed");
+                // Ticket: nur die Meldung; Fehlertext (kann den Pfad tragen) und Datei nur lokal
+                // (Ziel `woa_telemetry::LOCAL_TARGET`, hier ohne Abhängigkeit).
+                tracing::warn!("clap load failed");
+                tracing::warn!(target: "woa_lokal", datei = %file.display(), error = %e, "clap load failed");
                 self.problems.push(ScanProblem {
                     path: file.to_path_buf(),
                     reason: e.to_string(),
