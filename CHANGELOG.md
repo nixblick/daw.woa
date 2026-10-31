@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.18 — 2026-10-31
+## 0.34.19 — 2026-10-31
 
 Design-Nachbesserung: Was D1–D6 unerreichbar gemacht hatten, ist wieder da (André 31.10.: „Spur entfernen ist wichtig“, „Effekte sind weg im Studio-Mixer“).
 
@@ -9,6 +9,14 @@ Design-Nachbesserung: Was D1–D6 unerreichbar gemacht hatten, ist wieder da (An
 - **Effekte und Plugins:** stehen im Insert-Rack jetzt oben, direkt unter dem Kanalnamen, wie im Entwurf ScreenStudio. Vorher lagen „+ Effekt“ und „+ Plugin“ unter dem sichtbaren Rand des Docks. Ohne Auswahl zeigt das Rack den ersten Kanal, und jeder Kanalzug hat einen Knopf „Effekte n“, der seinen Kanal ins Rack holt.
 - Bus-Spuren zeigen im Spurmenü kein „Audio-Datei importieren“ mehr.
 - Tests über die echte Oberfläche ohne Fenster (`crates/gui/tests/design_regressions.rs`): Rechtsklick auf Spurkopf und Name → Spur löschen für alle drei Spurarten, Papierkorb im Spurkopf und im Kanalzug, „+ Effekt“ ohne Scrollen sichtbar und für jede Spur ein Effekt angelegt.
+
+## 0.34.18 — 2026-10-31
+
+Sicherheit #119: Gast-Rückweg wird geleert, Steuerzeichen im Gastnamen fliegen raus.
+
+- **Rückweg:** Ein neuer Netz-Gast beginnt mit leerem Rückweg und hört nichts mehr vom vorherigen Gast (geleert beim Anlegen und beim Zurückgeben).
+- **Gastname:** Steuerzeichen (Zeilenumbruch, ANSI-Sequenzen) werden vor dem Kürzen auf 24 Zeichen entfernt, damit sie weder im Log noch in der Anzeige landen. Bleibt nichts übrig, heißt der Gast "Gast N".
+- Tests: neuer Gast beginnt mit leerem Rückweg, Name mit Zeilenumbruch und Escape-Zeichen kommt sauber an.
 
 ## 0.34.17 — 2026-10-31
 
