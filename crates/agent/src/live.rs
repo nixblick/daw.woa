@@ -471,6 +471,13 @@ pub fn running_app(data_dir: &Path) -> Option<RunningApp> {
     Some(RunningApp { port, key: secret })
 }
 
+/// Eine Eingabezeile ohne Rand und ohne führendes UTF-8-BOM. Manche Clients (der
+/// StreamWriter von .NET) schreiben eines vor die erste Zeile; sonst ginge `initialize`
+/// still verloren (#243).
+fn request_line(line: &str) -> &str {
+    line.trim().trim_start_matches('\u{feff}').trim_start()
+}
+
 /// Reicht JSON-RPC-Zeilen von `input` mit dem Bearer `token` (das Live-Geheimnis aus
 /// [`running_app`]) an die App auf `port` durch und schreibt ihre
 /// Antworten zeilenweise nach `output`, bis `input` endet. So spricht ein stdio-Client
@@ -492,7 +499,7 @@ pub fn forward(
     let mut protocol: Option<String> = None;
     for line in input.lines() {
         let line = line.map_err(io)?;
-        let line = line.trim();
+        let line = request_line(&line);
         if line.is_empty() {
             continue;
         }
@@ -637,6 +644,13 @@ pub fn forward_stdio(port: u16, token: &str) -> Result<(), AgentError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn request_line_drops_a_leading_bom() {
+        let init = r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#;
+        assert_eq!(request_line(&format!("\u{feff}{init}\r")), init);
+        assert_eq!(request_line(&format!("  {init} ")), init);
+    }
 
     /// Wie die App unter Windows: Die SSE-Antwort auf `initialize` bleibt nach der Nachricht
     /// offen. Die Weiterleitung darf darauf nicht warten, muss die Session-Id übernehmen und
