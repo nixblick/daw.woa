@@ -252,11 +252,16 @@ impl Mapping {
                 .collect::<String>()
         );
         let path = dir.join(name);
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(&path)?;
+        let mut opts = OpenOptions::new();
+        opts.read(true).write(true).create_new(true);
+        // Nur der eigene Nutzer darf mitlesen (Audio, Plugin-Zustand); der Plugin-Prozess läuft
+        // unter demselben Nutzer. Windows: der Temp-Ordner gehört dem Nutzer.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let file = opts.open(&path)?;
         file.set_len(Self::total_len() as u64)?;
         // SAFETY: Die Datei gehört diesem Programm und dem Plugin-Prozess; niemand sonst
         // verkürzt sie. Zugriffe laufen nur über Atomics und das Protokoll.
@@ -346,6 +351,48 @@ impl Drop for Mapping {
         if self.owner {
             let _ = std::fs::remove_file(&self.path);
         }
+    }
+}
+
+/// Privates Arbeitsverzeichnis (Modus 0700) mit nicht vorhersehbarem Namen; wird beim Freigeben samt
+/// Inhalt gelöscht. Für Ergebnisdateien des Suchprozesses.
+pub struct PrivateDir {
+    path: PathBuf,
+}
+
+impl PrivateDir {
+    /// Legt `<parent>/woa-scan-<pid>-<zähler>-<nanos>` neu an (schlägt fehl, wenn es schon existiert,
+    /// also auch bei einem vorab untergeschobenen Symlink).
+    pub fn create(parent: &Path) -> std::io::Result<Self> {
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let path = parent.join(format!(
+            "woa-scan-{}-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed),
+            nanos
+        ));
+        let mut b = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            b.mode(0o700);
+        }
+        b.create(&path)?;
+        Ok(Self { path })
+    }
+
+    /// Pfad des Verzeichnisses.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for PrivateDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
     }
 }
 
@@ -457,6 +504,37 @@ mod tests {
         drop(m2);
         drop(m);
         assert!(!path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shared_memory_file_is_mode_0600() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir();
+        let m = Mapping::create(&dir, "mode").expect("create");
+        let mode = std::fs::metadata(m.path())
+            .expect("meta")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_dir_is_mode_0700_unique_and_removed() {
+        use std::os::unix::fs::PermissionsExt;
+        let parent = std::env::temp_dir();
+        let a = PrivateDir::create(&parent).expect("a");
+        let b = PrivateDir::create(&parent).expect("b");
+        assert_ne!(a.path(), b.path());
+        let mode = std::fs::metadata(a.path())
+            .expect("meta")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
+        let p = a.path().to_path_buf();
+        drop(a);
+        assert!(!p.exists());
     }
 
     #[test]
