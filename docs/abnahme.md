@@ -4,6 +4,20 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## KI & MCP, Teil 1: WOA als MCP-Server (0.34.31, offen)
+
+1. Einstellungen → „KI & MCP …“. Das Fenster zeigt Projektordner, Erreichbar, Port, Zugriffstoken und Einträge für deinen Client.
+2. „Erzeugen“ beim Zugriffstoken: ein Token ist da, angezeigt als Punkte; „Anzeigen“ zeigt es, „Verbergen“ maskiert wieder. `grep -r <token> ~/.config/woa/` findet nichts. Windows: Eintrag „woa / mcp-token“ in der Anmeldeinformationsverwaltung; Linux ohne Secret Service: Datei `mcp-token.pass` mit `-rw-------`.
+3. „Offenes Projekt“ (oder „Wählen …“) setzt den Projektordner. Die Einträge darunter nennen ihn und den Pfad von `woa-headless` (Stdio) bzw. die Adresse (HTTP). Das Token steht in ihnen als Punkte.
+4. „Kopieren“ am HTTP-Eintrag für Claude Code, im Terminal einfügen und ausführen (`claude mcp add --transport http woa …`). Das Token steht jetzt im Befehl, nicht im Fenster.
+5. Haken „HTTP-Server im Hintergrund“ setzen, „Speichern“: die Statuszeile sagt „läuft auf 127.0.0.1:8765“. In Claude Code: `claude mcp list` zeigt woa verbunden; „lege eine Spur an“ ändert die Projektdatei (nach erneutem Öffnen im Fenster sichtbar).
+6. `curl -i -X POST http://127.0.0.1:8765/mcp` ohne Kopf: 401. Mit falschem Token: 401.
+7. Haken weg, „Speichern“: nichts hört mehr auf dem Port. WOA beenden: der Hintergrund-Prozess ist weg (`pgrep woa-headless`).
+8. Stdio: den Eintrag für Claude Desktop in `claude_desktop_config.json` einfügen, Claude Desktop neu starten: woa erscheint in den Werkzeugen.
+9. „Erreichbar: auch andere Rechner im Netz“: eine rote Warnung erscheint; erst nach „Speichern“ hört der Server auf allen Adressen.
+
+Selbst geprüft von Claude: Tests und Clippy von woa-secrets, woa-assistant, woa-agent, woa-stream, woa-headless, woa-gui grün; HTTP-Test (401 ohne und mit falschem Token, 403 bei fremdem Origin, `initialize` mit Token); der gebaute `woa-headless mcp --http` mit curl (401, dann `initialize` mit `serverInfo` woa). Nicht selbst geprüft: Claude Desktop und Claude Code als echte Clients, echter Schlüsselbund unter Windows, das geöffnete Fenster im Screenshot.
+
 ## Bibliothek: Analyse, Hintergrund, Entfernen, Sortieren (0.34.30, offen)
 
 1. Einen Ordner mit langen Titeln (30 Minuten und mehr) importieren: „analysiert: n von m“ zählt zügig hoch, nicht minutenlang auf 1.
@@ -910,7 +924,7 @@ Offen für André: Pan doppelt (Spurkopf und Rack; `HEADER_PAN = false` in `crat
 
 Selbst geprüft von Claude: fünf neue Tests in `crates/gui/tests/design_system_2.rs`, alle Tests und Clippy von `woa-gui` grün.
 
-## Studio-Uhr, Quellen, Cart-Wall (0.34.31, offen)
+## Studio-Uhr, Quellen, Cart-Wall (0.34.32, offen)
 
 Tickets #172, #163, #97. Kein Ton nötig.
 

@@ -69,8 +69,21 @@ enum Cmd {
     UndoDemo,
     /// Lädt, speichert in einen Temp-Ordner, lädt erneut und vergleicht. Exit 1 bei Abweichung.
     Roundtrip { path: PathBuf },
-    /// Startet den MCP-Server über stdin/stdout für das Projekt <PATH> (legt es beim ersten `save` an).
-    Mcp { path: PathBuf },
+    /// Startet den MCP-Server für das Projekt <PATH> (legt es beim ersten `save` an): über
+    /// stdin/stdout, oder mit `--http` über HTTP mit Zugriffstoken (Schlüsselbund, sonst
+    /// Umgebung `WOA_MCP_TOKEN`).
+    Mcp {
+        path: PathBuf,
+        /// Statt stdin/stdout über HTTP (Streamable HTTP) auf `/mcp`, mit Bearer-Token.
+        #[arg(long)]
+        http: bool,
+        /// Adresse für `--http`. Vorgabe: nur diese Maschine.
+        #[arg(long, default_value = "127.0.0.1", requires = "http")]
+        bind: std::net::IpAddr,
+        /// Port für `--http`.
+        #[arg(long, default_value_t = 8765, requires = "http")]
+        port: u16,
+    },
     /// Listet die Audio-Ausgabegeräte, mit `--input` die Eingänge (nur mit Feature `device`).
     Devices {
         #[arg(long)]
@@ -439,6 +452,18 @@ fn run_broadcast_test(a: BroadcastArgs) -> ExitCode {
     }
 }
 
+/// `mcp --http`: das Token kommt aus der Umgebung oder dem Schlüsselbund, nie von der
+/// Kommandozeile.
+fn cmd_mcp_http(path: &std::path::Path, bind: std::net::IpAddr, port: u16) -> Result<(), String> {
+    let token = std::env::var("WOA_MCP_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty())
+        .or_else(|| woa_secrets::reveal(&woa_radio::data_dir(), "mcp-token"))
+        .ok_or("Kein Zugriffstoken: in WOA unter Einstellungen → KI & MCP erzeugen")?;
+    woa_agent::http::run_http(path, std::net::SocketAddr::new(bind, port), token)
+        .map_err(|e| e.to_string())
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.cmd {
@@ -447,7 +472,12 @@ fn main() -> ExitCode {
         Cmd::AddTrack { path, name, kind } => cmd_add_track(&path, &name, kind.into()),
         Cmd::UndoDemo => cmd_undo_demo(),
         Cmd::Roundtrip { path } => cmd_roundtrip(&path),
-        Cmd::Mcp { path } => woa_agent::run_stdio(&path).map_err(|e| e.to_string()),
+        Cmd::Mcp {
+            path, http: false, ..
+        } => woa_agent::run_stdio(&path).map_err(|e| e.to_string()),
+        Cmd::Mcp {
+            path, bind, port, ..
+        } => cmd_mcp_http(&path, bind, port),
         Cmd::Devices { input } => audio::cmd_devices(input),
         Cmd::Record {
             out,
