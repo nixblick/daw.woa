@@ -395,6 +395,165 @@ impl Controller {
         ok
     }
 
+    // ---- Mehrere Playlisten (crate::playlists) ----------------------------------------
+
+    /// Läuft die Sendung (ein Titel spielt)?
+    pub fn on_air(&self) -> bool {
+        self.running && self.status.current.load(Ordering::Acquire) != NONE
+    }
+
+    /// Neue leere Playlist (ohne Wechsel). Gibt ihren Index zurück.
+    pub fn new_playlist(&mut self, name: &str) -> usize {
+        self.show.new_playlist(name)
+    }
+
+    pub fn rename_playlist(&mut self, i: usize, name: &str) -> Result<(), String> {
+        self.show.rename_playlist(i, name)
+    }
+
+    pub fn duplicate_playlist(&mut self, i: usize) -> Option<usize> {
+        self.show.duplicate_playlist(i)
+    }
+
+    /// Leert Playlist `i`. Bei der aktiven spielt ein laufender Titel zu Ende.
+    pub fn clear_playlist(&mut self, i: usize) -> bool {
+        let ok = self.show.clear_playlist(i).is_some();
+        if ok && i == self.show.active {
+            self.cue = None;
+            self.requeue();
+        }
+        ok
+    }
+
+    /// Macht Playlist `i` aktiv. Läuft ein Titel, spielt er zu Ende (ebenso Decks und
+    /// Carts); danach geht es mit dem ersten Titel der neuen Playlist weiter.
+    pub fn select_playlist(&mut self, i: usize) -> bool {
+        if i == self.show.active {
+            return i < self.show.playlists.len();
+        }
+        if !self.show.switch_playlist(i) {
+            return false;
+        }
+        self.fresh_uids();
+        self.cue = None;
+        self.played.clear();
+        self.failed.clear();
+        self.cue_history = CueHistory::default();
+        self.requeue();
+        true
+    }
+
+    fn fresh_uids(&mut self) {
+        for e in &mut self.show.playlist {
+            if e.uid == 0 {
+                e.uid = self.next_uid;
+                self.next_uid += 1;
+            }
+        }
+    }
+
+    /// Löscht Playlist `i`. Die laufende Playlist während der Sendung nicht: erst eine
+    /// andere wählen (der laufende Titel spielt dann zu Ende).
+    pub fn delete_playlist(&mut self, i: usize) -> Result<crate::playlists::Deleted, String> {
+        if i == self.show.active && self.on_air() {
+            return Err(format!(
+                "„{}“ läuft gerade auf Sendung. Erst eine andere Playlist wählen.",
+                self.show.active_name()
+            ));
+        }
+        let was = self.show.active;
+        let d = self
+            .show
+            .delete_playlist(i)
+            .ok_or_else(|| format!("Playlist {} gibt es nicht", i + 1))?;
+        if d.was_active || was != self.show.active {
+            self.fresh_uids();
+            self.cue = None;
+            self.played.clear();
+            self.failed.clear();
+            self.cue_history = CueHistory::default();
+            self.requeue();
+        }
+        Ok(d)
+    }
+
+    /// Holt eine gelöschte Playlist zurück. War sie aktiv und läuft gerade nichts, wird sie
+    /// wieder aktiv; während der Sendung kommt sie nur in die Liste zurück.
+    pub fn restore_playlist(&mut self, mut d: crate::playlists::Deleted) -> usize {
+        if self.on_air() {
+            d.was_active = false;
+        }
+        let before = self.show.active;
+        let at = self.show.restore_playlist(d);
+        if self.show.playlist.iter().any(|e| e.uid == 0) || before != self.show.active {
+            self.fresh_uids();
+            self.requeue();
+        }
+        at
+    }
+
+    /// Hängt Titel an Playlist `i` an (die aktive wie [`Self::add`]).
+    pub fn playlist_add(&mut self, i: usize, paths: &[PathBuf]) -> bool {
+        if i == self.show.active {
+            self.add(paths, None);
+            return true;
+        }
+        match self.show.playlist_entries_mut(i) {
+            Some(v) => {
+                v.extend(paths.iter().cloned().map(PlaylistEntry::new));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Nimmt Titel `index` aus Playlist `i`.
+    pub fn playlist_remove(&mut self, i: usize, index: usize) -> bool {
+        if i == self.show.active {
+            return self.remove(index);
+        }
+        match self.show.playlist_entries_mut(i) {
+            Some(v) if index < v.len() => {
+                v.remove(index);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Verschiebt in Playlist `i` Titel `from` nach `to`.
+    pub fn playlist_move(&mut self, i: usize, from: usize, to: usize) -> bool {
+        if i == self.show.active {
+            return self.move_entry(from, to);
+        }
+        match self.show.playlist_entries_mut(i) {
+            Some(v) if from < v.len() && to < v.len() => {
+                let e = v.remove(from);
+                v.insert(to, e);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Liest eine M3U/M3U8-Datei als neue Playlist (ohne Wechsel).
+    pub fn import_m3u(&mut self, path: &Path) -> Result<usize, String> {
+        let (name, entries) = crate::playlists::import_m3u(path)?;
+        if entries.is_empty() {
+            return Err(format!("{}: keine Titel gefunden", path.display()));
+        }
+        Ok(self.show.add_playlist(&name, entries))
+    }
+
+    /// Schreibt Playlist `i` als M3U8.
+    pub fn export_m3u(&self, i: usize, path: &Path) -> Result<(), String> {
+        let e = self
+            .show
+            .playlist_entries(i)
+            .ok_or_else(|| format!("Playlist {} gibt es nicht", i + 1))?;
+        crate::playlists::export_m3u(path, e)
+    }
+
     /// Übernimmt eine Messung (aus dem Hintergrund-Thread) für alle Einträge mit `path`.
     pub fn set_measured(&mut self, path: &Path, m: crate::audio::Measured) {
         for e in &mut self.show.playlist {

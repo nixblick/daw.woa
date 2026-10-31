@@ -173,8 +173,16 @@ pub struct RadioShow {
     /// Mikro-Kette (EQ, Gate, Kompressor).
     #[serde(default = "yes")]
     pub mic_processing: bool,
+    /// Die aktive Playlist (die, die auf Sendung geht).
     #[serde(default)]
     pub playlist: Vec<PlaylistEntry>,
+    /// Alle Playlisten der Sendung in fester Reihenfolge; im Feld `active` steht nur der
+    /// Name, die Titel liegen in `playlist`. Alte Dateien ohne Feld: „Playlist 1“.
+    #[serde(default)]
+    pub playlists: Vec<crate::playlists::NamedPlaylist>,
+    /// Index der aktiven Playlist in `playlists`.
+    #[serde(default)]
+    pub active: usize,
     /// Genau [`CARTS`] Felder, `null` = frei.
     #[serde(default)]
     pub carts: Vec<Option<CartEntry>>,
@@ -197,6 +205,10 @@ impl Default for RadioShow {
             bus_processing: true,
             mic_processing: true,
             playlist: Vec::new(),
+            playlists: vec![crate::playlists::NamedPlaylist::new(
+                crate::playlists::FIRST_NAME,
+            )],
+            active: 0,
             carts: vec![None; CARTS],
             cart_keys: vec![String::new(); CARTS],
             decks: vec![None; DECKS],
@@ -235,6 +247,7 @@ impl RadioShow {
                 e.cues = Cues::default();
             }
         }
+        self.sanitize_playlists();
         for e in &mut self.playlist {
             if let Some(v) = e.voice.as_mut() {
                 v.params = v.params.sanitized();

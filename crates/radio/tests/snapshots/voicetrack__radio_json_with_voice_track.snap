@@ -50,6 +50,12 @@ expression: text
       }
     }
   ],
+  "playlists": [
+    {
+      "name": "Playlist 1"
+    }
+  ],
+  "active": 0,
   "carts": [
     null,
     null,

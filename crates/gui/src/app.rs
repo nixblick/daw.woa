@@ -5876,6 +5876,7 @@ impl eframe::App for WoaApp {
                 .show(ui, |ui| radio.ui(ui));
             radio.cue_window(&ctx);
             radio.voice_window(&ctx);
+            radio.manage_window(&ctx, &mut self.library);
             self.library_window(&ctx);
             self.clock_editor.show(&ctx);
             self.event_editor
