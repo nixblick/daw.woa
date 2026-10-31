@@ -785,8 +785,19 @@ pub fn folder_wishes(
     list.files
         .into_iter()
         .filter(|f| !f.copying)
-        .filter(|f| wishes.add_folder_file(f.path.clone(), &f.name))
+        .filter(|f| wishes.add_folder_file(f.path.clone(), &wish_title(&f.path, &f.name)))
         .count()
+}
+
+/// Anzeigename eines Wunschordner-Titels: „Interpret – Titel“ aus den Tags (nur gelesen, nie
+/// dekodiert); fehlt eines davon oder ist die Datei nicht lesbar, der Dateiname ohne Endung.
+fn wish_title(path: &std::path::Path, name: &str) -> String {
+    match woa_library::tags::read_fields(path) {
+        Ok((f, _)) if !f.artist.trim().is_empty() && !f.title.trim().is_empty() => {
+            format!("{} – {}", f.artist.trim(), f.title.trim())
+        }
+        _ => name.to_string(),
+    }
 }
 
 /// Index der Seite im Mixer (0 links, 1 rechts).
@@ -1061,6 +1072,52 @@ mod tests {
             1,
             "eine neue Datei kommt dazu"
         );
+    }
+
+    #[test]
+    fn wish_title_from_tags_else_file_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let wav = |p: &std::path::Path| {
+            let spec = hound::WavSpec {
+                channels: 1,
+                sample_rate: 8000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
+            let mut w = hound::WavWriter::create(p, spec).unwrap();
+            for _ in 0..800 {
+                w.write_sample(0i16).unwrap();
+            }
+            w.finalize().unwrap();
+        };
+        let tagged = tmp.path().join("datei.wav");
+        wav(&tagged);
+        let f = woa_library::tags::Fields {
+            title: "Titel".into(),
+            artist: "Interpret".into(),
+            ..Default::default()
+        };
+        woa_library::tags::write_fields(&tagged, &woa_library::tags::Edit::exact(&f, None))
+            .unwrap();
+        assert_eq!(wish_title(&tagged, "datei"), "Interpret – Titel");
+
+        let plain = tmp.path().join("ohne.wav");
+        wav(&plain);
+        assert_eq!(wish_title(&plain, "ohne"), "ohne");
+
+        let only_title = tmp.path().join("halb.wav");
+        wav(&only_title);
+        let f = woa_library::tags::Fields {
+            title: "Nur Titel".into(),
+            ..Default::default()
+        };
+        woa_library::tags::write_fields(&only_title, &woa_library::tags::Edit::exact(&f, None))
+            .unwrap();
+        assert_eq!(wish_title(&only_title, "halb"), "halb");
+
+        let broken = tmp.path().join("kaputt.mp3");
+        std::fs::write(&broken, b"kein audio").unwrap();
+        assert_eq!(wish_title(&broken, "kaputt"), "kaputt");
     }
 
     #[test]
