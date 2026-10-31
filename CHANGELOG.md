@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.34.51 — 2026-10-31
+
+### Behoben
+
+- **Wunschtitel-Ordner:** Neue Dateien aus dem Wunschordner heißen in der Party-Wunschliste jetzt „Interpret – Titel“ aus den Tags. Fehlt Interpret oder Titel oder ist die Datei nicht lesbar, bleibt es beim Dateinamen ohne Endung. Die Tags werden nur gelesen, nicht dekodiert. Vorhandene Wünsche bleiben, wie sie sind.
+
 ## 0.34.50 — 2026-10-31
 
 ### Neu
