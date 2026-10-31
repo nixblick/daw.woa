@@ -796,6 +796,7 @@ pub fn lcd_show<R>(
 /// aktiv ist das gewählte. Nur bei Änderung von Thema oder Modus nötig.
 pub fn apply(ctx: &egui::Context, theme: Theme, mode: Mode) {
     let _ = install_fonts(ctx);
+    ctx.options_mut(|o| o.input_options.max_double_click_delay = DOUBLE_CLICK_DELAY);
     CURRENT.store(palette_index(theme, mode), Ordering::Relaxed);
     for (t, egui_theme) in [
         (Theme::Dunkel, egui::Theme::Dark),
@@ -1090,6 +1091,16 @@ pub fn font_definitions() -> egui::FontDefinitions {
         vec!["phosphor-fill".to_owned()],
     );
     fd
+}
+
+/// Höchster Abstand der Klicks eines Doppelklicks in Sekunden: so viel wie die Voreinstellung
+/// von Windows (egui erlaubt nur 0,3 s, André 31.10.2026: „egal wo ich doppelt klicke“).
+pub const DOUBLE_CLICK_DELAY: f64 = 0.5;
+
+/// Doppelklick auf `r`. Auch der Dreifachklick zählt: wer erst wählt und kurz darauf
+/// doppelklickt, erzeugt für egui einen Dreifachklick, und `double_clicked()` bliebe falsch.
+pub fn double_clicked(r: &egui::Response) -> bool {
+    r.double_clicked() || r.triple_clicked()
 }
 
 /// Kontext für Tests: Schriften gesetzt und einmal durchlaufen, sodass alle Familien (auch

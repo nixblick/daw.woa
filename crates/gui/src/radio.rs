@@ -127,6 +127,8 @@ pub struct RadioDesk {
     zone: Zone,
     /// Offener Cue-Editor (Paket 15).
     cue_editor: Option<CueEditor>,
+    /// Titelinfos dieses Titels wünscht das Kontextmenü (öffnet die Bibliothek, App holt ab).
+    tag_wish: Option<PathBuf>,
     /// Offener Voice-Track-Editor (Paket 30).
     voice_editor: Option<VoiceEditor>,
     /// Zuletzt in den Editor übernommene Cue-Punkte je Titel (erkennt Undo/Redo).
@@ -525,6 +527,7 @@ impl RadioDesk {
             key_capture: None,
             zone: Zone::CENTRAL_EUROPE,
             cue_editor: None,
+            tag_wish: None,
             voice_editor: None,
             cue_seen: std::collections::HashMap::new(),
             manage: crate::manage::ManageWindow::default(),
@@ -1121,6 +1124,11 @@ impl RadioDesk {
     }
 
     /// Der Ordner, den der Nutzer eben gewählt hat (die App speichert ihn einmal).
+    /// Titel, dessen Titelinfos im Kontextmenü der Playlist gewählt wurden (einmal).
+    pub fn take_tag_wish(&mut self) -> Option<PathBuf> {
+        self.tag_wish.take()
+    }
+
     pub fn take_wish_choice(&mut self) -> Option<PathBuf> {
         self.wish_chosen.take()
     }
@@ -2817,6 +2825,11 @@ impl RadioDesk {
             }
         } else if ui.button("Voice-Track danach einfügen …").clicked() {
             self.add_voice_dialog(i + 1);
+            ui.close();
+        }
+        // Doppelklick setzt hier schon „als Nächstes“, darum Titelinfos nur im Kontextmenü.
+        if ui.button("Titelinfos bearbeiten …").clicked() {
+            self.tag_wish = Some(e.path.clone());
             ui.close();
         }
         if ui.button("Cue-Punkte …").clicked() {
