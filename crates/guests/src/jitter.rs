@@ -26,6 +26,8 @@ pub struct SlotStats {
     pub buffered: AtomicU32,
     /// Spitze seit dem letzten [`SlotStats::take_peak`] (f32-Bits, nach dem Fader).
     peak: AtomicU32,
+    /// Spitze vor dem Fader (f32-Bits): zeigt, ob der Gast spricht, auch stumm oder im Warteraum.
+    input_peak: AtomicU32,
     /// Aussetzer: der Puffer war leer, obwohl die Wiedergabe lief.
     pub underruns: AtomicU64,
     /// Überläufe: Daten zurückgewiesen oder abgeschnitten, weil über der Obergrenze.
@@ -41,6 +43,7 @@ impl Default for SlotStats {
             prebuffering: AtomicBool::new(true),
             buffered: AtomicU32::new(0),
             peak: AtomicU32::new(0),
+            input_peak: AtomicU32::new(0),
             underruns: AtomicU64::new(0),
             overflows: AtomicU64::new(0),
             dropped_frames: AtomicU64::new(0),
@@ -50,6 +53,15 @@ impl Default for SlotStats {
 
 impl SlotStats {
     /// Spitze seit dem letzten Aufruf (linear) und zurücksetzen.
+    pub fn take_input_peak(&self) -> f32 {
+        f32::from_bits(self.input_peak.swap(0, Ordering::Relaxed))
+    }
+
+    pub(crate) fn store_input_peak(&self, v: f32) {
+        self.input_peak
+            .fetch_max(v.max(0.0).to_bits(), Ordering::Relaxed);
+    }
+
     pub fn take_peak(&self) -> f32 {
         f32::from_bits(self.peak.swap(0, Ordering::Relaxed))
     }
@@ -61,6 +73,7 @@ impl SlotStats {
 
     pub(crate) fn reset(&self) {
         self.peak.store(0, Ordering::Relaxed);
+        self.input_peak.store(0, Ordering::Relaxed);
         self.buffered.store(0, Ordering::Relaxed);
         self.prebuffering.store(true, Ordering::Relaxed);
         self.underruns.store(0, Ordering::Relaxed);

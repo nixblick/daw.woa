@@ -34,8 +34,14 @@ pub struct GuestView {
     pub source: String,
     pub gain_db: f32,
     pub muted: bool,
+    /// Auf Sendung; `false`: Warteraum (hört die Sendung, ist aber nicht zu hören).
+    pub on_air: bool,
+    /// Der Gast hat sich in seinem Browser selbst stumm geschaltet.
+    pub self_muted: bool,
     /// Spitze seit dem letzten Bild (linear, nach dem Fader).
     pub peak: f32,
+    /// Spitze vor dem Fader: zeigt auch im Warteraum und stumm, ob der Gast spricht.
+    pub input_peak: f32,
     /// Gepufferte Millisekunden.
     pub buffered_ms: f32,
     pub prebuffering: bool,
@@ -52,6 +58,8 @@ struct Guest {
     source_label: String,
     gain_db: f32,
     muted: bool,
+    on_air: bool,
+    self_muted: bool,
     source: Option<TestSource>,
     seen_underruns: u64,
     seen_overflows: u64,
@@ -119,7 +127,7 @@ impl GuestHub {
     }
 
     /// Belegt einen freien Kanal und schaltet ihn in der Bank an.
-    fn claim(&mut self) -> Result<(usize, GuestFeed), String> {
+    fn claim(&mut self, on_air: bool) -> Result<(usize, GuestFeed), String> {
         let slot = self
             .guests
             .iter()
@@ -132,7 +140,7 @@ impl GuestHub {
         self.stats[slot].reset();
         self.send(GuestCmd::Activate { slot, on: true });
         self.send(GuestCmd::Gain { slot, gain: 1.0 });
-        self.send(GuestCmd::Mute { slot, on: false });
+        self.send(GuestCmd::Mute { slot, on: !on_air });
         Ok((slot, feed))
     }
 
@@ -140,22 +148,30 @@ impl GuestHub {
     /// schreibt selbst in den zurückgegebenen [`GuestFeed`]. Nach [`Self::remove`] gibt er den
     /// Feed mit [`Self::return_feed`] zurück, sonst bleibt der Kanal zu.
     pub fn add_external(&mut self, label: &str) -> Result<(usize, GuestFeed), String> {
-        self.add_named(label, None)
+        self.add_named(label, None, true)
     }
 
-    fn add_named(&mut self, label: &str, name: Option<&str>) -> Result<(usize, GuestFeed), String> {
-        let (slot, feed) = self.claim()?;
+    fn add_named(
+        &mut self,
+        label: &str,
+        name: Option<&str>,
+        on_air: bool,
+    ) -> Result<(usize, GuestFeed), String> {
+        let (slot, feed) = self.claim(on_air)?;
         let name = match name.map(crate::gate::clean_name).filter(|n| !n.is_empty()) {
             Some(n) => n,
             None => format!("Gast {}", self.next_number),
         };
         self.next_number += 1;
-        tracing::info!(slot, name = %name, source = label, "guest added");
+        // Keine Namen ins Log (Telemetrie): nur Kanal und Quelle.
+        tracing::info!(slot, source = label, on_air, "guest added");
         self.guests[slot] = Some(Guest {
             name,
             source_label: label.to_string(),
             gain_db: 0.0,
             muted: false,
+            on_air,
+            self_muted: false,
             source: None,
             seen_underruns: 0,
             seen_overflows: 0,
@@ -164,13 +180,14 @@ impl GuestHub {
     }
 
     /// Fügt einen Gast aus dem Netz hinzu (Browser per WebRTC): Kanal, Feed und Rückweg. Der
-    /// Rückweg (Mix-Minus ohne den Gast) läuft sofort. Nach dem Abbau gibt der Aufrufer beides
+    /// Rückweg (Mix-Minus ohne den Gast) läuft sofort. Der Gast kommt in den Warteraum: er hört
+    /// die Sendung, ist aber erst nach [`Self::set_on_air`] zu hören. Nach dem Abbau gibt der Aufrufer beides
     /// mit [`Self::return_network`] zurück.
     pub fn add_network(&mut self, label: &str, name: &str) -> Result<NetGuest, String> {
         if self.returns.iter().all(Option::is_none) {
             return Err("Kein Rückweg frei".into());
         }
-        let (slot, feed) = self.add_named(label, Some(name))?;
+        let (slot, feed) = self.add_named(label, Some(name), false)?;
         let Some(mut ret) = self.returns.get_mut(slot).and_then(Option::take) else {
             // Der Rückweg des Kanals ist noch bei einem alten Gast: Kanal sofort wieder frei.
             self.remove(slot);
@@ -212,7 +229,7 @@ impl GuestHub {
 
     /// Fügt einen Testgast hinzu (Sinus oder Datei). Gibt den Kanal zurück.
     pub fn add_test_guest(&mut self, signal: TestSignal) -> Result<usize, String> {
-        let (slot, feed) = self.claim()?;
+        let (slot, feed) = self.claim(true)?;
         let source = match TestSource::spawn(&signal, feed, self.rate) {
             Ok(s) => s,
             Err((e, feed)) => {
@@ -224,12 +241,14 @@ impl GuestHub {
         };
         let name = format!("Gast {}", self.next_number);
         self.next_number += 1;
-        tracing::info!(slot, name = %name, source = %signal.label(), "guest added");
+        tracing::info!(slot, source = %signal.label(), "guest added");
         self.guests[slot] = Some(Guest {
             name,
             source_label: signal.label(),
             gain_db: 0.0,
             muted: false,
+            on_air: true,
+            self_muted: false,
             source: Some(source),
             seen_underruns: 0,
             seen_overflows: 0,
@@ -256,7 +275,7 @@ impl GuestHub {
             }
         }
         self.send(GuestCmd::Activate { slot, on: false });
-        tracing::info!(slot, name = %g.name, "guest removed");
+        tracing::info!(slot, "guest removed");
     }
 
     pub fn set_gain_db(&mut self, slot: usize, db: f32) {
@@ -270,9 +289,48 @@ impl GuestHub {
         }
     }
 
+    /// Stumm durch den Moderator: der Gast ist nicht zu hören, hört die Sendung aber weiter.
     pub fn set_mute(&mut self, slot: usize, on: bool) {
         if let Some(Some(g)) = self.guests.get_mut(slot) {
             g.muted = on;
+        }
+        self.push_mute(slot);
+    }
+
+    /// Auf Sendung holen (`true`) oder zurück in den Warteraum (`false`).
+    pub fn set_on_air(&mut self, slot: usize, on: bool) {
+        if let Some(Some(g)) = self.guests.get_mut(slot) {
+            g.on_air = on;
+            tracing::info!(slot, on_air = on, "guest air state");
+        }
+        self.push_mute(slot);
+    }
+
+    /// Selbst-Stumm aus dem Browser des Gastes.
+    pub(crate) fn set_self_muted(&mut self, slot: usize, on: bool) {
+        match self.guests.get_mut(slot) {
+            Some(Some(g)) if g.self_muted != on => g.self_muted = on,
+            _ => return,
+        }
+        self.push_mute(slot);
+    }
+
+    /// Sendestand dieses Kanals für die Seite des Gastes.
+    pub(crate) fn air_of(&self, slot: usize) -> Option<crate::gate::Air> {
+        let g = self.guests.get(slot)?.as_ref()?;
+        Some(if !g.on_air {
+            crate::gate::Air::Waiting
+        } else if g.muted {
+            crate::gate::Air::Muted
+        } else {
+            crate::gate::Air::OnAir
+        })
+    }
+
+    /// Die Bank kennt nur ein Stumm: Moderator-Stumm, Warteraum oder Selbst-Stumm.
+    fn push_mute(&mut self, slot: usize) {
+        if let Some(Some(g)) = self.guests.get(slot) {
+            let on = g.muted || !g.on_air || g.self_muted;
             self.send(GuestCmd::Mute { slot, on });
         }
     }
@@ -299,15 +357,23 @@ impl GuestHub {
             let u = st.underruns.load(Ordering::Relaxed);
             let o = st.overflows.load(Ordering::Relaxed);
             if u > g.seen_underruns {
-                tracing::warn!(slot, name = %g.name, new = u - g.seen_underruns, total = u,
-                    "guest buffer underrun (silence inserted)");
+                tracing::warn!(
+                    slot,
+                    new = u - g.seen_underruns,
+                    total = u,
+                    "guest buffer underrun (silence inserted)"
+                );
                 last = Some(format!("{}: Aussetzer ({u})", g.name));
                 g.seen_underruns = u;
             }
             if o > g.seen_overflows {
-                tracing::warn!(slot, name = %g.name, new = o - g.seen_overflows, total = o,
+                tracing::warn!(
+                    slot,
+                    new = o - g.seen_overflows,
+                    total = o,
                     dropped_frames = st.dropped_frames.load(Ordering::Relaxed),
-                    "guest buffer overflow (audio dropped)");
+                    "guest buffer overflow (audio dropped)"
+                );
                 last = Some(format!("{}: Puffer übergelaufen ({o})", g.name));
                 g.seen_overflows = o;
             }
@@ -329,7 +395,10 @@ impl GuestHub {
                     source: g.source_label.clone(),
                     gain_db: g.gain_db,
                     muted: g.muted,
+                    on_air: g.on_air,
+                    self_muted: g.self_muted,
                     peak: st.take_peak(),
+                    input_peak: st.take_input_peak(),
                     buffered_ms: st.buffered.load(Ordering::Relaxed) as f32 * 1000.0
                         / self.rate.max(1) as f32,
                     prebuffering: st.prebuffering.load(Ordering::Relaxed),
@@ -353,5 +422,31 @@ impl Drop for GuestHub {
         for g in self.guests.iter_mut().flatten() {
             drop(g.source.take());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gate::Air;
+
+    #[test]
+    fn air_state_and_self_mute_per_guest() {
+        let (mut hub, _bank) = channel(48_000);
+        let a = hub.add_network("Browser", "A").unwrap();
+        let b = hub.add_network("Browser", "B").unwrap();
+        assert_eq!(hub.air_of(a.slot), Some(Air::Waiting));
+        hub.set_on_air(a.slot, true);
+        assert_eq!(hub.air_of(a.slot), Some(Air::OnAir));
+        hub.set_mute(a.slot, true);
+        assert_eq!(hub.air_of(a.slot), Some(Air::Muted));
+        // B bleibt unberührt.
+        assert_eq!(hub.air_of(b.slot), Some(Air::Waiting));
+        hub.set_self_muted(b.slot, true);
+        let v = hub.view();
+        assert!(v.iter().find(|g| g.slot == b.slot).unwrap().self_muted);
+        assert!(!v.iter().find(|g| g.slot == a.slot).unwrap().self_muted);
+        hub.remove(a.slot);
+        assert_eq!(hub.air_of(a.slot), None);
     }
 }

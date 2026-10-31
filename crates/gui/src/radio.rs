@@ -90,6 +90,8 @@ pub struct RadioDesk {
     view: View,
     /// QR-Code der zuletzt gezeigten Einladung (Paket 38).
     invite_qr: Option<(String, woa_remote::qr::QrMatrix)>,
+    /// „Trennen“ einmal geklickt: Kanal und Zeitpunkt; der zweite Klick binnen 3 s trennt.
+    guest_hangup_armed: Option<(usize, Instant)>,
     saved_revision: u64,
     saved_at: Instant,
     known_mtime: Option<SystemTime>,
@@ -500,6 +502,7 @@ impl RadioDesk {
             error,
             view: View::default(),
             invite_qr: None,
+            guest_hangup_armed: None,
             saved_revision: 0,
             saved_at: Instant::now(),
             known_mtime,
@@ -2145,33 +2148,79 @@ impl RadioDesk {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(&g.name).strong().color(theme::text()))
                 .on_hover_text(&g.source);
+            // Pegel vor dem Fader: zeigt auch im Warteraum und stumm, ob der Gast spricht.
             let (rect, _) = ui.allocate_exact_size(egui::vec2(90.0, 12.0), egui::Sense::hover());
-            theme::led_meter(ui.painter(), rect, g.peak);
-            let mut db = g.gain_db;
-            if ui
-                .add(
-                    egui::Slider::new(&mut db, -60.0..=12.0)
-                        .suffix(" dB")
-                        .fixed_decimals(0),
+            theme::led_meter(ui.painter(), rect, g.input_peak);
+            // Auf Sendung / Warteraum.
+            let (air_text, air_col, air_tip) = if g.on_air {
+                (
+                    format!("{} Auf Sendung", theme::ic::BROADCAST),
+                    theme::on_air(),
+                    "Der Gast ist zu hören. Klick: zurück in den Warteraum (hört weiter die Sendung).",
                 )
-                .changed()
-            {
-                if let Some(x) = self.view.guests.iter_mut().find(|x| x.slot == slot) {
-                    x.gain_db = db;
-                }
-                self.with(move |c| c.guests().set_gain_db(slot, db));
-            }
-            let mute = egui::Button::new(egui::RichText::new("M").strong().color(if g.muted {
-                theme::on_air()
             } else {
-                theme::text_dim()
-            }));
-            if ui.add(mute).on_hover_text("Gast stumm").clicked() {
+                (
+                    format!("{} Warteraum", theme::ic::PAUSE),
+                    theme::text_dim(),
+                    "Der Gast hört die Sendung, ist aber nicht zu hören. Klick: auf Sendung holen.",
+                )
+            };
+            if ui
+                .add(egui::Button::new(egui::RichText::new(air_text).strong().color(air_col)))
+                .on_hover_text(air_tip)
+                .clicked()
+            {
+                let on = !g.on_air;
+                if let Some(x) = self.view.guests.iter_mut().find(|x| x.slot == slot) {
+                    x.on_air = on;
+                }
+                self.with(move |c| c.guests().set_on_air(slot, on));
+            }
+            // Stumm (Moderator): nicht auf Sendung, hört die Sendung weiter.
+            let mute = egui::Button::new(
+                egui::RichText::new(format!("{} Stumm", theme::ic::MICROPHONE_SLASH)).color(
+                    if g.muted {
+                        theme::on_air()
+                    } else {
+                        theme::text_dim()
+                    },
+                ),
+            )
+            .selected(g.muted);
+            if ui
+                .add(mute)
+                .on_hover_text("Gast stumm: nicht auf Sendung, hört die Sendung aber weiter")
+                .clicked()
+            {
                 let on = !g.muted;
                 if let Some(x) = self.view.guests.iter_mut().find(|x| x.slot == slot) {
                     x.muted = on;
                 }
                 self.with(move |c| c.guests().set_mute(slot, on));
+            }
+            // Lautstärke wie der Kanal-Gain: ziehen, Doppelklick = 0 dB.
+            let mut db = g.gain_db;
+            let r = ui
+                .add(
+                    egui::DragValue::new(&mut db)
+                        .range(-60.0..=12.0)
+                        .speed(0.2)
+                        .fixed_decimals(1)
+                        .suffix(" dB"),
+                )
+                .on_hover_text("Lautstärke des Gastes. Ziehen, Doppelklick = 0 dB");
+            let set = if r.double_clicked() {
+                Some(0.0)
+            } else if r.changed() {
+                Some(db)
+            } else {
+                None
+            };
+            if let Some(db) = set {
+                if let Some(x) = self.view.guests.iter_mut().find(|x| x.slot == slot) {
+                    x.gain_db = db;
+                }
+                self.with(move |c| c.guests().set_gain_db(slot, db));
             }
             let ret = egui::Button::new(egui::RichText::new(theme::ic::HEADPHONES).color(
                 if g.monitored {
@@ -2191,12 +2240,30 @@ impl RadioDesk {
                 let to = (!g.monitored).then_some(slot);
                 self.with(move |c| c.guests().set_monitor(to));
             }
+            // Trennen mit kurzer Bestätigung: zweiter Klick binnen 3 s.
+            let armed = self
+                .guest_hangup_armed
+                .is_some_and(|(s, t)| s == slot && t.elapsed() < Duration::from_secs(3));
+            let label = if armed {
+                egui::RichText::new(format!("{} Wirklich trennen?", theme::ic::X))
+                    .color(theme::on_air())
+            } else {
+                egui::RichText::new(theme::ic::X)
+            };
             if ui
-                .small_button(theme::ic::X)
-                .on_hover_text("Gast entfernen")
+                .small_button(label)
+                .on_hover_text("Gast trennen (zweimal klicken)")
                 .clicked()
             {
-                self.with(move |c| c.guests().remove(slot));
+                if armed {
+                    self.guest_hangup_armed = None;
+                    self.with(move |c| c.guests().remove(slot));
+                } else {
+                    self.guest_hangup_armed = Some((slot, Instant::now()));
+                }
+            }
+            if armed {
+                ui.ctx().request_repaint_after(Duration::from_millis(250));
             }
         });
         let mut line = format!("{} · Puffer {:.0} ms", g.source, g.buffered_ms);
@@ -2205,8 +2272,15 @@ impl RadioDesk {
         }
         if let Some(n) = &g.net {
             if n.connected {
+                let q = if n.loss_permille > 50 || n.rtt_ms > 300 {
+                    "schlecht"
+                } else if n.loss_permille > 10 || n.rtt_ms > 150 {
+                    "mäßig"
+                } else {
+                    "gut"
+                };
                 line.push_str(&format!(
-                    " · RTT {} ms · Verlust {:.1} %",
+                    " · Leitung {q} · RTT {} ms · Verlust {:.1} %",
                     n.rtt_ms,
                     n.loss_permille as f32 / 10.0
                 ));
@@ -2221,6 +2295,16 @@ impl RadioDesk {
                     .monospace()
                     .color(theme::text_dim()),
             );
+            if g.self_muted {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} hat sich selbst stumm geschaltet",
+                        theme::ic::MICROPHONE_SLASH
+                    ))
+                    .small()
+                    .color(theme::accent()),
+                );
+            }
             if g.underruns > 0 || g.overflows > 0 {
                 ui.label(
                     egui::RichText::new(format!(

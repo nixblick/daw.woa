@@ -229,6 +229,8 @@ fn guest_tone_arrives_and_return_has_music_but_not_the_guest() {
     let (mut hub, mut bank) = channel(RATE);
     let guest = hub.add_network("Gast 1", "Anna").expect("slot");
     assert_eq!(hub.view()[0].name, "Anna");
+    assert!(!hub.view()[0].on_air, "neuer Gast wartet");
+    hub.set_on_air(guest.slot, true);
     let net = GuestNet::start(NetConfig {
         engine_rate: RATE,
         bind: "127.0.0.1:0".parse().expect("addr"),
@@ -407,7 +409,11 @@ fn invite_waiting_room_accept_talk_hangup() {
     assert_eq!(hub.count(), 1);
     let (_, v) = https(addr, "GET", &format!("/gast/state?t={ticket}"), "");
     assert_eq!(v["state"], "accepted");
+    assert_eq!(v["air"], "wait", "angenommen heißt erst Warteraum");
     client.accept(pending, v["sdp"].as_str().expect("sdp"));
+    // Der Moderator holt ihn auf Sendung.
+    assert!(!hub.view()[0].on_air);
+    hub.set_on_air(hub.view()[0].slot, true);
 
     // Sprechen: 5 Sekunden, Messung an beiden Enden.
     let at_bank = session(&mut client, &mut bank, Some(&mut hub), 5);
@@ -421,6 +427,19 @@ fn invite_waiting_room_accept_talk_hangup() {
         "Anzeige: RTT {} ms, Verlust {} Promille",
         net.rtt_ms, net.loss_permille
     );
+    let (_, v) = https(addr, "GET", &format!("/gast/state?t={ticket}"), "");
+    assert_eq!(v["air"], "air", "die Seite sieht: auf Sendung");
+
+    // Der Gast schaltet sich selbst stumm; der Moderator sieht es.
+    let (st, _) = https(
+        addr,
+        "POST",
+        "/gast/mute",
+        &json!({ "t": ticket, "on": true }).to_string(),
+    );
+    assert_eq!(st, 200);
+    hub.poll();
+    assert!(hub.view()[0].self_muted);
 
     // Der Gast legt auf: Kanal frei, Ticket zu Ende.
     let (st, _) = https(
