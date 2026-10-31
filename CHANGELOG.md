@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.41 — 2026-10-31
+## 0.34.42 — 2026-10-31
 
 Fehlerbehebung nach dem Test unter Windows (André: „bibliothek noch langsam. selbst bei 4 tracks“, „titelinfos ändert geht nicht. egal wo ich doppelt klicke“, „rechtsklick funktioniert auch nicht“).
 
@@ -9,6 +9,15 @@ Fehlerbehebung nach dem Test unter Windows (André: „bibliothek noch langsam. 
 - **Analyse etwa dreimal schneller:** Drei Viertel der Analysezeit gingen in die True-Peak-Messung. Sie rechnet das Filter jetzt nur dort, wo eine neue Spitze überhaupt möglich ist, und das Ergebnis bleibt exakt gleich. Gemessen im Release-Build (`examples/analyse_zeit.rs`): ein 3:17-Titel 0,9 s → 0,27 s, ein 5:21-Titel 1,5 s → 0,53 s.
 - **Tests:** `crates/gui/tests/titelinfos.rs` klickt in der echten App (Doppelklick schnell, langsam, nach vorherigem Klick; Kontextmenü); `true_peak_skip_is_exact` vergleicht mit dem vollen Filter.
 - **Analyse nur noch einen Titel nach dem anderen, unter 16 Threads:** Mit zwei gleichzeitig dauerte ein Dekodieren auf dem Notebook 1,3–2,8 s statt 0,3–0,4 s.
+
+## 0.34.41 — 2026-10-31
+
+### Behoben
+
+- **Bibliothek:** Nach dem Wechsel des Datenordners blieb ein Fehler des alten Ordners stehen, die neue Datenbank wurde nie geöffnet. Der Fehler wird jetzt beim Wechsel zurückgesetzt (Test).
+- **Stream-Test:** Solange der Verbindungstest lief, zeichnete das Fenster jeden Frame neu. Jetzt weckt nur der Test-Thread das Fenster, wenn er fertig ist.
+- **Stream-Test:** Das gespeicherte Kennwort wurde im UI-Thread aus dem Schlüsselbund gelesen; das geschieht jetzt im Test-Thread.
+- **KI-Fenster:** Ein Prüffehler beim Speichern im Reiter „Assistent“ war unsichtbar; er steht jetzt unter dem Speichern-Knopf.
 
 ## 0.34.40 — 2026-10-31
 
