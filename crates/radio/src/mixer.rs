@@ -123,6 +123,8 @@ pub enum Cmd {
     SetStopFade(usize),
     /// Absenkung der Musik bei offenem Mikro (linear).
     SetDuck(f32),
+    /// Musik auch absenken, solange ein Cart spielt (#149).
+    SetCartDuck(bool),
     /// Mikro auf/zu.
     MicOpen(bool),
     /// Mikro im eigenen Ausgang hören (Sendung enthält es immer).
@@ -610,6 +612,10 @@ pub struct Mixer {
     phone_l: [f32; PHONE_CHUNK],
     phone_r: [f32; PHONE_CHUNK],
     duck_lin: f32,
+    /// Carts senken die Musik ab (#149).
+    cart_duck: bool,
+    /// Beim letzten Blockanfang spielte mindestens ein Cart.
+    carts_on: bool,
     duck: Smoother,
     mic_backlog: usize,
     rec: Option<Owned<rtrb::Producer<f32>>>,
@@ -682,6 +688,8 @@ impl Mixer {
             phone_l: [0.0; PHONE_CHUNK],
             phone_r: [0.0; PHONE_CHUNK],
             duck_lin: 0.25,
+            cart_duck: true,
+            carts_on: false,
             duck: Smoother::new(1.0, DUCK_TAU, r),
             mic_backlog: (MIC_BACKLOG * r) as usize * 2,
             rec: None,
@@ -784,6 +792,10 @@ impl Mixer {
                 Cmd::SetStopFade(f) => self.stop_fade = f,
                 Cmd::SetDuck(g) => {
                     self.duck_lin = g.clamp(0.0, 1.0);
+                    self.retarget_duck();
+                }
+                Cmd::SetCartDuck(on) => {
+                    self.cart_duck = on;
                     self.retarget_duck();
                 }
                 Cmd::MicOpen(on) => {
@@ -1100,6 +1112,12 @@ impl Mixer {
             }
         });
         self.trim_mic_backlog();
+        // Carts ducken die Musik (#149); geprüft je Block, das reicht bei 80 ms Glättung.
+        let carts_on = self.carts.iter().any(Option::is_some);
+        if carts_on != self.carts_on {
+            self.carts_on = carts_on;
+            self.retarget_duck();
+        }
         self.guests.begin_block();
         let mut peak = 0.0f32;
         let mut mic_peak = 0.0f32;
@@ -1366,9 +1384,10 @@ impl Mixer {
         }
     }
 
-    /// Die Musik wird abgesenkt, solange das Mikro offen ist oder das Telefon auf Sendung.
+    /// Die Musik wird abgesenkt, solange das Mikro offen ist, das Telefon auf Sendung oder
+    /// (abschaltbar) ein Cart spielt.
     fn retarget_duck(&mut self) {
-        let down = self.mic_open || self.phone_on;
+        let down = self.mic_open || self.phone_on || (self.cart_duck && self.carts_on);
         self.duck.set_target(if down { self.duck_lin } else { 1.0 });
     }
 
