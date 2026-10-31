@@ -193,6 +193,7 @@ pub struct WoaApp {
     about_open: bool,
     /// Misst langsame Frames und Hänger für die Telemetrie (nur Dauer).
     frame_watch: woa_telemetry::FrameWatch,
+    protokoll: crate::protokoll::ProtokollWindow,
     /// Fotomodus (`WOA_SCREENSHOT=datei.png`): Zielpfad und gezählte Bilder.
     photo: Option<(PathBuf, u32)>,
     /// Party-Layout (Paket 35).
@@ -479,6 +480,7 @@ impl WoaApp {
             themed: None,
             about_open: false,
             frame_watch: woa_telemetry::FrameWatch::new(),
+            protokoll: Default::default(),
             party: crate::party::PartyView::default(),
             photo: std::env::var_os("WOA_SCREENSHOT").map(|p| (PathBuf::from(p), 0)),
             selected_clips: Vec::new(),
@@ -2417,6 +2419,10 @@ impl WoaApp {
         });
         ui.menu_button("Hilfe", |ui| {
             self.update_menu(ui);
+            if ui.button("Protokoll …").clicked() {
+                self.protokoll.open = true;
+                ui.close();
+            }
             ui.separator();
             if ui.button("Über WOA …").clicked() {
                 self.about_open = true;
@@ -5244,6 +5250,8 @@ impl eframe::App for WoaApp {
             self.report_metrics();
         }
         let ctx = ui.ctx().clone();
+        self.protokoll
+            .show(&ctx, &crate::protokoll::log_dir(&self.data_dir));
         // Die Schriften gelten erst ab dem nächsten Durchlauf (sonst fehlen die Familien
         // `label` und `seg`): beim allerersten Bild nur setzen und neu zeichnen lassen.
         if theme::install_fonts(&ctx) {

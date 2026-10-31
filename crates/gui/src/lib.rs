@@ -20,6 +20,7 @@ pub mod party;
 mod phone;
 pub mod pianoroll;
 pub mod player;
+pub mod protokoll;
 pub mod radio;
 pub mod remote;
 mod sources;

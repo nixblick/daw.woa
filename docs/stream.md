@@ -98,7 +98,7 @@ Die Angaben stehen im Schlüssel `stream` von `~/.config/woa/config.json` (Windo
 `protocol` ist `shoutcast`, `shoutcast2` oder `icecast`. Shoutcast v2 wird über den Legacy-Quellport
 (`port + 1`) bedient, nicht über Uvox2 (siehe oben).
 
-**Umstieg von 0.34.24 und früher:** Dort stand der Quell-Port in `port` (8001) und der Pfad einer
+**Umstieg von 0.34.25 und früher:** Dort stand der Quell-Port in `port` (8001) und der Pfad einer
 Kennwortdatei in `password_file`. Beim Laden rechnet WOA einmal um (`schema` 1 → 2: Shoutcast-Port minus 1) und
 übernimmt die Kennwortdatei beim Start in den Schlüsselbund; die Datei selbst bleibt liegen. Wer
 Skripte mit `password_file` hat, kann den Eintrag weiter setzen; er gewinnt dann gegen den Schlüsselbund.

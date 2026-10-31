@@ -20,7 +20,7 @@ pub fn default_password_file() -> PathBuf {
 pub const DEFAULT_HOST: &str = "stream.wironair.de";
 
 /// Stand des Dateiformats von `stream` in `config.json`. Fehlt `schema`, ist es ein Stand
-/// vor 0.34.25 und [`StreamConfig::migrate`] rechnet ihn um.
+/// vor 0.34.26 und [`StreamConfig::migrate`] rechnet ihn um.
 pub const SCHEMA: u32 = 2;
 
 /// Quellprotokoll des Servers.
@@ -190,7 +190,7 @@ impl Default for StreamConfig {
 }
 
 impl StreamConfig {
-    /// Rechnet einen alten Stand auf [`SCHEMA`] um. Bis 0.34.24 stand bei Shoutcast der
+    /// Rechnet einen alten Stand auf [`SCHEMA`] um. Bis 0.34.25 stand bei Shoutcast der
     /// Quell-Port (`portbase + 1`) in `port`; jetzt steht dort der Port des Servers.
     /// Mehrfacher Aufruf ändert nichts mehr.
     pub fn migrate(mut self) -> Self {
@@ -417,7 +417,7 @@ mod tests {
     fn old_config_is_migrated_once() {
         let tmp = tempfile::tempdir().unwrap();
         let p = tmp.path().join("config.json");
-        // Stand bis 0.34.24: Quell-Port 8001, Kennwortdatei, Protokoll `shoutcast`.
+        // Stand bis 0.34.25: Quell-Port 8001, Kennwortdatei, Protokoll `shoutcast`.
         std::fs::write(
             &p,
             r#"{"stream":{"host":"radio.example","port":8001,"stream_id":2,"password_file":"/x/kw.pass","name":"Mein Sender"}}"#,
