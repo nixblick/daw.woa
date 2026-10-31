@@ -1,8 +1,14 @@
 # Changelog
 
-## 9.9.9 — 2026-10-31
+## 0.34.72 — 2026-10-31
 
 - **QR-Code zum Spenden (#231):** Im Fenster „Über WOA“ steht unter den Knöpfen PayPal und Ko-fi ein QR-Code, der den PayPal-Link kodiert; mit dem Handy scannen genügt. Lokal erzeugt mit demselben Baustein wie der Code der Fernbedienung, ohne neue Abhängigkeit.
+
+## 0.34.71 — 2026-10-31
+
+### Behoben
+
+- **ON AIR nur bei Sendung (#225):** Die ON-AIR-Pille oben rechts leuchtete auch, wenn nur das Mikro offen war. Sie leuchtet jetzt nur noch bei „Auf Sendung“ (Stream läuft); das Mikro hat seine eigene Anzeige am Mikro-Knopf.
 
 ## 0.34.70 — 2026-10-31
 
