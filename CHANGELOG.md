@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.23 — 2026-10-31
+## 0.34.24 — 2026-10-31
 
 Sicherheit #136: Updater Stufe B vorbereitet, es fehlt nur noch der Schlüssel.
 
@@ -9,6 +9,17 @@ Sicherheit #136: Updater Stufe B vorbereitet, es fehlt nur noch der Schlüssel.
 - **Updater:** Der Platzhalter gilt nur noch, wenn die Datei mit `PLATZHALTER:` beginnt. Ein Schlüssel, dem die Kommentarzeile fehlt, fällt jetzt im Test auf.
 
 Nicht erledigt: Der Schlüssel selbst (nur André), #136 bleibt offen.
+
+## 0.34.23 — 2026-10-31
+
+Eine Auswahl, ein ruhiger Clip-Inspektor (André 31.10.: „mehr buttons sind nie die lösung … KISS“).
+
+- **Eine gewählte Spur:** Ein Klick irgendwo in den Spurkopf oder in den Kanalzug des Mixers wählt die Spur. Beide zeigen sie in ihrer Spurfarbe (Fläche und Rand), das Insert-Rack zeigt immer diese Spur mit Farbpunkt und Name im Kopf (ohne Auswahl die erste). Scharf geschaltet zeigt nur noch der Aufnahmepunkt.
+- **Weniger Knöpfe:** Der Knopf „Effekte n“ je Kanalzug ist weg, die Zahl steht klein als „fx n“ im Namensstreifen. Der Papierkorb steht einmal je Spur im Spurkopf; im Kanalzug öffnet ein Rechtsklick auf den Namen das Spurmenü. Die Hinweise „Kanal wählen …“ sind entfallen.
+- **Entf:** löscht den gewählten Clip (wie bisher), und ohne gewählten Clip die zuletzt angeklickte Spur. Ein Klick in die Zeitleiste oder auf einen Clip nimmt die Spur wieder aus diesem Griff, damit Entf nie versehentlich eine Spur löscht.
+- **Clip-Inspektor in einer Zeile:** Gruppen Fade (Symbole für Ein- und Ausblenden, Länge, Kurve kurz Lin/Pow/S), Gain (dB, Normalisieren als Symbol), Zeit (Dehnung %, Tonhöhe st, Tempo folgen als Metronom-Taste; die Symbole leuchten, wenn der Clip bearbeitet ist) und Bearbeiten (Schneiden, Duplizieren, Kopieren, Löschen als Symbole). Erklärungen und Tastenkürzel stehen im Tooltip, auch der lange Hinweis ohne gewählten Clip.
+- Tests (`crates/gui/tests/design_regressions.rs`): Auswahl über Spurkopf und Kanalzug mit Rack, Effekte für jede Spur per Klick auf den Kanalzug, Spur löschen per Rechtsklick im Kanalzug, ein Papierkorb je Spur, Entf für Clip und Spur, Papierkorb im Inspektor.
+- Neu: `docs/design/luecken.md`, was die Gestaltungsvorlage noch nicht zeigt.
 
 ## 0.34.22 — 2026-10-31
 
