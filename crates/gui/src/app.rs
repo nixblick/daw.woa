@@ -43,6 +43,8 @@ const ROW_H: f32 = 64.0;
 /// Pan auch im Spurkopf (zusätzlich zum Rack-Ausgang). Offene Entscheidung von André
 /// (31.10.2026): `false` nimmt die Anzeige aus dem Spurkopf.
 const HEADER_PAN: bool = true;
+/// Platz für Gain- und Pan-Feld in der zweiten Zeile des Spurkopfs (#212).
+const HEADER_FIELDS_W: f32 = if HEADER_PAN { 134.0 } else { 80.0 };
 /// So lange steht der Hinweis „Rückgängig (Strg+Z)“ nach dem Löschen einer Spur.
 const UNDO_TOAST_SECS: f64 = 8.0;
 /// Clip-Inspektor: darunter entfallen Gruppentitel (Tooltips tragen die Namen).
@@ -222,6 +224,8 @@ pub struct WoaApp {
     clipboard: Clipboard,
     /// Zeitleisten-Flächen je Spur (dieses und letztes Bild), für das Ziehen auf andere Spuren.
     track_rects: Vec<(TrackId, egui::Rect)>,
+    /// Gezeichneter Spurkopf je Spur im letzten Bild (#212: endet vor Takt 1).
+    header_rects: Vec<(TrackId, egui::Rect)>,
     prev_track_rects: Vec<(TrackId, egui::Rect)>,
     /// Angezeigter Pegel je Spur (mit Abfall), 0..1.
     track_levels: std::collections::HashMap<TrackId, f32>,
@@ -551,6 +555,7 @@ impl WoaApp {
             time_unit: TimeUnit::default(),
             clipboard: Clipboard::default(),
             track_rects: Vec::new(),
+            header_rects: Vec::new(),
             prev_track_rects: Vec::new(),
             track_levels: std::collections::HashMap::new(),
             level: 0.0,
@@ -624,6 +629,17 @@ impl WoaApp {
     /// Fläche der Zeitleiste je Spur im zuletzt gezeichneten Bild (Bildschirmpunkte).
     pub fn track_rects(&self) -> &[(TrackId, egui::Rect)] {
         &self.track_rects
+    }
+
+    /// Spurkopf je Spur im zuletzt gezeichneten Bild (Bildschirmpunkte).
+    pub fn header_rects(&self) -> &[(TrackId, egui::Rect)] {
+        &self.header_rects
+    }
+
+    /// Setzt die Eingangsquelle einer Spur ohne Auswahlmenü (für Oberflächentests).
+    #[doc(hidden)]
+    pub fn set_track_source(&mut self, id: TrackId, key: &str) {
+        self.track_source.insert(id, key.to_owned());
     }
 
     /// Pixel je Beat der Zeitleiste.
@@ -2725,6 +2741,7 @@ impl WoaApp {
             self.zoom = (self.zoom * z).clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
         }
         self.prev_track_rects = std::mem::take(&mut self.track_rects);
+        self.header_rects.clear();
         let tracks: Vec<_> = self
             .state
             .project()
@@ -3240,6 +3257,8 @@ impl WoaApp {
                 .max_rect(slot)
                 .layout(egui::Layout::top_down(egui::Align::Min)),
         );
+        // Was trotzdem breiter wird, schneidet der Spurkopf ab, statt ins Lineal zu ragen.
+        child.set_clip_rect(slot.intersect(ui.clip_rect()));
         let resp = {
             let ui = &mut child;
             frame.show(ui, |ui| {
@@ -3342,8 +3361,18 @@ impl WoaApp {
                         }
                     });
                 });
+                // Die Quellenwahl bekommt, was neben Gain und Pan bleibt, und kürzt ihren Text
+                // (#212); der Rest wird am Spurkopf abgeschnitten, nichts ragt in die Zeitleiste.
                 ui.horizontal(|ui| {
-                    self.source_combo(ui, id, is_midi, 96.0);
+                    let w = (ui.available_width() - HEADER_FIELDS_W).max(24.0);
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(w, 22.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.set_max_width(w);
+                            self.source_combo(ui, id, is_midi, w);
+                        },
+                    );
                     let r = self.gain_field(ui, id, gain, "");
                     let r = r.on_hover_text(
                         "Gain der Spur, derselbe Wert wie der Fader. Ziehen · Doppelklick = 0 dB · \
@@ -3376,6 +3405,7 @@ impl WoaApp {
             })
         };
         let r = resp.response.rect;
+        self.header_rects.push((id, r));
         // Ein Klick irgendwo in den Spurkopf wählt die Spur (auch auf M/S/Name).
         if resp.response.contains_pointer() && ui.input(|i| i.pointer.primary_clicked()) {
             self.select_track(id);

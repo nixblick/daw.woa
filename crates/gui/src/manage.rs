@@ -295,7 +295,7 @@ impl ManageWindow {
                         ui.horizontal(|ui| {
                             let r = ui.selectable_label(
                                 self.marked == Some(k),
-                                format!("{:>2}. {}", k + 1, e.title()),
+                                format!("{:>2}. {}", k + 1, theme::display_text(&e.title())),
                             );
                             if r.clicked() {
                                 self.marked = Some(k);
@@ -311,13 +311,21 @@ impl ManageWindow {
                                         out.push(Action::Remove(sel, k));
                                     }
                                     if ui
-                                        .add_enabled(k < last, egui::Button::new("↓").small())
+                                        .add_enabled(
+                                            k < last,
+                                            egui::Button::new(theme::ic::ARROW_DOWN).small(),
+                                        )
+                                        .on_hover_text("Nach unten")
                                         .clicked()
                                     {
                                         out.push(Action::Move(sel, k, k + 1));
                                     }
                                     if ui
-                                        .add_enabled(k > 0, egui::Button::new("↑").small())
+                                        .add_enabled(
+                                            k > 0,
+                                            egui::Button::new(theme::ic::ARROW_UP).small(),
+                                        )
+                                        .on_hover_text("Nach oben")
                                         .clicked()
                                     {
                                         out.push(Action::Move(sel, k, k - 1));
