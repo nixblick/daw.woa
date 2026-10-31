@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Protokoll-Fenster und beschädigte Dateien (0.34.23, offen)
+## Protokoll-Fenster und beschädigte Dateien (0.34.25, offen)
 
 1. Hilfe → „Protokoll …“ öffnen: Fenster mit Zeilen der Sitzung (Zeit, Symbol, Text). Die Knöpfe Info/Warnungen/Fehler blenden Stufen aus und ein.
 2. Eine beschädigte MP3 (z. B. die vom Windows-Notebook) in die Playlist legen: im Protokoll steht eine Zeile „Datei „….mp3“ ist beschädigt (n fehlerhafte Stellen), spielt aber. Tipp: neu exportieren.“, keine tausend Einzelwarnungen. Der Titel spielt.
@@ -12,6 +12,15 @@ eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt,
 4. „Kopieren“ legt die sichtbaren Zeilen in die Zwischenablage, „Logordner öffnen“ öffnet den Ordner `logs` im Dateimanager.
 
 Selbst geprüft von Claude: Tests in `crates/telemetry/src/journal.rs`, `crates/engine/tests/damage.rs` (beschädigte und unlesbare MP3, offline erzeugt) und `crates/telemetry/tests/log_bridge.rs` (kein Dateiname im Upload), Tests und Clippy von telemetry, engine und gui grün.
+
+## Sicherheit #136: Updater Stufe B vorbereitet (0.34.24, offen)
+
+Nur Test und Doku, kein Verhalten geändert. Schlüssel fehlt noch (Handgriffe in #136).
+
+1. `cargo test -p woa-updater`: grün, darunter `updater_pub_is_placeholder_or_valid_key`.
+2. Probe: in `packaging/windows/updater.pub` zwei Zeilen `untrusted comment: x` / `abc` eintragen, Test muss rot werden; Datei zurücksetzen.
+
+Selbst geprüft von Claude: Tests und Clippy des Crates grün.
 
 ## Kopfleiste, Über WOA und Feedback-Fenster (0.34.22, offen)
 
@@ -820,12 +829,24 @@ Selbst geprüft von Claude: Tests `shared_memory_file_is_mode_0600` und `private
 1. Produzent-Modus, je eine Audio-, MIDI- und Bus-Spur anlegen.
 2. Rechtsklick auf den freien Bereich eines Spurkopfs: Menü mit „Spur umbenennen“ und „Spur löschen“ geht auf. Dasselbe per Rechtsklick auf den Spurnamen. „Spur löschen“ entfernt die Spur; bei allen drei Spurarten probieren.
 3. Papierkorb rechts oben im Spurkopf: löscht die Spur sofort.
-4. Studio-Mixer im Dock: jeder Kanalzug hat M, S, Aufnahme und Papierkorb, darunter „Effekte n“.
+4. Studio-Mixer im Dock: jeder Kanalzug hat M, S und Aufnahme (seit 0.34.23 ohne Papierkorb und ohne „Effekte n“, siehe unten).
 5. Ohne einen Kanal anzuklicken steht rechts das Insert-Rack des ersten Kanals, „EFFEKTE“, „+ Effekt“ und „+ Plugin“ sind ohne Scrollen zu sehen.
-6. „Effekte n“ eines anderen Kanals klicken: das Rack zeigt diesen Kanal. „+ Effekt“ → EQ anlegen, Bypass-Taste aus und an, Reihenfolge ändern, mit X entfernen. Ein Plugin laden, Fenster öffnen und schließen, Bypass, entfernen.
+6. Einen anderen Kanalzug anklicken: das Rack zeigt diesen Kanal. „+ Effekt“ → EQ anlegen, Bypass-Taste aus und an, Reihenfolge ändern, mit X entfernen. Ein Plugin laden, Fenster öffnen und schließen, Bypass, entfernen.
 7. Gain, Pan, Ausgang und Sends stehen im Rack unter den Effekten und wirken wie vorher.
 
 Selbst geprüft von Claude: Tests in `crates/gui/tests/design_regressions.rs` (fünf, alle grün; der Rechtsklick-Test schlägt mit dem alten Hover-Rahmen fehl), Tests und Clippy von `woa-gui` grün.
+
+## Auswahl und Clip-Inspektor (0.34.23, offen)
+
+1. Produzent-Modus, je eine Audio-, MIDI- und Bus-Spur anlegen. Ohne Klick ist die erste Spur im Spurkopf und im Kanalzug in ihrer Farbe hervorgehoben, und das Rack zeigt sie (Farbpunkt und Name oben).
+2. Spurkopf der MIDI-Spur anklicken (auch auf M oder S): Spurkopf, Kanalzug und Rack wechseln auf diese Spur.
+3. Im Mixer den Kanalzug der Bus-Spur anklicken: wieder wechseln alle drei. Steht „fx 1“ im Namensstreifen, hat die Spur einen Effekt.
+4. Rechtsklick auf den Namen im Kanalzug: Spurmenü, „Spur löschen“ geht. Papierkorb gibt es einmal je Spur, oben rechts im Spurkopf.
+5. Einen Clip anklicken: der Inspektor oben zeigt eine Zeile mit Fade-Symbolen, Länge und Kurve, dB, Normalisieren, Dehnung %, Tonhöhe st, Metronom, Schneiden, Duplizieren, Kopieren, Papierkorb. Über jedes Feld fahren: der Tooltip erklärt es.
+6. Entf: der Clip ist weg, die Spur bleibt. Noch einmal Entf: nichts passiert. Spurkopf anklicken, Entf: die Spur ist weg. Strg+Z holt sie zurück.
+7. Ohne gewählten Clip steht nur „kein Clip gewählt“; der Tooltip zeigt die Tastenkürzel.
+
+Selbst geprüft von Claude: neun Tests in `crates/gui/tests/design_regressions.rs`, Tests und Clippy von `woa-gui` grün.
 
 ## Abgenommen
 

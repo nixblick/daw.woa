@@ -1,7 +1,8 @@
 //! Design D1–D6 durften keine Bedienung kosten (André 31.10.2026). Diese Tests spielen die
 //! Wege über die echte Oberfläche ohne Fenster und ohne Ton durch: Rechtsklick auf den
-//! Spurkopf → „Spur löschen“ für Audio, MIDI und Bus, der sichtbare Papierkorb im Spurkopf
-//! und im Kanalzug, und das Insert-Rack mit Effekten für jede Spur ohne vorherige Auswahl.
+//! Spurkopf oder Kanalzug → „Spur löschen“ für Audio, MIDI und Bus, der eine sichtbare
+//! Papierkorb je Spur, das Insert-Rack mit Effekten für jede Spur, das eine Auswahlmodell
+//! (Spurkopf und Kanalzug) und Entf für Clip und Spur.
 
 use eframe::egui;
 use woa_gui::{GuiConfig, WoaApp};
@@ -205,17 +206,48 @@ fn visible_trash_in_track_header_deletes() {
     }
 }
 
-/// Die Knöpfe „Effekte n“ der Kanalzüge, von links nach rechts.
-fn fx_buttons(rig: &Rig) -> Vec<egui::Rect> {
-    let mut v: Vec<_> = rig
-        .nodes
-        .iter()
-        .filter(|(l, _)| l.contains("Effekte "))
-        .map(|(_, r)| *r)
-        .collect();
-    v.sort_by(|x, y| x.left().total_cmp(&y.left()));
-    v.dedup_by(|a, b| (a.left() - b.left()).abs() < 1.0);
-    v
+impl Rig {
+    fn key(&mut self, key: egui::Key) {
+        let ev = |pressed| egui::Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        self.step(vec![ev(true)]);
+        self.step(vec![ev(false)]);
+        self.idle();
+    }
+
+    /// Unterkante der letzten Spurzeile: darunter liegt das Dock (Mixer, Rack, Inspektor).
+    fn rows_bottom(&self) -> f32 {
+        self.app
+            .track_rects()
+            .iter()
+            .map(|(_, r)| r.bottom())
+            .fold(0.0, f32::max)
+    }
+
+    /// Der Namensstreifen (Scribble-Strip) des Kanalzugs einer Spur im Mixer.
+    fn strip(&self, t: TrackId) -> egui::Rect {
+        let name = self.app.state().project().track(t).expect("t").name.clone();
+        let below = self.rows_bottom();
+        self.nodes
+            .iter()
+            .filter(|(l, r)| *l == name && r.top() > below && r.left() < 1000.0)
+            .map(|(_, r)| *r)
+            .min_by(|a, b| a.left().total_cmp(&b.left()))
+            .unwrap_or_else(|| panic!("strip of {name}"))
+    }
+
+    /// Zeigt das Insert-Rack (rechts) den Namen dieser Spur?
+    fn rack_shows(&self, t: TrackId) -> bool {
+        let name = self.app.state().project().track(t).expect("t").name.clone();
+        self.nodes
+            .iter()
+            .any(|(l, r)| *l == name && r.left() > 1000.0)
+    }
 }
 
 #[test]
@@ -231,18 +263,14 @@ fn effects_are_reachable_for_every_track_without_selecting() {
         !rig.find("+ Plugin").is_empty(),
         "plugins without selecting"
     );
-    assert_eq!(fx_buttons(&rig).len(), 3, "one effects button per strip");
+    assert!(rig.rack_shows(tracks[0]), "rack shows the first track");
+    // Kein eigener Knopf mehr je Kanalzug: ein Klick auf den Kanalzug holt ihn ins Rack.
+    assert!(rig.find("Effekte ").is_empty(), "no extra effects button");
     for (i, t) in tracks.into_iter().enumerate() {
-        let fx = fx_buttons(&rig)[i];
-        rig.click(fx.center(), egui::PointerButton::Primary);
-        let rack = rig.app.state().project().track(t).expect("t").name.clone();
-        assert!(
-            rig.nodes
-                .iter()
-                .any(|(l, r)| *l == rack && r.left() > 1000.0),
-            "rack shows {rack}"
-        );
-        // Effekt hinzufügen: „+ Effekt“ öffnet die Liste, der erste Eintrag legt ihn an.
+        let s = rig.strip(t);
+        rig.click(s.center(), egui::PointerButton::Primary);
+        assert_eq!(rig.app.selected_track(), Some(t));
+        assert!(rig.rack_shows(t), "rack shows track {i}");
         let add = rig.find("+ Effekt")[0];
         // Sichtbar ohne Scrollen: über der Statuszeile, nicht unter dem Dock-Rand.
         assert!(add.bottom() < 960.0, "„+ Effekt“ below the fold: {add:?}");
@@ -255,26 +283,115 @@ fn effects_are_reachable_for_every_track_without_selecting() {
         rig.click(item.center(), egui::PointerButton::Primary);
         let n = rig.app.state().project().track(t).expect("t").inserts.len();
         assert_eq!(n, 1, "effect added on track {i}");
-        assert_eq!(fx_buttons(&rig).len(), 3);
     }
 }
 
 #[test]
-fn mixer_strip_trash_deletes_each_kind() {
+fn right_click_on_mixer_strip_deletes_each_kind() {
+    let mut rig = Rig::new();
+    let tracks = three_kinds(&mut rig);
+    for t in tracks {
+        let s = rig.strip(t);
+        rig.click(s.center(), egui::PointerButton::Secondary);
+        let item = menu_item(&rig, "Spur löschen", s.center());
+        rig.click(item.center(), egui::PointerButton::Primary);
+        assert!(!rig.has(t), "deleted via the strip menu");
+    }
+}
+
+#[test]
+fn trash_is_shown_once_per_track() {
     let mut rig = Rig::new();
     let _ = three_kinds(&mut rig);
-    for _ in 0..3 {
-        let fx = fx_buttons(&rig)[0];
-        let btn = rig
-            .nodes
-            .iter()
-            .filter(|(l, r)| l == TRASH && r.bottom() < fx.top() && r.top() > fx.top() - 200.0)
-            .filter(|(_, r)| r.left() >= fx.left() - 1.0 && r.right() <= fx.right() + 1.0)
-            .map(|(_, r)| *r)
-            .next()
-            .expect("trash in first strip");
-        let before = rig.app.state().project().tracks.len();
-        rig.click(btn.center(), egui::PointerButton::Primary);
-        assert_eq!(rig.app.state().project().tracks.len(), before - 1);
-    }
+    let below = rig.rows_bottom();
+    let n = rig
+        .nodes
+        .iter()
+        .filter(|(l, r)| l == TRASH && r.top() < below)
+        .count();
+    assert_eq!(n, 3, "one trash per track header");
+    let strips = rig
+        .nodes
+        .iter()
+        .filter(|(l, r)| l == TRASH && r.top() > below)
+        .count();
+    assert_eq!(strips, 0, "no second trash in the mixer (no clip selected)");
+}
+
+#[test]
+fn one_selection_for_header_and_strip() {
+    let mut rig = Rig::new();
+    let [a, m, b] = three_kinds(&mut rig);
+    assert_eq!(rig.app.selected_track(), None);
+    // Spurkopf wählt, Rack folgt.
+    rig.click(rig.header_bg(m), egui::PointerButton::Primary);
+    assert_eq!(rig.app.selected_track(), Some(m));
+    assert!(rig.rack_shows(m));
+    // Kanalzug wählt, Spurkopf und Rack folgen derselben Auswahl.
+    let s = rig.strip(b);
+    rig.click(s.center(), egui::PointerButton::Primary);
+    assert_eq!(rig.app.selected_track(), Some(b));
+    assert!(rig.rack_shows(b));
+    rig.click(rig.header_bg(a), egui::PointerButton::Primary);
+    assert_eq!(rig.app.selected_track(), Some(a));
+    assert!(rig.rack_shows(a));
+}
+
+#[test]
+fn delete_key_removes_selected_clip_then_track() {
+    let mut rig = Rig::new();
+    let [a, m, _b] = three_kinds(&mut rig);
+    let c = rig
+        .app
+        .state_mut()
+        .create_empty_midi_clip(Some(m), 0.0, 16.0)
+        .expect("clip");
+    rig.idle();
+    // Ohne Auswahl tut Entf nichts.
+    rig.key(egui::Key::Delete);
+    assert_eq!(rig.app.state().project().tracks.len(), 3);
+    assert!(rig.app.state().project().clip(c).is_some());
+    // Clip anklicken, Entf: nur der Clip ist weg, die Spur bleibt.
+    let row = rig.row(m);
+    let at = egui::pos2(row.left() + 2.0 * rig.app.zoom(), row.center().y);
+    rig.click(at, egui::PointerButton::Primary);
+    assert_eq!(rig.app.selected_clip(), Some(c));
+    rig.key(egui::Key::Delete);
+    assert!(rig.app.state().project().clip(c).is_none(), "clip deleted");
+    assert!(rig.has(m), "track stays");
+    // Noch einmal Entf: die Spur war nicht angeklickt, also bleibt sie.
+    rig.key(egui::Key::Delete);
+    assert!(rig.has(m));
+    // Spurkopf anklicken, Entf: die Spur ist weg.
+    rig.click(rig.header_bg(a), egui::PointerButton::Primary);
+    rig.key(egui::Key::Delete);
+    assert!(!rig.has(a), "selected track deleted with Entf");
+}
+
+#[test]
+fn inspector_trash_icon_deletes_the_clip() {
+    let mut rig = Rig::new();
+    let [_a, m, _b] = three_kinds(&mut rig);
+    let c = rig
+        .app
+        .state_mut()
+        .create_empty_midi_clip(Some(m), 0.0, 16.0)
+        .expect("clip");
+    rig.idle();
+    let row = rig.row(m);
+    rig.click(
+        egui::pos2(row.left() + 2.0 * rig.app.zoom(), row.center().y),
+        egui::PointerButton::Primary,
+    );
+    // Der Inspektor steht über der Zeitleiste, oberhalb der ersten Spurzeile.
+    let top = rig.row(rig.app.state().project().tracks[0].id).top();
+    let btn = rig
+        .nodes
+        .iter()
+        .find(|(l, r)| l == TRASH && r.bottom() < top)
+        .map(|(_, r)| *r)
+        .expect("trash icon in the clip inspector");
+    rig.click(btn.center(), egui::PointerButton::Primary);
+    assert!(rig.app.state().project().clip(c).is_none());
+    assert!(rig.has(m));
 }
