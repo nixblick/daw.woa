@@ -180,6 +180,20 @@ impl Rig {
             .center()
     }
 
+    /// Wartet bis zu 10 s echte Zeit auf das Fenster: die Tags liest ein eigener Thread,
+    /// und der Windows-Runner der CI ist dafür manchmal zu langsam (flaky, 31.10.2026).
+    fn tag_window_appears(&mut self) -> bool {
+        let t0 = Instant::now();
+        while t0.elapsed() < Duration::from_secs(10) {
+            if self.tag_window_visible() {
+                return true;
+            }
+            self.idle();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        false
+    }
+
     /// Fenster „Titelinfos“ offen, ganz auf dem Bildschirm und zuoberst.
     fn tag_window_visible(&self) -> bool {
         let id = egui::Id::new(Some("Titelinfos"));
@@ -212,9 +226,9 @@ fn clicks_on_row(mode: Mode, gaps: &[f64]) -> Rig {
 }
 
 fn double_click_opens(mode: Mode) {
-    let rig = clicks_on_row(mode, &[0.0]);
+    let mut rig = clicks_on_row(mode, &[0.0]);
     assert!(
-        rig.tag_window_visible(),
+        rig.tag_window_appears(),
         "{mode:?}: Doppelklick öffnet die Titelinfos nicht"
     );
 }
@@ -223,9 +237,9 @@ fn double_click_opens(mode: Mode) {
 /// als Dreifachklick, und `double_clicked()` ist falsch.
 #[test]
 fn select_then_double_click_opens_tag_window() {
-    let rig = clicks_on_row(Mode::Produzent, &[0.36, 0.0]);
+    let mut rig = clicks_on_row(Mode::Produzent, &[0.36, 0.0]);
     assert!(
-        rig.tag_window_visible(),
+        rig.tag_window_appears(),
         "Klick + Doppelklick öffnet die Titelinfos nicht"
     );
 }
@@ -233,9 +247,9 @@ fn select_then_double_click_opens_tag_window() {
 /// Windows erlaubt 500 ms zwischen den Klicks eines Doppelklicks, egui nur 300 ms.
 #[test]
 fn slow_windows_double_click_opens_tag_window() {
-    let rig = clicks_on_row(Mode::Produzent, &[0.4]);
+    let mut rig = clicks_on_row(Mode::Produzent, &[0.4]);
     assert!(
-        rig.tag_window_visible(),
+        rig.tag_window_appears(),
         "langsamer Doppelklick öffnet die Titelinfos nicht"
     );
 }
@@ -250,7 +264,7 @@ fn context_menu_opens(mode: Mode) {
         rig.idle();
     }
     assert!(
-        rig.tag_window_visible(),
+        rig.tag_window_appears(),
         "{mode:?}: Kontextmenü öffnet die Titelinfos nicht"
     );
 }
