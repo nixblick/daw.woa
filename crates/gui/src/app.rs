@@ -2907,15 +2907,19 @@ impl WoaApp {
     /// Kopiert eine Audiodatei ins Projekt und legt sie als Clip bei `at` auf `track`
     /// (`None`: neue Spur). Dialog und Ziehen-und-Ablegen nutzen denselben Weg.
     fn import_audio_file(&mut self, path: &std::path::Path, track: Option<TrackId>, at: f64) {
-        let decoded = match woa_engine::decode::decode_file(path) {
-            Ok(d) => d,
-            Err(e) => {
-                tracing::error!(error = %e, path = %path.display(), "audio import decode failed");
-                self.state.status = Status::Error(format!("Audio-Import: {e}"));
-                return;
-            }
+        // Nur der Datei-Kopf: ganz dekodieren hielt die Oberfläche bei langen Titeln sekundenlang
+        // an. Verrät der Kopf keine Länge (selten), wird doch dekodiert.
+        let secs = match woa_library::tags::read_header(path) {
+            Ok(h) if h.duration > 0.0 => h.duration,
+            _ => match woa_engine::decode::decode_file(path) {
+                Ok(d) => d.frames() as f64 / f64::from(d.rate.max(1)),
+                Err(e) => {
+                    tracing::error!(error = %e, path = %path.display(), "audio import decode failed");
+                    self.state.status = Status::Error(format!("Audio-Import: {e}"));
+                    return;
+                }
+            },
         };
-        let secs = decoded.frames() as f64 / f64::from(decoded.rate.max(1));
         if secs <= 0.0 {
             self.state.status = Status::Error("Audio-Import: Datei ist leer".into());
             return;

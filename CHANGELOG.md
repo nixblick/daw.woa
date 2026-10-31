@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.34.35 — 2026-10-31
+
+Bibliothek: Ordner hinzufügen geht wieder schnell (André: „es dauert gerade wieder ewig“).
+
+- **Ursache, gemessen:** Der Import dekodierte jede Datei ganz, nur um ihre Länge zu kennen, eine nach der anderen; eingetragen wurde erst je 50 Dateien. Danach dekodierte die Analyse jede Datei ein zweites Mal, und sie begann erst, wenn der Import fertig war. Telemetrie 0.34.34: `decode_file` im Median 0,5 s, höchstens 111,6 s. Am Notebook (Release-Bau, 5-Minuten-MP3): Kopf lesen 0,24 ms, ganz dekodieren 259 ms, Analyse 1,06 s.
+- **Import liest nur noch den Datei-Kopf** (Tags und Länge, mit `lofty`, MIT/Apache-2.0). Titel heißen „Interpret - Titel“ aus den Tags, sonst wie bisher nach dem Dateinamen. Neue Titel stehen spätestens nach einer Viertelsekunde in der Liste, statt erst nach 50 dekodierten Dateien. 1000 Testdateien: 0,2 s.
+- **Analyse (Lautheit, Cue-Punkte, Tempo, Tonart) startet schon während des Imports**, im Hintergrund, mit Fortschritt und Abbruch wie bisher. Sie misst höchstens zwei Titel gleichzeitig, auf Rechnern mit weniger als vier Kernen einen; jeder dekodierte Titel liegt ganz im Speicher. Sie trägt auch die genaue Länge nach, wenn der Kopf keine nennt.
+- **Produzent:** Ein Titel aus der Bibliothek oder vom Desktop auf die Timeline gezogen wird nicht mehr zusätzlich im UI-Thread dekodiert, nur um seine Länge zu kennen. Das Laden des Clips für die Wiedergabe dekodiert weiterhin einmal im UI-Thread (offen).
+- **Tests:** Import von 40 Dateien füllt die Liste ohne ein einziges Dekodieren (Zähler in `woa-engine`), Längen stimmen aus dem Kopf, Analyse kommt danach; die bisherigen Import- und Analyse-Tests laufen unverändert.
+
 ## 0.34.34 — 2026-10-31
 
 KI & MCP, Teil 2: ein eigener Assistent in WOA mit frei wählbarem Anbieter und beliebigen MCP-Servern als Werkzeugen (André: „irgendein Server mit irgendeinem MCP bzw. LLM“). Nichts ist auf einen bestimmten Server festgelegt.

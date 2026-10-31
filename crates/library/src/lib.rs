@@ -11,6 +11,7 @@ mod hash;
 pub mod import;
 pub mod plays;
 pub mod rotation;
+pub mod tags;
 
 use std::fmt;
 use std::path::Path;
@@ -494,6 +495,15 @@ impl Library {
                 a.fade_out,
                 a.cue_out
             ],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Trägt die genaue Länge aus der Analyse ein, wenn die Datei noch zu `hash` gehört.
+    pub fn set_duration(&self, id: i64, hash: &str, secs: f64) -> Result<bool> {
+        let n = self.conn.execute(
+            "UPDATE tracks SET duration = ?3 WHERE id = ?1 AND hash = ?2",
+            params![id, hash, secs],
         )?;
         Ok(n > 0)
     }

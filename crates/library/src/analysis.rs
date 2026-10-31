@@ -1,6 +1,6 @@
 //! Hintergrundanalyse der Bibliothek (Paket 25): je Titel Lautheit, True Peak, Tempo, Tonart,
 //! Stille und Cue-Vorschläge. Ein eigener Thread arbeitet die Titel ohne Analyse nacheinander
-//! ab (ein Titel gleichzeitig, wegen des Arbeitsspeichers) und schreibt in kleinen
+//! ab (höchstens zwei Titel gleichzeitig, siehe [`workers`]) und schreibt in kleinen
 //! Transaktionen; die Oberfläche liest solange weiter. Nie im Audio-Thread.
 
 use std::path::Path;
@@ -73,25 +73,40 @@ pub fn to_analysis(a: &TrackAnalysis) -> Analysis {
     }
 }
 
-/// Liest und misst eine Datei.
-pub fn analyze_file(path: &Path) -> std::result::Result<Analysis, String> {
+/// Liest und misst eine Datei; dazu die genaue Länge in Sekunden (der Import kennt nur die
+/// aus dem Kopf).
+pub fn analyze_file(path: &Path) -> std::result::Result<(Analysis, f64), String> {
     let d = woa_engine::decode::decode_file(path)?;
     if d.frames() == 0 {
         return Err("leere Audiodatei".into());
     }
     let rate = d.rate;
+    let secs = d.frames() as f64 / f64::from(rate.max(1));
     let (l, r) = d.stereo();
     // Das verschachtelte Original wird nicht mehr gebraucht: ein 30-Minuten-Titel belegt
     // sonst doppelt Speicher, solange die Messung läuft.
     drop(d);
-    Ok(to_analysis(&track::analyze(&l, &r, rate)))
+    Ok((to_analysis(&track::analyze(&l, &r, rate)), secs))
+}
+
+/// So viele Titel misst die Analyse gleichzeitig: höchstens zwei, auf Rechnern mit weniger
+/// als vier Kernen einer. Jeder Titel liegt dekodiert im Speicher (eine Stunde Stereo gut
+/// 1 GB), und die Oberfläche und das Senden brauchen ihre CPU (altes Windows-Notebook).
+pub fn workers() -> usize {
+    match std::thread::available_parallelism().map_or(1, std::num::NonZero::get) {
+        n if n >= 4 => 2,
+        _ => 1,
+    }
 }
 
 /// Analysiert alle offenen Titel von `lib` (synchron; der Hintergrund-Thread ruft das auf).
+/// Gemessen wird in [`workers`] Threads; geschrieben wird nur hier, je Titel eine kurze
+/// Transaktion. Titel, die während der Analyse neu dazukommen, holt die nächste Runde.
 pub fn analyze_pending(lib: &Library, progress: &Progress) -> Result<()> {
     progress
         .total
         .store(lib.pending_analysis_count()?, Ordering::Release);
+    let n = workers();
     loop {
         if progress.cancel.load(Ordering::Acquire) {
             break;
@@ -100,21 +115,55 @@ pub fn analyze_pending(lib: &Library, progress: &Progress) -> Result<()> {
         if batch.is_empty() {
             break;
         }
-        for (id, path, hash) in batch {
-            if progress.cancel.load(Ordering::Acquire) {
-                return Ok(());
+        // Neue Titel aus einem laufenden Import zählen mit.
+        let open = lib.pending_analysis_count()?;
+        let done = progress.done.load(Ordering::Relaxed);
+        progress.total.fetch_max(done + open, Ordering::AcqRel);
+        let next = AtomicUsize::new(0);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let written = std::thread::scope(|s| -> Result<usize> {
+            for _ in 0..n {
+                let tx = tx.clone();
+                let (batch, next) = (&batch, &next);
+                s.spawn(move || {
+                    loop {
+                        if progress.cancel.load(Ordering::Acquire) {
+                            return;
+                        }
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        let Some((id, path, hash)) = batch.get(i) else {
+                            return;
+                        };
+                        let r = analyze_file(Path::new(path));
+                        if tx.send((*id, hash.clone(), r)).is_err() {
+                            return;
+                        }
+                    }
+                });
             }
-            let a = match analyze_file(Path::new(&path)) {
-                Ok(a) => a,
-                Err(e) => {
-                    tracing::warn!(error = %e, "library analysis: file not analysed");
-                    progress.failed.fetch_add(1, Ordering::Relaxed);
-                    // Leer eintragen, damit der Titel nicht in jedem Lauf wiederkommt.
-                    Analysis::default()
+            drop(tx);
+            let mut written = 0;
+            for (id, hash, r) in rx {
+                let (a, secs) = match r {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "library analysis: file not analysed");
+                        progress.failed.fetch_add(1, Ordering::Relaxed);
+                        // Leer eintragen, damit der Titel nicht in jedem Lauf wiederkommt.
+                        (Analysis::default(), 0.0)
+                    }
+                };
+                lib.set_analysis(id, &hash, &a)?;
+                if secs > 0.0 {
+                    lib.set_duration(id, &hash, secs)?;
                 }
-            };
-            lib.set_analysis(id, &hash, &a)?;
-            progress.done.fetch_add(1, Ordering::Relaxed);
+                progress.done.fetch_add(1, Ordering::Relaxed);
+                written += 1;
+            }
+            Ok(written)
+        })?;
+        if written == 0 {
+            break;
         }
     }
     Ok(())
@@ -269,7 +318,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("ebu.wav");
         write_wav(&p, &sine(1000.0, 10f32.powf(-23.0 / 20.0), 6.0));
-        let a = analyze_file(&p).unwrap();
+        let (a, _) = analyze_file(&p).unwrap();
         assert!((a.lufs.unwrap() + 23.0).abs() < 0.1, "{:?}", a.lufs);
         assert!(
             (a.true_peak_db.unwrap() + 23.0).abs() < 0.3,
