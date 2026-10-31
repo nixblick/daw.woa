@@ -453,7 +453,10 @@ fn entf_ignored_while_renaming_a_track() {
     let item = menu_item(&rig, "Spur umbenennen", at);
     rig.click(item.center(), egui::PointerButton::Primary);
     rig.idle();
-    assert!(rig.ctx.egui_wants_keyboard_input(), "rename field has focus");
+    assert!(
+        rig.ctx.egui_wants_keyboard_input(),
+        "rename field has focus"
+    );
     rig.key(egui::Key::Delete);
     assert!(rig.has(a), "Entf in the rename field keeps the track");
 }
