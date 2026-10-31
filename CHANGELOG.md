@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.28 — 2026-10-31
+## 0.34.29 — 2026-10-31
 
 Bibliothek: Analyse hängt nicht mehr an langen Titeln, läuft im Hintergrund weiter, Titel lassen sich entfernen und Spalten sortieren (#122, #123, #124, #120).
 
@@ -11,6 +11,15 @@ Bibliothek: Analyse hängt nicht mehr an langen Titeln, läuft im Hintergrund we
 - **Entfernen (#124):** Rechtsklick auf einen Titel → „Aus der Bibliothek entfernen“, oder Titel anklicken und Entf. Die Datei auf der Platte bleibt. Entf wirkt nur auf den markierten Eintrag und nie in einem Textfeld.
 - **Sortieren (#124):** Klick auf einen Spaltenkopf (Titel, BPM, Tonart, LUFS, Art, Dauer) sortiert, ein zweiter Klick dreht die Richtung; Pfeil zeigt die aktive Spalte. Sortiert wird in der Datenbank, nicht nur in den angezeigten 500 Zeilen; Titel ohne Messwert stehen am Ende.
 - **Tests:** Lautheit über zwei Stunden in linearer Zeit (`woa-dsp`), Entfernen und Sortieren (`woa-library`), geschlossenes Fenster importiert und analysiert, Entfernen und Sortieren über den Fensterzustand (`woa-gui`).
+
+## 0.34.28 — 2026-10-31
+
+Radio-Fehler aus dem Feedback (#168, #169, #166, dazu #95).
+
+- **Crossfade wieder erreichbar (#168):** Die Regler für Crossfade-Blende und Musik-Ducking waren nie entfernt, sie lagen unter dem Fensterrand. Ursache: Im Deck-Kasten nahm der Fortschrittsbalken die ganze Zeilenbreite, der Text „leer: Datei hierher ziehen“ brach daneben Zeichen für Zeichen um, jedes Deck wurde über 400 px hoch. Zusammen mit der Wunschtitel-Karte schob das Rack und Gäste aus dem Bild, und die rechte Spalte rollte nicht. Jetzt hat der Balken eine feste Breite, der Titel kürzt ab, und die rechte Spalte rollt.
+- **Pause pausiert (#169, #95):** Pause war intern ein Stopp. Der Mixer warf den Titel weg, Play lud die ganze Datei neu und sprang dann an die Stelle. Bei langen Titeln (30 min) dauerte das, und jeder Klick wartete dahinter. Jetzt blendet Pause aus und hält den Titel samt dem nächsten an der Stelle fest. Play macht sofort dort weiter, ohne Neuladen. Stopp nach Pause verwirft den Titel, Start beginnt neu.
+- **Ziehen in der Playlist (#166):** Eine Playlist-Zeile lässt sich auf Deck A, B oder C ziehen (lädt den Titel mit seinen Cue-Punkten) oder an eine andere Stelle der Playlist (verschiebt ihn). Aufs Fenster gezogene Dateien gehen nicht mehr verloren, wenn gerade ein Textfeld den Fokus hat.
+- **Tests:** `crates/radio/tests/pause.rs` (neu, scheitert mit dem alten Code), `party.rs` angepasst, Ablageziel beim Ziehen in `crates/gui/src/radio.rs`.
 
 ## 0.34.27 — 2026-10-31
 

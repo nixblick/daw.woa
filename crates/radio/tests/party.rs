@@ -464,7 +464,9 @@ fn pause_remembers_the_spot_and_play_continues_there() {
     press(&mut c, &mut s, PartyCommand::PlayPause);
     assert!(c.is_paused());
     step(&mut c, &mut m, secs(2.0));
-    assert_eq!(c.current_index(), None);
+    // Der Mixer hält den Titel fest (#169): er bleibt der aktuelle, läuft aber nicht.
+    assert_eq!(c.current_index(), Some(0));
+    assert!(!c.is_running());
     let (rest, len) = c.paused_times().unwrap();
     assert!(
         (rest - before).abs() < 0.1 && (len - 30.0).abs() < 0.1,

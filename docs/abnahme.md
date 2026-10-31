@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Bibliothek: Analyse, Hintergrund, Entfernen, Sortieren (0.34.28, offen)
+## Bibliothek: Analyse, Hintergrund, Entfernen, Sortieren (0.34.29, offen)
 
 1. Einen Ordner mit langen Titeln (30 Minuten und mehr) importieren: „analysiert: n von m“ zählt zügig hoch, nicht minutenlang auf 1.
 2. Ordner importieren und das Bibliotheks-Fenster sofort schließen. Nach einer Weile wieder öffnen: Import ist fertig, BPM/Tonart/LUFS sind gefüllt oder die Analyse läuft noch weiter.
@@ -13,6 +13,14 @@ eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt,
 5. Auf „DAUER“ klicken: längste zuerst, Pfeil am Kopf. Noch einmal: kürzeste zuerst. Auf „TITEL“: alphabetisch.
 
 Selbst geprüft von Claude: neue Tests in `crates/dsp/src/analysis/loudness.rs`, `crates/library/src/lib.rs` und `crates/gui/src/library.rs`; Tests und Clippy von dsp, library, radio und gui grün.
+## Radio: Crossfade, Pause, Ziehen (0.34.28, offen)
+
+1. Radio-Modus bei 1920 × 1080: die Decks A–C sind flach, „leer: Datei hierher ziehen“ steht in einer Zeile. Rechte Spalte nach unten rollen: „Crossfade-Blende“ und „Musik-Ducking“ sind da und wirken.
+2. Playlist starten, nach einer Minute Pause: die Musik blendet aus, die Restzeit steht. Play: es geht sofort an derselben Stelle weiter, auch bei einem 30-Minuten-Titel.
+3. Pause, dann Stopp, dann Play: die Sendung beginnt den Cue-Titel von vorn.
+4. Eine Playlist-Zeile auf Deck B ziehen: der Titel liegt auf B. Eine Zeile auf eine andere Zeile ziehen: sie steht jetzt dort. Doppelklick und Rechtsklick auf den Titel gehen wie vorher.
+
+Selbst geprüft von Claude: `crates/radio/tests/pause.rs` (rot mit dem alten Code, grün jetzt), Tests und Clippy von `woa-radio` und `woa-gui` grün. Nicht am Gerät gehört (kein Ton), Ziehen unter Windows nicht selbst geprüft.
 
 ## Entf nur für die markierte Spur (0.34.26, offen)
 
