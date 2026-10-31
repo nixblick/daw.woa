@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.67 — 2026-10-31
+
+- **Stopp ist zuerst Pause (#95):** Im Radio-Modus hält der erste Druck auf „Stopp“ am Sende-Player den Titel an der Stelle fest wie „Pause“; „Play“ macht dort weiter. Der zweite Druck stoppt wie bisher. Mit „Stopp blendet aus“ blendet schon der erste Druck über die eingestellte Ausblenddauer aus. Gilt auch für die per MIDI gelernte Stopp-Taste; Decks, Party und Handy bleiben unverändert. Hinweis beim Darüberfahren. Test: `crates/radio/tests/stop_pauses.rs` unter `assert_no_alloc`.
+
 ## 0.34.66 — 2026-10-31
 
 - **KI live ohne Token (#232):** Die App startet den Live-Server jetzt bei jedem Start selbst, auch wenn kein Zugriffstoken erzeugt wurde. Sie nutzt dann einen eigenen Schlüssel je Start (nur 127.0.0.1, Origin-Prüfung, Lock-Datei 0600, nie angezeigt). `woa-headless mcp` reicht so an das offene Fenster durch, statt daneben auf der Datei zu arbeiten. Kann der Server nicht starten, steht „KI aus“ in der Kopfleiste.
