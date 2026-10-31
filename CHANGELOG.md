@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.34.39 — 2026-10-31
+
+### Behoben
+
+- **Mitschnitt:** Verlorene Samples (Warteschlange voll) wurden gezählt, aber nie gemeldet. Die Steuerung prüft den Zähler jetzt bei jedem Takt, schreibt eine Warnung ins Log und zeigt „Mitschnitt: n ms verloren“.
+- **Sendung neu laden:** Stand dieselbe Datei mehrfach in der Playlist, bekamen alle Einträge dieselbe Laufzeit-Kennung. Jede alte Kennung wird jetzt höchstens einmal vergeben (Test mit doppeltem Pfad).
+- **Sendung neu laden:** Jede Änderung an Decks oder Carts lud alle Decks und Carts neu und unterbrach ein laufendes Deck. Jetzt werden nur die Slots neu geladen, deren Eintrag sich geändert hat.
+
 ## 0.34.38 — 2026-10-31
 
 ### Behoben

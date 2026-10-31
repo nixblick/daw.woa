@@ -167,6 +167,8 @@ pub struct Controller {
     /// Dekodierte Titel der Decks A bis C.
     decks: Vec<Option<Shared<Stereo>>>,
     recording: Option<Recording>,
+    /// Stand von `status.record_dropped` bei der letzten Meldung (Samples).
+    record_dropped_seen: u64,
     message: Option<String>,
     /// Titel, die sich nicht laden ließen (werden übersprungen).
     failed: Vec<u32>,
@@ -234,6 +236,7 @@ impl Controller {
             carts: vec![None; CARTS],
             decks: vec![None; crate::DECKS],
             recording: None,
+            record_dropped_seen: 0,
             message: None,
             failed: Vec::new(),
             last_load: None,
@@ -268,10 +271,15 @@ impl Controller {
             .iter()
             .map(|e| (e.path.clone(), e.uid))
             .collect();
+        let mut used = vec![false; old.len()];
         for e in &mut show.playlist {
-            // Laufzeit-Kennung behalten, damit der laufende Titel erkannt bleibt.
-            e.uid = match old.iter().position(|(p, _)| *p == e.path) {
-                Some(i) => old[i].1,
+            // Laufzeit-Kennung behalten, damit der laufende Titel erkannt bleibt. Jede alte
+            // Kennung höchstens einmal, sonst teilen sich doppelte Pfade eine uid.
+            e.uid = match (0..old.len()).find(|&i| !used[i] && old[i].0 == e.path) {
+                Some(i) => {
+                    used[i] = true;
+                    old[i].1
+                }
                 None => {
                     let u = self.next_uid;
                     self.next_uid += 1;
@@ -279,17 +287,18 @@ impl Controller {
                 }
             };
         }
-        let carts_changed = show.carts != self.show.carts;
-        let decks_changed = show.decks != self.show.decks;
+        // Nur geänderte Slots neu laden: ein laufendes Deck oder Cart soll weiterlaufen.
+        let old_decks = std::mem::take(&mut self.show.decks);
+        let old_carts = std::mem::take(&mut self.show.carts);
         self.show = show;
-        if decks_changed {
-            for deck in 0..crate::DECKS {
+        for deck in 0..crate::DECKS {
+            if old_decks.get(deck) != self.show.decks.get(deck) {
                 self.load_deck(deck);
             }
         }
-        if carts_changed {
-            self.carts = vec![None; CARTS];
-            for slot in 0..CARTS {
+        for slot in 0..CARTS {
+            if old_carts.get(slot) != self.show.carts.get(slot) {
+                self.carts[slot] = None;
                 self.load_cart(slot);
             }
         }
@@ -1340,6 +1349,14 @@ impl Controller {
             tracing::warn!(error = %e, "mitschnitt failed, stopped");
             self.message = Some(format!("Mitschnitt angehalten: {e}"));
             self.stop_recording();
+        }
+        let dropped = self.status.record_dropped.load(Ordering::Relaxed);
+        if dropped > self.record_dropped_seen {
+            let frames = (dropped - self.record_dropped_seen) / 2;
+            self.record_dropped_seen = dropped;
+            let ms = (frames * 1000 / u64::from(self.rate.max(1))).max(1);
+            tracing::warn!(frames, ms, "mitschnitt: samples dropped (queue full)");
+            self.message = Some(format!("Mitschnitt: {ms} ms verloren"));
         }
         if !self.running {
             return;
