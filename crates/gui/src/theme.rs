@@ -580,6 +580,23 @@ pub fn mix(c: Color32, with: Color32, t: f32) -> Color32 {
     Color32::from_rgb(m(c.r(), with.r()), m(c.g(), with.g()), m(c.b(), with.b()))
 }
 
+/// Anteil der Spurfarbe in der Fläche einer gewählten Spur (Design `SelectionSync`: 14 %).
+pub const SELECT_TINT: f32 = 0.14;
+
+/// Fläche einer gewählten Spur: Spurfarbe 14 % auf `panel`, gleich in Spurkopf, Kanalzug und
+/// Rack-Kopf.
+pub fn selection_fill(track: Color32) -> Color32 {
+    mix(panel(), track, SELECT_TINT)
+}
+
+/// Rahmen einer gewählten Spur: 1 px in Spurfarbe (nie `accent`).
+pub fn selection_stroke(track: Color32) -> Stroke {
+    Stroke::new(1.0, track)
+}
+
+/// Tooltips erscheinen nach 500 ms (Design `Tooltip`).
+pub const TOOLTIP_DELAY: f32 = 0.5;
+
 /// Hebt `c` hervor (Glanzlicht, Spitzen, Umriss): im dunklen Thema Richtung Weiß, im hellen
 /// Richtung Schwarz, damit es sich auf hellen Flächen noch abhebt.
 pub fn emphasize(c: Color32, t: f32) -> Color32 {
@@ -861,6 +878,7 @@ fn style_for(s: &mut egui::Style, p: &Palette, dark: bool) {
     v.widgets.hovered.fg_stroke = Stroke::new(1.0, strong);
     v.widgets.active.fg_stroke = Stroke::new(1.0, strong);
     v.slider_trailing_fill = true;
+    s.interaction.tooltip_delay = TOOLTIP_DELAY;
 
     s.spacing.item_spacing = vec2(SPACE_3, 6.0);
     s.spacing.button_padding = vec2(10.0, 5.0);

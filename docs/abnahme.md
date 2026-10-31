@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Einstellungen: Stream-Server (0.34.27, offen)
+## Einstellungen: Stream-Server (0.34.28, offen)
 
 1. Einstellungen → „Sendung: Stream-Server und Kennwort …“. Das Fenster zeigt Servertyp, Server, Port, Kennwort, Sendername und Format.
 2. Servertyp „Icecast 2“ wählen: Mountpoint und Benutzer erscheinen. Auf „Shoutcast v2“: Stream-ID. Auf „Shoutcast v1“: keins von beiden.
@@ -12,7 +12,7 @@ eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt,
 4. Kennwort eintippen: Punkte, „Anzeigen“ zeigt es, „Verbergen“ maskiert wieder. „Speichern“, Fenster wieder öffnen: Feld leer mit dem Hinweis „gespeichert“; „Anzeigen“ holt es zurück. `grep -ri <kennwort> ~/.config/woa/` findet nichts.
 5. „Verbindung testen“ mit eigenem Server: grüne Meldung „Verbunden“. Mit falschem Kennwort: Meldung, dass das Kennwort nicht stimmt. Mit falschem Port: Meldung „Keine Verbindung … Firewall“. Servertyp Icecast gegen einen Shoutcast-Port: Meldung, dass der Server nicht wie Icecast antwortet.
 6. Auf Sendung gehen: Der Test-Knopf ist grau, die Sendung läuft mit den neuen Angaben (bei laufender Sendung gelten sie erst ab der nächsten).
-7. Alte Konfiguration: eine `config.json` von vor 0.34.27 mit `"port": 8001` und `password_file` starten. Im Fenster steht Port 8000 (Hinweis: „meldet sich auf 8001 an“), das Kennwort ist gespeichert; `config.json` hat `"schema": 2`.
+7. Alte Konfiguration: eine `config.json` von vor 0.34.28 mit `"port": 8001` und `password_file` starten. Im Fenster steht Port 8000 (Hinweis: „meldet sich auf 8001 an“), das Kennwort ist gespeichert; `config.json` hat `"schema": 2`.
 8. Windows: Eintrag „woa / stream-source“ in der Anmeldeinformationsverwaltung. Linux ohne Secret Service: Datei `stream-source.pass` im Datenordner, `ls -l` zeigt `-rw-------`.
 
 Selbst geprüft von Claude: Tests und Clippy von woa-stream, woa-gui, woa-headless grün, darunter Umrechnen alter Konfigurationen, Kennwort-Ablage (Schlüsselbund und Ersatzdatei mit Modus 0600), Verbindungstest gegen Test-Server und Zeichnen des Fensters für alle drei Servertypen. Nicht selbst geprüft: echter Schlüsselbund unter Windows und echter Shoutcast-/Icecast-Server mit dem Fenster (hier nur Test-Server), das geöffnete Fenster im Screenshot.
@@ -869,6 +869,28 @@ Selbst geprüft von Claude: Tests in `crates/gui/tests/design_regressions.rs` (f
 7. Ohne gewählten Clip steht nur „kein Clip gewählt“; der Tooltip zeigt die Tastenkürzel.
 
 Selbst geprüft von Claude: neun Tests in `crates/gui/tests/design_regressions.rs`, Tests und Clippy von `woa-gui` grün.
+
+## Design System Fassung 2 (0.34.27, offen)
+
+Umsetzung des Pakets vom 31.10.2026 (`docs/design/woa-design-system/`, Abschnitt „Bearbeiten und Auswahl“). Kein Ton nötig.
+
+1. Zwei Spuren anlegen, einen Spurkopf anklicken: Spurkopf, Kanalzug im Mixer und Kopf des Insert-Racks sind gleich gefärbt (14 % Spurfarbe, 1 px Rand), die Zeitleiste der Spur leicht getönt.
+2. Spurkopf ist 64 px hoch: oben Aufnahmepunkt, Name, MIDI-Kennung, M, S, Papierkorb; unten Quelle (Mithören steckt im Aufklappmenü), Gain, Pan.
+3. Papierkorb im Spurkopf: die Spur ist weg, unten erscheint „Spur „X“ gelöscht · Rückgängig (Strg+Z)“. Strg+Z oder der Link holt sie mit Sends zurück; nach 8 s oder mit Esc verschwindet der Hinweis.
+4. Rack: Kopf mit Name, Art und ⋯-Menü (darin „Spur löschen“, rot, zuletzt), dann EINGANG (Quelle, Trim), INSERTS · n, SENDS (nur wenn vorhanden), AUSGANG, Pan. Ein Effekt-Slot: Power-Knopf = Bypass, Klick auf den Namen klappt die Regler auf. „+ Effekt“ hat ein Suchfeld.
+5. Ohne Spur zeigt das Rack „Keine Spur“ und „+ Audio-Spur“ / „+ MIDI-Spur“. Im Mixer steht rechts „+ Bus“ als gestrichelter Platz; ein Klick legt „Bus n“ an.
+6. Kanalzug: „fx n“ unter M/S, rot mit Warnsymbol, wenn ein Plugin fehlt oder abgestürzt ist.
+7. Clip-Inspektor: ohne Clip „Kein Clip gewählt“. Audio-Clip: Kennung, FADE, GAIN, ZEIT (Start/Länge als Takt.Schlag.Sechzehntel, Dehnung, Tonhöhe), rechts Teilen, Duplizieren, Kopieren, Löschen. MIDI-Clip: NOTEN (Raster, Q, Velocity), FADE, ZEIT, Piano-Roll. Mehrere Clips (Umschalt+Klick): „n Clips“, ungleiche Werte als „—“; Eintippen setzt alle, Strg+Z nimmt es in einem Schritt zurück.
+
+Abhakliste (vorher → nachher, nichts entfallen): Spurkopf-Papierkorb, M, S, Rec, MIDI-Learn, Gain, Pan, Quelle, „hören“ (→ Mithören im Quellmenü), Umbenennen, MIDI-Clip/Import im Spurmenü; Rack: „Spur löschen“ (→ ⋯-Menü), Insert-Regler, Preset, Sidechain, Absenkung, Bypass, Entfernen, Sprachkette, „+ Plugin“, Plugin-Fenster, Neu laden, Sperren, Log, Sends PRE/POST/×, Ausgang; Mixer: Busname-Feld (→ „+ Bus“ legt „Bus n“ an, Umbenennen im Menü); Inspektor: Fades mit Kurve, Gain, Normalisieren, Dehnung, Tonhöhe, Metronom, Teilen, Duplizieren, Kopieren, Löschen, Piano-Roll.
+
+Nicht gebaut, weil die Engine es nicht kann (keine Attrappen): Effekte per Ziehen umsortieren, Clip Umkehren, Loop, Stumm, Zusammenfügen, Zustand „Plugin lädt …“, Stereo-Pegel (Pegel ist mono).
+
+Abweichungen vom Design: Papierkorb im Spurkopf immer sichtbar (nicht nur bei Hover) und „+ Plugin“ getrennt von „+ Effekt“, beides wegen bestehender Regressionstests. „Trim“ ist derselbe Wert wie Spur-Gain und Fader.
+
+Offen für André: Pan doppelt (Spurkopf und Rack; `HEADER_PAN = false` in `crates/gui/src/app.rs` nimmt ihn aus dem Spurkopf) und Name Gain/Trim.
+
+Selbst geprüft von Claude: fünf neue Tests in `crates/gui/tests/design_system_2.rs`, alle Tests und Clippy von `woa-gui` grün.
 
 ## Abgenommen
 

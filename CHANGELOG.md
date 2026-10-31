@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.27 — 2026-10-31
+## 0.34.28 — 2026-10-31
 
 Einstellungen: Stream-Server (#121). Unter Einstellungen gibt es jetzt „Sendung: Stream-Server und Kennwort …“, damit man ohne Dateien von Hand den Server und das Kennwort einträgt.
 
@@ -10,6 +10,20 @@ Einstellungen: Stream-Server (#121). Unter Einstellungen gibt es jetzt „Sendun
 - **Port:** In `config.json` steht jetzt der Port des Servers (wie im Server eingestellt); Shoutcast meldet die Quelle auf `port + 1` an. Alte Dateien werden beim Laden einmal umgerechnet (`schema` 2; 8001 wird 8000). Eine bisher eingetragene Kennwortdatei wird beim Start in den Schlüsselbund übernommen und ausgetragen; die Datei selbst bleibt liegen.
 - Die Vorgabe `password_file` ist leer. woa-streamd liest das Kennwort aus dem Schlüsselbund; die Kommandozeile (`stream-test`, `broadcast-test`, `--pass-file`) funktioniert wie bisher mit dem Quell-Port.
 - Tests: Laden und Umrechnen alter Konfigurationen, Zerlegen von Server-Eingaben und Adress-Bau (IPv6), Prüfung typischer Tippfehler, Kennwort-Ablage (Schlüsselbund, Ersatzdatei mit 0600, alte Datei einmal übernehmen), Verbindungstest gegen Test-Server (Shoutcast ok / falsches Kennwort / Webserver, Icecast ok / 401 / belegt / kein HTTP, nicht erreichbar), Fenster zeichnet für jeden Servertyp.
+
+## 0.34.27 — 2026-10-31
+
+Design System Fassung 2 (Claude Design schließt die Lücken aus `docs/design/luecken.md`).
+
+- **Doku:** Neues Paket unter `docs/design/woa-design-system/` und als ZIP, Herkunft und Phosphor-Lizenz in `docs/herkunft.md`, alle Lücken in `docs/design/luecken.md` als geschlossen markiert.
+- **Auswahl:** eine Farbe an drei Stellen (Spurkopf, Kanalzug, Rack-Kopf: 14 % Spurfarbe, 1 px Rand), Zeitleiste der gewählten Spur 6 % getönt.
+- **Spurkopf:** 64 statt 92 px, zwei Zeilen; Mithören steckt im Quellmenü. Pan steht vorerst auch hier (`HEADER_PAN`).
+- **Spur löschen:** Hinweis „Spur „X“ gelöscht · Rückgängig (Strg+Z)“ für 8 s; Strg+Z holt die Spur samt Routing zurück. Im Rack wandert „Spur löschen“ ins ⋯-Menü (rot, zuletzt).
+- **Insert-Rack:** Kopf mit Art und Menü, Leer-Zustand ohne Spur, Gruppen EINGANG (Quelle, Trim) · INSERTS · SENDS · AUSGANG, Effekt-Slots mit Power-Bypass und aufklappbaren Reglern, „+ Effekt“ mit Suche.
+- **Mixer:** „fx n“ am Kanalzug (rot bei fehlendem oder abgestürztem Plugin), „+ Bus“ als Platzhalter statt Namensfeld.
+- **Clip-Inspektor:** 44 px, Zustände leer, Audio, MIDI (Raster, Quantisieren, Velocity) und „n Clips“ mit „—“ für ungleiche Werte; Start und Länge als Takt.Schlag.Sechzehntel. Tooltips nach 0,5 s.
+- **Nicht gebaut** (Engine kann es nicht): Effekte umsortieren, Umkehren, Loop, Stumm, Zusammenfügen, „lädt …“, Stereo-Pegel.
+- **Tests:** `crates/gui/tests/design_system_2.rs` (Rückgängig-Hinweis, Auswahlfarbe, Inspektor-Zustände, Rack-Leer-Zustände).
 
 ## 0.34.26 — 2026-10-31
 
