@@ -4,6 +4,15 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Entf nur für die markierte Spur (0.34.26, offen)
+
+1. Projekt mit drei Spuren öffnen, nichts anklicken: keine Spur ist farbig hervorgehoben, Entf tut nichts.
+2. Spurkopf anklicken: die Spur leuchtet in ihrer Farbe. Dann in die leere Zeitleiste klicken: die Hervorhebung ist weg, Entf tut nichts.
+3. Spur markieren, Rechtsklick (Menü offen) oder „Spur umbenennen“ oder „Feedback“ öffnen, Entf drücken: die Spur bleibt.
+4. Clip anklicken, Entf: nur der Clip ist weg. Spurkopf anklicken, Entf: die Spur ist weg.
+
+Selbst geprüft von Claude: fünf neue Tests in `crates/gui/tests/design_regressions.rs`, Tests und Clippy von `woa-gui` grün.
+
 ## Protokoll-Fenster und beschädigte Dateien (0.34.25, offen)
 
 1. Hilfe → „Protokoll …“ öffnen: Fenster mit Zeilen der Sitzung (Zeit, Symbol, Text). Die Knöpfe Info/Warnungen/Fehler blenden Stufen aus und ein.

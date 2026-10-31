@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.34.26 — 2026-10-31
+
+Entf löscht eine Spur nur, wenn sie sichtbar markiert ist (André 31.10.: „Entf darf nur aktiv sein wenn es sinnvoll was zu löschen gibt“).
+
+- **Ein Zustand:** Hervorhebung in Spurkopf und Kanalzug und das Ziel für Entf sind jetzt dieselbe markierte Spur. Bisher blieb eine Spur nach einem Klick auf einen Clip oder die Zeitleiste farbig hervorgehoben, ohne Ziel für Entf zu sein, und ohne Auswahl war die erste Spur hervorgehoben. Jetzt ist nach einem solchen Klick keine Spur mehr hervorgehoben, und ohne Auswahl ist keine markiert (das Insert-Rack zeigt weiter die erste Spur).
+- **Entf ruht**, solange ein Menü, Popup, der Feedback-, Export- oder Über-WOA-Dialog offen ist oder ein Textfeld den Fokus hat.
+- **Tests:** fünf neue Fälle in `crates/gui/tests/design_regressions.rs`.
+
 ## 0.34.25 — 2026-10-31
 
 Protokoll-Fenster: Meldungen wie „MP3 beschädigt“ sind lokal sichtbar, nicht in der Telemetrie (André 31.10.: „lokal darf sie solche meldungen ruhig anzeigen“).
