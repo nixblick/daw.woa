@@ -9,7 +9,7 @@
 
 ### Tests
 
-- Test für den Lock-Weiterleiter liest die Anfrage vollständig, bevor er antwortet (unter Windows sonst Verbindungsabbruch statt Antwort).
+- Test für den Lock-Weiterleiter liest die Anfrage vollständig, bevor er antwortet (unter Windows sonst Verbindungsabbruch statt Antwort). Formatierung.
 
 ## 0.34.49 — 2026-10-31
 

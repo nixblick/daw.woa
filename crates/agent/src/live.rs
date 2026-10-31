@@ -674,7 +674,8 @@ mod tests {
                     Ok(n) => got.extend_from_slice(&buf[..n]),
                 }
             }
-            let _ = c.write_all(b"HTTP/1.1 500 x\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
+            let _ =
+                c.write_all(b"HTTP/1.1 500 x\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
             let _ = c.flush();
             String::from_utf8_lossy(&got).into_owned()
         });
