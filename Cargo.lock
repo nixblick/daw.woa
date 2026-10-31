@@ -7251,7 +7251,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "woa"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "eframe",
  "tracing",
@@ -7264,7 +7264,7 @@ dependencies = [
 
 [[package]]
 name = "woa-agent"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "bytes",
  "getrandom 0.3.4",
@@ -7292,7 +7292,7 @@ dependencies = [
 
 [[package]]
 name = "woa-assistant"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "getrandom 0.3.4",
  "serde",
@@ -7305,7 +7305,7 @@ dependencies = [
 
 [[package]]
 name = "woa-dsp"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "assert_no_alloc",
  "hound",
@@ -7318,7 +7318,7 @@ dependencies = [
 
 [[package]]
 name = "woa-engine"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "arc-swap",
  "assert_no_alloc",
@@ -7342,7 +7342,7 @@ dependencies = [
 
 [[package]]
 name = "woa-guests"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "assert_no_alloc",
  "getrandom 0.4.3",
@@ -7359,7 +7359,7 @@ dependencies = [
 
 [[package]]
 name = "woa-gui"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "assert_no_alloc",
  "eframe",
@@ -7394,7 +7394,7 @@ dependencies = [
 
 [[package]]
 name = "woa-headless"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -7416,7 +7416,7 @@ dependencies = [
 
 [[package]]
 name = "woa-io"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "assert_no_alloc",
  "hound",
@@ -7435,7 +7435,7 @@ dependencies = [
 
 [[package]]
 name = "woa-library"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "hound",
  "lofty",
@@ -7451,7 +7451,7 @@ dependencies = [
 
 [[package]]
 name = "woa-model"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "base64",
  "insta",
@@ -7464,7 +7464,7 @@ dependencies = [
 
 [[package]]
 name = "woa-plugins"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "assert_no_alloc",
  "clack-extensions",
@@ -7484,7 +7484,7 @@ dependencies = [
 
 [[package]]
 name = "woa-radio"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "assert_no_alloc",
  "basedrop",
@@ -7504,7 +7504,7 @@ dependencies = [
 
 [[package]]
 name = "woa-remote"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "getrandom 0.4.3",
  "httparse",
@@ -7518,7 +7518,7 @@ dependencies = [
 
 [[package]]
 name = "woa-secrets"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "keyring",
  "tempfile",
@@ -7527,7 +7527,7 @@ dependencies = [
 
 [[package]]
 name = "woa-stream"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "hound",
  "mp3lame-encoder",
@@ -7543,7 +7543,7 @@ dependencies = [
 
 [[package]]
 name = "woa-streamd"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "tracing",
  "woa-radio",
@@ -7553,7 +7553,7 @@ dependencies = [
 
 [[package]]
 name = "woa-telemetry"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "base64",
  "log",
@@ -7570,7 +7570,7 @@ dependencies = [
 
 [[package]]
 name = "woa-updater"
-version = "0.34.62"
+version = "0.34.63"
 dependencies = [
  "minisign-verify",
  "serde",
