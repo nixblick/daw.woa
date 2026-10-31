@@ -1,14 +1,17 @@
 # Changelog
 
-## 0.34.60 — 2026-10-31
+## 0.34.61 — 2026-10-31
 
-<<<<<<< HEAD
 ### Geändert
 
 - **KI einfach einrichten (#217):** „Einstellungen → KI …“ öffnet vorn die Seite „KI einrichten“ mit einem Dropdown „Anbieter“: Claude Desktop / Claude Code (MCP), Anthropic API (eigener Schlüssel), Ollama lokal, OpenAI, OpenRouter, LM Studio; „Claude-Abo direkt im Chat“ steht ausgegraut als „kommt später“. Darunter nur die Felder, die der Anbieter braucht: Client, oder Modell (mit „Modelle holen“), Schlüssel und Adresse. Für MCP gibt es „JSON kopieren“ bzw. „Befehl kopieren“ mit drei Sätzen Anleitung, der Rohtext ist eingeklappt; das offene Projekt steht schon drin. Die Wahl im Dropdown wird sofort gespeichert. Die bisherigen Reiter stehen unter „Erweitert“.
 - **KI-Chat im Studio-Dock:** Der Produzent hat neben Studio-Mixer, Piano-Roll und Automation den Reiter „KI-Chat“ mit dem gewählten Anbieter. Ohne eingerichtete KI steht dort ein Satz und der Link „Einstellungen → KI öffnen“; bei Claude Desktop/Code ein Hinweis, dass man dort spricht. Ändern sich Einstellungen oder Projekt, beginnt das Gespräch neu.
 - **Schlüsselbund nicht mehr im UI-Thread:** Ob ein Schlüssel liegt, Speichern, Modelle holen und der Start des Chats lesen den Schlüsselbund im Hintergrund. Der Schlüssel erscheint weder im Fenster noch im Protokoll (Tests mit Fake-Speicher, ohne echte KI).
-=======
+
+## 0.34.60 — 2026-10-31
+
+### Behoben
+
 - **Leere Kästchen statt Pfeilen (#218):** Hoch/Runter in „Verwalten“ sind jetzt Phosphor-Symbole statt „↑/↓“, die in Barlow fehlten. JetBrains Mono (liegt schon bei) dient als Rückfallschrift für Pfeile wie „→“ und „↩“ in allen Textfamilien. Vollbreiten-Zeichen in Titeln („｜“, „（“) werden in „Verwalten“ schmal angezeigt. Test: jedes Nicht-ASCII-Zeichen im GUI-Quelltext hat eine Glyphe.
 - **Spurkopf ragte in die Zeitleiste (#212):** Die Eingangswahl bekommt nur noch den Platz neben Gain und Pan und kürzt lange Gerätenamen; was trotzdem zu breit ist, wird am Spurkopf abgeschnitten. Test: der Spurkopf endet vor Takt 1, auch mit langem Gerätenamen.
 
