@@ -271,6 +271,10 @@ pub struct WoaApp {
     /// Fenster „Ausgänge“ (Gerät und Kanalpaar je Quelle).
     outputs_ui: crate::outputs_ui::OutputsUi,
     stream_ui: crate::stream_ui::StreamUi,
+    /// Fenster „KI & MCP“ und der MCP-Server im Hintergrund.
+    ki_ui: crate::ki_ui::KiUi,
+    /// Der MCP-Server im Hintergrund ist nach der Konfiguration angelaufen.
+    ki_started: bool,
     /// Fenster „Telefon“ (Eingang für den Anrufer).
     phone_ui: crate::phone::PhoneUi,
 }
@@ -491,6 +495,8 @@ impl WoaApp {
             gr_shown: std::collections::HashMap::new(),
             outputs_ui: crate::outputs_ui::OutputsUi::default(),
             stream_ui: crate::stream_ui::StreamUi::default(),
+            ki_ui: crate::ki_ui::KiUi::default(),
+            ki_started: false,
             phone_ui: crate::phone::PhoneUi::default(),
             midi,
             midi_seen: (0, None),
@@ -697,6 +703,31 @@ impl WoaApp {
                 }
             }
         }
+        self.save_config();
+    }
+
+    /// Fenster „KI & MCP“. Beim ersten Bild startet auch der MCP-Server im Hintergrund,
+    /// falls er eingeschaltet ist.
+    fn ki_window(&mut self, ctx: &egui::Context) {
+        if !self.ki_started {
+            self.ki_started = true;
+            self.ki_ui.apply(&self.config.ki, &self.data_dir);
+        }
+        let project = self
+            .state
+            .session()
+            .path()
+            .map(std::path::Path::to_path_buf);
+        let Some(applied) = self.ki_ui.show(ctx, &self.data_dir, project.as_deref()) else {
+            return;
+        };
+        tracing::info!(
+            enabled = applied.mcp_server.enabled,
+            port = applied.mcp_server.port,
+            "ki settings applied"
+        );
+        self.config.ki = applied;
+        self.ki_ui.apply(&self.config.ki, &self.data_dir);
         self.save_config();
     }
 
@@ -2529,6 +2560,16 @@ impl WoaApp {
                 .clicked()
             {
                 self.stream_ui.open(&self.config.stream, &self.data_dir);
+                ui.close();
+            }
+            if ui
+                .button("KI & MCP …")
+                .on_hover_text(
+                    "WOA als MCP-Server für Claude Desktop, Claude Code und andere Clients",
+                )
+                .clicked()
+            {
+                self.ki_ui.open(&self.config.ki, &self.data_dir);
                 ui.close();
             }
             if ui.button("Telefon (Eingang für den Anrufer) …").clicked() {
@@ -5821,6 +5862,7 @@ impl eframe::App for WoaApp {
             self.outputs_window(&ctx);
             self.phone_window(&ctx);
             self.stream_window(&ctx);
+            self.ki_window(&ctx);
             self.telemetry_window(&ctx);
             self.about_window(&ctx);
             return;
@@ -5896,6 +5938,7 @@ impl eframe::App for WoaApp {
         self.outputs_window(&ctx);
         self.phone_window(&ctx);
         self.stream_window(&ctx);
+        self.ki_window(&ctx);
         self.telemetry_window(&ctx);
         self.about_window(&ctx);
     }

@@ -15,6 +15,20 @@ claude mcp list
 Mit `--scope project` landet der Eintrag in `.mcp.json` des aktuellen Repos, sonst nur lokal.
 Claude Desktop: derselbe Befehl als `command`/`args` in `claude_desktop_config.json`.
 
+## Über HTTP (ohne dass der Client einen Prozess startet)
+
+Für Clients, die keinen Prozess starten können oder sollen: `woa-headless mcp <projekt> --http`.
+Antwortet auf `http://127.0.0.1:8765/mcp` (Streamable HTTP). Das Zugriffstoken liest der Prozess
+aus dem Schlüsselbund (Eintrag `woa / mcp-token`) oder aus der Umgebung `WOA_MCP_TOKEN`; jede
+Anfrage braucht `Authorization: Bearer <Token>`. Optionen: `--port N`, `--bind ADRESSE` (Vorgabe
+`127.0.0.1`; `0.0.0.0` öffnet den Server für das Netz, nur in einem vertrauten Netz).
+
+Bequemer geht es in WOA unter **Einstellungen → KI & MCP**: Token erzeugen, Server im Hintergrund
+an- und ausschalten, fertige Einträge für Claude Code, Claude Desktop und andere Clients kopieren.
+
+Alle Sitzungen eines Servers teilen sich ein Projekt. Der Server arbeitet auf der Projektdatei im
+Ordner, nicht auf dem offenen Fenster von WOA; gleichzeitiges Speichern in beiden überschreibt sich.
+
 ## Werkzeuge
 
 | Tool | Parameter | Wirkung |
