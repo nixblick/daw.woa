@@ -4,6 +4,10 @@
 
 - **Fenstertitel (#243):** Heißt das Projekt noch „Neues Projekt“ oder hat es keinen Namen, zeigt der Titel nach dem Speichern oder Öffnen den Dateinamen des Projekts (ohne `.woa`). Ein selbst vergebener Name bleibt wie bisher.
 
+## 0.34.73 — 2026-10-31
+
+- **BOM vor der ersten Zeile (#243):** Die stdio-Weiterleitung an die offene App (`woa-headless mcp` bei laufender App) verwirft ein führendes UTF-8-BOM, wie es etwa der StreamWriter von .NET schreibt; vorher ging `initialize` still verloren. Der Headless-stdio-Modus ohne App vertrug es schon, ein Test hält das jetzt fest (`crates/agent/tests/mcp.rs`).
+
 ## 0.34.72 — 2026-10-31
 
 - **QR-Code zum Spenden (#231):** Im Fenster „Über WOA“ steht unter den Knöpfen PayPal und Ko-fi ein QR-Code, der den PayPal-Link kodiert; mit dem Handy scannen genügt. Lokal erzeugt mit demselben Baustein wie der Code der Fernbedienung, ohne neue Abhängigkeit.
