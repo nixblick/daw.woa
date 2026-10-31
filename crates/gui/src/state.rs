@@ -1005,6 +1005,14 @@ impl AppState {
         ok.then_some(id)
     }
 
+    /// Runs `f` as one undo step named `label` (Mehrfachauswahl im Clip-Inspektor).
+    pub fn grouped(&mut self, label: &str, f: impl FnOnce(&mut Self)) {
+        self.session.begin_group(label);
+        f(self);
+        let closed = self.session.end_group();
+        self.report(label, closed);
+    }
+
     /// Removes several clips as one undo step.
     pub fn remove_clips(&mut self, clips: &[ClipId]) -> bool {
         self.session.begin_group("Clips löschen");
