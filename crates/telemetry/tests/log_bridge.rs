@@ -7,8 +7,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::Value;
+use tracing_subscriber::Layer;
 use tracing_subscriber::layer::SubscriberExt;
-use woa_telemetry::{LOG_BURST, UploadConfig, Uploader, noise_filter};
+use woa_telemetry::{LOCAL_TARGET, LOG_BURST, UploadConfig, Uploader, noise_filter, upload_filter};
 
 fn mock() -> (String, Arc<Mutex<Vec<Value>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -58,13 +59,16 @@ fn log_crate_messages_carry_the_crate_are_throttled_and_mp3_noise_is_silenced() 
     tracing_log::LogTracer::init().unwrap();
     let subscriber = tracing_subscriber::registry()
         .with(noise_filter())
-        .with(up.layer());
+        .with(up.layer().with_filter(upload_filter()));
     tracing::subscriber::with_default(subscriber, || {
         for i in 0..1084 {
             log::warn!(target: "symphonia_bundle_mp3::layer3", "mpa: invalid main_data_begin, underflow by {i} bytes");
             log::warn!(target: "symphonia_bundle_mp3::demuxer", "skipping junk at {i} bytes in C:\\Users\\nutzer\\Musik\\geheim.mp3");
         }
         log::error!(target: "symphonia_core::formats::probe", "reached probe limit of 1048576 bytes");
+        // Klartextzeilen fürs lokale Protokoll: mit Pfad, nie im Upload.
+        tracing::warn!(target: LOCAL_TARGET, datei = "C:\\Users\\nutzer\\Musik\\geheim.mp3", "Datei „geheim.mp3“ ist beschädigt (1084 fehlerhafte Stellen)");
+        tracing::error!(target: LOCAL_TARGET, datei = "C:\\Users\\nutzer\\geheim2.mp3", "Datei „geheim2.mp3“ ist nicht lesbar");
     });
     assert!(up.flush());
     let bodies = bodies.lock().unwrap();
@@ -84,6 +88,10 @@ fn log_crate_messages_carry_the_crate_are_throttled_and_mp3_noise_is_silenced() 
         "{raw}"
     );
     assert!(!mods.contains(&"log"), "{raw}");
+    assert!(
+        !mods.contains(&LOCAL_TARGET) && !raw.contains("lokal"),
+        "{raw}"
+    );
     let err: Vec<_> = ev.iter().filter(|e| e["stufe"] == "error").collect();
     assert_eq!(err.len(), 1);
     assert_eq!(err[0]["modul"], "symphonia_core");

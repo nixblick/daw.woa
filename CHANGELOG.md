@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.34.25 — 2026-10-31
+
+Protokoll-Fenster: Meldungen wie „MP3 beschädigt“ sind lokal sichtbar, nicht in der Telemetrie (André 31.10.: „lokal darf sie solche meldungen ruhig anzeigen“).
+
+- **Hilfe → Protokoll …:** Fenster mit Info, Warnungen und Fehlern der laufenden Sitzung, je Zeile Zeit, Klartext und, wo vorhanden, Dateiname (im Tooltip). Filter je Stufe, Knöpfe „Kopieren“ und „Logordner öffnen“. Gespeist aus einem Ringpuffer im Speicher (höchstens 2000 Zeilen); gleiche Meldungen werden eine Zeile mit Zähler („×1084“).
+- **Beschädigte Dateien:** Beim Lesen zählt WOA je Datei die fehlerhaften Stellen (Frame-Warnungen des MP3-Dekoders und verworfene Pakete). Statt tausender Rohwarnungen steht im Protokoll eine Zeile: „Datei „X.mp3“ ist beschädigt (n fehlerhafte Stellen), spielt aber. Tipp: neu exportieren.“ bzw. „… ist nicht lesbar (Grund)“.
+- **Warnsymbol:** In Playlist und Bibliothek bekommt ein solcher Titel ein kleines Warnsymbol mit Tooltip. Kein Pop-up, das eine Sendung stört.
+- **Nur lokal:** Diese Zeilen tragen das Ziel `woa_lokal` und gehen nie in den Upload (eigener Filter der Upload-Senke). Die Telemetrie bleibt bei Code, Stufe und Zahl, gedrosselt auf 20 je Minute.
+- Tests: Ringpuffer (Zusammenfassen, Obergrenze), Fehlerzähler je Thread, beschädigte und unlesbare MP3 aus dem Tempordner (kein Ton), Brückentest ohne Dateinamen auf der Leitung.
+
 ## 0.34.24 — 2026-10-31
 
 Sicherheit #136: Updater Stufe B vorbereitet, es fehlt nur noch der Schlüssel.
