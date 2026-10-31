@@ -2,7 +2,7 @@
 
 ## 0.34.67 — 2026-10-31
 
-- **Ducking auch bei Carts (#149):** Spielt ein Cart, wird die Musik in den Playern auf die eingestellte Ducking-Tiefe abgesenkt und bleibt hörbar; nach dem Cart fährt sie sofort (80 ms Glättung) zurück. Abschaltbar mit dem Häkchen „auch bei Carts“ neben dem Ducking-Regler, Vorgabe an, gespeichert in `radio.json`.
+- **Ducking auch bei Carts (#149):** Spielt ein Cart, wird die Musik in den Playern auf die eingestellte Ducking-Tiefe abgesenkt und bleibt hörbar; nach dem Cart fährt sie sofort (80 ms Glättung) zurück. Abschaltbar mit dem Häkchen „auch bei Carts“ neben dem Ducking-Regler, Vorgabe an, gespeichert in `radio.json` (Feld `cart_duck`).
 
 ## 0.34.66 — 2026-10-31
 
