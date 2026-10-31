@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.79 — 2026-11-01
+
+- **Controller-Test misst das Cart-Ducking mit (#254):** `port::virtual_controller_drives_mixer_and_carts` in `crates/gui/tests/controller.rs` war lokal rot und in der CI nur scheinbar grün. Ursache: Der Test stammt aus 0.9.0 und erwartete beim Cart die volle Musik plus Cart. Seit #149 senkt ein Cart die Musik ab (Standard −12 dB), der gemessene Pegel (0,57) blieb unter der alten Schwelle. In der CI fehlt der ALSA-Sequencer, dort überspringt sich der Test selbst. Der Test lässt die Absenkung jetzt ausschwingen und prüft beides: Cart hörbar über der abgesenkten Musik, und die Musik unter dem Cart tatsächlich abgesenkt. Das Ducking bleibt unverändert.
+
 ## 0.34.78 — 2026-11-01
 
 - **Regler für die Ausgänge (#96):** Neben den Pegelreglern stehen zwei weitere senkrechte Fader im selben Stil, „Notebook“ (Wiedergabe Notebook, der Abhörausgang) und „Stream“ (Stream senden an woa-streamd), darunter je ein roter Stumm-Knopf „M“. Der Gain je Ausgang wird im Audio-Thread geglättet, lockfrei und ohne Allokation; der Mitschnitt bekommt weiter die volle Sendung. Die Einstellung steht in `radio.json` (`out_monitor`, `out_stream`); alte Dateien laden mit 0 dB, nicht stumm. Tests: `output_faders_scale_monitor_and_stream_separately` und `output_levels_default_to_full_and_round_trip` in `crates/radio/tests/rt.rs`, `output_faders_have_level_and_mute` in `crates/gui/src/radio.rs`.
