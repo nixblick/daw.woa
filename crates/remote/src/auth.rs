@@ -42,8 +42,16 @@ pub struct Limits {
     pub wish_interval: Duration,
     /// Befehle je Sekunde und Sitzung.
     pub commands_per_second: u32,
-    /// So viele Sitzungen bleiben gespeichert; die ältesten fliegen raus.
+    /// So viele Gast-Sitzungen bleiben gespeichert; die ältesten Gäste fliegen raus.
     pub max_sessions: usize,
+    /// So viele DJ-Sitzungen bleiben gespeichert; nur ältere DJ-Sitzungen fliegen dafür raus.
+    pub max_dj_sessions: usize,
+    /// So viele Sitzungen darf eine Adresse je Rolle haben; ältere derselben Adresse fliegen raus.
+    pub max_sessions_per_ip: usize,
+    /// Falsche PINs über alle Adressen zusammen, bis die DJ-PIN erneuert wird.
+    pub global_failures: u32,
+    /// Zählfenster dafür.
+    pub global_window: Duration,
 }
 
 impl Default for Limits {
@@ -55,6 +63,10 @@ impl Default for Limits {
             wish_interval: Duration::from_secs(10),
             commands_per_second: 10,
             max_sessions: 256,
+            max_dj_sessions: 32,
+            max_sessions_per_ip: 16,
+            global_failures: 50,
+            global_window: Duration::from_secs(600),
         }
     }
 }
@@ -68,6 +80,19 @@ pub fn random_pin() -> Option<String> {
         // Größtes Vielfaches von 1_000_000 unterhalb von 2^32, sonst wäre 0 etwas häufiger.
         if v < 4_294_000_000 {
             return Some(format!("{:06}", v % 1_000_000));
+        }
+    }
+}
+
+/// Achtstellige PIN für den DJ (ohne Verzerrung): 100-mal so schwer zu erraten wie die Gast-PIN.
+pub fn random_dj_pin() -> Option<String> {
+    loop {
+        let mut b = [0u8; 8];
+        getrandom::fill(&mut b).ok()?;
+        let v = u64::from_le_bytes(b);
+        // Größtes Vielfaches von 10^8 unterhalb von 2^64.
+        if v < 18_446_744_073_700_000_000 {
+            return Some(format!("{:08}", v % 100_000_000));
         }
     }
 }
@@ -120,6 +145,7 @@ impl Bucket {
 #[derive(Debug)]
 struct Session {
     role: Role,
+    ip: IpAddr,
     bucket: Bucket,
     created: Instant,
 }
@@ -131,6 +157,8 @@ pub struct Auth {
     dj_pin: String,
     sessions: HashMap<String, Session>,
     fails: HashMap<IpAddr, (u32, Instant)>,
+    /// Falsche PINs aller Adressen im laufenden Zählfenster.
+    global_fails: (u32, Instant),
     wishes: HashMap<IpAddr, Instant>,
     limits: Limits,
 }
@@ -151,9 +179,10 @@ impl Auth {
     pub fn new(limits: Limits) -> Option<Self> {
         Some(Self {
             guest_pin: random_pin()?,
-            dj_pin: random_pin()?,
+            dj_pin: random_dj_pin()?,
             sessions: HashMap::new(),
             fails: HashMap::new(),
+            global_fails: (0, Instant::now()),
             wishes: HashMap::new(),
             limits,
         })
@@ -166,6 +195,7 @@ impl Auth {
             dj_pin: dj.into(),
             sessions: HashMap::new(),
             fails: HashMap::new(),
+            global_fails: (0, Instant::now()),
             wishes: HashMap::new(),
             limits,
         }
@@ -185,12 +215,14 @@ impl Auth {
 
     /// Neue PINs; alle alten Sitzungen sind damit ungültig.
     pub fn renew(&mut self) -> bool {
-        let (Some(g), Some(d)) = (random_pin(), random_pin()) else {
+        let (Some(g), Some(d)) = (random_pin(), random_dj_pin()) else {
             return false;
         };
         self.guest_pin = g;
         self.dj_pin = d;
         self.sessions.clear();
+        self.fails.clear();
+        self.global_fails.0 = 0;
         true
     }
 
@@ -220,6 +252,7 @@ impl Auth {
         } else {
             let e = self.fails.entry(ip).or_insert((0, now));
             e.0 += 1;
+            self.count_global_failure(now);
             if self.fails.len() > 1024 {
                 let lockout = self.limits.lockout;
                 self.fails
@@ -227,26 +260,75 @@ impl Auth {
             }
             return Err(LoginError::WrongPin);
         };
-        self.fails.remove(&ip);
-        let token = random_token().ok_or(LoginError::NoRandom)?;
-        if self.sessions.len() >= self.limits.max_sessions
-            && let Some(oldest) = self
-                .sessions
-                .iter()
-                .min_by_key(|(_, s)| s.created)
-                .map(|(k, _)| k.clone())
-        {
-            self.sessions.remove(&oldest);
+        // Nur eine DJ-Anmeldung setzt den Zähler zurück. Eine Gast-Anmeldung darf es nicht:
+        // sonst ließe sich die DJ-PIN zwischen zwei Gast-Anmeldungen ohne Sperre durchprobieren (#116).
+        if role == Role::Dj {
+            self.fails.remove(&ip);
         }
+        let token = random_token().ok_or(LoginError::NoRandom)?;
+        self.make_room(ip, role);
         self.sessions.insert(
             token.clone(),
             Session {
                 role,
+                ip,
                 bucket: Bucket::new(now),
                 created: now,
             },
         );
         Ok((token, role))
+    }
+
+    /// Zählt eine falsche PIN über alle Adressen; zu viele erneuern die DJ-PIN.
+    /// Bestehende Sitzungen bleiben, nur wer die PIN noch nicht hat, braucht die neue.
+    fn count_global_failure(&mut self, now: Instant) {
+        if now.duration_since(self.global_fails.1) >= self.limits.global_window {
+            self.global_fails = (0, now);
+        }
+        self.global_fails.0 += 1;
+        if self.global_fails.0 >= self.limits.global_failures
+            && let Some(p) = random_dj_pin()
+        {
+            tracing::warn!("remote: zu viele falsche PINs, DJ-PIN erneuert");
+            self.dj_pin = p;
+            // Sperren je Adresse bleiben bestehen, sonst entsperrt der Angreifer sich selbst.
+            self.global_fails = (0, now);
+        }
+    }
+
+    /// Schafft Platz für eine neue Sitzung: erst je Adresse und Rolle, dann je Rolle.
+    /// Verdrängt werden nur Sitzungen derselben Rolle, ein Gast wirft also nie einen DJ hinaus.
+    fn make_room(&mut self, ip: IpAddr, role: Role) {
+        let per_role = match role {
+            Role::Guest => self.limits.max_sessions,
+            Role::Dj => self.limits.max_dj_sessions,
+        };
+        let per_ip = self.limits.max_sessions_per_ip;
+        loop {
+            let same = |s: &&Session| s.role == role;
+            let ip_n = self
+                .sessions
+                .values()
+                .filter(|s| same(s) && s.ip == ip)
+                .count();
+            let role_n = self.sessions.values().filter(same).count();
+            let by_ip = ip_n >= per_ip;
+            if !by_ip && role_n < per_role {
+                return;
+            }
+            let victim = self
+                .sessions
+                .iter()
+                .filter(|(_, s)| s.role == role && (!by_ip || s.ip == ip))
+                .min_by_key(|(_, s)| s.created)
+                .map(|(k, _)| k.clone());
+            match victim {
+                Some(k) => {
+                    self.sessions.remove(&k);
+                }
+                None => return,
+            }
+        }
     }
 
     /// Rolle zu einem Token, wenn es gilt.
@@ -362,6 +444,161 @@ mod tests {
         assert!(a.renew());
         assert_eq!(a.role_of(&t), None);
         assert_ne!(a.dj_pin(), "222222");
+    }
+
+    fn ip(n: u8) -> IpAddr {
+        IpAddr::V4(std::net::Ipv4Addr::new(192, 0, 2, n))
+    }
+
+    #[test]
+    fn guest_login_does_not_reset_the_dj_lockout() {
+        let mut a = auth();
+        let t0 = Instant::now();
+        // Vier Fehlversuche, dann ein Gast-Login, dann der fünfte: die Sperre muss greifen.
+        for _ in 0..4 {
+            assert_eq!(a.login(IP, "000000", t0), Err(LoginError::WrongPin));
+        }
+        assert!(a.login(IP, "111111", t0).is_ok());
+        assert_eq!(a.login(IP, "000001", t0), Err(LoginError::WrongPin));
+        assert!(matches!(
+            a.login(IP, "222222", t0),
+            Err(LoginError::Locked(_))
+        ));
+        // Durchprobieren im Wechsel mit Gast-Logins kommt nie über fünf Versuche hinaus.
+        let mut b = auth();
+        let mut tried = 0;
+        for i in 0..40 {
+            if b.login(IP, "111111", t0).is_err() {
+                break;
+            }
+            match b.login(IP, &format!("{i:06}"), t0) {
+                Err(LoginError::WrongPin) => tried += 1,
+                _ => break,
+            }
+        }
+        assert!(tried <= 5, "{tried} Versuche ohne Sperre");
+    }
+
+    #[test]
+    fn dj_login_resets_the_counter() {
+        let mut a = auth();
+        let t0 = Instant::now();
+        for _ in 0..4 {
+            let _ = a.login(IP, "000000", t0);
+        }
+        assert!(a.login(IP, "222222", t0).is_ok());
+        for _ in 0..5 {
+            assert_eq!(a.login(IP, "000000", t0), Err(LoginError::WrongPin));
+        }
+    }
+
+    #[test]
+    fn many_wrong_pins_from_many_addresses_renew_the_dj_pin() {
+        let mut a = Auth::with_pins(
+            Limits {
+                global_failures: 10,
+                ..Limits::default()
+            },
+            "111111",
+            "222222",
+        );
+        let t0 = Instant::now();
+        let (td, _) = a.login(ip(1), "222222", t0).unwrap();
+        for i in 0..10 {
+            let _ = a.login(ip(10 + i), "000000", t0);
+        }
+        assert_ne!(a.dj_pin(), "222222");
+        assert_eq!(a.dj_pin().len(), 8);
+        // Die alte PIN gilt nicht mehr, laufende Sitzungen bleiben.
+        assert_eq!(a.login(ip(99), "222222", t0), Err(LoginError::WrongPin));
+        assert_eq!(a.role_of(&td), Some(Role::Dj));
+    }
+
+    #[test]
+    fn global_failures_expire_with_the_window() {
+        let mut a = Auth::with_pins(
+            Limits {
+                global_failures: 10,
+                ..Limits::default()
+            },
+            "111111",
+            "222222",
+        );
+        let t0 = Instant::now();
+        for i in 0..9 {
+            let _ = a.login(ip(10 + i), "000000", t0);
+        }
+        let _ = a.login(ip(50), "000000", t0 + Duration::from_secs(601));
+        assert_eq!(a.dj_pin(), "222222");
+    }
+
+    #[test]
+    fn dj_pin_has_eight_digits() {
+        for _ in 0..50 {
+            let p = random_dj_pin().unwrap();
+            assert_eq!(p.len(), 8);
+            assert!(p.bytes().all(|b| b.is_ascii_digit()));
+        }
+        assert_eq!(Auth::new(Limits::default()).unwrap().dj_pin().len(), 8);
+    }
+
+    #[test]
+    fn guests_never_evict_a_dj_session() {
+        let mut a = Auth::with_pins(
+            Limits {
+                max_sessions: 2,
+                max_sessions_per_ip: 100,
+                ..Limits::default()
+            },
+            "111111",
+            "222222",
+        );
+        let t0 = Instant::now();
+        let (dj, _) = a.login(ip(1), "222222", t0).unwrap();
+        for i in 1..=50u64 {
+            a.login(ip(2), "111111", t0 + Duration::from_millis(i))
+                .unwrap();
+        }
+        assert_eq!(a.role_of(&dj), Some(Role::Dj));
+        assert_eq!(
+            a.sessions
+                .values()
+                .filter(|s| s.role == Role::Guest)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn dj_sessions_have_their_own_cap_and_one_address_cannot_flood() {
+        let mut a = Auth::with_pins(
+            Limits {
+                max_dj_sessions: 2,
+                max_sessions_per_ip: 3,
+                ..Limits::default()
+            },
+            "111111",
+            "222222",
+        );
+        let t0 = Instant::now();
+        let (d1, _) = a.login(ip(1), "222222", t0).unwrap();
+        let (d2, _) = a
+            .login(ip(1), "222222", t0 + Duration::from_millis(1))
+            .unwrap();
+        let (d3, _) = a
+            .login(ip(1), "222222", t0 + Duration::from_millis(2))
+            .unwrap();
+        assert_eq!(a.role_of(&d1), None);
+        assert!(a.role_of(&d2).is_some() && a.role_of(&d3).is_some());
+        // Eine Adresse hält höchstens drei Gast-Sitzungen, andere Adressen bleiben unberührt.
+        let (other, _) = a.login(ip(5), "111111", t0).unwrap();
+        for i in 1..=10u64 {
+            a.login(ip(6), "111111", t0 + Duration::from_millis(i))
+                .unwrap();
+        }
+        let from6 = a.sessions.values().filter(|s| s.ip == ip(6)).count();
+        assert_eq!(from6, 3);
+        assert_eq!(a.role_of(&other), Some(Role::Guest));
     }
 
     #[test]
