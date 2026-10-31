@@ -759,7 +759,7 @@ pub fn stream_status_json(data_dir: &Path) -> serde_json::Value {
         None => serde_json::json!({
             "running": false,
             "summary": "nicht auf Sendung",
-            "status_file": path.display().to_string(),
+            "status_file": shown(&path),
         }),
     }
 }
@@ -769,9 +769,83 @@ pub fn stream_status_json(data_dir: &Path) -> serde_json::Value {
 pub struct WoaAgent {
     session: Arc<Mutex<Session>>,
     dir: PathBuf,
+    /// Takes written by `generate_*` this run; declared after `session` so it drops last.
+    takes: Arc<Takes>,
     // Read by the code generated from `#[tool_handler]`.
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
+}
+
+/// WAV files the agent rendered into `aufnahmen/` during this run. When the last handle
+/// goes and nobody else holds the session any more (no GUI, no undo history alive), every
+/// file that neither the saved `project.json` nor its autosave references is removed, so an
+/// unsaved generation leaves nothing behind. Files the user brought are never listed here.
+struct Takes {
+    dir: PathBuf,
+    session: std::sync::Weak<Mutex<Session>>,
+    files: Mutex<Vec<(String, PathBuf)>>,
+}
+
+impl Takes {
+    fn referenced(project: &woa_model::Project, rel: &str) -> bool {
+        project
+            .tracks
+            .iter()
+            .flat_map(|t| &t.clips)
+            .any(|c| c.audio.as_deref() == Some(rel))
+    }
+
+    /// Removes the unreferenced takes; returns how many.
+    fn clean(&self) -> usize {
+        if self.session.upgrade().is_some() {
+            return 0;
+        }
+        let saved = store::load(&self.dir).ok();
+        let autosave = store::load_autosave(&self.dir).ok().flatten();
+        let files = std::mem::take(&mut *self.files.lock().unwrap_or_else(|e| e.into_inner()));
+        let mut removed = 0;
+        for (rel, abs) in files {
+            let kept = [&saved, &autosave]
+                .into_iter()
+                .flatten()
+                .any(|p| Self::referenced(p, &rel));
+            if !kept && std::fs::remove_file(&abs).is_ok() {
+                removed += 1;
+            }
+        }
+        removed
+    }
+}
+
+impl Drop for Takes {
+    fn drop(&mut self) {
+        self.clean();
+    }
+}
+
+/// Answer of `undo`/`redo`: the step just done plus the next undo and redo step.
+fn steps_json(done: &str, step: Option<String>, s: &Session) -> serde_json::Value {
+    serde_json::json!({
+        done: step,
+        "undo": s.history().undo_label(),
+        "redo": s.history().redo_label(),
+    })
+}
+
+/// A path for the client: without the Windows verbatim prefix that `canonicalize` adds
+/// (`\\?\C:\x` becomes `C:\x`, `\\?\UNC\host\share` becomes `\\host\share`).
+fn shown(path: &Path) -> String {
+    strip_verbatim(&path.display().to_string())
+}
+
+fn strip_verbatim(s: &str) -> String {
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        s.to_string()
+    }
 }
 
 /// Rate for radio measurements; LUFS does not depend on it.
@@ -801,7 +875,7 @@ fn run_order_json(show: &woa_radio::RadioShow, radio: &Path) -> serde_json::Valu
             serde_json::json!({
                 "position": i + 1,
                 "title": e.title(),
-                "path": e.path.display().to_string(),
+                "path": shown(&e.path),
                 "seconds": e.seconds,
                 "lufs": e.lufs,
                 "gain_db": e.gain_db(show.target_lufs),
@@ -811,7 +885,7 @@ fn run_order_json(show: &woa_radio::RadioShow, radio: &Path) -> serde_json::Valu
         })
         .collect();
     serde_json::json!({
-        "radio_json": radio.display().to_string(),
+        "radio_json": shown(radio),
         "playlist": show.active_name(),
         "playlists": show.playlist_names(),
         "titles": titles,
@@ -856,8 +930,15 @@ impl WoaAgent {
 
     /// Wraps an existing session; `save` writes to `dir`.
     pub fn with_session(session: Session, dir: PathBuf) -> Self {
+        let session = Arc::new(Mutex::new(session));
+        let takes = Arc::new(Takes {
+            dir: dir.clone(),
+            session: Arc::downgrade(&session),
+            files: Mutex::new(Vec::new()),
+        });
         Self {
-            session: Arc::new(Mutex::new(session)),
+            session,
+            takes,
             dir,
             tool_router: Self::tool_router(),
         }
@@ -977,6 +1058,11 @@ impl WoaAgent {
         if let Err(e) = audio::write_take(&abs, buf) {
             return fail(e);
         }
+        self.takes
+            .files
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push((rel.clone(), abs));
         Self::add_file_clip(s, id, track, name, start_beats, length_beats, rel)
     }
 
@@ -1197,7 +1283,7 @@ impl WoaAgent {
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(ok_json(serde_json::json!({
             "project": project,
-            "path": self.dir.display().to_string(),
+            "path": shown(&self.dir),
             "dirty": s.is_dirty(),
             "undo": s.history().undo_label(),
             "redo": s.history().redo_label(),
@@ -2103,7 +2189,7 @@ impl WoaAgent {
             return Ok(ok_json(result));
         }
         let mut tracks = Vec::new();
-        for t in project.tracks.iter().filter(|t| t.kind == TrackKind::Audio) {
+        for t in project.tracks.iter().filter(|t| t.kind != TrackKind::Bus) {
             let peak = audio::render_track(&project, &self.dir, t.id)
                 .ok()
                 .and_then(|m| audio::peak_db(&m.left, &m.right))
@@ -2148,7 +2234,7 @@ impl WoaAgent {
             return Ok(fail(e));
         }
         Ok(ok_json(serde_json::json!({
-            "path": out.display().to_string(),
+            "path": shown(&out),
             "width": w,
             "height": h,
             "seconds": audio::round(mix.seconds, 3),
@@ -2178,7 +2264,7 @@ impl WoaAgent {
             }
         };
         let mut result = audio::measure(&mix);
-        result["path"] = serde_json::Value::String(out.display().to_string());
+        result["path"] = serde_json::Value::String(shown(&out));
         if let Some(t) = p.target_lufs {
             let reached = result["lufs"]
                 .as_f64()
@@ -2192,8 +2278,9 @@ impl WoaAgent {
     #[tool(description = "Undo the last step (the agent's or the human's).")]
     async fn undo(&self) -> Result<CallToolResult, McpError> {
         let mut s = self.lock()?;
+        let step = s.history().undo_label().map(str::to_string);
         Ok(match s.undo() {
-            Ok(()) => ok_json(serde_json::json!({ "undo": s.history().undo_label() })),
+            Ok(()) => ok_json(steps_json("undone", step, &s)),
             Err(e) => fail(e),
         })
     }
@@ -2201,8 +2288,9 @@ impl WoaAgent {
     #[tool(description = "Redo the last undone step.")]
     async fn redo(&self) -> Result<CallToolResult, McpError> {
         let mut s = self.lock()?;
+        let step = s.history().redo_label().map(str::to_string);
         Ok(match s.redo() {
-            Ok(()) => ok_json(serde_json::json!({ "redo": s.history().redo_label() })),
+            Ok(()) => ok_json(steps_json("redone", step, &s)),
             Err(e) => fail(e),
         })
     }
@@ -2211,7 +2299,7 @@ impl WoaAgent {
     async fn save(&self) -> Result<CallToolResult, McpError> {
         let mut s = self.lock()?;
         Ok(match s.save_as(&self.dir) {
-            Ok(()) => ok_json(serde_json::json!({ "saved": self.dir.display().to_string() })),
+            Ok(()) => ok_json(serde_json::json!({ "saved": shown(&self.dir) })),
             Err(e) => fail(e),
         })
     }
@@ -2374,5 +2462,24 @@ mod stream_tests {
         let v = stream_status_json(tmp.path());
         assert_eq!(v["running"], true);
         assert_eq!(v["listeners"], 4);
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::strip_verbatim;
+
+    #[test]
+    fn verbatim_prefix_is_stripped() {
+        assert_eq!(strip_verbatim(r"\\?\C:\Musik\mix.wav"), r"C:\Musik\mix.wav");
+        assert_eq!(
+            strip_verbatim(r"\\?\UNC\nas\musik\a.wav"),
+            r"\\nas\musik\a.wav"
+        );
+        assert_eq!(
+            strip_verbatim("/home/projekt/mix.wav"),
+            "/home/projekt/mix.wav"
+        );
+        assert_eq!(strip_verbatim(r"C:\x.wav"), r"C:\x.wav");
     }
 }

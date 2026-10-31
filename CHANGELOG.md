@@ -1,11 +1,21 @@
 # Changelog
 
-## 0.34.47 — 2026-10-31
+## 0.34.48 — 2026-10-31
 
 ### Neu
 
 - **KI live in der App:** Läuft WOA, arbeitet Claude auf dem Projekt, das in der App offen ist. Neue Spuren und Clips erscheinen sofort, und jeder Werkzeugaufruf steht als „Agent: <werkzeug>“ im Rückgängig-Verlauf (Bearbeiten → Rückgängig). Die App hostet dafür einen MCP-Server nur auf 127.0.0.1, mit dem vorhandenen Zugriffstoken und der Origin-Prüfung; der Port steht in `mcp-live.json` im Datenordner (ohne Token). `woa-headless mcp` (so startet Claude Desktop) erkennt die laufende App und reicht durch, sonst arbeitet es wie bisher headless. In Claude Desktop ist nichts umzustellen. Die Werkzeuge laufen zwischen zwei Bildern im GUI-Thread auf derselben Sitzung, die Wiedergabe läuft weiter. `save` speichert nur in den Ordner der App. Unten rechts steht „KI bereit“ bzw. „KI verbunden“. Sicherheit: Die Lock-Datei (Modus 0600) enthält statt des Tokens einen Live-Schlüssel, der je App-Start neu entsteht. Durchgereicht wird nur mit diesem Schlüssel und nur, wenn der Prozess der App noch lebt. Wird das Token im KI-Fenster neu erzeugt oder gelöscht, startet der Server neu bzw. endet, und das alte Token gilt nicht mehr.
 - **Fenster „Produktionen“:** Knopf „Produktionen“ in der Clip-Leiste des Produzenten-Modus. Er zeigt alle Audio-Dateien des Projektordners (`aufnahmen/`, Exporte, von Claude erzeugte Dateien), die neuesten oben, mit Länge und Alter. Mit dem Kopfhörer-Knopf hörst du vor (PFL wie in der Bibliothek). Ziehst du eine Datei auf eine Spur, liegt sie an dieser Stelle. Gelesen wird beim Öffnen, auf „Neu einlesen“ und nach jedem Agent-Schritt, sonst nicht.
+
+## 0.34.47 — 2026-10-31
+
+### Behoben
+
+- **Hall:** Auf einer Mono-Spur lief der Hall mono, selbst bei Mix 100 % (Korrelation 1). Die Kette einer Mono-Spur läuft jetzt ab dem ersten Hall in Stereo, die versetzten Kammfilter wirken auf beide Seiten (Test: Korrelation < 0,9). Gilt für GUI, Export und Agent, alle bauen denselben Graphen.
+- **Agent:** `generate_notes` und `generate_drums` ließen ihre WAV in `aufnahmen/` liegen, wenn das Projekt nie gespeichert wurde. Beim Beenden entfernt der Agent jetzt die von ihm selbst erzeugten Takes, auf die weder das gespeicherte Projekt noch die Autosicherung verweist, und nur, wenn niemand sonst (GUI) die Sitzung hält. Während der Sitzung wird nichts gelöscht, Undo bleibt möglich (Tests).
+- **Agent:** Pfade in den Antworten (`export`, `spectrogram_png`, `save` u. a.) tragen unter Windows nicht mehr die Vorsilbe `\\?\` (Test der Hilfsfunktion).
+- **Agent:** `undo` und `redo` nennen jetzt den eben ausgeführten Schritt (`undone` bzw. `redone`) und beide nächsten Schritte (`undo`, `redo`); die bisherigen Felder bleiben (Test).
+- **Agent:** `analyze` führt MIDI-Spuren in der Liste der Spurpegel (Test).
 
 ## 0.34.46 — 2026-10-31
 
