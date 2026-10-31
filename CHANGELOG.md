@@ -1,12 +1,19 @@
 # Changelog
 
-## 0.34.59 — 2026-10-31
+## 0.34.60 — 2026-10-31
 
 ### Geändert
 
 - **KI einfach einrichten (#217):** „Einstellungen → KI …“ öffnet vorn die Seite „KI einrichten“ mit einem Dropdown „Anbieter“: Claude Desktop / Claude Code (MCP), Anthropic API (eigener Schlüssel), Ollama lokal, OpenAI, OpenRouter, LM Studio; „Claude-Abo direkt im Chat“ steht ausgegraut als „kommt später“. Darunter nur die Felder, die der Anbieter braucht: Client, oder Modell (mit „Modelle holen“), Schlüssel und Adresse. Für MCP gibt es „JSON kopieren“ bzw. „Befehl kopieren“ mit drei Sätzen Anleitung, der Rohtext ist eingeklappt; das offene Projekt steht schon drin. Die Wahl im Dropdown wird sofort gespeichert. Die bisherigen Reiter stehen unter „Erweitert“.
 - **KI-Chat im Studio-Dock:** Der Produzent hat neben Studio-Mixer, Piano-Roll und Automation den Reiter „KI-Chat“ mit dem gewählten Anbieter. Ohne eingerichtete KI steht dort ein Satz und der Link „Einstellungen → KI öffnen“; bei Claude Desktop/Code ein Hinweis, dass man dort spricht. Ändern sich Einstellungen oder Projekt, beginnt das Gespräch neu.
 - **Schlüsselbund nicht mehr im UI-Thread:** Ob ein Schlüssel liegt, Speichern, Modelle holen und der Start des Chats lesen den Schlüsselbund im Hintergrund. Der Schlüssel erscheint weder im Fenster noch im Protokoll (Tests mit Fake-Speicher, ohne echte KI).
+
+## 0.34.59 — 2026-10-31
+
+### Neu
+
+- **Gespielte ausblenden (#215):** Neben dem Titelzähler der Sende-Playlist schaltet ein kleines Auge-Symbol die gespielten Titel (alle vor dem laufenden bzw. nächsten) aus der Liste. Sie werden nur ausgeblendet, nicht gelöscht; der Zähler zeigt dann „offen, gespielt“. „bis Playlist-Ende“ zählt nur die offenen Titel. Die Einstellung gilt je Sendung und steht in radio.json (Vorgabe aus). Tests: Restzeit nur der offenen Titel, Speichern und Laden.
+- **LED-Meter an den Fadern (#216):** Neben jedem der vier Fader (Playlist, Carts, Decks, Mikro) steht ein schmales senkrechtes LED-Meter nach dem Fader, dazu eine fünfte Spalte „Master“ ohne Fader: der Sendemix, der wirklich rausgeht. Grün bis -18 dBFS, Gelb bis -6, Rot darüber, Blau unter -40 („zu leise“); die Spitze hält 1,5 s. Der Audio-Thread schreibt nur drei weitere Spitzenwerte in Atomics, ohne Lock. Tests: Farbstufen, Spitze halten, fünf Meter vorhanden, Pegel je Zweig.
 
 ## 0.34.58 — 2026-10-31
 

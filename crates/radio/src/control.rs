@@ -625,6 +625,17 @@ impl Controller {
         self.apply_settings();
     }
 
+    /// Gespielte Titel ausblenden (#215), gespeichert in der Sendung.
+    pub fn set_hide_played(&mut self, on: bool) {
+        self.show.hide_played = on;
+    }
+
+    /// Erster noch offener Titel: der laufende, sonst der nächste. Alles davor ist gespielt
+    /// und zählt nicht zu [`Self::remaining_total`].
+    pub fn first_open_index(&self) -> usize {
+        self.current_index().unwrap_or_else(|| self.cue_index())
+    }
+
     /// Sendebus- und Mikro-Processing an/aus.
     pub fn set_processing(&mut self, bus: bool, mic: bool) {
         self.show.bus_processing = bus;

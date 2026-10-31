@@ -116,6 +116,13 @@ pub struct View {
     pub phone_on: bool,
     /// Spitze des Telefon-Eingangs seit der letzten Ansicht (0..1).
     pub phone_peak: f32,
+    /// Spitzen seit der letzten Ansicht (linear) für die LED-Meter: Playlist, Carts, Decks,
+    /// Mikro nach ihrem Fader und der Sendemix (Master), #216.
+    pub meters: [f32; 5],
+    /// Gespielte Titel ausblenden (#215).
+    pub hide_played: bool,
+    /// Erster offener Titel; die davor sind gespielt.
+    pub first_open: usize,
     pub recording: Option<PathBuf>,
     /// Mitschnitt läuft (auch bevor die erste Datei offen ist).
     pub recording_on: bool,
@@ -445,6 +452,12 @@ fn run(
             mic_open: st.mic_open.load(Ordering::Acquire),
             phone_on: st.phone_on.load(Ordering::Acquire),
             phone_peak: st.take_phone_peak(),
+            meters: {
+                let [m, c, d] = st.take_bus_peaks();
+                [m, c, d, st.take_mic_peak(), st.take_peak()]
+            },
+            hide_played: c.show().hide_played,
+            first_open: c.first_open_index(),
             recording: c.recording_file().map(|p| p.to_path_buf()),
             recording_on: c.is_recording(),
             messages: messages.clone(),

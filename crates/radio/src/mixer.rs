@@ -248,6 +248,9 @@ pub struct Status {
     pub peak: AtomicU32,
     /// Spitzenpegel Mikro seit letztem Abholen (f32-Bits).
     pub mic_peak: AtomicU32,
+    /// Spitzen nach dem Fader je Zweig Playlist, Carts, Decks seit letztem Abholen (f32-Bits,
+    /// für die LED-Meter neben den Fadern, #216).
+    pub bus_peaks: [AtomicU32; 3],
     /// Sendebus: Verstärkung der Lautheitsregelung (dB, f32-Bits).
     pub bus_agc_db: AtomicU32,
     /// Sendebus: größte Absenkung Kompressor + Limiter seit letztem Abholen (dB, f32-Bits).
@@ -291,6 +294,7 @@ impl Default for Status {
             mic_underruns: AtomicU64::new(0),
             peak: AtomicU32::new(0),
             mic_peak: AtomicU32::new(0),
+            bus_peaks: std::array::from_fn(|_| AtomicU32::new(0)),
             bus_agc_db: AtomicU32::new(0),
             bus_reduction_db: AtomicU32::new(0),
             bus_lufs: AtomicU32::new((-70.0f32).to_bits()),
@@ -312,6 +316,11 @@ impl Status {
 
     pub fn take_mic_peak(&self) -> f32 {
         f32::from_bits(self.mic_peak.swap(0, Ordering::Relaxed))
+    }
+
+    /// Spitzen der Zweige Playlist, Carts, Decks seit dem letzten Aufruf.
+    pub fn take_bus_peaks(&self) -> [f32; 3] {
+        std::array::from_fn(|k| f32::from_bits(self.bus_peaks[k].swap(0, Ordering::Relaxed)))
     }
 
     /// Spitze des Telefon-Eingangs seit dem letzten Aufruf.
@@ -1076,6 +1085,7 @@ impl Mixer {
         let mut peak = 0.0f32;
         let mut mic_peak = 0.0f32;
         let mut phone_peak = 0.0f32;
+        let mut bus_peaks = [0.0f32; 3];
         let ret_dest = match self.routes.dest[crate::routing::Source::PhoneReturn.index()] as usize
         {
             d if (1..=extra.len()).contains(&d) => Some(d - 1),
@@ -1247,6 +1257,9 @@ impl Mixer {
             il *= mg;
             ir *= mg;
             mic_peak = mic_peak.max(il.abs()).max(ir.abs());
+            bus_peaks[0] = bus_peaks[0].max((ml * duck).abs()).max((mr * duck).abs());
+            bus_peaks[1] = bus_peaks[1].max(cl.abs()).max(cr.abs());
+            bus_peaks[2] = bus_peaks[2].max(dl.abs()).max(dr.abs());
 
             // Basis ohne Gäste: Musik, Carts, Moderator. Daraus entstehen die Rückwege.
             let (bl, br) = (ml * duck + cl + il + dl, mr * duck + cr + ir + dr);
@@ -1329,6 +1342,9 @@ impl Mixer {
         self.guests.end_block();
         self.publish(peak, mic_peak, reduction);
         store_max(&self.status.phone_peak, phone_peak);
+        for (cell, v) in self.status.bus_peaks.iter().zip(bus_peaks) {
+            store_max(cell, v);
+        }
     }
 
     /// Die Musik wird abgesenkt, solange das Mikro offen ist oder das Telefon auf Sendung.
