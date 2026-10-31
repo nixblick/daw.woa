@@ -260,6 +260,94 @@ pub struct KiConfig {
     /// WOAs eigene Werkzeuge (Spuren, Clips, Mischen …) dem Assistenten geben.
     #[serde(default = "yes")]
     pub woa_tools: bool,
+    /// Auf der Seite „KI“ gewählt: ein MCP-Client (Claude Desktop/Code) statt eines
+    /// API-Anbieters für den Chat in WOA. `None`: der aktive Anbieter gilt.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_client: Option<McpClient>,
+}
+
+/// Ein MCP-Client, der WOA von außen bedient.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpClient {
+    ClaudeDesktop,
+    ClaudeCode,
+    Other,
+}
+
+impl McpClient {
+    pub const ALL: [Self; 3] = [Self::ClaudeDesktop, Self::ClaudeCode, Self::Other];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::ClaudeDesktop => "Claude Desktop",
+            Self::ClaudeCode => "Claude Code",
+            Self::Other => "anderer MCP-Client",
+        }
+    }
+
+    /// Name des passenden Schnipsels in [`server::snippets`] (Stdio).
+    pub fn snippet_client(self) -> &'static str {
+        match self {
+            Self::ClaudeDesktop => "Claude Desktop",
+            Self::ClaudeCode => "Claude Code",
+            Self::Other => "Anderer Client (Stdio)",
+        }
+    }
+}
+
+/// Eine Wahl im Dropdown „Anbieter“ der Seite „KI“.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pick {
+    /// Claude Desktop / Claude Code bedienen WOA über MCP.
+    Mcp(McpClient),
+    /// Eine Voreinstellung aus [`ProviderConfig::presets`] (Index).
+    Preset(usize),
+}
+
+impl KiConfig {
+    /// Was im Dropdown „Anbieter“ gerade gilt.
+    pub fn pick(&self) -> Option<Pick> {
+        if let Some(c) = self.mcp_client {
+            return Some(Pick::Mcp(c));
+        }
+        let p = self.active_provider()?;
+        ProviderConfig::presets()
+            .iter()
+            .position(|(_, k, url)| *k == p.kind && *url == p.base_url)
+            .map(Pick::Preset)
+    }
+
+    /// Übernimmt eine Wahl aus dem Dropdown. Eine Voreinstellung nimmt einen schon
+    /// angelegten Anbieter mit gleicher Adresse wieder, sonst legt sie einen an.
+    pub fn choose(&mut self, pick: Pick) {
+        match pick {
+            Pick::Mcp(c) => self.mcp_client = Some(c),
+            Pick::Preset(i) => {
+                self.mcp_client = None;
+                let Some((name, kind, url)) = ProviderConfig::presets().get(i).copied() else {
+                    return;
+                };
+                if let Some(p) = self
+                    .providers
+                    .iter()
+                    .find(|p| p.kind == kind && p.base_url == url)
+                {
+                    self.active = Some(p.id.clone());
+                    return;
+                }
+                let id = new_id();
+                self.providers.push(ProviderConfig {
+                    id: id.clone(),
+                    name: name.to_string(),
+                    kind,
+                    base_url: url.to_string(),
+                    model: String::new(),
+                });
+                self.active = Some(id);
+            }
+        }
+    }
 }
 
 impl Default for KiConfig {
@@ -270,6 +358,7 @@ impl Default for KiConfig {
             active: None,
             servers: Vec::new(),
             woa_tools: true,
+            mcp_client: None,
         }
     }
 }
@@ -299,6 +388,7 @@ mod tests {
         let old: KiConfig = serde_json::from_str(r#"{"mcp_server":{"enabled":true}}"#).unwrap();
         assert!(old.mcp_server.enabled);
         assert!(old.woa_tools && old.providers.is_empty());
+        assert!(old.mcp_client.is_none());
     }
 
     #[test]
@@ -378,5 +468,36 @@ mod tests {
         let id = new_id();
         assert_eq!(id.len(), 8);
         assert!(woa_secrets::valid_account(&format!("ki-{id}")));
+    }
+
+    #[test]
+    fn dropdown_pick_is_stored_and_survives_a_round_trip() {
+        let mut c = KiConfig::default();
+        assert_eq!(c.pick(), None);
+        c.choose(Pick::Mcp(McpClient::ClaudeDesktop));
+        assert_eq!(c.pick(), Some(Pick::Mcp(McpClient::ClaudeDesktop)));
+        assert!(!c.is_default());
+        let back: KiConfig = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        assert_eq!(back, c);
+        // Ollama ist Voreinstellung 3; zweimal wählen legt nur einen Anbieter an.
+        c.choose(Pick::Preset(3));
+        c.choose(Pick::Preset(0));
+        c.choose(Pick::Preset(3));
+        assert_eq!(c.pick(), Some(Pick::Preset(3)));
+        assert_eq!(c.providers.len(), 2);
+        assert!(c.mcp_client.is_none());
+        let back: KiConfig = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        assert_eq!(back.pick(), Some(Pick::Preset(3)));
+    }
+
+    #[test]
+    fn provider_debug_never_shows_the_key() {
+        let p = llm::Provider::new(
+            llm::Kind::Anthropic,
+            "https://api.anthropic.com".to_string(),
+            "m".to_string(),
+            Some("sk-ant-geheim-123".to_string()),
+        );
+        assert!(!format!("{p:?}").contains("geheim"));
     }
 }

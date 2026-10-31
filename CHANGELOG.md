@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.34.58 — 2026-10-31
+
+### Geändert
+
+- **KI einfach einrichten (#217):** „Einstellungen → KI …“ öffnet vorn die Seite „KI einrichten“ mit einem Dropdown „Anbieter“: Claude Desktop / Claude Code (MCP), Anthropic API (eigener Schlüssel), Ollama lokal, OpenAI, OpenRouter, LM Studio; „Claude-Abo direkt im Chat“ steht ausgegraut als „kommt später“. Darunter nur die Felder, die der Anbieter braucht: Client, oder Modell (mit „Modelle holen“), Schlüssel und Adresse. Für MCP gibt es „JSON kopieren“ bzw. „Befehl kopieren“ mit drei Sätzen Anleitung, der Rohtext ist eingeklappt; das offene Projekt steht schon drin. Die Wahl im Dropdown wird sofort gespeichert. Die bisherigen Reiter stehen unter „Erweitert“.
+- **KI-Chat im Studio-Dock:** Der Produzent hat neben Studio-Mixer, Piano-Roll und Automation den Reiter „KI-Chat“ mit dem gewählten Anbieter. Ohne eingerichtete KI steht dort ein Satz und der Link „Einstellungen → KI öffnen“; bei Claude Desktop/Code ein Hinweis, dass man dort spricht. Ändern sich Einstellungen oder Projekt, beginnt das Gespräch neu.
+- **Schlüsselbund nicht mehr im UI-Thread:** Ob ein Schlüssel liegt, Speichern, Modelle holen und der Start des Chats lesen den Schlüsselbund im Hintergrund. Der Schlüssel erscheint weder im Fenster noch im Protokoll (Tests mit Fake-Speicher, ohne echte KI).
+
 ## 0.34.57 — 2026-10-31
 
 - **Playlist umbenennen hielt fest:** Das Namensfeld im Fenster „Verwalten“ holte sich in jedem Bild den Fokus zurück, man kam nicht mehr heraus (André, 31.10.). Wie bei den Spuren (0.33.3) wird der Fokus nur beim Öffnen gesetzt; Enter oder ein Klick daneben übernimmt den Namen, Esc verwirft ihn. Test: Klick daneben schließt das Feld und benennt um.

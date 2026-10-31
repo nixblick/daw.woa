@@ -197,9 +197,19 @@ pub struct Worker {
 impl Worker {
     /// Verbindet alle Quellen (Name, Zugang) und wartet dann auf Eingaben.
     pub fn spawn(provider: Provider, specs: Vec<(String, Spec)>) -> Self {
+        Self::spawn_with(move || (provider, specs))
+    }
+
+    /// Wie [`Worker::spawn`], aber Anbieter und Quellen entstehen erst im Hintergrund-Thread.
+    /// So liest die Oberfläche nie selbst den Schlüsselbund.
+    pub fn spawn_with<F>(setup: F) -> Self
+    where
+        F: FnOnce() -> (Provider, Vec<(String, Spec)>) + Send + 'static,
+    {
         let (tx, cmd_rx) = channel::<Cmd>();
         let (ev_tx, rx) = channel::<Ev>();
         std::thread::spawn(move || {
+            let (provider, specs) = setup();
             let mut sources = Vec::new();
             for (label, spec) in specs {
                 match McpClient::connect(&spec) {

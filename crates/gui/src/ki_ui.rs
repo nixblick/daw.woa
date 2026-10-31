@@ -1,4 +1,5 @@
-//! Fenster „KI & MCP“: WOA als MCP-Server für beliebige Clients (Claude Desktop, Claude Code,
+//! Fenster „KI“: vorn die einfache Seite „KI einrichten“ ([`crate::ki_setup`]), dahinter
+//! unter „Erweitert“ WOA als MCP-Server für beliebige Clients (Claude Desktop, Claude Code,
 //! andere). Das Zugriffstoken liegt im Schlüsselbund des Systems, nie in `config.json`
 //! ([`woa_secrets`]); im Fenster ist es maskiert, „Kopieren“ legt es in die Zwischenablage.
 
@@ -19,6 +20,7 @@ const NETWORK_HOST: &str = "<IP-dieses-Rechners>";
 #[derive(Default, Clone, Copy, PartialEq)]
 enum Tab {
     #[default]
+    Setup,
     Server,
     Assistant,
 }
@@ -33,6 +35,7 @@ pub struct KiUi {
     snippet_transport: Transport,
     tab: Tab,
     assistant: crate::assistant_ui::AssistantTab,
+    setup: crate::ki_setup::KiSetup,
     note: Option<String>,
     proc: Option<ServerProcess>,
     proc_error: Option<String>,
@@ -50,6 +53,7 @@ impl KiUi {
         self.token_text = None;
         self.note = None;
         self.assistant.reset(&self.draft);
+        self.tab = Tab::Setup;
     }
 
     /// Wurde das Token seit dem letzten Aufruf neu erzeugt? (Hook für den Live-Server.)
@@ -121,7 +125,8 @@ impl KiUi {
         }
         let mut open = true;
         let mut save = false;
-        egui::Window::new("KI & MCP")
+        let mut changed = false;
+        egui::Window::new("KI")
             .open(&mut open)
             .collapsible(false)
             .default_width(600.0)
@@ -131,11 +136,29 @@ impl KiUi {
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.selectable_value(&mut self.tab, Tab::Server, "WOA als MCP-Server");
-                            ui.selectable_value(&mut self.tab, Tab::Assistant, "Assistent");
+                            ui.selectable_value(&mut self.tab, Tab::Setup, "KI einrichten");
+                            ui.selectable_value(
+                                &mut self.tab,
+                                Tab::Server,
+                                "Erweitert: MCP-Server",
+                            );
+                            ui.selectable_value(
+                                &mut self.tab,
+                                Tab::Assistant,
+                                "Erweitert: Anbieter und Werkzeuge",
+                            );
                         });
                         ui.separator();
                         match self.tab {
+                            Tab::Setup => {
+                                changed = self.setup.show(
+                                    ui,
+                                    &mut self.draft,
+                                    data_dir,
+                                    project,
+                                    server::headless_exe(),
+                                );
+                            }
                             Tab::Server => self.server_tab(ui, data_dir, project, &mut save),
                             Tab::Assistant => {
                                 self.assistant.show(ui, &mut self.draft, data_dir);
@@ -151,6 +174,10 @@ impl KiUi {
                     });
             });
         let mut applied = None;
+        if changed && !save && open {
+            // Die Wahl im Dropdown gilt sofort; das Fenster bleibt offen.
+            return Some(self.draft.clone());
+        }
         if save {
             match self.draft.mcp_server.check() {
                 Ok(()) => {
