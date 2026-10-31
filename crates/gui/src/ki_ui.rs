@@ -136,6 +136,9 @@ impl KiUi {
                                 if ui.button("Speichern").clicked() {
                                     save = true;
                                 }
+                                if let Some(n) = &self.note {
+                                    ui.colored_label(ui.visuals().warn_fg_color, n);
+                                }
                             }
                         }
                     });
