@@ -988,6 +988,23 @@ Kein Ton nötig.
 
 Selbst geprüft von Claude: neuer Test „Import ohne Dekodieren“, alle Tests und Clippy von `woa-library` grün, Clippy von `woa-engine` und `woa-gui` grün.
 
+## Titelinfos bearbeiten (0.34.37, offen)
+
+Gern mit laufender Sendung, aber kein Ton nötig.
+
+1. Radio läuft mit einem Titel. Bibliothek öffnen, denselben Titel doppelklicken: Fenster „Titelinfos“ mit Titel, Interpret, Album, Jahr, Genre, Tracknummer, Kommentar und Cover.
+2. Einen Tippfehler im Titel korrigieren, Enter. „Gespeichert (1 Datei)“, die Liste zeigt den neuen Titel, die Wiedergabe läuft ohne Aussetzer weiter. BPM/LUFS bleiben stehen (kein neues Messen).
+3. „Bild …“ ein JPEG wählen, Speichern: das Cover erscheint im Fenster. „Entfernen“, Speichern: kein Cover mehr.
+4. „Rückgängig“: der alte Titel und das alte Cover sind zurück.
+5. Jahr „98“ eintragen: rote Meldung, nichts wird geschrieben.
+6. Eine schreibgeschützte Datei (Eigenschaften → Schreibgeschützt): Speichern meldet „schreibgeschützt“.
+7. Unter Windows eine Datei in einem anderen Player offen halten und speichern: Hinweis „gesperrt … WOA versucht es alle 10 s wieder“. Den Player schließen: kurz darauf „Gespeichert“.
+8. Die Datei in einem anderen Programm öffnen (z. B. foobar2000, VLC): die neuen Titelinfos stehen dort.
+
+9. Radio → Verwalten → Titel: links drei Titel mit Strg-Klick wählen, rechts Genre setzen, Speichern: alle drei haben das Genre, die anderen Felder sind unverändert.
+
+Selbst geprüft von Claude: 11 neue Tests in `woa-library` und `woa-gui`, Clippy und Tests beider Crates grün. Windows-Sperre (Punkt 7) ist nur über die Fehlernummer und den CI-Lauf unter Windows geprüft, nicht am Gerät.
+
 ## Abgenommen
 
 - Paket 10 Dauertest (0.5.0): 30.10.2026, André „2 abgenommen“ (Sammelabnahme Pakete 5, 9, 10 und Nachtrag #43).

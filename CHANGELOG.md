@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.34.37 — 2026-10-31
+
+Titelinfos bearbeiten, direkt in WOA (André: „Tippfehler und andere Feinheiten gleich in der App verbessern … möglichst ohne Wiedergabe zu unterbrechen“).
+
+- **Radio → Verwalten → Titel:** links die Bibliothek mit Suche und Mehrfachauswahl (Klick, Strg-Klick, Umschalt-Klick), rechts die Titelinfos der Auswahl, „+“ legt weiter in die Playlist.
+- **Bibliothek → Doppelklick auf einen Titel** oder Rechtsklick → „Titelinfos bearbeiten …“: Titel, Interpret, Album, Jahr, Genre, Tracknummer, Kommentar und das Cover (anzeigen, „Bild …“ ersetzt, „Entfernen“). Enter oder „Speichern“ schreibt in die Datei, „Rückgängig“ schreibt den Stand davor zurück.
+- **Mehrere Titel auf einmal** (im Reiter „Titel“): Felder mit verschiedenen Werten stehen leer mit „(verschieden, bleibt)“ und werden nur gesetzt, wenn man sie ändert. Der Editor ist ein eigenes Bauteil (`tag_editor.rs`), Fenster und Reiter teilen ihn.
+- **Formate:** MP3 (ID3v2), FLAC, OGG Vorbis, M4A und WAV, mit `lofty`. Opus-Dateien schreibt der Editor auch, WOA importiert sie aber noch nicht (kein Opus-Decoder).
+- **Speichern ohne Unterbrechung:** WOA schreibt in eine neu angelegte Kopie mit zufälligem Namen im selben Ordner (folgt keinem fremden Symlink, überschreibt nichts; ein Symlink auf eine Musikdatei bearbeitet bewusst deren Ziel), bringt sie auf die Platte und ersetzt die Datei dann in einem Schritt; eine halb geschriebene Datei gibt es nie. Die Wiedergabe läuft aus dem Speicher weiter. Alles im Hintergrund, die Oberfläche wartet nicht.
+- **Audiodaten bleiben bitgenau**, nur die Tag-Blöcke ändern sich. Die Bibliothek übernimmt den neuen Inhalt samt Analyse, ohne neu zu messen; Suche und Liste zeigen den neuen Titel sofort.
+- **Fehler stehen im Fenster:** „schreibgeschützt“ (Datei oder Ordner), „gesperrt“ (ein anderes Programm hält die Datei unter Windows; auch „Zugriff verweigert“ beim Ersetzen zählt als Sperre). Gesperrte Dateien versucht WOA selbst alle 10 Sekunden wieder, auch bei geschlossenem Fenster, mit sichtbarem Hinweis. Ungültiges Jahr oder Tracknummer und Bilder, die kein JPEG/PNG sind, werden vor dem Schreiben abgelehnt.
+- **Analyse auf alten Rechnern:** zwei Titel gleichzeitig erst ab acht Threads (ein Zweikerner mit Hyperthreading meldet vier und misst nun einen).
+- **Grenze:** Die Sendeliste des Radios misst einen geänderten Titel einmal neu (sie erkennt Änderungen an Größe und Zeitstempel), im Hintergrund.
+- **Tests:** alle Felder und Cover in allen sechs Formaten schreiben und lesen, Cover ersetzen und entfernen, Teiländerung, Audio bitgenau (dekodiert verglichen, außer Opus), schreibgeschützte Datei, Fehlernummern für gesperrt, Speichern bei offener Datei, Bibliothek ohne neue Analyse, zwei Titel gemeinsam setzen und Rückgängig, falsches Jahr wird nicht geschrieben, Symlink mit vorhersagbarem Namen bleibt unberührt. Kleine Testdateien liegen unter `crates/library/tests/data/`.
+
 ## 0.34.36 — 2026-10-31
 
 Bibliothek: Ordner hinzufügen geht wieder schnell (André: „es dauert gerade wieder ewig“).
