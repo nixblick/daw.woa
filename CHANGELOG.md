@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.34.27 — 2026-10-31
+
+Design System Fassung 2 (Claude Design schließt die Lücken aus `docs/design/luecken.md`).
+
+- **Doku:** Neues Paket unter `docs/design/woa-design-system/` und als ZIP, Herkunft und Phosphor-Lizenz in `docs/herkunft.md`, alle Lücken in `docs/design/luecken.md` als geschlossen markiert.
+
 ## 0.34.26 — 2026-10-31
 
 Entf löscht eine Spur nur, wenn sie sichtbar markiert ist (André 31.10.: „Entf darf nur aktiv sein wenn es sinnvoll was zu löschen gibt“).
