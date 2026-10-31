@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.34.19 — 2026-10-31
+
+Sicherheit #127: AppImage-Werkzeuge werden vor dem Ausführen per SHA-256 geprüft.
+
+- **Bau:** `packaging/linux/build-appimage.sh` kennt für linuxdeploy und appimagetool (feste Versionen, kein `continuous`) je eine SHA-256 und prüft sie vor `chmod +x`, auch bei bereits zwischengespeicherten Dateien. Eine falsche Prüfsumme bricht den Bau ab.
+
+Closes #127.
+
 ## 0.34.18 — 2026-10-31
 
 Sicherheit #119: Gast-Rückweg wird geleert, Steuerzeichen im Gastnamen fliegen raus.
