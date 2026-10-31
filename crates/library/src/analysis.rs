@@ -89,12 +89,14 @@ pub fn analyze_file(path: &Path) -> std::result::Result<(Analysis, f64), String>
     Ok((to_analysis(&track::analyze(&l, &r, rate)), secs))
 }
 
-/// So viele Titel misst die Analyse gleichzeitig: zwei erst ab acht Threads, sonst einer
-/// (ein alter Zweikerner mit Hyperthreading meldet vier). Jeder Titel liegt dekodiert im Speicher (eine Stunde Stereo gut
-/// 1 GB), und die Oberfläche und das Senden brauchen ihre CPU (altes Windows-Notebook).
+/// So viele Titel misst die Analyse gleichzeitig: zwei erst ab 16 Threads, sonst einer.
+/// Auf Andrés Windows-Notebook (mindestens acht Threads) dauerte ein Dekodieren mit zwei
+/// gleichzeitig 1,3–2,8 s statt 0,3–0,4 s allein (Telemetrie 0.34.37, 31.10.2026). Jeder Titel
+/// liegt dekodiert im Speicher (eine Stunde Stereo gut 1 GB), und Oberfläche und Senden
+/// brauchen ihre CPU.
 pub fn workers() -> usize {
     match std::thread::available_parallelism().map_or(1, std::num::NonZero::get) {
-        n if n >= 8 => 2,
+        n if n >= 16 => 2,
         _ => 1,
     }
 }

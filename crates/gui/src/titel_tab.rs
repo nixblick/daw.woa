@@ -37,6 +37,7 @@ pub fn titel_tab(ui: &mut egui::Ui, library: &mut LibraryWindow, target: &str) -
     });
     ui.add_space(4.0);
     let mut click: Option<(usize, egui::Modifiers)> = None;
+    let mut open_window = None;
     ui.columns(2, |cols| {
         let marked: std::collections::HashSet<i64> = library.marked().iter().copied().collect();
         let results = library.results();
@@ -58,10 +59,28 @@ pub fn titel_tab(ui: &mut egui::Ui, library: &mut LibraryWindow, target: &str) -
                             out.push(PathBuf::from(&t.path));
                         }
                         let sel = marked.contains(&t.id);
-                        let r = ui.selectable_label(sel, &t.title).on_hover_text(&t.path);
+                        let r = ui.selectable_label(sel, &t.title).on_hover_text(format!(
+                            "{}
+Doppelklick: Fenster Titelinfos",
+                            t.path
+                        ));
                         if r.clicked() {
                             click = Some((i, ui.input(|inp| inp.modifiers)));
+                        } else if r.secondary_clicked() && !sel {
+                            // Das Kontextmenü gilt dem Titel darunter: ihn wählen, sonst
+                            // zeigte der Editor rechts (derselbe wie im Fenster) die alte Wahl.
+                            click = Some((i, egui::Modifiers::NONE));
                         }
+                        // Wie in der Bibliothek: Doppelklick öffnet das Fenster „Titelinfos“.
+                        if theme::double_clicked(&r) {
+                            open_window = Some(t.id);
+                        }
+                        r.context_menu(|ui| {
+                            if ui.button("Titelinfos bearbeiten …").clicked() {
+                                open_window = Some(t.id);
+                                ui.close();
+                            }
+                        });
                     });
                 }
             });
@@ -79,6 +98,9 @@ pub fn titel_tab(ui: &mut egui::Ui, library: &mut LibraryWindow, target: &str) -
     });
     if let Some((i, m)) = click {
         library.mark_click(i, m.command || m.ctrl, m.shift);
+    }
+    if let Some(id) = open_window {
+        library.edit_tags(&[id]);
     }
     out
 }
