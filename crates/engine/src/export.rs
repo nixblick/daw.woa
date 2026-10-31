@@ -205,6 +205,131 @@ pub fn export_with(
     std::fs::write(path, bytes.into_inner()).map_err(fail)
 }
 
+/// Titel, Interpret und Kommentar für eine exportierte Datei (Ticket 229). Leere Felder
+/// fallen weg. Geschrieben werden sie nur in WAV (RIFF `LIST/INFO`) und MP3 (ID3v2.3).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExportTags {
+    pub title: String,
+    pub artist: String,
+    pub comment: String,
+}
+
+impl ExportTags {
+    fn is_empty(&self) -> bool {
+        self.title.trim().is_empty()
+            && self.artist.trim().is_empty()
+            && self.comment.trim().is_empty()
+    }
+}
+
+/// Wie [`export_with`], dazu die Tags. Andere Formate als WAV und MP3 lehnen Tags ab.
+pub fn export_tagged(
+    path: &Path,
+    spec: &ExportSpec,
+    left: &[f32],
+    right: &[f32],
+    rate: u32,
+    tags: &ExportTags,
+) -> Result<(), EngineError> {
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    export_with_to(&mut bytes, spec, left, right, rate)?;
+    let mut bytes = bytes.into_inner();
+    if !tags.is_empty() {
+        match spec.format {
+            ExportFormat::Wav => add_wav_info(&mut bytes, tags)?,
+            ExportFormat::Mp3 => bytes = [id3v23(tags), bytes].concat(),
+            f => return Err(fail(format!("{} bekommt hier keine Tags", f.label()))),
+        }
+    }
+    std::fs::write(path, bytes).map_err(fail)
+}
+
+/// Hängt einen `LIST/INFO`-Block an und zieht die RIFF-Länge nach.
+fn add_wav_info(bytes: &mut Vec<u8>, tags: &ExportTags) -> Result<(), EngineError> {
+    if bytes.len() < 12 || &bytes[..4] != b"RIFF" {
+        return Err(fail("kein RIFF"));
+    }
+    let mut info = b"INFO".to_vec();
+    for (id, v) in [
+        (b"INAM", &tags.title),
+        (b"IART", &tags.artist),
+        (b"ICMT", &tags.comment),
+    ] {
+        let v = v.trim();
+        if v.is_empty() {
+            continue;
+        }
+        let mut data = v.as_bytes().to_vec();
+        data.push(0);
+        info.extend_from_slice(id);
+        info.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        info.extend_from_slice(&data);
+        if data.len() % 2 == 1 {
+            info.push(0);
+        }
+    }
+    if bytes.len() % 2 == 1 {
+        bytes.push(0);
+    }
+    bytes.extend_from_slice(b"LIST");
+    bytes.extend_from_slice(&(info.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&info);
+    let riff = u32::try_from(bytes.len() - 8).map_err(|_| fail("WAV zu groß"))?;
+    bytes[4..8].copy_from_slice(&riff.to_le_bytes());
+    Ok(())
+}
+
+/// ID3v2.3-Kopf mit TIT2, TPE1 und COMM. Text in ISO-8859-1, wenn er hineinpasst,
+/// sonst UTF-16 mit BOM (mehr kennt v2.3 nicht).
+fn id3v23(tags: &ExportTags) -> Vec<u8> {
+    /// Kodierungsbyte, Text, Endmarke.
+    fn text(s: &str) -> (u8, Vec<u8>, &'static [u8]) {
+        if s.chars().all(|c| (c as u32) < 0x100) {
+            (0, s.chars().map(|c| c as u8).collect(), &[0])
+        } else {
+            let mut v = vec![0xFF, 0xFE];
+            for u in s.encode_utf16() {
+                v.extend_from_slice(&u.to_le_bytes());
+            }
+            (1, v, &[0, 0])
+        }
+    }
+    let mut frames = Vec::new();
+    let mut frame = |id: &[u8; 4], body: Vec<u8>| {
+        frames.extend_from_slice(id);
+        frames.extend_from_slice(&(body.len() as u32).to_be_bytes());
+        frames.extend_from_slice(&[0, 0]);
+        frames.extend_from_slice(&body);
+    };
+    for (id, v) in [(b"TIT2", &tags.title), (b"TPE1", &tags.artist)] {
+        let v = v.trim();
+        if !v.is_empty() {
+            let (enc, t, _) = text(v);
+            frame(id, [vec![enc], t].concat());
+        }
+    }
+    let c = tags.comment.trim();
+    if !c.is_empty() {
+        // Kodierung, Sprache, leere Kurzbeschreibung, Text.
+        let (enc, t, end) = text(c);
+        let desc: Vec<u8> = if enc == 1 {
+            vec![0xFF, 0xFE, 0, 0]
+        } else {
+            end.to_vec()
+        };
+        frame(b"COMM", [vec![enc], b"deu".to_vec(), desc, t].concat());
+    }
+    let n = frames.len() as u32;
+    let size = [
+        (n >> 21) & 0x7F,
+        (n >> 14) & 0x7F,
+        (n >> 7) & 0x7F,
+        n & 0x7F,
+    ]
+    .map(|b| b as u8);
+    [b"ID3\x03\x00\x00".to_vec(), size.to_vec(), frames].concat()
+}
+
 /// Schreibt Stereo in ein schon geöffnetes Ziel (etwa eine mit `create_new` angelegte
 /// Datei). So bleibt zwischen Prüfen und Schreiben kein Pfad, den jemand austauschen kann.
 pub fn export_stereo_to<W: Write + Seek>(

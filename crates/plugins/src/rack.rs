@@ -96,6 +96,18 @@ impl PluginRack {
         Self::new(Arc::clone(&self.catalog), self.rate).with_isolation(isolation)
     }
 
+    /// Wie [`Self::fresh`], aber erst im Ziel-Thread gebaut: Ein Rack selbst darf den Thread
+    /// nicht wechseln (Plugin-Instanzen), seine Bauteile schon (Spur-Export, Ticket 229).
+    pub fn fresh_later(&self) -> impl FnOnce() -> Self + Send + 'static {
+        let isolation = match &self.isolation {
+            Isolation::InProcess => Isolation::InProcess,
+            Isolation::Process(c) => Isolation::Process(c.for_export()),
+        };
+        let catalog = Arc::clone(&self.catalog);
+        let rate = self.rate;
+        move || Self::new(catalog, rate).with_isolation(isolation)
+    }
+
     /// Lädt alle Plätze neu (nach einer neuen Suche, wenn ein Plugin dazugekommen sein kann).
     pub fn reset(&mut self, catalog: Arc<Catalog>) {
         self.catalog = catalog;

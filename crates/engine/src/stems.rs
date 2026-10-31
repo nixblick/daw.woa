@@ -218,6 +218,34 @@ pub fn mixdown_file_name(ext: &str) -> String {
     format!("00 Mixdown.{ext}")
 }
 
+/// Rendert genau eine Spur (oder einen Bus) wie ihren Stem: nach Fader und Pan, vor dem
+/// Master (Ticket 229). Eine stumme Spur ist ein Fehler, denn sie hätte keinen Ton.
+pub fn render_track(
+    project: &Project,
+    rate: u32,
+    seconds: f64,
+    track: TrackId,
+    load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
+    plugins: &mut dyn FnMut(&woa_model::Track) -> woa_dsp::plugin::TrackPlugins,
+) -> Result<Stem, EngineError> {
+    let t = project
+        .track(track)
+        .ok_or_else(|| EngineError::Export("Spur nicht gefunden".into()))?;
+    let bus = t.kind == TrackKind::Bus;
+    let select = StemSelect {
+        tracks: !bus,
+        buses: bus,
+    };
+    let render = render_stems_plugins(project, rate, seconds, select, load, plugins)?;
+    render
+        .stems
+        .into_iter()
+        .find(|s| s.track == track)
+        .ok_or_else(|| {
+            EngineError::Export(format!("{} ist stumm, kein Ton zum Exportieren", t.name))
+        })
+}
+
 fn scaled(x: &[f32], gain: f32) -> Vec<f32> {
     x.iter().map(|s| s * gain).collect()
 }
