@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use woa_engine::localtime::Zone;
 
-use crate::{Error, Library, MAX_RESULTS, Query, Result, Track, normalize_tag};
+use crate::{Error, Library, Result, normalize_tag};
 
 /// Formatversion von `stundenuhr.json`.
 pub const VERSION: u32 = 1;
@@ -245,18 +245,18 @@ impl Schedule {
         Ok(s)
     }
 
-    /// Speichert atomar (Temp-Datei im selben Ordner, dann umbenennen). Ein Symlink als Ziel
-    /// wird abgelehnt.
+    /// Speichert atomar und dauerhaft (eigene Temp-Datei im selben Ordner, fsync, umbenennen,
+    /// fsync des Ordners). Ein Symlink als Ziel wird abgelehnt.
     pub fn save(&self, path: &Path) -> Result<()> {
         if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
             return Err(Error::Invalid("Stundenuhr: Ziel ist ein Symlink".into()));
         }
         let text = serde_json::to_string_pretty(self)
             .map_err(|e| Error::Invalid(format!("Stundenuhr: {e}")))?;
-        let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, text)?;
-        std::fs::rename(&tmp, path)?;
-        Ok(())
+        woa_model::store::write_atomic(path, text.as_bytes()).map_err(|e| match e {
+            woa_model::ModelError::Io { source, .. } => Error::Io(source),
+            other => Error::Invalid(format!("Stundenuhr: {other}")),
+        })
     }
 
     /// Uhr einer Stunde (Wochentag Montag = 0).
@@ -439,22 +439,16 @@ fn load_category(lib: &Library, tag: &str) -> Result<Vec<Cand>> {
     if tag.is_empty() {
         return Ok(Vec::new());
     }
-    let tracks: Vec<Track> = lib.search(&Query {
-        text: String::new(),
-        tag: Some(tag.to_string()),
-        kind: None,
-        limit: MAX_RESULTS,
-        ..Query::default()
-    })?;
-    Ok(tracks
+    Ok(lib
+        .tagged_tracks(tag)?
         .into_iter()
-        .filter(|t| t.duration >= 1.0)
-        .map(|t| Cand {
-            id: t.id,
-            artist: artist_of(&t.title),
-            path: t.path,
-            title: t.title,
-            seconds: t.duration,
+        .filter(|(_, _, _, secs)| *secs >= 1.0)
+        .map(|(id, path, title, seconds)| Cand {
+            id,
+            artist: artist_of(&title),
+            path,
+            title,
+            seconds,
         })
         .collect())
 }
@@ -715,7 +709,7 @@ pub fn plan_until(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AddOutcome, Kind, NewTrack};
+    use crate::{AddOutcome, Kind, NewTrack, Query};
 
     /// Ein Montag 0 Uhr (UTC).
     const MONDAY: i64 = (4 + 7 * 20_000) * 86_400;
@@ -1035,7 +1029,19 @@ mod tests {
         let mut s = schedule(9);
         s.set_hour(2, 14, Some("Standard")).unwrap();
         s.autodj = true;
+        // Eine untergeschobene Datei am früheren festen Temp-Namen wird nicht überschrieben.
+        #[cfg(unix)]
+        {
+            let victim = dir.path().join("fremd.txt");
+            std::fs::write(&victim, "bleibt").unwrap();
+            std::os::unix::fs::symlink(&victim, f.with_extension("json.tmp")).unwrap();
+        }
         s.save(&f).unwrap();
+        #[cfg(unix)]
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("fremd.txt")).unwrap(),
+            "bleibt"
+        );
         let back = Schedule::load(&f).unwrap();
         assert_eq!(back, s);
         assert!(back.clock_for(2, 14).is_some());

@@ -13,6 +13,7 @@ serde_json = "1.0.154"
 tracing = "0.1.44"
 woa-engine = { version = "0.34", path = "../engine" }
 woa-dsp = { version = "0.34", path = "../dsp" }
+woa-model = { version = "0.34", path = "../model" }
 lofty = "0.25.5"
 
 [dev-dependencies]

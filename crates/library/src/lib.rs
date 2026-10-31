@@ -557,6 +557,23 @@ impl Library {
             .optional()?)
     }
 
+    /// Alle Titel mit diesem Tag als (id, Pfad, Titel, Dauer), ohne Obergrenze; für die
+    /// AutoDJ-Kategorien, die sonst bei [`MAX_RESULTS`] still abgeschnitten würden.
+    pub fn tagged_tracks(&self, tag: &str) -> Result<Vec<(i64, String, String, f64)>> {
+        let tag = normalize_tag(tag)?;
+        let mut st = self.conn.prepare(
+            "SELECT t.id, t.path, t.title, t.duration FROM tracks t \
+             JOIN tags g ON g.track_id = t.id WHERE g.tag = ?1 \
+             ORDER BY t.title COLLATE NOCASE, t.id",
+        )?;
+        let rows = st.query_map([tag], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
     /// Trägt eine Datei ein; erkennt Doppelte am Inhalt (Hash) und am Pfad.
     pub fn add_track(&self, t: &NewTrack) -> Result<AddOutcome> {
         if let Some((id, hash)) = self
@@ -572,8 +589,13 @@ impl Library {
                 return Ok(AddOutcome::Duplicate(id));
             }
             self.conn.execute(
-                "UPDATE tracks SET hash = ?1, duration = ?2 WHERE id = ?3",
-                params![t.hash, t.duration, id],
+                "UPDATE tracks SET hash = ?1, duration = ?2, title = ?3 WHERE id = ?4",
+                params![t.hash, t.duration, t.title, id],
+            )?;
+            // Neue Tags: Titel und Suchindex folgen dem Inhalt (wie in `retagged`).
+            self.conn.execute(
+                "UPDATE tracks_fts SET title = ?1 WHERE rowid = ?2",
+                params![t.title, id],
             )?;
             return Ok(AddOutcome::Updated(id));
         }
@@ -906,11 +928,13 @@ mod tests {
         assert_eq!(lib.search(&q("moved")).unwrap().len(), 1);
         // Gleicher Pfad, neuer Inhalt: aktualisiert.
         assert_eq!(
-            lib.add_track(&nt("/nonexistent/moved.wav", "h2", "A"))
+            lib.add_track(&nt("/nonexistent/moved.wav", "h2", "Neuer Name"))
                 .unwrap(),
             AddOutcome::Updated(id)
         );
         assert_eq!(lib.count().unwrap(), 1);
+        assert_eq!(lib.get(id).unwrap().unwrap().title, "Neuer Name");
+        assert_eq!(lib.search(&q("Neuer")).unwrap().len(), 1);
     }
 
     #[test]
@@ -970,6 +994,21 @@ mod tests {
             Library::open(&db),
             Err(Error::TooNew(v)) if v == SCHEMA_VERSION + 1
         ));
+    }
+
+    #[test]
+    fn tagged_tracks_has_no_result_cap() {
+        let lib = Library::open_in_memory().unwrap();
+        for i in 0..=MAX_RESULTS {
+            let AddOutcome::Added(id) = lib
+                .add_track(&nt(&format!("/m/{i}.wav"), &format!("h{i}"), "T"))
+                .unwrap()
+            else {
+                panic!()
+            };
+            lib.add_tag(id, "hit").unwrap();
+        }
+        assert_eq!(lib.tagged_tracks("HIT").unwrap().len(), MAX_RESULTS + 1);
     }
 
     #[test]
