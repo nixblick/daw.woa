@@ -20,11 +20,13 @@ use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::filter::{LevelFilter, Targets};
 use tracing_subscriber::{EnvFilter, Layer};
 
 pub use feedback::{FeedbackError, FeedbackMeta, FeedbackType, submit_feedback};
 pub use upload::{
-    DEFAULT_INGEST_URL, Event, Level, UploadConfig, UploadLayer, Uploader, new_install_id,
+    DEFAULT_INGEST_URL, Event, LOG_BURST, LOG_WINDOW, Level, UploadConfig, UploadLayer, Uploader,
+    new_install_id,
 };
 pub use watch::{FrameWatch, metric};
 
@@ -85,6 +87,7 @@ pub fn init(log_dir: &Path, upload: Option<UploadConfig>) -> Result<Telemetry, I
     let upload_layer = uploader.as_ref().map(|u| u.layer());
 
     tracing_subscriber::registry()
+        .with(noise_filter())
         .with(file_layer)
         .with(upload_layer)
         .try_init()
@@ -95,6 +98,16 @@ pub fn init(log_dir: &Path, upload: Option<UploadConfig>) -> Result<Telemetry, I
         _file_guard: guard,
         uploader,
     })
+}
+
+/// Globaler Filter vor Datei und Upload: stellt Meldungen fremder Crates still, die bei
+/// beschädigten Dateien je Frame kommen und nichts sagen. Der MP3-Dekoder meldet
+/// „invalid main_data_begin“ für jeden Frame, dessen Bit-Reservoir fehlt, und dekodiert
+/// trotzdem weiter; eine kaputte MP3 erzeugt so tausende Warnungen. Fehler bleiben.
+pub fn noise_filter() -> Targets {
+    Targets::new()
+        .with_default(LevelFilter::TRACE)
+        .with_target("symphonia_bundle_mp3::layer3", LevelFilter::ERROR)
 }
 
 /// Panic-Hook: schreibt den Absturz samt Ort und Backtrace ins Log und erzeugt das
