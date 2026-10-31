@@ -2034,6 +2034,9 @@ impl WoaApp {
     /// Liest eine `.dawproject`-Datei in einen neuen Projektordner `<name>.woa` neben der
     /// Datei und öffnet ihn.
     fn open_dawproject(&mut self) {
+        if !self.save_before_replace("DAWproject öffnen") {
+            return;
+        }
         let Some(file) = rfd::FileDialog::new()
             .set_title("DAWproject öffnen")
             .add_filter("DAWproject", &["dawproject"])
@@ -2075,7 +2078,31 @@ impl WoaApp {
         self.state.open(dir);
     }
 
+    /// Vor Neu/Öffnen: ungespeicherte Änderungen erst sichern (wie vor dem Update).
+    /// `false` heißt: das Projekt blieb ungespeichert, der Aufrufer bricht ab.
+    fn save_before_replace(&mut self, what: &str) -> bool {
+        if self.state.session().is_dirty() {
+            self.save();
+            if self.state.session().is_dirty() {
+                self.state.status = Status::Error(format!(
+                    "{what} abgebrochen: erst das Projekt speichern, dann noch einmal"
+                ));
+                return false;
+            }
+        }
+        true
+    }
+
+    fn new_project(&mut self) {
+        if self.save_before_replace("Neues Projekt") {
+            self.state.new_project();
+        }
+    }
+
     fn open(&mut self) {
+        if !self.save_before_replace("Öffnen") {
+            return;
+        }
         if let Some(dir) = rfd::FileDialog::new()
             .set_title("Projektordner (.woa) öffnen")
             .pick_folder()
@@ -2158,7 +2185,8 @@ impl WoaApp {
         if record {
             self.toggle_record();
         }
-        if !ctx.egui_wants_keyboard_input() {
+        // Offene Dialoge (Über, Export, Feedback, Popups) schlucken die Bearbeitungs-Kürzel.
+        if !ctx.egui_wants_keyboard_input() && !self.overlay_open(ctx) {
             let (copy, cut, paste, dup) = ctx.input_mut(|i| {
                 let has =
                     |i: &egui::InputState, f: fn(&egui::Event) -> bool| i.events.iter().any(f);
@@ -2203,7 +2231,7 @@ impl WoaApp {
             if home {
                 self.rewind();
             }
-            if del && !self.overlay_open(ctx) {
+            if del {
                 if self.selected_clip.is_none() && self.selected_clips.is_empty() {
                     if let Some(t) = self.marked_track() {
                         self.delete_track(t);
@@ -2227,7 +2255,7 @@ impl WoaApp {
             self.open();
         }
         if new {
-            self.state.new_project();
+            self.new_project();
         }
     }
 
@@ -2455,7 +2483,7 @@ impl WoaApp {
         ui.add_space(4.0);
         ui.menu_button("Datei", |ui| {
             if ui.button("Neu (Strg+N)").clicked() {
-                self.state.new_project();
+                self.new_project();
             }
             if ui.button("Öffnen … (Strg+O)").clicked() {
                 self.open();

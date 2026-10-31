@@ -3,7 +3,7 @@
 //! davon nichts. Dazu das Warnsymbol für beschädigte Dateien in Playlist und Bibliothek.
 
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use eframe::egui;
 use woa_engine::decode::Damage;
@@ -19,6 +19,10 @@ pub struct ProtokollWindow {
     info: bool,
     warn: bool,
     error: bool,
+    /// Gefilterte Zeilen, höchstens einmal je Sekunde neu aus dem Journal geholt.
+    rows: Vec<Entry>,
+    /// Filter und Zeitpunkt, zu denen `rows` gebaut wurde.
+    rows_key: Option<((bool, bool, bool), Instant)>,
 }
 
 impl Default for ProtokollWindow {
@@ -28,6 +32,8 @@ impl Default for ProtokollWindow {
             info: true,
             warn: true,
             error: true,
+            rows: Vec::new(),
+            rows_key: None,
         }
     }
 }
@@ -99,7 +105,15 @@ impl ProtokollWindow {
             return;
         }
         let mut open = self.open;
-        let rows = self.visible(woa_telemetry::journal().snapshot());
+        let filter = (self.info, self.warn, self.error);
+        let stale = self
+            .rows_key
+            .is_none_or(|(f, at)| f != filter || at.elapsed() >= Duration::from_secs(1));
+        if stale {
+            self.rows = self.visible(woa_telemetry::journal().snapshot());
+            self.rows_key = Some((filter, Instant::now()));
+        }
+        let rows = std::mem::take(&mut self.rows);
         egui::Window::new(format!("{} Protokoll", theme::ic::LIST_BULLETS))
             .open(&mut open)
             .default_size([640.0, 380.0])
@@ -172,18 +186,27 @@ impl ProtokollWindow {
                                     )
                                     .truncate(),
                                 );
-                                let mut hover = format!("{}\n{}", e.text, e.ziel);
-                                if let Some(d) = &e.datei {
-                                    hover.push('\n');
-                                    hover.push_str(d);
-                                }
-                                r.on_hover_text(hover);
+                                // Text erst beim Hover bauen, nicht für jede Zeile je Frame.
+                                r.on_hover_ui(|ui| {
+                                    let mut hover = format!("{}\n{}", e.text, e.ziel);
+                                    if let Some(d) = &e.datei {
+                                        hover.push('\n');
+                                        hover.push_str(d);
+                                    }
+                                    ui.label(hover);
+                                });
                             });
                         }
                     },
                 );
             });
+        self.rows = rows;
         self.open = open;
+        if !open {
+            // Geschlossen: beim nächsten Öffnen frisch holen, Speicher freigeben.
+            self.rows = Vec::new();
+            self.rows_key = None;
+        }
     }
 }
 

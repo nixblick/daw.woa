@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.40 — 2026-10-31
+## 0.34.41 — 2026-10-31
 
 Fehlerbehebung nach dem Test unter Windows (André: „bibliothek noch langsam. selbst bei 4 tracks“, „titelinfos ändert geht nicht. egal wo ich doppelt klicke“, „rechtsklick funktioniert auch nicht“).
 
@@ -8,6 +8,18 @@ Fehlerbehebung nach dem Test unter Windows (André: „bibliothek noch langsam. 
 - **Überall gleich:** In der Bibliothek und im Reiter Verwalten → Titel öffnen ein Doppelklick und der Rechtsklick → „Titelinfos bearbeiten …“ das Fenster „Titelinfos“. Rechtsklick wählt dort zuerst den Titel. In der Radio-Playlist setzt ein Doppelklick schon „als Nächstes“, deshalb gibt es die Titelinfos dort nur im Kontextmenü. Liegt der Titel nicht in der Bibliothek, steht das als Hinweis in der Bibliothek.
 - **Analyse etwa dreimal schneller:** Drei Viertel der Analysezeit gingen in die True-Peak-Messung. Sie rechnet das Filter jetzt nur dort, wo eine neue Spitze überhaupt möglich ist, und das Ergebnis bleibt exakt gleich. Gemessen im Release-Build (`examples/analyse_zeit.rs`): ein 3:17-Titel 0,9 s → 0,27 s, ein 5:21-Titel 1,5 s → 0,53 s.
 - **Analyse nur noch einen Titel nach dem anderen, unter 16 Threads:** Mit zwei gleichzeitig dauerte ein Dekodieren auf dem Notebook 1,3–2,8 s statt 0,3–0,4 s.
+
+## 0.34.40 — 2026-10-31
+
+### Behoben
+
+- **Neu und Öffnen:** Strg+N, Strg+O, „Datei → Neu“ und „DAWproject öffnen“ verwarfen ungespeicherte Änderungen ohne Rückfrage. Jetzt wird vorher gespeichert; bleibt das Projekt ungespeichert, bricht der Schritt mit einer Statusmeldung ab (Test mit Strg+N).
+- **Radio:** Das Speichern von `radio.json` überschrieb eine kurz vorher von außen (Agenten-Werkzeug `build_playlist`) geschriebene Datei. Vor dem Speichern wird jetzt der Dateistand geprüft; bei fremder Änderung wird sie übernommen und der Konflikt gemeldet.
+- **Tastenkürzel:** Strg+X, Strg+C/V, Strg+D, Leertaste, Pos1, S und Strg+E wirkten hinter offenen Dialogen (Über, Export, Feedback); nur Entf beachtete sie. Jetzt gilt die Prüfung für alle (kittest: Strg+X bei offenem Export).
+- **Verwalten → Titel:** Die Liste zeichnete bis zu 500 Zeilen je Frame und suchte die Auswahl linear je Zeile und je Frame. Jetzt nur die sichtbaren Zeilen (`show_rows`), die Auswahl als Menge, das Bereinigen der Auswahl nur nach einer neuen Suche.
+- **Verwalten → Titel:** Der Anker für Umschalt-Klick war ein Index und zeigte nach einer neuen Suche auf einen anderen Titel. Er ist jetzt die Track-ID (Test).
+- **Protokoll:** Das Fenster holte das ganze Journal in jedem Frame und baute für jede sichtbare Zeile den Hover-Text. Jetzt höchstens einmal je Sekunde (oder bei Filterwechsel), der Hover-Text erst beim Hover.
+
 ## 0.34.39 — 2026-10-31
 
 ### Behoben
