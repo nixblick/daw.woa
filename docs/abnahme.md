@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Kopfleiste aus einem Guss und REC für alle Modi (0.34.55, offen)
+## Kopfleiste aus einem Guss und REC für alle Modi (0.34.56, offen)
 
 1. Oben rechts: MIDI, ON AIR, REC (und KI, wenn der Live-Server läuft), dann Produzent · Party · Radio, ganz rechts Feedback. Alles gleich hoch, gleiche Schrift, sichtbar mehr Luft, Gruppen mit größerem Abstand.
 2. Aktiver Modus in der Akzentfarbe (nicht rot), auch während der Sendung. Rot nur ON AIR, wenn live, und REC, wenn der Mitschnitt läuft.

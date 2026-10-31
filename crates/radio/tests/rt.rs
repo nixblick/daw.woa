@@ -434,6 +434,37 @@ fn pfl_never_reaches_the_broadcast() {
 }
 
 #[test]
+fn pfl_toggle_stops_same_source_and_switches_to_another() {
+    use woa_radio::control::PflSource;
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("a.wav");
+    let b = tmp.path().join("b.wav");
+    write_tone(&a, 2.0, 440.0, 0.5);
+    write_tone(&b, 2.0, 660.0, 0.5);
+    let (mut c, _m) = Controller::new(show_of(&[a, b], 0.0), SR);
+    let (h, mut pfl) = woa_radio::pfl::channel(SR);
+    c.set_pfl(Some(h));
+    let (mut hl, mut hr) = (vec![0.0f32; BLOCK], vec![0.0f32; BLOCK]);
+
+    c.pfl_toggle(PflSource::Title(0)).unwrap();
+    pfl.process(&mut hl, &mut hr);
+    assert!(c.pfl_previewing(PflSource::Title(0)));
+    assert_eq!(c.pfl_current(), Some(PflSource::Title(0)));
+
+    // Andere Quelle: wechselt dorthin.
+    c.pfl_toggle(PflSource::Title(1)).unwrap();
+    pfl.process(&mut hl, &mut hr);
+    assert!(c.pfl_previewing(PflSource::Title(1)));
+    assert!(!c.pfl_previewing(PflSource::Title(0)));
+
+    // Zweiter Klick auf dieselbe Quelle: stoppt.
+    c.pfl_toggle(PflSource::Title(1)).unwrap();
+    pfl.process(&mut hl, &mut hr);
+    assert!(!c.pfl_playing());
+    assert_eq!(c.pfl_current(), None);
+}
+
+#[test]
 fn cue_edits_undo_and_redo() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("u.wav");

@@ -1,12 +1,22 @@
 # Changelog
 
-## 0.34.55 — 2026-10-31
+## 0.34.56 — 2026-10-31
 
 ### Geändert
 
 - **Kopfleiste aus einem Guss:** MIDI, ON AIR, REC, KI, Modus-Umschalter und Feedback sind jetzt gleich hohe Pillen (24 px) mit gleicher Schrift, Symbolgröße, Radius und Innenabstand (Design-System-Tokens). Abstände aus den Tokens: 16 px in der Gruppe, 24 px zwischen Status, Modus und Feedback. Rot nur für ON AIR, wenn live; der aktive Modus in der Akzentfarbe, auch während der Sendung. Unter 760 px freier Breite zeigen die Pillen nur ihr Symbol, das Wort steht im Tooltip (Tests bei 1280 und 900 px).
 - **REC in der Kopfleiste:** Der Mitschnitt hat einen Knopf für alle Modi (Radio, Party, Produzent) und leuchtet rot, solange er läuft; der Tooltip nennt Dauer und Ziel. Ein Moduswechsel bricht ihn nicht ab. Der alte Mitschnitt-Knopf im Sendepult entfällt (Tests).
 - **KI-Anzeige** („KI bereit“/„KI verbunden“) wandert aus der Statusleiste in die Status-Gruppe der Kopfleiste.
+
+## 0.34.55 — 2026-10-31
+
+### Geändert
+
+- **Feedback (#211):** Der Haken „Protokoll mitsenden“ ist jetzt bei jedem Öffnen an (abwählbar). Nach Bildschirmfoto oder eigenem Bild erscheint eine kleine Vorschau (160 px) mit „× Entfernen“. Strg+Enter schickt mit den gesetzten Haken ab wie „Abschicken“ (Tooltip). Tests mit Fake-Server.
+
+### Behoben
+
+- **Vorhören (#205):** In Playlist, Cartwall und den Decks A/B/C ließ sich das Vorhören nicht über den Knopf beenden. Hört man dieselbe Quelle vor, heißt der Knopf jetzt „⏹ Vorhören stoppen“ (hervorgehoben) und stoppt beim Klick; eine andere Quelle wechselt das Vorhören dorthin (Test).
 
 ## 0.34.54 — 2026-10-31
 
