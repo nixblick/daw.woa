@@ -1038,6 +1038,21 @@ Ohne Ton möglich (Lautstärke auf Null), am besten mit drei kurzen Titeln und 5
 
 Selbst geprüft von Claude: neue Tests ohne Ton für den Wechsel links/rechts über drei Titel, die Crossfader-Kurve, den Plattenteller nur am hörbaren Deck, Wünsche (anlegen, einreihen, erledigt, entfernen, speichern) und die Knöpfe (Symbol und Wort, eine Höhe, über AccessKit). Clippy und Tests von `woa-radio`, `woa-remote` und `woa-gui` grün. Nicht am Gerät gesehen.
 
+## KI live in der App und Fenster „Produktionen“ (0.34.47, offen)
+
+Kein Ton nötig. Voraussetzung: unter Einstellungen → KI & MCP ist ein Zugriffstoken erzeugt.
+
+1. WOA starten (Produzent). Unten rechts steht „KI bereit“.
+2. In Claude Desktop (unverändert eingerichtet, `woa-headless mcp …`) sagen: „Leg eine Audiospur ‚Test‘ an.“ Die Spur erscheint sofort in WOA, unten rechts steht „KI verbunden“.
+3. Bearbeiten → „Rückgängig Agent: add_track“: die Spur ist wieder weg. „Wiederholen“: sie ist zurück.
+4. Claude einen Drum-Loop erzeugen lassen (`generate_drums`): Spur und Clip erscheinen, die Wiedergabe läuft dabei ohne Aussetzer weiter.
+5. Claude „speichern“ lassen, solange das Projekt noch nie gespeichert war: Claude meldet „in der App Speichern unter …“; es entsteht kein fremder Ordner.
+6. WOA schließen, Claude erneut fragen: `woa-headless mcp` arbeitet wieder headless auf dem eigenen Projekt.
+7. Knopf „Produktionen“: das Fenster listet die Dateien aus `aufnahmen/` und Exporte, die neueste ganz oben. Eine Datei auf eine Spur ziehen: sie liegt dort, wo du losgelassen hast.
+8. Im Fenster auf den Kopfhörer klicken (Vorhören eingerichtet): die Datei läuft im Kopfhörer, nie auf Sendung.
+
+Selbst geprüft von Claude: Tests in `woa-agent` (Aufruf über die stdio-Weiterleitung landet in der geliehenen Sitzung, Undo entfernt ihn, falsches Token 401, verwaiste Lock-Datei) und `woa-gui` (dasselbe gegen `AppState`, kittest: Knopf öffnet das Fenster, Sortierung neueste oben). Nicht geprüft: echtes Claude Desktop, Windows.
+
 ## Abgenommen
 
 - Paket 10 Dauertest (0.5.0): 30.10.2026, André „2 abgenommen“ (Sammelabnahme Pakete 5, 9, 10 und Nachtrag #43).

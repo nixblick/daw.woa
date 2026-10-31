@@ -58,6 +58,20 @@ impl AppState {
         &self.session
     }
 
+    /// Die Sitzung zum Herleihen an den Live-MCP-Server (`mcp_live`): Er bekommt sie für
+    /// einen Werkzeugaufruf und gibt sie zurück, bevor dieses Bild weiterläuft.
+    pub fn lend_session(&mut self) -> &mut Session {
+        &mut self.session
+    }
+
+    /// Projektordner, bei einem ungespeicherten Projekt der Wiederherstellungsordner.
+    pub fn project_dir(&self) -> PathBuf {
+        self.session
+            .path()
+            .unwrap_or(&self.recovery_dir)
+            .to_path_buf()
+    }
+
     /// Window title: project name, folder, dirty marker.
     pub fn title(&self) -> String {
         let dirty = if self.session.is_dirty() { " *" } else { "" };

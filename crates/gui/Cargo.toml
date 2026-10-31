@@ -16,6 +16,7 @@ rtrb = "0.4.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tracing = "0.1.44"
+woa-agent = { version = "0.34", path = "../agent" }
 woa-assistant = { version = "0.34", path = "../assistant" }
 woa-dsp = { version = "0.34", path = "../dsp" }
 woa-io = { version = "0.34", path = "../io" }

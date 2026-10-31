@@ -97,12 +97,15 @@ impl std::fmt::Debug for HttpOptions {
 }
 
 /// Bedient `agent` auf `listener`, bis `opts.cancel` gesetzt wird. Alle Sitzungen teilen
-/// sich das eine Projekt von `agent`.
-pub async fn serve_http(
+/// sich das eine Projekt von `agent` ([`WoaAgent`] oder der Live-Agent der App).
+pub async fn serve_http<S>(
     listener: TcpListener,
-    agent: WoaAgent,
+    agent: S,
     opts: HttpOptions,
-) -> Result<(), AgentError> {
+) -> Result<(), AgentError>
+where
+    S: rmcp::ServerHandler + Clone + Send + Sync + 'static,
+{
     if opts.token.is_empty() {
         return Err(AgentError::Transport(
             "Ohne Zugriffstoken startet der HTTP-Server nicht".into(),
