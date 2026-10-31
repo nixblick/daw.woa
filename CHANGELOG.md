@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.46 — 2026-10-31
+## 0.34.47 — 2026-10-31
 
 ### Behoben
 
@@ -9,6 +9,16 @@
 - **Bibliothek:** Bei geänderter Datei am gleichen Pfad blieben Titel und Suchindex alt. Beides folgt jetzt den neuen Tags (Test).
 - **AutoDJ:** Eine Kategorie wurde still bei 5000 Titeln (alphabetisch) abgeschnitten. Sie lädt jetzt alle Titel des Tags (Test).
 - **Analyse:** Je Titel wurden Analyse und Dauer in zwei Autocommits geschrieben; jetzt in einer Transaktion.
+
+## 0.34.46 — 2026-10-31
+
+Fehlerbehebung nach dem Test unter Windows (André: „bibliothek noch langsam. selbst bei 4 tracks“, „titelinfos ändert geht nicht. egal wo ich doppelt klicke“, „rechtsklick funktioniert auch nicht“).
+
+- **Doppelklick öffnet die Titelinfos zuverlässig:** egui erkannte einen Doppelklick nur bei höchstens 0,3 s zwischen den Klicks (Windows erlaubt 0,5 s), und wer einen Titel erst anklickte und kurz darauf doppelklickte, erzeugte für egui einen Dreifachklick, der nichts tat. Jetzt gelten 0,5 s, und auch der Dreifachklick öffnet das Fenster. Getestet über die echte Oberfläche (Studio und Radio).
+- **Überall gleich:** In der Bibliothek und im Reiter Verwalten → Titel öffnen ein Doppelklick und der Rechtsklick → „Titelinfos bearbeiten …“ das Fenster „Titelinfos“. Rechtsklick wählt dort zuerst den Titel. In der Radio-Playlist setzt ein Doppelklick schon „als Nächstes“, deshalb gibt es die Titelinfos dort nur im Kontextmenü. Liegt der Titel nicht in der Bibliothek, steht das als Hinweis in der Bibliothek.
+- **Analyse etwa dreimal schneller:** Drei Viertel der Analysezeit gingen in die True-Peak-Messung. Sie rechnet das Filter jetzt nur dort, wo eine neue Spitze überhaupt möglich ist, und das Ergebnis bleibt exakt gleich. Gemessen im Release-Build (`examples/analyse_zeit.rs`): ein 3:17-Titel 0,9 s → 0,27 s, ein 5:21-Titel 1,5 s → 0,53 s.
+- **Tests:** `crates/gui/tests/titelinfos.rs` klickt in der echten App (Doppelklick schnell, langsam, nach vorherigem Klick; Kontextmenü); `true_peak_skip_is_exact` vergleicht mit dem vollen Filter.
+- **Analyse nur noch einen Titel nach dem anderen, unter 16 Threads:** Mit zwei gleichzeitig dauerte ein Dekodieren auf dem Notebook 1,3–2,8 s statt 0,3–0,4 s.
 
 ## 0.34.45 — 2026-10-31
 
