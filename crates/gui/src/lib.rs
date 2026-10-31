@@ -28,6 +28,7 @@ pub mod theme;
 pub mod timeline;
 pub mod update;
 pub mod voice_editor;
+pub mod widgets;
 mod wishes;
 mod xrun;
 

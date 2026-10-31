@@ -173,8 +173,14 @@ pub fn clock(seconds: f64) -> String {
 
 /// Uhrzeit `hh:mm:ss` zur Unix-Zeit `unix` in `zone` (zum Ansagen).
 pub fn time_of_day(unix: i64, zone: Zone) -> String {
+    let (h, m, s) = time_parts(unix, zone);
+    crate::widgets::clock::fmt_hms(h, m, s)
+}
+
+/// Stunde, Minute und Sekunde zur Unix-Zeit `unix` in `zone` (für die Studio-Uhr).
+pub fn time_parts(unix: i64, zone: Zone) -> (u32, u32, u32) {
     let l = zone.local(unix);
-    format!("{:02}:{:02}:{:02}", l.hour, l.minute, l.second)
+    (l.hour as u32, l.minute as u32, l.second as u32)
 }
 
 /// Name der Zifferntaste, die zur Nummer von Cart `slot` passt (1–9, 0 für 10).
@@ -1129,6 +1135,14 @@ impl RadioDesk {
                 theme::status_pill(ui, "REC LÄUFT", theme::on_air(), true);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let live = self.feeder.is_some() || v.mic_open;
+                crate::widgets::onair_lamp(ui, egui::vec2(78.0, 24.0), live).on_hover_text(
+                    if live {
+                        "Live: Sendung läuft oder das Mikro ist offen"
+                    } else {
+                        "Nicht auf Sendung"
+                    },
+                );
                 let n = self.underruns();
                 if n > 0 {
                     ui.label(
@@ -1156,6 +1170,10 @@ impl RadioDesk {
                     crate::covers::paint_square(ui, 152.0, now.as_ref(), before.as_ref(), t)
                         .on_hover_text("Cover des Titels (aus der Datei)");
                 });
+
+            // Studio-Uhr: 60 Sekunden-LEDs und Digitalzeit (Ortszeit der Stundenuhr).
+            let (h, m, s) = time_parts(crate::clock_editor::now_unix(), self.zone);
+            crate::widgets::studio_clock(ui, 152.0, h, m, s);
 
             theme::lcd_show(ui, |ui| {
                 ui.set_min_height(142.0);
@@ -1204,26 +1222,9 @@ impl RadioDesk {
                     );
                     ui.add_space(2.0);
 
-                    // Uhrzeit zum Ansagen, groß und ruhig.
+                    // Die Uhr zeigt die Studio-Uhr links; hier nur der Takt für ihre Sekunden.
                     ui.ctx()
                         .request_repaint_after(std::time::Duration::from_millis(250));
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(time_of_day(
-                                crate::clock_editor::now_unix(),
-                                self.zone,
-                            ))
-                            .font(theme::seg_font(40.0))
-                            .color(theme::text()),
-                        )
-                        .on_hover_text("Uhrzeit (Ortszeit der Stundenuhr)");
-                        ui.label(
-                            egui::RichText::new("UHR")
-                                .size(11.0)
-                                .strong()
-                                .color(theme::text_dim()),
-                        );
-                    });
 
                     let urgent = v.running && v.remaining_title < 10.0;
                     let clock_col = if urgent {
@@ -1638,23 +1639,33 @@ impl RadioDesk {
             }
         });
         for b in Bus::ALL {
-            let mut db = self.level_db(b);
+            let mut db = self.level_db(b) as f32;
             let r = ui
-                .add(
-                    egui::Slider::new(
+                .horizontal(|ui| {
+                    let r = crate::widgets::fader(
+                        ui,
                         &mut db,
-                        woa_radio::mixer::LEVEL_MIN_DB..=woa_radio::mixer::LEVEL_MAX_DB,
-                    )
-                    .suffix(" dB")
-                    .fixed_decimals(1)
-                    .text(format!("Pegel {}", b.label())),
-                )
-                .on_hover_text("Rechtsklick: MIDI lernen. Ganz links = aus.");
+                        woa_radio::mixer::LEVEL_MIN_DB as f32
+                            ..=woa_radio::mixer::LEVEL_MAX_DB as f32,
+                        0.0,
+                        egui::vec2((ui.available_width() - 150.0).clamp(80.0, 260.0), 28.0),
+                        crate::widgets::Orient::Horizontal,
+                    );
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Pegel {} {}",
+                            b.label(),
+                            crate::widgets::vu::fmt_db(db)
+                        ))
+                        .font(theme::label_font(14.0))
+                        .color(theme::text()),
+                    );
+                    r
+                })
+                .inner
+                .on_hover_text("Doppelklick: 0 dB. Rechtsklick: MIDI lernen. Ganz links = aus.");
             if r.changed() {
-                self.set_level(b, db);
-            }
-            if r.double_clicked() {
-                self.set_level(b, 0.0);
+                self.set_level(b, f64::from(db));
             }
             self.learn_menu(&r, Target::Level(b));
         }
@@ -2391,97 +2402,27 @@ impl RadioDesk {
                 for slot in 0..CARTS {
                     let label = v.carts.get(slot).cloned().flatten();
                     let playing = v.carts_playing & (1 << slot) != 0;
-                    let pad_color = theme::track_color(slot);
-                    // Die große Zahl ist die Nummer des Carts. Die Taste steht klein in der
-                    // Ecke, sobald sie nicht die Nummer selbst ist.
-                    let number = (slot + 1).to_string();
+                    // Die Nummer ist die große Zahl; die Taste steht klein in der Ecke,
+                    // sobald sie nicht die Nummer selbst ist.
                     let key = v.cart_keys.get(slot).cloned().flatten();
                     let key_text = match &key {
                         Some(k) if cart_number_key(slot).as_deref() == Some(k.as_str()) => None,
                         Some(k) => Some(k.clone()),
                         None => Some("–".to_string()),
                     };
-                    let text = format!(
-                        "{number}\n{}",
-                        label.clone().unwrap_or_else(|| "leer".into())
-                    );
-                    let fill = if playing {
-                        theme::mix(theme::accent(), theme::surface(), 0.25)
-                    } else if label.is_some() {
-                        theme::mix(pad_color, theme::surface(), 0.80)
-                    } else {
-                        theme::well()
-                    };
-                    let stroke = if playing {
-                        egui::Stroke::new(2.0, theme::accent())
-                    } else if label.is_some() {
-                        egui::Stroke::new(1.0, theme::mix(pad_color, theme::border(), 0.45))
-                    } else {
-                        egui::Stroke::new(1.0, theme::border())
-                    };
-                    let b =
-                        egui::Button::new(egui::RichText::new(text).strong().color(if playing {
-                            theme::well()
-                        } else if label.is_some() {
-                            theme::text()
-                        } else {
-                            theme::text_dim()
-                        }))
-                        .fill(fill)
-                        .stroke(stroke)
-                        .min_size(egui::vec2(w, 68.0));
-                    let r = ui.add(b);
+                    let r = crate::widgets::CartPad {
+                        number: slot + 1,
+                        title: label.as_deref(),
+                        key: key_text.as_deref(),
+                        capturing: self.key_capture == Some(slot),
+                        playing,
+                        color: theme::track_color(slot),
+                    }
+                    .ui(ui, egui::vec2(w, 68.0));
                     if self.cart_rects.len() <= slot {
                         self.cart_rects.resize(slot + 1, egui::Rect::NOTHING);
                     }
                     self.cart_rects[slot] = r.rect;
-
-                    // Hardware-Pad-Optik: LED oben rechts + Farb-Streifen unten
-                    let pad_rect = r.rect;
-                    if let Some(k) = key_text {
-                        let capturing = self.key_capture == Some(slot);
-                        let font = egui::FontId::monospace(11.0);
-                        let text = if capturing { "?".to_string() } else { k };
-                        let galley = ui.painter().layout_no_wrap(
-                            text,
-                            font,
-                            if capturing {
-                                theme::accent()
-                            } else {
-                                theme::text()
-                            },
-                        );
-                        let tag = egui::Rect::from_min_size(
-                            pad_rect.left_top() + egui::vec2(4.0, 4.0),
-                            galley.size() + egui::vec2(8.0, 2.0),
-                        );
-                        ui.painter().rect_filled(tag, 3.0, theme::well());
-                        ui.painter()
-                            .galley(tag.min + egui::vec2(4.0, 1.0), galley, theme::text());
-                    }
-                    let led_col = if playing {
-                        theme::well()
-                    } else if label.is_some() {
-                        pad_color
-                    } else {
-                        theme::mix(theme::text_dim(), theme::well(), 0.6)
-                    };
-                    ui.painter().circle_filled(
-                        egui::pos2(pad_rect.right() - 9.0, pad_rect.top() + 9.0),
-                        3.5,
-                        led_col,
-                    );
-                    if label.is_some() {
-                        let bottom_bar = egui::Rect::from_min_max(
-                            egui::pos2(pad_rect.left() + 3.0, pad_rect.bottom() - 4.0),
-                            egui::pos2(pad_rect.right() - 3.0, pad_rect.bottom() - 1.5),
-                        );
-                        ui.painter().rect_filled(
-                            bottom_bar,
-                            1.0,
-                            if playing { theme::well() } else { pad_color },
-                        );
-                    }
 
                     if r.clicked() {
                         if label.is_some() {

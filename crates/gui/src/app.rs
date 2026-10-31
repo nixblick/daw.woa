@@ -1662,6 +1662,26 @@ impl WoaApp {
                 }
             }
 
+            // 3b. Pegelansicht der Summe (Analog, Modern oder Aus)
+            if self.config.vu_view != crate::widgets::VuView::Aus {
+                let sum = self
+                    .track_levels
+                    .values()
+                    .copied()
+                    .fold(self.level, f32::max);
+                let size = match self.config.vu_view {
+                    crate::widgets::VuView::Analog => egui::vec2(104.0, 46.0),
+                    _ => egui::vec2(150.0, 46.0),
+                };
+                crate::widgets::vu_meter(
+                    ui,
+                    egui::Id::new("transport-vu"),
+                    self.config.vu_view,
+                    size,
+                    sum,
+                );
+            }
+
             // 4. Latenz-Kapsel
             egui::Frame::new()
                 .fill(theme::well())
@@ -5441,57 +5461,35 @@ impl WoaApp {
                                     // M / S / Arm Tastenreihe
                                     ui.horizontal(|ui| {
                                         ui.spacing_mut().item_spacing.x = 4.0;
-                                        let m_btn = egui::Button::new(
-                                            egui::RichText::new("M").size(11.0).strong().color(
-                                                if mute {
-                                                    theme::well()
-                                                } else {
-                                                    theme::text_dim()
-                                                },
-                                            ),
-                                        )
-                                        .fill(if mute {
-                                            theme::accent()
-                                        } else {
-                                            theme::surface()
-                                        })
-                                        .min_size(egui::vec2(28.0, 20.0));
-                                        if ui.add(m_btn).on_hover_text("Stumm").clicked() {
+                                        let key_size = egui::vec2(28.0, 22.0);
+                                        let key_font = theme::label_font(13.0);
+                                        if crate::widgets::Key::new("M", key_size)
+                                            .font(key_font.clone())
+                                            .color(theme::accent())
+                                            .on(mute)
+                                            .ui(ui)
+                                            .on_hover_text("Stumm")
+                                            .clicked()
+                                        {
                                             self.state.toggle_mute(id);
                                         }
 
-                                        let s_btn = egui::Button::new(
-                                            egui::RichText::new("S").size(11.0).strong().color(
-                                                if solo {
-                                                    theme::well()
-                                                } else {
-                                                    theme::text_dim()
-                                                },
-                                            ),
-                                        )
-                                        .fill(if solo { theme::cue() } else { theme::surface() })
-                                        .min_size(egui::vec2(28.0, 20.0));
-                                        if ui.add(s_btn).on_hover_text("Solo").clicked() {
+                                        if crate::widgets::Key::new("S", key_size)
+                                            .font(key_font)
+                                            .color(theme::cue())
+                                            .on(solo)
+                                            .ui(ui)
+                                            .on_hover_text("Solo")
+                                            .clicked()
+                                        {
                                             self.state.toggle_solo(id);
                                         }
 
-                                        let arm_btn = egui::Button::new(
-                                            theme::fill_icon(theme::icf::RECORD, 11.0)
-                                                .strong()
-                                                .color(if armed {
-                                                    egui::Color32::WHITE
-                                                } else {
-                                                    theme::on_air()
-                                                }),
-                                        )
-                                        .fill(if armed {
-                                            theme::on_air()
-                                        } else {
-                                            theme::surface()
-                                        })
-                                        .min_size(egui::vec2(28.0, 20.0));
-                                        if ui
-                                            .add(arm_btn)
+                                        if crate::widgets::Key::new(theme::icf::RECORD, key_size)
+                                            .font(theme::fill_icon_font(12.0))
+                                            .color(theme::on_air_fill())
+                                            .on(armed)
+                                            .ui(ui)
                                             .on_hover_text("Aufnahme scharf schalten")
                                             .clicked()
                                             && !self.armed.remove(&id)
@@ -5527,6 +5525,38 @@ impl WoaApp {
                                             egui::Sense::hover(),
                                         );
                                         theme::led_meter_vertical(ui.painter(), m_rect, level);
+
+                                        // Kanalfader: derselbe Gain wie das Zahlenfeld.
+                                        let mut fg = match self.gain_drag {
+                                            Some((d, v)) if d == id => v,
+                                            _ => self.shown_gain(id, gain),
+                                        }
+                                            as f32;
+                                        let fr = crate::widgets::fader(
+                                            ui,
+                                            &mut fg,
+                                            MIN_GAIN_DB as f32..=MAX_GAIN_DB as f32,
+                                            0.0,
+                                            egui::vec2(26.0, 78.0),
+                                            crate::widgets::Orient::Vertical,
+                                        )
+                                        .on_hover_text("Kanal-Gain (Doppelklick: 0 dB)");
+                                        if fr.changed() {
+                                            if fr.double_clicked() {
+                                                self.gain_drag = None;
+                                                self.state.set_gain(id, 0.0);
+                                            } else if fr.dragged() {
+                                                self.gain_drag = Some((id, f64::from(fg)));
+                                            } else {
+                                                self.gain_drag = None;
+                                                self.state.set_gain(id, f64::from(fg));
+                                            }
+                                        } else if fr.drag_stopped()
+                                            && let Some((d, v)) = self.gain_drag.take()
+                                            && d == id
+                                        {
+                                            self.state.set_gain(id, v);
+                                        }
 
                                         ui.vertical(|ui| {
                                             ui.spacing_mut().item_spacing.y = 4.0;
@@ -6553,6 +6583,17 @@ impl WoaApp {
                 if ui
                     .radio_value(&mut self.config.theme, t, t.label())
                     .on_hover_text("Die Akzentfarbe folgt dem Layout: Produzent, Radio oder Party")
+                    .changed()
+                {
+                    self.save_config();
+                }
+            }
+            ui.separator();
+            ui.label(egui::RichText::new("Pegelansicht (Produzent)").small());
+            for v in crate::widgets::VuView::ALL {
+                if ui
+                    .radio_value(&mut self.config.vu_view, v, v.label())
+                    .on_hover_text("Anzeige des Summenpegels in der Transportleiste")
                     .changed()
                 {
                     self.save_config();

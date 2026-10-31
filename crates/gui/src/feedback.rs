@@ -33,6 +33,8 @@ pub struct GuiConfig {
     pub mode: Mode,
     /// Farbthema: Dunkel (Vorgabe) oder Hell. Die Modusfarbe folgt dem Layout.
     pub theme: crate::theme::Theme,
+    /// Pegelansicht im Produzenten-Modus: Analog (VU), Modern (Balken) oder Aus.
+    pub vu_view: crate::widgets::VuView,
     /// Sendung an den eigenen Shoutcast (liest auch woa-streamd). Ohne Kennwort.
     pub stream: woa_stream::StreamConfig,
     /// Puffergröße der Radio-Ausgabe in Frames. Fehlt oder 0 = Vorgabe des Treibers
@@ -130,6 +132,7 @@ impl Default for GuiConfig {
             telemetry_url: DEFAULT_INGEST_URL.to_string(),
             mode: Mode::Produzent,
             theme: crate::theme::Theme::default(),
+            vu_view: crate::widgets::VuView::default(),
             stream: woa_stream::StreamConfig::default(),
             radio_buffer_frames: None,
             midi_input: None,
@@ -486,6 +489,21 @@ mod tests {
         c.save(&p).unwrap();
         assert_eq!(GuiConfig::load(&p).theme, Theme::Hell);
         assert_eq!(GuiConfig::load(&p).mode, Mode::Radio);
+    }
+
+    #[test]
+    fn level_view_defaults_to_analog_and_is_persisted() {
+        use crate::widgets::VuView;
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("config.json");
+        std::fs::write(&p, r#"{"mode":"produzent"}"#).unwrap();
+        assert_eq!(GuiConfig::load(&p).vu_view, VuView::Analog);
+        let mut c = GuiConfig::load(&p);
+        c.vu_view = VuView::Modern;
+        c.save(&p).unwrap();
+        assert_eq!(GuiConfig::load(&p).vu_view, VuView::Modern);
+        std::fs::write(&p, r#"{"vu_view":"aus"}"#).unwrap();
+        assert_eq!(GuiConfig::load(&p).vu_view, VuView::Aus);
     }
 
     #[test]

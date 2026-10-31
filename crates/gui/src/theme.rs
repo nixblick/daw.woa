@@ -617,12 +617,11 @@ pub fn status_pill(ui: &mut egui::Ui, label: &str, color: Color32, active: bool)
 
 /// Farbe eines LED-Segments bei `seg_db` (Grün → Gelb → Rot), auf `lcd_bg`.
 fn led_color(seg_db: f32) -> Color32 {
-    if seg_db > -3.0 {
-        led_red()
-    } else if seg_db > -12.0 {
-        led_yellow()
-    } else {
-        led_green()
+    use crate::widgets::vu::{LedZone, zone_for_db};
+    match zone_for_db(seg_db) {
+        LedZone::Red => led_red(),
+        LedZone::Yellow => led_yellow(),
+        LedZone::Green => led_green(),
     }
 }
 
@@ -856,6 +855,11 @@ pub fn fill_icon(glyph: &str, size: f32) -> egui::RichText {
     egui::RichText::new(glyph)
         .size(size)
         .family(egui::FontFamily::Name(FAMILY_ICON_FILL.into()))
+}
+
+/// Schrift für Fill-Symbole (Familie [`FAMILY_ICON_FILL`]), etwa für Beschriftungen von Tasten.
+pub fn fill_icon_font(size: f32) -> FontId {
+    FontId::new(size, egui::FontFamily::Name(FAMILY_ICON_FILL.into()))
 }
 
 /// Beschriftung aus einem Fill-Symbol und optionalem Text, für Knöpfe. Das Symbol kommt aus

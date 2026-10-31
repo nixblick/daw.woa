@@ -227,78 +227,99 @@ fn now_card(ui: &mut egui::Ui, l: &PartyLayout, _height: f32) {
     theme::lcd_show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.set_min_height(260.0);
-        let (badge, col) = match &l.now {
-            Some(n) if n.playing => ("JETZT", theme::accent()),
-            Some(n) if n.paused => ("PAUSE", theme::on_air()),
-            _ => ("BEREIT", theme::cue()),
-        };
-        ui.label(
-            egui::RichText::new(badge)
-                .size(13.0)
-                .strong()
-                .monospace()
-                .color(col),
+        // Rechts das Jogwheel (dreht beim Abspielen), links die Texte.
+        let d = 120.0;
+        let area = ui.max_rect();
+        let text_w = (ui.available_width() - d - 16.0).max(120.0);
+        ui.scope(|ui| {
+            ui.set_max_width(text_w);
+            now_texts(ui, l);
+        });
+        let playing = l.now.as_ref().is_some_and(|n| n.playing);
+        let jog_rect = egui::Rect::from_min_size(
+            egui::pos2(area.right() - d, area.top() + 4.0),
+            egui::vec2(d, d),
         );
-        match &l.now {
-            Some(n) => {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(jog_rect), |ui| {
+            crate::widgets::jog(ui, egui::Id::new("party-jog"), d, playing)
+                .on_hover_text("Das Jogwheel dreht sich, solange ein Titel läuft");
+        });
+    });
+}
+
+/// Titel, Künstler, Restzeit und nächster Titel im Now-Playing-LCD.
+fn now_texts(ui: &mut egui::Ui, l: &PartyLayout) {
+    let (badge, col) = match &l.now {
+        Some(n) if n.playing => ("JETZT", theme::accent()),
+        Some(n) if n.paused => ("PAUSE", theme::on_air()),
+        _ => ("BEREIT", theme::cue()),
+    };
+    ui.label(
+        egui::RichText::new(badge)
+            .size(13.0)
+            .strong()
+            .monospace()
+            .color(col),
+    );
+    match &l.now {
+        Some(n) => {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(&n.title)
+                        .size(40.0)
+                        .strong()
+                        .color(theme::text()),
+                )
+                .truncate(),
+            );
+            if !n.artist.is_empty() {
                 ui.add(
                     egui::Label::new(
-                        egui::RichText::new(&n.title)
-                            .size(40.0)
-                            .strong()
-                            .color(theme::text()),
+                        egui::RichText::new(&n.artist)
+                            .size(26.0)
+                            .color(theme::text_dim()),
                     )
                     .truncate(),
                 );
-                if !n.artist.is_empty() {
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(&n.artist)
-                                .size(26.0)
-                                .color(theme::text_dim()),
-                        )
-                        .truncate(),
-                    );
-                }
-                ui.add_space(6.0);
-                let urgent = n.playing && n.remaining.len() <= 4 && n.remaining.starts_with("0:0");
-                ui.label(
-                    egui::RichText::new(&n.remaining)
-                        .size(84.0)
-                        .strong()
-                        .monospace()
-                        .color(if urgent {
-                            theme::on_air()
-                        } else {
-                            theme::accent()
-                        }),
-                );
-                ui.add(
-                    egui::ProgressBar::new(n.progress)
-                        .desired_height(12.0)
-                        .fill(theme::accent()),
-                );
             }
-            None => {
-                ui.label(
-                    egui::RichText::new("Noch kein Titel – Ordner laden")
-                        .size(28.0)
-                        .color(theme::text_dim()),
-                );
-            }
+            ui.add_space(6.0);
+            let urgent = n.playing && n.remaining.len() <= 4 && n.remaining.starts_with("0:0");
+            ui.label(
+                egui::RichText::new(&n.remaining)
+                    .size(84.0)
+                    .strong()
+                    .monospace()
+                    .color(if urgent {
+                        theme::on_air()
+                    } else {
+                        theme::accent()
+                    }),
+            );
+            ui.add(
+                egui::ProgressBar::new(n.progress)
+                    .desired_height(12.0)
+                    .fill(theme::accent()),
+            );
         }
-        ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new(format!(
-                "NÄCHSTER: {}",
-                l.next
-                    .as_deref()
-                    .unwrap_or("– nichts mehr in der Playlist –")
-            ))
-            .size(20.0)
-            .color(theme::cue()),
-        );
-    });
+        None => {
+            ui.label(
+                egui::RichText::new("Noch kein Titel – Ordner laden")
+                    .size(28.0)
+                    .color(theme::text_dim()),
+            );
+        }
+    }
+    ui.add_space(8.0);
+    ui.label(
+        egui::RichText::new(format!(
+            "NÄCHSTER: {}",
+            l.next
+                .as_deref()
+                .unwrap_or("– nichts mehr in der Playlist –")
+        ))
+        .size(20.0)
+        .color(theme::cue()),
+    );
 }
 
 /// Zeichnet die Tasten; `true`, wenn „Ordner laden“ gedrückt wurde.
@@ -313,21 +334,18 @@ fn buttons_row(ui: &mut egui::Ui, l: &PartyLayout, cmds: &mut Vec<PartyCommand>)
             for b in row {
                 let primary = matches!(b.command, PartyCommand::PlayPause);
                 let lit = primary || b.active;
-                let btn = egui::Button::new(
-                    egui::RichText::new(b.label)
-                        .size(size)
-                        .strong()
-                        .color(if lit { theme::well() } else { theme::text() }),
-                )
-                .fill(if primary {
+                let color = if primary {
                     theme::ok()
-                } else if b.active {
-                    theme::accent()
                 } else {
-                    theme::surface()
-                })
-                .min_size(egui::vec2(w, h));
-                if ui.add(btn).clicked() {
+                    theme::accent()
+                };
+                let btn = crate::widgets::Key::new(b.label, egui::vec2(w, h))
+                    .font(theme::label_font(size))
+                    .color(color)
+                    .radius(theme::RADIUS_PARTY)
+                    .on(lit)
+                    .ui(ui);
+                if btn.clicked() {
                     cmds.push(b.command.clone());
                 }
             }
