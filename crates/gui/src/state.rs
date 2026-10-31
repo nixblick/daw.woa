@@ -11,6 +11,9 @@ use woa_model::{
 };
 
 /// Subfolder for recorded takes, inside the project or recovery folder.
+/// Name of a fresh project, until it is saved under a file name.
+const NEW_PROJECT: &str = "Neues Projekt";
+
 pub const TAKES_DIR: &str = "aufnahmen";
 
 /// Autosave interval (rule 7).
@@ -50,7 +53,7 @@ impl AppState {
     /// A fresh, empty project. `recovery_dir` receives autosaves of unsaved projects.
     pub fn new(recovery_dir: PathBuf, now: Instant) -> Self {
         Self {
-            session: limited(Session::new("Neues Projekt")),
+            session: limited(Session::new(NEW_PROJECT)),
             recovery_dir,
             last_autosave: now,
             status: Status::Idle,
@@ -81,10 +84,22 @@ impl AppState {
             .to_path_buf()
     }
 
-    /// Window title: project name, folder, dirty marker.
+    /// Window title: project name, dirty marker. Is the name empty or still the default,
+    /// a saved project shows its file name instead (#243).
     pub fn title(&self) -> String {
         let dirty = if self.session.is_dirty() { " *" } else { "" };
-        format!("WOA – {}{}", self.project().meta.name, dirty)
+        let name = self.project().meta.name.trim();
+        let file = self
+            .session
+            .path()
+            .and_then(|p| p.file_stem())
+            .map(|s| s.to_string_lossy());
+        let shown = match file {
+            Some(f) if name.is_empty() || name == NEW_PROJECT => f.into_owned(),
+            _ if name.is_empty() => NEW_PROJECT.to_string(),
+            _ => name.to_string(),
+        };
+        format!("WOA – {shown}{dirty}")
     }
 
     fn report(&mut self, what: &str, result: Result<(), ModelError>) -> bool {
@@ -1181,7 +1196,7 @@ impl AppState {
 
     /// Starts a new, empty project.
     pub fn new_project(&mut self) {
-        self.session = limited(Session::new("Neues Projekt"));
+        self.session = limited(Session::new(NEW_PROJECT));
         self.status = Status::Info("Neues Projekt".into());
     }
 
@@ -1574,6 +1589,22 @@ mod tests {
         assert!(s.project().track(t).unwrap().sends.is_empty());
         s.undo();
         assert_eq!(s.project().track(t).unwrap().sends.len(), 1);
+    }
+
+    /// Ein gespeichertes Projekt mit dem Vorgabenamen heißt im Titel wie seine Datei (#243).
+    #[test]
+    fn title_uses_file_name_for_default_or_empty_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        assert_eq!(s.title(), "WOA – Neues Projekt");
+        assert!(s.save_as(&tmp.path().join("Morgenshow")));
+        assert_eq!(s.title(), "WOA – Morgenshow");
+        s.session = limited(Session::new(""));
+        assert!(s.save_as(&tmp.path().join("Leer.woa")));
+        assert_eq!(s.title(), "WOA – Leer");
+        s.session = limited(Session::new("Sendung"));
+        assert!(s.save_as(&tmp.path().join("Datei")));
+        assert_eq!(s.title(), "WOA – Sendung");
     }
 
     #[test]
