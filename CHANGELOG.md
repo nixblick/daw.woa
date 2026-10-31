@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.63 — 2026-10-31
+
+- **README neu:** zeigt, was WOA kann (Radio, Produzent, Party, KI über MCP), wo es den Download gibt und wer dahinter steht (André Hinz, creaVisions). Der veraltete Satz „noch nichts lauffähig“ ist raus.
+
 ## 0.34.62 — 2026-10-31
 
 ### Geändert
