@@ -23,6 +23,8 @@ use crate::xrun::XrunLog;
 use woa_engine::localtime::Zone;
 
 const NO_PFL: &str = "Kein Kopfhörer-Ausgang: Einstellungen → Vorhören (PFL)";
+/// Tooltip, wenn das Vorhören in den Einstellungen aus ist.
+pub const PFL_OFF: &str = "Vorhören ist aus: Einstellungen → Vorhören (PFL)";
 
 type Stream = Box<dyn std::any::Any>;
 
@@ -131,6 +133,8 @@ pub struct RadioDesk {
     manage: crate::manage::ManageWindow,
     /// Eigener Strom für das Vorhören auf einem zweiten Gerät.
     _pfl_output: Option<woa_engine::device::ManagedOutput>,
+    /// Warum das Vorhören keinen Ausgang hat (aus oder Fehler beim Öffnen); `None` = offen.
+    pfl_note: Option<String>,
 }
 
 fn level_bus(b: Bus) -> LevelBus {
@@ -272,8 +276,12 @@ impl RadioDesk {
         let counter = Arc::clone(&underruns);
         // Vorhören (Paket 15): Kanal 3/4 im selben Callback oder ein eigener Strom.
         // Der PFL-Spieler hat keinen Weg in den Mixer, den Mitschnitt oder den Sende-Ring.
+        let mut pfl_note: Option<String> = None;
         let (aux, pfl_output) = match pfl {
-            PflOutput::Aus => (None, None),
+            PflOutput::Aus => {
+                pfl_note = Some(PFL_OFF.into());
+                (None, None)
+            }
             PflOutput::Kanal34 => match woa_engine::device::output_channels(&config) {
                 Ok(n) if n >= 4 => {
                     let (h, mut player) = woa_radio::pfl::channel(rate);
@@ -285,13 +293,16 @@ impl RadioDesk {
                 }
                 Ok(n) => {
                     tracing::warn!(channels = n, "pfl: device has too few channels");
-                    error = Some(format!(
+                    pfl_note = Some(format!(
                         "Vorhören aus: Das Gerät hat nur {n} Kanäle, Kanal 3/4 gibt es nicht"
                     ));
+                    error.clone_from(&pfl_note);
                     (None, None)
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "pfl: channel count");
+                    pfl_note = Some(format!("Vorhören aus: Kanalzahl nicht lesbar ({e})"));
+                    error.clone_from(&pfl_note);
                     (None, None)
                 }
             },
@@ -316,7 +327,8 @@ impl RadioDesk {
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, device = %id, "pfl output failed");
-                        error = Some(format!("Vorhören aus: Kopfhörer-Gerät geht nicht ({e})"));
+                        pfl_note = Some(format!("Vorhören aus: Kopfhörer-Gerät geht nicht ({e})"));
+                        error.clone_from(&pfl_note);
                         (None, None)
                     }
                 }
@@ -396,6 +408,7 @@ impl RadioDesk {
             cue_seen: std::collections::HashMap::new(),
             manage: crate::manage::ManageWindow::default(),
             _pfl_output: pfl_output,
+            pfl_note,
         }
         .reattach()
     }
@@ -2579,7 +2592,7 @@ impl RadioDesk {
                         if label.is_some()
                             && ui
                                 .add_enabled(v.pfl_available, egui::Button::new("Vorhören"))
-                                .on_disabled_hover_text(NO_PFL)
+                                .on_disabled_hover_text(self.pfl_hint())
                                 .clicked()
                         {
                             self.with(move |c| {
@@ -2641,7 +2654,7 @@ impl RadioDesk {
             }
             if ui
                 .add_enabled(v.pfl_available, egui::Button::new(label))
-                .on_disabled_hover_text(NO_PFL)
+                .on_disabled_hover_text(self.pfl_hint())
                 .clicked()
             {
                 self.with(move |c| {
@@ -2996,6 +3009,16 @@ impl RadioDesk {
         }
     }
 
+    /// Warum das Vorhören aus ist: Einstellung „Aus“ oder der Fehler beim Öffnen.
+    pub fn pfl_note(&self) -> Option<&str> {
+        self.pfl_note.as_deref()
+    }
+
+    /// Tooltip für deaktivierte Vorhören-Knöpfe.
+    pub fn pfl_hint(&self) -> String {
+        pfl_hint_for(self.pfl_note.as_deref())
+    }
+
     /// Ob das Vorhören (PFL) einen Ausgang hat.
     pub fn pfl_available(&self) -> bool {
         self.view.pfl_available
@@ -3192,7 +3215,7 @@ impl RadioDesk {
                                     loaded && v.pfl_available,
                                     egui::Button::new("Vorhören").min_size(egui::vec2(70.0, 30.0)),
                                 )
-                                .on_disabled_hover_text(NO_PFL)
+                                .on_disabled_hover_text(self.pfl_hint())
                                 .clicked()
                             {
                                 self.with(move |c| {
@@ -3309,5 +3332,23 @@ mod tests {
         assert_eq!(super::clock(83.4), "01:23");
         assert_eq!(super::clock(3725.0), "1:02:05");
         assert_eq!(super::clock(-3.0), "00:00");
+    }
+}
+
+/// Tooltip-Text: der Grund, falls bekannt, sonst der allgemeine Hinweis.
+pub fn pfl_hint_for(note: Option<&str>) -> String {
+    note.map_or_else(|| NO_PFL.to_string(), str::to_string)
+}
+
+#[cfg(test)]
+mod pfl_hint_tests {
+    use super::*;
+
+    #[test]
+    fn hint_shows_open_error() {
+        let e = "Vorhören aus: Kopfhörer-Gerät geht nicht (busy)";
+        assert_eq!(pfl_hint_for(Some(e)), e);
+        assert_eq!(pfl_hint_for(Some(PFL_OFF)), PFL_OFF);
+        assert_eq!(pfl_hint_for(None), NO_PFL);
     }
 }
