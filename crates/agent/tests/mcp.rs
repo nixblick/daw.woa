@@ -170,3 +170,30 @@ async fn reopen_existing_project() {
     let agent = WoaAgent::open_or_create(&dir).unwrap();
     assert_eq!(agent.session().lock().unwrap().project().meta.name, "Alt");
 }
+
+/// Manche Clients (der StreamWriter von .NET) schreiben ein UTF-8-BOM vor die erste Zeile.
+/// `initialize` darf dadurch nicht verloren gehen (#243).
+#[tokio::test(flavor = "current_thread")]
+async fn bom_before_initialize_is_ignored() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let tmp = tempfile::tempdir().unwrap();
+    let agent = WoaAgent::open_or_create(tmp.path().join("bom.woa")).unwrap();
+    let (mut c_write, s_read) = tokio::io::duplex(1 << 16);
+    let (s_write, c_read) = tokio::io::duplex(1 << 16);
+    let _server = tokio::spawn(woa_agent::serve(agent, (s_read, s_write)));
+    let init = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"#;
+    c_write.write_all(b"\xEF\xBB\xBF").await.unwrap();
+    c_write.write_all(init.as_bytes()).await.unwrap();
+    c_write.write_all(b"\n").await.unwrap();
+    let mut line = String::new();
+    let read = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        BufReader::new(c_read).read_line(&mut line),
+    )
+    .await;
+    assert!(read.is_ok(), "keine Antwort auf initialize mit BOM");
+    assert!(
+        line.contains("\"id\":1") && line.contains("protocolVersion"),
+        "{line}"
+    );
+}
