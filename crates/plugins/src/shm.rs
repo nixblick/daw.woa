@@ -374,6 +374,7 @@ impl PrivateDir {
             COUNTER.fetch_add(1, Ordering::Relaxed),
             nanos
         ));
+        #[cfg_attr(not(unix), allow(unused_mut))]
         let mut b = std::fs::DirBuilder::new();
         #[cfg(unix)]
         {

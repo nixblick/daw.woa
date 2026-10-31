@@ -6,7 +6,7 @@ Sicherheit #112: Plugin-Suche und gemeinsamer Speicher nur noch für den eigenen
 
 - **Suchergebnis:** der Suchprozess schreibt in ein neu angelegtes privates Verzeichnis (Modus 0700, nicht vorhersehbarer Name) statt in eine feste Datei im gemeinsamen Temp-Ordner; das Verzeichnis wird danach gelöscht. Untergeschobene Dateien oder Symlinks sind damit wirkungslos.
 - **Gemeinsamer Speicher:** die Datei zwischen Oberfläche und Plugin-Prozess wird unter Linux mit Modus 0600 angelegt; andere Nutzer können kein Audio mehr mitlesen.
-- Tests belegen 0600 und 0700.
+- Tests belegen 0600 und 0700. Der Windows-Bau bleibt warnungsfrei.
 
 Closes #112.
 
