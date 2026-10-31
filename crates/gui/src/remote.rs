@@ -122,12 +122,7 @@ impl RemoteView {
         theme::card_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("FERNBEDIENUNG")
-                        .size(11.5)
-                        .strong()
-                        .color(theme::text_dim()),
-                );
+                ui.label(theme::panel_label("FERNBEDIENUNG"));
                 if let Some(r) = &self.remote {
                     theme::status_pill(
                         ui,

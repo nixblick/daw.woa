@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.71 — 2026-10-31
+
+- **Einheitliche Modulköpfe (#246):** Alle Kartenköpfe in Radio, Party, Fernbedienung, Bibliothek, Analyse, Export, Automation und Uhren-Editor („SENDE-PLAYLIST“, „CART-WALL“, „WUNSCHLISTE“ …) stehen jetzt einheitlich als `panel-label` des Design-Systems: Barlow Condensed Bold, 12 px, leicht gesperrt, `text-dim`. Bisher mischten sich Barlow 11,5 px fett, 10 px und `small`. Das Pianoroll nimmt für Noten im Dunkeln die Spurfarbe 1 statt eines eigenen Blaus. Neu in `theme.rs`: `panel_label()` und `danger_text()` (Fehlertext mit WCAG-AA-Kontrast). Rein optisch, keine Bedienung geändert.
+
 ## 0.34.70 — 2026-10-31
 
 - **Spur exportieren (#229):** Im Kontextmenü des Spurkopfs (Produzent) steht „Spur exportieren …“. Ein kleines Fenster fragt Dateiname (Vorgabe: Spurname), Format WAV oder MP3 sowie Titel, Interpret und Kommentar. Die Datei enthält nur diese Spur, genau wie ihr Stem (nach Fader und Pan, mit Plugins, ohne Master). Die Tags stehen in WAV als `LIST/INFO`, in MP3 als ID3v2.3; MP3 nutzt den eingebauten Encoder des Mixdown-Exports. Gerechnet und geschrieben wird in einem eigenen Thread, die Oberfläche bleibt bedienbar; die Statuszeile meldet das Ende. Eine stumme Spur meldet „kein Ton“.

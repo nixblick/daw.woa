@@ -555,11 +555,7 @@ impl ClockEditor {
             ui.vertical(|ui| self.week_grid(ui));
         });
         ui.separator();
-        ui.label(
-            egui::RichText::new("LETZTE AUSWAHLEN")
-                .small()
-                .color(theme::text_dim()),
-        );
+        ui.label(theme::panel_label("LETZTE AUSWAHLEN"));
         if self.log.is_empty() {
             ui.label(egui::RichText::new("Noch nichts gewählt").color(theme::text_dim()));
         }
@@ -645,11 +641,7 @@ impl ClockEditor {
     }
 
     fn clock_list(&mut self, ui: &mut egui::Ui) {
-        ui.label(
-            egui::RichText::new("UHREN")
-                .small()
-                .color(theme::text_dim()),
-        );
+        ui.label(theme::panel_label("UHREN"));
         let mut pick = None;
         for (i, c) in self.schedule.clocks.iter().enumerate() {
             let col = theme::track_color(i);
