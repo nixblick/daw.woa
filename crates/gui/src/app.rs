@@ -5475,7 +5475,10 @@ impl WoaApp {
                         egui::FontId::proportional(11.5),
                         theme::well(),
                     );
-                    if bar_resp.on_hover_text("Kanal wählen (Insert-Rack)").clicked() {
+                    if bar_resp
+                        .on_hover_text("Kanal wählen (Insert-Rack)")
+                        .clicked()
+                    {
                         self.selected_track = Some(id);
                     }
 
@@ -5519,8 +5522,8 @@ impl WoaApp {
 
                     // LED-Kette und Kanalfader (derselbe Gain wie das Zahlenfeld im Rack).
                     ui.horizontal(|ui| {
-                        let (m_rect, _) = ui
-                            .allocate_exact_size(egui::vec2(14.0, 110.0), egui::Sense::hover());
+                        let (m_rect, _) =
+                            ui.allocate_exact_size(egui::vec2(14.0, 110.0), egui::Sense::hover());
                         theme::led_meter_vertical(ui.painter(), m_rect, level);
                         let mut fg = match self.gain_drag {
                             Some((d, v)) if d == id => v,
