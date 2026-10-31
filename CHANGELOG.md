@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.34.55 — 2026-10-31
+
+### Geändert
+
+- **Feedback (#211):** Der Haken „Protokoll mitsenden“ ist jetzt bei jedem Öffnen an (abwählbar). Nach Bildschirmfoto oder eigenem Bild erscheint eine kleine Vorschau (160 px) mit „× Entfernen“. Strg+Enter schickt mit den gesetzten Haken ab wie „Abschicken“ (Tooltip). Tests mit Fake-Server.
+
+### Behoben
+
+- **Vorhören (#205):** In Playlist, Cartwall und den Decks A/B/C ließ sich das Vorhören nicht über den Knopf beenden. Hört man dieselbe Quelle vor, heißt der Knopf jetzt „⏹ Vorhören stoppen“ (hervorgehoben) und stoppt beim Klick; eine andere Quelle wechselt das Vorhören dorthin (Test).
+
 ## 0.34.54 — 2026-10-31
 
 ### Behoben

@@ -9,6 +9,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui;
 use woa_io::controller::{Bus, Target};
+use woa_radio::control::PflSource;
 use woa_radio::mixer::LevelBus;
 use woa_radio::station::{Station, View, ViewEntry};
 use woa_radio::{CARTS, Controller, RadioShow};
@@ -25,6 +26,22 @@ use woa_engine::localtime::Zone;
 const NO_PFL: &str = "Kein Kopfhörer-Ausgang: Einstellungen → Vorhören (PFL)";
 /// Tooltip, wenn das Vorhören in den Einstellungen aus ist.
 pub const PFL_OFF: &str = "Vorhören ist aus: Einstellungen → Vorhören (PFL)";
+
+/// Knopf „Vorhören“: läuft gerade diese Quelle, wird er zu „⏹ Vorhören stoppen“ (hervorgehoben),
+/// ein Klick darauf stoppt (#205).
+fn pfl_button(active: bool) -> egui::Button<'static> {
+    if active {
+        egui::Button::new(theme::fill_label(
+            theme::icf::STOP,
+            "Vorhören stoppen",
+            14.0,
+            theme::text(),
+        ))
+        .selected(true)
+    } else {
+        egui::Button::new("Vorhören")
+    }
+}
 
 type Stream = Box<dyn std::any::Any>;
 
@@ -2851,12 +2868,15 @@ impl RadioDesk {
                         }
                         if label.is_some()
                             && ui
-                                .add_enabled(v.pfl_available, egui::Button::new("Vorhören"))
+                                .add_enabled(
+                                    v.pfl_available,
+                                    pfl_button(v.pfl_source == Some(PflSource::Cart(slot))),
+                                )
                                 .on_disabled_hover_text(self.pfl_hint())
                                 .clicked()
                         {
                             self.with(move |c| {
-                                if let Err(e) = c.pfl_cart(slot) {
+                                if let Err(e) = c.pfl_toggle(PflSource::Cart(slot)) {
                                     c.report(e);
                                 }
                             });
@@ -2913,17 +2933,28 @@ impl RadioDesk {
             ));
             ui.close();
         }
-        for (label, hook) in [("Vorhören", false), ("Vorhören ab Hook", true)] {
+        let here = v.pfl_source == Some(PflSource::Title(i));
+        for hook in [false, true] {
             if hook && e.cues.hook.is_none() {
                 continue;
             }
+            let button = if hook {
+                egui::Button::new("Vorhören ab Hook")
+            } else {
+                pfl_button(here)
+            };
             if ui
-                .add_enabled(v.pfl_available, egui::Button::new(label))
+                .add_enabled(v.pfl_available, button)
                 .on_disabled_hover_text(self.pfl_hint())
                 .clicked()
             {
                 self.with(move |c| {
-                    if let Err(e) = c.pfl_title(i, hook) {
+                    let r = if hook {
+                        c.pfl_title(i, true)
+                    } else {
+                        c.pfl_toggle(PflSource::Title(i))
+                    };
+                    if let Err(e) = r {
                         c.report(e);
                     }
                 });
@@ -3501,13 +3532,14 @@ impl RadioDesk {
                             if ui
                                 .add_enabled(
                                     loaded && v.pfl_available,
-                                    egui::Button::new("Vorhören").min_size(egui::vec2(70.0, 30.0)),
+                                    pfl_button(v.pfl_source == Some(PflSource::Deck(k)))
+                                        .min_size(egui::vec2(70.0, 30.0)),
                                 )
                                 .on_disabled_hover_text(self.pfl_hint())
                                 .clicked()
                             {
                                 self.with(move |c| {
-                                    if let Err(e) = c.pfl_deck(k) {
+                                    if let Err(e) = c.pfl_toggle(PflSource::Deck(k)) {
                                         c.report(e);
                                     }
                                 });
