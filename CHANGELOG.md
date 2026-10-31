@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.34.74 — 2026-10-31
+## 0.34.75 — 2026-10-31
 
 - **Einheitliche Modulköpfe (#246):** Alle Kartenköpfe in Radio, Party, Fernbedienung, Bibliothek, Analyse, Export, Automation und Uhren-Editor („SENDE-PLAYLIST“, „CART-WALL“, „WUNSCHLISTE“ …) stehen jetzt einheitlich als `panel-label` des Design-Systems: Barlow Condensed Bold, 12 px, leicht gesperrt, `text-dim`. Bisher mischten sich Barlow 11,5 px fett, 10 px und `small`. Das Pianoroll nimmt für Noten im Dunkeln die Spurfarbe 1 statt eines eigenen Blaus. Neu in `theme.rs`: `panel_label()` und `danger_text()` (Fehlertext mit WCAG-AA-Kontrast). Rein optisch, keine Bedienung geändert.
+
+## 0.34.74 — 2026-10-31
+
+- **Playlist: Griff und Nummer eintippen (#92):** Vor der Nummer jeder Zeile der Sende-Playlist steht ein Griff-Symbol (sechs Punkte); gezogen wird wie bisher die ganze Zeile (#166). Ein Klick auf die Nummer macht sie zum Eingabefeld: neue Nummer eintippen, Enter verschiebt den Titel dorthin (zu groß: ans Ende), Esc oder Wegklicken lässt alles, wie es ist. Pfeile, Entfernen, Doppelklick und Kontextmenü bleiben unverändert. Test: `typed_position` in `crates/gui/src/radio.rs`.
 
 ## 0.34.73 — 2026-10-31
 
