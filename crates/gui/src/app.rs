@@ -5799,6 +5799,10 @@ impl eframe::App for WoaApp {
         }
         self.stop_at_audio_end();
         self.drain_live_peaks();
+        // Schreibfehler (z. B. Platte voll) sofort melden, nicht erst beim Stopp.
+        if self.takes.iter().any(|(_, t)| t.failed()) {
+            self.stop_record();
+        }
         self.analysis_frame();
         let busy = self.recording() || self.player.as_ref().is_some_and(Player::is_playing);
         // Radio: 5 Bilder/s, solange ein Titel läuft (Uhr, Pegel), sonst 2/s. Vorher 10/s

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.34.38 — 2026-10-31
+
+### Behoben
+
+- **Rauschunterdrückung:** Nach einem verspäteten Block des Arbeits-Threads blieb das Nasssignal dauerhaft einen Block hinter dem Trockensignal. Verspätete Ergebnisse werden jetzt verworfen, bis Lesen und Schreiben wieder im Gleichschritt sind (Test mit künstlich verzögertem Arbeits-Thread).
+- **Aufnahme:** Ein Schreibfehler (z. B. Platte voll) wurde erst beim Stoppen gemeldet, bis dahin lief die Aufnahme scheinbar weiter. Der Recorder meldet ihn jetzt über `writer_failed()`, die Oberfläche beendet die Aufnahme sofort und zeigt den Fehler.
+
 ## 0.34.37 — 2026-10-31
 
 Titelinfos bearbeiten, direkt in WOA (André: „Tippfehler und andere Feinheiten gleich in der App verbessern … möglichst ohne Wiedergabe zu unterbrechen“).
