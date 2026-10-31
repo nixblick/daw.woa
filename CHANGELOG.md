@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.34.59 — 2026-10-31
+
+### Neu
+
+- **Gespielte ausblenden (#215):** Neben dem Titelzähler der Sende-Playlist schaltet ein kleines Auge-Symbol die gespielten Titel (alle vor dem laufenden bzw. nächsten) aus der Liste. Sie werden nur ausgeblendet, nicht gelöscht; der Zähler zeigt dann „offen, gespielt“. „bis Playlist-Ende“ zählt nur die offenen Titel. Die Einstellung gilt je Sendung und steht in radio.json (Vorgabe aus). Tests: Restzeit nur der offenen Titel, Speichern und Laden.
+- **LED-Meter an den Fadern (#216):** Neben jedem der vier Fader (Playlist, Carts, Decks, Mikro) steht ein schmales senkrechtes LED-Meter nach dem Fader, dazu eine fünfte Spalte „Master“ ohne Fader: der Sendemix, der wirklich rausgeht. Grün bis -18 dBFS, Gelb bis -6, Rot darüber, Blau unter -40 („zu leise“); die Spitze hält 1,5 s. Der Audio-Thread schreibt nur drei weitere Spitzenwerte in Atomics, ohne Lock. Tests: Farbstufen, Spitze halten, fünf Meter vorhanden, Pegel je Zweig.
+
 ## 0.34.58 — 2026-10-31
 
 ### Behoben
