@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.11 — 2026-10-31
+
+Design D3: Icons statt Emojis.
+
+- **Phosphor-Icons:** `egui-phosphor` (MIT) ist eingebunden. Alle Emojis und Sonderzeichen-Symbole der Oberfläche (Transport, Radio-Konsole, Menüs, Knöpfe, Bibliothek, Studio-Dock, Spurliste) sind durch Phosphor-Icons ersetzt.
+- **Transport im Fill-Stil:** Play, Pause, Stopp, Zurück, Weiter, Wiederholen, Zufall, Neustart und Aufnahme sind gefüllte Symbole, alle übrigen Icons im Regular-Stil.
+- **Aufnahmeknopf:** Der selbst gezeichnete rote Punkt entfällt; das Aufnahme-Symbol gehört nun zur Beschriftung.
+- **Für Entwickler:** `theme::ic` (Regular), `theme::icf` (Fill), `theme::fill_label` und `theme::fill_icon`; Fill liegt als eigene Schriftfamilie `icon-fill`.
+
 ## 0.34.10 — 2026-10-31
 
 Design D2: Schriften des Design Systems (Barlow, Barlow Condensed, JetBrains Mono, DSEG7 Classic).

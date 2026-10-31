@@ -1039,10 +1039,14 @@ impl RadioDesk {
                 .inner_margin(egui::Margin::symmetric(10, 6))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("⚠").strong().color(theme::on_air()));
+                        ui.label(
+                            egui::RichText::new(theme::ic::WARNING)
+                                .strong()
+                                .color(theme::on_air()),
+                        );
                         ui.colored_label(theme::text(), e);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("✕").clicked() {
+                            if ui.small_button(theme::ic::X).clicked() {
                                 self.error = None;
                             }
                         });
@@ -1322,12 +1326,21 @@ impl RadioDesk {
         // Hardware-Tastenreihe (Broadcast-Konsole)
         ui.horizontal_wrapped(|ui| {
             let big = |t: &str| egui::RichText::new(t).size(15.0).strong();
-            let go = if v.running { "⏸ Pause" } else { "▶ Play" };
-            let go_btn = egui::Button::new(big(go).color(if v.running {
-                theme::well()
+            let (go_icon, go_text) = if v.running {
+                (theme::icf::PAUSE, "Pause")
             } else {
-                theme::text()
-            }))
+                (theme::icf::PLAY, "Play")
+            };
+            let go_btn = egui::Button::new(theme::fill_label(
+                go_icon,
+                go_text,
+                15.0,
+                if v.running {
+                    theme::well()
+                } else {
+                    theme::text()
+                },
+            ))
             .fill(if v.running {
                 theme::ok()
             } else {
@@ -1346,9 +1359,14 @@ impl RadioDesk {
             self.learn_menu(&r, Target::StartNext);
 
             let r = ui.add(
-                egui::Button::new(big("■ Stopp"))
-                    .fill(theme::surface())
-                    .min_size(egui::vec2(88.0, 38.0)),
+                egui::Button::new(theme::fill_label(
+                    theme::icf::STOP,
+                    "Stopp",
+                    15.0,
+                    theme::text(),
+                ))
+                .fill(theme::surface())
+                .min_size(egui::vec2(88.0, 38.0)),
             );
             if r.clicked() {
                 self.with(|c| c.stop());
@@ -1360,17 +1378,17 @@ impl RadioDesk {
             let mut state = woa_radio::party::PartyState::default();
             for (label, cmd, tip) in [
                 (
-                    "⏮",
+                    theme::icf::SKIP_BACK,
                     woa_radio::party::PartyCommand::Previous,
                     "Vorheriger Titel (P)",
                 ),
                 (
-                    "⏭",
+                    theme::icf::SKIP_FORWARD,
                     woa_radio::party::PartyCommand::Next,
                     "Nächster Titel (N)",
                 ),
                 (
-                    "↺",
+                    theme::icf::ARROW_COUNTER_CLOCKWISE,
                     woa_radio::party::PartyCommand::Restart,
                     "Titel von vorn",
                 ),
@@ -1385,7 +1403,17 @@ impl RadioDesk {
                     "10 s vor",
                 ),
             ] {
-                let b = egui::Button::new(big(label))
+                // Symbole (Fill-Stil) stehen in `theme::icf`, reiner Text ("−10 s") bleibt Text.
+                let text: egui::WidgetText = if label
+                    .chars()
+                    .next()
+                    .is_some_and(|c| ('\u{E000}'..='\u{F8FF}').contains(&c))
+                {
+                    theme::fill_label(label, "", 15.0, theme::text()).into()
+                } else {
+                    big(label).into()
+                };
+                let b = egui::Button::new(text)
                     .fill(theme::surface())
                     .min_size(egui::vec2(48.0, 38.0));
                 if ui.add(b).on_hover_text(tip).clicked() {
@@ -1395,16 +1423,21 @@ impl RadioDesk {
                 }
             }
             let (rep_label, rep_tip) = match v.repeat {
-                woa_radio::control::Repeat::Off => ("🔁", "Wiederholen: aus"),
-                woa_radio::control::Repeat::All => ("🔁", "Wiederholen: ganze Playlist"),
-                woa_radio::control::Repeat::One => ("🔂", "Wiederholen: ein Titel"),
+                woa_radio::control::Repeat::Off => (theme::icf::REPEAT, "Wiederholen: aus"),
+                woa_radio::control::Repeat::All => {
+                    (theme::icf::REPEAT, "Wiederholen: ganze Playlist")
+                }
+                woa_radio::control::Repeat::One => {
+                    (theme::icf::REPEAT_ONCE, "Wiederholen: ein Titel")
+                }
             };
             let on = v.repeat != woa_radio::control::Repeat::Off;
-            let b = egui::Button::new(big(rep_label).color(if on {
-                theme::well()
-            } else {
-                theme::text()
-            }))
+            let b = egui::Button::new(theme::fill_label(
+                rep_label,
+                "",
+                15.0,
+                if on { theme::well() } else { theme::text() },
+            ))
             .fill(if on {
                 theme::accent()
             } else {
@@ -1414,11 +1447,16 @@ impl RadioDesk {
             if ui.add(b).on_hover_text(rep_tip).clicked() {
                 self.party_effect(woa_radio::party::Effect::CycleRepeat);
             }
-            let b = egui::Button::new(big("🔀").color(if v.shuffle {
-                theme::well()
-            } else {
-                theme::text()
-            }))
+            let b = egui::Button::new(theme::fill_label(
+                theme::icf::SHUFFLE,
+                "",
+                15.0,
+                if v.shuffle {
+                    theme::well()
+                } else {
+                    theme::text()
+                },
+            ))
             .fill(if v.shuffle {
                 theme::accent()
             } else {
@@ -1437,11 +1475,13 @@ impl RadioDesk {
                 self.party_effect(woa_radio::party::Effect::ToggleShuffle);
             }
 
-            let mic = egui::Button::new(big("🎙 Mikro (M)").color(if v.mic_open {
-                egui::Color32::WHITE
-            } else {
-                theme::text()
-            }))
+            let mic = egui::Button::new(
+                big(&format!("{} Mikro (M)", theme::ic::MICROPHONE)).color(if v.mic_open {
+                    egui::Color32::WHITE
+                } else {
+                    theme::text()
+                }),
+            )
             .fill(if v.mic_open {
                 theme::on_air()
             } else {
@@ -1464,11 +1504,11 @@ impl RadioDesk {
 
             let ph = v.phone_on;
             let phone = egui::Button::new(
-                big(if ph {
-                    "📞 Telefon auf Sendung"
-                } else {
-                    "📞 Telefon"
-                })
+                big(&format!(
+                    "{} {}",
+                    theme::ic::PHONE,
+                    if ph { "Telefon auf Sendung" } else { "Telefon" }
+                ))
                 .color(if ph {
                     egui::Color32::WHITE
                 } else {
@@ -1507,31 +1547,32 @@ impl RadioDesk {
 
             let rec_on = v.recording.is_some();
             let rec = if rec_on {
-                "● Mitschnitt läuft"
+                "Mitschnitt läuft"
             } else {
-                "● Mitschnitt"
+                "Mitschnitt"
+            };
+            let rec_color = if rec_on {
+                egui::Color32::WHITE
+            } else {
+                theme::text()
             };
             if ui
                 .add(
-                    egui::Button::new(big(rec).color(if rec_on {
-                        egui::Color32::WHITE
-                    } else {
-                        theme::text()
-                    }))
-                    .fill(if rec_on {
-                        theme::on_air()
-                    } else {
-                        theme::surface()
-                    })
-                    .stroke(egui::Stroke::new(
-                        1.0,
-                        if rec_on {
+                    egui::Button::new(theme::fill_label(theme::icf::RECORD, rec, 15.0, rec_color))
+                        .fill(if rec_on {
                             theme::on_air()
                         } else {
-                            theme::border()
-                        },
-                    ))
-                    .min_size(egui::vec2(126.0, 38.0)),
+                            theme::surface()
+                        })
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            if rec_on {
+                                theme::on_air()
+                            } else {
+                                theme::border()
+                            },
+                        ))
+                        .min_size(egui::vec2(126.0, 38.0)),
                 )
                 .on_hover_text(format!(
                     "Sendung als WAV nach {}",
@@ -1697,7 +1738,10 @@ impl RadioDesk {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let full = guests.len() >= woa_guests::MAX_GUESTS;
                 let file = ui
-                    .add_enabled(!full, egui::Button::new("＋ Datei als Gast"))
+                    .add_enabled(
+                        !full,
+                        egui::Button::new(format!("{} Datei als Gast", theme::ic::PLUS)),
+                    )
                     .on_hover_text(
                         "Eine Audiodatei in Schleife als Testgast (kein Netz, kein Mikrofon)",
                     );
@@ -1712,7 +1756,10 @@ impl RadioDesk {
                     self.add_guest(woa_guests::TestSignal::File(p));
                 }
                 let sine = ui
-                    .add_enabled(!full, egui::Button::new("＋ Testgast"))
+                    .add_enabled(
+                        !full,
+                        egui::Button::new(format!("{} Testgast", theme::ic::PLUS)),
+                    )
                     .on_hover_text("Ein Sinuston als Gast, jeder Gast mit eigener Tonhöhe");
                 if sine.clicked() {
                     let freq = 330.0 + 110.0 * guests.len() as f32;
@@ -1762,7 +1809,7 @@ impl RadioDesk {
                     }
                     let full = self.view.guests.len() >= woa_guests::MAX_GUESTS;
                     if ui
-                        .add_enabled(!full, egui::Button::new("＋ Einladung"))
+                        .add_enabled(!full, egui::Button::new(format!("{} Einladung", theme::ic::PLUS)))
                         .on_hover_text("Ein Link für ein Handy im selben WLAN, einmal benutzbar")
                         .clicked()
                     {
@@ -1874,7 +1921,7 @@ impl RadioDesk {
             }
             if web.invites.is_empty() && web.waiting.is_empty() {
                 ui.label(
-                    egui::RichText::new("Bereit. „＋ Einladung“ erzeugt einen Link mit QR-Code.")
+                    egui::RichText::new("Bereit. „Einladung“ erzeugt einen Link mit QR-Code.")
                         .small()
                         .color(theme::text_dim()),
                 );
@@ -1923,11 +1970,13 @@ impl RadioDesk {
                 }
                 self.with(move |c| c.guests().set_mute(slot, on));
             }
-            let ret = egui::Button::new(egui::RichText::new("🎧").color(if g.monitored {
-                theme::cue()
-            } else {
-                theme::text_dim()
-            }));
+            let ret = egui::Button::new(egui::RichText::new(theme::ic::HEADPHONES).color(
+                if g.monitored {
+                    theme::cue()
+                } else {
+                    theme::text_dim()
+                },
+            ));
             if ui
                 .add(ret)
                 .on_hover_text(
@@ -1940,7 +1989,7 @@ impl RadioDesk {
                 self.with(move |c| c.guests().set_monitor(to));
             }
             if ui
-                .small_button("✕")
+                .small_button(theme::ic::X)
                 .on_hover_text("Gast entfernen")
                 .clicked()
             {
@@ -1992,22 +2041,25 @@ impl RadioDesk {
             ui.horizontal_wrapped(|ui| {
                 let (label, fill, border) = if on {
                     (
-                        "📡 Sendung beenden",
+                        format!("{} Sendung beenden", theme::ic::BROADCAST),
                         theme::on_air(),
                         theme::emphasize(theme::on_air(), 0.35),
                     )
                 } else {
                     (
-                        "📡 Auf Sendung",
+                        format!("{} Auf Sendung", theme::ic::BROADCAST),
                         theme::mix(theme::accent(), theme::surface(), 0.72),
                         theme::accent(),
                     )
                 };
-                let text = egui::RichText::new(label).size(14.5).strong().color(if on {
-                    egui::Color32::WHITE
-                } else {
-                    theme::text()
-                });
+                let text = egui::RichText::new(&label)
+                    .size(14.5)
+                    .strong()
+                    .color(if on {
+                        egui::Color32::WHITE
+                    } else {
+                        theme::text()
+                    });
                 if ui
                     .add(
                         egui::Button::new(text)

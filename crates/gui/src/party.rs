@@ -190,7 +190,11 @@ impl PartyView {
                         theme::status_pill(ui, &format!("×{}", w.votes), theme::cue(), true);
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("✕").on_hover_text("Wunsch verwerfen").clicked() {
+                        if ui
+                            .button(theme::ic::X)
+                            .on_hover_text("Wunsch verwerfen")
+                            .clicked()
+                        {
                             cmds.push(PartyCommand::DropWish(w.path.clone()));
                         }
                         if ui

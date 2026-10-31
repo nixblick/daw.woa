@@ -139,6 +139,12 @@ Lizenztext gehört zu jeder Weitergabe).
   `DSEG7-Classic/DSEG7Classic-Bold.ttf`, Lizenztext `DSEG-LICENSE.txt` → `OFL-DSEG.txt`.
 - Der Über-Dialog der App (Einstellungen-Leiste, „Über WOA …“) nennt die OFL.
 
+## Icons (Paket D3)
+
+- **Phosphor Icons** (Helena Zhang und Tobias Fried, `phosphor-icons/core`, MIT), eingebunden über das
+  Crate `egui-phosphor` 0.13 (MIT), das die Schriftdateien Regular und Fill mitbringt. Regular für
+  Menüs und Knöpfe, Fill für den Transport. Der Über-Dialog nennt die MIT-Lizenz.
+
 ## Regel
 
 Quellen werden nur mit Repository, Datei und Commit genannt, nie mit Pfaden einer Maschine.

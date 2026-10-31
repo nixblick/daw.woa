@@ -1016,9 +1016,9 @@ impl WoaApp {
                     let radio_active = mode == Mode::Radio;
                     let radio_btn = egui::Button::new(
                         egui::RichText::new(if on_air {
-                            "● 📻 Radio"
+                            format!("{} Radio", theme::ic::BROADCAST)
                         } else {
-                            "📻 Radio"
+                            format!("{} Radio", theme::ic::RADIO)
                         })
                         .strong()
                         .color(if radio_active || on_air {
@@ -1044,20 +1044,21 @@ impl WoaApp {
                     }
 
                     let party_active = mode == Mode::Party;
-                    let party_btn =
-                        egui::Button::new(egui::RichText::new("🎉 Party").strong().color(
-                            if party_active {
+                    let party_btn = egui::Button::new(
+                        egui::RichText::new(format!("{} Party", theme::ic::CONFETTI))
+                            .strong()
+                            .color(if party_active {
                                 theme::well()
                             } else {
                                 theme::text_dim()
-                            },
-                        ))
-                        .fill(if party_active {
-                            theme::accent()
-                        } else {
-                            theme::well()
-                        })
-                        .stroke(egui::Stroke::NONE);
+                            }),
+                    )
+                    .fill(if party_active {
+                        theme::accent()
+                    } else {
+                        theme::well()
+                    })
+                    .stroke(egui::Stroke::NONE);
                     if ui
                         .add(party_btn)
                         .on_hover_text("Abspielmodus: große Anzeige, Wunschliste, Vollbild")
@@ -1067,20 +1068,21 @@ impl WoaApp {
                     }
 
                     let prod_active = mode == Mode::Produzent;
-                    let prod_btn =
-                        egui::Button::new(egui::RichText::new("🎚 Produzent").strong().color(
-                            if prod_active {
+                    let prod_btn = egui::Button::new(
+                        egui::RichText::new(format!("{} Produzent", theme::ic::SLIDERS_HORIZONTAL))
+                            .strong()
+                            .color(if prod_active {
                                 theme::well()
                             } else {
                                 theme::text_dim()
-                            },
-                        ))
-                        .fill(if prod_active {
-                            theme::accent()
-                        } else {
-                            theme::well()
-                        })
-                        .stroke(egui::Stroke::NONE);
+                            }),
+                    )
+                    .fill(if prod_active {
+                        theme::accent()
+                    } else {
+                        theme::well()
+                    })
+                    .stroke(egui::Stroke::NONE);
                     if ui
                         .add(prod_btn)
                         .on_hover_text("Zeitleiste mit Spuren und Clips")
@@ -1355,7 +1357,6 @@ impl WoaApp {
     fn transport_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let playing = self.player.as_ref().is_some_and(Player::is_playing);
-            let big = |t: &str| egui::RichText::new(t).size(16.0).strong();
 
             // 1. Hardware-Transport-Gruppe
             egui::Frame::new()
@@ -1367,7 +1368,12 @@ impl WoaApp {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     if ui
                         .add(
-                            egui::Button::new(big("⏮"))
+                            egui::Button::new(theme::fill_label(
+                                theme::icf::SKIP_BACK,
+                                "",
+                                16.0,
+                                theme::text(),
+                            ))
                                 .fill(theme::surface())
                                 .min_size(egui::vec2(38.0, 32.0)),
                         )
@@ -1376,13 +1382,20 @@ impl WoaApp {
                     {
                         self.rewind();
                     }
-                    let play = egui::Button::new(
-                        big(if playing { "⏸" } else { "▶" }).color(if playing {
+                    let play = egui::Button::new(theme::fill_label(
+                        if playing {
+                            theme::icf::PAUSE
+                        } else {
+                            theme::icf::PLAY
+                        },
+                        "",
+                        16.0,
+                        if playing {
                             theme::well()
                         } else {
                             theme::text()
-                        }),
-                    )
+                        },
+                    ))
                     .min_size(egui::vec2(48.0, 32.0))
                     .fill(if playing {
                         theme::ok()
@@ -1409,24 +1422,24 @@ impl WoaApp {
                     }
 
                     let recording = self.recording();
-                    let label = match self.takes.first() {
+                    let (rec_icon, label) = match self.takes.first() {
                         Some((_, rec)) => {
                             let t = rec.elapsed().as_secs();
-                            format!("■  {}:{:02}", t / 60, t % 60)
+                            (theme::icf::STOP, format!("{}:{:02}", t / 60, t % 60))
                         }
-                        None if recording => "■  MIDI".to_string(),
-                        None => "     Aufnahme".to_string(),
+                        None if recording => (theme::icf::STOP, "MIDI".to_string()),
+                        None => (theme::icf::RECORD, "Aufnahme".to_string()),
                     };
-                    let rec_btn = egui::Button::new(
-                        egui::RichText::new(label)
-                            .strong()
-                            .size(14.0)
-                            .color(if recording {
-                                egui::Color32::WHITE
-                            } else {
-                                theme::text()
-                            }),
-                    )
+                    let rec_btn = egui::Button::new(theme::fill_label(
+                        rec_icon,
+                        &label,
+                        14.0,
+                        if recording {
+                            egui::Color32::WHITE
+                        } else {
+                            theme::text()
+                        },
+                    ))
                     .min_size(egui::vec2(114.0, 32.0))
                     .fill(if recording {
                         theme::on_air()
@@ -1445,17 +1458,12 @@ impl WoaApp {
                         "Nimmt auf jeder scharfen Spur (roter Punkt) ihre Quelle auf, \
                              sonst auf der ausgewählten Spur (Strg+R)",
                     );
-                    if !recording {
-                        // Die Schrift hat kein ●, also selbst zeichnen.
-                        let c = rec_resp.rect.left_center() + egui::vec2(18.0, 0.0);
-                        ui.painter().circle_filled(c, 5.5, theme::on_air());
-                    }
                     if rec_resp.clicked() {
                         self.toggle_record();
                     }
 
                     let end = egui::Button::new(
-                        egui::RichText::new("⇥ Stopp am Ende")
+                        egui::RichText::new(format!("{} Stopp am Ende", theme::ic::ARROW_LINE_RIGHT))
                             .small()
                             .strong()
                             .color(if self.stop_at_end {
@@ -1482,7 +1490,7 @@ impl WoaApp {
                     }
 
                     let loop_btn = egui::Button::new(
-                        egui::RichText::new("🔁 Loop")
+                        egui::RichText::new(format!("{} Loop", theme::ic::REPEAT))
                             .small()
                             .strong()
                             .color(if self.loop_enabled {
@@ -1523,7 +1531,7 @@ impl WoaApp {
 
                     // Paket 22: Punch-Bereich. Von der Aufnahme bleibt nur dieser Teil.
                     let punch_btn = egui::Button::new(
-                        egui::RichText::new("⏺ Punch")
+                        egui::RichText::new(format!("{} Punch", theme::ic::RECORD))
                             .small()
                             .strong()
                             .color(if self.punch_enabled {
@@ -2325,7 +2333,7 @@ impl WoaApp {
                     .add_sized(
                         [154.0, 32.0],
                         egui::Button::new(
-                            egui::RichText::new("📂 Audio importieren …")
+                            egui::RichText::new(format!("{} Audio importieren …", theme::ic::FOLDER_OPEN))
                                 .small()
                                 .strong()
                                 .color(theme::text()),
@@ -2341,7 +2349,7 @@ impl WoaApp {
                     .add_sized(
                         [146.0, 32.0],
                         egui::Button::new(
-                            egui::RichText::new("🎹 + MIDI-Clip (4 T.)")
+                            egui::RichText::new(format!("{} + MIDI-Clip (4 T.)", theme::ic::PIANO_KEYS))
                                 .small()
                                 .strong()
                                 .color(theme::cue()),
@@ -2906,23 +2914,41 @@ impl WoaApp {
         };
         let r = resp.response.rect;
         resp.response.context_menu(|ui| {
-            if ui.button("✏ Spur umbenennen").clicked() {
+            if ui
+                .button(format!("{} Spur umbenennen", theme::ic::PENCIL_SIMPLE))
+                .clicked()
+            {
                 self.rename = Some((id, name.to_string(), false));
                 ui.close();
             }
             if is_midi {
-                if ui.button("🎹 + Leerer MIDI-Clip (4 Takte)").clicked() {
+                if ui
+                    .button(format!(
+                        "{} + Leerer MIDI-Clip (4 Takte)",
+                        theme::ic::PIANO_KEYS
+                    ))
+                    .clicked()
+                {
                     self.create_midi_clip_at_playhead(Some(id));
                     ui.close();
                 }
-            } else if ui.button("📂 Audio-Datei importieren …").clicked() {
+            } else if ui
+                .button(format!(
+                    "{} Audio-Datei importieren …",
+                    theme::ic::FOLDER_OPEN
+                ))
+                .clicked()
+            {
                 self.selected_track = Some(id);
                 self.import_audio();
                 ui.close();
             }
             ui.separator();
             if ui
-                .button(egui::RichText::new("🗑 Spur löschen").color(theme::on_air()))
+                .button(
+                    egui::RichText::new(format!("{} Spur löschen", theme::ic::TRASH))
+                        .color(theme::on_air()),
+                )
                 .clicked()
             {
                 self.armed.remove(&id);
@@ -3102,7 +3128,7 @@ fn draw_live_take(
     painter.with_clip_rect(head.intersect(rect)).text(
         head.left_center() + egui::vec2(6.0, 0.0),
         egui::Align2::LEFT_CENTER,
-        "● Aufnahme läuft",
+        format!("{} Aufnahme läuft", theme::ic::RECORD),
         egui::FontId::proportional(11.0),
         egui::Color32::WHITE,
     );
@@ -3160,7 +3186,11 @@ impl WoaApp {
                 let toggle = egui::Rect::from_min_size(slot.min, egui::vec2(HEADER_W - 36.0, 24.0));
                 let label = format!(
                     "{} {}  ·  {} Takes",
-                    if open { "▾" } else { "▸" },
+                    if open {
+                        theme::ic::CARET_DOWN
+                    } else {
+                        theme::ic::CARET_RIGHT
+                    },
                     f.name,
                     f.takes.len()
                 );
@@ -3187,7 +3217,9 @@ impl WoaApp {
                     .put(
                         del,
                         egui::Button::new(
-                            egui::RichText::new("🗑").small().color(theme::text_dim()),
+                            egui::RichText::new(theme::ic::TRASH)
+                                .small()
+                                .color(theme::text_dim()),
                         )
                         .fill(egui::Color32::TRANSPARENT),
                     )
@@ -3867,9 +3899,12 @@ impl WoaApp {
                 && ui
                     .add(
                         egui::Button::new(
-                            egui::RichText::new("🎹 Piano-Roll öffnen")
-                                .strong()
-                                .color(theme::cue()),
+                            egui::RichText::new(format!(
+                                "{} Piano-Roll öffnen",
+                                theme::ic::PIANO_KEYS
+                            ))
+                            .strong()
+                            .color(theme::cue()),
                         )
                         .fill(theme::well()),
                     )
@@ -3902,10 +3937,16 @@ impl WoaApp {
             if !dragging && let Some((cid, a, b)) = self.fade_edit.take() {
                 self.state.set_fades(cid, a, b);
             }
-            if ui.button("✂ Schneiden (S)").clicked() {
+            if ui
+                .button(format!("{} Schneiden (S)", theme::ic::SCISSORS))
+                .clicked()
+            {
                 self.split_at_playhead();
             }
-            if ui.button("⧉ Duplizieren (Strg+D)").clicked() {
+            if ui
+                .button(format!("{} Duplizieren (Strg+D)", theme::ic::COPY))
+                .clicked()
+            {
                 self.duplicate_selected();
             }
             if ui.button("Kopieren").on_hover_text("Strg+C").clicked() {
@@ -3913,9 +3954,9 @@ impl WoaApp {
             }
             let n = self.selected_clips.len().max(1);
             let label = if n > 1 {
-                format!("🗑 {n} Clips löschen (Entf)")
+                format!("{} {n} Clips löschen (Entf)", theme::ic::TRASH)
             } else {
-                "🗑 Löschen (Entf)".to_string()
+                format!("{} Löschen (Entf)", theme::ic::TRASH)
             };
             if ui.button(label).clicked() {
                 self.delete_selected();
@@ -4508,6 +4549,9 @@ impl WoaApp {
                      der SIL Open Font License 1.1 (OFL).",
                 );
                 ui.label(
+                    "Die Symbole sind Phosphor Icons (MIT-Lizenz), eingebunden über egui-phosphor.",
+                );
+                ui.label(
                     egui::RichText::new(
                         "Die Lizenztexte liegen im Quelltext unter crates/gui/assets/fonts/.",
                     )
@@ -4638,7 +4682,11 @@ impl WoaApp {
                     Phase::Done(msg) if self.feedback.is_thanks() => {
                         ui.add_space(12.0);
                         ui.vertical_centered(|ui| {
-                            ui.label(egui::RichText::new("✔").size(40.0).color(theme::ok()));
+                            ui.label(
+                                egui::RichText::new(theme::ic::CHECK_CIRCLE)
+                                    .size(40.0)
+                                    .color(theme::ok()),
+                            );
                             ui.add_space(6.0);
                             ui.label(
                                 egui::RichText::new(msg)
@@ -4959,9 +5007,12 @@ impl eframe::App for WoaApp {
                     match &self.state.status {
                         Status::Idle => {
                             ui.label(
-                                egui::RichText::new("● Engine bereit")
-                                    .small()
-                                    .color(theme::ok()),
+                                egui::RichText::new(format!(
+                                    "{} Engine bereit",
+                                    theme::ic::CHECK_CIRCLE
+                                ))
+                                .small()
+                                .color(theme::ok()),
                             );
                         }
                         Status::Info(m) => {
@@ -5134,7 +5185,7 @@ impl WoaApp {
 
                 let mixer_active = self.studio_dock == StudioDockTab::Mixer;
                 let mixer_btn = egui::Button::new(
-                    egui::RichText::new("🎚 Studio-Mixer")
+                    egui::RichText::new(format!("{} Studio-Mixer", theme::ic::SLIDERS_HORIZONTAL))
                         .small()
                         .strong()
                         .color(if mixer_active {
@@ -5162,14 +5213,17 @@ impl WoaApp {
 
                 let pr_active = self.studio_dock == StudioDockTab::PianoRoll;
                 let pr_btn = egui::Button::new(
-                    egui::RichText::new("🎹 Piano-Roll (Clip-Editor)")
-                        .small()
-                        .strong()
-                        .color(if pr_active {
-                            theme::well()
-                        } else {
-                            theme::cue()
-                        }),
+                    egui::RichText::new(format!(
+                        "{} Piano-Roll (Clip-Editor)",
+                        theme::ic::PIANO_KEYS
+                    ))
+                    .small()
+                    .strong()
+                    .color(if pr_active {
+                        theme::well()
+                    } else {
+                        theme::cue()
+                    }),
                 )
                 .fill(if pr_active {
                     theme::cue()
@@ -5189,19 +5243,21 @@ impl WoaApp {
                 }
 
                 let auto_active = self.studio_dock == StudioDockTab::Automation;
-                let auto_btn =
-                    egui::Button::new(egui::RichText::new("〰 Automation").small().strong().color(
-                        if auto_active {
+                let auto_btn = egui::Button::new(
+                    egui::RichText::new(format!("{} Automation", theme::ic::WAVE_SINE))
+                        .small()
+                        .strong()
+                        .color(if auto_active {
                             theme::well()
                         } else {
                             theme::accent()
-                        },
-                    ))
-                    .fill(if auto_active {
-                        theme::accent()
-                    } else {
-                        theme::well()
-                    });
+                        }),
+                )
+                .fill(if auto_active {
+                    theme::accent()
+                } else {
+                    theme::well()
+                });
                 if ui
                     .add(auto_btn)
                     .on_hover_text(
@@ -5216,19 +5272,21 @@ impl WoaApp {
                     };
                 }
 
-                let an_btn =
-                    egui::Button::new(egui::RichText::new("📊 Analyse").small().strong().color(
-                        if self.analysis_open {
+                let an_btn = egui::Button::new(
+                    egui::RichText::new(format!("{} Analyse", theme::ic::CHART_BAR))
+                        .small()
+                        .strong()
+                        .color(if self.analysis_open {
                             theme::well()
                         } else {
                             theme::ok()
-                        },
-                    ))
-                    .fill(if self.analysis_open {
-                        theme::ok()
-                    } else {
-                        theme::well()
-                    });
+                        }),
+                )
+                .fill(if self.analysis_open {
+                    theme::ok()
+                } else {
+                    theme::well()
+                });
                 if ui
                     .add(an_btn)
                     .on_hover_text("Lautheit, True Peak, Spektrum, Spektrogramm und Stereo-Scope")
@@ -5239,9 +5297,9 @@ impl WoaApp {
 
                 if self.studio_dock == StudioDockTab::PianoRoll {
                     let float_label = if self.piano_roll_floating {
-                        "⤡ Im Dock einbetten"
+                        format!("{} Im Dock einbetten", theme::ic::ARROWS_IN)
                     } else {
-                        "⤢ Als Fenster lösen"
+                        format!("{} Als Fenster lösen", theme::ic::ARROWS_OUT)
                     };
                     if ui
                         .add(
@@ -5260,9 +5318,9 @@ impl WoaApp {
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let toggle_lbl = if is_open {
-                        "▾ Dock einklappen"
+                        format!("{} Dock einklappen", theme::ic::CARET_DOWN)
                     } else {
-                        "▴ Dock ausklappen"
+                        format!("{} Dock ausklappen", theme::ic::CARET_UP)
                     };
                     if ui
                         .add(
@@ -5418,13 +5476,13 @@ impl WoaApp {
                                         }
 
                                         let arm_btn = egui::Button::new(
-                                            egui::RichText::new("●").size(11.0).strong().color(
-                                                if armed {
+                                            theme::fill_icon(theme::icf::RECORD, 11.0)
+                                                .strong()
+                                                .color(if armed {
                                                     egui::Color32::WHITE
                                                 } else {
                                                     theme::on_air()
-                                                },
-                                            ),
+                                                }),
                                         )
                                         .fill(if armed {
                                             theme::on_air()
@@ -5444,7 +5502,7 @@ impl WoaApp {
                                         if ui
                                             .add(
                                                 egui::Button::new(
-                                                    egui::RichText::new("🗑")
+                                                    egui::RichText::new(theme::ic::TRASH)
                                                         .size(10.5)
                                                         .color(theme::text_dim()),
                                                 )
@@ -5688,7 +5746,7 @@ impl WoaApp {
                     self.state.set_send(id, s.target, s.level_db, !s.pre_fader);
                 }
                 if ui
-                    .small_button("✕")
+                    .small_button(theme::ic::X)
                     .on_hover_text("Send entfernen")
                     .clicked()
                 {
@@ -5728,7 +5786,7 @@ impl WoaApp {
                     self.state.toggle_insert_bypass(id, ins.id);
                 }
                 if ui
-                    .small_button("✕")
+                    .small_button(theme::ic::X)
                     .on_hover_text("Effekt entfernen")
                     .clicked()
                 {
@@ -5801,7 +5859,7 @@ impl WoaApp {
             egui::CollapsingHeader::new(small("Regler"))
                 .id_salt(("fx", ins.id.0))
                 .show(ui, |ui| {
-                    ui.menu_button(small("Preset ▾"), |ui| {
+                    ui.menu_button(small(&format!("Preset {}", theme::ic::CARET_DOWN)), |ui| {
                         for pr in ins.kind.presets() {
                             if ui.button(pr.name).clicked() {
                                 self.fx_drag = None;
@@ -5911,7 +5969,7 @@ impl WoaApp {
                     }
                 } else {
                     ui.label(
-                        egui::RichText::new(format!("♪ {}", slot.name))
+                        egui::RichText::new(format!("{} {}", theme::ic::MUSIC_NOTE, slot.name))
                             .size(10.5)
                             .color(theme::text()),
                     );
@@ -5955,7 +6013,7 @@ impl WoaApp {
                     p.simulate_plugin_crash(slot.id);
                 }
                 if ui
-                    .small_button("✕")
+                    .small_button(theme::ic::X)
                     .on_hover_text("Plugin entfernen")
                     .clicked()
                 {
@@ -6091,7 +6149,7 @@ impl WoaApp {
                 let as_instrument = info.is_instrument();
                 let as_effect = info.is_effect() || !as_instrument;
                 if as_instrument && kind == woa_model::TrackKind::Midi && !has_instrument {
-                    let label = format!("♪ {}  {}", info.name, info.vendor);
+                    let label = format!("{} {}  {}", theme::ic::MUSIC_NOTE, info.name, info.vendor);
                     if ui.button(label).on_hover_text("Als Instrument").clicked() {
                         self.state.add_plugin(
                             id,
@@ -6253,7 +6311,7 @@ impl WoaApp {
         if self.piano_roll_floating {
             ui.label(
                 egui::RichText::new(
-                    "Die Piano-Roll ist aktuell als schwebendes Fenster geöffnet. Klicke oben auf „⤡ Im Dock einbetten“, um sie hier unten anzudocken.",
+                    "Die Piano-Roll ist aktuell als schwebendes Fenster geöffnet. Klicke oben auf „Im Dock einbetten“, um sie hier unten anzudocken.",
                 )
                 .color(theme::text_dim()),
             );
@@ -6295,7 +6353,7 @@ impl WoaApp {
             if ui
                 .add(
                     egui::Button::new(
-                        egui::RichText::new("🎹 + Leeren MIDI-Clip (4 Takte) anlegen")
+                        egui::RichText::new(format!("{} + Leeren MIDI-Clip (4 Takte) anlegen", theme::ic::PIANO_KEYS))
                             .strong()
                             .color(theme::cue()),
                     )

@@ -386,7 +386,7 @@ impl EventEditor {
                     }
                 });
             if ui
-                .small_button("🗑")
+                .small_button(theme::ic::TRASH)
                 .on_hover_text("Event entfernen")
                 .clicked()
             {
@@ -490,7 +490,7 @@ mod tests {
         let (mut ed, _d) = editor();
         ed.toggle();
         ed.add_event(Path::new("/x/a.wav"));
-        let ctx = egui::Context::default();
+        let ctx = crate::theme::test_context();
         let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
             ed.show(ui.ctx(), Some(&View::default()));
         });
