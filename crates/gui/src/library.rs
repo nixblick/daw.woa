@@ -240,17 +240,28 @@ impl LibraryWindow {
     }
 
     /// Öffnet die Titelinfos der Titel `ids` (läuft noch ein Speichern, bleibt der alte Editor).
+    /// Titel außerhalb der aktuellen Trefferliste holt es aus der Datenbank.
     pub fn edit_tags(&mut self, ids: &[i64]) {
         if self.tag_editor.as_ref().is_some_and(TagEditor::busy) {
             self.tag_editor_open = true;
             return;
         }
+        self.ensure_open();
         let items: Vec<TagItem> = ids
             .iter()
-            .filter_map(|id| self.results.iter().find(|t| t.id == *id))
-            .map(|t| TagItem {
-                id: t.id,
-                path: PathBuf::from(&t.path),
+            .filter_map(|id| {
+                self.results
+                    .iter()
+                    .find(|t| t.id == *id)
+                    .map(|t| t.path.clone())
+                    .or_else(|| {
+                        let lib = self.lib.as_ref()?;
+                        lib.get(*id).ok().flatten().map(|t| t.path)
+                    })
+                    .map(|path| TagItem {
+                        id: *id,
+                        path: PathBuf::from(path),
+                    })
             })
             .collect();
         if items.is_empty() {
@@ -258,6 +269,26 @@ impl LibraryWindow {
         }
         self.tag_editor = Some(TagEditor::open(self.db_path.clone(), items));
         self.tag_editor_open = true;
+    }
+
+    /// Titelinfos der Datei `path` (Radio-Playlist). Steht sie nicht in der Bibliothek, sagt
+    /// das die Bibliothek, statt still nichts zu tun.
+    pub fn edit_tags_for_path(&mut self, path: &Path) {
+        self.ensure_open();
+        let found = self
+            .lib
+            .as_ref()
+            .and_then(|l| l.by_path(&path.to_string_lossy()).ok().flatten());
+        match found {
+            Some(t) => self.edit_tags(&[t.id]),
+            None => {
+                self.open = true;
+                self.note = Some(format!(
+                    "Titelinfos: {} steht nicht in der Bibliothek (erst importieren)",
+                    path.display()
+                ));
+            }
+        }
     }
 
     /// Suchtext der Trefferliste.
@@ -813,7 +844,7 @@ impl LibraryWindow {
                         // Fokus auf die Zeile: Entf gilt dann ihr, nicht dem Studio.
                         resp.request_focus();
                     }
-                    if resp.double_clicked() {
+                    if theme::double_clicked(&resp) {
                         edit_tags = Some(t.id);
                     }
                     resp.context_menu(|ui| {
@@ -1290,6 +1321,135 @@ mod tests {
         let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
             let _ = w.show(ui.ctx(), false);
         });
+    }
+
+    use egui_kittest::kittest::Queryable;
+
+    /// Bibliothek mit einem Titel, offen in einem kittest-Harness.
+    fn harness_with_one_track(dir: &Path) -> (egui_kittest::Harness<'static, LibraryWindow>, i64) {
+        let music = dir.join("m");
+        std::fs::create_dir_all(&music).unwrap();
+        write_wav(&music.join("a.wav"), 300.0);
+        let mut w = LibraryWindow::new(dir.join(DB_FILE));
+        w.start_import(&music);
+        wait_import(&mut w);
+        w.open = true;
+        let id = w.results()[0].id;
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(1024.0, 600.0))
+            .with_step_dt(1.0 / 60.0)
+            .build_ui_state(
+                |ui, w: &mut LibraryWindow| {
+                    let ctx = ui.ctx();
+                    crate::theme::install_fonts(ctx);
+                    let _ = w.show(ctx, true);
+                },
+                w,
+            );
+        h.run_steps(3);
+        (h, id)
+    }
+
+    fn row_center(h: &egui_kittest::Harness<'_, LibraryWindow>, id: i64) -> egui::Pos2 {
+        h.ctx
+            .read_response(row_id(id))
+            .expect("Zeile gezeichnet")
+            .rect
+            .center()
+    }
+
+    fn click(
+        h: &mut egui_kittest::Harness<'_, LibraryWindow>,
+        at: egui::Pos2,
+        button: egui::PointerButton,
+    ) {
+        h.event(egui::Event::PointerMoved(at));
+        h.step();
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton {
+                pos: at,
+                button,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.step();
+        }
+    }
+
+    fn tag_window_open(h: &egui_kittest::Harness<'_, LibraryWindow>) -> bool {
+        if !h.state().tag_editor_open || h.query_by_label("Titelinfos").is_none() {
+            return false;
+        }
+        // Auch sichtbar: oben, nicht hinter der Bibliothek, und mit Fläche.
+        let id = egui::Id::new(Some("Titelinfos"));
+        let Some(rect) = h.ctx.memory(|m| m.area_rect(id)) else {
+            return false;
+        };
+        let screen = h.ctx.content_rect();
+        screen.contains_rect(rect)
+            && rect.width() > 100.0
+            && rect.height() > 100.0
+            && h.ctx.layer_id_at(rect.center()).map(|l| l.id) == Some(id)
+    }
+
+    #[test]
+    fn tags_open_by_path_and_outside_the_hits() {
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("m");
+        std::fs::create_dir_all(&music).unwrap();
+        write_wav(&music.join("a.wav"), 300.0);
+        let mut w = LibraryWindow::new(dir.path().join(DB_FILE));
+        w.start_import(&music);
+        wait_import(&mut w);
+        let t = w.results()[0].clone();
+        // Radio-Playlist: nach Pfad.
+        w.edit_tags_for_path(Path::new(&t.path));
+        assert!(w.tag_editor_open && w.tag_editor.as_ref().unwrap().ids() == vec![t.id]);
+        // Nicht in der Trefferliste (andere Suche): trotzdem aus der Datenbank.
+        w.tag_editor = None;
+        w.tag_editor_open = false;
+        w.results.clear();
+        w.edit_tags(&[t.id]);
+        assert!(w.tag_editor_open, "Titel außerhalb der Treffer");
+        // Nicht in der Bibliothek: Hinweis statt Stille.
+        w.tag_editor = None;
+        w.tag_editor_open = false;
+        w.edit_tags_for_path(&dir.path().join("fremd.mp3"));
+        assert!(w.tag_editor.is_none());
+        assert!(
+            w.note
+                .as_deref()
+                .is_some_and(|n| n.contains("nicht in der Bibliothek"))
+        );
+    }
+
+    #[test]
+    fn double_click_on_library_row_opens_tag_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut h, id) = harness_with_one_track(dir.path());
+        let at = row_center(&h, id);
+        click(&mut h, at, egui::PointerButton::Primary);
+        click(&mut h, at, egui::PointerButton::Primary);
+        h.run_steps(3);
+        assert!(
+            tag_window_open(&h),
+            "Doppelklick öffnet die Titelinfos nicht"
+        );
+    }
+
+    #[test]
+    fn context_menu_on_library_row_opens_tag_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut h, id) = harness_with_one_track(dir.path());
+        let at = row_center(&h, id);
+        click(&mut h, at, egui::PointerButton::Secondary);
+        h.run_steps(2);
+        h.get_by_label("Titelinfos bearbeiten …").click();
+        h.run_steps(3);
+        assert!(
+            tag_window_open(&h),
+            "Kontextmenü öffnet die Titelinfos nicht"
+        );
     }
 
     #[test]

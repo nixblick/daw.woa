@@ -5939,6 +5939,9 @@ impl eframe::App for WoaApp {
                         .inner_margin(egui::Margin::symmetric(14, 12)),
                 )
                 .show(ui, |ui| radio.ui(ui));
+            if let Some(path) = radio.take_tag_wish() {
+                self.library.edit_tags_for_path(&path);
+            }
             radio.cue_window(&ctx);
             radio.voice_window(&ctx);
             radio.manage_window(&ctx, &mut self.library);
