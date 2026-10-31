@@ -56,6 +56,26 @@ fn rig(guest_freqs: &[f32]) -> Rig {
     }
 }
 
+/// Wie [`rig`], aber Browser-Gäste: sie kommen in den Warteraum.
+fn rig_net(guest_freqs: &[f32]) -> Rig {
+    let (mut hub, bank) = channel(RATE);
+    let mut feeds = Vec::new();
+    for (i, _) in guest_freqs.iter().enumerate() {
+        let g = hub.add_network("Browser", &format!("G{i}")).unwrap();
+        feeds.push(g.feed);
+    }
+    Rig {
+        hub,
+        bank,
+        feeds,
+        gens: guest_freqs
+            .iter()
+            .map(|&f| SineGen::new(f, RATE, 0.3))
+            .collect(),
+        music: SineGen::new(880.0, RATE, 0.3),
+    }
+}
+
 impl Rig {
     /// Vorlauf: 70 ms, mehr als der Puffer zum Start braucht.
     fn prefill(&mut self) {
@@ -305,4 +325,94 @@ fn network_guest_name_has_no_control_characters() {
     let view = hub.view();
     let n2 = &view.iter().find(|v| v.slot == h.slot).unwrap().name;
     assert!(n2.starts_with("Gast "));
+}
+
+#[test]
+fn browser_guests_start_in_the_waiting_room_and_go_on_air() {
+    let mut r = rig_net(&[440.0, 660.0]);
+    let v = r.hub.view();
+    assert!(v.iter().all(|g| !g.on_air), "neue Gäste warten");
+    r.prefill();
+    let (ret, prog) = r.run(100);
+    let p = &prog[24_000..];
+    // Im Warteraum: nicht in der Sendung, aber beide hören die Musik.
+    assert!(db(tone(p, 440.0)) < -80.0 && db(tone(p, 660.0)) < -80.0);
+    assert!(
+        db(tone(&ret[0][24_000..], 880.0)) > -12.0,
+        "A hört die Sendung"
+    );
+    assert!(
+        db(tone(&ret[1][24_000..], 880.0)) > -12.0,
+        "B hört die Sendung"
+    );
+    // Der Pegel vor dem Fader zeigt, dass der Gast spricht.
+    assert!(r.hub.view()[0].input_peak > 0.2);
+
+    r.hub.set_on_air(0, true);
+    r.hub.set_on_air(1, true);
+    let (ret, prog) = r.run(100);
+    let p = &prog[24_000..];
+    assert!(db(tone(p, 440.0)) > -12.0 && db(tone(p, 660.0)) > -12.0);
+    // Mix-Minus mit zwei Gästen: A hört B, nicht sich selbst; B spiegelbildlich.
+    let a = &ret[0][24_000..];
+    let b = &ret[1][24_000..];
+    assert!(db(tone(a, 660.0)) > -12.0 && db(tone(a, 440.0)) < -90.0);
+    assert!(db(tone(b, 440.0)) > -12.0 && db(tone(b, 660.0)) < -90.0);
+}
+
+#[test]
+fn muted_guest_still_hears_the_show_and_volume_resets_to_zero() {
+    let mut r = rig_net(&[440.0, 660.0]);
+    r.hub.set_on_air(0, true);
+    r.hub.set_on_air(1, true);
+    r.hub.set_mute(0, true);
+    r.hub.set_gain_db(1, -20.0);
+    r.prefill();
+    let (ret, prog) = r.run(200);
+    let p = &prog[24_000..];
+    assert!(db(tone(p, 440.0)) < -80.0, "A stumm");
+    let a = &ret[0][24_000..];
+    assert!(db(tone(a, 880.0)) > -12.0, "stummer A hört die Musik");
+    assert!((db(tone(a, 660.0)) + 30.5).abs() < 1.0, "A hört B leiser");
+    // Doppelklick = 0 dB, Stumm aus: beide wieder voll.
+    r.hub.set_gain_db(1, 0.0);
+    r.hub.set_mute(0, false);
+    let (_ret, prog) = r.run(100);
+    let p = &prog[24_000..];
+    assert!(db(tone(p, 440.0)) > -12.0 && db(tone(p, 660.0)) > -12.0);
+    // Zurück in den Warteraum: wieder still.
+    r.hub.set_on_air(0, false);
+    let (_ret, prog) = r.run(100);
+    assert!(db(tone(&prog[24_000..], 440.0)) < -80.0);
+}
+
+#[test]
+fn hangup_removes_guest_from_show_and_returns() {
+    let mut r = rig(&[440.0, 660.0]);
+    r.prefill();
+    r.hub.remove(1);
+    assert_eq!(r.hub.count(), 1);
+    let (ret, prog) = r.run(100);
+    assert!(db(tone(&prog[24_000..], 660.0)) < -80.0);
+    assert!(
+        db(tone(&ret[0][24_000..], 660.0)) < -80.0,
+        "A hört B nicht mehr"
+    );
+}
+
+#[test]
+fn four_guests_each_hear_all_others_but_not_themselves() {
+    let freqs = [440.0, 550.0, 660.0, 770.0];
+    let mut r = rig(&freqs);
+    r.prefill();
+    let (ret, _prog) = r.run(200);
+    for (i, f) in freqs.iter().enumerate() {
+        let x = &ret[i][24_000..];
+        assert!(db(tone(x, *f)) < -90.0, "Gast {i} hört sich selbst");
+        for (j, g) in freqs.iter().enumerate() {
+            if j != i {
+                assert!(db(tone(x, *g)) > -12.0, "Gast {i} hört {j} nicht");
+            }
+        }
+    }
 }

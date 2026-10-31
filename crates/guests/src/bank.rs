@@ -92,6 +92,8 @@ pub struct GuestBank {
     own: [(f32, f32); MAX_GUESTS],
     /// Spitzen im aktuellen Block.
     block_peak: [f32; MAX_GUESTS],
+    /// Spitzen vor dem Fader im aktuellen Block.
+    block_in_peak: [f32; MAX_GUESTS],
     active_count: usize,
     monitor: Option<usize>,
 }
@@ -124,6 +126,7 @@ impl GuestBank {
             slots,
             own: [(0.0, 0.0); MAX_GUESTS],
             block_peak: [0.0; MAX_GUESTS],
+            block_in_peak: [0.0; MAX_GUESTS],
             active_count: 0,
             monitor: None,
         })
@@ -200,6 +203,7 @@ impl GuestBank {
                 continue;
             }
             let (l, r) = s.reader.pop_frame();
+            self.block_in_peak[i] = self.block_in_peak[i].max(l.abs()).max(r.abs());
             s.gate.target = if s.reader.is_prebuffering() { 0.0 } else { 1.0 };
             let g = s.fader.tick() * s.gate.tick();
             let (l, r) = (l * g, r * g);
@@ -243,11 +247,18 @@ impl GuestBank {
 
     /// Am Blockende: Spitzen für die Anzeige.
     pub fn end_block(&mut self) {
-        for (s, p) in self.slots.iter().zip(self.block_peak.iter_mut()) {
+        for ((s, p), q) in self
+            .slots
+            .iter()
+            .zip(self.block_peak.iter_mut())
+            .zip(self.block_in_peak.iter_mut())
+        {
             if s.active {
                 s.stats.store_peak(*p);
+                s.stats.store_input_peak(*q);
             }
             *p = 0.0;
+            *q = 0.0;
         }
     }
 }
