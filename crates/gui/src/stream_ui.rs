@@ -56,6 +56,16 @@ impl StreamUi {
         self.note = None;
     }
 
+    /// Speichern des Kennworts schlug fehl: Fenster wieder zeigen, mit dem Grund. Die übrigen
+    /// Angaben sind gespeichert; das Kennwort muss neu eingetippt werden.
+    pub fn password_failed(&mut self, data_dir: &Path, grund: &str) {
+        self.open = true;
+        self.stored = kennwort::stored(data_dir);
+        self.note = Some(format!(
+            "Kennwort nicht gespeichert: {grund}. Die übrigen Angaben sind gespeichert."
+        ));
+    }
+
     fn close(&mut self) {
         self.open = false;
         // Das Kennwort bleibt nicht im Fensterzustand liegen.

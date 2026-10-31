@@ -691,6 +691,8 @@ impl WoaApp {
             if neu.is_empty() {
                 if let Err(e) = woa_stream::kennwort::clear(&self.data_dir) {
                     tracing::warn!(error = %e, "stream password not removed");
+                    self.stream_ui
+                        .password_failed(&self.data_dir, &format!("nicht entfernt ({e})"));
                 }
             } else {
                 match woa_stream::kennwort::save(&self.data_dir, &neu) {
@@ -698,7 +700,11 @@ impl WoaApp {
                         tracing::info!(ort = ort.label(), "stream password stored");
                         self.config.stream.forget_legacy_file();
                     }
-                    Err(e) => tracing::warn!(error = %e, "stream password not stored"),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "stream password not stored");
+                        self.stream_ui
+                            .password_failed(&self.data_dir, &e.to_string());
+                    }
                 }
             }
         }
