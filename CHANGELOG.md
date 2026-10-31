@@ -1,11 +1,32 @@
 # Changelog
 
-## 0.34.48 — 2026-10-31
+## 0.34.49 — 2026-10-31
 
 ### Neu
 
 - **KI live in der App:** Läuft WOA, arbeitet Claude auf dem Projekt, das in der App offen ist. Neue Spuren und Clips erscheinen sofort, und jeder Werkzeugaufruf steht als „Agent: <werkzeug>“ im Rückgängig-Verlauf (Bearbeiten → Rückgängig). Die App hostet dafür einen MCP-Server nur auf 127.0.0.1, mit dem vorhandenen Zugriffstoken und der Origin-Prüfung; der Port steht in `mcp-live.json` im Datenordner (ohne Token). `woa-headless mcp` (so startet Claude Desktop) erkennt die laufende App und reicht durch, sonst arbeitet es wie bisher headless. In Claude Desktop ist nichts umzustellen. Die Werkzeuge laufen zwischen zwei Bildern im GUI-Thread auf derselben Sitzung, die Wiedergabe läuft weiter. `save` speichert nur in den Ordner der App. Unten rechts steht „KI bereit“ bzw. „KI verbunden“. Sicherheit: Die Lock-Datei (Modus 0600) enthält statt des Tokens einen Live-Schlüssel, der je App-Start neu entsteht. Durchgereicht wird nur mit diesem Schlüssel und nur, wenn der Prozess der App noch lebt. Wird das Token im KI-Fenster neu erzeugt oder gelöscht, startet der Server neu bzw. endet, und das alte Token gilt nicht mehr.
 - **Fenster „Produktionen“:** Knopf „Produktionen“ in der Clip-Leiste des Produzenten-Modus. Er zeigt alle Audio-Dateien des Projektordners (`aufnahmen/`, Exporte, von Claude erzeugte Dateien), die neuesten oben, mit Länge und Alter. Mit dem Kopfhörer-Knopf hörst du vor (PFL wie in der Bibliothek). Ziehst du eine Datei auf eine Spur, liegt sie an dieser Stelle. Gelesen wird beim Öffnen, auf „Neu einlesen“ und nach jedem Agent-Schritt, sonst nicht.
+
+## 0.34.48 — 2026-10-31
+
+Party mit echter Zwei-Deck-Blende (André: „ja“ zu freier Blende von Hand mit Schalter „Auto-Übergang“ und zu Wunschtitel-Ordner → Party-Wunschliste).
+
+### Neu
+
+- **Echte Zwei-Deck-Wiedergabe:** Links und rechts sind zwei eigene Abspieler im Sendemixer (neben den Radio-Decks A bis C, die unberührt bleiben). Beide spielen gleichzeitig im Musikzweig, also auf Programm, Mitschnitt und Stream, und hören auf den Regler „Playlist“ (Lauter/Leiser in der Party). Der Crossfader steuert stufenlos eine Constant-Power-Kurve ohne Lautstärkeloch in der Mitte (beide −3 dB), mit exakten Endpunkten. Der Mixer fährt die Stellung sample-genau und linear nach (Handbewegung höchstens 10 ms für den ganzen Weg), darum knackt nichts. Keine Allokation im Audio-Thread.
+- **Schalter „Auto-Übergang“** (Symbol und Wort, neben dem Crossfader, Vorgabe an, wird mit der Sendung gespeichert): An heißt, eine Crossfade-Länge vor dem Ende startet das andere Deck und der Fader fährt hinüber. Aus heißt, der DJ startet jedes Deck mit dessen eigenem „Play“ und blendet von Hand. Ein Deck, das endet, lädt den nächsten Titel vor und startet nicht.
+- **Die Hand gewinnt:** Wer während der automatischen Fahrt den Crossfader anfasst, hält ihn; die Automatik fährt nicht dagegen.
+- **Wunschordner → Party-Wunschliste (#134):** Neue, fertig kopierte Dateien im Wunschtitel-Ordner erscheinen als Wünsche und lassen sich direkt einreihen. Je Datei nur einmal; ein entfernter Wunsch kommt nicht wieder, und die Datei wird nie gelöscht. Es bleibt beim einen Ordner-Beobachter.
+
+### Geändert
+
+- **Crossfader über die Mitte ist kein „Weiter“ mehr:** Er blendet nur. „Weiter“ blendet sofort über die Crossfade-Länge zum anderen Deck.
+- **Playlist bleibt das Modell:** „läuft“ ist das lautere Deck, „nächster“ das vorgeladene; Handy und Radio-Ansicht zeigen das. Beim Verlassen der Party läuft der hörbare Titel an derselben Stelle im Playlist-Abspieler weiter.
+- Die alte, zeitgesteuerte Deck-Anzeige ist entfernt; Decks, Plattenteller und Fader lesen den Zustand des Mixers.
+
+### Tests
+
+- Neue Tests ohne Ton (`crates/radio/tests/party_duo.rs`, Fader in `level.rs`, Wunschordner in `party.rs` und der GUI): Constant Power mit exakten Enden, Glättung ohne Sprung, Auto an und aus, Hand schlägt Automatik, Mitte ist kein Weiter, Ende lädt vor ohne Start, Ein- und Austritt ohne Lücke, jeder Mixer-Block unter `assert_no_alloc`.
 
 ## 0.34.47 — 2026-10-31
 

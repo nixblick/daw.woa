@@ -72,6 +72,10 @@ pub struct Wishlist {
     items: Vec<Wish>,
     #[serde(default)]
     counter: u64,
+    /// Dateien aus dem Wunschtitel-Ordner (#134), die schon einmal Wunsch waren. Ein
+    /// entfernter Wunsch kommt so nicht beim nächsten Blick in den Ordner zurück.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    folder_seen: std::collections::BTreeSet<PathBuf>,
 }
 
 impl Wishlist {
@@ -187,6 +191,34 @@ impl Wishlist {
 
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
+    }
+
+    /// Datei aus dem Wunschtitel-Ordner als Wunsch aufnehmen, ohne Stimme zu zählen: steht
+    /// die Datei schon in der Liste (oder war sie schon einmal da und wurde entfernt),
+    /// passiert nichts. `true`, wenn sie neu dazukam.
+    pub fn add_folder_file(&mut self, path: PathBuf, title: &str) -> bool {
+        if self.folder_seen.contains(&path) {
+            return false;
+        }
+        self.folder_seen.insert(path.clone());
+        if self
+            .items
+            .iter()
+            .any(|w| w.path == path || w.queued.as_deref() == Some(path.as_path()))
+        {
+            return false;
+        }
+        self.counter += 1;
+        self.items.push(Wish {
+            title: title.trim().to_string(),
+            votes: 1,
+            order: self.counter,
+            done: false,
+            queued: None,
+            path,
+        });
+        self.sort();
+        true
     }
 
     /// Nimmt den Wunsch mit diesem Pfad heraus.
@@ -553,19 +585,22 @@ pub fn layout(view: &View, state: &PartyState) -> PartyLayout {
             paused: paused.is_some(),
         }
     });
-    let next = idx.and_then(|i| {
-        view.playlist
-            .iter()
-            .skip(i + 1)
-            .find(|e| e.voice.is_none())
-            .map(|e| {
-                let (a, t) = split_title(&e.title);
-                if a.is_empty() {
-                    t
-                } else {
-                    format!("{a} – {t}")
-                }
-            })
+    // Party-Decks: der Nächste ist der Titel auf der anderen Seite.
+    let party_next = view
+        .party
+        .as_ref()
+        .map(|p| p.sides[1 - p.live].index.and_then(|i| view.playlist.get(i)));
+    let next = match party_next {
+        Some(e) => e,
+        None => idx.and_then(|i| view.playlist.iter().skip(i + 1).find(|e| e.voice.is_none())),
+    }
+    .map(|e| {
+        let (a, t) = split_title(&e.title);
+        if a.is_empty() {
+            t
+        } else {
+            format!("{a} – {t}")
+        }
     });
     PartyLayout {
         now,
@@ -664,74 +699,6 @@ impl Side {
     }
 }
 
-/// Zwei Decks über der einen Sende-Playlist: Die Playlist bleibt das Modell (laufender und
-/// nächster Titel); hier steht nur, auf welcher Seite der laufende liegt. Jeder Titelwechsel
-/// legt den neuen Titel auf die andere Seite, der nächste ist auf der freien Seite vorgeladen.
-/// Der Mixer wechselt den laufenden Titel zu Beginn der Überblendung, darum läuft der
-/// Crossfader ab diesem Wechsel über die eingestellte Crossfade-Länge.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Decks {
-    /// Seite des laufenden (bzw. als Nächstes startenden) Titels.
-    pub live: Side,
-    last: Option<PathBuf>,
-    /// Der vorige Titel (blendet nach einem Wechsel noch aus).
-    pub previous: Option<PathBuf>,
-    /// Zeitpunkt des letzten Wechsels (Sekunden), `None` vor dem ersten.
-    since: Option<f64>,
-}
-
-impl Decks {
-    /// Nimmt den laufenden Titel aus dem Schnappschuss. `true`, wenn die Seite gewechselt hat.
-    pub fn track(&mut self, current: Option<&std::path::Path>, now: f64) -> bool {
-        let Some(cur) = current else {
-            // Stopp: keine Überblendung mehr, die Seite bleibt.
-            if self.last.take().is_some() {
-                self.since = None;
-            }
-            return false;
-        };
-        let flip = self.last.as_deref().is_some_and(|l| l != cur);
-        if flip {
-            self.live = self.live.other();
-            self.previous = self.last.take();
-            self.since = Some(now);
-        }
-        self.last = Some(cur.to_path_buf());
-        flip
-    }
-
-    /// Crossfader-Stellung (0 = links, 1 = rechts) zur Zeit `now` bei `xf` Sekunden
-    /// Überblendung: gleichmäßig von der alten zur neuen Seite.
-    pub fn fader(&self, now: f64, xf: f64) -> f32 {
-        crossfader_pos(self.live, self.since.map(|s| now - s), xf)
-    }
-
-    /// Blendet gerade über (der vorige Titel ist noch zu hören)?
-    pub fn fading(&self, now: f64, xf: f64) -> bool {
-        self.since.is_some_and(|s| xf > 0.0 && now - s < xf)
-    }
-
-    /// Dreht der Plattenteller dieser Seite? Nur das hörbare Deck: das laufende, und während
-    /// der Überblendung noch das ausblendende. Pausiert oder vorgeladen steht er still.
-    pub fn spinning(&self, side: Side, playing: bool, now: f64, xf: f64) -> bool {
-        playing && (side == self.live || self.fading(now, xf))
-    }
-}
-
-/// Crossfader-Kurve beim Auto-Übergang: `elapsed` Sekunden nach dem Wechsel auf `to`, linear
-/// über `xf` Sekunden. Ohne Wechsel (oder ohne Überblendung) steht er auf `to`.
-pub fn crossfader_pos(to: Side, elapsed: Option<f64>, xf: f64) -> f32 {
-    let target = to.pos();
-    match elapsed {
-        Some(e) if xf > 0.0 => {
-            let t = (e / xf).clamp(0.0, 1.0) as f32;
-            let from = 1.0 - target;
-            from + (target - from) * t
-        }
-        _ => target,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -747,6 +714,37 @@ mod tests {
             cues: Default::default(),
             voice: None,
         }
+    }
+
+    #[test]
+    fn folder_files_become_wishes_once_and_removed_stay_away() {
+        let tmp = tempfile::tempdir().unwrap();
+        let f = tmp.path().join("Gast - Lied.mp3");
+        std::fs::write(&f, b"x").unwrap();
+        let mut l = Wishlist::default();
+        assert!(l.add_folder_file(f.clone(), "Gast - Lied"));
+        assert!(
+            !l.add_folder_file(f.clone(), "Gast - Lied"),
+            "keine Doppelten"
+        );
+        assert_eq!(l.len(), 1);
+        assert_eq!(
+            l.items()[0].votes,
+            1,
+            "der Blick in den Ordner zählt keine Stimme"
+        );
+        assert!(l.take(&f).is_some());
+        assert!(f.exists(), "Entfernen löscht nie die Datei");
+        assert!(
+            !l.add_folder_file(f.clone(), "Gast - Lied"),
+            "entfernt bleibt entfernt"
+        );
+        let json = serde_json::to_string(&l).unwrap();
+        let mut back: Wishlist = serde_json::from_str(&json).unwrap();
+        assert!(!back.add_folder_file(f, "x"), "auch nach dem Neustart");
+        // Alte Dateien ohne das Feld lesen sich weiter.
+        let old: Wishlist = serde_json::from_str(r#"{"items":[]}"#).unwrap();
+        assert!(old.is_empty());
     }
 
     #[test]
@@ -885,58 +883,6 @@ mod tests {
         assert_eq!(clock(59.0), "0:59");
         assert_eq!(clock(61.5), "1:02");
         assert_eq!(clock(3600.0), "1:00:00");
-    }
-
-    #[test]
-    fn three_titles_alternate_left_right_left() {
-        let mut d = Decks::default();
-        let p = |n: &str| PathBuf::from(n);
-        assert!(!d.track(Some(&p("1.mp3")), 0.0));
-        assert_eq!(d.live, Side::Left);
-        assert!(d.track(Some(&p("2.mp3")), 10.0));
-        assert_eq!(d.live, Side::Right);
-        assert_eq!(d.previous, Some(p("1.mp3")));
-        assert!(d.track(Some(&p("3.mp3")), 20.0));
-        assert_eq!(d.live, Side::Left);
-        // Gleicher Titel im nächsten Bild: kein Wechsel.
-        assert!(!d.track(Some(&p("3.mp3")), 21.0));
-        assert_eq!(d.live, Side::Left);
-    }
-
-    #[test]
-    fn crossfader_moves_over_the_crossfade_length() {
-        assert_eq!(crossfader_pos(Side::Right, None, 5.0), 1.0);
-        assert_eq!(crossfader_pos(Side::Right, Some(0.0), 5.0), 0.0);
-        assert!((crossfader_pos(Side::Right, Some(2.5), 5.0) - 0.5).abs() < 1e-6);
-        assert_eq!(crossfader_pos(Side::Right, Some(9.0), 5.0), 1.0);
-        assert!((crossfader_pos(Side::Left, Some(1.0), 4.0) - 0.75).abs() < 1e-6);
-        assert_eq!(crossfader_pos(Side::Left, Some(1.0), 0.0), 0.0);
-        let mut d = Decks::default();
-        d.track(Some(std::path::Path::new("a")), 0.0);
-        d.track(Some(std::path::Path::new("b")), 100.0);
-        let mut last = -1.0;
-        for k in 0..=10 {
-            let f = d.fader(100.0 + f64::from(k) * 0.5, 5.0);
-            assert!(f >= last, "monoton");
-            last = f;
-        }
-        assert_eq!(last, 1.0);
-    }
-
-    #[test]
-    fn only_the_audible_deck_spins() {
-        let mut d = Decks::default();
-        d.track(Some(std::path::Path::new("a")), 0.0);
-        assert!(d.spinning(Side::Left, true, 1.0, 5.0));
-        assert!(!d.spinning(Side::Right, true, 1.0, 5.0), "vorgeladen steht");
-        assert!(!d.spinning(Side::Left, false, 1.0, 5.0), "pausiert steht");
-        d.track(Some(std::path::Path::new("b")), 10.0);
-        assert!(d.spinning(Side::Right, true, 11.0, 5.0));
-        assert!(d.spinning(Side::Left, true, 11.0, 5.0), "blendet noch aus");
-        assert!(
-            !d.spinning(Side::Left, true, 16.0, 5.0),
-            "nach der Blende still"
-        );
     }
 
     #[test]
