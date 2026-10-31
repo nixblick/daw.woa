@@ -197,7 +197,12 @@ fn feedback_with_screenshot() {
         ..FeedbackMeta::default()
     };
     let png = b"\x89PNG\r\n\x1a\nrest-of-image".to_vec();
-    let issue = submit_feedback("Mixer knackt\nDetails", Some(png.clone()), &meta).unwrap();
+    let issue = submit_feedback(
+        "Mixer knackt\nDetails",
+        vec![("screenshot.png".into(), png.clone())],
+        &meta,
+    )
+    .unwrap();
     assert_eq!(issue, Some(42));
     let bodies = m.bodies.lock().unwrap();
     let (path, b) = &bodies[0];
@@ -224,11 +229,11 @@ fn feedback_errors() {
         ..FeedbackMeta::default()
     };
     assert!(matches!(
-        submit_feedback("x", None, &meta),
+        submit_feedback("x", vec![], &meta),
         Err(FeedbackError::Status(503))
     ));
     assert!(matches!(
-        submit_feedback("x", None, &FeedbackMeta::default()),
+        submit_feedback("x", vec![], &FeedbackMeta::default()),
         Err(FeedbackError::NoEndpoint)
     ));
 }
