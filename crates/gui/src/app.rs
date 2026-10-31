@@ -5375,24 +5375,15 @@ impl WoaApp {
         });
     }
 
-    /// Vertikale Mischpult-Konsole im unteren Studio-Dock.
+    /// Vertikale Mischpult-Konsole im unteren Studio-Dock: schlanke Kanalzüge (nur Name,
+    /// Tasten, LED-Kette und Fader), rechts daneben das Insert-Rack des gewählten Kanals.
     fn mixer_console(&mut self, ui: &mut egui::Ui) {
         let tracks: Vec<_> = self
             .state
             .project()
             .tracks
             .iter()
-            .map(|t| {
-                (
-                    t.id,
-                    t.name.clone(),
-                    t.kind,
-                    t.gain_db,
-                    t.pan,
-                    t.mute,
-                    t.solo,
-                )
-            })
+            .map(|t| (t.id, t.name.clone(), t.gain_db, t.mute, t.solo))
             .collect();
         if tracks.is_empty() {
             ui.horizontal(|ui| {
@@ -5411,248 +5402,290 @@ impl WoaApp {
             });
             return;
         }
-        egui::ScrollArea::horizontal()
-            .id_salt("studio_mixer_scroll")
-            .auto_shrink([false, false])
+        const RACK_W: f32 = 270.0;
+        let strips_w = (ui.available_width() - RACK_W - 12.0).max(160.0);
+        ui.horizontal_top(|ui| {
+            egui::ScrollArea::horizontal()
+                .id_salt("studio_mixer_scroll")
+                .max_width(strips_w)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        for (i, (id, name, gain, mute, solo)) in tracks.into_iter().enumerate() {
+                            self.channel_strip(ui, i, id, &name, gain, mute, solo);
+                        }
+                        self.add_bus_box(ui);
+                    });
+                });
+            ui.separator();
+            ui.vertical(|ui| {
+                ui.set_width(RACK_W);
+                egui::ScrollArea::vertical()
+                    .id_salt("studio_insert_rack_scroll")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| self.insert_rack(ui));
+            });
+        });
+    }
+
+    /// Ein Kanalzug ohne Drehregler: Scribble-Strip in Spurfarbe, Tasten M, S und Aufnahme,
+    /// LED-Kette und Fader. Gain, Pan, Routing und Effekte liegen im Insert-Rack.
+    #[allow(clippy::too_many_arguments)]
+    fn channel_strip(
+        &mut self,
+        ui: &mut egui::Ui,
+        index: usize,
+        id: TrackId,
+        name: &str,
+        gain: f64,
+        mute: bool,
+        solo: bool,
+    ) {
+        const W: f32 = 96.0;
+        let color = theme::track_color(index);
+        let is_sel = self.selected_track == Some(id);
+        let armed = if self.armed.is_empty() {
+            is_sel
+        } else {
+            self.armed.contains(&id)
+        };
+        let level = self.track_levels.get(&id).copied().unwrap_or(0.0);
+
+        egui::Frame::new()
+            .fill(theme::well())
+            .stroke(egui::Stroke::new(
+                1.0,
+                if is_sel { color } else { theme::border() },
+            ))
+            .corner_radius(5)
+            .inner_margin(egui::Margin::symmetric(8, 6))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 8.0;
-                    for (i, (id, name, kind, gain, pan, mute, solo)) in
-                        tracks.into_iter().enumerate()
+                ui.set_width(W);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 4.0;
+                    // Scribble-Strip: Name in Spurfarbe, Klick wählt den Kanal fürs Insert-Rack.
+                    let (bar_rect, bar_resp) =
+                        ui.allocate_exact_size(egui::vec2(W, 18.0), egui::Sense::click());
+                    ui.painter().rect_filled(bar_rect, 3.0, color);
+                    ui.painter().with_clip_rect(bar_rect).text(
+                        bar_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        name,
+                        egui::FontId::proportional(11.5),
+                        theme::well(),
+                    );
+                    if bar_resp
+                        .on_hover_text("Kanal wählen (Insert-Rack)")
+                        .clicked()
                     {
-                        let color = theme::track_color(i);
-                        let is_sel = self.selected_track == Some(id);
-                        let armed = if self.armed.is_empty() {
-                            is_sel
-                        } else {
-                            self.armed.contains(&id)
-                        };
-                        let level = self.track_levels.get(&id).copied().unwrap_or(0.0);
-
-                        egui::Frame::new()
-                            .fill(theme::well())
-                            .stroke(egui::Stroke::new(
-                                1.0,
-                                if is_sel { color } else { theme::border() },
-                            ))
-                            .corner_radius(5)
-                            .inner_margin(egui::Margin::symmetric(8, 6))
-                            .show(ui, |ui| {
-                                ui.set_width(118.0);
-                                ui.vertical(|ui| {
-                                    ui.spacing_mut().item_spacing.y = 4.0;
-                                    // Farbiger Kanal-Kopfstreifen
-                                    let (bar_rect, bar_resp) = ui.allocate_exact_size(
-                                        egui::vec2(118.0, 18.0),
-                                        egui::Sense::click(),
-                                    );
-                                    ui.painter().rect_filled(bar_rect, 3.0, color);
-                                    ui.painter().text(
-                                        bar_rect.center(),
-                                        egui::Align2::CENTER_CENTER,
-                                        &name,
-                                        egui::FontId::proportional(11.5),
-                                        theme::well(),
-                                    );
-                                    if bar_resp.clicked() {
-                                        self.selected_track = Some(id);
-                                    }
-
-                                    // M / S / Arm Tastenreihe
-                                    ui.horizontal(|ui| {
-                                        ui.spacing_mut().item_spacing.x = 4.0;
-                                        let key_size = egui::vec2(28.0, 22.0);
-                                        let key_font = theme::label_font(13.0);
-                                        if crate::widgets::Key::new("M", key_size)
-                                            .font(key_font.clone())
-                                            .color(theme::accent())
-                                            .on(mute)
-                                            .ui(ui)
-                                            .on_hover_text("Stumm")
-                                            .clicked()
-                                        {
-                                            self.state.toggle_mute(id);
-                                        }
-
-                                        if crate::widgets::Key::new("S", key_size)
-                                            .font(key_font)
-                                            .color(theme::cue())
-                                            .on(solo)
-                                            .ui(ui)
-                                            .on_hover_text("Solo")
-                                            .clicked()
-                                        {
-                                            self.state.toggle_solo(id);
-                                        }
-
-                                        if crate::widgets::Key::new(theme::icf::RECORD, key_size)
-                                            .font(theme::fill_icon_font(12.0))
-                                            .color(theme::on_air_fill())
-                                            .on(armed)
-                                            .ui(ui)
-                                            .on_hover_text("Aufnahme scharf schalten")
-                                            .clicked()
-                                            && !self.armed.remove(&id)
-                                        {
-                                            self.armed.insert(id);
-                                        }
-
-                                        if ui
-                                            .add(
-                                                egui::Button::new(
-                                                    egui::RichText::new(theme::ic::TRASH)
-                                                        .size(10.5)
-                                                        .color(theme::text_dim()),
-                                                )
-                                                .fill(theme::surface())
-                                                .min_size(egui::vec2(22.0, 20.0)),
-                                            )
-                                            .on_hover_text("Spur löschen")
-                                            .clicked()
-                                        {
-                                            self.armed.remove(&id);
-                                            if self.selected_track == Some(id) {
-                                                self.selected_track = None;
-                                            }
-                                            self.state.remove_track(id);
-                                        }
-                                    });
-
-                                    // Vertikale LED-Pegelanzeige + Gain- & Pan-Steuerung
-                                    ui.horizontal(|ui| {
-                                        let (m_rect, _) = ui.allocate_exact_size(
-                                            egui::vec2(14.0, 78.0),
-                                            egui::Sense::hover(),
-                                        );
-                                        theme::led_meter_vertical(ui.painter(), m_rect, level);
-
-                                        // Kanalfader: derselbe Gain wie das Zahlenfeld.
-                                        let mut fg = match self.gain_drag {
-                                            Some((d, v)) if d == id => v,
-                                            _ => self.shown_gain(id, gain),
-                                        }
-                                            as f32;
-                                        let fr = crate::widgets::fader(
-                                            ui,
-                                            &mut fg,
-                                            MIN_GAIN_DB as f32..=MAX_GAIN_DB as f32,
-                                            0.0,
-                                            egui::vec2(26.0, 78.0),
-                                            crate::widgets::Orient::Vertical,
-                                        )
-                                        .on_hover_text("Kanal-Gain (Doppelklick: 0 dB)");
-                                        if fr.changed() {
-                                            if fr.double_clicked() {
-                                                self.gain_drag = None;
-                                                self.state.set_gain(id, 0.0);
-                                            } else if fr.dragged() {
-                                                self.gain_drag = Some((id, f64::from(fg)));
-                                            } else {
-                                                self.gain_drag = None;
-                                                self.state.set_gain(id, f64::from(fg));
-                                            }
-                                        } else if fr.drag_stopped()
-                                            && let Some((d, v)) = self.gain_drag.take()
-                                            && d == id
-                                        {
-                                            self.state.set_gain(id, v);
-                                        }
-
-                                        ui.vertical(|ui| {
-                                            ui.spacing_mut().item_spacing.y = 4.0;
-                                            ui.label(
-                                                egui::RichText::new(
-                                                    if kind == woa_model::TrackKind::Midi {
-                                                        "MIDI-SYNTH"
-                                                    } else if kind == woa_model::TrackKind::Bus {
-                                                        "BUS"
-                                                    } else {
-                                                        "AUDIO-KANAL"
-                                                    },
-                                                )
-                                                .size(9.5)
-                                                .monospace()
-                                                .color(if kind == woa_model::TrackKind::Midi {
-                                                    theme::cue()
-                                                } else {
-                                                    theme::text_dim()
-                                                }),
-                                            );
-                                            let mut g = match self.gain_drag {
-                                                Some((d, v)) if d == id => v,
-                                                _ => self.shown_gain(id, gain),
-                                            };
-                                            let r = ui
-                                                .add(
-                                                    egui::DragValue::new(&mut g)
-                                                        .range(MIN_GAIN_DB..=MAX_GAIN_DB)
-                                                        .speed(0.2)
-                                                        .fixed_decimals(1)
-                                                        .prefix("Pegel ")
-                                                        .suffix(" dB"),
-                                                )
-                                                .on_hover_text("Kanal-Gain (Doppelklick: 0 dB)");
-                                            if r.double_clicked() {
-                                                self.gain_drag = None;
-                                                self.state.set_gain(id, 0.0);
-                                            } else {
-                                                if r.changed() {
-                                                    self.gain_drag = Some((id, g));
-                                                }
-                                                if r.drag_stopped() || (r.changed() && !r.dragged())
-                                                {
-                                                    self.gain_drag = None;
-                                                    self.state.set_gain(id, g);
-                                                }
-                                            }
-
-                                            let mut p = match self.pan_drag {
-                                                Some((d, v)) if d == id => v,
-                                                _ => pan,
-                                            };
-                                            let mut p_pct = (p * 100.0).round();
-                                            let pr = ui
-                                                .add(
-                                                    egui::DragValue::new(&mut p_pct)
-                                                        .range(-100.0..=100.0)
-                                                        .speed(1.0)
-                                                        .fixed_decimals(0)
-                                                        .custom_formatter(|v, _| {
-                                                            let iv = v.round() as i32;
-                                                            if iv == 0 {
-                                                                "Pan Mitte".to_string()
-                                                            } else if iv < 0 {
-                                                                format!("Pan L{}", -iv)
-                                                            } else {
-                                                                format!("Pan R{iv}")
-                                                            }
-                                                        }),
-                                                )
-                                                .on_hover_text("Panorama (Doppelklick: Mitte)");
-                                            if pr.double_clicked() {
-                                                self.pan_drag = None;
-                                                self.state.set_pan(id, 0.0);
-                                            } else {
-                                                p = (p_pct / 100.0).clamp(-1.0, 1.0);
-                                                if pr.changed() {
-                                                    self.pan_drag = Some((id, p));
-                                                }
-                                                if pr.drag_stopped()
-                                                    || (pr.changed() && !pr.dragged())
-                                                {
-                                                    self.pan_drag = None;
-                                                    self.state.set_pan(id, p);
-                                                }
-                                            }
-                                        });
-                                    });
-                                    self.strip_routing(ui, id, kind);
-                                });
-                            });
+                        self.selected_track = Some(id);
                     }
-                    self.add_bus_box(ui);
+
+                    // M / S / Aufnahme
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        let key_size = egui::vec2(28.0, 22.0);
+                        let key_font = theme::label_font(13.0);
+                        if crate::widgets::Key::new("M", key_size)
+                            .font(key_font.clone())
+                            .color(theme::accent())
+                            .on(mute)
+                            .ui(ui)
+                            .on_hover_text("Stumm")
+                            .clicked()
+                        {
+                            self.state.toggle_mute(id);
+                        }
+                        if crate::widgets::Key::new("S", key_size)
+                            .font(key_font)
+                            .color(theme::cue())
+                            .on(solo)
+                            .ui(ui)
+                            .on_hover_text("Solo")
+                            .clicked()
+                        {
+                            self.state.toggle_solo(id);
+                        }
+                        if crate::widgets::Key::new(theme::icf::RECORD, key_size)
+                            .font(theme::fill_icon_font(12.0))
+                            .color(theme::on_air_fill())
+                            .on(armed)
+                            .ui(ui)
+                            .on_hover_text("Aufnahme scharf schalten")
+                            .clicked()
+                            && !self.armed.remove(&id)
+                        {
+                            self.armed.insert(id);
+                        }
+                    });
+
+                    // LED-Kette und Kanalfader (derselbe Gain wie das Zahlenfeld im Rack).
+                    ui.horizontal(|ui| {
+                        let (m_rect, _) =
+                            ui.allocate_exact_size(egui::vec2(14.0, 110.0), egui::Sense::hover());
+                        theme::led_meter_vertical(ui.painter(), m_rect, level);
+                        let mut fg = match self.gain_drag {
+                            Some((d, v)) if d == id => v,
+                            _ => self.shown_gain(id, gain),
+                        } as f32;
+                        let fr = crate::widgets::fader(
+                            ui,
+                            &mut fg,
+                            MIN_GAIN_DB as f32..=MAX_GAIN_DB as f32,
+                            0.0,
+                            egui::vec2(48.0, 110.0),
+                            crate::widgets::Orient::Vertical,
+                        )
+                        .on_hover_text("Kanal-Gain (Doppelklick: 0 dB)");
+                        if fr.changed() {
+                            if fr.double_clicked() {
+                                self.gain_drag = None;
+                                self.state.set_gain(id, 0.0);
+                            } else if fr.dragged() {
+                                self.gain_drag = Some((id, f64::from(fg)));
+                            } else {
+                                self.gain_drag = None;
+                                self.state.set_gain(id, f64::from(fg));
+                            }
+                        } else if fr.drag_stopped()
+                            && let Some((d, v)) = self.gain_drag.take()
+                            && d == id
+                        {
+                            self.state.set_gain(id, v);
+                        }
+                    });
                 });
             });
+    }
+
+    /// Insert-Rack des gewählten Kanals: Pegel (Gain), Panorama, Ausgang, Sends,
+    /// Effektkette und Plugins. Hier leben die Regler, die der Kanalzug nicht mehr trägt.
+    fn insert_rack(&mut self, ui: &mut egui::Ui) {
+        let sel = self
+            .selected_track
+            .and_then(|id| self.state.project().tracks.iter().position(|t| t.id == id));
+        let Some(index) = sel else {
+            ui.label(
+                egui::RichText::new("INSERT-RACK")
+                    .size(9.5)
+                    .monospace()
+                    .color(theme::text_dim()),
+            );
+            ui.label(
+                egui::RichText::new("Kanal wählen: Klick auf den Namen im Kanalzug.")
+                    .color(theme::text_dim()),
+            );
+            return;
+        };
+        let (id, name, kind, gain, pan) = {
+            let t = &self.state.project().tracks[index];
+            (t.id, t.name.clone(), t.kind, t.gain_db, t.pan)
+        };
+        let color = theme::track_color(index);
+        ui.spacing_mut().item_spacing.y = 4.0;
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(4.0, 16.0), egui::Sense::hover());
+            ui.painter().rect_filled(r, 1.0, color);
+            ui.label(
+                egui::RichText::new(format!(
+                    "INSERT-RACK · {}",
+                    match kind {
+                        woa_model::TrackKind::Midi => "MIDI-SYNTH",
+                        woa_model::TrackKind::Bus => "BUS",
+                        _ => "AUDIO-KANAL",
+                    }
+                ))
+                .size(9.5)
+                .monospace()
+                .color(theme::text_dim()),
+            );
+        });
+        ui.label(egui::RichText::new(name).strong().color(theme::text()));
+
+        let mut g = match self.gain_drag {
+            Some((d, v)) if d == id => v,
+            _ => self.shown_gain(id, gain),
+        };
+        let r = ui
+            .add(
+                egui::DragValue::new(&mut g)
+                    .range(MIN_GAIN_DB..=MAX_GAIN_DB)
+                    .speed(0.2)
+                    .fixed_decimals(1)
+                    .prefix("Pegel ")
+                    .suffix(" dB"),
+            )
+            .on_hover_text("Kanal-Gain (Doppelklick: 0 dB)");
+        if r.double_clicked() {
+            self.gain_drag = None;
+            self.state.set_gain(id, 0.0);
+        } else {
+            if r.changed() {
+                self.gain_drag = Some((id, g));
+            }
+            if r.drag_stopped() || (r.changed() && !r.dragged()) {
+                self.gain_drag = None;
+                self.state.set_gain(id, g);
+            }
+        }
+
+        let mut p = match self.pan_drag {
+            Some((d, v)) if d == id => v,
+            _ => pan,
+        };
+        let mut p_pct = (p * 100.0).round();
+        let pr = ui
+            .add(
+                egui::DragValue::new(&mut p_pct)
+                    .range(-100.0..=100.0)
+                    .speed(1.0)
+                    .fixed_decimals(0)
+                    .custom_formatter(|v, _| {
+                        let iv = v.round() as i32;
+                        if iv == 0 {
+                            "Pan Mitte".to_string()
+                        } else if iv < 0 {
+                            format!("Pan L{}", -iv)
+                        } else {
+                            format!("Pan R{iv}")
+                        }
+                    }),
+            )
+            .on_hover_text("Panorama (Doppelklick: Mitte)");
+        if pr.double_clicked() {
+            self.pan_drag = None;
+            self.state.set_pan(id, 0.0);
+        } else {
+            p = (p_pct / 100.0).clamp(-1.0, 1.0);
+            if pr.changed() {
+                self.pan_drag = Some((id, p));
+            }
+            if pr.drag_stopped() || (pr.changed() && !pr.dragged()) {
+                self.pan_drag = None;
+                self.state.set_pan(id, p);
+            }
+        }
+
+        self.strip_routing(ui, id, kind);
+
+        ui.add_space(4.0);
+        if ui
+            .add(
+                egui::Button::new(
+                    egui::RichText::new(format!("{} Spur löschen", theme::ic::TRASH))
+                        .size(10.5)
+                        .color(theme::text_dim()),
+                )
+                .fill(theme::surface()),
+            )
+            .on_hover_text("Spur löschen")
+            .clicked()
+        {
+            self.armed.remove(&id);
+            self.selected_track = None;
+            self.state.remove_track(id);
+        }
     }
 
     /// "+ Bus": Name eintragen, Knopf legt die Gruppenspur an.
