@@ -589,19 +589,32 @@ impl RadioDesk {
         }
         let Some(st) = &self.station else { return };
         let now = Instant::now();
+        let mut check_now = false;
         if self.view.revision != self.saved_revision
             && now.duration_since(self.saved_at).as_millis() >= 700
         {
-            match st.show().save(&self.radio_path) {
-                Ok(()) => {
-                    self.saved_revision = self.view.revision;
-                    self.known_mtime = mtime(&self.radio_path);
+            let m = mtime(&self.radio_path);
+            if m.is_some() && m != self.known_mtime {
+                // Erst die fremde Änderung (build_playlist) übernehmen, nicht überschreiben.
+                self.saved_revision = self.view.revision;
+                self.error = Some(
+                    "radio.json wurde außerhalb geändert: neuer Stand übernommen, \
+                     die letzte Änderung hier nicht gespeichert"
+                        .into(),
+                );
+                check_now = true;
+            } else {
+                match st.show().save(&self.radio_path) {
+                    Ok(()) => {
+                        self.saved_revision = self.view.revision;
+                        self.known_mtime = mtime(&self.radio_path);
+                    }
+                    Err(e) => self.error = Some(format!("radio.json nicht gespeichert: {e}")),
                 }
-                Err(e) => self.error = Some(format!("radio.json nicht gespeichert: {e}")),
             }
             self.saved_at = now;
         }
-        if now.duration_since(self.checked_at).as_secs() >= 2 {
+        if check_now || now.duration_since(self.checked_at).as_secs() >= 2 {
             self.checked_at = now;
             let m = mtime(&self.radio_path);
             if m.is_some() && m != self.known_mtime {
