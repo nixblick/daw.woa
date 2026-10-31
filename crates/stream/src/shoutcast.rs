@@ -6,7 +6,9 @@
 //! – viel mehr Code und Fehlerfläche für dasselbe Ergebnis. Auf dem eigenen Server ist zudem nur der
 //! v1-Quellport (8001) offen (bretteins.infra#150).
 //!
-//! Stream-ID 1 braucht keinen Zusatz; ab 2 hängt sie am Kennwort (`kennwort:#sid`). Das
+//! Die Quelle meldet sich bei Shoutcast auf `port + 1` an ([`StreamConfig::source_port`]).
+//! Stream-ID 1 braucht keinen Zusatz; ab 2 hängt sie am Kennwort (`kennwort:#sid`, nur
+//! Shoutcast v2). Das
 //! v1-Protokoll hat keinen Weg für Titel in der Quellverbindung (die `icy-*`-Kopfzeilen
 //! gelten nur einmal beim Anmelden). Titel gehen per HTTP an `admin.cgi?mode=updinfo` mit
 //! dem Kennwort in der URL. Deshalb nur bei Loopback-Host und Admin-Port; gegen einen
@@ -32,6 +34,8 @@ pub enum StreamError {
     Connect(String),
     /// Server lehnt das Kennwort ab.
     AuthFailed,
+    /// Kennwort stimmt, aber die Quelle ist schon belegt (Icecast: Mountpoint in Benutzung).
+    InUse,
     /// Server lehnt aus anderem Grund ab (Antwortzeile).
     Refused(String),
     /// Verbindung während der Sendung abgerissen.
@@ -43,8 +47,9 @@ impl std::fmt::Display for StreamError {
         match self {
             Self::Connect(e) => write!(f, "Server nicht erreichbar: {e}"),
             Self::AuthFailed => f.write_str(
-                "Server lehnt das Quell-Kennwort ab (Kennwortdatei und Stream-ID prüfen)",
+                "Server lehnt das Quell-Kennwort ab (Kennwort, Benutzer und Stream-ID prüfen)",
             ),
+            Self::InUse => f.write_str("Die Quelle ist schon belegt (es sendet bereits jemand)"),
             Self::Refused(l) => write!(f, "Server lehnt ab: {l}"),
             Self::Io(e) => write!(f, "Verbindung abgerissen: {e}"),
         }
@@ -96,6 +101,35 @@ fn read_head(s: &mut TcpStream) -> std::io::Result<String> {
     Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
+/// Shoutcast: Anmeldezeile senden und die Antwort prüfen. Danach ist die Verbindung bereit
+/// für die `icy-*`-Kopfzeilen. Genutzt vom Senden und vom Verbindungstest.
+pub(crate) fn login_shoutcast(cfg: &StreamConfig, kw: &Kennwort) -> Result<TcpStream, StreamError> {
+    let mut s = open(&cfg.host, cfg.source_port())?;
+    let io = |e: std::io::Error| StreamError::Io(e.to_string());
+    let line = cfg.login_line(kw.expose());
+    s.write_all(line.as_bytes()).map_err(io)?;
+    let head = read_head(&mut s).map_err(io)?;
+    let first = head.lines().next().unwrap_or("").trim().to_string();
+    if first.starts_with("OK") {
+        return Ok(s);
+    }
+    let low = first.to_ascii_lowercase();
+    if low.contains("password") || low.contains("invalid") {
+        return Err(StreamError::AuthFailed);
+    }
+    if low.starts_with("http/") || low.starts_with("<") {
+        return Err(StreamError::Refused(format!(
+            "Der Server antwortet wie ein Webserver ({first}). Ist hier Icecast oder ein \
+             anderer Port gemeint?"
+        )));
+    }
+    Err(StreamError::Refused(if first.is_empty() {
+        "keine Antwort (Server-Typ und Port prüfen)".into()
+    } else {
+        first
+    }))
+}
+
 /// Angemeldete Quellverbindung.
 pub struct Source {
     stream: TcpStream,
@@ -113,22 +147,8 @@ impl Source {
         if cfg.protocol == crate::config::Protocol::Icecast {
             return Self::connect_icecast(cfg, kw);
         }
-        let mut s = open(&cfg.host, cfg.port)?;
+        let mut s = login_shoutcast(cfg, kw)?;
         let io = |e: std::io::Error| StreamError::Io(e.to_string());
-        let line = cfg.login_line(kw.expose());
-        s.write_all(line.as_bytes()).map_err(io)?;
-        let head = read_head(&mut s).map_err(io)?;
-        let first = head.lines().next().unwrap_or("").trim().to_string();
-        if !first.starts_with("OK") {
-            if first.to_ascii_lowercase().contains("password") {
-                return Err(StreamError::AuthFailed);
-            }
-            return Err(StreamError::Refused(if first.is_empty() {
-                "keine Antwort".into()
-            } else {
-                first
-            }));
-        }
         let headers = format!(
             "content-type:audio/mpeg\r\nicy-name:{}\r\nicy-genre:Radio\r\nicy-pub:0\r\n\
              icy-br:{}\r\nicy-url:\r\n\r\n",
@@ -142,16 +162,16 @@ impl Source {
     /// Icecast 2: `PUT <mount>` mit Basic-Auth (`source:<kennwort>`), dann rohes MP3.
     /// Das Kennwort steht nur im Kopf der Anfrage, nie in einer URL oder im Log.
     fn connect_icecast(cfg: &StreamConfig, kw: &Kennwort) -> Result<Self, StreamError> {
-        let mut s = open(&cfg.host, cfg.port)?;
+        let mut s = open(&cfg.host, cfg.source_port())?;
         let io = |e: std::io::Error| StreamError::Io(e.to_string());
-        let auth = base64(format!("source:{}", kw.expose()).as_bytes());
+        let auth = base64(format!("{}:{}", cfg.source_user(), kw.expose()).as_bytes());
         let req = format!(
             "PUT {} HTTP/1.1\r\nHost: {}:{}\r\nAuthorization: Basic {auth}\r\n\
              User-Agent: {USER_AGENT}\r\nContent-Type: audio/mpeg\r\nIce-Public: 0\r\n\
              Ice-Name: {}\r\nIce-Bitrate: {}\r\nExpect: 100-continue\r\n\r\n",
             cfg.mount,
-            cfg.host,
-            cfg.port,
+            crate::config::host_for_url(&cfg.host),
+            cfg.source_port(),
             one_line(&cfg.name),
             cfg.bitrate_kbps
         );
@@ -165,8 +185,21 @@ impl Source {
             .unwrap_or(0);
         match code {
             100 | 200 => Ok(Self { stream: s }),
-            401 | 403 => Err(StreamError::AuthFailed),
-            0 => Err(StreamError::Refused("keine Antwort".into())),
+            401 => Err(StreamError::AuthFailed),
+            403 => {
+                // Icecast meldet „Mountpoint in use“ mit 403; das Kennwort stimmt dann.
+                let mut rest = Vec::new();
+                let _ = s.take(512).read_to_end(&mut rest);
+                let rest = format!("{head}{}", String::from_utf8_lossy(&rest)).to_ascii_lowercase();
+                if rest.contains("in use") {
+                    Err(StreamError::InUse)
+                } else {
+                    Err(StreamError::AuthFailed)
+                }
+            }
+            0 => Err(StreamError::Refused(
+                "keine HTTP-Antwort (Server-Typ prüfen: ist es Icecast?)".into(),
+            )),
             c => Err(StreamError::Refused(format!("HTTP {c}"))),
         }
     }
@@ -207,7 +240,8 @@ fn http_get(cfg: &StreamConfig, path: &str) -> Result<(u16, String), StreamError
     let io = |e: std::io::Error| StreamError::Io(e.to_string());
     let req = format!(
         "GET {path} HTTP/1.0\r\nHost: {}:{}\r\nUser-Agent: {USER_AGENT}\r\nConnection: close\r\n\r\n",
-        cfg.host, port
+        crate::config::host_for_url(&cfg.host),
+        port
     );
     s.write_all(req.as_bytes()).map_err(io)?;
     let mut buf = Vec::new();
@@ -259,9 +293,7 @@ pub fn is_loopback(host: &str) -> bool {
 /// Können Titel gesetzt werden? Nur mit Admin-Port und nur auf Loopback: `admin.cgi`
 /// trägt das Quell-Kennwort im Klartext in der URL, das darf nicht übers Netz.
 pub fn titles_possible(cfg: &StreamConfig) -> bool {
-    cfg.protocol == crate::config::Protocol::Shoutcast
-        && cfg.admin_port.is_some()
-        && is_loopback(&cfg.host)
+    cfg.protocol.is_shoutcast() && cfg.admin_port.is_some() && is_loopback(&cfg.host)
 }
 
 /// Titel setzen (`admin.cgi?mode=updinfo`). Nur für Loopback-Hosts, siehe

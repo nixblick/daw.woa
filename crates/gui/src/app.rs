@@ -232,6 +232,7 @@ pub struct WoaApp {
     gr_shown: std::collections::HashMap<woa_model::InsertId, f32>,
     /// Fenster „Ausgänge“ (Gerät und Kanalpaar je Quelle).
     outputs_ui: crate::outputs_ui::OutputsUi,
+    stream_ui: crate::stream_ui::StreamUi,
     /// Fenster „Telefon“ (Eingang für den Anrufer).
     phone_ui: crate::phone::PhoneUi,
 }
@@ -451,6 +452,7 @@ impl WoaApp {
             auto_ed: crate::automation::EditorState::default(),
             gr_shown: std::collections::HashMap::new(),
             outputs_ui: crate::outputs_ui::OutputsUi::default(),
+            stream_ui: crate::stream_ui::StreamUi::default(),
             phone_ui: crate::phone::PhoneUi::default(),
             midi,
             midi_seen: (0, None),
@@ -588,6 +590,53 @@ impl WoaApp {
         self.clock_editor.set_dir(dir.clone());
         self.event_editor.set_dir(dir.clone());
         self.data_dir = dir;
+        if self.config_path.is_some() {
+            self.import_stream_kennwort();
+        }
+    }
+
+    /// Alte Kennwortdatei der Sendung (bis 0.34.24 in `config.json` eingetragen) in den
+    /// Schlüsselbund übernehmen und aus der Konfiguration austragen. Die Datei bleibt liegen.
+    fn import_stream_kennwort(&mut self) {
+        let file = self.config.stream.password_file.clone();
+        if file.as_os_str().is_empty() {
+            return;
+        }
+        match woa_stream::kennwort::import_legacy(&self.data_dir, &file) {
+            Ok(_) => {
+                tracing::info!("stream password moved to the secret store");
+                self.config.stream.forget_legacy_file();
+                self.save_config();
+            }
+            Err(e) => tracing::warn!(error = %e, "stream password import failed"),
+        }
+    }
+
+    /// Fenster „Sendung: Stream-Server“: speichert die Angaben, das Kennwort geht in den
+    /// Schlüsselbund.
+    fn stream_window(&mut self, ctx: &egui::Context) {
+        let streaming = self.radio.as_ref().is_some_and(|r| r.stream_running());
+        let Some(applied) = self.stream_ui.show(ctx, &self.data_dir, streaming) else {
+            return;
+        };
+        tracing::info!(server = %applied.config.label(), "stream settings applied");
+        self.config.stream = applied.config;
+        if let Some(neu) = applied.neues_kennwort {
+            if neu.is_empty() {
+                if let Err(e) = woa_stream::kennwort::clear(&self.data_dir) {
+                    tracing::warn!(error = %e, "stream password not removed");
+                }
+            } else {
+                match woa_stream::kennwort::save(&self.data_dir, &neu) {
+                    Ok(ort) => {
+                        tracing::info!(ort = ort.label(), "stream password stored");
+                        self.config.stream.forget_legacy_file();
+                    }
+                    Err(e) => tracing::warn!(error = %e, "stream password not stored"),
+                }
+            }
+        }
+        self.save_config();
     }
 
     fn set_mode(&mut self, mode: Mode) {
@@ -2335,6 +2384,14 @@ impl WoaApp {
                     r.reconnect_outputs();
                 }
                 tracing::info!("output reconnect by button");
+                ui.close();
+            }
+            if ui
+                .button("Sendung: Stream-Server und Kennwort …")
+                .on_hover_text("Shoutcast oder Icecast: Adresse, Port, Kennwort, Verbindung testen")
+                .clicked()
+            {
+                self.stream_ui.open(&self.config.stream, &self.data_dir);
                 ui.close();
             }
             if ui.button("Telefon (Eingang für den Anrufer) …").clicked() {
@@ -5245,6 +5302,7 @@ impl eframe::App for WoaApp {
             self.feedback_window(&ctx);
             self.outputs_window(&ctx);
             self.phone_window(&ctx);
+            self.stream_window(&ctx);
             self.telemetry_window(&ctx);
             self.about_window(&ctx);
             return;
@@ -5318,6 +5376,7 @@ impl eframe::App for WoaApp {
         self.feedback_window(&ctx);
         self.outputs_window(&ctx);
         self.phone_window(&ctx);
+        self.stream_window(&ctx);
         self.telemetry_window(&ctx);
         self.about_window(&ctx);
     }

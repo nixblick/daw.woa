@@ -76,7 +76,7 @@ fn emergency_takes_over_and_hands_back() {
     let fake = start(KW);
     let cfg = StreamConfig {
         host: "127.0.0.1".into(),
-        port: fake.port,
+        port: fake.port - 1,
         admin_port: Some(fake.admin),
         stream_id: 1,
         sample_rate: SR,
@@ -174,7 +174,7 @@ fn local_link_rejects_strangers() {
     let fake = start(KW);
     let cfg = StreamConfig {
         host: "127.0.0.1".into(),
-        port: fake.port,
+        port: fake.port - 1,
         password_file: kw_file,
         ..StreamConfig::default()
     };

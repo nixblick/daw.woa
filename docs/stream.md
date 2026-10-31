@@ -14,7 +14,7 @@ Mixer (Audio-Thread) ──rtrb──▶ Feeder-Thread ──lokal──▶ woa-
 
 Der Server ist der eigene Shoutcast DNAS v2 auf dem eigenen Server.
 
-- Quelle: `stream.wironair.de:8001`, Stream-ID 1
+- Quelle: `stream.wironair.de`, Server-Port 8000, Quell-Port 8001, Stream-ID 1
 - Hören: <https://stream.wironair.de/stream>. Ohne Quelle spielt der Server eine eigene Notfall-Schleife; das ist erwartet.
 
 ## Protokoll: Shoutcast 1 (Legacy)
@@ -67,25 +67,42 @@ Notfall-Playlist. Zähler und Bericht: siehe CHANGELOG 0.5.0. `streamd-status.js
 
 ## Einrichten
 
-1. Kennwort-Datei anlegen, eine Zeile, Modus 600: `~/.secrets/daw.woa/shoutcast-source.pass`.
-   Den Wert gibt der Server-PR in bretteins.infra vor. Er steht nie im Repo und nie in der
-   Konfiguration. WOA liest nur die Datei und schreibt das Kennwort in kein Log.
-2. Optional in `~/.config/woa/config.json` den Schlüssel `stream` setzen. Alle Felder haben Vorgaben:
+Am einfachsten im Programm: **Einstellungen → „Sendung: Stream-Server und Kennwort …“**.
+
+- **Servertyp:** Shoutcast v1, Shoutcast v2 (DNAS, mit Stream-ID) oder Icecast 2. Es geht jeder Server dieser Art, nicht nur der eigene.
+- **Server und Port:** Name oder IP und der Port, wie ihn der Server hat (Shoutcast `portbase`, Icecast `port`). Shoutcast nimmt die Quelle auf `port + 1` an, das zeigt das Fenster an. In das Feld „Server“ darf man eine ganze Adresse einfügen (`http://1.2.3.4:8000/live`).
+- **Icecast:** Mountpoint (`/stream`) und Benutzer (meist `source`).
+- **Kennwort:** das Quell-Kennwort des Servers, nicht das Admin-Kennwort. Es kommt in den Schlüsselbund des Systems (Windows Anmeldeinformationsverwaltung, Linux Secret Service, macOS Schlüsselbund), unter Dienst `woa`, Eintrag `stream-source`. Ohne Schlüsselbund liegt es in `stream-source.pass` im Datenordner (Modus 0600). Es steht nie in `config.json` und nie im Log.
+- **Verbindung testen:** meldet sich ohne Ton an und erklärt das Ergebnis. Nicht während der Sendung.
+
+Die Angaben stehen im Schlüssel `stream` von `~/.config/woa/config.json` (Windows: `%APPDATA%\woa`), alles außer dem Kennwort. Alle Felder haben Vorgaben:
 
 ```json
 "stream": {
+  "schema": 2,
+  "protocol": "shoutcast",
   "host": "stream.wironair.de",
-  "port": 8001,
+  "port": 8000,
+  "user": "source",
+  "mount": "/stream",
   "admin_port": null,
   "stream_id": 1,
   "bitrate_kbps": 128,
   "sample_rate": 44100,
-  "password_file": "/home/<du>/.secrets/daw.woa/shoutcast-source.pass",
   "name": "WOA – Wir on Air",
   "emergency": ["/home/<du>/Musik/notfall"],
   "silence_seconds": 2.0
 }
 ```
+
+`protocol` ist `shoutcast`, `shoutcast2` oder `icecast`. Shoutcast v2 wird über den Legacy-Quellport
+(`port + 1`) bedient, nicht über Uvox2 (siehe oben).
+
+**Umstieg von 0.34.24 und früher:** Dort stand der Quell-Port in `port` (8001) und der Pfad einer
+Kennwortdatei in `password_file`. Beim Laden rechnet WOA einmal um (`schema` 1 → 2: Shoutcast-Port minus 1) und
+übernimmt die Kennwortdatei beim Start in den Schlüsselbund; die Datei selbst bleibt liegen. Wer
+Skripte mit `password_file` hat, kann den Eintrag weiter setzen; er gewinnt dann gegen den Schlüsselbund.
+Die Kommandozeile (`stream-test`, `broadcast-test`) nimmt weiter den Quell-Port (8001) und `--pass-file`.
 
 `emergency` nimmt Dateien oder Ordner (WAV, MP3, FLAC …). Sie laufen der Reihe nach und endlos. Ist
 die Liste leer, sendet woa-streamd bei Ausfall Stille.

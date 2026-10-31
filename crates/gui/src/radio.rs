@@ -407,6 +407,13 @@ impl RadioDesk {
         }
     }
 
+    /// Läuft woa-streamd gerade (frische Status-Datei)?
+    pub fn stream_running(&self) -> bool {
+        self.stream_status
+            .as_ref()
+            .is_some_and(|s| s.is_running(woa_stream::unix_now()))
+    }
+
     /// Zustand der Sendung (Status-Datei von woa-streamd), wenn er läuft.
     pub fn stream_status(&self) -> Option<&StreamStatus> {
         self.stream_status.as_ref()
