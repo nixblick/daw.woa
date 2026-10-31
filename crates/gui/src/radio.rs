@@ -896,9 +896,9 @@ impl RadioDesk {
         self.view.running
     }
 
-    /// Live für die ON-AIR-Lampe: die Sendung läuft (Feeder) oder das Mikro ist offen.
+    /// Live für die ON-AIR-Lampe: nur „Auf Sendung“ (Feeder läuft), nicht das Mikro (#225).
     pub fn is_live(&self) -> bool {
-        self.feeder.is_some() || self.view.mic_open
+        onair_lamp_lit(self.feeder.is_some(), self.view.mic_open)
     }
 
     fn add_dialog(&self) {
@@ -3768,6 +3768,11 @@ impl RadioDesk {
     }
 }
 
+/// ON-AIR-Lampe: leuchtet nur, wenn die Sendung läuft. Mikro an ist eine eigene Anzeige (#225).
+fn onair_lamp_lit(on_air: bool, _mic_open: bool) -> bool {
+    on_air
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -3780,6 +3785,18 @@ mod tests {
         assert_eq!(super::typed_position("abc", 5), None);
         assert_eq!(super::typed_position("", 5), None);
         assert_eq!(super::typed_position("2", 0), None);
+    }
+
+    #[test]
+    fn onair_lamp_ignores_the_mic() {
+        use super::onair_lamp_lit;
+        assert!(
+            !onair_lamp_lit(false, true),
+            "mic open is not on air (#225)"
+        );
+        assert!(!onair_lamp_lit(false, false));
+        assert!(onair_lamp_lit(true, false));
+        assert!(onair_lamp_lit(true, true));
     }
 
     #[test]
