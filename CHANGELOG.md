@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.73 — 2026-10-31
+## 0.34.74 — 2026-10-31
 
 - **Fenstertitel (#243):** Heißt das Projekt noch „Neues Projekt“ oder hat es keinen Namen, zeigt der Titel nach dem Speichern oder Öffnen den Dateinamen des Projekts (ohne `.woa`). Ein selbst vergebener Name bleibt wie bisher.
 
