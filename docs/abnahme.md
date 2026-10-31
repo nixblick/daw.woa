@@ -4,6 +4,15 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Radio: Crossfade, Pause, Ziehen (0.34.28, offen)
+
+1. Radio-Modus bei 1920 × 1080: die Decks A–C sind flach, „leer: Datei hierher ziehen“ steht in einer Zeile. Rechte Spalte nach unten rollen: „Crossfade-Blende“ und „Musik-Ducking“ sind da und wirken.
+2. Playlist starten, nach einer Minute Pause: die Musik blendet aus, die Restzeit steht. Play: es geht sofort an derselben Stelle weiter, auch bei einem 30-Minuten-Titel.
+3. Pause, dann Stopp, dann Play: die Sendung beginnt den Cue-Titel von vorn.
+4. Eine Playlist-Zeile auf Deck B ziehen: der Titel liegt auf B. Eine Zeile auf eine andere Zeile ziehen: sie steht jetzt dort. Doppelklick und Rechtsklick auf den Titel gehen wie vorher.
+
+Selbst geprüft von Claude: `crates/radio/tests/pause.rs` (rot mit dem alten Code, grün jetzt), Tests und Clippy von `woa-radio` und `woa-gui` grün. Nicht am Gerät gehört (kein Ton), Ziehen unter Windows nicht selbst geprüft.
+
 ## Entf nur für die markierte Spur (0.34.26, offen)
 
 1. Projekt mit drei Spuren öffnen, nichts anklicken: keine Spur ist farbig hervorgehoben, Entf tut nichts.

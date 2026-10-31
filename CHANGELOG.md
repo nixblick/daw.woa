@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.28 — 2026-10-31
+
+Radio-Fehler aus dem Feedback (#168, #169, #166, dazu #95).
+
+- **Crossfade wieder erreichbar (#168):** Die Regler für Crossfade-Blende und Musik-Ducking waren nie entfernt, sie lagen unter dem Fensterrand. Ursache: Im Deck-Kasten nahm der Fortschrittsbalken die ganze Zeilenbreite, der Text „leer: Datei hierher ziehen“ brach daneben Zeichen für Zeichen um, jedes Deck wurde über 400 px hoch. Zusammen mit der Wunschtitel-Karte schob das Rack und Gäste aus dem Bild, und die rechte Spalte rollte nicht. Jetzt hat der Balken eine feste Breite, der Titel kürzt ab, und die rechte Spalte rollt.
+- **Pause pausiert (#169, #95):** Pause war intern ein Stopp. Der Mixer warf den Titel weg, Play lud die ganze Datei neu und sprang dann an die Stelle. Bei langen Titeln (30 min) dauerte das, und jeder Klick wartete dahinter. Jetzt blendet Pause aus und hält den Titel samt dem nächsten an der Stelle fest. Play macht sofort dort weiter, ohne Neuladen. Stopp nach Pause verwirft den Titel, Start beginnt neu.
+- **Ziehen in der Playlist (#166):** Eine Playlist-Zeile lässt sich auf Deck A, B oder C ziehen (lädt den Titel mit seinen Cue-Punkten) oder an eine andere Stelle der Playlist (verschiebt ihn). Aufs Fenster gezogene Dateien gehen nicht mehr verloren, wenn gerade ein Textfeld den Fokus hat.
+- **Tests:** `crates/radio/tests/pause.rs` (neu, scheitert mit dem alten Code), `party.rs` angepasst, Ablageziel beim Ziehen in `crates/gui/src/radio.rs`.
+
 ## 0.34.26 — 2026-10-31
 
 Entf löscht eine Spur nur, wenn sie sichtbar markiert ist (André 31.10.: „Entf darf nur aktiv sein wenn es sinnvoll was zu löschen gibt“).
