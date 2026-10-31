@@ -145,8 +145,8 @@ impl GuestHub {
 
     fn add_named(&mut self, label: &str, name: Option<&str>) -> Result<(usize, GuestFeed), String> {
         let (slot, feed) = self.claim()?;
-        let name = match name.map(str::trim).filter(|n| !n.is_empty()) {
-            Some(n) => n.chars().take(24).collect::<String>(),
+        let name = match name.map(crate::gate::clean_name).filter(|n| !n.is_empty()) {
+            Some(n) => n,
             None => format!("Gast {}", self.next_number),
         };
         self.next_number += 1;
@@ -171,19 +171,26 @@ impl GuestHub {
             return Err("Kein Rückweg frei".into());
         }
         let (slot, feed) = self.add_named(label, Some(name))?;
-        let Some(ret) = self.returns.get_mut(slot).and_then(Option::take) else {
+        let Some(mut ret) = self.returns.get_mut(slot).and_then(Option::take) else {
             // Der Rückweg des Kanals ist noch bei einem alten Gast: Kanal sofort wieder frei.
             self.remove(slot);
             self.feeds[slot] = Some(feed);
             return Err("Rückweg dieses Kanals noch belegt".into());
         };
+        // Reste des vorherigen Gasts im Rückweg dürfen nie zum neuen Gast durchkommen.
+        ret.flush();
         self.send(GuestCmd::Return { slot, on: true });
         Ok(NetGuest { slot, feed, ret })
     }
 
     /// Gibt Feed und Rückweg eines abgebauten Netz-Gastes zurück; der Kanal wird wieder frei.
     pub fn return_network(&mut self, g: NetGuest) {
-        let NetGuest { slot, feed, ret } = g;
+        let NetGuest {
+            slot,
+            feed,
+            mut ret,
+        } = g;
+        ret.flush();
         self.return_feed(slot, feed);
         if self.guests.get(slot).is_some_and(Option::is_none)
             && let Some(r) = self.returns.get_mut(slot)

@@ -4,6 +4,14 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Sicherheit #119: Gast-Rückweg und Gastnamen (0.34.18, offen)
+
+1. Gast-Zugang einschalten, mit dem Handy als Gast anmelden und etwas sprechen, dann abmelden.
+2. Sofort mit einem zweiten Gerät als neuer Gast anmelden: im ersten Moment ist nichts vom vorherigen Gast zu hören.
+3. Einen Gast mit einem Namen anmelden, der Sonderzeichen enthält (etwa mit Zeilenumbruch aus dem Einfügen): in der Gästeliste und im Log steht der Name einzeilig, ohne Steuerzeichen.
+
+Selbst geprüft von Claude: zwei neue Tests in `crates/guests/tests/mix_minus.rs`, Tests und Clippy des Crates grün.
+
 ## Sicherheit #116: DJ-PIN-Sperre und Gast-Sitzungen (0.34.17, offen)
 
 1. Fernbedienung einschalten. Die DJ-PIN im Fenster hat jetzt acht Stellen, die Gast-PIN im QR-Code weiter sechs.

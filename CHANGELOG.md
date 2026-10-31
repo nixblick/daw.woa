@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.34.18 — 2026-10-31
+
+Sicherheit #119: Gast-Rückweg wird geleert, Steuerzeichen im Gastnamen fliegen raus.
+
+- **Rückweg:** Ein neuer Netz-Gast beginnt mit leerem Rückweg und hört nichts mehr vom vorherigen Gast (geleert beim Anlegen und beim Zurückgeben).
+- **Gastname:** Steuerzeichen (Zeilenumbruch, ANSI-Sequenzen) werden vor dem Kürzen auf 24 Zeichen entfernt, damit sie weder im Log noch in der Anzeige landen. Bleibt nichts übrig, heißt der Gast "Gast N".
+- Tests: neuer Gast beginnt mit leerem Rückweg, Name mit Zeilenumbruch und Escape-Zeichen kommt sauber an.
+
 ## 0.34.17 — 2026-10-31
 
 Sicherheit #116: DJ-PIN-Sperre ließ sich per Gast-Login umgehen, Gäste konnten DJ-Sitzungen verdrängen.
