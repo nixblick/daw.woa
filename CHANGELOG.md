@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.31 — 2026-10-31
+
+Studio-Uhr, Quellen unter Windows und Cart-Wall (#172, #163, #97).
+
+- **Studio-Uhr (#172):** Die Digitalzeit hatte eine feste Größe und war in DSEG7 breiter als der Kreis der Stundenpunkte; bei 3 und 9 Uhr lagen Ziffern und Punkte übereinander. Die Schrift wird jetzt gemessen und so weit verkleinert, dass rundum Abstand zu den Punkten bleibt. Sekunden-LEDs, Stundenpunkte und „STUDIO-UHR“ bleiben wie sie waren.
+- **Quellen je Spur (#163):** Unter Windows und macOS stand nur „Standard-Eingang (Mikrofon)“ in der Liste, weil weitere Quellen nur über PipeWire (Linux) gesucht wurden. Jetzt stehen dort alle Eingabegeräte des Systems („Eingang: …“), die Spur zeigt den Gerätenamen. Der Hinweis „Programm spielt gerade keinen Ton?“ erscheint nur noch unter Linux, wo es Programme als Quelle gibt. Linux unverändert.
+- **Cart-Wall (#97):** Belegte Pads sind freundlich grün, leere grau, das laufende leuchtet wie bisher in der Modusfarbe. Die Nummer steht groß vorn (fast padhoch), der Titel daneben auf höchstens zwei Zeilen, Rest mit „…“. Tastenschild jetzt rechts oben neben der LED; Spurfarben-LED und -Balken, Rechtsklick-Menü und Tasten unverändert.
+- **Tests:** Digitalzeit hält Abstand zu den Stundenpunkten (mit echter Schrift gemessen, alte Größe als Gegenprobe), jedes Eingabegerät wird ein Eintrag, Pad-Farben je Zustand und zweizeiliger Titel (`woa-gui`).
+
 ## 0.34.30 — 2026-10-31
 
 Bibliothek: Analyse hängt nicht mehr an langen Titeln, läuft im Hintergrund weiter, Titel lassen sich entfernen und Spalten sortieren (#122, #123, #124, #120).

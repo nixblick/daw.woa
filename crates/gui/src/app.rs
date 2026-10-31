@@ -3320,7 +3320,7 @@ impl WoaApp {
                 .selected_text(
                     egui::RichText::new(format!(
                         "{icon} {}{}",
-                        sources::short_label(&current),
+                        sources::track_label(&current, &self.source_list.0),
                         if on { " · hören" } else { "" }
                     ))
                     .small()
@@ -3335,7 +3335,7 @@ impl WoaApp {
                             chosen = Some(s.key.clone());
                         }
                     }
-                    if !sources::has_apps(&list) {
+                    if cfg!(target_os = "linux") && !sources::has_apps(&list) {
                         ui.weak(sources::NO_APPS_HINT);
                     }
                     ui.separator();
