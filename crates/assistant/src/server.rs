@@ -121,16 +121,53 @@ impl Snippet {
     }
 }
 
-/// Eine Kommandozeilen-Angabe so quoten, dass sie in Terminal (Bash, PowerShell) hält.
-fn quote(s: &str) -> String {
-    if !s.is_empty()
+/// Eine Kommandozeilen-Angabe für das Terminal dieses Systems quoten (Windows: PowerShell,
+/// sonst bash/zsh). Einfache Anführungszeichen, damit beim Einfügen nichts ausgewertet wird
+/// (`$(…)`, Backticks, `$VAR`). `None` bei Zeilenumbruch: der bräche den Befehl beim Einfügen.
+fn quote(s: &str) -> Option<String> {
+    if cfg!(windows) {
+        quote_powershell(s)
+    } else {
+        quote_posix(s)
+    }
+}
+
+fn is_plain(s: &str) -> bool {
+    !s.is_empty()
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"/._-:=@+".contains(&b))
-    {
+}
+
+/// bash/zsh: `'…'`, ein `'` wird zu `'\''`.
+fn quote_posix(s: &str) -> Option<String> {
+    if s.contains(['\n', '\r']) {
+        return None;
+    }
+    Some(if is_plain(s) {
         s.to_string()
     } else {
-        format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+        format!("'{}'", s.replace('\'', "'\\''"))
+    })
+}
+
+/// PowerShell: `'…'` ist wörtlich, ein `'` (auch typografisch) wird verdoppelt.
+fn quote_powershell(s: &str) -> Option<String> {
+    if s.contains(['\n', '\r']) {
+        return None;
     }
+    Some(if is_plain(s) {
+        s.to_string()
+    } else {
+        let mut out = String::from("'");
+        for c in s.chars() {
+            if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+                out.push(c);
+            }
+            out.push(c);
+        }
+        out.push('\'');
+        out
+    })
 }
 
 fn pretty(v: &serde_json::Value) -> String {
@@ -158,16 +195,15 @@ pub fn snippets(cfg: &McpServerConfig, exe: Option<&Path>, network_host: &str) -
     let u = url(cfg, network_host);
     if let Some(exe) = exe {
         let exe = exe.display().to_string();
-        out.push(Snippet {
-            client: "Claude Code",
-            target: "Terminal",
-            transport: Transport::Stdio,
-            template: format!(
-                "claude mcp add woa -- {} mcp {}",
-                quote(&exe),
-                quote(&project)
-            ),
-        });
+        // Pfad mit Zeilenumbruch: kein Terminal-Befehl, nur die JSON-Einträge.
+        if let (Some(e), Some(p)) = (quote(&exe), quote(&project)) {
+            out.push(Snippet {
+                client: "Claude Code",
+                target: "Terminal",
+                transport: Transport::Stdio,
+                template: format!("claude mcp add woa -- {e} mcp {p}"),
+            });
+        }
         out.push(Snippet {
             client: "Claude Desktop",
             target: "claude_desktop_config.json",
@@ -191,7 +227,7 @@ pub fn snippets(cfg: &McpServerConfig, exe: Option<&Path>, network_host: &str) -
         transport: Transport::Http,
         template: format!(
             "claude mcp add --transport http woa {} --header \"Authorization: Bearer {TOKEN_SLOT}\"",
-            quote(&u)
+            quote(&u).unwrap_or_default()
         ),
     });
     out.push(Snippet {
@@ -350,7 +386,42 @@ mod tests {
         let cc = &list[0];
         assert_eq!(
             cc.masked(),
-            "claude mcp add woa -- \"/opt/wir on air/woa-headless\" mcp \"/tmp/mein projekt.woa\""
+            "claude mcp add woa -- '/opt/wir on air/woa-headless' mcp '/tmp/mein projekt.woa'"
+        );
+    }
+
+    #[test]
+    fn terminal_quoting_never_evaluates_anything() {
+        // bash/zsh: nichts in einfachen Anführungszeichen wird ausgewertet.
+        assert_eq!(quote_posix("/a/b.woa").as_deref(), Some("/a/b.woa"));
+        assert_eq!(
+            quote_posix("/x/$(rm -rf ~)/`id`/$HOME").as_deref(),
+            Some("'/x/$(rm -rf ~)/`id`/$HOME'")
+        );
+        assert_eq!(quote_posix("/x/it's").as_deref(), Some("'/x/it'\\''s'"));
+        // PowerShell: '…' ist wörtlich, ' wird verdoppelt.
+        assert_eq!(
+            quote_powershell("C:\\Pro gramme\\$(calc)\\it's").as_deref(),
+            Some("'C:\\Pro gramme\\$(calc)\\it''s'")
+        );
+        assert_eq!(
+            quote_powershell("C:\\a\u{2019}b").as_deref(),
+            Some("'C:\\a\u{2019}\u{2019}b'")
+        );
+        // Zeilenumbruch: abgelehnt, kein Terminal-Befehl.
+        assert_eq!(quote_posix("/a\nrm -rf ~"), None);
+        assert_eq!(quote_powershell("C:\\a\r\nx"), None);
+        let mut c = cfg();
+        c.project = Some("/tmp/a\nb.woa".into());
+        let list = snippets(&c, Some(Path::new("/opt/woa-headless")), "x");
+        assert!(
+            !list
+                .iter()
+                .any(|s| s.transport == Transport::Stdio && s.target == "Terminal")
+        );
+        assert!(
+            list.iter()
+                .any(|s| s.client == "Claude Desktop" && s.transport == Transport::Stdio)
         );
     }
 

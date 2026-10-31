@@ -273,6 +273,7 @@ pub struct WoaApp {
     stream_ui: crate::stream_ui::StreamUi,
     /// Fenster „KI & MCP“ und der MCP-Server im Hintergrund.
     ki_ui: crate::ki_ui::KiUi,
+    chat_ui: crate::chat_ui::ChatUi,
     /// Der MCP-Server im Hintergrund ist nach der Konfiguration angelaufen.
     ki_started: bool,
     /// Fenster „Telefon“ (Eingang für den Anrufer).
@@ -496,6 +497,7 @@ impl WoaApp {
             outputs_ui: crate::outputs_ui::OutputsUi::default(),
             stream_ui: crate::stream_ui::StreamUi::default(),
             ki_ui: crate::ki_ui::KiUi::default(),
+            chat_ui: crate::chat_ui::ChatUi::default(),
             ki_started: false,
             phone_ui: crate::phone::PhoneUi::default(),
             midi,
@@ -692,6 +694,8 @@ impl WoaApp {
             if neu.is_empty() {
                 if let Err(e) = woa_stream::kennwort::clear(&self.data_dir) {
                     tracing::warn!(error = %e, "stream password not removed");
+                    self.stream_ui
+                        .password_failed(&self.data_dir, &format!("nicht entfernt ({e})"));
                 }
             } else {
                 match woa_stream::kennwort::save(&self.data_dir, &neu) {
@@ -699,7 +703,11 @@ impl WoaApp {
                         tracing::info!(ort = ort.label(), "stream password stored");
                         self.config.stream.forget_legacy_file();
                     }
-                    Err(e) => tracing::warn!(error = %e, "stream password not stored"),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "stream password not stored");
+                        self.stream_ui
+                            .password_failed(&self.data_dir, &e.to_string());
+                    }
                 }
             }
         }
@@ -718,6 +726,8 @@ impl WoaApp {
             .session()
             .path()
             .map(std::path::Path::to_path_buf);
+        self.chat_ui
+            .show(ctx, &self.config.ki, &self.data_dir, project.as_deref());
         let Some(applied) = self.ki_ui.show(ctx, &self.data_dir, project.as_deref()) else {
             return;
         };
@@ -2570,6 +2580,20 @@ impl WoaApp {
                 .clicked()
             {
                 self.ki_ui.open(&self.config.ki, &self.data_dir);
+                ui.close();
+            }
+            if ui
+                .button("Assistent (Chat) …")
+                .on_hover_text("Chat mit einem Sprachmodell deiner Wahl, das WOA bedienen kann")
+                .clicked()
+            {
+                let project = self
+                    .state
+                    .session()
+                    .path()
+                    .map(std::path::Path::to_path_buf);
+                self.chat_ui
+                    .open(&self.config.ki, &self.data_dir, project.as_deref());
                 ui.close();
             }
             if ui.button("Telefon (Eingang für den Anrufer) …").clicked() {

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.34.34 — 2026-10-31
+
+KI & MCP, Teil 2: ein eigener Assistent in WOA mit frei wählbarem Anbieter und beliebigen MCP-Servern als Werkzeugen (André: „irgendein Server mit irgendeinem MCP bzw. LLM“). Nichts ist auf einen bestimmten Server festgelegt.
+
+- **Neuer Reiter „Assistent“** im Fenster Einstellungen → „KI & MCP …“. Anbieter anlegen: Format (Anthropic oder OpenAI-kompatibel), Adresse, Modellname (frei eintippbar, „Modelle holen“ füllt eine Auswahlliste, wenn der Server eine nennt), Schlüssel. Voreinstellungen zum Antippen: Anthropic, OpenAI, OpenRouter, Ollama und LM Studio (lokal); „Eigener Server“ beginnt leer (vLLM und jeder andere OpenAI-kompatible Server). Die Adresse darf mit oder ohne `/v1` enden.
+- **Schlüssel** liegen im Schlüsselbund des Systems (Eintrag `woa / ki-<Kennung>`), sonst in einer Datei mit Modus 0600; `config.json` kennt nur die Kennung. Im Feld sind sie maskiert, in Fehlermeldungen und im Log stehen sie nie. Lokale Server brauchen keinen.
+- **Externe MCP-Server als Werkzeuge:** Liste beliebig vieler Server, je lokal gestartet (Befehl, Argumente, Umgebung) oder über Adresse (HTTP, Kopfzeilen). Eine geheime Kopfzeile (z. B. `Authorization`) oder Umgebungsvariable liegt ebenfalls im Schlüsselbund. Einzeln ein- und ausschaltbar.
+- **„Verbindung testen“** je Anbieter und je Server, im Hintergrund, mit einer Meldung in einem Satz: verbunden, Modell nicht in der Liste, Schlüssel abgelehnt, Adresse nicht erreichbar, Server nicht gestartet.
+- **Chat-Fenster:** Einstellungen → „Assistent (Chat) …“. Das Modell ruft WOAs eigene Werkzeuge (über `woa-headless mcp` auf dem offenen Projektordner) und die eingetragenen Server auf, bis es antwortet; höchstens 10 Runden je Eingabe. Gleichnamige Werkzeuge verschiedener Server bekommen den Servernamen vorangestellt. Läuft im Hintergrund-Thread, die Oberfläche steht nie.
+- **Grenze:** Wie in Teil 1 arbeiten WOAs Werkzeuge auf der Projektdatei im Ordner, nicht auf dem offenen Fenster. Der Chat spricht nicht gestreamt, die Antwort erscheint auf einmal.
+- **Sicherheit, Kopierbefehl für Claude Code:** Pfade standen in doppelten Anführungszeichen; ein `$(…)` oder Backtick im Pfad wäre beim Einfügen in bash/zsh ausgeführt worden. Jetzt einfache Anführungszeichen (`'` als `'\''`), unter Windows die PowerShell-Schreibweise (`'` verdoppelt). Ein Pfad mit Zeilenumbruch bekommt keinen Terminal-Befehl mehr, nur die JSON-Einträge.
+- **Stream-Server ohne Vorgabe:** Das Feld „Server“ ist bei neuen Installationen leer (mit Platzhalter), es steht kein bestimmter Server mehr im Code; gespeicherte Einträge bleiben. `woa-headless stream-test` braucht jetzt `--host`.
+- **Kennwort nicht gespeichert:** Scheitert die Ablage im Schlüsselbund, öffnet sich das Fenster „Sendung: Stream-Server“ wieder und nennt den Grund, statt es nur ins Log zu schreiben.
+- **Tests (mit HTTP-Mock):** beide Formate mit einer Werkzeug-Runde (Anthropic `tool_use`/`tool_result`, OpenAI `tool_calls`/`tool`), Schlüssel als `x-api-key` bzw. `Bearer` bzw. gar nicht, Adress-Normalisierung, Texte des Testknopfs, Server ohne Modellliste, MCP-Client über HTTP (JSON und Ereignisstrom) und Stdio, Chat-Schleife von Modell über Werkzeug zurück zum Modell, Fehler lassen den Verlauf sauber, Fenster zeichnen.
+
 ## 0.34.33 — 2026-10-31
 
 Studio-Uhr, Quellen unter Windows und Cart-Wall (#172, #163, #97).
@@ -8,6 +23,7 @@ Studio-Uhr, Quellen unter Windows und Cart-Wall (#172, #163, #97).
 - **Quellen je Spur (#163):** Unter Windows und macOS stand nur „Standard-Eingang (Mikrofon)“ in der Liste, weil weitere Quellen nur über PipeWire (Linux) gesucht wurden. Jetzt stehen dort alle Eingabegeräte des Systems („Eingang: …“), die Spur zeigt den Gerätenamen. Der Hinweis „Programm spielt gerade keinen Ton?“ erscheint nur noch unter Linux, wo es Programme als Quelle gibt. Linux unverändert.
 - **Cart-Wall (#97):** Belegte Pads sind freundlich grün, leere grau, das laufende leuchtet wie bisher in der Modusfarbe. Die Nummer steht groß vorn (fast padhoch), der Titel daneben auf höchstens zwei Zeilen, Rest mit „…“. Tastenschild jetzt rechts oben neben der LED; Spurfarben-LED und -Balken, Rechtsklick-Menü und Tasten unverändert.
 - **Tests:** Digitalzeit hält Abstand zu den Stundenpunkten (mit echter Schrift gemessen, alte Größe als Gegenprobe), jedes Eingabegerät wird ein Eintrag, Pad-Farben je Zustand und zweizeiliger Titel (`woa-gui`).
+
 ## 0.34.32 — 2026-10-31
 
 Feedback: Bildschirmfoto erst auf Klick, eigenes Bild anhängen, Protokoll auf Wunsch mitsenden (#173, #174).
@@ -21,7 +37,7 @@ Feedback: Bildschirmfoto erst auf Klick, eigenes Bild anhängen, Protokoll auf W
 
 ## 0.34.31 — 2026-10-31
 
-KI & MCP, Teil 1: WOA als MCP-Server für beliebige Clients (André: „nicht nur mein Server muss funktionieren, sondern irgendein Server mit irgendeinem MCP bzw. LLM“). Teil 2, der eigene Assistent mit frei wählbarem Anbieter, folgt.
+KI & MCP, Teil 1: WOA als MCP-Server für beliebige Clients (André: „nicht nur mein Server muss funktionieren, sondern irgendein Server mit irgendeinem MCP bzw. LLM“). Teil 2 (0.34.34): der eigene Assistent.
 
 - **Neues Fenster:** Einstellungen → „KI & MCP …“. Dort steht der Hintergrund-Server (an/aus), der Projektordner, wer ihn erreicht (nur dieser Rechner oder das Netz), der Port und das Zugriffstoken.
 - **Einträge zum Kopieren:** fertig für Claude Code, Claude Desktop und andere Clients, je für Stdio (der Client startet `woa-headless`) und für HTTP. Sie entstehen zur Laufzeit aus dem Pfad des laufenden Programms und der Einstellung; im Fenster ist das Token maskiert, erst „Kopieren“ setzt es ein.

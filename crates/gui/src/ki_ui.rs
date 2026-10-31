@@ -16,6 +16,13 @@ use crate::theme;
 /// Platzhalter für den Namen dieses Rechners in Schnipseln für Clients im Netz.
 const NETWORK_HOST: &str = "<IP-dieses-Rechners>";
 
+#[derive(Default, Clone, Copy, PartialEq)]
+enum Tab {
+    #[default]
+    Server,
+    Assistant,
+}
+
 #[derive(Default)]
 pub struct KiUi {
     open: bool,
@@ -24,6 +31,8 @@ pub struct KiUi {
     /// Das Token im Klartext, nur solange „Anzeigen“ an ist.
     token_text: Option<String>,
     snippet_transport: Transport,
+    tab: Tab,
+    assistant: crate::assistant_ui::AssistantTab,
     note: Option<String>,
     proc: Option<ServerProcess>,
     proc_error: Option<String>,
@@ -38,6 +47,7 @@ impl KiUi {
         self.token = woa_secrets::stored(data_dir, TOKEN_ACCOUNT);
         self.token_text = None;
         self.note = None;
+        self.assistant.reset(&self.draft);
     }
 
     fn close(&mut self) {
@@ -113,7 +123,21 @@ impl KiUi {
                     .max_height(560.0)
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
-                        self.server_tab(ui, data_dir, project, &mut save);
+                        ui.horizontal(|ui| {
+                            ui.selectable_value(&mut self.tab, Tab::Server, "WOA als MCP-Server");
+                            ui.selectable_value(&mut self.tab, Tab::Assistant, "Assistent");
+                        });
+                        ui.separator();
+                        match self.tab {
+                            Tab::Server => self.server_tab(ui, data_dir, project, &mut save),
+                            Tab::Assistant => {
+                                self.assistant.show(ui, &mut self.draft, data_dir);
+                                ui.add_space(8.0);
+                                if ui.button("Speichern").clicked() {
+                                    save = true;
+                                }
+                            }
+                        }
                     });
             });
         let mut applied = None;

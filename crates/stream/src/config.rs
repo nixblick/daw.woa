@@ -16,9 +16,6 @@ pub fn default_password_file() -> PathBuf {
         .join("shoutcast-source.pass")
 }
 
-/// Eigener Shoutcast auf dem eigenen Server. Hören: `https://stream.wironair.de/stream`.
-pub const DEFAULT_HOST: &str = "stream.wironair.de";
-
 /// Stand des Dateiformats von `stream` in `config.json`. Fehlt `schema`, ist es ein Stand
 /// vor 0.34.29 und [`StreamConfig::migrate`] rechnet ihn um.
 pub const SCHEMA: u32 = 2;
@@ -173,7 +170,8 @@ impl Default for StreamConfig {
         Self {
             protocol: Protocol::Shoutcast,
             mount: "/stream".to_string(),
-            host: DEFAULT_HOST.to_string(),
+            // Leer: jeder trägt seinen eigenen Server ein. Bestehende Einträge bleiben.
+            host: String::new(),
             port: 8000,
             user: "source".to_string(),
             admin_port: None,
@@ -368,20 +366,18 @@ mod tests {
         assert_eq!(c.bitrate_kbps, 128);
         assert!(c.validate().is_ok());
         let d = StreamConfig::default();
-        assert_eq!(
-            (d.host.as_str(), d.port, d.stream_id),
-            ("stream.wironair.de", 8000, 1)
-        );
+        assert_eq!((d.host.as_str(), d.port, d.stream_id), ("", 8000, 1));
         assert_eq!(d.source_port(), 8001);
         assert_eq!(d.admin_port, None);
-        assert!(d.validate().is_ok());
+        // Ohne eingetragenen Server ist die Vorgabe noch nicht gültig.
+        assert!(d.validate().is_err());
         assert!(
             StreamConfig {
-                host: String::new(),
+                host: "radio.example".into(),
                 ..d.clone()
             }
             .validate()
-            .is_err()
+            .is_ok()
         );
         assert_eq!(d.login_line("k"), "k\r\n");
         // Shoutcast v1 kennt keine Stream-ID, v2 hängt sie ab 2 an.
@@ -498,7 +494,10 @@ mod tests {
 
     #[test]
     fn validation_catches_typical_typing_errors() {
-        let d = StreamConfig::default();
+        let d = StreamConfig {
+            host: "radio.example".into(),
+            ..StreamConfig::default()
+        };
         let bad = |f: &dyn Fn(&mut StreamConfig)| {
             let mut c = d.clone();
             f(&mut c);

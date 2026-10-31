@@ -12,10 +12,11 @@ Mixer (Audio-Thread) ──rtrb──▶ Feeder-Thread ──lokal──▶ woa-
 
 ## Server
 
-Der Server ist der eigene Shoutcast DNAS v2 auf dem eigenen Server.
+Es gibt keinen vorgegebenen Server: Das Feld „Server“ ist anfangs leer, jeder trägt seinen
+eigenen ein (Name oder IP-Adresse). Bestehende Einstellungen behalten ihren Eintrag.
 
-- Quelle: `stream.wironair.de`, Server-Port 8000, Quell-Port 8001, Stream-ID 1
-- Hören: <https://stream.wironair.de/stream>. Ohne Quelle spielt der Server eine eigene Notfall-Schleife; das ist erwartet.
+- Typisch für Shoutcast DNAS v2: Server-Port 8000, Quell-Port 8001, Stream-ID 1
+- Hören: `https://radio.example/stream`. Ein Server ohne Quelle spielt oft eine eigene Notfall-Schleife; das ist erwartet.
 
 ## Protokoll: Shoutcast 1 (Legacy)
 
@@ -34,8 +35,8 @@ Warum nicht Uvox2 (das v2-Protokoll):
 **Titel:** Das v1-Protokoll kann keine Titel in der Quellverbindung tragen; die `icy-*`-Kopfzeilen
 gelten nur einmal beim Anmelden. Titel gehen nur per HTTP an `admin.cgi?mode=updinfo`, und dabei
 steht das Quell-Kennwort im Klartext in der URL. WOA setzt Titel deshalb **nur bei lokalem Server**
-(Host Loopback) und eingetragenem `admin_port`. Gegen `stream.wironair.de` werden **vorerst keine
-Titel gesendet**; der Admin-Port 8000 ist dort von außen ohnehin gesperrt. Die Hörerzahl (`/7.html`,
+(Host Loopback) und eingetragenem `admin_port`. Gegen einen entfernten Server werden **vorerst keine
+Titel gesendet**; der Admin-Port ist dort meist von außen gesperrt. Die Hörerzahl (`/7.html`,
 ohne Kennwort) kommt, sobald ein `admin_port` erreichbar ist.
 
 **Bekanntes Risiko:** Die Quellanmeldung auf 8001 läuft im Klartext (Shoutcast 1 kennt kein TLS).
@@ -81,7 +82,7 @@ Die Angaben stehen im Schlüssel `stream` von `~/.config/woa/config.json` (Windo
 "stream": {
   "schema": 2,
   "protocol": "shoutcast",
-  "host": "stream.wironair.de",
+  "host": "radio.example",
   "port": 8000,
   "user": "source",
   "mount": "/stream",
@@ -122,7 +123,7 @@ Weitere Wege an die Sendung:
 - **Probe ohne Oberfläche:**
 
 ```
-cargo run -q -p woa-headless -- stream-test --host stream.wironair.de --port 8001 --sid 1 \
+cargo run -q -p woa-headless -- stream-test --host radio.example --port 8001 --sid 1 \
   --pass-file ~/.secrets/daw.woa/shoutcast-source.pass --seconds 30
 ```
 

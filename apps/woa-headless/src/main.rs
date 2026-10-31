@@ -194,7 +194,8 @@ enum Cmd {
     /// Sendet Testton (440 Hz, MP3) und einen Titel an einen Shoutcast-Server.
     /// Exit 3 = Kennwort abgelehnt, 4 = Server nicht erreichbar.
     StreamTest {
-        #[arg(long, default_value = woa_stream::config::DEFAULT_HOST)]
+        /// Name oder IP-Adresse des Servers.
+        #[arg(long)]
         host: String,
         /// Quell-Port (Shoutcast 1).
         #[arg(long, default_value_t = 8001)]
