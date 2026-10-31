@@ -603,6 +603,11 @@ impl RadioDesk {
         self.view.running
     }
 
+    /// Live für die ON-AIR-Lampe: die Sendung läuft (Feeder) oder das Mikro ist offen.
+    pub fn is_live(&self) -> bool {
+        self.feeder.is_some() || self.view.mic_open
+    }
+
     fn add_dialog(&self) {
         if let Some(files) = rfd::FileDialog::new()
             .add_filter(
@@ -1135,14 +1140,7 @@ impl RadioDesk {
                 theme::status_pill(ui, "REC LÄUFT", theme::on_air(), true);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let live = self.feeder.is_some() || v.mic_open;
-                crate::widgets::onair_lamp(ui, egui::vec2(78.0, 24.0), live).on_hover_text(
-                    if live {
-                        "Live: Sendung läuft oder das Mikro ist offen"
-                    } else {
-                        "Nicht auf Sendung"
-                    },
-                );
+                // Die ON-AIR-Lampe sitzt in der Kopfleiste neben MIDI (André 31.10.).
                 let n = self.underruns();
                 if n > 0 {
                     ui.label(

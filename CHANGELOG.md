@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.34.20 — 2026-10-31
+
+Kopfleiste aufgeräumt, Über-WOA persönlicher, Feedback-Fenster einladender (André 31.10.).
+
+- **Menüs links wie in üblichen DAWs:** Datei, Bearbeiten, Ansicht, Einstellungen, Hilfe. Import und Export stehen als Untermenüs in Datei, „Leeren MIDI-Clip anlegen“ in Bearbeiten. Bibliothek, Stundenuhr, Zeit-Events und Erscheinungsbild liegen unter Ansicht, Update-Suche und „Über WOA“ unter Hilfe. Einstellungen sind nach Audio und MIDI gegliedert.
+- **Update-Info in der Mitte der Kopfleiste**, nur wenn ein Update da ist; der eigene Streifen darunter entfällt.
+- **Rechts mehr Abstand.** Die ON-AIR-Lampe sitzt jetzt neben MIDI statt im Kopf des Radio-Decks und leuchtet wie bisher, wenn die Sendung läuft oder das Mikro offen ist.
+- **Feedback** ist eine grüne Taste ganz rechts, ohne „…“.
+- **Über WOA:** Logo, „WOA – built with love, coffee and AI“, Spenden über PayPal und Ko-fi (dieselben Links wie in bretteins und fotobrett) und „Danke an alle Lizenzgeber“ mit rotem Herz. Die Lizenzliste bleibt.
+- **Feedback-Fenster:** 600 statt 420 px breit, mittig, freundlicher Titel und Hinweis, größeres Textfeld, „Bildschirmfoto mitsenden“, grüne Taste „Abschicken“.
+- Tests über die echte Oberfläche: `crates/gui/tests/kopfleiste.rs`.
+
 ## 0.34.19 — 2026-10-31
 
 Design-Nachbesserung: Was D1–D6 unerreichbar gemacht hatten, ist wieder da (André 31.10.: „Spur entfernen ist wichtig“, „Effekte sind weg im Studio-Mixer“).
