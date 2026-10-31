@@ -269,3 +269,40 @@ fn test_source_thread_fills_the_buffer_in_real_time() {
             .is_ok()
     );
 }
+
+#[test]
+fn new_network_guest_starts_with_an_empty_return() {
+    let (mut hub, mut bank) = channel(RATE);
+    let a = hub.add_network("Test", "Anna").unwrap();
+    let slot = a.slot;
+    bank.begin_block();
+    let music = (0.5f32, 0.5f32);
+    for _ in 0..BLOCK {
+        let _ = bank.frame();
+        bank.send_returns(music, |l, r| (l, r));
+    }
+    bank.end_block();
+    assert!(a.ret.frames() > 0, "Rückweg des ersten Gasts hat Audio");
+    hub.remove(slot);
+    hub.return_network(a);
+    let b = hub.add_network("Test", "Ben").unwrap();
+    assert_eq!(b.slot, slot);
+    assert_eq!(b.ret.frames(), 0, "neuer Gast beginnt mit leerem Rückweg");
+}
+
+#[test]
+fn network_guest_name_has_no_control_characters() {
+    let (mut hub, _bank) = channel(RATE);
+    let g = hub
+        .add_network("Test", "  Mal\nory\u{1b}[31m\u{7}  ")
+        .unwrap();
+    let view = hub.view();
+    let name = &view.iter().find(|v| v.slot == g.slot).unwrap().name;
+    assert_eq!(name, "Malory[31m");
+    assert!(!name.chars().any(char::is_control));
+    let (_s, _f) = hub.add_external("x").unwrap();
+    let h = hub.add_network("Test", "\n\u{1b}").unwrap();
+    let view = hub.view();
+    let n2 = &view.iter().find(|v| v.slot == h.slot).unwrap().name;
+    assert!(n2.starts_with("Gast "));
+}
