@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.68 — 2026-10-31
+
+- **Auto-Weiter abschaltbar (#148):** Im Kopf der Sende-Playlist steht neben „Gespielte ausblenden“ der Umschalter „Auto-Weiter“ (Vorgabe an, wie bisher). Aus: Nach jedem Titel hält die Playlist an, der nächste Titel steht als Cue bereit und startet mit „Play“; „Weiter“ springt sofort zum nächsten. Ausschalten mitten im Titel verwirft den schon bereitgelegten nächsten, der laufende spielt zu Ende. Gespeichert mit der Sendung (`auto_next`, alte Dateien laden unverändert). Decks, Party und Stopp-Verhalten bleiben unverändert. Test: `crates/radio/tests/auto_next.rs` unter `assert_no_alloc`.
+
 ## 0.34.67 — 2026-10-31
 
 - **Stopp ist zuerst Pause (#95):** Im Radio-Modus hält der erste Druck auf „Stopp“ am Sende-Player den Titel an der Stelle fest wie „Pause“; „Play“ macht dort weiter. Der zweite Druck stoppt wie bisher. Mit „Stopp blendet aus“ blendet schon der erste Druck über die eingestellte Ausblenddauer aus. Gilt auch für die per MIDI gelernte Stopp-Taste; Decks, Party und Handy bleiben unverändert. Hinweis beim Darüberfahren. Test: `crates/radio/tests/stop_pauses.rs` unter `assert_no_alloc`.

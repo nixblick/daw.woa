@@ -2603,6 +2603,18 @@ impl RadioDesk {
                 self.hide_played = Some(on);
                 self.with(move |c| c.set_hide_played(on));
             }
+            // Auto-Weiter (#148): aus, dann hält die Playlist nach jedem Titel an.
+            let r = ui
+                .selectable_label(v.auto_next, egui::RichText::new("Auto-Weiter").small())
+                .on_hover_text(
+                    "An: Die Titel laufen nacheinander. Aus: Nach jedem Titel hält die \
+                     Playlist an, der nächste steht bereit und startet mit „Play“.",
+                );
+            if r.clicked() {
+                let on = !v.auto_next;
+                self.view.auto_next = on;
+                self.with(move |c| c.set_auto_next(on));
+            }
             if v.measuring > 0 {
                 ui.spinner();
                 ui.label(
