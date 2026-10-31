@@ -95,8 +95,14 @@ pub enum Cmd {
     ClearNext,
     /// Sendung starten: der bereitgelegte Titel beginnt.
     Play,
-    /// Musik kurz ausblenden und anhalten; Carts und Mikro laufen weiter.
+    /// Musik kurz ausblenden und anhalten; Carts und Mikro laufen weiter. Verwirft auch
+    /// einen pausierten Titel.
     Stop,
+    /// Pause: Musik kurz ausblenden und an der Stelle festhalten (laufender und
+    /// bereitgelegter Titel bleiben); [`Cmd::Resume`] macht dort weiter.
+    Pause,
+    /// Nach [`Cmd::Pause`] an der gehaltenen Stelle weiter (ohne neu zu laden).
+    Resume,
     /// Jetzt zum nächsten Titel überblenden (oder ausblenden, wenn keiner bereitliegt).
     Next,
     /// Im laufenden Titel um so viele Frames springen (negativ: zurück); bleibt zwischen
@@ -417,6 +423,10 @@ pub struct Mixer {
     playing: bool,
     stop_len: usize,
     stopping: Option<usize>,
+    /// Die laufende Ausblendung ist eine Pause: am Ende bleibt der Titel stehen.
+    pausing: bool,
+    /// Pausiert: der Titel steht und wird nicht weitergespielt.
+    held: bool,
     carts: [Option<Voice>; CARTS],
     decks: [Option<DeckPlay>; DECKS],
     voice_pending: Option<VoicePending>,
@@ -473,6 +483,8 @@ impl Mixer {
             playing: false,
             stop_len: (STOP_SECONDS * r).max(1.0) as usize,
             stopping: None,
+            pausing: false,
+            held: false,
             carts: std::array::from_fn(|_| None),
             decks: std::array::from_fn(|_| None),
             voice_pending: None,
@@ -538,12 +550,35 @@ impl Mixer {
                     self.voice_pending = None;
                 }
                 Cmd::Play => {
+                    if self.held {
+                        // Neuer Start nach einer Pause: der gehaltene Titel ist vorbei, der
+                        // eben bereitgelegte beginnt.
+                        self.current = None;
+                        self.outgoing = None;
+                        self.held = false;
+                    }
                     self.playing = true;
                     self.stopping = None;
+                    self.pausing = false;
+                }
+                Cmd::Resume => {
+                    self.held = false;
+                    self.playing = true;
+                    self.stopping = None;
+                    self.pausing = false;
                 }
                 Cmd::Stop => {
+                    if self.held {
+                        self.clear_music();
+                    } else if self.playing && self.stopping.is_none() {
+                        self.stopping = Some(self.stop_len);
+                    }
+                    self.pausing = false;
+                }
+                Cmd::Pause => {
                     if self.playing && self.stopping.is_none() {
                         self.stopping = Some(self.stop_len);
+                        self.pausing = true;
                     }
                 }
                 Cmd::Next => self.skip(),
@@ -741,6 +776,15 @@ impl Mixer {
         }
     }
 
+    /// Laufenden, abgehenden und bereitgelegten Titel verwerfen (Stopp).
+    fn clear_music(&mut self) {
+        self.current = None;
+        self.outgoing = None;
+        self.next = None;
+        self.voice_pending = None;
+        self.held = false;
+    }
+
     fn transitions(&mut self) {
         if !self.playing || self.stopping.is_some() {
             return;
@@ -848,7 +892,7 @@ impl Mixer {
             } else {
                 (0.0, 1.0)
             };
-            if let Some(c) = self.current.as_mut() {
+            if let Some(c) = self.current.as_mut().filter(|_| !self.held) {
                 let (l, r) = c.next();
                 ml += l * g_in;
                 mr += r * g_in;
@@ -875,10 +919,14 @@ impl Mixer {
                 ml *= g;
                 mr *= g;
                 if k <= 1 {
-                    self.current = None;
-                    self.outgoing = None;
-                    self.next = None;
-                    self.voice_pending = None;
+                    if self.pausing {
+                        // Pause: der Titel bleibt an dieser Stelle stehen.
+                        self.outgoing = None;
+                        self.held = self.current.is_some();
+                        self.pausing = false;
+                    } else {
+                        self.clear_music();
+                    }
                     self.playing = false;
                     self.stopping = None;
                 } else {
