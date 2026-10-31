@@ -2,8 +2,10 @@
 //! Audio-Thread. Ergebnis: interleavte f32-Samples in Dateirate; Umrechnen auf die
 //! Projektrate macht [`resample_linear`].
 
+use std::collections::HashMap;
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use symphonia::core::codecs::CodecParameters;
 use symphonia::core::codecs::audio::AudioDecoderOptions;
@@ -84,23 +86,99 @@ impl Decoded {
     }
 }
 
-/// Liest WAV (hound), FLAC oder MP3 (symphonia). Fehlertext ohne Pfad.
+/// Befund einer Datei beim letzten Lesen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Damage {
+    /// Gelesen, aber mit so vielen fehlerhaften Stellen (Frames).
+    Damaged(u64),
+    /// Nicht lesbar, mit Grund (ohne Pfad).
+    Unreadable(String),
+}
+
+impl Damage {
+    /// Klartext für Protokoll und Tooltip.
+    pub fn text(&self, name: &str) -> String {
+        match self {
+            Self::Damaged(n) => format!(
+                "Datei „{name}“ ist beschädigt ({n} fehlerhafte Stellen), spielt aber. \
+                 Tipp: neu exportieren."
+            ),
+            Self::Unreadable(why) => {
+                format!("Datei „{name}“ ist nicht lesbar ({why}). Tipp: neu exportieren.")
+            }
+        }
+    }
+}
+
+/// Obergrenze der gemerkten Befunde.
+const MAX_DAMAGE: usize = 10_000;
+
+fn damage_map() -> &'static Mutex<HashMap<PathBuf, Damage>> {
+    static M: std::sync::OnceLock<Mutex<HashMap<PathBuf, Damage>>> = std::sync::OnceLock::new();
+    M.get_or_init(Default::default)
+}
+
+/// Befund zu `path` aus dem letzten Lesen, `None` bei heiler oder noch nicht gelesener Datei.
+pub fn damage(path: &Path) -> Option<Damage> {
+    damage_map().lock().ok()?.get(path).cloned()
+}
+
+fn note_damage(path: &Path, d: Option<Damage>) {
+    let Ok(mut m) = damage_map().lock() else {
+        return;
+    };
+    let Some(d) = d else {
+        m.remove(path);
+        return;
+    };
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    // Nur lokal: Pfad und Name gehen nie in den Upload (`woa_telemetry::upload_filter`).
+    if m.get(path) != Some(&d) {
+        tracing::warn!(
+            target: woa_telemetry::LOCAL_TARGET,
+            datei = %path.display(),
+            "{}",
+            d.text(&name)
+        );
+    }
+    if m.len() < MAX_DAMAGE || m.contains_key(path) {
+        m.insert(path.to_path_buf(), d);
+    }
+}
+
+/// Liest WAV (hound), FLAC oder MP3 (symphonia). Fehlertext ohne Pfad. Beschädigte oder
+/// unlesbare Dateien landen mit Klartext im lokalen Protokoll und in [`damage`].
 #[tracing::instrument(level = "info", skip_all, name = "decode_file")]
 pub fn decode_file(path: &Path) -> Result<Decoded, String> {
+    woa_telemetry::take_decoder_faults();
+    let r = decode_inner(path);
+    match &r {
+        Ok((_, 0)) => note_damage(path, None),
+        Ok((_, n)) => note_damage(path, Some(Damage::Damaged(*n))),
+        Err(e) => note_damage(path, Some(Damage::Unreadable(e.clone()))),
+    }
+    r.map(|(d, _)| d)
+}
+
+/// Dekodiert und zählt fehlerhafte Frames (verworfene Pakete plus Warnungen des Dekoders).
+fn decode_inner(path: &Path) -> Result<(Decoded, u64), String> {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
     let d = match ext.as_str() {
-        "wav" => decode_wav(path)?,
+        "wav" => (decode_wav(path)?, 0),
         e if EXTENSIONS.contains(&e) => decode_symphonia(path, &ext)?,
         _ => return Err(format!("nicht lesbar, nur {FILTER_NAME}")),
     };
-    if !(MIN_RATE..=MAX_RATE).contains(&d.rate) {
+    if !(MIN_RATE..=MAX_RATE).contains(&d.0.rate) {
         return Err("Abtastrate außerhalb".into());
     }
-    Ok(d)
+    Ok((d.0, d.1 + woa_telemetry::take_decoder_faults()))
 }
 
 fn check_len(frames: u64, rate: u32) -> Result<(), String> {
@@ -158,7 +236,7 @@ fn decode_wav(path: &Path) -> Result<Decoded, String> {
     })
 }
 
-fn decode_symphonia(path: &Path, ext: &str) -> Result<Decoded, String> {
+fn decode_symphonia(path: &Path, ext: &str) -> Result<(Decoded, u64), String> {
     let e = |x: SymError| x.to_string();
     let file = File::open(path).map_err(|x| x.to_string())?;
     let mss = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
@@ -191,6 +269,7 @@ fn decode_symphonia(path: &Path, ext: &str) -> Result<Decoded, String> {
         .map_err(e)?;
     let mut samples = Vec::new();
     let mut chunk: Vec<f32> = Vec::new();
+    let mut bad = 0u64;
     loop {
         let packet = match format.next_packet() {
             Ok(Some(p)) => p,
@@ -214,18 +293,24 @@ fn decode_symphonia(path: &Path, ext: &str) -> Result<Decoded, String> {
                 samples.extend_from_slice(&chunk);
             }
             // Ein kaputter Frame ist kein Abbruch (z. B. MP3 mit Fehlern).
-            Err(SymError::DecodeError(_)) => continue,
+            Err(SymError::DecodeError(_)) => {
+                bad += 1;
+                continue;
+            }
             Err(x) => return Err(e(x)),
         }
         if let Some(frames) = samples.len().checked_div(channels) {
             check_len(frames as u64, rate)?;
         }
     }
-    Ok(Decoded {
-        samples,
-        channels,
-        rate,
-    })
+    Ok((
+        Decoded {
+            samples,
+            channels,
+            rate,
+        },
+        bad,
+    ))
 }
 
 /// Linear von `from` auf `to` Hz (wie bisher bei WAV mit anderer Rate).

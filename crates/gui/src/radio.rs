@@ -2262,6 +2262,7 @@ impl RadioDesk {
                         );
                         let thumb = self.covers.as_mut().and_then(|c| c.thumb(&e.path));
                         crate::covers::paint_square(ui, 34.0, thumb.as_ref(), None, 1.0);
+                        crate::protokoll::damage_badge(ui, &e.path);
                         if let Some(vb) = e.voice {
                             ui.label(
                                 egui::RichText::new("VOICE")

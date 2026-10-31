@@ -4,6 +4,15 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Protokoll-Fenster und beschädigte Dateien (0.34.22, offen)
+
+1. Einstellungen → „Protokoll …“ öffnen: Fenster mit Zeilen der Sitzung (Zeit, Symbol, Text). Die Knöpfe Info/Warnungen/Fehler blenden Stufen aus und ein.
+2. Eine beschädigte MP3 (z. B. die vom Windows-Notebook) in die Playlist legen: im Protokoll steht eine Zeile „Datei „….mp3“ ist beschädigt (n fehlerhafte Stellen), spielt aber. Tipp: neu exportieren.“, keine tausend Einzelwarnungen. Der Titel spielt.
+3. In Playlist und Bibliothek hat der Titel ein gelbes Warnsymbol; Maus darüber zeigt denselben Text. Es geht kein Fenster auf.
+4. „Kopieren“ legt die sichtbaren Zeilen in die Zwischenablage, „Logordner öffnen“ öffnet den Ordner `logs` im Dateimanager.
+
+Selbst geprüft von Claude: Tests in `crates/telemetry/src/journal.rs`, `crates/engine/tests/damage.rs` (beschädigte und unlesbare MP3, offline erzeugt) und `crates/telemetry/tests/log_bridge.rs` (kein Dateiname im Upload), Tests und Clippy von telemetry, engine und gui grün.
+
 ## Sicherheit #127: AppImage-Werkzeuge mit Prüfsumme (0.34.21, offen)
 
 1. Der CI-Lauf `linux-build` ist grün (AppImage wird gebaut).
