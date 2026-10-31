@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.57 — 2026-10-31
+
+- **Playlist umbenennen hielt fest:** Das Namensfeld im Fenster „Verwalten“ holte sich in jedem Bild den Fokus zurück, man kam nicht mehr heraus (André, 31.10.). Wie bei den Spuren (0.33.3) wird der Fokus nur beim Öffnen gesetzt; Enter oder ein Klick daneben übernimmt den Namen, Esc verwirft ihn. Test: Klick daneben schließt das Feld und benennt um.
+
 ## 0.34.56 — 2026-10-31
 
 ### Geändert
