@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.34.60 — 2026-10-31
+
+- **Leere Kästchen statt Pfeilen (#218):** Hoch/Runter in „Verwalten“ sind jetzt Phosphor-Symbole statt „↑/↓“, die in Barlow fehlten. JetBrains Mono (liegt schon bei) dient als Rückfallschrift für Pfeile wie „→“ und „↩“ in allen Textfamilien. Vollbreiten-Zeichen in Titeln („｜“, „（“) werden in „Verwalten“ schmal angezeigt. Test: jedes Nicht-ASCII-Zeichen im GUI-Quelltext hat eine Glyphe.
+- **Spurkopf ragte in die Zeitleiste (#212):** Die Eingangswahl bekommt nur noch den Platz neben Gain und Pan und kürzt lange Gerätenamen; was trotzdem zu breit ist, wird am Spurkopf abgeschnitten. Test: der Spurkopf endet vor Takt 1, auch mit langem Gerätenamen.
+
 ## 0.34.59 — 2026-10-31
 
 ### Neu
