@@ -1,0 +1,17 @@
+<!-- @dsCard group="Bedienelemente" height=210 subtitle="Tooltip: Name + Tastenkürzel, optional ein Satz Hinweis; 500 ms Verzögerung" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}.cap{font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0 0 6px}</style></head>
+<body>
+
+<div class="woa-row" style="gap:20px;align-items:flex-start">
+ <div class="woa-tip woa-tip--static" data-tip="Löschen" data-kbd="Entf"></div>
+ <div class="woa-tip woa-tip--static" data-tip="Duplizieren" data-kbd="Strg+D"></div>
+ <div class="woa-tip woa-tip--static" data-tip="Alle umgehen" data-kbd="Umschalt+B"></div>
+ <div class="woa-tip woa-tip--static" data-tip="Clip-Gain" data-hint="Ziehen · Doppelklick = Standard · Klick = eintippen"></div>
+</div>
+<p class="woa-dim" style="font-size:12px;margin:18px 0 0;max-width:640px">Fahre über die Knöpfe: <button class="woa-ib" data-woa-icon="cut" data-tip="Teilen" data-kbd="S"></button><button class="woa-ib" data-woa-icon="copy" data-tip="Duplizieren" data-kbd="Strg+D"></button><button class="woa-ib woa-ib--danger" data-woa-icon="trash" data-tip="Löschen" data-kbd="Entf" data-hint="Rückgängig mit Strg+Z"></button> – im Text-Fallback (egui ohne Tasten-Chips) lautet es „Löschen (Entf)“.</p>
+<script>WOA.init();</script>
+</body>
+</html>
