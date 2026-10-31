@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.32 — 2026-10-31
+## 0.34.33 — 2026-10-31
 
 Studio-Uhr, Quellen unter Windows und Cart-Wall (#172, #163, #97).
 
@@ -8,6 +8,16 @@ Studio-Uhr, Quellen unter Windows und Cart-Wall (#172, #163, #97).
 - **Quellen je Spur (#163):** Unter Windows und macOS stand nur „Standard-Eingang (Mikrofon)“ in der Liste, weil weitere Quellen nur über PipeWire (Linux) gesucht wurden. Jetzt stehen dort alle Eingabegeräte des Systems („Eingang: …“), die Spur zeigt den Gerätenamen. Der Hinweis „Programm spielt gerade keinen Ton?“ erscheint nur noch unter Linux, wo es Programme als Quelle gibt. Linux unverändert.
 - **Cart-Wall (#97):** Belegte Pads sind freundlich grün, leere grau, das laufende leuchtet wie bisher in der Modusfarbe. Die Nummer steht groß vorn (fast padhoch), der Titel daneben auf höchstens zwei Zeilen, Rest mit „…“. Tastenschild jetzt rechts oben neben der LED; Spurfarben-LED und -Balken, Rechtsklick-Menü und Tasten unverändert.
 - **Tests:** Digitalzeit hält Abstand zu den Stundenpunkten (mit echter Schrift gemessen, alte Größe als Gegenprobe), jedes Eingabegerät wird ein Eintrag, Pad-Farben je Zustand und zweizeiliger Titel (`woa-gui`).
+## 0.34.32 — 2026-10-31
+
+Feedback: Bildschirmfoto erst auf Klick, eigenes Bild anhängen, Protokoll auf Wunsch mitsenden (#173, #174).
+
+- **Bildschirmfoto auf Klick (#173):** WOA fotografiert beim Öffnen des Feedback-Fensters nicht mehr. Wer „Bildschirmfoto mitsenden“ anhakt, sieht das Fenster kurz verschwinden, dann wird ohne Fenster aufgenommen. Haken weg: das Bild ist verworfen. Vorgabe: aus.
+- **Eigenes Bild (#174):** „Eigenes Bild anhängen …“ öffnet die Dateiauswahl (PNG oder JPEG). Das Bild wird als PNG geschickt und bei Bedarf verkleinert, damit es unter der Server-Grenze von 3 MB bleibt; „Entfernen“ nimmt es wieder ab. Höchstens zwei Bilder je Meldung.
+- **Protokoll mitsenden:** neuer Haken, Vorgabe aus. Er hängt die Zeilen des Protokoll-Fensters (Hilfe → Protokoll) unter den Text. Der Heimordner (`/home/<name>`, `C:\Users\<name>`) wird zu `~` gekürzt. Der Text samt Protokoll bleibt unter 20 000 Zeichen; bei mehr gehen die neuesten Zeilen mit. Unter dem Haken lässt sich das Protokoll vorher ansehen.
+- **Was mitgeht:** Über „Abschicken“ steht, was gesendet wird (Text, Bilder, Protokoll, Version und System). Es geht nur mit, was angehakt oder angehängt ist.
+- **Sendeweg unverändert:** `POST https://feedback.wironair.de/api/feedback`, Bilder im Feld `images`. `woa-headless feedback-test` nutzt dieselbe Funktion.
+- **Tests:** Bildschirmfoto und eigenes Bild setzen und entfernen, Pfadkürzung, ohne Haken kein Protokoll, Längengrenze (`woa-gui`); mehrere Bilder und Obergrenze (`woa-telemetry`).
 
 ## 0.34.31 — 2026-10-31
 
@@ -20,6 +30,7 @@ KI & MCP, Teil 1: WOA als MCP-Server für beliebige Clients (André: „nicht nu
 - **Neue Crates:** `woa-secrets` (die Schlüsselbund-Ablage aus dem Stream-Kennwort, jetzt für beliebig viele Einträge mit stabiler Kennung; `woa-stream` nutzt sie unverändert weiter) und `woa-assistant` (Einstellungen, Einträge, Hintergrund-Prozess).
 - **Grenze:** Der Server arbeitet auf der Projektdatei im Ordner, nicht auf dem offenen Fenster. Das steht im Fenster und in `docs/agent.md`.
 - Tests: HTTP ohne/falsches/richtiges Token, falscher `Origin`, fremder Pfad, leeres Token; Einträge sind gültiges JSON und zeigen das Token nie maskiert; Pfade mit Leerzeichen; Schlüsselbund-Ersatzdatei mit 0600 und Kennung als Dateiname; Fenster zeichnet.
+
 ## 0.34.30 — 2026-10-31
 
 Bibliothek: Analyse hängt nicht mehr an langen Titeln, läuft im Hintergrund weiter, Titel lassen sich entfernen und Spalten sortieren (#122, #123, #124, #120).

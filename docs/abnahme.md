@@ -924,7 +924,7 @@ Offen für André: Pan doppelt (Spurkopf und Rack; `HEADER_PAN = false` in `crat
 
 Selbst geprüft von Claude: fünf neue Tests in `crates/gui/tests/design_system_2.rs`, alle Tests und Clippy von `woa-gui` grün.
 
-## Studio-Uhr, Quellen, Cart-Wall (0.34.32, offen)
+## Studio-Uhr, Quellen, Cart-Wall (0.34.33, offen)
 
 Tickets #172, #163, #97. Kein Ton nötig.
 
@@ -935,6 +935,17 @@ Tickets #172, #163, #97. Kein Ton nötig.
 Abhakliste (nichts entfallen): Uhr mit Sekunden-LEDs, Stundenpunkten, „STUDIO-UHR“; Quelle Standard-Eingang, PipeWire-Quellen unter Linux, Mithören; Cart: Tastenschild, „?“ beim Tastenlernen, Status-LED, Spurfarben-Balken, Rechtsklick (Belegen, Lernen, Vorhören, Taste, Schneiden, Leeren).
 
 Selbst geprüft von Claude: drei neue Tests in `woa-gui`, alle Tests und Clippy von `woa-gui` grün. Der Windows-Zweig der Quellen ist unter Linux nicht gebaut worden; geprüft ist die Umsetzung der Geräteliste in Einträge.
+## Feedback: Bildschirmfoto auf Klick, eigenes Bild, Protokoll (0.34.32, offen)
+
+Tickets #173, #174.
+
+1. Feedback öffnen: kein Haken bei „Bildschirmfoto mitsenden“, „Protokoll mitsenden“ ist aus. Zeile „Geht mit:“ nennt nur Text sowie Version, System, Installationskennung.
+2. „Bildschirmfoto mitsenden“ anhaken: das Fenster verschwindet kurz und kommt mit Haken zurück. „Geht mit:“ nennt „Bildschirmfoto“. In der fertigen Meldung ist das Feedback-Fenster nicht auf dem Bild.
+3. Haken wieder weg: „Bildschirmfoto“ steht nicht mehr in „Geht mit:“.
+4. „Eigenes Bild anhängen …“, ein JPEG wählen: Dateiname mit Büroklammer und „Entfernen“ erscheinen, „Geht mit:“ nennt das Bild mit Größe. „Entfernen“ nimmt es wieder ab. Eine Nicht-Bild-Datei ergibt eine rote Meldung.
+5. „Protokoll mitsenden“ anhaken, „Protokoll ansehen“ aufklappen: Pfade beginnen mit `~`, der Benutzername steht nirgends.
+6. Abschicken mit Bildschirmfoto, eigenem Bild und Protokoll: das Ticket zeigt beide Bilder und unter dem Text „--- Protokoll ---“.
+7. Abschicken ohne Haken: das Ticket hat weder Bild noch Protokoll.
 
 ## Abgenommen
 
