@@ -25,6 +25,7 @@ pub mod radio;
 pub mod remote;
 mod sources;
 pub mod state;
+mod stream_ui;
 pub mod theme;
 pub mod timeline;
 pub mod update;

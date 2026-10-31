@@ -16,8 +16,9 @@ const KW: &str = "test-kw-123";
 
 fn cfg(fake: &fake_server::Fake) -> StreamConfig {
     StreamConfig {
+        protocol: woa_stream::Protocol::ShoutcastV2,
         host: "127.0.0.1".into(),
-        port: fake.port,
+        port: fake.port - 1,
         admin_port: Some(fake.admin),
         stream_id: 2,
         ..StreamConfig::default()
@@ -116,7 +117,7 @@ fn wrong_password_is_a_clear_error() {
 fn unreachable_server_is_a_connect_error() {
     let fake = start("x");
     let c = StreamConfig {
-        port: fake.port.wrapping_add(10),
+        port: fake.port.wrapping_add(10) - 1,
         ..cfg(&fake)
     };
     drop(fake);

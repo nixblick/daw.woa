@@ -202,7 +202,7 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
         msg
     };
     cfg.validate().map_err(fail)?;
-    let kw = Kennwort::from_file(&cfg.password_file).map_err(fail)?;
+    let kw = Kennwort::load(&cfg, data_dir).map_err(fail)?;
     let link = link_path(data_dir);
     if is_alive(&link) {
         return Err(fail("woa-streamd läuft schon".into()));
