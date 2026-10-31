@@ -503,8 +503,20 @@ impl LibraryWindow {
                     } else {
                         theme::mix(theme::text(), theme::text_dim(), 0.2)
                     };
+                    let hint = crate::protokoll::damage_hint(Path::new(&t.path));
+                    let mut title_x = rect.left() + 8.0;
+                    if hint.is_some() {
+                        let r = painter.text(
+                            egui::pos2(title_x, mid),
+                            egui::Align2::LEFT_CENTER,
+                            theme::ic::WARNING,
+                            egui::FontId::proportional(13.0),
+                            theme::warn(),
+                        );
+                        title_x = r.right() + 4.0;
+                    }
                     painter.text(
-                        egui::pos2(rect.left() + 8.0, mid),
+                        egui::pos2(title_x, mid),
                         egui::Align2::LEFT_CENTER,
                         &t.title,
                         egui::FontId::proportional(13.0),
@@ -562,7 +574,10 @@ impl LibraryWindow {
                     if resp.drag_stopped() {
                         stopped = Some(PathBuf::from(&t.path));
                     }
-                    resp.on_hover_text(&t.path);
+                    match hint {
+                        Some(h) => resp.on_hover_text(format!("{}\n{h}", t.path)),
+                        None => resp.on_hover_text(&t.path),
+                    };
                 }
             });
         if let Some(id) = clicked {

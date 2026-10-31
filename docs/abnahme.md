@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Entf nur für die markierte Spur (0.34.25, offen)
+## Entf nur für die markierte Spur (0.34.26, offen)
 
 1. Projekt mit drei Spuren öffnen, nichts anklicken: keine Spur ist farbig hervorgehoben, Entf tut nichts.
 2. Spurkopf anklicken: die Spur leuchtet in ihrer Farbe. Dann in die leere Zeitleiste klicken: die Hervorhebung ist weg, Entf tut nichts.
@@ -12,6 +12,15 @@ eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt,
 4. Clip anklicken, Entf: nur der Clip ist weg. Spurkopf anklicken, Entf: die Spur ist weg.
 
 Selbst geprüft von Claude: fünf neue Tests in `crates/gui/tests/design_regressions.rs`, Tests und Clippy von `woa-gui` grün.
+
+## Protokoll-Fenster und beschädigte Dateien (0.34.25, offen)
+
+1. Hilfe → „Protokoll …“ öffnen: Fenster mit Zeilen der Sitzung (Zeit, Symbol, Text). Die Knöpfe Info/Warnungen/Fehler blenden Stufen aus und ein.
+2. Eine beschädigte MP3 (z. B. die vom Windows-Notebook) in die Playlist legen: im Protokoll steht eine Zeile „Datei „….mp3“ ist beschädigt (n fehlerhafte Stellen), spielt aber. Tipp: neu exportieren.“, keine tausend Einzelwarnungen. Der Titel spielt.
+3. In Playlist und Bibliothek hat der Titel ein gelbes Warnsymbol; Maus darüber zeigt denselben Text. Es geht kein Fenster auf.
+4. „Kopieren“ legt die sichtbaren Zeilen in die Zwischenablage, „Logordner öffnen“ öffnet den Ordner `logs` im Dateimanager.
+
+Selbst geprüft von Claude: Tests in `crates/telemetry/src/journal.rs`, `crates/engine/tests/damage.rs` (beschädigte und unlesbare MP3, offline erzeugt) und `crates/telemetry/tests/log_bridge.rs` (kein Dateiname im Upload), Tests und Clippy von telemetry, engine und gui grün.
 
 ## Sicherheit #136: Updater Stufe B vorbereitet (0.34.24, offen)
 
