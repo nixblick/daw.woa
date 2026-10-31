@@ -239,3 +239,71 @@ fn missing_password_file_is_reported() {
     assert_eq!(s.connection, "beendet");
     assert!(s.last_error.unwrap().contains("Kennwortdatei"));
 }
+
+/// Fake-Oberfläche unter Last: echter Feeder, Sendemix in unregelmäßigen Häppchen (20 bis
+/// 100 ms), ein 200-ms-Hänger, 48 kHz → 44,1 kHz, dazu ein Verbindungsabriss mitten in der
+/// Sendung. Im Sendestream darf keine Lücke entstehen: kein Unterlauf, keine Kürzung, und
+/// der Feeder verbindet sich selbst neu.
+#[test]
+fn feeder_under_load_and_link_drop_leaves_no_gap() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    let kw_file = tmp.path().join("source.pass");
+    std::fs::write(&kw_file, format!("{KW}\n")).unwrap();
+    let fake = start(KW);
+    let cfg = StreamConfig {
+        host: "127.0.0.1".into(),
+        port: fake.port - 1,
+        admin_port: Some(fake.admin),
+        stream_id: 1,
+        sample_rate: SR,
+        password_file: kw_file,
+        ..StreamConfig::default()
+    };
+    let stop = Arc::new(AtomicBool::new(false));
+    let daemon = {
+        let (cfg, data, stop) = (cfg, data.clone(), Arc::clone(&stop));
+        std::thread::spawn(move || daemon::run(cfg, &data, stop))
+    };
+    let link = link::link_path(&data);
+    assert!(wait_for(Duration::from_secs(3), || link::is_alive(&link)));
+
+    const UI_RATE: u32 = 48_000;
+    let (mut producer, consumer) = rtrb::RingBuffer::new(UI_RATE as usize * 2);
+    let feeder = link::Feeder::spawn(consumer, UI_RATE, link.clone()).unwrap();
+    let t0 = Instant::now();
+    let mut k: u64 = 0;
+    let mut lcg: u32 = 7;
+    let mut dropped_link = false;
+    let mut stalled = false;
+    while t0.elapsed() < Duration::from_secs(6) {
+        // Bis „jetzt“ erzeugen (Takt der Soundkarte), in einem Häppchen.
+        let due = (t0.elapsed().as_secs_f64() * f64::from(UI_RATE)) as u64;
+        while k < due && producer.slots() >= 2 {
+            let v = (k as f32 * 440.0 * std::f32::consts::TAU / UI_RATE as f32).sin() * 0.5;
+            producer.push(v).unwrap();
+            producer.push(v).unwrap();
+            k += 1;
+        }
+        let at = t0.elapsed();
+        if !stalled && at > Duration::from_secs(2) {
+            stalled = true;
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        if !dropped_link && at > Duration::from_secs(3) {
+            // Eine zweite Anmeldung löst die Verbindung des Feeders ab (Abriss).
+            dropped_link = true;
+            drop(link::connect(&link, UI_RATE).unwrap());
+        }
+        lcg = lcg.wrapping_mul(1_103_515_245).wrapping_add(12345);
+        std::thread::sleep(Duration::from_millis(20 + u64::from((lcg >> 16) % 80)));
+    }
+    let s = status_of(&data);
+    assert!(s.ui_connected, "{s:?}");
+    assert_eq!(s.source, "Sendemix");
+    assert_eq!((s.live_underruns, s.live_trims), (0, 0), "{s:?}");
+    assert!(feeder.reconnects() >= 1, "Feeder hat neu verbunden");
+    assert!(feeder.is_connected());
+    feeder.stop_broadcast();
+    assert!(daemon.join().unwrap().is_ok());
+}

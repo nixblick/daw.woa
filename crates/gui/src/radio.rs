@@ -1463,7 +1463,7 @@ impl RadioDesk {
                     )
                     .on_hover_text(
                         "Puffer-Unterläufe der Ausgabe seit dem Öffnen. Steigt die Zahl, \
-                         in config.json radio_buffer_frames setzen, etwa 4096 (Vorgabe: Treiber).",
+                         in config.json radio_buffer_frames setzen, etwa 2048 oder 4096 (Vorgabe: 1024).",
                     );
                 }
             });
@@ -2456,6 +2456,14 @@ impl RadioDesk {
                 .and_then(StreamStatus::problem)
             {
                 ui.label(egui::RichText::new(p).small().color(theme::on_air()));
+            }
+            if let Some(line) = link_line(
+                self.feeder
+                    .as_ref()
+                    .map(|f| (f.is_connected(), f.reconnects())),
+                st.as_ref().filter(|_| running),
+            ) {
+                ui.label(egui::RichText::new(line).small().color(theme::on_air()));
             }
         });
     }
@@ -3827,6 +3835,53 @@ mod tests {
         assert_eq!(super::clock(83.4), "01:23");
         assert_eq!(super::clock(3725.0), "1:02:05");
         assert_eq!(super::clock(-3.0), "00:00");
+    }
+}
+
+/// Zeile unter „Auf Sendung“ zur lokalen Verbindung Oberfläche → woa-streamd und zu
+/// Lücken im Sendemix. `feeder`: (verbunden, Neuverbindungen), `None` = nicht auf Sendung.
+pub fn link_line(feeder: Option<(bool, u32)>, status: Option<&StreamStatus>) -> Option<String> {
+    let (connected, reconnects) = feeder?;
+    if !connected {
+        return Some("Verbindung zu woa-streamd unterbrochen, verbinde neu …".into());
+    }
+    let gaps = status.map_or(0, |s| s.live_underruns + s.live_trims);
+    match (reconnects, gaps) {
+        (0, 0) => None,
+        (r, 0) => Some(format!("Verbindung zu woa-streamd {r}× neu aufgebaut")),
+        (0, g) => Some(format!("Lücken im Sendestream: {g}")),
+        (r, g) => Some(format!(
+            "Verbindung zu woa-streamd {r}× neu aufgebaut · Lücken im Sendestream: {g}"
+        )),
+    }
+}
+
+#[cfg(test)]
+mod link_line_tests {
+    use super::*;
+
+    #[test]
+    fn link_line_shows_drop_reconnects_and_gaps() {
+        assert_eq!(link_line(None, None), None);
+        assert_eq!(link_line(Some((true, 0)), None), None);
+        assert!(
+            link_line(Some((false, 0)), None)
+                .unwrap()
+                .contains("verbinde neu")
+        );
+        assert_eq!(
+            link_line(Some((true, 2)), None).as_deref(),
+            Some("Verbindung zu woa-streamd 2× neu aufgebaut")
+        );
+        let s = StreamStatus {
+            live_underruns: 3,
+            live_trims: 1,
+            ..StreamStatus::default()
+        };
+        assert_eq!(
+            link_line(Some((true, 0)), Some(&s)).as_deref(),
+            Some("Lücken im Sendestream: 4")
+        );
     }
 }
 
