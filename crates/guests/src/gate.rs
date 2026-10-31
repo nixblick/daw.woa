@@ -74,6 +74,32 @@ struct Entry {
     taken: bool,
     /// Der Gast hat aufgelegt.
     left: bool,
+    /// Sendestand für die Seite des Gastes (vom Control-Thread gesetzt).
+    air: Air,
+    /// Der Gast hat sich selbst stumm geschaltet (von seiner Seite gemeldet).
+    self_muted: bool,
+}
+
+/// Sendestand eines angenommenen Gastes, wie seine Seite ihn zeigt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Air {
+    /// Verbunden, hört die Sendung, ist aber nicht auf Sendung (Warteraum).
+    #[default]
+    Waiting,
+    /// Auf Sendung.
+    OnAir,
+    /// Vom Moderator stumm geschaltet.
+    Muted,
+}
+
+impl Air {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Air::Waiting => "wait",
+            Air::OnAir => "air",
+            Air::Muted => "muted",
+        }
+    }
 }
 
 #[derive(Default)]
@@ -184,6 +210,8 @@ impl Gate {
                 state: TicketState::Waiting,
                 taken: false,
                 left: false,
+                air: Air::Waiting,
+                self_muted: false,
             },
         );
         Ok(ticket)
@@ -199,6 +227,41 @@ impl Gate {
             }
             None => TicketState::Ended,
         }
+    }
+
+    /// Sendestand und Selbst-Stumm eines Tickets (für die Seite des Gastes).
+    pub fn air(&self, ticket: &str) -> (Air, bool) {
+        self.lock()
+            .tickets
+            .get(ticket)
+            .map_or((Air::Waiting, false), |t| (t.air, t.self_muted))
+    }
+
+    /// Der Control-Thread setzt den Sendestand.
+    pub fn set_air(&self, ticket: &str, air: Air) {
+        if let Some(t) = self.lock().tickets.get_mut(ticket) {
+            t.air = air;
+        }
+    }
+
+    /// Der Gast schaltet sich selbst stumm. Nur für ein angenommenes Ticket; jede Seite kennt
+    /// nur ihr eigenes Ticket und kann so keinen anderen Gast steuern.
+    pub fn set_self_mute(&self, ticket: &str, on: bool) -> bool {
+        match self.lock().tickets.get_mut(ticket) {
+            Some(t) if matches!(t.state, TicketState::Accepted(_)) => {
+                t.self_muted = on;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Hat sich der Gast selbst stumm geschaltet?
+    pub fn self_muted(&self, ticket: &str) -> bool {
+        self.lock()
+            .tickets
+            .get(ticket)
+            .is_some_and(|t| t.self_muted)
     }
 
     /// Der Gast legt auf (oder schließt die Seite).

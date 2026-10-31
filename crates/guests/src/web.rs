@@ -180,7 +180,7 @@ impl GuestHub {
                     },
                 );
                 w.gate.set_answer(ticket, answer);
-                tracing::info!(slot, name = %name, "guest web: accepted");
+                tracing::info!(slot, "guest web: accepted (waiting room)");
                 Ok(())
             }
             Err((e, guest)) => {
@@ -251,6 +251,14 @@ impl GuestHub {
         }
         for ev in w.net.poll() {
             self.on_net_event(&mut w, ev);
+        }
+        // Sendestand an die Seite des Gastes, Selbst-Stumm von ihr zurück.
+        for p in w.peers.values() {
+            if let Some(air) = self.air_of(p.slot) {
+                w.gate.set_air(&p.ticket, air);
+            }
+            let me = w.gate.self_muted(&p.ticket);
+            self.set_self_muted(p.slot, me);
         }
         for _ in w.gate.sweep(Instant::now()) {
             tracing::info!("guest web: waiting guest gone silent");
