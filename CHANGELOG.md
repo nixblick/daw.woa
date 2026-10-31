@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.34.20 — 2026-10-31
+## 0.34.21 — 2026-10-31
 
 Kopfleiste aufgeräumt, Über-WOA persönlicher, Feedback-Fenster einladender (André 31.10.).
 
@@ -11,6 +11,16 @@ Kopfleiste aufgeräumt, Über-WOA persönlicher, Feedback-Fenster einladender (A
 - **Über WOA:** Logo, „WOA – built with love, coffee and AI“, Spenden über PayPal und Ko-fi (dieselben Links wie in bretteins und fotobrett) und „Danke an alle Lizenzgeber“ mit rotem Herz. Die Lizenzliste bleibt.
 - **Feedback-Fenster:** 600 statt 420 px breit, mittig, freundlicher Titel und Hinweis, größeres Textfeld, „Bildschirmfoto mitsenden“, grüne Taste „Abschicken“.
 - Tests über die echte Oberfläche: `crates/gui/tests/kopfleiste.rs`.
+
+## 0.34.20 — 2026-10-31
+
+Windows-Notebook mit schwacher CPU: Tausende Dekoder-Warnungen und ein Hänger beim Hinzufügen von Titeln.
+
+- **Messen nacheinander:** Neue Titel werden in einem einzigen Hintergrund-Thread gemessen. Bisher bekam jede Datei einen eigenen Thread, und elf Titel auf einmal dekodierten elf Threads parallel. Auf einem alten Notebook blieb der Oberfläche dann keine CPU mehr.
+- **MP3-Rauschen still:** Der MP3-Dekoder (symphonia) meldet bei beschädigten oder angeschnittenen MP3s für jeden Frame „invalid main_data_begin“ und spielt trotzdem weiter. Diese Warnung geht nicht mehr in Logdatei und Telemetrie, Fehler weiterhin schon.
+- **Drosselung:** Gleiche Warnungen und Fehler ohne eigenen Code gehen höchstens 20-mal je Minute in die Telemetrie. Wie viele verworfen wurden, steht danach als `log.dropped`.
+- **Herkunft:** Meldungen aus Abhängigkeiten (über das `log`-Crate) tragen in der Telemetrie jetzt den Crate-Namen (z. B. `symphonia_core`) statt `log`, dazu Dateiname und Zeile im Code-Ort. Text und Pfade bleiben weiterhin lokal.
+- Tests: Drosselung, begrenzte Tabelle, Crate-Name statt Modulpfad, Brücke vom `log`-Crate mit 1084 Warnungen ohne Dateinamen auf der Leitung.
 
 ## 0.34.19 — 2026-10-31
 
