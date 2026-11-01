@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.82 — 2026-11-01
+
+- **Server-Doku auf das Nötigste gekürzt:** `server/README.md` ohne den längst umgesetzten Patch-Vorschlag, die überholte `server/feedback/daw-woa.vars.yml` ist entfernt, `docs/telemetrie.md` ohne „Offen“ und ohne Serverpfade. Testpfade in `crates/gui/src/feedback.rs` heißen jetzt `nutzer`.
+
 ## 0.34.81 — 2026-11-01
 
 - **Drei wackelige Windows-Tests an der Ursache behoben (#256):**
