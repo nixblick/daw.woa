@@ -185,6 +185,26 @@ pub fn generate(p: &ChordProgression, key: u8, bars: u32) -> ChordClips {
     out
 }
 
+/// Akkordnamen der Folge `p` in Tonart `key` (z. B. „C G Am F“), leitereigene Dreiklänge.
+pub fn chord_names(p: &ChordProgression, key: u8) -> Vec<String> {
+    let scale = if p.minor { MINOR } else { MAJOR };
+    p.degrees
+        .iter()
+        .map(|&d| {
+            let i = usize::from(d.clamp(1, 7) - 1);
+            let root = scale[i];
+            let third = (scale[(i + 2) % 7] + 12 - root) % 12;
+            let fifth = (scale[(i + 4) % 7] + 12 - root) % 12;
+            let name = KEYS[usize::from((key + root) % 12)];
+            match (third, fifth) {
+                (3, 6) => format!("{name}°"),
+                (3, _) => format!("{name}m"),
+                _ => name.to_string(),
+            }
+        })
+        .collect()
+}
+
 /// Kürzester Weg von Tonart `from` nach `to` in Halbtönen (-5..=6).
 pub fn key_shift(from: u8, to: u8) -> i8 {
     let d = (i16::from(to % 12) - i16::from(from % 12)).rem_euclid(12);

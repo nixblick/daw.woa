@@ -18,7 +18,9 @@ use crate::state::AppState;
 use crate::theme;
 
 const KEYS_W: f32 = 46.0;
-const VEL_H: f32 = 70.0;
+const VEL_H: f32 = 64.0;
+/// Lineal über den Noten: Taktnummern und Akkordnamen (Design `PianoRoll`).
+const RULER_H: f32 = 20.0;
 const RESIZE_PX: f32 = 6.0;
 const DIVISIONS: [u32; 4] = [4, 8, 16, 32];
 
@@ -53,15 +55,15 @@ struct Palette {
 }
 
 impl Palette {
-    fn of(ui: &egui::Ui) -> Self {
+    fn of(ui: &egui::Ui, note: Color32) -> Self {
         if ui.visuals().dark_mode {
             Self {
                 bg: theme::bg(),
                 row_black: theme::mix(theme::bg(), Color32::BLACK, 0.25),
                 line: theme::mix(theme::bg(), theme::grid(), 0.6),
                 bar: theme::mix(theme::grid(), theme::text_dim(), 0.35),
-                note: theme::track_color(0),
-                note_sel: theme::accent(),
+                note,
+                note_sel: theme::text(),
                 text: theme::text_dim(),
                 key_white: Color32::from_rgb(214, 218, 226),
                 key_black: Color32::from_rgb(28, 30, 36),
@@ -72,8 +74,8 @@ impl Palette {
                 row_black: theme::well(),
                 line: theme::grid(),
                 bar: theme::border_strong(),
-                note: theme::track_color(0),
-                note_sel: theme::accent(),
+                note,
+                note_sel: theme::text(),
                 text: theme::text_dim(),
                 key_white: Color32::WHITE,
                 key_black: theme::text(),
@@ -129,6 +131,11 @@ pub struct PianoRoll {
     preset: Option<usize>,
     /// Zähler für den Würfel.
     dice_seed: u64,
+    /// Spurfarbe, Tonart und Clip-Anfang (Beat der Note 0), je Bild aus dem Projekt.
+    color: Color32,
+    key: Option<woa_model::harmony::Key>,
+    origin: f64,
+    chords: Vec<Option<woa_model::harmony::Chord>>,
 }
 
 impl PianoRoll {
@@ -150,7 +157,21 @@ impl PianoRoll {
             density: 0,
             preset: None,
             dice_seed: 0,
+            color: theme::track_color(0),
+            key: None,
+            origin: 0.0,
+            chords: Vec::new(),
         }
+    }
+
+    /// Spurfarbe des Clips (Design: Noten in Spurfarbe, auch Velocity und Drum-Raster).
+    pub fn note_color(state: &AppState, clip: ClipId) -> Color32 {
+        let index = state
+            .project()
+            .tracks
+            .iter()
+            .position(|t| t.clips.iter().any(|c| c.id == clip));
+        theme::track_color(index.unwrap_or(0))
     }
 
     fn grid(&self) -> f64 {
@@ -281,6 +302,15 @@ impl PianoRoll {
             .clip(self.clip)
             .is_some_and(|(t, _)| t.sound.is_some_and(|s| s.drums));
         let grid = self.drum_grid.unwrap_or(kit);
+        self.color = Self::note_color(state, self.clip);
+        self.key = crate::timeline::harmony(state.project(), 0.0, 0).key;
+        self.origin = state
+            .project()
+            .clip(self.clip)
+            .map_or(0.0, |(_, c)| c.start_beats - c.offset_beats);
+        let h = crate::timeline::harmony(state.project(), self.origin, 128);
+        self.key = h.key;
+        self.chords = h.bars;
         ui.horizontal(|ui| {
             let mut on = grid;
             if ui
@@ -382,7 +412,7 @@ impl PianoRoll {
     ) {
         use woa_model::{DRUM_ROWS, drums};
         const NAME_W: f32 = 90.0;
-        let pal = Palette::of(ui);
+        let pal = Palette::of(ui, self.color);
         let total = drums::steps(length);
         let avail = ui.available_width() - NAME_W;
         let cell = (avail / total.min(drums::STEPS_PER_BAR * 2) as f32).clamp(14.0, 40.0);
@@ -519,7 +549,7 @@ impl PianoRoll {
         length: f64,
         sink: Option<&woa_io::midi::EventSink>,
     ) {
-        let pal = Palette::of(ui);
+        let pal = Palette::of(ui, self.color);
         let avail = ui.available_size();
         let view_w = (avail.x - KEYS_W).max(100.0);
         let shown = length.max(midi.end_beats()).max(4.0);
@@ -527,9 +557,11 @@ impl PianoRoll {
         let visible = f64::from(view_w / px);
         self.x_off = self.x_off.clamp(0.0, (shown - visible).max(0.0));
         let grid = self.grid();
-        let notes_h = (avail.y - VEL_H - 22.0).max(120.0);
+        let notes_h = (avail.y - VEL_H - 22.0 - RULER_H).max(120.0);
         let row_h = self.row_h;
         let full_h = 128.0 * row_h;
+
+        self.chord_ruler(ui, view_w, px, shown, length, &pal);
 
         // Notenfläche mit Klaviatur, senkrecht scrollbar.
         let mut scroll = egui::ScrollArea::vertical()
@@ -561,7 +593,13 @@ impl PianoRoll {
             for p in 0..=127u8 {
                 let y = y_of(p);
                 let r = Rect::from_x_y_ranges(area.x_range(), y..=y + row_h);
-                painter.rect_filled(r, 0.0, if is_black(p) { pal.row_black } else { pal.bg });
+                let row = if is_black(p) { pal.row_black } else { pal.bg };
+                // Töne der Tonart: 8 % Spurfarbe (Design `PianoRoll`).
+                let row = match self.key {
+                    Some(k) if k.contains(p) => theme::mix(row, pal.note, 0.08),
+                    _ => row,
+                };
+                painter.rect_filled(r, 0.0, row);
                 if p % 12 == 0 {
                     painter.hline(area.x_range(), y + row_h, Stroke::new(1.0, pal.bar));
                 }
@@ -584,7 +622,7 @@ impl PianoRoll {
                 let r = Rect::from_x_y_ranges(keys.x_range(), y..=y + row_h);
                 let held = self.preview == Some(p);
                 let fill = match (held, is_black(p)) {
-                    (true, _) => pal.note_sel,
+                    (true, _) => pal.note,
                     (false, true) => pal.key_black,
                     (false, false) => pal.key_white,
                 };
@@ -635,12 +673,29 @@ impl PianoRoll {
                     continue;
                 }
                 let lit = sel || band.is_some_and(|b| b.intersects(r));
-                let base = if lit { pal.note_sel } else { pal.note };
-                // Velocity als Helligkeit.
-                let fill = theme::mix(pal.bg, base, 0.45 + 0.55 * f32::from(n.velocity) / 127.0);
+                // Spurfarbe, Velocity als Helligkeit; Auswahl mit `text`-Rahmen.
+                let fill = theme::mix(
+                    pal.bg,
+                    pal.note,
+                    0.45 + 0.55 * f32::from(n.velocity) / 127.0,
+                );
                 let r = r.intersect(area);
                 painter.rect_filled(r, 2.0, fill);
-                painter.rect_stroke(r, 2.0, Stroke::new(1.0, base), egui::StrokeKind::Inside);
+                let edge = if lit {
+                    Stroke::new(2.0, pal.note_sel)
+                } else {
+                    Stroke::new(1.0, pal.note)
+                };
+                painter.rect_stroke(r, 2.0, edge, egui::StrokeKind::Inside);
+                if r.width() >= 40.0 && row_h >= 10.0 {
+                    painter.with_clip_rect(r).text(
+                        pos2(r.left() + 4.0, r.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        pitch_name(n.pitch),
+                        egui::FontId::proportional((row_h - 3.0).min(10.0)),
+                        theme::mix(pal.bg, Color32::BLACK, 0.4),
+                    );
+                }
             }
             if let Some(b) = band {
                 painter.rect_stroke(
@@ -682,6 +737,56 @@ impl PianoRoll {
                 );
             });
             self.x_off = off;
+        }
+    }
+
+    /// Lineal: Taktnummer, Clip-Bereich als Balken in Spurfarbe, je Takt der Akkord aller
+    /// MIDI-Spuren (dieselbe Erkennung wie die Akkordspur).
+    fn chord_ruler(
+        &self,
+        ui: &mut egui::Ui,
+        view_w: f32,
+        px: f32,
+        shown: f64,
+        length: f64,
+        pal: &Palette,
+    ) {
+        let (rect, _) = ui.allocate_exact_size(vec2(KEYS_W + view_w, RULER_H), Sense::hover());
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 0.0, theme::well());
+        let area = Rect::from_min_max(pos2(rect.left() + KEYS_W, rect.top()), rect.max);
+        let bars = (shown / 4.0).ceil() as usize + 1;
+        let xe = self.x(area.left(), px, length).min(area.right());
+        let xs = self.x(area.left(), px, 0.0).max(area.left());
+        if xe > xs {
+            painter.rect_filled(
+                Rect::from_x_y_ranges(xs..=xe, rect.bottom() - 3.0..=rect.bottom()),
+                0.0,
+                pal.note,
+            );
+        }
+        for bar in 0..bars {
+            let x = self.x(area.left(), px, bar as f64 * 4.0);
+            if x < area.left() - 1.0 || x > area.right() {
+                continue;
+            }
+            painter.vline(x, rect.y_range(), Stroke::new(1.0, pal.bar));
+            painter.text(
+                pos2(x + 3.0, rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                format!("{}", bar + 1),
+                egui::FontId::monospace(10.0),
+                pal.text,
+            );
+            if let Some(Some(ch)) = self.chords.get(bar) {
+                painter.text(
+                    pos2(x + 22.0, rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    ch.name(),
+                    egui::FontId::new(11.0, egui::FontFamily::Name("ui-bold".into())),
+                    theme::text(),
+                );
+            }
         }
     }
 
@@ -1030,6 +1135,17 @@ impl PianoRoll {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notes_take_the_colour_of_their_track() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let mut st = AppState::new(tmp.path().join("rec"), std::time::Instant::now());
+        let p = woa_model::chords::progression("I–V–vi–IV").expect("pop");
+        let made = st.add_chord_tracks(p, 0, 4, 0.0).expect("made");
+        for (i, (_, clip)) in made.iter().enumerate() {
+            assert_eq!(PianoRoll::note_color(&st, *clip), theme::track_color(i));
+        }
+    }
 
     #[test]
     fn pitch_names() {

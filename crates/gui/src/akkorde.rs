@@ -3,7 +3,7 @@
 
 use eframe::egui;
 use woa_model::ClipId;
-use woa_model::chords::{CHORD_PROGRESSIONS, ChordProgression, KEYS, key_shift};
+use woa_model::chords::{CHORD_PROGRESSIONS, KEYS, chord_names, key_shift};
 
 use crate::state::AppState;
 use crate::theme;
@@ -26,30 +26,6 @@ impl Default for AkkordFenster {
             last: None,
         }
     }
-}
-
-/// Dur-Leiter und natürliches Moll in Halbtönen.
-const MAJOR: [u8; 7] = [0, 2, 4, 5, 7, 9, 11];
-const MINOR: [u8; 7] = [0, 2, 3, 5, 7, 8, 10];
-
-/// Akkordnamen der Folge `p` in Tonart `key` (z. B. „C G Am F“), leitereigene Dreiklänge.
-pub fn chord_names(p: &ChordProgression, key: u8) -> Vec<String> {
-    let scale = if p.minor { MINOR } else { MAJOR };
-    p.degrees
-        .iter()
-        .map(|&d| {
-            let i = usize::from(d.clamp(1, 7) - 1);
-            let root = scale[i];
-            let third = (scale[(i + 2) % 7] + 12 - root) % 12;
-            let fifth = (scale[(i + 4) % 7] + 12 - root) % 12;
-            let name = KEYS[usize::from((key + root) % 12)];
-            match (third, fifth) {
-                (3, 6) => format!("{name}°"),
-                (3, _) => format!("{name}m"),
-                _ => name.to_string(),
-            }
-        })
-        .collect()
 }
 
 /// Akkord-Chips (dunkle Kästchen mit Namen, darunter optional die Stufe).
