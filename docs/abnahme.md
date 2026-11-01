@@ -4,6 +4,16 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Titel per Ziehen aufs Deck (0.35.5, offen)
+
+1. Radio-Modus: einen Playlist-Titel am Griff (sechs Punkte links) packen und auf Deck A ziehen: der Titel liegt auf Deck A.
+2. Denselben Weg am Titeltext statt am Griff: liegt auf Deck B.
+3. Einen Titel aus der Bibliothek auf Deck C ziehen: liegt auf Deck C.
+4. Eine Audiodatei aus dem Explorer auf ein Deck ziehen: liegt auf dem Deck.
+5. Ziehen innerhalb der Playlist verschiebt weiter, Klick auf die Nummer zum Eintippen geht weiter.
+
+Selbst geprüft von Claude: vier Tests im echten Pult-Layout ohne Audiogerät; der Griff-Test war vor dem Fix rot. Nicht am Windows-Rechner gesehen, Explorer-Ziehen nur über das egui-Ereignis geprüft.
+
 ## Windows-Taskleiste mit WOA-Logo (0.35.4, offen)
 
 1. ZIP auspacken, `woa.exe` starten: Taskleiste zeigt WOA-Logo, auch aus der ZIP gestartet. Im Explorer trägt `woa.exe` dasselbe Logo.

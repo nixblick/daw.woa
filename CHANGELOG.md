@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.35.5 — 2026-11-01
+
+- **Playlist-Titel lassen sich wieder am Griff auf ein Deck ziehen (#298):** Seit dem Griff-Symbol aus #92 (0.34.74, Commit `1933917`) war der Griff am linken Zeilenrand ein markierbarer Text. egui gibt das Ziehen dann der Textauswahl statt der Zeile; die Zeile bewegte sich nicht, und auf dem Deck kam nichts an. Jetzt sind alle Texte einer Playlist-Zeile nicht markierbar, Ziehen am Griff wie am Titel lädt aufs Deck oder verschiebt in der Playlist. Klick, Doppelklick, Nummer eintippen und Kontextmenü bleiben. Bibliothek und Dateien aus dem Explorer waren nicht betroffen und sind jetzt mit abgedeckt. Tests im echten Pult-Layout ohne Audiogerät (`RadioDesk::headless`, der Mixer rechnet nur in einen Puffer): `deck_drop_tests` in `crates/gui/src/radio.rs` (Bibliothek, Explorer-Datei, Playlist am Griff, Playlist am Titel).
+
 ## 0.35.4 — 2026-11-01
 
 - **WOA-Logo in der Windows-Taskleiste:** Die `woa.exe` trägt jetzt `packaging/windows/woa.ico` (16 bis 256 px) als Icon-Ressource, eingebettet per `apps/woa/build.rs` mit `winresource` (Build-Abhängigkeit nur unter Windows). Bisher zeigte die Taskleiste einen Platzhalter, weil das Fensterbild aus dem PNG nur als kleines Symbol ankommt und die Exe kein eigenes Icon hatte; aus der ZIP gestartet fehlte es ganz. Der Windows-Bau prüft das jetzt (Icon der `woa.exe` ungleich Standardsymbol). `woa-headless` und `woa-streamd` sind Konsolenprogramme ohne Fenster und bleiben ohne. Linux unverändert.
