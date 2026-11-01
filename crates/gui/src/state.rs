@@ -19,6 +19,23 @@ pub const TAKES_DIR: &str = "aufnahmen";
 /// Autosave interval (rule 7).
 pub const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(10);
 
+/// Paket J4: was der Assistent „Jingle bauen“ angelegt hat.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct JingleParts {
+    /// Länge in Takten.
+    pub bars: u32,
+    /// Tonart (Halbtöne über C).
+    pub key: u8,
+    /// Beat-Clip auf der Drum-Spur.
+    pub drums: ClipId,
+    /// Akkorde, Bass, Arpeggio.
+    pub chords: [ClipId; 3],
+    /// Leere Audio-Spur für die Stimme.
+    pub voice: TrackId,
+    /// Schluss-Stab an.
+    pub stab: bool,
+}
+
 /// One line in the status bar.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Status {
@@ -903,6 +920,109 @@ impl AppState {
         let closed = self.session.end_group();
         self.report(label, closed);
         ok
+    }
+
+    /// Paket J4: legt das Gerüst eines Jingles an (Assistent „Jingle bauen“, Schritt 1):
+    /// Tempo aus der Längen-Rechnung, Drum-Spur mit Kit und Beat der Stimmung, Akkorde,
+    /// Bass und Arpeggio (J3) und eine leere Audio-Spur „Stimme“. Alles ab Beat 0, ein
+    /// Undo-Schritt, nur normale Spuren und Clips.
+    pub fn build_jingle(
+        &mut self,
+        mood: &woa_model::jingle::Mood,
+        seconds: u32,
+    ) -> Option<JingleParts> {
+        use woa_model::sound::{SOUND_PRESETS, SoundRole};
+        let progression = woa_model::chords::progression(mood.progression)?;
+        let preset = woa_model::drum_preset(mood.drums)?;
+        let (bars, bpm) = woa_model::jingle::fit(f64::from(seconds), f64::from(mood.bpm));
+        let length = f64::from(bars) * 4.0;
+        let label = "Jingle anlegen";
+        self.session.begin_group(label);
+        let parts = (|| {
+            // Unverändertes Tempo ist kein Fehler.
+            self.set_tempo(bpm);
+            let drum_track = self.session.new_track_id();
+            let kit = SOUND_PRESETS
+                .iter()
+                .find(|p| p.role == SoundRole::Kit)
+                .map(|p| p.sound);
+            let drums = self.session.new_clip_id();
+            let midi =
+                woa_model::drums::apply_preset(&woa_model::MidiData::default(), length, preset, 0);
+            let ok = self.apply(Command::add_track(drum_track, "Drums", TrackKind::Midi))
+                && self.apply(Command::SetTrackSound {
+                    track: drum_track,
+                    sound: kit,
+                })
+                && self.apply(Command::AddClip {
+                    track: drum_track,
+                    clip: Clip::new_midi(drums, "Beat", 0.0, length, midi),
+                    index: None,
+                });
+            if !ok {
+                return None;
+            }
+            let made = self.add_chord_tracks(progression, mood.key, bars, 0.0)?;
+            let voice = self.session.new_track_id();
+            self.apply(Command::add_track(voice, "Stimme", TrackKind::Audio))
+                .then_some(JingleParts {
+                    bars,
+                    key: mood.key,
+                    drums,
+                    chords: made.map(|m| m.1),
+                    voice,
+                    stab: false,
+                })
+        })();
+        let closed = self.session.end_group();
+        self.report(label, closed);
+        parts
+    }
+
+    /// Paket J4: Schluss-Stab an oder aus. Setzt die Noten aller vier Jingle-Clips neu
+    /// (Beat nach `preset`, Akkorde nach `progression`), mit oder ohne Stab; ein Undo-Schritt.
+    /// Auch für den Wechsel von Beat oder Folge im Assistenten.
+    pub fn jingle_notes(
+        &mut self,
+        parts: &JingleParts,
+        drums: Option<woa_model::MidiData>,
+        progression: Option<&woa_model::ChordProgression>,
+    ) -> bool {
+        use woa_model::jingle::{STAB_DRUMS, stab};
+        let bars = parts.bars;
+        let finish = |m: woa_model::MidiData, extra: &[u8]| {
+            if parts.stab { stab(&m, bars, extra) } else { m }
+        };
+        let label = "Jingle ändern";
+        self.session.begin_group(label);
+        let mut ok = true;
+        if let Some(d) = drums {
+            ok &= self.apply(Command::SetNotes {
+                clip: parts.drums,
+                midi: finish(d, &STAB_DRUMS),
+            });
+        }
+        if let Some(p) = progression {
+            let made = woa_model::chords::generate(p, parts.key, bars);
+            for (clip, midi) in parts.chords.iter().zip([made.chords, made.bass, made.arp]) {
+                ok &= self.apply(Command::SetNotes {
+                    clip: *clip,
+                    midi: finish(midi, &[]),
+                });
+            }
+        }
+        let closed = self.session.end_group();
+        self.report(label, closed);
+        ok
+    }
+
+    /// Paket J4: ob alle Clips und die Stimm-Spur des Jingles noch da sind (nach Undo nicht).
+    pub fn jingle_alive(&self, parts: &JingleParts) -> bool {
+        let p = self.project();
+        p.track(parts.voice).is_some()
+            && std::iter::once(parts.drums)
+                .chain(parts.chords)
+                .all(|c| p.clip(c).is_some_and(|(_, c)| c.midi.is_some()))
     }
 
     /// Moves a clip on its track to `start_beats` (clamped to >= 0).
@@ -1806,5 +1926,77 @@ mod tests {
         assert!(t.remove_plugin(audio, fx));
         t.undo();
         assert_eq!(t.project().track(audio).unwrap().plugins.len(), 1);
+    }
+
+    #[test]
+    fn jingle_wizard_builds_a_normal_project_in_one_undo_step() {
+        use woa_model::jingle::{MOODS, seconds};
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        let party = &MOODS[3];
+        let parts = s.build_jingle(party, 10).expect("Jingle angelegt");
+        let p = s.project();
+        assert_eq!(p.tracks.len(), 5, "Drums, Akkorde, Bass, Arpeggio, Stimme");
+        assert!(
+            (seconds(parts.bars, p.tempo_bpm) - 10.0).abs() < 1e-9,
+            "genau 10 s"
+        );
+        let (drums, _) = p.clip(parts.drums).unwrap();
+        assert!(
+            drums.sound.is_some_and(|k| k.drums),
+            "Drum-Spur hat ein Kit"
+        );
+        for c in std::iter::once(parts.drums).chain(parts.chords) {
+            let (_, clip) = p.clip(c).unwrap();
+            assert_eq!(clip.start_beats, 0.0);
+            assert_eq!(clip.length_beats, f64::from(parts.bars) * 4.0);
+            assert!(!clip.midi.as_ref().unwrap().notes.is_empty());
+        }
+        assert_eq!(p.track(parts.voice).unwrap().kind, TrackKind::Audio);
+        assert!(s.jingle_alive(&parts));
+        assert_eq!(s.session().history().undo_entries().len(), 1);
+
+        // Schluss-Stab: letzter Takt ist ein Schlag, ein Undo-Schritt.
+        let mut on = parts;
+        on.stab = true;
+        let beat = woa_model::drums::apply_preset(
+            &woa_model::MidiData::default(),
+            f64::from(parts.bars) * 4.0,
+            woa_model::drum_preset(party.drums).unwrap(),
+            0,
+        );
+        let prog = woa_model::chords::progression(party.progression).unwrap();
+        assert!(s.jingle_notes(&on, Some(beat), Some(prog)));
+        let last = f64::from(parts.bars - 1) * 4.0;
+        let (_, c) = s.project().clip(parts.chords[0]).unwrap();
+        assert!(
+            c.midi
+                .as_ref()
+                .unwrap()
+                .notes
+                .iter()
+                .filter(|n| n.beat >= last)
+                .all(|n| n.beat == last)
+        );
+        assert_eq!(s.session().history().undo_entries().len(), 2);
+
+        // Stimme über Bett (J5) auf der Stimm-Spur.
+        assert!(s.voice_over(parts.voice));
+
+        // Speichern und wieder öffnen: dasselbe normale Projekt.
+        let dir = tmp.path().join("jingle.woa");
+        assert!(s.save_as(&dir));
+        let before = s.project().clone();
+        let (mut t, _) = state(tmp.path());
+        assert!(t.open(&dir));
+        assert_eq!(t.project().tracks, before.tracks);
+        assert_eq!(t.project().tempo_bpm, before.tempo_bpm);
+
+        // Undo bis zum Anfang entfernt alles, der Assistent merkt es.
+        s.undo();
+        s.undo();
+        s.undo();
+        assert!(s.project().tracks.is_empty());
+        assert!(!s.jingle_alive(&parts));
     }
 }

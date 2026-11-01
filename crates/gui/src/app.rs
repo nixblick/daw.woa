@@ -260,6 +260,7 @@ pub struct WoaApp {
     produktionen: crate::produktionen::ProduktionenWindow,
     akkorde: crate::akkorde::AkkordFenster,
     jingle_fx: crate::jingle_fx::FxFenster,
+    jingle_assistent: crate::jingle_assistent::JingleAssistent,
     /// Export-Fenster (Paket 26).
     export_dialog: crate::export_dialog::ExportDialog,
     /// „Spur exportieren“ (Ticket 229): offenes Fenster und laufender Export.
@@ -618,6 +619,7 @@ impl WoaApp {
             produktionen: crate::produktionen::ProduktionenWindow::default(),
             akkorde: crate::akkorde::AkkordFenster::default(),
             jingle_fx: crate::jingle_fx::FxFenster::default(),
+            jingle_assistent: crate::jingle_assistent::JingleAssistent::default(),
             export_dialog: crate::export_dialog::ExportDialog::new(),
             track_export: None,
             track_export_job: None,
@@ -2947,6 +2949,22 @@ impl WoaApp {
                 {
                     self.jingle_fx.open = true;
                 }
+                if ui
+                    .add_sized(
+                        [128.0, 32.0],
+                        egui::Button::new(
+                            egui::RichText::new(format!("{} Jingle bauen …", theme::ic::WAVEFORM))
+                                .small()
+                                .strong()
+                                .color(theme::cue()),
+                        )
+                        .fill(theme::well()),
+                    )
+                    .on_hover_text("Assistent: Länge und Stimmung wählen, Beat, Akkorde, Stimme, Ausgabe")
+                    .clicked()
+                {
+                    self.jingle_assistent.open = true;
+                }
             });
             if self.state.project().tracks.is_empty() {
                 ui.add_space(24.0);
@@ -5219,6 +5237,44 @@ impl WoaApp {
         self.akkorde.show(ctx, &mut self.state, at);
     }
 
+    /// Assistent „Jingle bauen“ (Paket J4): führt seine Wünsche mit App-Zustand aus
+    /// (neues Projekt mit Speicher-Frage, Loop über das Jingle, Drum-Raster, Export).
+    fn jingle_assistent_window(&mut self, ctx: &egui::Context) {
+        use crate::jingle_assistent::Wunsch;
+        if !self.jingle_assistent.open {
+            return;
+        }
+        match self.jingle_assistent.show(ctx, &mut self.state) {
+            Some(Wunsch::Anlegen { mood, seconds }) => {
+                let Some(m) = woa_model::jingle::MOODS.get(mood) else {
+                    return;
+                };
+                if !self.state.project().tracks.is_empty() {
+                    if !self.save_before_replace("Jingle bauen") {
+                        return;
+                    }
+                    self.state.new_project();
+                }
+                if let Some(parts) = self.state.build_jingle(m, seconds) {
+                    self.loop_start_bar = 1;
+                    self.loop_end_bar = parts.bars + 1;
+                    self.loop_enabled = true;
+                    self.jingle_assistent.angelegt(parts);
+                }
+            }
+            Some(Wunsch::Raster(clip)) => self.open_piano_roll(clip),
+            Some(Wunsch::Export(name)) => {
+                self.export_dialog
+                    .set_jingle(Some(crate::export_dialog::JingleOptions {
+                        name,
+                        ..Default::default()
+                    }));
+                self.export_dialog.open_now();
+            }
+            None => {}
+        }
+    }
+
     /// Fenster „Jingle-FX“ (Paket J8), Clip ab dem Takt am Abspielkopf.
     fn jingle_fx_window(&mut self, ctx: &egui::Context) {
         if !self.jingle_fx.open {
@@ -6472,6 +6528,7 @@ impl eframe::App for WoaApp {
         self.produktionen_window(&ctx);
         self.akkorde_window(&ctx);
         self.jingle_fx_window(&ctx);
+        self.jingle_assistent_window(&ctx);
         self.clock_editor.show(&ctx);
         self.event_editor
             .show(&ctx, self.radio.as_ref().map(|r| r.view()));

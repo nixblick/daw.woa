@@ -16,6 +16,7 @@ pub mod cue_editor;
 pub mod event_editor;
 pub mod export_dialog;
 pub mod feedback;
+pub mod jingle_assistent;
 pub mod jingle_fx;
 mod ki_setup;
 mod ki_ui;
