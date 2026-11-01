@@ -18,33 +18,25 @@ Code: `crates/updater` (Prüfung, Netz), `crates/gui/src/update.rs` und `update_
 - `https://github.com/nixblick/daw.woa/releases/latest/download/latest.json`. „latest“ sind nur
   veröffentlichte Releases, keine Entwürfe und keine Vorabversionen. Ein Release wird also erst
   sichtbar, wenn es veröffentlicht ist.
-- `latest.json`: `{version, notes, msi_url, msi_sha256, msi_sig_url}`. `msi_sig_url` fehlt, wenn
-  das Release nicht signiert wurde.
+- `latest.json`: `{version, notes, msi_url, msi_sha256, msi_sig_url}`. Ohne `msi_sig_url` lehnt die App ab.
 - Die App lädt nur von `https://github.com/nixblick/daw.woa/releases/…`. Weiterleitungen folgt
   sie selbst und nur auf `objects.githubusercontent.com` und `release-assets.githubusercontent.com`.
   Alles andere (anderer Host, anderes Repo, `http`, `..` im Pfad) wird abgelehnt.
 - Der Download läuft in einem Hintergrund-Thread mit Zeitlimit und Größengrenze, nie im
   UI-Thread.
 
-## Zwei Stufen, nie gemischt
+## Signatur ist Pflicht
 
-Welche Stufe gilt, entscheidet die Datei `packaging/windows/updater.pub`, die zur Bauzeit per
-`include_str!` eingebrannt wird.
+Die Datei `packaging/windows/updater.pub` mit dem öffentlichen minisign-Schlüssel wird zur
+Bauzeit per `include_str!` eingebrannt. Ein Update wird nur installiert, wenn die minisign-Signatur
+über die MSI-Bytes zu diesem Schlüssel passt. Fehlt die Signatur oder ist der Schlüssel kein
+gültiger minisign-Schlüssel, wird abgelehnt (fail-closed); eine Prüfsumme allein genügt nie.
 
-| | Stufe A | Stufe B |
-|---|---|---|
-| Wann | `updater.pub` ist ein Platzhalter (bis 0.34.91) | `updater.pub` ist ein echter minisign-Schlüssel (seit 0.34.92) |
-| Prüfung | SHA-256 des MSI aus `latest.json` | minisign-Signatur über die MSI-Bytes, Pflicht |
-| Fehlt der Prüfwert | abgelehnt | abgelehnt (kein Rückfall auf A) |
-| Downgrade-Wächter | ja | ja |
-
-In beiden Stufen gilt: nur strikt neuere Version (gleiche, ältere und unlesbare Versionen sind
-ein Veto), nur HTTPS mit Zertifikatsprüfung, nur die festen GitHub-Hosts.
-
-Stufe B zusätzlich: Der signierte, vertrauenswürdige Kommentar muss `woa <version>` heißen, und
-die Version muss der Manifest-Version entsprechen. So kann niemand mit einer gefälschten
-Versionsangabe ein altes, echt signiertes MSI unterschieben. Steht im Manifest zusätzlich eine
-SHA-256, muss auch sie stimmen.
+Zusätzlich gilt: nur strikt neuere Version (gleiche, ältere und unlesbare Versionen sind ein
+Veto), nur HTTPS mit Zertifikatsprüfung, nur die festen GitHub-Hosts. Der signierte,
+vertrauenswürdige Kommentar muss `woa <version>` heißen, und die Version muss der
+Manifest-Version entsprechen. So kann niemand mit einer gefälschten Versionsangabe ein altes,
+echt signiertes MSI unterschieben. Steht im Manifest zusätzlich eine SHA-256, muss auch sie stimmen.
 
 ## Bedrohungsmodell, ehrlich
 
@@ -55,18 +47,12 @@ Release-Dateien auf GitHub ändern.
   Zertifikat für `github.com` kommt nichts an, und andere Hosts nimmt die App nicht.
 - **Beschädigter oder abgeschnittener Download:** In beiden Stufen abgefangen.
 - **Zurückgespieltes altes Release:** Der Downgrade-Wächter lehnt es ab.
-- **Restrisiko Stufe A: Kompromittierung des GitHub-Kontos oder der Release-Assets.** Wer
-  Release-Dateien ändern darf, tauscht MSI und `latest.json` gemeinsam aus; die SHA-256 passt
-  dann zum Schadcode. Eine Prüfsumme neben dem Paket ist kein Schutz gegen den Betreiber des
-  Ortes, an dem beides liegt. Das MSI läuft zudem mit Administratorrechten (UAC-Abfrage), ein
-  untergeschobenes Paket wäre also volle Codeausführung. Dieses Risiko ist bewusst
-  akzeptiert, solange es um wenige bekannte Tester geht.
-- **Stufe B** schließt das: Der private Schlüssel liegt nur als GitHub-Secret in der CI und auf
-  Andrés Rechner. Wer nur Release-Dateien ändern kann, kann keine gültige Signatur erzeugen.
-  Restrisiko dort: Zugriff auf Secrets/Workflows des Repos.
-- **Übergang A zu B:** Eine App, die noch mit Platzhalter gebaut wurde, prüft keine Signatur.
-  Das erste Release mit echtem Schlüssel erreicht sie also noch über Stufe A. Erst Versionen, die
-  den Schlüssel enthalten, erzwingen Signaturen.
+- **Kompromittierung der Release-Dateien auf GitHub:** abgewehrt. Der private Schlüssel liegt
+  nur als GitHub-Secret in der CI und auf Andrés Rechner. Wer nur Release-Dateien ändern kann,
+  kann keine gültige Signatur erzeugen. Restrisiko: Zugriff auf Secrets/Workflows des Repos.
+- **Übergang:** Apps vor 0.35.4 wurden ohne Schlüssel gebaut und prüfen nur die SHA-256. Sie
+  aktualisieren sich noch einmal auf ein signiertes Release; erst Versionen mit Schlüssel erzwingen
+  Signaturen.
 - Das MSI ist (noch) nicht mit einem Windows-Codesigning-Zertifikat signiert; SmartScreen kann
   bei einer Handinstallation nachfragen. Das ist unabhängig von der minisign-Signatur.
 
@@ -101,33 +87,30 @@ einem Ubuntu-Job signieren, `latest.json` schreiben und ein Release als **Entwur
 (MSI, ZIP, `.minisig`, `latest.json`). Die Neuerungen kommen aus dem `CHANGELOG.md`. Erst das
 Veröffentlichen des Entwurfs macht das Update für die App sichtbar.
 
-Ohne das Secret `WOA_UPDATER_KEY` bricht der Workflow nicht ab: Er signiert nicht, schreibt nur
-die SHA-256 in `latest.json` und warnt im Log (Stufe A). Ist die `updater.pub` aber schon echt
-und das Secret fehlt, bricht er ab, weil kein Gerät ein unsigniertes Update annehmen würde.
+Ohne das Secret `WOA_UPDATER_KEY` bricht der Workflow bei einem Tag ab (im Probelauf nur eine
+Warnung), ebenso wenn `updater.pub` kein minisign-Schlüssel ist: Keine App würde ein
+unsigniertes Update annehmen.
 
 ## Erste Version mit Updater
 
 Die erste Version, die den Updater enthält, muss einmal **von Hand** installiert werden (MSI aus
 dem Windows-Bau oder dem Release doppelklicken). Erst von da an aktualisiert sie sich selbst.
 
-## Stufe B einschalten
+## Schlüssel erzeugen (einmalig, erledigt)
 
-Stand 01.11.2026: Schritte 1 bis 3 sind erledigt. Der Schlüssel ist erzeugt, das Secret
-`WOA_UPDATER_KEY` gesetzt und `packaging/windows/updater.pub` enthält seit 0.34.92 den echten
-öffentlichen Schlüssel. Offen sind Schritt 4 (erstes signiertes Release) und Schritt 5.
+Stand 01.11.2026: erledigt (#136), seit v0.35.4 sind Releases signiert; der Rückfall auf die
+Prüfsumme ist mit 0.35.11 aus dem Code entfernt.
 
 1. `minisign -G -W -p updater.pub -s updater.key` (`-W`: ohne Passwort, der Workflow signiert unbeaufsichtigt).
 2. Inhalt von `updater.key` als Actions-Secret `WOA_UPDATER_KEY` setzen, `updater.key` danach in den Vault, nie ins Repo.
 3. `updater.pub` nach `packaging/windows/updater.pub` kopieren, committen. Der Test
-   `updater_pub_is_placeholder_or_valid_key` meldet einen beschädigten Schlüssel.
-4. Release bauen und veröffentlichen; ab dann erzwingen neue Versionen die Signatur.
-5. Danach (eigener Schritt, #136): den Stufe-A-Pfad (`verify_hash` als Alleinprüfung) aus dem Code entfernen.
+   `updater_pub_is_valid_key` meldet einen beschädigten Schlüssel.
 
 ## Tests
 
 `cargo test -p woa-updater` (ohne Netz): Signatur gut, schlecht, fremder Schlüssel, Kommentar-Version
 ungleich, geänderter Kommentar; Downgrade, gleiche und unlesbare Version; Manifest-Parsing;
-Host-Regeln; Stufe A (Hash) und Stufe B (Signatur Pflicht, kein Rückfall). Die Schlüssel- und
+Host-Regeln; Signatur Pflicht ohne Rückfall auf die Prüfsumme. Die Schlüssel- und
 Signaturdateien in `tests/fixtures/updater/` sind nur für Tests; der zugehörige private Schlüssel
 wurde nach dem Erzeugen gelöscht.
 

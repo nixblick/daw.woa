@@ -6,8 +6,8 @@ use sha2::{Digest, Sha256};
 use crate::error::UpdateError;
 use crate::version;
 
-/// Öffentlicher Schlüssel, zur Bauzeit eingebrannt. Solange die Datei einen Platzhalter
-/// enthält (kein gültiger minisign-Schlüssel), ist der Updater aus.
+/// Öffentlicher Schlüssel, zur Bauzeit eingebrannt. Ist die Datei kein gültiger
+/// minisign-Schlüssel, lehnt der Updater jedes Paket ab.
 pub const PUBLIC_KEY: &str = include_str!("../../../packaging/windows/updater.pub");
 
 /// `true`, wenn `key_text` ein gültiger öffentlicher minisign-Schlüssel ist.
@@ -28,7 +28,7 @@ pub fn configured() -> bool {
 ///    der Manifest-Version. So kann ein Angreifer mit gefälschtem Manifest kein altes,
 ///    echt signiertes MSI unter einer neuen Versionsnummer unterschieben.
 ///
-/// Die `sha256` im Manifest ersetzt das nicht: sie liegt neben dem Paket (siehe [`verify_hash`]).
+/// Die `sha256` im Manifest ersetzt das nicht: sie liegt neben dem Paket.
 pub fn verify_package(
     pubkey: &str,
     msi: &[u8],
@@ -67,18 +67,11 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// Stufe A: Prüfsumme gegen das Manifest. Schützt vor beschädigten Downloads und vor
-/// Adressen ausserhalb von GitHub, **nicht** vor jemandem, der Release-Dateien auf GitHub
-/// austauschen kann (er tauscht MSI und Prüfsumme gemeinsam).
-pub fn verify_hash(
-    msi: &[u8],
-    expected: &str,
-    manifest_version: &str,
-    current: &str,
-) -> Result<(), UpdateError> {
-    version::ensure_newer(manifest_version, current)?;
+/// Die Prüfsumme aus dem Manifest ist nur ein Zusatz (Schutz vor beschädigtem Download),
+/// nie ein Ersatz für die Signatur.
+fn check_hash(msi: &[u8], expected: &str) -> Result<(), UpdateError> {
     if !is_sha256_hex(expected) {
-        return Err(UpdateError::Manifest("sha256 fehlt oder ungültig".into()));
+        return Err(UpdateError::Manifest("sha256 ungültig".into()));
     }
     if sha256_hex(msi) != expected {
         return Err(UpdateError::Signature("sha256 passt nicht".into()));
@@ -86,9 +79,9 @@ pub fn verify_hash(
     Ok(())
 }
 
-/// Eine Stufe, kein Rückfall. Ist in `pubkey` ein echter Schlüssel, ist die Signatur Pflicht
-/// (Stufe B, fail-closed): fehlt sie, wird abgelehnt, die Prüfsumme allein genügt nie. Steht
-/// dort ein Platzhalter, gilt Stufe A: die Prüfsumme aus dem Manifest ist Pflicht.
+/// Die Signatur ist Pflicht, fail-closed: ohne gültigen eingebauten Schlüssel
+/// ([`UpdateError::NotConfigured`]) oder ohne Signatur wird abgelehnt, die Prüfsumme allein
+/// genügt nie. Steht eine Prüfsumme im Manifest, muss sie zusätzlich stimmen.
 pub fn verify_download(
     pubkey: &str,
     msi: &[u8],
@@ -97,17 +90,16 @@ pub fn verify_download(
     manifest_version: &str,
     current: &str,
 ) -> Result<(), UpdateError> {
-    if key_configured(pubkey) {
-        let sig = sig_text.ok_or_else(|| UpdateError::Signature("Signatur fehlt".into()))?;
-        verify_package(pubkey, msi, sig, manifest_version, current)?;
-        // Steht trotzdem eine Prüfsumme im Manifest, muss sie stimmen.
-        if !sha256.is_empty() {
-            verify_hash(msi, sha256, manifest_version, current)?;
-        }
-        Ok(())
-    } else {
-        verify_hash(msi, sha256, manifest_version, current)
+    version::ensure_newer(manifest_version, current)?;
+    if !key_configured(pubkey) {
+        return Err(UpdateError::NotConfigured);
     }
+    let sig = sig_text.ok_or_else(|| UpdateError::Signature("Signatur fehlt".into()))?;
+    verify_package(pubkey, msi, sig, manifest_version, current)?;
+    if !sha256.is_empty() {
+        check_hash(msi, sha256)?;
+    }
+    Ok(())
 }
 
 /// Version aus dem Kommentar `woa X.Y.Z` (genau zwei Wörter).
@@ -136,23 +128,14 @@ mod tests {
         verify_package(&read("test.pub"), &payload(), sig, manifest, current)
     }
 
-    /// Ein halb eingefügter oder beschädigter Schlüssel in `updater.pub` würde den Updater
-    /// stillschweigend auf Stufe A zurückfallen lassen. Darum: Die Datei ist entweder der
-    /// Platzhalter (keine minisign-Kopfzeile) oder ein gültiger Schlüssel, nie etwas dazwischen.
+    /// Ein beschädigter Schlüssel in `updater.pub` würde den Updater lahmlegen (fail-closed).
+    /// Darum muss die Datei ein gültiger minisign-Schlüssel sein.
     #[test]
-    fn updater_pub_is_placeholder_or_valid_key() {
-        let text = PUBLIC_KEY;
-        if text.starts_with("PLATZHALTER:") {
-            assert!(
-                !key_configured(text),
-                "Platzhalter darf nicht als Schlüssel gelten"
-            );
-        } else {
-            assert!(
-                key_configured(text),
-                "packaging/windows/updater.pub ist weder Platzhalter noch gültiger minisign-Schlüssel"
-            );
-        }
+    fn updater_pub_is_valid_key() {
+        assert!(
+            key_configured(PUBLIC_KEY),
+            "packaging/windows/updater.pub ist kein gültiger minisign-Schlüssel"
+        );
     }
 
     #[test]
@@ -262,39 +245,39 @@ mod tests {
     }
 
     #[test]
-    fn stage_a_needs_a_matching_hash() {
+    fn no_valid_key_means_everything_is_refused_even_with_a_matching_hash() {
         let msi = payload();
         let h = hash_of(&msi);
-        let ph = "PLATZHALTER";
-        assert_eq!(
-            verify_download(ph, &msi, None, &h, "0.34.0", "0.33.4"),
-            Ok(())
-        );
-        let mut bad = msi.clone();
-        bad[0] ^= 1;
-        assert!(verify_download(ph, &bad, None, &h, "0.34.0", "0.33.4").is_err());
-        assert!(matches!(
-            verify_download(ph, &msi, None, "", "0.34.0", "0.33.4"),
-            Err(UpdateError::Manifest(_))
-        ));
+        let sig = read("payload.minisig");
+        for key in ["PLATZHALTER", ""] {
+            assert_eq!(
+                verify_download(key, &msi, None, &h, "0.34.0", "0.33.4"),
+                Err(UpdateError::NotConfigured)
+            );
+            assert_eq!(
+                verify_download(key, &msi, Some(&sig), &h, "0.34.0", "0.33.4"),
+                Err(UpdateError::NotConfigured)
+            );
+        }
     }
 
     #[test]
-    fn stage_a_keeps_the_downgrade_guard() {
+    fn downgrade_guard_comes_first() {
         let msi = payload();
-        let h = hash_of(&msi);
+        let key = read("test.pub");
+        let sig = read("payload.minisig");
         assert_eq!(
-            verify_download("PLATZHALTER", &msi, None, &h, "0.33.0", "0.33.4"),
+            verify_download(&key, &msi, Some(&sig), "", "0.33.0", "0.33.4"),
             Err(Veto::Downgrade.into())
         );
         assert_eq!(
-            verify_download("PLATZHALTER", &msi, None, &h, "0.33.4", "0.33.4"),
+            verify_download(&key, &msi, Some(&sig), "", "0.33.4", "0.33.4"),
             Err(Veto::SameVersion.into())
         );
     }
 
     #[test]
-    fn stage_b_requires_the_signature_and_never_falls_back_to_the_hash() {
+    fn signature_is_required_and_never_falls_back_to_the_hash() {
         let msi = payload();
         let h = hash_of(&msi);
         let key = read("test.pub");

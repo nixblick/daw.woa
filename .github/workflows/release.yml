@@ -83,23 +83,19 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq minisign
-      - name: MSI signieren (Stufe B) oder nur Prüfsumme (Stufe A)
+      - name: MSI signieren (Pflicht)
         env:
           WOA_UPDATER_KEY: ${{ secrets.WOA_UPDATER_KEY }}
         run: |
           set -eu
-          pub_real=no
-          if head -n1 packaging/windows/updater.pub | grep -q '^untrusted comment:'; then pub_real=yes; fi
+          head -n1 packaging/windows/updater.pub | grep -q '^untrusted comment:' \
+            || { echo "::error::packaging/windows/updater.pub ist kein minisign-Schlüssel"; exit 1; }
           if [ -z "${WOA_UPDATER_KEY:-}" ]; then
-            if [ "$pub_real" = yes ]; then
-              if [ "$IS_TAG" = true ]; then
-                echo "::error::updater.pub enthält einen echten Schlüssel, aber das Secret WOA_UPDATER_KEY fehlt. Apps mit diesem Schlüssel würden ein unsigniertes Update ablehnen. Secret setzen (docs/updater.md) oder den Platzhalter wiederherstellen."
-                exit 1
-              fi
-              echo "::warning::Probelauf: WOA_UPDATER_KEY nicht verfügbar (Pull Request). Ein Tag würde hier abbrechen."
-            else
-              echo "::warning::Secret WOA_UPDATER_KEY fehlt: das MSI wird NICHT signiert, latest.json enthält nur die SHA-256 (Stufe A, siehe docs/updater.md)."
+            if [ "$IS_TAG" = true ]; then
+              echo "::error::Secret WOA_UPDATER_KEY fehlt. Apps lehnen unsignierte Updates ab (docs/updater.md)."
+              exit 1
             fi
+            echo "::warning::Probelauf: WOA_UPDATER_KEY nicht verfügbar (Pull Request). Ein Tag würde hier abbrechen."
             echo "SIGNED=no" >> "$GITHUB_ENV"
           else
             key=$(mktemp)
@@ -108,11 +104,7 @@ jobs:
             printf '%s\n' "$WOA_UPDATER_KEY" > "$key"
             minisign -S -s "$key" -m "$MSI" -t "woa $VERSION"
             rm -f "$key"
-            if [ "$pub_real" = yes ]; then
-              minisign -V -p packaging/windows/updater.pub -m "$MSI"
-            else
-              echo "::warning::Signiert, aber packaging/windows/updater.pub ist noch ein Platzhalter: Apps prüfen noch keine Signatur (Stufe A). Öffentlichen Schlüssel eintragen."
-            fi
+            minisign -V -p packaging/windows/updater.pub -m "$MSI"
             echo "SIGNED=yes" >> "$GITHUB_ENV"
           fi
       - name: latest.json und Notizen

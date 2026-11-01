@@ -286,11 +286,11 @@ Selbst geprüft von Claude: fünf neue Tests in `crates/gui/tests/design_regress
 
 Selbst geprüft von Claude: Tests in `crates/telemetry/src/journal.rs`, `crates/engine/tests/damage.rs` (beschädigte und unlesbare MP3, offline erzeugt) und `crates/telemetry/tests/log_bridge.rs` (kein Dateiname im Upload), Tests und Clippy von telemetry, engine und gui grün.
 
-## Sicherheit #136: Updater Stufe B vorbereitet (0.34.24, offen)
+## Sicherheit #136: Updater nur noch mit Signatur (0.35.11)
 
-Nur Test und Doku, kein Verhalten geändert. Schlüssel fehlt noch (Handgriffe in #136).
+Der Rückfall auf die reine Prüfsumme ist entfernt. Nichts zu klicken; ab dem nächsten Release gilt: Updates ohne gültige Signatur lehnt die App ab.
 
-1. `cargo test -p woa-updater`: grün, darunter `updater_pub_is_placeholder_or_valid_key`.
+1. `cargo test -p woa-updater`: grün, darunter `updater_pub_is_valid_key`.
 2. Probe: in `packaging/windows/updater.pub` zwei Zeilen `untrusted comment: x` / `abc` eintragen, Test muss rot werden; Datei zurücksetzen.
 
 Selbst geprüft von Claude: Tests und Clippy des Crates grün.

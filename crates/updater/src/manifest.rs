@@ -16,10 +16,10 @@ pub struct Available {
     #[serde(default)]
     pub notes: String,
     pub msi_url: String,
-    /// Adresse der minisign-Signatur (Stufe B). Fehlt in Manifesten ohne Signatur.
+    /// Adresse der minisign-Signatur. Pflicht: ohne sie wird das Update abgelehnt.
     #[serde(default)]
     pub msi_sig_url: String,
-    /// SHA-256 des MSI als Hex. Prüfwert in Stufe A; mit Signatur (Stufe B) nur Zusatz.
+    /// SHA-256 des MSI als Hex. Nur Zusatz zur Signatur.
     #[serde(default)]
     pub msi_sha256: String,
 }

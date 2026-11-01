@@ -82,37 +82,32 @@ pub fn check(current: &str) -> Result<Option<Available>, UpdateError> {
     manifest::evaluate(&json, current)
 }
 
-/// Lädt das MSI (und mit eingebautem Schlüssel die Signatur), prüft es und legt es erst
+/// Lädt das MSI samt Signatur, prüft es und legt es erst
 /// **danach** in `%TEMP%` ab. Der Rückgabepfad zeigt also immer auf ein geprüftes Paket.
 pub fn download_and_verify(update: &Available, current: &str) -> Result<PathBuf, UpdateError> {
     // Vor dem Download: kein Byte für ein Paket, das ohnehin abgelehnt würde.
     crate::version::ensure_newer(&update.version, current)?;
-    let signed = verify::configured();
-    if signed && update.msi_sig_url.is_empty() {
+    if !verify::configured() {
+        return Err(UpdateError::NotConfigured);
+    }
+    if update.msi_sig_url.is_empty() {
         return Err(UpdateError::Signature("Manifest ohne Signatur".into()));
     }
-    if !signed && update.msi_sha256.is_empty() {
-        return Err(UpdateError::Manifest("Manifest ohne sha256".into()));
-    }
     let agent = agent(Duration::from_secs(20 * 60));
-    let sig = if signed {
-        let raw = get(&agent, &update.msi_sig_url, SIG_LIMIT)?;
-        Some(String::from_utf8(raw).map_err(|_| UpdateError::Signature("kein Text".into()))?)
-    } else {
-        None
-    };
+    let raw = get(&agent, &update.msi_sig_url, SIG_LIMIT)?;
+    let sig = String::from_utf8(raw).map_err(|_| UpdateError::Signature("kein Text".into()))?;
     let msi = get(&agent, &update.msi_url, MSI_LIMIT)?;
     verify::verify_download(
         verify::PUBLIC_KEY,
         &msi,
-        sig.as_deref(),
+        Some(&sig),
         &update.msi_sha256,
         &update.version,
         current,
     )?;
     let path = std::env::temp_dir().join(format!("woa-update-{}.msi", update.version));
     std::fs::write(&path, &msi).map_err(|e| UpdateError::Io(e.to_string()))?;
-    tracing::info!(version = %update.version, signed, "update downloaded and verified");
+    tracing::info!(version = %update.version, "update downloaded and verified");
     Ok(path)
 }
 

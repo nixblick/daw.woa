@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.35.11 — 2026-11-01
+
+- **Updater: Signatur ist Pflicht (#136):** Der Pfad mit reiner SHA-256-Prüfung (Stufe A) ist aus dem Code entfernt. `verify_download` lehnt ab, wenn kein gültiger Schlüssel eingebaut ist (`NotConfigured`) oder die Signatur fehlt; eine passende Prüfsumme ersetzt sie nie. `verify_hash` entfällt, die Prüfsumme im Manifest bleibt als Zusatz. `download_and_verify` lädt immer erst die Signatur. `release.yml` bricht bei einem Tag ohne Secret `WOA_UPDATER_KEY` ab und prüft die Signatur gegen `updater.pub`. Tests: `no_valid_key_means_everything_is_refused_even_with_a_matching_hash`, `downgrade_guard_comes_first`, `updater_pub_is_valid_key` in `crates/updater/src/verify.rs`. Doku: `docs/updater.md`.
+
 ## 0.35.10 — 2026-11-01
 
 - **Ganze Zeile anklickbar (#302):** In der Sende-Playlist und in den Decks ist die ganze Zeile eine Klickfläche, man muss nicht mehr den Titel treffen. Playlist: Klick wählt aus (Rahmen in Akzentfarbe), Doppelklick setzt „als Nächstes“, Rechtsklick öffnet überall das Titelmenü (Umbenennen, Titelinfos …), Ziehen wie bisher von jeder Stelle. Decks: Rechtsklick irgendwo auf der Deck-Zeile öffnet das Menü (Datei laden, Schneiden, Leeren). Nur Knöpfe und die Nummer (eintippen) behalten ihren eigenen Klick. Die Cart-Pads waren schon ganz klickbar. Technisch: neue Hilfsfunktion `row_area` (Klickfläche unter dem Inhalt per `UiBuilder::sense`), Beschriftungen in der Zeile sind nicht mehr markierbar, der lange Hover-Text wird erst beim Zeigen gebaut. Trägheit gemessen: 300 Zeilen etwa 15 ms je Bild mit Klickfläche gegen 13 ms ohne (Debug-Bau, Notebook), unter der `ui.frame_slow`-Schwelle von 50 ms; der Test vergleicht relativ, weil die CI langsamer ist; Wellenformen werden in den Zeilen nicht gezeichnet. Tests: `whole_row_selects_and_opens_the_menu_anywhere`, `many_rows_stay_fast` in `crates/gui/src/radio.rs`.
