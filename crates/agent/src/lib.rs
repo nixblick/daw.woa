@@ -593,6 +593,12 @@ pub struct TrackSoundParams {
     /// `true`: back to the built-in synth.
     #[serde(default)]
     pub synth: bool,
+    /// Sound bank (see the returned `banks`): "musescore-general", "avl-red-zeppelin" (drums only)
+    /// or "generaluser" (the built-in default). A missing bank is downloaded in the background on
+    /// first use (`bank_state`: downloading); until it is ready, and without network, the track
+    /// plays GeneralUser GS. Without preset/program it keeps the current sound (piano or kit if none).
+    #[serde(default)]
+    pub bank: Option<String>,
 }
 
 /// Parameters of `import_audio`.
@@ -985,7 +991,19 @@ fn sound_json(sound: Option<TrackSound>) -> serde_json::Value {
             "program": x.program,
             "drums": x.drums,
             "preset": woa_model::preset_name(x),
+            "bank": x.bank.map(woa_model::SoundBank::id),
         }),
+    }
+}
+
+/// Lizenz einer Bank in einer Zeile (Volltext liegt neben der Datei, Paket J7).
+fn bank_license(bank: woa_model::SoundBank) -> &'static str {
+    match bank {
+        woa_model::SoundBank::MusescoreGeneral => {
+            "MIT (MuseScore General, S. Christian Collins; FluidR3 Frank Wen)"
+        }
+        woa_model::SoundBank::AvlRedZeppelin => "CC BY-SA 3.0 (AVL Drumkits, Glen MacArthur)",
+        woa_model::SoundBank::Unknown => "",
     }
 }
 
@@ -1266,6 +1284,7 @@ impl WoaAgent {
         let kit = current.filter(|k| k.drums).unwrap_or(TrackSound {
             program: 0,
             drums: true,
+            bank: None,
         });
         let r = s.group(AGENT_LABEL, |s| {
             if current != Some(kit) {
@@ -1808,7 +1827,7 @@ impl WoaAgent {
     }
 
     #[tool(
-        description = "Read or set the sound of a MIDI track. Without preset/program/synth it only reads. A sound is a General MIDI program from the SoundFont (GeneralUser GS) or, with drums, a GM drum kit on channel 10; without a sound, or if no SoundFont is installed (soundfont_available: false), the track plays the built-in synth. Returns the current sound and the presets (four per role: lead, bass, pad, kit). One undo step."
+        description = "Read or set the sound of a MIDI track. Without preset/program/synth/bank it only reads. A sound is a General MIDI program from the SoundFont (GeneralUser GS, or a downloadable bank: see bank and the returned banks) or, with drums, a GM drum kit on channel 10; without a sound, or if no SoundFont is installed (soundfont_available: false), the track plays the built-in synth. Returns the current sound and the presets (four per role: lead, bass, pad, kit). One undo step."
     )]
     async fn track_sound(
         &self,
@@ -1816,7 +1835,17 @@ impl WoaAgent {
     ) -> Result<CallToolResult, McpError> {
         let mut s = self.lock()?;
         let track = TrackId(p.track);
-        let wanted = if p.synth {
+        // Bank (Paket J7): `Some(None)` = GeneralUser GS.
+        let bank = match p.bank.as_deref() {
+            None => None,
+            Some(id) if id.eq_ignore_ascii_case("generaluser") || id.is_empty() => Some(None),
+            Some(id) => match woa_model::SoundBank::from_id(id) {
+                Some(b) => Some(Some(b)),
+                None => return Ok(fail(format!("Bank {id:?} gibt es nicht"))),
+            },
+        };
+        let current = s.project().track(track).and_then(|t| t.sound);
+        let mut wanted = if p.synth {
             Some(None)
         } else if let Some(name) = &p.preset {
             match woa_model::SOUND_PRESETS
@@ -1831,9 +1860,30 @@ impl WoaAgent {
                 Some(TrackSound {
                     program,
                     drums: p.drums,
+                    bank: None,
                 })
             })
         };
+        if !p.synth {
+            match bank {
+                Some(b) => {
+                    let base = wanted.flatten().or(current).unwrap_or(TrackSound {
+                        program: 0,
+                        drums: b.is_some_and(woa_model::SoundBank::drums_only),
+                        bank: None,
+                    });
+                    wanted = Some(Some(TrackSound { bank: b, ..base }));
+                }
+                // Neuer Klang ohne `bank`: die Bank bleibt, solange sie passt.
+                None => {
+                    if let Some(Some(w)) = &mut wanted {
+                        w.bank = current
+                            .and_then(|c| c.bank)
+                            .filter(|b| w.drums || !b.drums_only());
+                    }
+                }
+            }
+        }
         if let Some(sound) = wanted
             && let Err(e) = s.group(AGENT_LABEL, |s| {
                 s.apply(Command::SetTrackSound { track, sound })
@@ -1857,12 +1907,40 @@ impl WoaAgent {
                 })
             })
             .collect();
-        Ok(ok_json(serde_json::json!({
+        // Erster Gebrauch: fehlt die Bank, lädt sie jetzt im Hintergrund.
+        let state = t.sound.and_then(|x| x.bank).map(woa_engine::banks::ensure);
+        let banks: Vec<_> = woa_model::SoundBank::ALL
+            .iter()
+            .map(|&b| {
+                let entry = woa_engine::banks::entry(b);
+                serde_json::json!({
+                    "id": b.id(),
+                    "name": b.name(),
+                    "drums_only": b.drums_only(),
+                    "state": woa_engine::banks::state(b).name(),
+                    "bytes": entry.map(|e| e.bytes),
+                    "license": bank_license(b),
+                })
+            })
+            .collect();
+        let mut out = serde_json::json!({
             "track": t.id.0,
             "sound": sound_json(t.sound),
             "soundfont_available": woa_engine::soundfont::default_soundfont().is_some(),
             "presets": presets,
-        })))
+            "banks": banks,
+        });
+        if let Some(st) = state {
+            out["bank_state"] = st.name().into();
+            match st {
+                woa_engine::banks::BankState::Downloading { done, total } => {
+                    out["bank_progress"] = serde_json::json!({"done": done, "total": total});
+                }
+                woa_engine::banks::BankState::Failed(e) => out["bank_error"] = e.into(),
+                _ => {}
+            }
+        }
+        Ok(ok_json(out))
     }
 
     #[tool(

@@ -706,6 +706,8 @@ impl WoaApp {
 
     /// Sets the data folder (radio.json, recordings). Default: the WOA data folder.
     pub fn set_data_dir(&mut self, dir: PathBuf) {
+        // Zusatzbänke (Paket J7) landen im Datenordner.
+        woa_engine::banks::set_bank_dir(dir.join("banks"));
         self.library.set_db_path(dir.join(crate::library::DB_FILE));
         self.clock_editor.set_dir(dir.clone());
         self.event_editor.set_dir(dir.clone());
@@ -5689,6 +5691,11 @@ impl WoaApp {
                     "Die Symbole sind Phosphor Icons (MIT-Lizenz), eingebunden über egui-phosphor.",
                 );
                 ui.label(
+                    "Klänge: GeneralUser GS (S. Christian Collins). Auf Wunsch geladen: \
+                     MuseScore General (S. Christian Collins, auf Basis von FluidR3 von Frank \
+                     Wen, MIT-Lizenz) und AVL Drumkits (Glen MacArthur, CC BY-SA 3.0).",
+                );
+                ui.label(
                     "Dazu kommen die vielen freien Rust-Crates, auf denen WOA aufbaut, \
                      unter anderem egui, cpal und symphonia.",
                 );
@@ -6201,6 +6208,16 @@ impl eframe::App for WoaApp {
                 (s < e).then_some((s, e))
             })
             .flatten();
+        // Erster Gebrauch (Paket J7): fehlt eine Bank des Projekts, lädt sie im Hintergrund.
+        for b in project
+            .tracks
+            .iter()
+            .filter_map(|t| t.sound.and_then(|s| s.bank))
+        {
+            if woa_engine::banks::state(b) == woa_engine::banks::BankState::Missing {
+                woa_engine::banks::ensure(b);
+            }
+        }
         if let Some(p) = self.player.as_mut() {
             p.sync(&project, &|rel| state.resolve_audio(rel), live);
             p.set_loop_beats(loop_beats, project.tempo_bpm);
@@ -7444,11 +7461,18 @@ impl WoaApp {
         const SYNTH: &str = "Synth (eingebaut)";
         let text = match current {
             None => SYNTH.to_owned(),
-            Some(s) => woa_model::preset_name(s).map_or_else(
-                || format!("GM {}{}", s.program, if s.drums { " Kit" } else { "" }),
-                str::to_owned,
-            ),
+            Some(s) => {
+                let name = woa_model::preset_name(s).map_or_else(
+                    || format!("GM {}{}", s.program, if s.drums { " Kit" } else { "" }),
+                    str::to_owned,
+                );
+                match s.bank {
+                    Some(b) => format!("{name} · {}", b.name()),
+                    None => name,
+                }
+            }
         };
+        let bank = current.and_then(|s| s.bank);
         let mut chosen = None;
         egui::ComboBox::from_id_salt(("track_sound", id.0))
             .selected_text(format!("{} {text}", theme::ic::MUSIC_NOTE))
@@ -7462,17 +7486,66 @@ impl WoaApp {
                         role = Some(p.role);
                         ui.separator();
                     }
+                    let same = current
+                        .is_some_and(|c| c.program == p.sound.program && c.drums == p.sound.drums);
+                    if ui.selectable_label(same, p.name).clicked() {
+                        // Die Bank bleibt, solange sie zum Klang passt (Paket J7).
+                        let keep = bank.filter(|b| p.sound.drums || !b.drums_only());
+                        chosen = Some(Some(woa_model::TrackSound {
+                            bank: keep,
+                            ..p.sound
+                        }));
+                    }
+                }
+                // Bank (Paket J7): GeneralUser GS ist eingebaut, die übrigen kommen beim
+                // ersten Gebrauch aus dem Netz; bis dahin spielt GeneralUser GS.
+                if let Some(cur) = current {
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new("BANK")
+                            .size(theme::TYPE_SMALL)
+                            .color(theme::text_dim()),
+                    );
                     if ui
-                        .selectable_label(current == Some(p.sound), p.name)
+                        .selectable_label(bank.is_none(), "GeneralUser GS (eingebaut)")
                         .clicked()
                     {
-                        chosen = Some(Some(p.sound));
+                        chosen = Some(Some(woa_model::TrackSound { bank: None, ..cur }));
+                    }
+                    for b in woa_model::SoundBank::ALL {
+                        if b.drums_only() && !cur.drums {
+                            continue;
+                        }
+                        let label =
+                            format!("{}{}", b.name(), bank_hint(&woa_engine::banks::state(b)));
+                        if ui.selectable_label(bank == Some(b), label).clicked() {
+                            chosen = Some(Some(woa_model::TrackSound {
+                                bank: Some(b),
+                                ..cur
+                            }));
+                        }
                     }
                 }
             })
             .response
-            .on_hover_text("Klang aus der GM-SoundFont; ohne SoundFont spielt der Synth");
+            .on_hover_text(match bank {
+                Some(b) => format!(
+                    "Bank {}: {}",
+                    b.name(),
+                    match woa_engine::banks::state(b) {
+                        woa_engine::banks::BankState::Ready => "geladen".to_owned(),
+                        s => format!(
+                            "{}, bis dahin spielt GeneralUser GS",
+                            bank_hint(&s).trim_start_matches(" · ")
+                        ),
+                    }
+                ),
+                None => "Klang aus der GM-SoundFont; ohne SoundFont spielt der Synth".to_owned(),
+            });
         if let Some(sound) = chosen {
+            if let Some(b) = sound.and_then(|s| s.bank) {
+                woa_engine::banks::ensure(b);
+            }
             self.state.set_track_sound(id, sound);
         }
     }
@@ -8457,5 +8530,18 @@ mod pfl_switch_tests {
         assert!(s.choose(false));
         assert!(!s.pending);
         assert!(!s.poll(false));
+    }
+}
+
+/// Zustand einer Bank als Zusatz im Menü (Paket J7): leer, wenn sie da ist.
+fn bank_hint(state: &woa_engine::banks::BankState) -> String {
+    use woa_engine::banks::BankState;
+    match state {
+        BankState::Ready => String::new(),
+        BankState::Missing => " · wird beim Wählen geladen".to_owned(),
+        BankState::Downloading { done, total } => {
+            format!(" · lädt {} %", done * 100 / (*total).max(1))
+        }
+        BankState::Failed(e) => format!(" · Fehler: {e}"),
     }
 }

@@ -78,6 +78,7 @@ fn gm_sound_plays_the_soundfont_not_the_synth() {
     let font = render(&project(Some(TrackSound {
         program: 0,
         drums: false,
+        bank: None,
     })));
     assert_eq!(synth.len(), font.len());
     assert!(peak(&synth) > 0.05, "synth audible");

@@ -933,6 +933,16 @@ impl Command {
                         value: f64::from(snd.program),
                     });
                 }
+                // Eine reine Drum-Bank hat kein Melodie-Programm (Paket J7).
+                if let Some(snd) = sound
+                    && !snd.drums
+                    && snd.bank.is_some_and(crate::sound::SoundBank::drums_only)
+                {
+                    return Err(ModelError::InvalidValue {
+                        field: "bank",
+                        value: f64::from(snd.program),
+                    });
+                }
                 let t = find(project, track)?;
                 if t.kind != TrackKind::Midi {
                     return Err(ModelError::NotMidiTrack(track));
