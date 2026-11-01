@@ -31,7 +31,7 @@ pub mod http;
 pub mod jingle;
 pub mod live;
 
-use audio::{AgentNote, AgentWaveform};
+use audio::{AgentFxKind, AgentNote, AgentWaveform};
 
 /// Undo label of every step an agent creates.
 pub const AGENT_LABEL: &str = "Agent";
@@ -553,6 +553,29 @@ pub struct QuantizeNotesParams {
 pub struct ReadNotesParams {
     /// MIDI clip id.
     pub clip: u64,
+}
+
+/// Parameters of `generate_fx`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GenerateFxParams {
+    /// Audio track that gets the new clip.
+    pub track: u64,
+    /// riser (builds up before a hit), whoosh (transition), downlifter (falls after a hit).
+    #[serde(default)]
+    pub kind: AgentFxKind,
+    /// Length in beats; default 4 (one 4/4 bar). The clip fits the project tempo.
+    #[serde(default = "default_fx_beats")]
+    pub length_beats: f64,
+    /// Clip start on the timeline in beats.
+    #[serde(default)]
+    pub start_beats: f64,
+    /// Clip name; default the kind ("Riser", "Whoosh", "Downlifter").
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+fn default_fx_beats() -> f64 {
+    4.0
 }
 
 /// Parameters of `generate_drums`.
@@ -2133,6 +2156,31 @@ impl WoaAgent {
         };
         let name = p.name.unwrap_or_else(|| "Drums".into());
         Ok(self.add_take(&mut s, p.track, name, p.start_beats, length, &buf))
+    }
+
+    #[tool(
+        description = "Render a jingle effect from noise and a filter sweep into a new audio clip: riser (builds up into a hit, put it right before), whoosh (transition), downlifter (falls away after a hit). length_beats (default 4) follows the project tempo; peak -3 dBFS. Returns the clip id."
+    )]
+    async fn generate_fx(
+        &self,
+        Parameters(p): Parameters<GenerateFxParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut s = self.lock()?;
+        if let Err(e) = Self::check_target(&s, p.track, p.start_beats) {
+            return Ok(fail(e));
+        }
+        let buf = match audio::fx_buffer(p.kind, p.length_beats, s.project().tempo_bpm) {
+            Ok(b) => b,
+            Err(e) => return Ok(fail(e)),
+        };
+        let name = p.name.unwrap_or_else(|| {
+            AgentFxKind::ALL
+                .iter()
+                .find(|(k, _)| *k == p.kind)
+                .map_or("FX", |(_, n)| n)
+                .to_owned()
+        });
+        Ok(self.add_take(&mut s, p.track, name, p.start_beats, p.length_beats, &buf))
     }
 
     #[tool(

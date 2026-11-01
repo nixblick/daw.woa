@@ -11,7 +11,7 @@ use woa_dsp::analysis::loudness::{LoudnessMeter, true_peak_dbtp};
 use woa_dsp::analysis::spectrogram::Spectrogram;
 use woa_dsp::analysis::spectrum::{FLOOR_DB, bin_hz, octave_bands, peak_bin};
 use woa_dsp::analysis::stereo::StereoMeter;
-use woa_dsp::generate::{Drum, Note, render_drums, render_notes};
+use woa_dsp::generate::{Drum, FxSweep, Note, render_drums, render_fx, render_notes};
 use woa_dsp::synth::Waveform;
 use woa_engine::clip::{load_wav_mono, project_end_seconds, render_clips};
 use woa_engine::loudness::{integrated_lufs, normalize};
@@ -225,6 +225,40 @@ pub fn drums_buffer(
     }
     let total = samples(length_beats, bpm) as usize;
     Ok((render_drums(&hits, RATE as f32, total), length_beats))
+}
+
+/// Art eines Jingle-Effekts (Paket J8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentFxKind {
+    /// Rauschen schwillt an, der Filter öffnet sich: vor dem Einsatz.
+    #[default]
+    Riser,
+    /// Filter auf und zu, laut in der Mitte: Übergang.
+    Whoosh,
+    /// Setzt laut ein, Filter schließt sich: nach dem Einsatz.
+    Downlifter,
+}
+
+impl AgentFxKind {
+    /// Alle Arten mit deutschem Namen, für die Oberfläche.
+    pub const ALL: [(Self, &'static str); 3] = [
+        (Self::Riser, "Riser"),
+        (Self::Whoosh, "Whoosh"),
+        (Self::Downlifter, "Downlifter"),
+    ];
+}
+
+/// Jingle-Effekt über `length_beats` beim Tempo `bpm` (Mono, −3 dBFS Spitze).
+pub fn fx_buffer(kind: AgentFxKind, length_beats: f64, bpm: f64) -> Result<Vec<f32>, String> {
+    check_length(length_beats)?;
+    let sweep = match kind {
+        AgentFxKind::Riser => FxSweep::Riser,
+        AgentFxKind::Whoosh => FxSweep::Whoosh,
+        AgentFxKind::Downlifter => FxSweep::Downlifter,
+    };
+    let total = samples(length_beats, bpm) as usize;
+    Ok(render_fx(sweep, RATE as f32, total))
 }
 
 /// Freier Dateiname `aufnahmen/<stem>.<ext>` (mit Zähler, nie überschreiben).

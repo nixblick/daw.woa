@@ -4,6 +4,17 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## J8 Jingle-FX (0.34.94, offen)
+
+1. Eine Audio-Spur wählen, Abspielkopf auf Takt 2, „Jingle-FX …“: Riser, 4 Beats, „Erzeugen“. Ein Clip „Riser“ mit genau einem Takt Länge steht ab Takt 2.
+2. Whoosh und Downlifter ebenso; Tempo vorher auf 90 BPM: der Clip ist wieder genau so lang wie die gewählten Beats.
+3. Anhören: Riser wird lauter und heller, Downlifter leiser und dunkler, Whoosh ist in der Mitte am lautesten; kein Knacken am Anfang oder Ende. Strg+Z nimmt den Clip weg.
+4. Über MCP: `generate_fx` mit `kind: "riser"`, `length_beats: 8`, danach `analyze`: `clipping` ist `false`.
+
+Offen: die Kenney „Impact Sounds“ als Ordner „Jingle-FX“ (Abruf von kenney.nl abgelehnt, noch nicht geprüft).
+
+Selbst geprüft von Claude: `crates/dsp/src/generate.rs`, `crates/agent/tests/j8_fx.rs`, `crates/gui/tests/jingle_fx.rs`, nur Offline-Render. Clippy und Tests von `woa-dsp`, `woa-agent`, `woa-gui` grün.
+
 ## J9 MCP-Ausbau (0.34.93, offen)
 
 Mit einem MCP-Client (z. B. Claude) an WOA.

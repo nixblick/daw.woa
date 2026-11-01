@@ -1,7 +1,8 @@
 //! Offline-Klangerzeugung für den Agenten (Control-Thread, nie im Audio-Thread):
 //! Noten mit dem [`PolySynth`] rendern und einfache synthetische Drums
 //! (Kick: Sinus mit Tonhöhen-Sweep, Snare: Ton plus Rauschen, Hi-Hat: hochpassgefiltertes
-//! Rauschen). Das Ergebnis ist ein Mono-Puffer, den der Aufrufer als WAV ablegt.
+//! Rauschen) sowie Jingle-FX (Riser, Whoosh, Downlifter: Rauschen durch einen
+//! wandernden Tiefpass, Paket J8). Das Ergebnis ist ein Mono-Puffer, den der Aufrufer als WAV ablegt.
 
 use crate::instrument::{Instrument, NoteEvent};
 use crate::synth::{PolySynth, Waveform};
@@ -121,6 +122,64 @@ fn hihat(dst: &mut [f32], rate: f32, vel: f32, noise: &mut Noise) {
     }
 }
 
+/// Ein Jingle-Effekt aus Rauschen und Filter-Sweep (Paket J8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FxSweep {
+    /// Rauschen schwillt an, der Filter öffnet sich (vor dem Einsatz).
+    Riser,
+    /// Filter öffnet und schließt sich, laut in der Mitte (Übergang).
+    Whoosh,
+    /// Umgekehrter Riser: setzt laut ein, Filter schließt sich (nach dem Einsatz).
+    Downlifter,
+}
+
+/// Spitzenwert eines FX-Puffers (−3 dBFS), Platz für den Mix.
+const FX_PEAK: f32 = 0.708;
+
+/// Rendert einen Jingle-Effekt über `total` Samples. Spitze genau bei −3 dBFS,
+/// Anfang und Ende ohne Knacken.
+pub fn render_fx(kind: FxSweep, rate: f32, total: usize) -> Vec<f32> {
+    let mut out = vec![0.0f32; total];
+    if total == 0 {
+        return out;
+    }
+    let mut noise = Noise(0x2545_F491_4F6C_DD1D);
+    let (mut lp1, mut lp2) = (0.0f32, 0.0f32);
+    let (lo, hi) = (150.0f32, 12_000.0f32.min(rate * 0.45));
+    let last = (total.max(2) - 1) as f32;
+    for (i, s) in out.iter_mut().enumerate() {
+        let x = i as f32 / last; // 0..1
+        // Lage des Sweeps (0 = dunkel, 1 = hell) und Lautstärke.
+        let (sweep, env) = match kind {
+            FxSweep::Riser => (x, x * x),
+            FxSweep::Downlifter => (1.0 - x, (1.0 - x) * (1.0 - x)),
+            FxSweep::Whoosh => {
+                let b = (x * std::f32::consts::PI).sin();
+                (b, b * b)
+            }
+        };
+        let fc = lo * (hi / lo).powf(sweep);
+        let a = 1.0 - (-std::f32::consts::TAU * fc / rate).exp();
+        lp1 += a * (noise.next() - lp1);
+        lp2 += a * (lp1 - lp2);
+        *s = lp2 * env;
+    }
+    // Kurzer Einstieg (5 ms), damit ein Downlifter nicht knackt.
+    let n = ((0.005 * rate) as usize).min(total);
+    for (i, s) in out[..n].iter_mut().enumerate() {
+        *s *= i as f32 / n as f32;
+    }
+    let peak = out.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    if peak > 0.0 {
+        let g = FX_PEAK / peak;
+        for s in out.iter_mut() {
+            *s *= g;
+        }
+    }
+    fade_tail(&mut out);
+    out
+}
+
 /// Regelt den Puffer herunter, wenn eine Spitze über [`MAX_PEAK`] liegt.
 fn limit_peak(buf: &mut [f32]) {
     let peak = buf.iter().fold(0.0f32, |m, s| m.max(s.abs()));
@@ -219,5 +278,34 @@ mod tests {
                 .iter()
                 .all(|s| *s == 0.0)
         );
+    }
+
+    #[test]
+    fn fx_sweeps_have_their_shape_and_stay_below_ceiling() {
+        let rate = 48_000.0;
+        let total = 96_000;
+        let rms = |b: &[f32]| (b.iter().map(|s| s * s).sum::<f32>() / b.len() as f32).sqrt();
+        for kind in [FxSweep::Riser, FxSweep::Whoosh, FxSweep::Downlifter] {
+            let b = render_fx(kind, rate, total);
+            assert_eq!(b.len(), total);
+            assert!(peak(&b) <= MAX_PEAK, "{kind:?}");
+            assert!(peak(&b) > 0.5, "{kind:?} too quiet");
+            assert!(
+                b[0].abs() < 1e-3 && b[total - 1].abs() < 1e-3,
+                "{kind:?} clicks"
+            );
+            let (first, mid, end) = (
+                rms(&b[..24_000]),
+                rms(&b[36_000..60_000]),
+                rms(&b[72_000..]),
+            );
+            match kind {
+                FxSweep::Riser => assert!(end > 3.0 * first, "{kind:?} {first} {end}"),
+                FxSweep::Downlifter => assert!(first > 3.0 * end, "{kind:?} {first} {end}"),
+                FxSweep::Whoosh => assert!(mid > 2.0 * first && mid > 2.0 * end, "{kind:?}"),
+            }
+        }
+        assert_eq!(render_fx(FxSweep::Riser, rate, 0).len(), 0);
+        assert_eq!(render_fx(FxSweep::Riser, rate, 1).len(), 1);
     }
 }

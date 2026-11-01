@@ -259,6 +259,7 @@ pub struct WoaApp {
     /// Fenster „Produktionen“: Audio-Dateien des Projekts, neueste oben.
     produktionen: crate::produktionen::ProduktionenWindow,
     akkorde: crate::akkorde::AkkordFenster,
+    jingle_fx: crate::jingle_fx::FxFenster,
     /// Export-Fenster (Paket 26).
     export_dialog: crate::export_dialog::ExportDialog,
     /// „Spur exportieren“ (Ticket 229): offenes Fenster und laufender Export.
@@ -616,6 +617,7 @@ impl WoaApp {
             mcp_live: crate::mcp_live::McpLive::new(woa_radio::data_dir(), open_audio),
             produktionen: crate::produktionen::ProduktionenWindow::default(),
             akkorde: crate::akkorde::AkkordFenster::default(),
+            jingle_fx: crate::jingle_fx::FxFenster::default(),
             export_dialog: crate::export_dialog::ExportDialog::new(),
             track_export: None,
             track_export_job: None,
@@ -2929,6 +2931,22 @@ impl WoaApp {
                 {
                     self.akkorde.open = true;
                 }
+                if ui
+                    .add_sized(
+                        [110.0, 32.0],
+                        egui::Button::new(
+                            egui::RichText::new(format!("{} Jingle-FX …", theme::ic::WAVEFORM))
+                                .small()
+                                .strong()
+                                .color(theme::cue()),
+                        )
+                        .fill(theme::well()),
+                    )
+                    .on_hover_text("Riser, Whoosh oder Downlifter als Audio-Clip, passend zum Tempo")
+                    .clicked()
+                {
+                    self.jingle_fx.open = true;
+                }
             });
             if self.state.project().tracks.is_empty() {
                 ui.add_space(24.0);
@@ -5201,6 +5219,20 @@ impl WoaApp {
         self.akkorde.show(ctx, &mut self.state, at);
     }
 
+    /// Fenster „Jingle-FX“ (Paket J8), Clip ab dem Takt am Abspielkopf.
+    fn jingle_fx_window(&mut self, ctx: &egui::Context) {
+        if !self.jingle_fx.open {
+            return;
+        }
+        let tempo = self.state.project().tempo_bpm;
+        let at = self
+            .player
+            .as_ref()
+            .map_or(0.0, |p| ((p.position_beats(tempo) / 4.0).floor()) * 4.0);
+        let track = self.selected_track;
+        self.jingle_fx.show(ctx, &mut self.state, track, at);
+    }
+
     /// Fenster „Produktionen“: gleicher Weg wie die Bibliothek (Vorhören, Ablegen).
     fn produktionen_window(&mut self, ctx: &egui::Context) {
         let pfl = self.radio.as_ref().is_some_and(RadioDesk::pfl_available);
@@ -6439,6 +6471,7 @@ impl eframe::App for WoaApp {
         self.library_window(&ctx);
         self.produktionen_window(&ctx);
         self.akkorde_window(&ctx);
+        self.jingle_fx_window(&ctx);
         self.clock_editor.show(&ctx);
         self.event_editor
             .show(&ctx, self.radio.as_ref().map(|r| r.view()));
