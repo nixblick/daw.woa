@@ -67,7 +67,8 @@ async fn list_instruments_shows_banks_presets_and_no_scan_by_default() {
 #[tokio::test]
 async fn list_samples_searches_library_by_kind_and_name() {
     let dir = tempfile::tempdir().unwrap();
-    let db = dir.path().join("bibliothek.sqlite3");
+    std::fs::create_dir_all(dir.path().join("p")).unwrap();
+    let db = dir.path().join("p").join("bibliothek.sqlite3");
     {
         let lib = woa_library::Library::open(&db).unwrap();
         for (title, kind) in [
@@ -88,6 +89,9 @@ async fn list_samples_searches_library_by_kind_and_name() {
     }
     let (client, _) = start(dir.path()).await;
     let lib = db.to_string_lossy().to_string();
+    let before = std::fs::read(&db).unwrap();
+    let wal = db.with_extension("sqlite3-wal");
+    let wal_before = std::fs::read(&wal).ok();
 
     let r = ok(&call(
         &client,
@@ -115,8 +119,38 @@ async fn list_samples_searches_library_by_kind_and_name() {
     assert!(s.iter().all(|x| x["kind"] == "sample"));
     assert!(s[0]["path"].is_string() && s[0]["duration"].is_number());
 
+    assert_eq!(
+        std::fs::read(&db).unwrap(),
+        before,
+        "read-only: db unchanged"
+    );
+    // SQLite legt lesend höchstens eine leere WAL-Datei an, Daten kommen nicht hinein.
+    let wal_after = std::fs::read(&wal).unwrap_or_default();
+    assert!(
+        wal_after.is_empty() || Some(&wal_after) == wal_before.as_ref(),
+        "read-only: no wal data"
+    );
+
+    // Ausserhalb von Daten- und Projektordner: abgelehnt.
+    let outside = tempfile::tempdir().unwrap();
+    let foreign = outside.path().join("bibliothek.sqlite3");
+    std::fs::copy(&db, &foreign).unwrap();
+    for bad in [
+        foreign.to_string_lossy().to_string(),
+        "../bibliothek.sqlite3".to_string(),
+    ] {
+        assert!(
+            is_err(&call(&client, "list_samples", json!({"library": bad})).await),
+            "{bad}"
+        );
+    }
+
     // Fehlende Bibliothek: leere Liste, keine neue Datei.
-    let missing = dir.path().join("nichts").join("bibliothek.sqlite3");
+    let missing = dir
+        .path()
+        .join("p")
+        .join("nichts")
+        .join("bibliothek.sqlite3");
     let r = ok(&call(
         &client,
         "list_samples",

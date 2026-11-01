@@ -1160,6 +1160,35 @@ fn audio_files(root: &Path, words: &[String], limit: usize) -> Vec<PathBuf> {
     out
 }
 
+/// Liegt `path` unter einem der Ordner? `..` wird abgelehnt, Symlinks werden aufgelöst: der
+/// nächste vorhandene Vorfahr zählt, die Datei selbst darf fehlen.
+fn inside_any(path: &Path, roots: &[&Path]) -> bool {
+    if path
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        return false;
+    }
+    let mut base = path;
+    let mut rest = Vec::new();
+    let resolved = loop {
+        if let Ok(b) = base.canonicalize() {
+            break rest.iter().rev().fold(b, |acc: PathBuf, n| acc.join(n));
+        }
+        match (base.parent(), base.file_name()) {
+            (Some(p), Some(n)) => {
+                rest.push(n.to_os_string());
+                base = p;
+            }
+            _ => return false,
+        }
+    };
+    roots
+        .iter()
+        .filter_map(|r| r.canonicalize().ok())
+        .any(|r| resolved.starts_with(r))
+}
+
 fn fail(e: impl std::fmt::Display) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(e.to_string())])
 }
@@ -2584,9 +2613,16 @@ impl WoaAgent {
             })
             .await;
         }
+        let data = woa_radio::data_dir();
         let db = match &p.library {
-            Some(l) => self.resolve_media(l),
-            None => woa_radio::data_dir().join(woa_library::DB_FILE),
+            Some(l) => {
+                let db = self.resolve_media(l);
+                if !inside_any(&db, &[&data, &self.dir]) {
+                    return Ok(fail("library nur im WOA-Datenordner oder im Projektordner"));
+                }
+                db
+            }
+            None => data.join(woa_library::DB_FILE),
         };
         let kind = match p.kind.as_deref() {
             None => None,
@@ -2607,7 +2643,7 @@ impl WoaAgent {
                     serde_json::json!({ "samples": [], "library": false }),
                 ));
             }
-            let lib = match woa_library::Library::open(&db) {
+            let lib = match woa_library::Library::open_read_only(&db) {
                 Ok(l) => l,
                 Err(e) => return Ok(fail(e)),
             };
