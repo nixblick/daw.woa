@@ -74,5 +74,23 @@ expression: text
     null,
     null,
     null
-  ]
+  ],
+  "cart_sets": [
+    {
+      "name": "Satz 1"
+    },
+    {
+      "name": "Satz 2"
+    },
+    {
+      "name": "Satz 3"
+    },
+    {
+      "name": "Satz 4"
+    },
+    {
+      "name": "Satz 5"
+    }
+  ],
+  "cart_set": 0
 }

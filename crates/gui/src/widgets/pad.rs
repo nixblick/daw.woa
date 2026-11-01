@@ -40,11 +40,14 @@ pub fn number_size(pad_height: f32) -> f32 {
     pad_height * 0.62
 }
 
+/// Schriftgröße des Cart-Namens (#292: größer, lesbarer).
+pub const TITLE_SIZE: f32 = 15.0;
+
 /// Titel neben der Nummer: umbrochen auf `width`, höchstens zwei Zeilen, Rest mit „…“.
 pub fn title_job(text: &str, width: f32, color: Color32) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::simple(
         text.to_string(),
-        theme::label_font(13.0),
+        theme::label_font(TITLE_SIZE),
         color,
         width.max(1.0),
     );
@@ -64,6 +67,14 @@ pub struct CartPad<'a> {
     pub color: Color32,
     /// Restzeit in Sekunden, solange das Pad läuft (Countdown rechts).
     pub remaining: Option<f64>,
+    /// Gesamtdauer in Sekunden (#292), rechts unten solange das Pad steht.
+    pub seconds: Option<f64>,
+}
+
+/// Gesamtdauer eines Carts: „0:12“, „1:30“.
+pub fn duration(secs: f64) -> String {
+    let s = secs.max(0.0).round() as u64;
+    format!("{}:{:02}", s / 60, s % 60)
 }
 
 /// Countdown eines laufenden Carts: „-12 s“, unter 10 s mit einer Nachkommastelle („-9,4 s“).
@@ -152,8 +163,16 @@ impl CartPad<'_> {
             .remaining
             .filter(|_| state == PadState::Playing)
             .map(countdown);
-        if let Some(t) = &count {
-            let g = p.layout_no_wrap(t.clone(), theme::label_font(18.0), ink);
+        let total = self
+            .seconds
+            .filter(|_| state == PadState::Ready)
+            .map(duration);
+        if let Some((t, size)) = count
+            .as_ref()
+            .map(|t| (t, 18.0))
+            .or(total.as_ref().map(|t| (t, 12.0)))
+        {
+            let g = p.layout_no_wrap(t.clone(), theme::label_font(size), ink);
             let at = egui::pos2(
                 rect.right() - 8.0 - g.size().x,
                 rect.bottom() - 8.0 - g.size().y,
@@ -222,9 +241,9 @@ impl CartPad<'_> {
                 },
             );
         }
-        let label = match &count {
-            Some(t) => format!("Cart {}: {} {t}", self.number, shown),
-            None => format!("Cart {}: {}", self.number, shown),
+        let label = match (&count, &total) {
+            (Some(t), _) | (None, Some(t)) => format!("Cart {}: {} {t}", self.number, shown),
+            (None, None) => format!("Cart {}: {}", self.number, shown),
         };
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
         resp
@@ -263,6 +282,14 @@ mod tests {
                 .layout_job(title_job("Intro", 120.0, Color32::WHITE));
             assert_eq!(short.rows.len(), 1);
         });
+    }
+
+    #[test]
+    fn duration_reads_minutes_and_seconds() {
+        assert_eq!(duration(12.4), "0:12");
+        assert_eq!(duration(90.0), "1:30");
+        assert_eq!(duration(-1.0), "0:00");
+        const { assert!(TITLE_SIZE > 13.0) };
     }
 
     #[test]

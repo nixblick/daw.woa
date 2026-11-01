@@ -744,3 +744,38 @@ fn output_levels_default_to_full_and_round_trip() {
     assert_eq!(back.out_monitor, show.out_monitor);
     assert_eq!(back.out_stream, show.out_stream);
 }
+
+/// #292: Satz wechseln lässt einen laufenden Cart weiterlaufen; der neue Satz ist leer,
+/// der alte kommt beim Zurückwechseln samt Dauer wieder.
+#[test]
+fn running_cart_survives_cart_set_switch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jingle = tmp.path().join("jingle.wav");
+    write_tone(&jingle, 1.0, 0.0, 0.1);
+    let (mut c, mut m) = Controller::new(RadioShow::default(), SR);
+    c.assign_cart(0, Some(jingle)).unwrap();
+    assert!((c.cart_seconds(0).unwrap() - 1.0).abs() < 0.01);
+    let mut l = vec![0.0f32; BLOCK];
+    let mut r = vec![0.0f32; BLOCK];
+    c.trigger_cart(0);
+    block(&mut c, &mut m, &mut l, &mut r);
+    assert_ne!(c.status().carts.load(Ordering::Acquire) & 1, 0);
+
+    c.select_cart_set(1).unwrap();
+    assert!(c.show().carts[0].is_none());
+    assert!(c.cart_seconds(0).is_none());
+    for _ in 0..10 {
+        block(&mut c, &mut m, &mut l, &mut r);
+    }
+    assert_ne!(
+        c.status().carts.load(Ordering::Acquire) & 1,
+        0,
+        "läuft weiter"
+    );
+    assert!(l[BLOCK - 1] != 0.0);
+
+    c.select_cart_set(0).unwrap();
+    assert!(c.show().carts[0].is_some());
+    assert!(c.cart_seconds(0).is_some());
+    assert!(c.select_cart_set(9).is_err());
+}

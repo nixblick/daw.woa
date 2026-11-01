@@ -860,6 +860,85 @@ pub struct SetCuePointsParams {
     pub radio_json: Option<String>,
 }
 
+/// Parameters of `select_cart_set`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SelectCartSetParams {
+    /// Cart-wall set 1 to 5.
+    pub set: usize,
+    /// Same rules as `build_playlist`. Default: radio.json in the WOA data folder.
+    #[serde(default)]
+    pub radio_json: Option<String>,
+}
+
+/// What `rename` renames.
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RenameWhat {
+    /// A cart-wall set (number 1 to 5).
+    CartSet,
+    /// A cart of the active set (number 1 to 16).
+    Cart,
+    /// A title of the active playlist (position from 1).
+    Title,
+}
+
+/// Parameters of `rename`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RenameParams {
+    pub what: RenameWhat,
+    /// Set 1-5, cart 1-16 or playlist position from 1.
+    pub number: usize,
+    /// New name; empty restores the file name (or "Satz n" for a set).
+    pub name: String,
+    /// Same rules as `build_playlist`. Default: radio.json in the WOA data folder.
+    #[serde(default)]
+    pub radio_json: Option<String>,
+}
+
+/// Loads `radio`, applies `f`, saves. Same functions the app uses.
+fn edit_show(
+    radio: &Path,
+    f: impl FnOnce(&mut woa_radio::RadioShow) -> Result<(), String>,
+) -> Result<woa_radio::RadioShow, String> {
+    let mut show = woa_radio::RadioShow::load(radio)?;
+    f(&mut show)?;
+    show.save(radio)?;
+    Ok(show)
+}
+
+/// Applies a `rename` to `show`.
+fn rename_in(show: &mut woa_radio::RadioShow, p: &RenameParams) -> Result<(), String> {
+    let i = p
+        .number
+        .checked_sub(1)
+        .ok_or_else(|| "number beginnt bei 1".to_string())?;
+    match p.what {
+        RenameWhat::CartSet => show.rename_cart_set(i, &p.name),
+        RenameWhat::Cart => show.rename_cart(i, &p.name),
+        RenameWhat::Title => show.rename_title(i, &p.name),
+    }
+}
+
+fn cart_wall_json(show: &woa_radio::RadioShow) -> serde_json::Value {
+    let carts: Vec<_> = show
+        .carts
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            serde_json::json!({
+                "cart": i + 1,
+                "name": c.as_ref().map(|e| e.label.clone()),
+                "path": c.as_ref().map(|e| shown(&e.path)),
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "cart_set": show.cart_set + 1,
+        "cart_sets": show.cart_set_names(),
+        "carts": carts,
+    })
+}
+
 /// Parameters of `run_order`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RunOrderParams {
@@ -3369,6 +3448,63 @@ impl WoaAgent {
     }
 
     #[tool(
+        description = "Radio mode: switch the cart wall to set 1-5 in radio.json (each set has its own name and 16 carts; a running cart keeps playing). Returns the set names and the carts of the active set; a running WOA picks the file up within 2 s."
+    )]
+    async fn select_cart_set(
+        &self,
+        Parameters(p): Parameters<SelectCartSetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let (radio, created) = match p.radio_json.as_deref() {
+            None => (woa_radio::default_radio_path(), Vec::new()),
+            Some(g) => match self.resolve_out(g) {
+                Ok(x) => x,
+                Err(e) => return Ok(fail(e)),
+            },
+        };
+        let r = p
+            .set
+            .checked_sub(1)
+            .ok_or_else(|| "set beginnt bei 1".to_string())
+            .and_then(|i| edit_show(&radio, |s| s.switch_cart_set(i)));
+        match r {
+            Ok(show) => Ok(ok_json(cart_wall_json(&show))),
+            Err(e) => {
+                remove_created(&created);
+                Ok(fail(e))
+            }
+        }
+    }
+
+    #[tool(
+        description = "Radio mode: rename a cart-wall set (1-5), a cart of the active set (1-16) or a title of the active playlist (position from 1) in radio.json. Only the shown name changes, never the file; an empty name restores the file name. Same function as right-click > Umbenennen in the app. Project tracks: use rename_track."
+    )]
+    async fn rename(
+        &self,
+        Parameters(p): Parameters<RenameParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let (radio, created) = match p.radio_json.as_deref() {
+            None => (woa_radio::default_radio_path(), Vec::new()),
+            Some(g) => match self.resolve_out(g) {
+                Ok(x) => x,
+                Err(e) => return Ok(fail(e)),
+            },
+        };
+        match edit_show(&radio, |s| rename_in(s, &p)) {
+            Ok(show) => {
+                let mut v = cart_wall_json(&show);
+                if let Some(o) = v.as_object_mut() {
+                    o.insert("run_order".into(), run_order_json(&show, &radio));
+                }
+                Ok(ok_json(v))
+            }
+            Err(e) => {
+                remove_created(&created);
+                Ok(fail(e))
+            }
+        }
+    }
+
+    #[tool(
         description = "Broadcast: status of the stream process woa-streamd (running, connection, source live/emergency, listeners, bitrate, on-air seconds, last error). Read-only."
     )]
     async fn stream_status(
@@ -3484,5 +3620,47 @@ mod path_tests {
             "/home/projekt/mix.wav"
         );
         assert_eq!(strip_verbatim(r"C:\x.wav"), r"C:\x.wav");
+    }
+}
+
+#[cfg(test)]
+mod cart_set_tests {
+    use super::*;
+
+    #[test]
+    fn select_set_and_rename_through_radio_json() {
+        let tmp = tempfile::tempdir().unwrap();
+        let radio = tmp.path().join("radio.json");
+        let mut show = woa_radio::RadioShow::default();
+        show.carts[1] = Some(woa_radio::CartEntry::new("jingles/id.wav"));
+        show.playlist
+            .push(woa_radio::PlaylistEntry::new("musik/song_v3.mp3"));
+        show.save(&radio).unwrap();
+
+        let p = |what, number, name: &str| RenameParams {
+            what,
+            number,
+            name: name.into(),
+            radio_json: None,
+        };
+        edit_show(&radio, |s| rename_in(s, &p(RenameWhat::Cart, 2, "Station"))).unwrap();
+        edit_show(&radio, |s| {
+            rename_in(s, &p(RenameWhat::CartSet, 1, "Morgen"))
+        })
+        .unwrap();
+        let s = edit_show(&radio, |s| rename_in(s, &p(RenameWhat::Title, 1, "Song"))).unwrap();
+        assert_eq!(s.playlist[0].title(), "Song");
+        let v = cart_wall_json(&s);
+        assert_eq!(v["cart_sets"][0], "Morgen");
+        assert_eq!(v["carts"][1]["name"], "Station");
+        assert!(edit_show(&radio, |s| rename_in(s, &p(RenameWhat::Cart, 0, "x"))).is_err());
+
+        let s = edit_show(&radio, |s| s.switch_cart_set(2)).unwrap();
+        assert_eq!(cart_wall_json(&s)["cart_set"], 3);
+        assert!(s.carts.iter().all(Option::is_none));
+        let back = woa_radio::RadioShow::load(&radio).unwrap();
+        assert_eq!(back.cart_set, 2);
+        let s = edit_show(&radio, |s| s.switch_cart_set(0)).unwrap();
+        assert_eq!(s.carts[1].as_ref().unwrap().label, "Station");
     }
 }

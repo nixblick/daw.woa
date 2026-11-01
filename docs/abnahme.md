@@ -4,12 +4,27 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Windows-Taskleiste mit WOA-Logo (0.35.2, offen)
+## Windows-Taskleiste mit WOA-Logo (0.35.3, offen)
 
 1. ZIP auspacken, `woa.exe` starten: Taskleiste zeigt WOA-Logo, auch aus der ZIP gestartet. Im Explorer trägt `woa.exe` dasselbe Logo.
 2. Mit dem MSI installiert und über das Startmenü gestartet: ebenfalls das WOA-Logo in der Taskleiste.
 
 Selbst geprüft von Claude: der Windows-Bau prüft, dass `woa.exe` ein eigenes Icon trägt (anders als das Standardsymbol). Linux-Bau unverändert. Nicht am Windows-Rechner gesehen.
+
+## Cart-Wall-Sätze und Umbenennen (0.35.2, offen)
+
+1. Radio-Modus: Über der Cart-Wall stehen fünf kleine Reiter „1 Satz 1“ bis „5 Satz 5“. Die bisherige Belegung steht in Satz 1, nichts fehlt.
+2. Rechtsklick auf Reiter 1 → „Umbenennen …“ → „Morgen“, Enter. Reiter 2 → „Mittag“, Reiter 5 → „Sondersendung“.
+3. Reiter 2 anklicken: die Wall ist leer. Zwei Jingles belegen. Zurück auf 1: die alte Belegung ist wieder da.
+4. Einen langen Cart in Satz 1 starten, auf Satz 2 wechseln: er läuft hörbar weiter, sein Platz zählt herunter.
+5. Jedes belegte Pad zeigt unten rechts seine Dauer („0:12“), im Lauf wie bisher den Countdown. Der Name ist größer.
+6. Rechtsklick auf ein Pad → „Umbenennen …“ → neuer Name. Leer lassen und übernehmen: der Dateiname kommt zurück.
+7. Playlist: Rechtsklick auf einen Titel → „Umbenennen …“: der neue Name steht sofort in der Playlist und im Playlist-Fenster.
+8. Bibliothek: Rechtsklick → „Umbenennen …“ (oder Doppelklick) öffnet die Titelinfos mit dem Titel-Feld. Produzent: Spurname per Doppelklick oder Rechtsklick → „Spur umbenennen“ (gab es schon).
+9. WOA neu starten: Satznamen, Belegungen, aktiver Satz, Cart- und Titelnamen sind noch da.
+10. Claude per MCP: „Wechsle auf Satz 2“ (`select_cart_set`) und „Benenne Cart 3 in Wetter um“ (`rename`): die App übernimmt es nach etwa 2 s.
+
+Selbst geprüft von Claude: Tests für die Migration alter `radio.json` in Satz 1, Wechsel und Speichern, Umbenennen (leer, zu lang, Steuerzeichen, freies Cart), einen laufenden Cart über den Satzwechsel (Mixer-Blöcke), die Dauer am Pad und die MCP-Wege. Clippy und Tests von `woa-radio`, `woa-gui` und `woa-agent` grün. Nicht am Gerät gehört.
 
 ## J10 Sample-Suche (0.35.0, offen)
 

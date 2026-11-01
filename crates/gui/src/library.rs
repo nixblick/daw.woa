@@ -847,6 +847,11 @@ impl LibraryWindow {
                         edit_tags = Some(t.id);
                     }
                     resp.context_menu(|ui| {
+                        // #292: Umbenennen heißt überall gleich; hier ist es der Titel-Tag.
+                        if ui.button("Umbenennen …").clicked() {
+                            edit_tags = Some(t.id);
+                            ui.close();
+                        }
                         if ui.button("Titelinfos bearbeiten …").clicked() {
                             edit_tags = Some(t.id);
                             ui.close();

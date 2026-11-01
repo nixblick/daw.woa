@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.35.2 — 2026-11-01
+## 0.35.3 — 2026-11-01
 
 - **WOA-Logo in der Windows-Taskleiste:** Die `woa.exe` trägt jetzt `packaging/windows/woa.ico` (16 bis 256 px) als Icon-Ressource, eingebettet per `apps/woa/build.rs` mit `winresource` (Build-Abhängigkeit nur unter Windows). Bisher zeigte die Taskleiste einen Platzhalter, weil das Fensterbild aus dem PNG nur als kleines Symbol ankommt und die Exe kein eigenes Icon hatte; aus der ZIP gestartet fehlte es ganz. Der Windows-Bau prüft das jetzt (Icon der `woa.exe` ungleich Standardsymbol). `woa-headless` und `woa-streamd` sind Konsolenprogramme ohne Fenster und bleiben ohne. Linux unverändert.
+
+## 0.35.2 — 2026-11-01
+
+- **Cart-Wall-Sätze 1–5, Cart-Dauer, Umbenennen (#292):** Über der Cart-Wall stehen fünf kleine Reiter, je ein Satz mit eigenem Namen (etwa Morgen, Mittag, Sondersendung) und eigener Belegung. Klick wechselt, Rechtsklick → „Umbenennen …“. Gespeichert in `radio.json` wie die Playlisten: der aktive Satz in `carts`, die anderen in `cart_sets`, der aktive in `cart_set`. Alte Dateien: die Belegung wird Satz 1. Tasten gelten je Platz. Ein laufender Cart läuft beim Wechsel weiter. Jedes Pad zeigt rechts unten seine Dauer (Start bis Ende des Schnitts), im Lauf wie bisher den Countdown; der Name ist größer (15 statt 13 px). Umbenennen überall per Rechtsklick → „Umbenennen …“: Cart, Satz, Playlist-Titel (neues Feld `name` am Eintrag, die Datei bleibt) und in der Bibliothek (öffnet die Titelinfos). Grund, warum André die Titel nicht fand: Die Playlist zeigte immer den Dateinamen, „Titelinfos bearbeiten“ schrieb nur die Tags der Datei, die Änderung war also unsichtbar. Leerer Name heißt zurück zum Dateinamen. MCP: neue Werkzeuge `select_cart_set` und `rename` (`cart_set`, `cart`, `title`), über dieselben Funktionen wie die App; Spuren weiter mit `rename_track`. Tests: `crates/radio/src/cart_sets.rs`, `crates/radio/tests/rt.rs` (laufender Cart über den Wechsel), `crates/gui/src/radio.rs` und `widgets/pad.rs` (Dauer am Pad), `crates/agent/src/lib.rs` (`cart_set_tests`).
 
 ## 0.35.1 — 2026-11-01
 
