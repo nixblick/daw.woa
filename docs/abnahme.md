@@ -4,6 +4,17 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design-Runde 2: Produzent mit Browser (0.35.14, offen)
+
+1. Produzent bei 1920×1030 und 1366×768: links der Browser mit Klänge · Beats · Akkorde · FX · Samples · Jingles, unter den Spuren keine Knopfreihe mehr.
+2. Akkorde: Folge wählen, Tonart tippen, „Einfügen · Takt n“ legt Akkorde, Bass und Arpeggio an; danach eine andere Tonart tippen, die drei Clips wandern mit.
+3. FX: Riser, Whoosh oder Downlifter wählen, Länge, „Einfügen · Takt n“.
+4. „+“ im Spurenkopf: Audio-Spur und MIDI-Spur.
+5. Klänge (Import, Produktionen), Beats (MIDI-Clip), Samples (öffnet KI-Chat), Jingles (Assistent) erreichbar; « klappt den Browser ein, Ansicht → Browser holt ihn zurück.
+6. Transport: Loop · Punch · Stopp am Ende als eigene Gruppe, eingeschaltet orange hinterlegt.
+
+Selbst geprüft von Claude: `cargo test -p woa-gui` und Clippy grün, Screenshots vorher und nachher bei 1920×1030 und 1366×768 unter Linux neben den Entwurfsbildern. Nicht unter Windows gesehen, kein Ton abgespielt.
+
 ## Design-Runde 2: Kopfleiste und Radio-Modus (0.35.13, offen)
 
 1. Kopfleiste in jedem Modus: rechts ein Block Produzent · Radio · Party | MIDI · ON AIR · REC · KI | Feedback, der aktive Modus in seiner Farbe. Klick auf MIDI: Gerätewahl; auf ON AIR: Stream-Verbindung; REC: Mitschnitt mit Laufzeit.

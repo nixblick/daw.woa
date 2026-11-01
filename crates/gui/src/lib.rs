@@ -8,6 +8,7 @@ pub mod analysis;
 pub mod app;
 mod assistant_ui;
 pub mod automation;
+pub mod browser;
 mod chat_ui;
 pub mod clock_editor;
 pub mod controls;

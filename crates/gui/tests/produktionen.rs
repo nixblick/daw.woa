@@ -70,25 +70,28 @@ fn button_opens_the_produktionen_window() {
         nodes = run(&ctx, &mut app, &mut frame, n, Vec::new());
     }
     assert!(!app.produktionen_open());
-    let at = nodes
-        .iter()
-        .find(|(l, _)| l.contains("Produktionen"))
-        .map(|(_, r)| r.center())
-        .expect("Knopf Produktionen");
-    let press = |pressed| egui::Event::PointerButton {
-        pos: at,
-        button: egui::PointerButton::Primary,
-        pressed,
-        modifiers: egui::Modifiers::NONE,
-    };
-    for ev in [
-        vec![egui::Event::PointerMoved(at)],
-        vec![press(true)],
-        vec![press(false)],
-        vec![],
-    ] {
-        n += 1;
-        nodes = run(&ctx, &mut app, &mut frame, n, ev);
+    // Seit Design-Runde 2 steht „Produktionen“ im Browser-Reiter „Klänge“.
+    for label in ["KLÄNGE", "Produktionen"] {
+        let at = nodes
+            .iter()
+            .find(|(l, _)| l.contains(label))
+            .map(|(_, r)| r.center())
+            .unwrap_or_else(|| panic!("Knopf {label}"));
+        let press = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for ev in [
+            vec![egui::Event::PointerMoved(at)],
+            vec![press(true)],
+            vec![press(false)],
+            vec![],
+        ] {
+            n += 1;
+            nodes = run(&ctx, &mut app, &mut frame, n, ev);
+        }
     }
     assert!(app.produktionen_open(), "Fenster offen");
     assert!(

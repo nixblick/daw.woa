@@ -259,6 +259,8 @@ pub struct WoaApp {
     /// Fenster „Produktionen“: Audio-Dateien des Projekts, neueste oben.
     produktionen: crate::produktionen::ProduktionenWindow,
     akkorde: crate::akkorde::AkkordFenster,
+    /// Browser links im Produzenten-Modus (Design System 2).
+    browser: crate::browser::Browser,
     jingle_fx: crate::jingle_fx::FxFenster,
     jingle_assistent: crate::jingle_assistent::JingleAssistent,
     /// Export-Fenster (Paket 26).
@@ -618,6 +620,7 @@ impl WoaApp {
             mcp_live: crate::mcp_live::McpLive::new(woa_radio::data_dir(), open_audio),
             produktionen: crate::produktionen::ProduktionenWindow::default(),
             akkorde: crate::akkorde::AkkordFenster::default(),
+            browser: crate::browser::Browser::default(),
             jingle_fx: crate::jingle_fx::FxFenster::default(),
             jingle_assistent: crate::jingle_assistent::JingleAssistent::default(),
             export_dialog: crate::export_dialog::ExportDialog::new(),
@@ -1695,49 +1698,41 @@ impl WoaApp {
                         self.toggle_record();
                     }
 
-                    let end = egui::Button::new(
-                        egui::RichText::new(format!("{} Stopp am Ende", theme::ic::ARROW_LINE_RIGHT))
-                            .small()
-                            .strong()
-                            .color(if self.stop_at_end {
-                                theme::well()
-                            } else {
-                                theme::text_dim()
-                            }),
-                    )
-                    .min_size(egui::vec2(0.0, 32.0))
-                    .fill(if self.stop_at_end {
-                        theme::accent()
-                    } else {
-                        theme::surface()
-                    });
-                    if ui
-                        .add(end)
-                        .on_hover_text(
-                            "An: die Wiedergabe hält am Ende des letzten Clips an. \
-                             Aus: sie läuft weiter, z. B. zum Aufnehmen über das Ende hinaus.",
-                        )
-                        .clicked()
-                    {
-                        self.stop_at_end = !self.stop_at_end;
-                    }
 
+                });
+
+            // 1b. Loop · Punch · Stopp am Ende (eine Gruppe, eingeschaltet = accent-soft)
+            egui::Frame::new()
+                .fill(theme::well())
+                .stroke(egui::Stroke::new(1.0, theme::border()))
+                .corner_radius(5)
+                .inner_margin(egui::Margin::symmetric(4, 3))
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
                     let loop_btn = egui::Button::new(
                         egui::RichText::new(format!("{} Loop", theme::ic::REPEAT))
                             .small()
                             .strong()
                             .color(if self.loop_enabled {
-                                theme::well()
+                                theme::text()
                             } else {
                                 theme::text_dim()
                             }),
                     )
                     .min_size(egui::vec2(0.0, 32.0))
                     .fill(if self.loop_enabled {
-                        theme::cue()
+                        theme::accent_soft()
                     } else {
                         theme::surface()
-                    });
+                    })
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        if self.loop_enabled {
+                            theme::accent()
+                        } else {
+                            theme::border()
+                        },
+                    ));
                     if ui
                         .add(loop_btn)
                         .on_hover_text("Wiedergabe im gewählten Taktbereich im Kreis abspielen")
@@ -1768,17 +1763,25 @@ impl WoaApp {
                             .small()
                             .strong()
                             .color(if self.punch_enabled {
-                                theme::well()
+                                theme::text()
                             } else {
                                 theme::text_dim()
                             }),
                     )
                     .min_size(egui::vec2(0.0, 32.0))
                     .fill(if self.punch_enabled {
-                        theme::on_air()
+                        theme::accent_soft()
                     } else {
                         theme::surface()
-                    });
+                    })
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        if self.punch_enabled {
+                            theme::accent()
+                        } else {
+                            theme::border()
+                        },
+                    ));
                     if ui
                         .add(punch_btn)
                         .on_hover_text(
@@ -1804,6 +1807,41 @@ impl WoaApp {
                                 .prefix("– "),
                         )
                         .on_hover_text("Punch-Out (Takt)");
+                    }
+
+                    let end = egui::Button::new(
+                        egui::RichText::new(format!("{} Stopp am Ende", theme::ic::ARROW_LINE_RIGHT))
+                            .small()
+                            .strong()
+                            .color(if self.stop_at_end {
+                                theme::text()
+                            } else {
+                                theme::text_dim()
+                            }),
+                    )
+                    .min_size(egui::vec2(0.0, 32.0))
+                    .fill(if self.stop_at_end {
+                        theme::accent_soft()
+                    } else {
+                        theme::surface()
+                    })
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        if self.stop_at_end {
+                            theme::accent()
+                        } else {
+                            theme::border()
+                        },
+                    ));
+                    if ui
+                        .add(end)
+                        .on_hover_text(
+                            "An: die Wiedergabe hält am Ende des letzten Clips an. \
+                             Aus: sie läuft weiter, z. B. zum Aufnehmen über das Ende hinaus.",
+                        )
+                        .clicked()
+                    {
+                        self.stop_at_end = !self.stop_at_end;
                     }
                 });
 
@@ -2417,6 +2455,16 @@ impl WoaApp {
             // Fotomodus der Zuordnungsliste.
             self.controls.window = true;
         }
+        if first && std::env::var_os("WOA_DEMO_SONG").is_some() {
+            // Fotomodus des Produzenten: ein Jingle-Gerüst plus Akkorde und ein FX-Clip,
+            // damit Arrangement, Browser und Dock echte Inhalte zeigen (keine Nutzerdaten).
+            if let Some(m) = woa_model::jingle::MOODS.first() {
+                let _ = self.state.build_jingle(m, 10);
+            }
+            if let Some(p) = woa_model::chords::CHORD_PROGRESSIONS.first() {
+                let _ = self.state.add_chord_tracks(p, 0, 4, 0.0);
+            }
+        }
         if first && std::env::var_os("WOA_PIANOROLL").is_some() {
             // Fotomodus der Piano-Roll: ersten MIDI-Clip öffnen, zwei Noten wählen.
             let clip = self
@@ -2671,6 +2719,14 @@ impl WoaApp {
             }
         });
         ui.menu_button("Ansicht", |ui| {
+            if self.config.mode == Mode::Produzent
+                && ui
+                    .checkbox(&mut self.browser.open, "Browser")
+                    .on_hover_text("Browser links: Klänge, Beats, Akkorde, FX, Samples, Jingles")
+                    .clicked()
+            {
+                ui.close();
+            }
             if ui
                 .checkbox(&mut self.library.open, "Bibliothek")
                 .on_hover_text(
@@ -2828,7 +2884,7 @@ impl WoaApp {
             ui.spacing_mut().item_spacing.y = 5.0;
             ui.horizontal(|ui| {
                 let (corner_rect, _) =
-                    ui.allocate_exact_size(egui::vec2(HEADER_W, 24.0), egui::Sense::hover());
+                    ui.allocate_exact_size(egui::vec2(HEADER_W - 30.0, 24.0), egui::Sense::hover());
                 ui.painter()
                     .rect_filled(corner_rect, 4.0, theme::panel_header());
                 ui.painter().text(
@@ -2838,6 +2894,8 @@ impl WoaApp {
                     egui::FontId::proportional(11.0),
                     theme::text_dim(),
                 );
+                ui.add_space(-ui.spacing().item_spacing.x);
+                self.new_track_menu(ui);
                 self.ruler(ui);
             });
             for (i, (id, name, gain, pan, mute, solo)) in tracks.into_iter().enumerate() {
@@ -2847,152 +2905,39 @@ impl WoaApp {
                 });
                 self.take_folder_rows(ui, id, i);
             }
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                if ui
-                    .add_sized(
-                        [136.0, 32.0],
-                        egui::Button::new(
-                            egui::RichText::new("+  Audio-Spur")
-                                .strong()
-                                .color(theme::text()),
-                        )
-                        .fill(theme::surface()),
-                    )
-                    .clicked()
-                {
-                    self.state.add_track();
-                }
-                if ui
-                    .add_sized(
-                        [116.0, 32.0],
-                        egui::Button::new(
-                            egui::RichText::new("+  MIDI-Spur")
-                                .strong()
-                                .color(theme::cue()),
-                        )
-                        .fill(theme::surface())
-                        .stroke(egui::Stroke::new(
-                            1.0,
-                            theme::mix(theme::cue(), theme::border(), 0.5),
-                        )),
-                    )
-                    .on_hover_text("Spur für das Keyboard; scharf schalten zum Spielen")
-                    .clicked()
-                {
-                    self.state.add_midi_track();
-                }
-                if ui
-                    .add_sized(
-                        [154.0, 32.0],
-                        egui::Button::new(
-                            egui::RichText::new(format!("{} Audio importieren …", theme::ic::FOLDER_OPEN))
-                                .small()
-                                .strong()
-                                .color(theme::text()),
-                        )
-                        .fill(theme::well()),
-                    )
-                    .on_hover_text("WAV, FLAC, MP3, OGG oder M4A als Clip am Abspielkopf einfügen")
-                    .clicked()
-                {
-                    self.import_audio();
-                }
-                if ui
-                    .add_sized(
-                        [124.0, 32.0],
-                        egui::Button::new(
-                            egui::RichText::new(format!("{} Produktionen", theme::ic::WAVEFORM))
-                                .small()
-                                .strong()
-                                .color(theme::text()),
-                        )
-                        .fill(theme::well()),
-                    )
-                    .on_hover_text(
-                        "Audio-Dateien des Projekts (Aufnahmen, Exporte, von Claude erzeugt), \
-                         die neuesten oben; auf eine Spur ziehen",
-                    )
-                    .clicked()
-                {
-                    self.produktionen.open_window();
-                }
-                if ui
-                    .add_sized(
-                        [146.0, 32.0],
-                        egui::Button::new(
-                            egui::RichText::new(format!("{} + MIDI-Clip (4 T.)", theme::ic::PIANO_KEYS))
-                                .small()
-                                .strong()
-                                .color(theme::cue()),
-                        )
-                        .fill(theme::well()),
-                    )
-                    .on_hover_text(
-                        "Leeren 4-Takt-MIDI-Clip anlegen und direkt in der Piano-Roll öffnen (oder Doppelklick in eine MIDI-Spur)",
-                    )
-                    .clicked()
-                {
-                    self.create_midi_clip_at_playhead(self.selected_track);
-                }
-                if ui
-                    .add_sized(
-                        [128.0, 32.0],
-                        egui::Button::new(
-                            egui::RichText::new(format!("{} Akkordfolge …", theme::ic::PIANO_KEYS))
-                                .small()
-                                .strong()
-                                .color(theme::cue()),
-                        )
-                        .fill(theme::well()),
-                    )
-                    .on_hover_text("Fertige Akkordfolge wählen: Akkorde, Bass und Arpeggio als MIDI-Spuren")
-                    .clicked()
-                {
-                    self.akkorde.open = true;
-                }
-                if ui
-                    .add_sized(
-                        [110.0, 32.0],
-                        egui::Button::new(
-                            egui::RichText::new(format!("{} Jingle-FX …", theme::ic::WAVEFORM))
-                                .small()
-                                .strong()
-                                .color(theme::cue()),
-                        )
-                        .fill(theme::well()),
-                    )
-                    .on_hover_text("Riser, Whoosh oder Downlifter als Audio-Clip, passend zum Tempo")
-                    .clicked()
-                {
-                    self.jingle_fx.open = true;
-                }
-                if ui
-                    .add_sized(
-                        [128.0, 32.0],
-                        egui::Button::new(
-                            egui::RichText::new(format!("{} Jingle bauen …", theme::ic::WAVEFORM))
-                                .small()
-                                .strong()
-                                .color(theme::cue()),
-                        )
-                        .fill(theme::well()),
-                    )
-                    .on_hover_text("Assistent: Länge und Stimmung wählen, Beat, Akkorde, Stimme, Ausgabe")
-                    .clicked()
-                {
-                    self.jingle_assistent.open = true;
-                }
-            });
             if self.state.project().tracks.is_empty() {
                 ui.add_space(24.0);
                 ui.label(
                     egui::RichText::new(
-                        "Noch keine Spur. Strg+R nimmt sofort auf und legt eine an.",
+                        "Noch keine Spur. „+“ im Spurenkopf legt eine an, Strg+R nimmt sofort auf.",
                     )
                     .color(theme::text_dim()),
                 );
             }
+        });
+    }
+
+    /// „+“ im Spurenkopf (ScreenStudio): neue Audio- oder MIDI-Spur.
+    fn new_track_menu(&mut self, ui: &mut egui::Ui) {
+        ui.scope(|ui| {
+            ui.spacing_mut().button_padding = egui::vec2(6.0, 2.0);
+            ui.menu_button(
+                egui::RichText::new(theme::ic::PLUS).color(theme::text()),
+                |ui| {
+                    if ui.button("Audio-Spur").clicked() {
+                        self.state.add_track();
+                    }
+                    if ui
+                        .button("MIDI-Spur")
+                        .on_hover_text("Spur für das Keyboard; scharf schalten zum Spielen")
+                        .clicked()
+                    {
+                        self.state.add_midi_track();
+                    }
+                },
+            )
+            .response
+            .on_hover_text("Neue Spur");
         });
     }
 
@@ -5242,19 +5187,6 @@ impl WoaApp {
         self.apply_pick(out);
     }
 
-    /// Fenster „Akkordfolge“ (Paket J3), erzeugt ab dem Takt am Abspielkopf.
-    fn akkorde_window(&mut self, ctx: &egui::Context) {
-        if !self.akkorde.open {
-            return;
-        }
-        let tempo = self.state.project().tempo_bpm;
-        let at = self
-            .player
-            .as_ref()
-            .map_or(0.0, |p| ((p.position_beats(tempo) / 4.0).floor()) * 4.0);
-        self.akkorde.show(ctx, &mut self.state, at);
-    }
-
     /// Assistent „Jingle bauen“ (Paket J4): führt seine Wünsche mit App-Zustand aus
     /// (neues Projekt mit Speicher-Frage, Loop über das Jingle, Drum-Raster, Export).
     fn jingle_assistent_window(&mut self, ctx: &egui::Context) {
@@ -5293,9 +5225,30 @@ impl WoaApp {
         }
     }
 
-    /// Fenster „Jingle-FX“ (Paket J8), Clip ab dem Takt am Abspielkopf.
-    fn jingle_fx_window(&mut self, ctx: &egui::Context) {
-        if !self.jingle_fx.open {
+    /// Browser links (Design System 2): volle Höhe zwischen Transport und Statuszeile,
+    /// einklappbar auf einen schmalen Streifen.
+    fn browser_panel(&mut self, ui: &mut egui::Ui) {
+        use crate::browser::{WIDTH, Wish};
+        let frame = egui::Frame::new()
+            .fill(theme::panel())
+            .stroke(egui::Stroke::new(1.0, theme::border()))
+            .inner_margin(egui::Margin::symmetric(10, 10));
+        if !self.browser.open {
+            egui::Panel::left("browser_zu")
+                .resizable(false)
+                .exact_size(30.0)
+                .frame(frame.inner_margin(egui::Margin::symmetric(2, 10)))
+                .show(ui, |ui| {
+                    if ui
+                        .small_button(theme::ic::CARET_DOUBLE_RIGHT)
+                        .on_hover_text(
+                            "Browser zeigen (Klänge, Beats, Akkorde, FX, Samples, Jingles)",
+                        )
+                        .clicked()
+                    {
+                        self.browser.open = true;
+                    }
+                });
             return;
         }
         let tempo = self.state.project().tempo_bpm;
@@ -5304,7 +5257,41 @@ impl WoaApp {
             .as_ref()
             .map_or(0.0, |p| ((p.position_beats(tempo) / 4.0).floor()) * 4.0);
         let track = self.selected_track;
-        self.jingle_fx.show(ctx, &mut self.state, track, at);
+        let mut wish = None;
+        egui::Panel::left("browser")
+            .resizable(false)
+            .exact_size(WIDTH)
+            .frame(frame)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(theme::panel_label("BROWSER"));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .small_button(theme::ic::CARET_DOUBLE_LEFT)
+                            .on_hover_text("Browser einklappen")
+                            .clicked()
+                        {
+                            self.browser.open = false;
+                        }
+                    });
+                });
+                wish = self.browser.ui(
+                    ui,
+                    &mut self.state,
+                    &mut self.akkorde,
+                    &mut self.jingle_fx,
+                    track,
+                    at,
+                );
+            });
+        match wish {
+            Some(Wish::ImportAudio) => self.import_audio(),
+            Some(Wish::Produktionen) => self.produktionen.open_window(),
+            Some(Wish::MidiClip) => self.create_midi_clip_at_playhead(self.selected_track),
+            Some(Wish::OpenChat) => self.studio_dock = StudioDockTab::Chat,
+            Some(Wish::JingleWizard) => self.jingle_assistent.open = true,
+            None => {}
+        }
     }
 
     /// Fenster „Produktionen“: gleicher Weg wie die Bibliothek (Vorhören, Ablegen).
@@ -6480,13 +6467,6 @@ impl eframe::App for WoaApp {
                     .inner_margin(egui::Margin::symmetric(12, 7)),
             )
             .show(ui, |ui| self.transport_bar(ui));
-        egui::Panel::top("clipbar")
-            .frame(
-                egui::Frame::new()
-                    .fill(theme::mix(theme::panel(), theme::bg(), 0.5))
-                    .inner_margin(egui::Margin::symmetric(12, 5)),
-            )
-            .show(ui, |ui| ui.vertical(|ui| self.clip_bar(ui)));
         egui::Panel::bottom("status")
             .frame(
                 egui::Frame::new()
@@ -6523,6 +6503,14 @@ impl eframe::App for WoaApp {
                     });
                 });
             });
+        self.browser_panel(ui);
+        egui::Panel::top("clipbar")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::mix(theme::panel(), theme::bg(), 0.5))
+                    .inner_margin(egui::Margin::symmetric(12, 5)),
+            )
+            .show(ui, |ui| ui.vertical(|ui| self.clip_bar(ui)));
         self.studio_dock_panel(ui);
         self.undo_toast_ui(&ctx);
         egui::CentralPanel::default()
@@ -6536,8 +6524,6 @@ impl eframe::App for WoaApp {
         self.analysis_window(&ctx);
         self.library_window(&ctx);
         self.produktionen_window(&ctx);
-        self.akkorde_window(&ctx);
-        self.jingle_fx_window(&ctx);
         self.jingle_assistent_window(&ctx);
         self.clock_editor.show(&ctx);
         self.event_editor
