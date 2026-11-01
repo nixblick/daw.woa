@@ -67,8 +67,20 @@ impl KiUi {
         self.token_text = None;
     }
 
+    /// Beim Start der App: Der HTTP-Server startet nicht von selbst (#243, André 01.11.2026:
+    /// „nur auf Wunsch“). Ein Haken aus einer früheren Sitzung wird zurückgenommen, damit das
+    /// Fenster den echten Zustand zeigt; Port, Reichweite und Projektordner bleiben.
+    pub fn app_started(&mut self, cfg: &mut KiConfig) {
+        self.proc = None;
+        self.proc_error = None;
+        if cfg.mcp_server.enabled {
+            tracing::info!("mcp http server not started at app start (only on request)");
+            cfg.mcp_server.enabled = false;
+        }
+    }
+
     /// Bringt den Hintergrundprozess in Einklang mit `cfg`: läuft, wenn eingeschaltet und
-    /// alles da ist, sonst nicht. Beim Start der Oberfläche und nach „Speichern“ aufrufen.
+    /// alles da ist, sonst nicht. Nach „Speichern“ aufrufen.
     pub fn apply(&mut self, cfg: &KiConfig, data_dir: &Path) {
         self.proc = None;
         self.proc_error = None;
@@ -214,10 +226,11 @@ impl KiUi {
         let mut cfg = self.draft.mcp_server.clone();
         ui.checkbox(
             &mut cfg.enabled,
-            "HTTP-Server im Hintergrund, solange WOA offen ist",
+            "HTTP-Server im Hintergrund, bis WOA schließt",
         )
         .on_hover_text(
-            "Aus: nichts hört auf einem Port. Die Stdio-Schnipsel unten brauchen den Server nicht.",
+            "Startet erst mit „Speichern“ und nie von selbst beim Start von WOA. Aus: nichts hört \
+             auf einem Port. Die Stdio-Schnipsel unten brauchen den Server nicht.",
         );
         egui::Grid::new("ki-server-grid")
             .num_columns(2)
@@ -506,6 +519,22 @@ mod tests {
         ui.apply(&KiConfig::default(), tmp.path());
         assert!(ui.running().is_none());
         assert!(ui.proc_error.is_none());
+    }
+
+    /// #243: Der HTTP-Server (Port 8765) startet nie beim Start der App, auch wenn er in
+    /// einer früheren Sitzung eingeschaltet war. Nur „Speichern“ mit Haken startet ihn.
+    #[test]
+    fn app_start_never_starts_http_server() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut cfg = KiConfig::default();
+        cfg.mcp_server.enabled = true;
+        cfg.mcp_server.project = Some(tmp.path().to_path_buf());
+        let mut ui = KiUi::default();
+        ui.app_started(&mut cfg);
+        assert!(ui.running().is_none());
+        assert!(ui.proc_error.is_none());
+        assert!(!cfg.mcp_server.enabled, "Haken zeigt den echten Zustand");
+        assert_eq!(cfg.mcp_server.project.as_deref(), Some(tmp.path()));
     }
 
     #[test]
