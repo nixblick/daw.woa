@@ -2,10 +2,11 @@
 //! kein Lock, kein I/O; die Zustände sind feste Felder, angelegt im Control-Thread.
 //!
 //! **Sendebus** ([`BusProcessor`]), Stereo gekoppelt:
-//! 1. Lautheitsregelung (AGC): misst die Lautheit *am Ausgang* (K-Filter nach BS.1770,
-//!    gleitend über etwa 3 s, also „kurzzeitig“) und führt eine Verstärkung langsam
-//!    (höchstens [`AGC_DB_PER_SECOND`]) Richtung Ziel, z. B. −16 LUFS. In Pausen
-//!    (unter [`AGC_GATE_LUFS`]) bleibt sie stehen, damit Stille nicht hochgezogen wird.
+//! 1. Lautheitsmessung am Ausgang (K-Filter nach BS.1770, gleitend über etwa 3 s, also
+//!    „kurzzeitig“), nur für die Anzeige. Sie regelt nicht nach (#297): Jeder Titel hat
+//!    schon seine feste Verstärkung zum Ziel (Auto-Gain beim Bereitlegen), eine gleitende
+//!    Regelung würde leise und laute Passagen innerhalb eines Titels angleichen und nach
+//!    jedem Ducking nachpumpen.
 //! 2. Kompressor (RMS, 2,5 : 1, Schwelle 4 dB über dem Ziel), fängt kurze Lautheitsspitzen ab.
 //! 3. Limiter ohne Vorausschau mit sofortigem Angriff: Spitze nie über [`CEILING_DB`].
 //!    Ohne Vorausschau entsteht keine Latenz; Mitschnitt, Sendung und Abhören bleiben
@@ -19,35 +20,22 @@ use crate::level::db_to_gain;
 
 /// Höchste Spitze am Sendeausgang (dBFS).
 pub const CEILING_DB: f64 = -1.0;
-/// Regelbereich der Lautheitsregelung (dB, ±).
-pub const AGC_RANGE_DB: f32 = 12.0;
-/// Schnellste Änderung der Lautheitsregelung.
-pub const AGC_DB_PER_SECOND: f32 = 3.0;
-/// Darunter gilt der Ausgang als Pause, die Regelung hält still.
-pub const AGC_GATE_LUFS: f32 = -45.0;
 /// Messfenster der Lautheit (Zeitkonstante, Sekunden).
 const AGC_TAU: f32 = 3.0;
-/// Die Regelung rechnet alle so viele Samples neu.
-const AGC_STEP: u32 = 64;
 
 pub use woa_dsp::dynamics::{Biquad, Compressor, Gate, Limiter, coef, lin_to_db};
 
-/// Lautheitsmessung am Ausgang (K-gefiltert, gleitend) und langsame Regelung.
+/// Lautheitsmessung am Ausgang (K-gefiltert, gleitend). Sie regelt nicht (#297).
 #[derive(Debug, Clone, Copy)]
 struct Agc {
     kl: [Biquad; 2],
     kr: [Biquad; 2],
     ms: f32,
     ms_coef: f32,
-    target: f32,
-    gain_db: f32,
-    max_step_db: f32,
-    count: u32,
-    gain: f32,
 }
 
 impl Agc {
-    fn new(target_lufs: f32, rate: f32) -> Self {
+    fn new(rate: f32) -> Self {
         let r = f64::from(rate);
         let k = [Biquad::k_shelf(r), Biquad::k_highpass(r)];
         Self {
@@ -55,11 +43,6 @@ impl Agc {
             kr: k,
             ms: 0.0,
             ms_coef: coef(AGC_TAU, rate),
-            target: target_lufs,
-            gain_db: 0.0,
-            max_step_db: AGC_DB_PER_SECOND * AGC_STEP as f32 / rate.max(1.0),
-            count: 0,
-            gain: 1.0,
         }
     }
 
@@ -68,7 +51,7 @@ impl Agc {
         -0.691 + 10.0 * self.ms.max(1e-18).log10()
     }
 
-    /// Misst ein Ausgangs-Sample; alle [`AGC_STEP`] Samples wird die Verstärkung nachgeführt.
+    /// Misst ein Ausgangs-Sample.
     #[inline]
     fn observe(&mut self, l: f32, r: f32) {
         let a = self.kl[0].run(l);
@@ -76,24 +59,14 @@ impl Agc {
         let b = self.kr[0].run(r);
         let b = self.kr[1].run(b);
         self.ms += (a * a + b * b - self.ms) * self.ms_coef;
-        self.count += 1;
-        if self.count >= AGC_STEP {
-            self.count = 0;
-            let lufs = self.lufs();
-            if lufs > AGC_GATE_LUFS {
-                let want = (self.gain_db + (self.target - lufs)).clamp(-AGC_RANGE_DB, AGC_RANGE_DB);
-                let step = (want - self.gain_db).clamp(-self.max_step_db, self.max_step_db);
-                self.gain_db += step;
-                self.gain = db_to_gain(f64::from(self.gain_db));
-            }
-        }
     }
 }
 
 /// Werte für die Anzeige, aus dem Audio-Thread über Atomics.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct BusMeter {
-    /// Verstärkung der Lautheitsregelung (dB).
+    /// Verstärkung der Lautheitsregelung (dB). Seit #297 immer 0: der Sendebus regelt
+    /// innerhalb eines Titels nicht nach.
     pub agc_db: f32,
     /// Absenkung durch Kompressor (dB, ≥ 0).
     pub comp_db: f32,
@@ -103,7 +76,7 @@ pub struct BusMeter {
     pub lufs: f32,
 }
 
-/// Sendebus: Lautheitsregelung, Kompressor, Limiter. Stereo gekoppelt.
+/// Sendebus: Lautheitsmessung, Kompressor, Limiter. Stereo gekoppelt.
 #[derive(Debug, Clone, Copy)]
 pub struct BusProcessor {
     agc: Agc,
@@ -116,30 +89,26 @@ impl BusProcessor {
         let r = rate.max(1) as f32;
         let t = target_lufs as f32;
         Self {
-            agc: Agc::new(t, r),
+            agc: Agc::new(r),
             // RMS eines Sinus liegt ~3 dB über seinem LUFS-Wert; Schwelle 4 dB über dem Ziel.
             comp: Compressor::new(t + 4.0, 2.5, 0.01, 0.25, r),
             limit: Limiter::new(CEILING_DB, 0.08, r),
         }
     }
 
-    /// Neues Ziel (LUFS); die Regelung fährt weich dorthin.
+    /// Neues Ziel (LUFS) für die Kompressor-Schwelle.
     pub fn set_target(&mut self, target_lufs: f64) {
-        let t = target_lufs as f32;
-        self.agc.target = t;
-        self.comp.set_threshold_db(t + 4.0);
+        self.comp.set_threshold_db(target_lufs as f32 + 4.0);
     }
 
     /// Rechnet den Faktor für ein Stereo-Sample `(l, r)`. Der Aufrufer multipliziert damit
     /// alle Wege (Sendung und Abhören), damit beide gleich geregelt sind.
     #[inline]
     pub fn gain(&mut self, l: f32, r: f32) -> f32 {
-        let g0 = self.agc.gain;
-        let (al, ar) = (l * g0, r * g0);
-        let gc = self.comp.gain((al * al + ar * ar) * 0.5);
-        let (cl, cr) = (al * gc, ar * gc);
+        let gc = self.comp.gain((l * l + r * r) * 0.5);
+        let (cl, cr) = (l * gc, r * gc);
         let gl = self.limit.gain(cl.abs().max(cr.abs()));
-        let g = g0 * gc * gl;
+        let g = gc * gl;
         let c = self.limit.ceiling();
         self.agc.observe((l * g).clamp(-c, c), (r * g).clamp(-c, c));
         g
@@ -162,7 +131,7 @@ impl BusProcessor {
 
     pub fn meter(&self) -> BusMeter {
         BusMeter {
-            agc_db: self.agc.gain_db,
+            agc_db: 0.0,
             comp_db: self.comp.reduction_db(),
             limit_db: self.limit.reduction_db(),
             lufs: self.agc.lufs(),
@@ -239,48 +208,22 @@ mod tests {
     }
 
     #[test]
-    fn agc_pulls_quiet_and_loud_material_to_target() {
-        for amp in [0.05f32, 0.6] {
-            let mut bus = BusProcessor::new(-16.0, SR);
-            let mut out_l = Vec::new();
-            let mut out_r = Vec::new();
-            for i in 0..SR as usize * 20 {
-                let (l, r) = bus.process(sine(i, 440.0, amp), sine(i, 440.0, amp));
-                if i > SR as usize * 12 {
-                    out_l.push(l);
-                    out_r.push(r);
+    fn bus_does_not_ride_quiet_and_loud_passages() {
+        // #297: leise und laute Passagen unter der Kompressor-Schwelle behalten ihren Abstand.
+        let mut bus = BusProcessor::new(-16.0, SR);
+        let mut peaks = [0.0f32; 2];
+        for (k, amp) in [0.03f32, 0.15].into_iter().enumerate() {
+            for i in 0..SR as usize * 6 {
+                let (l, _) = bus.process(sine(i, 1_000.0, amp), sine(i, 1_000.0, amp));
+                if i > SR as usize * 5 {
+                    peaks[k] = peaks[k].max(l.abs() / amp);
                 }
             }
-            let lufs = woa_engine::loudness::integrated_lufs(&out_l, &out_r, SR).unwrap();
-            assert!((lufs + 16.0).abs() < 1.0, "amp {amp}: {lufs} LUFS");
         }
-    }
-
-    #[test]
-    fn agc_holds_still_in_silence() {
-        let mut bus = BusProcessor::new(-16.0, SR);
-        for _ in 0..SR as usize * 10 {
-            bus.process(0.0, 0.0);
-        }
+        assert!((peaks[0] - 1.0).abs() < 0.01, "{peaks:?}");
+        assert!((peaks[1] - 1.0).abs() < 0.01, "{peaks:?}");
         assert_eq!(bus.meter().agc_db, 0.0);
-        // Rauschen weit unter der Pausenschwelle zieht nicht hoch.
-        for i in 0..SR as usize * 5 {
-            bus.process(sine(i, 300.0, 1e-4), 0.0);
-        }
-        assert_eq!(bus.meter().agc_db, 0.0);
-    }
-
-    #[test]
-    fn agc_moves_slowly() {
-        let mut bus = BusProcessor::new(-16.0, SR);
-        for i in 0..SR as usize {
-            bus.process(sine(i, 440.0, 0.05), sine(i, 440.0, 0.05));
-        }
-        let m = bus.meter();
-        assert!(
-            m.agc_db > 0.5 && m.agc_db <= AGC_DB_PER_SECOND + 0.1,
-            "{m:?}"
-        );
+        assert!((bus.meter().lufs - (-0.691 + 20.0 * 0.15f32.log10())).abs() < 0.5);
     }
 
     #[test]

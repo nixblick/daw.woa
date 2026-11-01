@@ -270,11 +270,8 @@ fn bus_processing_limits_and_levels_without_alloc() {
         "limiter/compressor worked"
     );
     assert!(c.status().mic_gate_open.load(Ordering::Relaxed));
-    // After 10 s close to the target: loudness of the last 3 s.
-    let tail = &sent[sent.len() - 3 * 2 * SR as usize..];
-    let (tl, tr): (Vec<f32>, Vec<f32>) = tail.chunks(2).map(|p| (p[0], p[1])).unzip();
-    let lufs = integrated_lufs(&tl, &tr, SR).unwrap();
-    assert!((lufs + 16.0).abs() < 2.0, "{lufs} LUFS");
+    // #297: the bus no longer rides the level; each title keeps its own fixed gain.
+    assert_eq!(c.status().bus_agc_db(), 0.0);
 
     // Switched off: the AGC reports 0 dB.
     c.set_processing(false, false);

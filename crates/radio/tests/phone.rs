@@ -16,6 +16,15 @@ const SR: u32 = 48_000;
 const BLOCK: usize = 256;
 const PROGRAM: f32 = 0.25;
 const CALLER: f32 = 0.5;
+/// Pegel des Programms (Deck A) am Ausgang: Gleichwert mit seinem Auto-Gain (#297).
+static PROGRAM_OUT: std::sync::LazyLock<f32> = std::sync::LazyLock::new(|| {
+    let tmp = tempfile::tempdir().unwrap();
+    let f = tmp.path().join("programm.wav");
+    write_dc(&f, 30.0, PROGRAM);
+    let m = woa_radio::audio::measure_file(&f, SR).unwrap();
+    let g = woa_radio::level::auto_gain_db(m.lufs, m.peak_db, woa_radio::level::TARGET_LUFS);
+    PROGRAM * woa_radio::level::db_to_gain(g)
+});
 
 fn write_dc(path: &Path, seconds: f64, amp: f32) {
     let spec = hound::WavSpec {
@@ -126,8 +135,12 @@ fn return_carries_the_program_but_never_the_caller() {
     rig.c.set_phone_on(true);
     let h = rig.run(200, SR);
     // Auf Sendung liegen Programm und Anrufer; der Rückweg trägt nur das Programm.
-    assert!(near(h.main, PROGRAM + CALLER), "Hauptausgang {}", h.main);
-    assert!(near(h.ret, PROGRAM), "Rückweg {}", h.ret);
+    assert!(
+        near(h.main, *PROGRAM_OUT + CALLER),
+        "Hauptausgang {}",
+        h.main
+    );
+    assert!(near(h.ret, *PROGRAM_OUT), "Rückweg {}", h.ret);
 }
 
 #[test]
@@ -137,7 +150,7 @@ fn without_a_caller_signal_the_return_is_exactly_the_program() {
     rig.c.set_phone_on(true);
     let h = rig.run(200, SR);
     assert!(
-        near(h.main, PROGRAM) && near(h.ret, PROGRAM),
+        near(h.main, *PROGRAM_OUT) && near(h.ret, *PROGRAM_OUT),
         "{} {}",
         h.main,
         h.ret
@@ -146,7 +159,7 @@ fn without_a_caller_signal_the_return_is_exactly_the_program() {
     let mut rig = Rig::new(true, None, SR);
     rig.c.set_phone_on(true);
     let h = rig.run(200, SR);
-    assert!(near(h.main, PROGRAM) && near(h.ret, PROGRAM));
+    assert!(near(h.main, *PROGRAM_OUT) && near(h.ret, *PROGRAM_OUT));
     assert!(h.ret_energy > 0.0);
 }
 
@@ -154,17 +167,17 @@ fn without_a_caller_signal_the_return_is_exactly_the_program() {
 fn caller_off_air_is_metered_but_neither_on_air_nor_in_the_return() {
     let mut rig = Rig::new(true, Some(CALLER), SR);
     let h = rig.run(200, SR);
-    assert!(near(h.main, PROGRAM), "Hauptausgang {}", h.main);
-    assert!(near(h.ret, PROGRAM), "Rückweg {}", h.ret);
+    assert!(near(h.main, *PROGRAM_OUT), "Hauptausgang {}", h.main);
+    assert!(near(h.ret, *PROGRAM_OUT), "Rückweg {}", h.ret);
     assert!(near(rig.phone_peak(), CALLER), "Pegel {}", rig.phone_peak());
     // Dann auf Sendung: ab jetzt im Hauptausgang, der Rückweg bleibt rein.
     rig.c.set_phone_on(true);
     let h = rig.run(200, SR);
-    assert!(near(h.main, PROGRAM + CALLER));
-    assert!(near(h.ret, PROGRAM));
+    assert!(near(h.main, *PROGRAM_OUT + CALLER));
+    assert!(near(h.ret, *PROGRAM_OUT));
     rig.c.set_phone_on(false);
     let h = rig.run(200, SR);
-    assert!(near(h.main, PROGRAM) && near(h.ret, PROGRAM));
+    assert!(near(h.main, *PROGRAM_OUT) && near(h.ret, *PROGRAM_OUT));
 }
 
 #[test]
@@ -173,8 +186,12 @@ fn caller_from_another_card_with_another_rate_arrives_and_stays_out_of_the_retur
     let mut rig = Rig::new(true, Some(CALLER), 44_100);
     rig.c.set_phone_on(true);
     let h = rig.run(400, 44_100);
-    assert!(near(h.main, PROGRAM + CALLER), "Hauptausgang {}", h.main);
-    assert!(near(h.ret, PROGRAM), "Rückweg {}", h.ret);
+    assert!(
+        near(h.main, *PROGRAM_OUT + CALLER),
+        "Hauptausgang {}",
+        h.main
+    );
+    assert!(near(h.ret, *PROGRAM_OUT), "Rückweg {}", h.ret);
 }
 
 #[test]
@@ -182,7 +199,7 @@ fn without_a_return_route_nothing_reaches_the_return_pair() {
     let mut rig = Rig::new(false, Some(CALLER), SR);
     rig.c.set_phone_on(true);
     let h = rig.run(100, SR);
-    assert!(near(h.main, PROGRAM + CALLER));
+    assert!(near(h.main, *PROGRAM_OUT + CALLER));
     assert_eq!(h.ret_energy, 0.0, "kein Rückweg gewählt");
 }
 
