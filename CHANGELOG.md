@@ -1,8 +1,16 @@
 # Changelog
 
-## 0.34.99 — 2026-11-01
+## 0.35.2 — 2026-11-01
 
 - **WOA-Logo in der Windows-Taskleiste:** Die `woa.exe` trägt jetzt `packaging/windows/woa.ico` (16 bis 256 px) als Icon-Ressource, eingebettet per `apps/woa/build.rs` mit `winresource` (Build-Abhängigkeit nur unter Windows). Bisher zeigte die Taskleiste einen Platzhalter, weil das Fensterbild aus dem PNG nur als kleines Symbol ankommt und die Exe kein eigenes Icon hatte; aus der ZIP gestartet fehlte es ganz. Der Windows-Bau prüft das jetzt (Icon der `woa.exe` ungleich Standardsymbol). `woa-headless` und `woa-streamd` sind Konsolenprogramme ohne Fenster und bleiben ohne. Linux unverändert.
+
+## 0.35.1 — 2026-11-01
+
+- **PIN-Bremse: wechselnde IPv6-Adressen im LAN umgehen sie nicht mehr (#294, zu #234):** Link-local- und ULA-Adressen zählen jetzt wie alle IPv6-Adressen je /64. Dazu gibt es wieder eine Obergrenze, die nicht von der Adresse abhängt: höchstens 30 falsche PINs je Minute insgesamt (`Limits::global_failures_per_minute`); ist sie erreicht, wird jede Anmeldung von Adressen ohne DJ-Sitzung abgelehnt, ohne die PIN zu prüfen (kein Treffer als Orakel). Die PIN wird nicht neu gewürfelt. Adressen, die schon eine DJ-Sitzung haben, sind von beiden Sperren ausgenommen, der angemeldete DJ kommt also weiter herein. Folge: Wer noch nicht angemeldet ist, kann während eines Angriffs bis zu einer Minute nicht anmelden. Tests: `changing_ula_addresses_cannot_bypass_the_brake`, `real_dj_gets_in_during_a_guessing_attack`.
+
+## 0.35.0 — 2026-11-01
+
+- **J10 Sample-Suche über Freesound (Paket aus #262, das letzte J-Paket):** Neue MCP-Werkzeuge `search_samples` (`text`, `limit`) und `import_sample` (`id`, `track`, `start_beats`, `name`). Gesucht wird nur nach CC0 und CC BY: der Filter steht in der Anfrage, und jede Antwort wird beim Lesen noch einmal geprüft, CC BY-NC, Sampling+ und Unbekanntes fallen raus, auch beim Import einer Nummer. Der Import lädt die Vorschau (MP3, das Original bräuchte OAuth2) nach `aufnahmen/`, legt den Clip an und schreibt die Herkunftszeile (Titel, Urheber, Lizenz mit Link, Quelle) in `notizen.md` im Projektordner. Der Schlüssel ist der eigene des Nutzers: neues Feld „Freesound-Schlüssel“ unter Einstellungen → KI, abgelegt im Schlüsselbund (Eintrag `freesound`), nie im Projekt, nie im Log, nie in einer Antwort ans Modell. Ohne Schlüssel sagen beide Werkzeuge, wo er hingehört. Nur https. Keine neue Abhängigkeit (ureq gab es schon). Tests: `crates/agent/src/freesound.rs`, `crates/agent/tests/j10_samples.rs` (lokaler Test-Freesound, kein Netz, kein Schlüsselbund), `crates/gui/src/ki_setup.rs`. Damit sind J1 bis J10 gebaut; Version 0.35.0.
 
 ## 0.34.98 — 2026-11-01
 

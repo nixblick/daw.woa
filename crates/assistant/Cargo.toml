@@ -12,7 +12,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tracing = "0.1.44"
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
-woa-secrets = { version = "0.34", path = "../secrets" }
+woa-secrets = { version = "0.35", path = "../secrets" }
 
 [dev-dependencies]
 tempfile = "3.27.0"
