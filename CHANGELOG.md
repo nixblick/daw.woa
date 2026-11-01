@@ -1,8 +1,15 @@
 # Changelog
 
-## 0.35.6 — 2026-11-01
+## 0.35.8 — 2026-11-01
 
 - **Ganze Zeile anklickbar (#302):** In der Sende-Playlist und in den Decks ist die ganze Zeile eine Klickfläche, man muss nicht mehr den Titel treffen. Playlist: Klick wählt aus (Rahmen in Akzentfarbe), Doppelklick setzt „als Nächstes“, Rechtsklick öffnet überall das Titelmenü (Umbenennen, Titelinfos …), Ziehen wie bisher von jeder Stelle. Decks: Rechtsklick irgendwo auf der Deck-Zeile öffnet das Menü (Datei laden, Schneiden, Leeren). Nur Knöpfe und die Nummer (eintippen) behalten ihren eigenen Klick. Die Cart-Pads waren schon ganz klickbar. Technisch: neue Hilfsfunktion `row_area` (Klickfläche unter dem Inhalt per `UiBuilder::sense`), Beschriftungen in der Zeile sind nicht mehr markierbar, der lange Hover-Text wird erst beim Zeigen gebaut. Trägheit gemessen: 300 Zeilen etwa 15 ms je Bild mit Klickfläche gegen 13 ms ohne (Debug-Bau, Notebook), unter der `ui.frame_slow`-Schwelle von 50 ms; der Test vergleicht relativ, weil die CI langsamer ist; Wellenformen werden in den Zeilen nicht gezeichnet. Tests: `whole_row_selects_and_opens_the_menu_anywhere`, `many_rows_stay_fast` in `crates/gui/src/radio.rs`.
+## 0.35.7 — 2026-11-01
+
+- **Feedback geht auch in der Party-Ansicht (#288):** Die Party-Ansicht zeichnete nur ihr eigenes Pult und kehrte dann zurück, ohne die Fenster aus dem Menü zu zeichnen. Die Feedback-Taste öffnete das Fenster also unsichtbar, erst nach dem Wechsel zu Radio erschien es. Jetzt zeichnen alle drei Ansichten dieselben Fenster über `WoaApp::app_windows` (Feedback, Über WOA, Ausgabe, Telefon, Ordner, Stream, KI, Telemetrie, Export, Controller). Tests: `party_feedback_tests` in `crates/gui/src/app.rs` (Party war vor dem Fix rot, Radio als Gegenprobe).
+
+## 0.35.6 — 2026-11-01
+
+- **Playlist-Titel lassen sich wieder am Griff auf ein Deck ziehen (#298):** Seit dem Griff-Symbol aus #92 (0.34.74, Commit `1933917`) war der Griff am linken Zeilenrand ein markierbarer Text. egui gibt das Ziehen dann der Textauswahl statt der Zeile; die Zeile bewegte sich nicht, und auf dem Deck kam nichts an. Jetzt sind alle Texte einer Playlist-Zeile nicht markierbar, Ziehen am Griff wie am Titel lädt aufs Deck oder verschiebt in der Playlist. Klick, Doppelklick, Nummer eintippen und Kontextmenü bleiben. Bibliothek und Dateien aus dem Explorer waren nicht betroffen und sind jetzt mit abgedeckt. Tests im echten Pult-Layout ohne Audiogerät (`RadioDesk::headless`, der Mixer rechnet nur in einen Puffer): `deck_drop_tests` in `crates/gui/src/radio.rs` (Bibliothek, Explorer-Datei, Playlist am Griff, Playlist am Titel).
 
 ## 0.35.5 — 2026-11-01
 
