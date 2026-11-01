@@ -631,7 +631,7 @@ fn login(stream: &mut TcpStream, req: &Request, ip: IpAddr, inner: &Inner) {
     if pin.len() > 32 {
         return fail(stream, 400, "PIN zu lang");
     }
-    let r = lock(&inner.auth).login(ip, &pin, Instant::now());
+    let r = lock(&inner.auth).login_with_token(ip, &pin, req.token().as_deref(), Instant::now());
     match r {
         Ok((token, role)) => {
             tracing::info!(%ip, role = role.as_str(), "remote: login");
