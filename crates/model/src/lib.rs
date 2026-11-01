@@ -31,7 +31,9 @@
 //! No function in this crate panics on bad input; all failures are [`ModelError`].
 
 pub mod automation;
+pub mod chords;
 mod command;
+pub mod drums;
 pub mod effect;
 mod error;
 mod history;
@@ -39,13 +41,16 @@ pub mod midi;
 pub mod plugin;
 mod project;
 mod session;
+pub mod sound;
 pub mod store;
 pub mod takes;
 
 pub use automation::{
     AutoMode, AutoPoint, AutoRange, AutoTarget, AutomationLane, MAX_AUTOMATION_POINTS,
 };
+pub use chords::{CHORD_PROGRESSIONS, ChordProgression};
 pub use command::Command;
+pub use drums::{DRUM_PRESETS, DRUM_ROWS, DrumPreset, DrumRow, drum_preset};
 pub use effect::{
     DELAY_SYNC_CHOICES, EffectKind, Insert, InsertId, ParamSpec, Preset, VOICE_CHAIN,
 };
@@ -59,6 +64,7 @@ pub use project::{
     STRETCH_RANGE, Send, Track, TrackId, TrackKind, is_safe_audio_path,
 };
 pub use session::Session;
+pub use sound::{SOUND_PRESETS, SoundBank, SoundPreset, SoundRole, TrackSound, preset_name};
 pub use store::{FORMAT_VERSION, ProjectFile, required_version};
 pub use takes::{
     ClipPlan, CompSegment, MAX_COMP_SEGMENTS, MAX_TAKES, RecordInput, RecordPlan, TakeEntry,

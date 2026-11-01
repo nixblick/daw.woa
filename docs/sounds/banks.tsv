@@ -1,0 +1,4 @@
+# Bank-Katalog (Paket J7, #271). Gelesen von crates/engine/src/banks.rs und packaging/fetch-soundfont.sh.
+# Spalten (Tab): id, Datei, Bytes, SHA-256, URL (nur https), Lizenzdatei in docs/sounds/. Herkunft: docs/sounds/README.md.
+musescore-general	MuseScore_General.sf2	215614036	ee51d2c4b1525e70f19a45909c4fd7a2e26d91d115fa89dbf5a6bc413d8b9bf3	https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf2	MuseScore_General-LICENSE.md
+avl-red-zeppelin	Red_Zeppelin_4_LV2.sf2	26470546	289fc3e30a4859eb74ae14eb08ddef453e8bf8eab3e501772dcf96fd8328a71a	https://raw.githubusercontent.com/x42/avldrums.lv2/9389f16f139410d9a55f9006976bd54cbd8b7806/sf2/Red_Zeppelin_4_LV2.sf2	AVL-Drumkits-LICENSE.txt

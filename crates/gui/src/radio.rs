@@ -81,6 +81,12 @@ fn row_drop_target(
 }
 
 /// Anzahl gespielter Titel am Anfang der Playlist (vor dem laufenden bzw. nächsten).
+/// Eingetippte Playlist-Nummer (#92, 1-basiert) als Zielindex, auf die Liste begrenzt.
+fn typed_position(text: &str, len: usize) -> Option<usize> {
+    let n: usize = text.trim().parse().ok()?;
+    (len > 0).then(|| n.clamp(1, len) - 1)
+}
+
 pub(crate) fn played_count(v: &View) -> usize {
     v.first_open.min(v.playlist.len())
 }
@@ -151,6 +157,8 @@ pub struct RadioDesk {
     row_rects: Vec<egui::Rect>,
     /// Gezogene Playlist-Zeile (Index), solange die Maus gedrückt ist (#166).
     row_drag: Option<usize>,
+    /// Nummer einer Playlist-Zeile wird gerade eingetippt (#92): Zeile und Text.
+    pos_edit: Option<(usize, String)>,
     /// Cart, das die nächste gedrückte Taste als neue Taste bekommt.
     key_capture: Option<usize>,
     /// Ortszeit für die Uhrzeit-Anzeige (von der Stundenuhr).
@@ -347,6 +355,87 @@ pub(crate) fn level_faders(
         });
     });
     out
+}
+
+/// Die zwei Ausgänge mit eigenem Regler (#96), Reihenfolge wie in [`output_faders`].
+const OUTPUTS: [(woa_radio::show::Output, &str, &str); 2] = [
+    (
+        woa_radio::show::Output::Monitor,
+        "Notebook",
+        "Wiedergabe Notebook",
+    ),
+    (woa_radio::show::Output::Stream, "Stream", "Stream senden"),
+];
+
+/// Regler für die Ausgänge „Wiedergabe Notebook“ (Abhören) und „Stream senden“ (#96), im
+/// Stil der Pegelregler, darunter je ein roter Stumm-Knopf. Liefert je Ausgang, ob sich Pegel
+/// oder Stumm geändert hat.
+pub(crate) fn output_faders(
+    ui: &mut egui::Ui,
+    outs: &mut [woa_radio::show::OutLevel; 2],
+) -> [bool; 2] {
+    let mut changed = [false; 2];
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        for (((_, short, name), o), ch) in OUTPUTS.iter().zip(outs.iter_mut()).zip(&mut changed) {
+            ui.vertical(|ui| {
+                ui.set_width(52.0);
+                ui.label(
+                    egui::RichText::new(*short)
+                        .font(theme::label_font(11.0))
+                        .color(theme::text_dim()),
+                );
+                let mut db = o.db as f32;
+                let r = crate::widgets::fader(
+                    ui,
+                    &mut db,
+                    woa_radio::mixer::LEVEL_MIN_DB as f32..=woa_radio::mixer::LEVEL_MAX_DB as f32,
+                    0.0,
+                    egui::vec2(40.0, 150.0),
+                    crate::widgets::Orient::Vertical,
+                );
+                let label = format!("Pegel {name}");
+                let value = f64::from(db);
+                r.widget_info(|| egui::WidgetInfo::slider(true, value, &label));
+                let r = r.on_hover_text(format!(
+                    "Pegel {name}. Doppelklick: 0 dB. Ganz unten = aus."
+                ));
+                if r.changed() {
+                    o.db = f64::from(db);
+                    *ch = true;
+                }
+                let red = theme::on_air();
+                let m = egui::Button::new(egui::RichText::new("M").strong().color(if o.mute {
+                    theme::well()
+                } else {
+                    theme::text_dim()
+                }))
+                .fill(if o.mute { red } else { theme::well() })
+                .stroke(egui::Stroke::new(
+                    1.0,
+                    if o.mute { red } else { theme::border() },
+                ))
+                .min_size(egui::vec2(40.0, 21.0));
+                let label = format!("Stumm {name}");
+                let mute = o.mute;
+                let b = ui.add(m);
+                b.widget_info(|| {
+                    egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, mute, &label)
+                });
+                if b.on_hover_text(format!("{name} stumm schalten")).clicked() {
+                    o.mute = !o.mute;
+                    *ch = true;
+                }
+                ui.label(
+                    egui::RichText::new(crate::widgets::vu::fmt_db(db))
+                        .font(theme::label_font(11.0))
+                        .monospace()
+                        .color(theme::text()),
+                );
+            });
+        }
+    });
+    changed
 }
 
 /// Knöpfe „Deck A/B/C starten“ im Playlist-Player: das Deck löst die Playlist ab.
@@ -617,6 +706,7 @@ impl RadioDesk {
             deck_rects: [egui::Rect::NOTHING; woa_radio::DECKS],
             row_rects: Vec::new(),
             row_drag: None,
+            pos_edit: None,
             key_capture: None,
             zone: Zone::CENTRAL_EUROPE,
             cue_editor: None,
@@ -887,13 +977,13 @@ impl RadioDesk {
         self.view.running
     }
 
-    /// Live für die ON-AIR-Lampe: die Sendung läuft (Feeder) oder das Mikro ist offen.
+    /// Live für die ON-AIR-Lampe: nur „Auf Sendung“ (Feeder läuft), nicht das Mikro (#225).
     pub fn is_live(&self) -> bool {
-        self.feeder.is_some() || self.view.mic_open
+        onair_lamp_lit(self.feeder.is_some(), self.view.mic_open)
     }
 
     fn add_dialog(&self) {
-        if let Some(files) = rfd::FileDialog::new()
+        if let Some(files) = crate::ordner::dialog_musik()
             .add_filter(
                 woa_engine::decode::FILTER_NAME,
                 &woa_engine::decode::dialog_extensions(),
@@ -1176,17 +1266,12 @@ impl RadioDesk {
     /// Die Wunschtitel: Liste mit einem Klick in die Playlist oder auf ein Deck.
     fn wish_card(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("WUNSCHTITEL")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("WUNSCHTITEL"));
             if ui
                 .small_button("Ordner wählen …")
                 .on_hover_text("Alles, was hier hineinkommt, erscheint sofort in der Liste")
                 .clicked()
-                && let Some(dir) = rfd::FileDialog::new().pick_folder()
+                && let Some(dir) = crate::ordner::dialog_musik().pick_folder()
             {
                 self.set_wish_folder(Some(dir.clone()));
                 self.wish_chosen = Some(dir);
@@ -1293,7 +1378,7 @@ impl RadioDesk {
 
     /// Ordner der Mitschnitte.
     pub fn recordings_dir(&self) -> PathBuf {
-        self.data_dir.join(woa_radio::RECORDINGS_DIR)
+        crate::ordner::dir(crate::ordner::Art::Mitschnitte)
     }
 
     /// Startet oder beendet den Mitschnitt der Sendesumme (REC in der Kopfleiste).
@@ -1309,8 +1394,8 @@ impl RadioDesk {
                 c.stop_recording();
             });
         } else {
-            let dir = self.data_dir.clone();
-            self.with(move |c| c.start_recording(&dir));
+            let dir = self.recordings_dir();
+            self.with(move |c| c.start_recording_in(&dir));
         }
     }
 
@@ -1512,10 +1597,7 @@ impl RadioDesk {
         // Modul-Kopfzeile: Status-Badges links, Sendestatus rechts.
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("SENDE-DECK & MASTER-UHR")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
+                theme::panel_label("SENDE-DECK & MASTER-UHR"),
             );
             if v.running {
                 theme::status_pill(ui, "DECK LÄUFT", theme::ok(), true);
@@ -1535,7 +1617,7 @@ impl RadioDesk {
                     ui.label(
                         egui::RichText::new(format!("Aussetzer: {n}"))
                             .small()
-                            .color(theme::on_air()),
+                            .color(theme::danger_text()),
                     )
                     .on_hover_text(
                         "Puffer-Unterläufe der Ausgabe seit dem Öffnen. Steigt die Zahl, \
@@ -1955,12 +2037,7 @@ impl RadioDesk {
     fn processing_rack(&mut self, ui: &mut egui::Ui) {
         let v = self.view.clone();
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("BROADCAST-PROCESSING & ÜBERGÄNGE")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("BROADCAST-PROCESSING & ÜBERGÄNGE"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 theme::status_pill(
                     ui,
@@ -1998,6 +2075,15 @@ impl RadioDesk {
             {
                 self.view.duck_db = duck;
                 self.with(move |c| c.set_duck(duck));
+            }
+            let mut cart_duck = v.cart_duck;
+            if ui
+                .checkbox(&mut cart_duck, "auch bei Carts")
+                .on_hover_text("Musik leiser, solange ein Cart spielt")
+                .changed()
+            {
+                self.view.cart_duck = cart_duck;
+                self.with(move |c| c.set_cart_duck(cart_duck));
             }
             // Stopp mit Ausblenden (#227): kein eigener Knopf, die Stopp-Knöpfe bleiben.
             let (mut on, mut secs) = (v.stop_fade, v.stop_fade_seconds);
@@ -2097,12 +2183,7 @@ impl RadioDesk {
     fn guests_card(&mut self, ui: &mut egui::Ui) {
         let guests = self.view.guests.clone();
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("GÄSTE & MIX-MINUS")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("GÄSTE & MIX-MINUS"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let full = guests.len() >= woa_guests::MAX_GUESTS;
                 let file = ui
@@ -2114,7 +2195,7 @@ impl RadioDesk {
                         "Eine Audiodatei in Schleife als Testgast (kein Netz, kein Mikrofon)",
                     );
                 if file.clicked()
-                    && let Some(p) = rfd::FileDialog::new()
+                    && let Some(p) = crate::ordner::dialog(crate::ordner::Art::Aufnahmen)
                         .add_filter(
                             woa_engine::decode::FILTER_NAME,
                             &woa_engine::decode::dialog_extensions(),
@@ -2161,10 +2242,7 @@ impl RadioDesk {
         let web = self.view.web.clone();
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("BROWSER-GÄSTE")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
+                theme::panel_label("BROWSER-GÄSTE"),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if web.running {
@@ -2408,7 +2486,7 @@ impl RadioDesk {
                 .is_some_and(|(s, t)| s == slot && t.elapsed() < Duration::from_secs(3));
             let label = if armed {
                 egui::RichText::new(format!("{} Wirklich trennen?", theme::ic::X))
-                    .color(theme::on_air())
+                    .color(theme::danger_text())
             } else {
                 egui::RichText::new(theme::ic::X)
             };
@@ -2474,7 +2552,7 @@ impl RadioDesk {
                         g.underruns, g.overflows
                     ))
                     .small()
-                    .color(theme::on_air()),
+                    .color(theme::danger_text()),
                 );
             }
         });
@@ -2559,7 +2637,7 @@ impl RadioDesk {
                 .filter(|_| running)
                 .and_then(StreamStatus::problem)
             {
-                ui.label(egui::RichText::new(p).small().color(theme::on_air()));
+                ui.label(egui::RichText::new(p).small().color(theme::danger_text()));
             }
             if let Some(line) = link_line(
                 self.feeder
@@ -2567,19 +2645,18 @@ impl RadioDesk {
                     .map(|f| (f.is_connected(), f.reconnects())),
                 st.as_ref().filter(|_| running),
             ) {
-                ui.label(egui::RichText::new(line).small().color(theme::on_air()));
+                ui.label(
+                    egui::RichText::new(line)
+                        .small()
+                        .color(theme::danger_text()),
+                );
             }
         });
     }
 
     fn playlist(&mut self, ui: &mut egui::Ui, v: &View) {
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("SENDE-PLAYLIST")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("SENDE-PLAYLIST"));
             let acts = self
                 .manage
                 .header(ui, &v.playlists, v.active_playlist, v.running);
@@ -2736,18 +2813,59 @@ impl RadioDesk {
                 let resp = frame.show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
+                        // Griff zum Ziehen (#92): die ganze Zeile lässt sich ziehen (#166).
                         ui.label(
-                            egui::RichText::new(format!("{:>2}", i + 1))
-                                .monospace()
-                                .strong()
-                                .color(if on_air {
-                                    theme::on_air()
-                                } else if is_cue {
-                                    theme::cue()
-                                } else {
-                                    theme::text_dim()
-                                }),
-                        );
+                            egui::RichText::new(theme::ic::DOTS_SIX_VERTICAL)
+                                .color(theme::text_dim()),
+                        )
+                        .on_hover_text("Ziehen zum Verschieben");
+                        // Nummer eintippen (#92): Klick, Zahl, Enter verschiebt den Titel.
+                        let editing = self.pos_edit.as_ref().is_some_and(|(k, _)| *k == i);
+                        if editing {
+                            let len = v.playlist.len();
+                            let mut done = None;
+                            if let Some((_, text)) = self.pos_edit.as_mut() {
+                                let r = ui.add(
+                                    egui::TextEdit::singleline(text)
+                                        .desired_width(26.0)
+                                        .font(egui::TextStyle::Monospace),
+                                );
+                                r.request_focus();
+                                if r.lost_focus() {
+                                    let enter = ui.input(|inp| inp.key_pressed(egui::Key::Enter));
+                                    done = Some(enter.then(|| typed_position(text, len)).flatten());
+                                }
+                            }
+                            if let Some(target) = done {
+                                self.pos_edit = None;
+                                if let Some(to) = target.filter(|&to| to != i) {
+                                    self.with(move |c| {
+                                        c.move_entry(i, to);
+                                    });
+                                }
+                            }
+                        } else {
+                            let r = ui
+                                .add(
+                                    egui::Label::new(
+                                        egui::RichText::new(format!("{:>2}", i + 1))
+                                            .monospace()
+                                            .strong()
+                                            .color(if on_air {
+                                                theme::on_air()
+                                            } else if is_cue {
+                                                theme::cue()
+                                            } else {
+                                                theme::text_dim()
+                                            }),
+                                    )
+                                    .sense(egui::Sense::click()),
+                                )
+                                .on_hover_text("Klicken und neue Nummer eintippen (Enter)");
+                            if r.clicked() {
+                                self.pos_edit = Some((i, (i + 1).to_string()));
+                            }
+                        }
                         let thumb = self.covers.as_mut().and_then(|c| c.thumb(&e.path));
                         crate::covers::paint_square(ui, 34.0, thumb.as_ref(), None, 1.0);
                         crate::protokoll::damage_badge(ui, &e.path);
@@ -2763,7 +2881,7 @@ impl RadioDesk {
                                     egui::RichText::new("prüfen")
                                         .small()
                                         .strong()
-                                        .color(theme::on_air()),
+                                        .color(theme::danger_text()),
                                 )
                                 .on_hover_text(
                                     "Ein Nachbar hat sich geändert: der Voice-Track geht erst \
@@ -2914,12 +3032,7 @@ impl RadioDesk {
 
     fn cart_wall(&mut self, ui: &mut egui::Ui, v: &View) {
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("CART-WALL (JINGLES & SOUNDS)")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("CART-WALL (JINGLES & SOUNDS)"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
                     egui::RichText::new(match self.key_capture {
@@ -3231,7 +3344,7 @@ impl RadioDesk {
 
     /// Wählt eine Sprachdatei und legt sie als Voice-Track bei `at` in die Playlist.
     fn add_voice_dialog(&self, at: usize) {
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(path) = crate::ordner::dialog(crate::ordner::Art::Aufnahmen)
             .add_filter(
                 woa_engine::decode::FILTER_NAME,
                 &woa_engine::decode::dialog_extensions(),
@@ -3485,7 +3598,7 @@ impl RadioDesk {
     }
 
     fn pick_deck_file(&self, k: usize) {
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(path) = crate::ordner::dialog_musik()
             .add_filter(
                 woa_engine::decode::FILTER_NAME,
                 &woa_engine::decode::dialog_extensions(),
@@ -3510,16 +3623,11 @@ impl RadioDesk {
 
     /// Die drei Decks: große Restzeit, Start und Stopp, Laden per Ziehen oder Menü.
     fn deck_card(&mut self, ui: &mut egui::Ui, v: &View) {
-        ui.label(
-            egui::RichText::new("DECKS A · B · C")
-                .size(11.5)
-                .strong()
-                .color(theme::text_dim()),
-        );
+        ui.label(theme::panel_label("DECKS A · B · C"));
         ui.add_space(4.0);
         // Decks links, die senkrechten Pegelregler als eine Gruppe rechts daneben.
         ui.horizontal_top(|ui| {
-            let w = (ui.available_width() - 270.0).max(260.0);
+            let w = (ui.available_width() - 390.0).max(260.0);
             ui.allocate_ui(egui::vec2(w, 0.0), |ui| {
                 ui.vertical(|ui| self.deck_rows(ui, v));
             });
@@ -3536,6 +3644,19 @@ impl RadioDesk {
                 self.set_level(b, f64::from(db));
             }
             self.learn_menu(r, Target::Level(b));
+        }
+        ui.separator();
+        let mut outs = [self.view.out_monitor, self.view.out_stream];
+        let ch = output_faders(ui, &mut outs);
+        for ((out, _, _), (o, c)) in OUTPUTS.iter().zip(outs.into_iter().zip(ch)) {
+            if c {
+                match out {
+                    woa_radio::show::Output::Monitor => self.view.out_monitor = o,
+                    woa_radio::show::Output::Stream => self.view.out_stream = o,
+                }
+                let out = *out;
+                self.with(move |c| c.set_output(out, o));
+            }
         }
     }
 
@@ -3693,7 +3814,7 @@ impl RadioDesk {
     }
 
     fn assign_cart(&self, slot: usize) {
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(path) = crate::ordner::dialog(crate::ordner::Art::Jingles)
             .add_filter(
                 woa_engine::decode::FILTER_NAME,
                 &woa_engine::decode::dialog_extensions(),
@@ -3709,8 +3830,37 @@ impl RadioDesk {
     }
 }
 
+/// ON-AIR-Lampe: leuchtet nur, wenn die Sendung läuft. Mikro an ist eine eigene Anzeige (#225).
+fn onair_lamp_lit(on_air: bool, _mic_open: bool) -> bool {
+    on_air
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn typed_position_moves_within_the_playlist() {
+        // Eingetippte Nummer (#92): 1-basiert, auf die Liste begrenzt, Unsinn tut nichts.
+        assert_eq!(super::typed_position(" 3 ", 5), Some(2));
+        assert_eq!(super::typed_position("1", 5), Some(0));
+        assert_eq!(super::typed_position("99", 5), Some(4));
+        assert_eq!(super::typed_position("0", 5), Some(0));
+        assert_eq!(super::typed_position("abc", 5), None);
+        assert_eq!(super::typed_position("", 5), None);
+        assert_eq!(super::typed_position("2", 0), None);
+    }
+
+    #[test]
+    fn onair_lamp_ignores_the_mic() {
+        use super::onair_lamp_lit;
+        assert!(
+            !onair_lamp_lit(false, true),
+            "mic open is not on air (#225)"
+        );
+        assert!(!onair_lamp_lit(false, false));
+        assert!(onair_lamp_lit(true, false));
+        assert!(onair_lamp_lit(true, true));
+    }
+
     #[test]
     fn time_of_day_follows_the_zone() {
         use woa_engine::localtime::Zone;
@@ -3944,6 +4094,30 @@ mod tests {
         ev.extend(click_at(p, false));
         let _ = frame(&ctx, 4, ev, &mut ui);
         assert_eq!(dbs.borrow()[2], 0.0, "Doppelklick: 0 dB");
+    }
+
+    #[test]
+    fn output_faders_have_level_and_mute() {
+        let ctx = eframe::egui::Context::default();
+        ctx.enable_accesskit();
+        let outs = std::cell::RefCell::new([woa_radio::show::OutLevel::default(); 2]);
+        let changed = std::cell::RefCell::new(Vec::new());
+        let mut ui = |ui: &mut eframe::egui::Ui| {
+            let ch = super::output_faders(ui, &mut outs.borrow_mut());
+            changed.borrow_mut().push(ch);
+        };
+        frame(&ctx, 0, vec![], &mut ui);
+        let nodes = frame(&ctx, 1, vec![], &mut ui);
+        for name in ["Pegel Wiedergabe Notebook", "Pegel Stream senden"] {
+            let r = find(&nodes, name).1;
+            assert!(r.height() > 2.0 * r.width(), "{name} senkrecht: {r:?}");
+        }
+        let p = find(&nodes, "Stumm Stream senden").1.center();
+        let _ = frame(&ctx, 2, click_at(p, false), &mut ui);
+        assert_eq!(changed.borrow().last(), Some(&[false, true]));
+        assert!(outs.borrow()[1].mute, "Stream stumm");
+        assert!(!outs.borrow()[0].mute);
+        assert_eq!(outs.borrow()[1].db, 0.0, "Pegel bleibt beim Stummschalten");
     }
 
     #[test]

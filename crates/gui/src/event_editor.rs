@@ -284,7 +284,7 @@ impl EventEditor {
                 .button("+ Event …")
                 .on_hover_text("Audiodatei wählen: Jingle, Nachrichten, Werbung")
                 .clicked()
-                && let Some(p) = rfd::FileDialog::new()
+                && let Some(p) = crate::ordner::dialog(crate::ordner::Art::Jingles)
                     .add_filter("Audio", &["wav", "mp3", "flac", "ogg"])
                     .pick_file()
             {

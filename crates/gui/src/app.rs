@@ -37,6 +37,12 @@ use crate::widgets::topbar::{
 pub const ABOUT_TAGLINE: &str = "WOA – built with love, coffee and AI";
 /// Andrés PayPal-Spendenlink, derselbe wie in bretteins.desktop und fotobrett.desktop (`app/ui/app-info.js`).
 pub const DONATE_PAYPAL: &str = "https://www.paypal.com/qrcodes/p2pqrc/KUND7JXYHRGDN";
+/// QR-Code des PayPal-Links für „Über WOA“ (#231), einmal gebaut.
+pub fn donate_qr() -> Option<&'static woa_remote::qr::QrMatrix> {
+    static QR: std::sync::OnceLock<Option<woa_remote::qr::QrMatrix>> = std::sync::OnceLock::new();
+    QR.get_or_init(|| woa_remote::qr::qr(DONATE_PAYPAL))
+        .as_ref()
+}
 /// Andrés Ko-fi-Seite, wie in bretteins.desktop und fotobrett.desktop.
 pub const DONATE_KOFI: &str = "https://ko-fi.com/nixblick";
 /// Höhe einer Spur (Design `TrackHeader`: 64 px, zwei Zeilen).
@@ -252,8 +258,12 @@ pub struct WoaApp {
     mcp_live: crate::mcp_live::McpLive,
     /// Fenster „Produktionen“: Audio-Dateien des Projekts, neueste oben.
     produktionen: crate::produktionen::ProduktionenWindow,
+    akkorde: crate::akkorde::AkkordFenster,
     /// Export-Fenster (Paket 26).
     export_dialog: crate::export_dialog::ExportDialog,
+    /// „Spur exportieren“ (Ticket 229): offenes Fenster und laufender Export.
+    track_export: Option<crate::track_export::TrackExportDialog>,
+    track_export_job: Option<crate::track_export::TrackExportJob>,
     clock_editor: crate::clock_editor::ClockEditor,
     event_editor: crate::event_editor::EventEditor,
     /// Sendeablauf; läuft weiter, auch wenn das Produzent-Layout zu sehen ist.
@@ -293,6 +303,7 @@ pub struct WoaApp {
     ki_started: bool,
     /// Fenster „Telefon“ (Eingang für den Anrufer).
     phone_ui: crate::phone::PhoneUi,
+    ordner_ui: crate::ordner::OrdnerUi,
 }
 
 /// Ein Controller-Wert, der erst nach einer Ruhepause als ein Undo-Schritt ins Projekt geht
@@ -515,6 +526,7 @@ impl WoaApp {
             chat_ui: crate::chat_ui::ChatUi::default(),
             ki_started: false,
             phone_ui: crate::phone::PhoneUi::default(),
+            ordner_ui: crate::ordner::OrdnerUi::default(),
             midi,
             midi_seen: (0, None),
             piano_roll: None,
@@ -603,7 +615,10 @@ impl WoaApp {
             ),
             mcp_live: crate::mcp_live::McpLive::new(woa_radio::data_dir(), open_audio),
             produktionen: crate::produktionen::ProduktionenWindow::default(),
+            akkorde: crate::akkorde::AkkordFenster::default(),
             export_dialog: crate::export_dialog::ExportDialog::new(),
+            track_export: None,
+            track_export_job: None,
             clock_editor: crate::clock_editor::ClockEditor::new(woa_radio::data_dir()),
             event_editor: crate::event_editor::EventEditor::new(woa_radio::data_dir()),
             radio: None,
@@ -691,6 +706,8 @@ impl WoaApp {
 
     /// Sets the data folder (radio.json, recordings). Default: the WOA data folder.
     pub fn set_data_dir(&mut self, dir: PathBuf) {
+        // Zusatzbänke (Paket J7) landen im Datenordner.
+        woa_engine::banks::set_bank_dir(dir.join("banks"));
         self.library.set_db_path(dir.join(crate::library::DB_FILE));
         self.clock_editor.set_dir(dir.clone());
         self.event_editor.set_dir(dir.clone());
@@ -834,6 +851,17 @@ impl WoaApp {
     }
 
     /// Fenster „Telefon“: Der gewählte Eingang wird gespeichert und sofort geöffnet.
+    /// Fenster „Speicherorte“ (#258): jede Änderung wird gespeichert und angewendet.
+    fn ordner_window(&mut self, ctx: &egui::Context) {
+        let Some(ordner) = self.ordner_ui.show(ctx, &self.config.ordner) else {
+            return;
+        };
+        tracing::info!("folder settings applied");
+        crate::ordner::apply(&ordner);
+        self.config.ordner = ordner;
+        self.save_config();
+    }
+
     fn phone_window(&mut self, ctx: &egui::Context) {
         let status: Vec<String> = self
             .radio
@@ -1108,12 +1136,16 @@ impl WoaApp {
                 ui.label(
                     egui::RichText::new("Wirkt, sobald nichts mehr läuft")
                         .small()
-                        .color(theme::on_air()),
+                        .color(theme::danger_text()),
                 );
             } else if let Some(note) = self.radio.as_ref().and_then(RadioDesk::pfl_note)
                 && note != crate::radio::PFL_OFF
             {
-                ui.label(egui::RichText::new(note).small().color(theme::on_air()));
+                ui.label(
+                    egui::RichText::new(note)
+                        .small()
+                        .color(theme::danger_text()),
+                );
             }
         });
     }
@@ -2002,7 +2034,7 @@ impl WoaApp {
 
     fn save_as(&mut self) {
         self.capture_plugins();
-        if let Some(dir) = rfd::FileDialog::new()
+        if let Some(dir) = crate::ordner::dialog(crate::ordner::Art::Projekte)
             .set_title("Projekt speichern")
             .set_file_name(format!("{}.woa", self.state.project().meta.name))
             .save_file()
@@ -2013,7 +2045,7 @@ impl WoaApp {
 
     /// Schreibt das Projekt als `.dawproject` (Austausch mit Bitwig, Studio One, Cubase …).
     fn export_dawproject(&mut self) {
-        let Some(out) = rfd::FileDialog::new()
+        let Some(out) = crate::ordner::dialog(crate::ordner::Art::Exporte)
             .set_title("Als DAWproject exportieren")
             .add_filter("DAWproject", &["dawproject"])
             .set_file_name(format!("{}.dawproject", self.state.project().meta.name))
@@ -2051,7 +2083,7 @@ impl WoaApp {
         if !self.save_before_replace("DAWproject öffnen") {
             return;
         }
-        let Some(file) = rfd::FileDialog::new()
+        let Some(file) = crate::ordner::dialog(crate::ordner::Art::Projekte)
             .set_title("DAWproject öffnen")
             .add_filter("DAWproject", &["dawproject"])
             .pick_file()
@@ -2117,7 +2149,7 @@ impl WoaApp {
         if !self.save_before_replace("Öffnen") {
             return;
         }
-        if let Some(dir) = rfd::FileDialog::new()
+        if let Some(dir) = crate::ordner::dialog(crate::ordner::Art::Projekte)
             .set_title("Projektordner (.woa) öffnen")
             .pick_folder()
         {
@@ -2502,7 +2534,7 @@ impl WoaApp {
             ChipLook::Quiet
         };
         let resp = topbar_chip(ui, theme::ic::RECORD, "REC", look, compact, true);
-        let dir = self.data_dir.join(woa_radio::RECORDINGS_DIR);
+        let dir = crate::ordner::dir(crate::ordner::Art::Mitschnitte);
         let mut tip = match &rec {
             Some((path, since)) => {
                 let secs = since.map_or(0, |t| t.elapsed().as_secs());
@@ -2555,7 +2587,7 @@ impl WoaApp {
         let resp = topbar_chip(ui, theme::ic::BROADCAST, "ON AIR", look, compact, false);
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, word));
         resp.on_hover_text(if live {
-            "ON AIR – Live: Sendung läuft oder das Mikro ist offen"
+            "ON AIR – Auf Sendung: der Stream läuft"
         } else {
             "ON AIR – Nicht auf Sendung"
         });
@@ -2710,6 +2742,14 @@ impl WoaApp {
                     self.chat_ui
                         .open(&self.config.ki, &self.data_dir, project.as_deref());
                 }
+                ui.close();
+            }
+            if ui
+                .button("Speicherorte …")
+                .on_hover_text("Wo WOA Projekte, Mitschnitte, Exporte … ablegt (WOA-Ordner)")
+                .clicked()
+            {
+                self.ordner_ui.open = true;
                 ui.close();
             }
             if ui.button("Telefon (Eingang für den Anrufer) …").clicked() {
@@ -2873,6 +2913,22 @@ impl WoaApp {
                 {
                     self.create_midi_clip_at_playhead(self.selected_track);
                 }
+                if ui
+                    .add_sized(
+                        [128.0, 32.0],
+                        egui::Button::new(
+                            egui::RichText::new(format!("{} Akkordfolge …", theme::ic::PIANO_KEYS))
+                                .small()
+                                .strong()
+                                .color(theme::cue()),
+                        )
+                        .fill(theme::well()),
+                    )
+                    .on_hover_text("Fertige Akkordfolge wählen: Akkorde, Bass und Arpeggio als MIDI-Spuren")
+                    .clicked()
+                {
+                    self.akkorde.open = true;
+                }
             });
             if self.state.project().tracks.is_empty() {
                 ui.add_space(24.0);
@@ -3025,7 +3081,7 @@ impl WoaApp {
     fn import_audio(&mut self) {
         let exts = woa_engine::decode::dialog_extensions();
         let ext_refs: Vec<&str> = exts.iter().map(String::as_str).collect();
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = crate::ordner::dialog_musik()
             .set_title("Audiodatei importieren")
             .add_filter(woa_engine::decode::FILTER_NAME, &ext_refs)
             .pick_file()
@@ -3120,7 +3176,7 @@ impl WoaApp {
 
     /// Importiert eine `.mid`-Datei als MIDI-Clip am Kopf (Paket 12).
     fn import_midi(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = crate::ordner::dialog(crate::ordner::Art::Midi)
             .set_title("MIDI importieren")
             .add_filter("MIDI", &["mid", "midi"])
             .pick_file()
@@ -3170,7 +3226,7 @@ impl WoaApp {
             self.state.status = Status::Error("Erst einen MIDI-Clip auswählen".into());
             return;
         };
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = crate::ordner::dialog(crate::ordner::Art::Midi)
             .set_title("MIDI exportieren")
             .set_file_name(format!("{name}.mid"))
             .add_filter("MIDI", &["mid"])
@@ -3517,11 +3573,18 @@ impl WoaApp {
                 }
             }
         }
+        if ui
+            .button(format!("{} Spur exportieren …", theme::ic::EXPORT))
+            .clicked()
+        {
+            self.track_export = Some(crate::track_export::TrackExportDialog::new(id, name));
+            ui.close();
+        }
         ui.separator();
         if ui
             .button(
                 egui::RichText::new(format!("{} Spur löschen", theme::ic::TRASH))
-                    .color(theme::on_air()),
+                    .color(theme::danger_text()),
             )
             .clicked()
         {
@@ -5125,6 +5188,19 @@ impl WoaApp {
         self.apply_pick(out);
     }
 
+    /// Fenster „Akkordfolge“ (Paket J3), erzeugt ab dem Takt am Abspielkopf.
+    fn akkorde_window(&mut self, ctx: &egui::Context) {
+        if !self.akkorde.open {
+            return;
+        }
+        let tempo = self.state.project().tempo_bpm;
+        let at = self
+            .player
+            .as_ref()
+            .map_or(0.0, |p| ((p.position_beats(tempo) / 4.0).floor()) * 4.0);
+        self.akkorde.show(ctx, &mut self.state, at);
+    }
+
     /// Fenster „Produktionen“: gleicher Weg wie die Bibliothek (Vorhören, Ablegen).
     fn produktionen_window(&mut self, ctx: &egui::Context) {
         let pfl = self.radio.as_ref().is_some_and(RadioDesk::pfl_available);
@@ -5234,6 +5310,109 @@ impl WoaApp {
         if let Some(req) = self.export_dialog.show(ctx) {
             self.run_export(req);
         }
+        self.track_export_window(ctx);
+    }
+
+    /// Fenster und Hintergrund-Export „Spur exportieren“ (Ticket 229).
+    fn track_export_window(&mut self, ctx: &egui::Context) {
+        if let Some(job) = &self.track_export_job {
+            match job.rx.try_recv() {
+                Ok(result) => {
+                    self.state.status = match result {
+                        Ok(secs) => {
+                            tracing::info!(seconds = secs, "track export done");
+                            Status::Info(format!(
+                                "Spur exportiert: {} ({secs:.1} s)",
+                                job.out.display()
+                            ))
+                        }
+                        Err(e) => {
+                            tracing::error!(error = %e, "track export failed");
+                            Status::Error(format!("Export fehlgeschlagen: {e}"))
+                        }
+                    };
+                    self.track_export_job = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(200));
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    tracing::error!("track export thread ended without result");
+                    self.state.status = Status::Error("Export fehlgeschlagen".into());
+                    self.track_export_job = None;
+                }
+            }
+        }
+        let Some(dialog) = self.track_export.as_mut() else {
+            return;
+        };
+        let req = match dialog.show(ctx) {
+            Err(()) => {
+                self.track_export = None;
+                return;
+            }
+            Ok(None) => return,
+            Ok(Some(req)) => req,
+        };
+        if self.track_export_job.is_some() {
+            self.state.status = Status::Error("Es läuft schon ein Spur-Export".into());
+            return;
+        }
+        let ext = req.format.extension();
+        let Some(out) = crate::ordner::dialog(crate::ordner::Art::Exporte)
+            .set_title("Spur exportieren")
+            .set_file_name(&req.file_name)
+            .add_filter(req.format.label(), &[ext])
+            .save_file()
+        else {
+            return;
+        };
+        self.track_export = None;
+        let out = if out.extension().is_none() {
+            out.with_extension(ext)
+        } else {
+            out
+        };
+        self.capture_plugins();
+        let project = self.state.project().clone();
+        let state = &self.state;
+        let job = match self.player.as_mut() {
+            Some(p) => p.track_export_job(
+                &project,
+                &|rel| state.resolve_audio(rel),
+                req.track,
+                out.clone(),
+                woa_engine::export::ExportSpec::new(req.format),
+                req.tags,
+            ),
+            None => Err("keine Audio-Engine".into()),
+        };
+        let work = match job {
+            Ok(w) => w,
+            Err(e) => {
+                self.state.status = Status::Error(format!("Export fehlgeschlagen: {e}"));
+                return;
+            }
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ctx2 = ctx.clone();
+        let spawned = std::thread::Builder::new()
+            .name("track-export".into())
+            .spawn(move || {
+                let _ = tx.send(work());
+                ctx2.request_repaint();
+            });
+        match spawned {
+            Ok(_) => {
+                self.state.status =
+                    Status::Info(format!("Spur wird exportiert: {}", out.display()));
+                self.track_export_job = Some(crate::track_export::TrackExportJob { out, rx });
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "track export thread not started");
+                self.state.status = Status::Error(format!("Export fehlgeschlagen: {e}"));
+            }
+        }
     }
 
     fn run_export(&mut self, req: crate::export_dialog::ExportRequest) {
@@ -5274,7 +5453,7 @@ impl WoaApp {
         ext: &str,
         spec: &woa_engine::export::ExportSpec,
     ) -> Option<Status> {
-        let out = rfd::FileDialog::new()
+        let out = crate::ordner::dialog(crate::ordner::Art::Exporte)
             .set_title("Exportieren")
             .set_file_name(format!("{name}.{ext}"))
             .add_filter(spec.format.label(), &[ext])
@@ -5318,7 +5497,7 @@ impl WoaApp {
         spec: &woa_engine::export::ExportSpec,
         opts: crate::export_dialog::StemOptions,
     ) -> Option<Status> {
-        let parent = rfd::FileDialog::new()
+        let parent = crate::ordner::dialog(crate::ordner::Art::Exporte)
             .set_title("Ordner für die Stems wählen")
             .pick_folder()?;
         // Eigener Unterordner „<Projekt> Stems“, damit nichts Fremdes überschrieben wird.
@@ -5482,6 +5661,19 @@ impl WoaApp {
                             ui.ctx().open_url(egui::OpenUrl::new_tab(DONATE_KOFI));
                         }
                     });
+                    // #231: zum Scannen mit dem Handy, kodiert den PayPal-Link.
+                    if let Some(m) = donate_qr() {
+                        ui.add_space(8.0);
+                        crate::remote::draw_qr(ui, m, 140.0)
+                            .on_hover_text(DONATE_PAYPAL)
+                            .widget_info(|| {
+                                egui::WidgetInfo::labeled(
+                                    egui::WidgetType::Image,
+                                    true,
+                                    "Spenden-QR-Code",
+                                )
+                            });
+                    }
                 });
                 ui.add_space(12.0);
                 ui.separator();
@@ -5497,6 +5689,11 @@ impl WoaApp {
                 );
                 ui.label(
                     "Die Symbole sind Phosphor Icons (MIT-Lizenz), eingebunden über egui-phosphor.",
+                );
+                ui.label(
+                    "Klänge: GeneralUser GS (S. Christian Collins). Auf Wunsch geladen: \
+                     MuseScore General (S. Christian Collins, auf Basis von FluidR3 von Frank \
+                     Wen, MIT-Lizenz) und AVL Drumkits (Glen MacArthur, CC BY-SA 3.0).",
                 );
                 ui.label(
                     "Dazu kommen die vielen freien Rust-Crates, auf denen WOA aufbaut, \
@@ -5718,7 +5915,7 @@ impl WoaApp {
                         });
                         self.feedback_previews(ui);
                         if let Some(e) = &self.image_error {
-                            ui.label(egui::RichText::new(e).color(theme::on_air()));
+                            ui.label(egui::RichText::new(e).color(theme::danger_text()));
                         }
                         ui.checkbox(
                             &mut self.feedback.send_log,
@@ -5825,7 +6022,7 @@ impl WoaApp {
                     }
                     Phase::Done(msg) => {
                         ui.add_space(8.0);
-                        ui.label(egui::RichText::new(msg).color(theme::on_air()));
+                        ui.label(egui::RichText::new(msg).color(theme::danger_text()));
                         ui.add_space(12.0);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
@@ -6011,6 +6208,16 @@ impl eframe::App for WoaApp {
                 (s < e).then_some((s, e))
             })
             .flatten();
+        // Erster Gebrauch (Paket J7): fehlt eine Bank des Projekts, lädt sie im Hintergrund.
+        for b in project
+            .tracks
+            .iter()
+            .filter_map(|t| t.sound.and_then(|s| s.bank))
+        {
+            if woa_engine::banks::state(b) == woa_engine::banks::BankState::Missing {
+                woa_engine::banks::ensure(b);
+            }
+        }
         if let Some(p) = self.player.as_mut() {
             p.sync(&project, &|rel| state.resolve_audio(rel), live);
             p.set_loop_beats(loop_beats, project.tempo_bpm);
@@ -6115,6 +6322,7 @@ impl eframe::App for WoaApp {
             self.feedback_window(&ctx);
             self.outputs_window(&ctx);
             self.phone_window(&ctx);
+            self.ordner_window(&ctx);
             self.stream_window(&ctx);
             self.ki_window(&ctx);
             self.telemetry_window(&ctx);
@@ -6184,6 +6392,7 @@ impl eframe::App for WoaApp {
         self.analysis_window(&ctx);
         self.library_window(&ctx);
         self.produktionen_window(&ctx);
+        self.akkorde_window(&ctx);
         self.clock_editor.show(&ctx);
         self.event_editor
             .show(&ctx, self.radio.as_ref().map(|r| r.view()));
@@ -6192,6 +6401,7 @@ impl eframe::App for WoaApp {
         self.feedback_window(&ctx);
         self.outputs_window(&ctx);
         self.phone_window(&ctx);
+        self.ordner_window(&ctx);
         self.stream_window(&ctx);
         self.ki_window(&ctx);
         self.telemetry_window(&ctx);
@@ -6928,7 +7138,7 @@ impl WoaApp {
         };
         let small = |s: &str| {
             egui::RichText::new(s.to_owned())
-                .size(9.5)
+                .size(theme::TYPE_SMALL)
                 .monospace()
                 .color(theme::text_dim())
         };
@@ -7024,7 +7234,7 @@ impl WoaApp {
         let inserts = track.inserts.clone();
         let small = |s: &str| {
             egui::RichText::new(s.to_owned())
-                .size(9.5)
+                .size(theme::TYPE_SMALL)
                 .monospace()
                 .color(theme::text_dim())
         };
@@ -7241,6 +7451,105 @@ impl WoaApp {
     }
 
     /// CLAP-Plugins einer Spur (Paket 31): Instrument und Effekte, Regler, Browser.
+    /// Klang der MIDI-Spur (Paket J1): eingebauter Synth oder ein GM-Klang je Rolle.
+    fn sound_combo(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: TrackId,
+        current: Option<woa_model::TrackSound>,
+    ) {
+        const SYNTH: &str = "Synth (eingebaut)";
+        let text = match current {
+            None => SYNTH.to_owned(),
+            Some(s) => {
+                let name = woa_model::preset_name(s).map_or_else(
+                    || format!("GM {}{}", s.program, if s.drums { " Kit" } else { "" }),
+                    str::to_owned,
+                );
+                match s.bank {
+                    Some(b) => format!("{name} · {}", b.name()),
+                    None => name,
+                }
+            }
+        };
+        let bank = current.and_then(|s| s.bank);
+        let mut chosen = None;
+        egui::ComboBox::from_id_salt(("track_sound", id.0))
+            .selected_text(format!("{} {text}", theme::ic::MUSIC_NOTE))
+            .show_ui(ui, |ui| {
+                if ui.selectable_label(current.is_none(), SYNTH).clicked() {
+                    chosen = Some(None);
+                }
+                let mut role = None;
+                for p in woa_model::SOUND_PRESETS {
+                    if role != Some(p.role) {
+                        role = Some(p.role);
+                        ui.separator();
+                    }
+                    let same = current
+                        .is_some_and(|c| c.program == p.sound.program && c.drums == p.sound.drums);
+                    if ui.selectable_label(same, p.name).clicked() {
+                        // Die Bank bleibt, solange sie zum Klang passt (Paket J7).
+                        let keep = bank.filter(|b| p.sound.drums || !b.drums_only());
+                        chosen = Some(Some(woa_model::TrackSound {
+                            bank: keep,
+                            ..p.sound
+                        }));
+                    }
+                }
+                // Bank (Paket J7): GeneralUser GS ist eingebaut, die übrigen kommen beim
+                // ersten Gebrauch aus dem Netz; bis dahin spielt GeneralUser GS.
+                if let Some(cur) = current {
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new("BANK")
+                            .size(theme::TYPE_SMALL)
+                            .color(theme::text_dim()),
+                    );
+                    if ui
+                        .selectable_label(bank.is_none(), "GeneralUser GS (eingebaut)")
+                        .clicked()
+                    {
+                        chosen = Some(Some(woa_model::TrackSound { bank: None, ..cur }));
+                    }
+                    for b in woa_model::SoundBank::ALL {
+                        if b.drums_only() && !cur.drums {
+                            continue;
+                        }
+                        let label =
+                            format!("{}{}", b.name(), bank_hint(&woa_engine::banks::state(b)));
+                        if ui.selectable_label(bank == Some(b), label).clicked() {
+                            chosen = Some(Some(woa_model::TrackSound {
+                                bank: Some(b),
+                                ..cur
+                            }));
+                        }
+                    }
+                }
+            })
+            .response
+            .on_hover_text(match bank {
+                Some(b) => format!(
+                    "Bank {}: {}",
+                    b.name(),
+                    match woa_engine::banks::state(b) {
+                        woa_engine::banks::BankState::Ready => "geladen".to_owned(),
+                        s => format!(
+                            "{}, bis dahin spielt GeneralUser GS",
+                            bank_hint(&s).trim_start_matches(" · ")
+                        ),
+                    }
+                ),
+                None => "Klang aus der GM-SoundFont; ohne SoundFont spielt der Synth".to_owned(),
+            });
+        if let Some(sound) = chosen {
+            if let Some(b) = sound.and_then(|s| s.bank) {
+                woa_engine::banks::ensure(b);
+            }
+            self.state.set_track_sound(id, sound);
+        }
+    }
+
     fn strip_plugins(&mut self, ui: &mut egui::Ui, id: TrackId, kind: woa_model::TrackKind) {
         use woa_model::PluginRole;
         let Some(track) = self.state.project().track(id) else {
@@ -7249,10 +7558,13 @@ impl WoaApp {
         let slots = track.plugins.clone();
         let small = |s: &str| {
             egui::RichText::new(s.to_owned())
-                .size(9.5)
+                .size(theme::TYPE_SMALL)
                 .color(theme::text_dim())
         };
         let has_instrument = slots.iter().any(|s| s.role == PluginRole::Instrument);
+        if kind == woa_model::TrackKind::Midi && !has_instrument {
+            self.sound_combo(ui, id, track.sound);
+        }
         if !slots.is_empty() {
             ui.label(small("PLUGINS"));
         }
@@ -7338,8 +7650,8 @@ impl WoaApp {
                                 theme::ic::WARNING,
                                 slot.clap_id
                             ))
-                            .size(9.5)
-                            .color(theme::on_air()),
+                            .size(theme::TYPE_SMALL)
+                            .color(theme::danger_text()),
                         );
                         if ui
                             .small_button("Plugin suchen")
@@ -7356,8 +7668,8 @@ impl WoaApp {
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new(format!("{} {why}", theme::ic::WARNING))
-                                .size(9.5)
-                                .color(theme::on_air()),
+                                .size(theme::TYPE_SMALL)
+                                .color(theme::danger_text()),
                         );
                         let isolated = self
                             .player
@@ -7516,7 +7828,7 @@ impl WoaApp {
     fn plugin_safety_ui(&mut self, ui: &mut egui::Ui) {
         let small = |s: &str| {
             egui::RichText::new(s.to_owned())
-                .size(9.5)
+                .size(theme::TYPE_SMALL)
                 .color(theme::text_dim())
         };
         let Some(p) = self.player.as_mut() else {
@@ -7542,7 +7854,7 @@ impl WoaApp {
             for q in problems.iter().take(8) {
                 ui.label(
                     egui::RichText::new(format!("{}: {}", name(&q.path), q.reason))
-                        .size(9.5)
+                        .size(theme::TYPE_SMALL)
                         .color(theme::text_dim()),
                 );
             }
@@ -7560,8 +7872,8 @@ impl WoaApp {
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(format!("{}: {}", name(&b.file), b.reason))
-                        .size(9.5)
-                        .color(theme::on_air()),
+                        .size(theme::TYPE_SMALL)
+                        .color(theme::danger_text()),
                 )
                 .on_hover_text(b.file.display().to_string());
                 if ui.small_button("Freigeben").clicked() {
@@ -7584,7 +7896,7 @@ impl WoaApp {
     fn plugin_log_ui(&mut self, ui: &mut egui::Ui, clap_id: &str, id: woa_model::InsertId) {
         let small = |s: &str| {
             egui::RichText::new(s.to_owned())
-                .size(9.5)
+                .size(theme::TYPE_SMALL)
                 .color(theme::text_dim())
         };
         let Some(p) = self.player.as_ref().filter(|p| p.plugin_isolated(id)) else {
@@ -7601,7 +7913,7 @@ impl WoaApp {
                     ui.label(
                         egui::RichText::new(l)
                             .monospace()
-                            .size(9.0)
+                            .size(theme::TYPE_SMALL)
                             .color(theme::text_dim()),
                     );
                 }
@@ -8069,12 +8381,9 @@ fn bar_beat(beats: f64, position: bool) -> String {
     format!("{bar}.{beat}.{six}")
 }
 
-/// Gruppentitel im Insert-Rack (klein, Mono, gedimmt).
+/// Gruppentitel im Insert-Rack: Modulkopf wie überall (`panel-label`).
 fn rack_title(s: &str) -> egui::RichText {
-    egui::RichText::new(s.to_owned())
-        .size(9.5)
-        .monospace()
-        .color(theme::text_dim())
+    theme::panel_label(s)
 }
 
 /// Gefahr-Symbolknopf (Design `IconButton --danger`): ohne Fläche, Symbol gedimmt, erst bei Hover
@@ -8221,5 +8530,18 @@ mod pfl_switch_tests {
         assert!(s.choose(false));
         assert!(!s.pending);
         assert!(!s.poll(false));
+    }
+}
+
+/// Zustand einer Bank als Zusatz im Menü (Paket J7): leer, wenn sie da ist.
+fn bank_hint(state: &woa_engine::banks::BankState) -> String {
+    use woa_engine::banks::BankState;
+    match state {
+        BankState::Ready => String::new(),
+        BankState::Missing => " · wird beim Wählen geladen".to_owned(),
+        BankState::Downloading { done, total } => {
+            format!(" · lädt {} %", done * 100 / (*total).max(1))
+        }
+        BankState::Failed(e) => format!(" · Fehler: {e}"),
     }
 }

@@ -157,6 +157,39 @@ fn default_stop_fade() -> f64 {
     3.0
 }
 
+/// Ein Ausgang mit eigenem Regler (#96).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Output {
+    /// „Wiedergabe Notebook“: der Abhörausgang.
+    Monitor,
+    /// „Stream senden“: die Sendung an woa-streamd.
+    Stream,
+}
+
+/// Pegel und Stumm eines Ausgangs (#96). Vorgabe 0 dB, nicht stumm (auch für alte Dateien).
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct OutLevel {
+    #[serde(default)]
+    pub db: f64,
+    #[serde(default)]
+    pub mute: bool,
+}
+
+impl OutLevel {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Linearer Gain (stumm oder ganz unten = 0).
+    pub fn gain(&self) -> f32 {
+        if self.mute || self.db <= crate::mixer::LEVEL_MIN_DB {
+            0.0
+        } else {
+            10f64.powf(self.db / 20.0) as f32
+        }
+    }
+}
+
 fn is_default_stop_fade(v: &f64) -> bool {
     *v == default_stop_fade()
 }
@@ -181,6 +214,9 @@ pub struct RadioShow {
     pub crossfade_seconds: f64,
     #[serde(default = "default_duck")]
     pub duck_db: f64,
+    /// Musik auch absenken, solange ein Cart spielt (#149).
+    #[serde(default = "yes")]
+    pub cart_duck: bool,
     #[serde(default = "default_target")]
     pub target_lufs: f64,
     /// Sendebus-Processing (Lautheitsregelung auf `target_lufs`, Kompressor, Limiter).
@@ -234,6 +270,12 @@ pub struct RadioShow {
     /// der nächste steht als Cue bereit und startet mit „Play“. Vorgabe an.
     #[serde(default = "yes", skip_serializing_if = "is_true")]
     pub auto_next: bool,
+    /// Regler „Wiedergabe Notebook“ (Abhörausgang, #96).
+    #[serde(default, skip_serializing_if = "OutLevel::is_default")]
+    pub out_monitor: OutLevel,
+    /// Regler „Stream senden“ (#96); der Mitschnitt bleibt unberührt.
+    #[serde(default, skip_serializing_if = "OutLevel::is_default")]
+    pub out_stream: OutLevel,
 }
 
 impl Default for RadioShow {
@@ -242,6 +284,7 @@ impl Default for RadioShow {
             version: VERSION,
             crossfade_seconds: default_crossfade(),
             duck_db: default_duck(),
+            cart_duck: true,
             target_lufs: default_target(),
             bus_processing: true,
             mic_processing: true,
@@ -259,6 +302,8 @@ impl Default for RadioShow {
             stop_fade: false,
             stop_fade_seconds: default_stop_fade(),
             auto_next: true,
+            out_monitor: OutLevel::default(),
+            out_stream: OutLevel::default(),
         }
     }
 }
@@ -285,6 +330,13 @@ impl RadioShow {
             self.target_lufs = default_target();
         }
         self.target_lufs = self.target_lufs.clamp(-40.0, -5.0);
+        for o in [&mut self.out_monitor, &mut self.out_stream] {
+            o.db = if o.db.is_finite() {
+                o.db.clamp(crate::mixer::LEVEL_MIN_DB, crate::mixer::LEVEL_MAX_DB)
+            } else {
+                0.0
+            };
+        }
         self.carts.resize(CARTS, None);
         self.decks.resize(DECKS, None);
         self.deck_return.resize(DECKS, false);

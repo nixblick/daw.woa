@@ -19,6 +19,9 @@ symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "m
 woa-dsp = { version = "0.34", path = "../dsp" }
 woa-model = { version = "0.34", path = "../model" }
 woa-telemetry = { version = "0.34", path = "../telemetry" }
+# Paket J7: Bänke beim ersten Gebrauch laden (nur https, rustls wie woa-updater) und prüfen.
+sha2 = "0.10.9"
+ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 pulseaudio = { version = "0.3.2", optional = true }

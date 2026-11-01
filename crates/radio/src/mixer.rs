@@ -53,6 +53,10 @@ pub enum LevelBus {
     Mic,
     /// Decks A, B, C zusammen.
     Decks,
+    /// Ausgang „Wiedergabe Notebook“ (Abhörmix im Hauptausgang, #96).
+    Monitor,
+    /// Ausgang „Stream senden“ (nur der Ring an woa-streamd, #96).
+    Stream,
 }
 
 impl LevelBus {
@@ -62,6 +66,8 @@ impl LevelBus {
             LevelBus::Carts => 1,
             LevelBus::Mic => 2,
             LevelBus::Decks => 3,
+            LevelBus::Monitor => 4,
+            LevelBus::Stream => 5,
         }
     }
 }
@@ -123,6 +129,8 @@ pub enum Cmd {
     SetStopFade(usize),
     /// Absenkung der Musik bei offenem Mikro (linear).
     SetDuck(f32),
+    /// Musik auch absenken, solange ein Cart spielt (#149).
+    SetCartDuck(bool),
     /// Mikro auf/zu.
     MicOpen(bool),
     /// Mikro im eigenen Ausgang hören (Sendung enthält es immer).
@@ -610,6 +618,10 @@ pub struct Mixer {
     phone_l: [f32; PHONE_CHUNK],
     phone_r: [f32; PHONE_CHUNK],
     duck_lin: f32,
+    /// Carts senken die Musik ab (#149).
+    cart_duck: bool,
+    /// Beim letzten Blockanfang spielte mindestens ein Cart.
+    carts_on: bool,
     duck: Smoother,
     mic_backlog: usize,
     rec: Option<Owned<rtrb::Producer<f32>>>,
@@ -619,8 +631,8 @@ pub struct Mixer {
     bus_on: bool,
     mic_chain: MicChain,
     mic_chain_on: bool,
-    /// Pegel Musik, Carts, Mikro, Decks (geglättet).
-    levels: [Smoother; 4],
+    /// Pegel Musik, Carts, Mikro, Decks, Abhören, Stream (geglättet).
+    levels: [Smoother; 6],
     /// Gast-Kanäle mit Mix-Minus (Paket 37).
     guests: GuestBank,
     /// Wohin die Cart-Wall geht (0 = in den Hauptausgang).
@@ -682,6 +694,8 @@ impl Mixer {
             phone_l: [0.0; PHONE_CHUNK],
             phone_r: [0.0; PHONE_CHUNK],
             duck_lin: 0.25,
+            cart_duck: true,
+            carts_on: false,
             duck: Smoother::new(1.0, DUCK_TAU, r),
             mic_backlog: (MIC_BACKLOG * r) as usize * 2,
             rec: None,
@@ -784,6 +798,10 @@ impl Mixer {
                 Cmd::SetStopFade(f) => self.stop_fade = f,
                 Cmd::SetDuck(g) => {
                     self.duck_lin = g.clamp(0.0, 1.0);
+                    self.retarget_duck();
+                }
+                Cmd::SetCartDuck(on) => {
+                    self.cart_duck = on;
                     self.retarget_duck();
                 }
                 Cmd::MicOpen(on) => {
@@ -1100,6 +1118,12 @@ impl Mixer {
             }
         });
         self.trim_mic_backlog();
+        // Carts ducken die Musik (#149); geprüft je Block, das reicht bei 80 ms Glättung.
+        let carts_on = self.carts.iter().any(Option::is_some);
+        if carts_on != self.carts_on {
+            self.carts_on = carts_on;
+            self.retarget_duck();
+        }
         self.guests.begin_block();
         let mut peak = 0.0f32;
         let mut mic_peak = 0.0f32;
@@ -1266,7 +1290,8 @@ impl Mixer {
             let pg = self.phone_gain.tick();
             pl *= pg;
             pr *= pg;
-            let [lm, lc, li, _] = &mut self.levels;
+            let [lm, lc, li, _, lo, ls] = &mut self.levels;
+            let (out_mon, out_stream) = (lo.tick(), ls.tick());
             let (lm, lc) = (lm.tick(), lc.tick());
             let mg = self.mic_gain.tick() * li.tick();
             let duck = self.duck.tick() * lm * vduck;
@@ -1327,8 +1352,8 @@ impl Mixer {
             }
             if let Some(p) = self.stream.as_mut() {
                 if p.slots() >= 2 {
-                    let _ = p.push(sl);
-                    let _ = p.push(sr);
+                    let _ = p.push(sl * out_stream);
+                    let _ = p.push(sr * out_stream);
                 } else {
                     self.status.stream_dropped.fetch_add(2, Ordering::Relaxed);
                 }
@@ -1351,6 +1376,8 @@ impl Mixer {
                     right[i] -= xr * gain_out;
                 }
             }
+            left[i] *= out_mon;
+            right[i] *= out_mon;
             if let Some(d) = ret_dest {
                 extra[d].l[i] += tl;
                 extra[d].r[i] += tr;
@@ -1366,9 +1393,10 @@ impl Mixer {
         }
     }
 
-    /// Die Musik wird abgesenkt, solange das Mikro offen ist oder das Telefon auf Sendung.
+    /// Die Musik wird abgesenkt, solange das Mikro offen ist, das Telefon auf Sendung oder
+    /// (abschaltbar) ein Cart spielt.
     fn retarget_duck(&mut self) {
-        let down = self.mic_open || self.phone_on;
+        let down = self.mic_open || self.phone_on || (self.cart_duck && self.carts_on);
         self.duck.set_target(if down { self.duck_lin } else { 1.0 });
     }
 

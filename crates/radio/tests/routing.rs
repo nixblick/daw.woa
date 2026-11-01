@@ -38,6 +38,8 @@ fn setup(dir: &Path) -> (Controller, Mixer) {
     let show = RadioShow {
         bus_processing: false,
         mic_processing: false,
+        // Hier zählt die Leitung, nicht das Ducking (#149).
+        cart_duck: false,
         playlist: vec![PlaylistEntry::new(&music)],
         ..RadioShow::default()
     };

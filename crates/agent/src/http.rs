@@ -66,6 +66,11 @@ fn plain(status: u16, text: &'static str) -> http::Response<Body> {
         http::header::CONTENT_TYPE,
         http::HeaderValue::from_static("text/plain; charset=utf-8"),
     );
+    // Abgewiesen: die Verbindung endet nach der Antwort.
+    r.headers_mut().insert(
+        http::header::CONNECTION,
+        http::HeaderValue::from_static("close"),
+    );
     if status == 401 {
         r.headers_mut().insert(
             http::header::WWW_AUTHENTICATE,
@@ -165,6 +170,7 @@ where
                 let token = token.clone();
                 async move {
                     let resp: http::Response<Body> = if req.uri().path() != MCP_PATH {
+                        drain(req.into_body()).await;
                         plain(404, "nicht gefunden")
                     } else if !{
                         let h = req
@@ -174,6 +180,7 @@ where
                         bearer_matches(h, &token.0)
                             || token.1.as_deref().is_some_and(|s| bearer_matches(h, s))
                     } {
+                        drain(req.into_body()).await;
                         plain(401, "Zugriffstoken fehlt oder stimmt nicht")
                     } else {
                         match service.call(req).await {
@@ -193,6 +200,41 @@ where
             }
         });
     }
+}
+
+/// Höchstens so viele Bytes liest der Server von einer abgewiesenen Anfrage weg.
+const DRAIN_LIMIT: u64 = 1024 * 1024;
+/// Höchstens so viele abgewiesene Anfragen werden gleichzeitig weggelesen; jede weitere
+/// bekommt die Antwort sofort.
+static DRAINS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(16);
+
+/// Liest den Body einer abgewiesenen Anfrage weg und verwirft jedes Stück sofort (höchstens
+/// [`DRAIN_LIMIT`] Bytes, höchstens 2 s, höchstens 16 gleichzeitig). Schließt der Server mit
+/// ungelesenen Bytes, wird unter Windows aus der Antwort ein RST, und der Client sieht statt
+/// der 401 „connection aborted (os error 10053)“ (#256). Gibt die gelesenen Bytes zurück.
+async fn drain<B>(body: B) -> u64
+where
+    B: hyper::body::Body + Unpin,
+{
+    let Ok(_permit) = DRAINS.try_acquire() else {
+        return 0;
+    };
+    let mut body = body;
+    let mut read = 0u64;
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while read < DRAIN_LIMIT {
+            match body.frame().await {
+                Some(Ok(f)) => {
+                    if let Some(d) = f.data_ref() {
+                        read += bytes::Buf::remaining(d) as u64;
+                    }
+                }
+                _ => break,
+            }
+        }
+    })
+    .await;
+    read
 }
 
 // Der Crate hat kein `tracing`; Verbindungsfehler gehören auf stderr (stdout bleibt MCP).
@@ -243,6 +285,55 @@ mod tests {
     }
 
     use super::*;
+
+    /// Ein Body aus `n` Stücken zu 64 KiB; zählt, wie viele gelesen wurden.
+    struct Chunks {
+        left: usize,
+        polled: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl hyper::body::Body for Chunks {
+        type Data = Bytes;
+        type Error = std::convert::Infallible;
+        fn poll_frame(
+            mut self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Option<Result<hyper::body::Frame<Bytes>, Self::Error>>> {
+            if self.left == 0 {
+                return std::task::Poll::Ready(None);
+            }
+            self.left -= 1;
+            self.polled
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            std::task::Poll::Ready(Some(Ok(hyper::body::Frame::data(Bytes::from(vec![
+                0u8;
+                64 * 1024
+            ])))))
+        }
+    }
+
+    #[test]
+    fn drain_stops_at_the_limit_and_reads_small_bodies_fully() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let polled = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let big = Chunks {
+            left: 48,
+            polled: polled.clone(),
+        };
+        let read = rt.block_on(drain(big));
+        assert_eq!(read, DRAIN_LIMIT);
+        assert_eq!(polled.load(std::sync::atomic::Ordering::SeqCst), 16);
+        let small = Chunks {
+            left: 2,
+            polled: polled.clone(),
+        };
+        assert_eq!(rt.block_on(drain(small)), 128 * 1024);
+        let r = plain(401, "x");
+        assert_eq!(r.headers()[http::header::CONNECTION], "close");
+    }
 
     #[test]
     fn bearer_check() {

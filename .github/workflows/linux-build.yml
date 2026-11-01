@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - packaging/linux/**
+      - packaging/fetch-soundfont.sh
       - .github/workflows/linux-build.yml
       - apps/woa/**
 
@@ -44,6 +45,10 @@ jobs:
           test -s "$RUNNER_TEMP/probe.wav"
           "$img" --appimage-extract >/dev/null
           desktop-file-validate squashfs-root/usr/share/applications/de.wironair.woa.desktop
+          # SoundFont am Suchpfad von soundfont.rs: usr/bin/../share/woa/sounds (#265)
+          test -s squashfs-root/usr/bin/../share/woa/sounds/GeneralUser-GS.sf2
+          test -s squashfs-root/usr/share/woa/sounds/GeneralUser-GS-LICENSE.txt
+          echo "ok: AppImage enthält share/woa/sounds/GeneralUser-GS.sf2"
           appstreamcli validate --no-net squashfs-root/usr/share/metainfo/de.wironair.woa.appdata.xml
       - uses: actions/upload-artifact@v4
         with:
@@ -69,6 +74,10 @@ jobs:
         run: |
           curl -fsSL https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/9d86d336a39b9af38b86f114b6ce5820fe260f91/cargo/flatpak-cargo-generator.py -o "$RUNNER_TEMP/flatpak-cargo-generator.py"
           "$RUNNER_TEMP/gen/bin/python" "$RUNNER_TEMP/flatpak-cargo-generator.py" Cargo.lock -o packaging/linux/flatpak/cargo-sources.json
+      - name: SoundFont-Prüfsumme gleich in Skript und Manifest
+        run: |
+          sha="$(sed -n 's/^sha256="\(.*\)"/\1/p' packaging/fetch-soundfont.sh)"
+          grep -q "sha256: $sha" packaging/linux/flatpak/de.wironair.woa.yaml
       - name: Flatpak bauen
         run: flatpak-builder --user --install --force-clean --disable-rofiles-fuse --repo=repo build-dir packaging/linux/flatpak/de.wironair.woa.yaml
       - name: Flatpak prüfen (ohne Fenster, ohne Ton)
@@ -83,6 +92,11 @@ jobs:
           flatpak run --filesystem="$p" --command=woa-headless de.wironair.woa render "$p/probe.woa" "$p/probe.wav" --seconds 2
           test -s "$p/probe.wav"
           d="$HOME/.local/share/flatpak/app/de.wironair.woa/current/active/files/share"
+          # SoundFont am Suchpfad von soundfont.rs: /app/bin/../share/woa/sounds (#265)
+          test -s "$d/woa/sounds/GeneralUser-GS.sf2"
+          test -s "$d/woa/sounds/GeneralUser-GS-LICENSE.txt"
+          flatpak run --command=sh de.wironair.woa -c 'test -s /app/bin/../share/woa/sounds/GeneralUser-GS.sf2'
+          echo "ok: Flatpak enthält /app/share/woa/sounds/GeneralUser-GS.sf2"
           desktop-file-validate "$d/applications/de.wironair.woa.desktop"
           appstreamcli validate --no-net "$d/metainfo/de.wironair.woa.metainfo.xml"
           flatpak build-bundle repo "woa-$version.flatpak" de.wironair.woa

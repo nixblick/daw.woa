@@ -142,3 +142,98 @@ impl Instrument for SoundFontPlayer {
         }
     }
 }
+
+// --- Test-SoundFont, im Speicher erzeugt (keine Datei im Repo).
+
+fn chunk(id: &[u8; 4], data: &[u8]) -> Vec<u8> {
+    let mut v = id.to_vec();
+    v.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    v.extend_from_slice(data);
+    v
+}
+
+fn list(kind: &[u8; 4], parts: &[Vec<u8>]) -> Vec<u8> {
+    let mut d = kind.to_vec();
+    for p in parts {
+        d.extend_from_slice(p);
+    }
+    chunk(b"LIST", &d)
+}
+
+fn name20(s: &str) -> Vec<u8> {
+    let mut v = s.as_bytes().to_vec();
+    v.resize(20, 0);
+    v
+}
+
+fn u16s(xs: &[u16]) -> Vec<u8> {
+    xs.iter().flat_map(|x| x.to_le_bytes()).collect()
+}
+
+/// Kleinste gültige SF2 (ein Sinus-Sample, Preset 0) für Tests in allen Crates.
+#[doc(hidden)]
+pub fn tiny_sf2() -> Vec<u8> {
+    let period = 100usize; // 480 Hz bei 48 kHz
+    let len = period * 20;
+    let mut smpl = Vec::new();
+    for i in 0..len + 46 {
+        let x = if i < len {
+            ((i as f32 / period as f32 * std::f32::consts::TAU).sin() * 16000.0) as i16
+        } else {
+            0
+        };
+        smpl.extend_from_slice(&x.to_le_bytes());
+    }
+    let info = list(
+        b"INFO",
+        &[
+            chunk(b"ifil", &u16s(&[2, 1])),
+            chunk(b"INAM", &name20("woa test")),
+        ],
+    );
+    let sdta = list(b"sdta", &[chunk(b"smpl", &smpl)]);
+
+    let mut phdr = Vec::new();
+    for (name, bag) in [("Sine", 0u16), ("EOP", 1)] {
+        phdr.extend(name20(name));
+        phdr.extend(u16s(&[0, 0, bag]));
+        phdr.extend([0u8; 12]);
+    }
+    let pbag = u16s(&[0, 0, 1, 0]);
+    let pmod = vec![0u8; 10];
+    let pgen = u16s(&[41, 0, 0, 0]); // instrument 0, Terminator
+    let mut inst = name20("Sine");
+    inst.extend(u16s(&[0]));
+    inst.extend(name20("EOI"));
+    inst.extend(u16s(&[1]));
+    let ibag = u16s(&[0, 0, 2, 0]);
+    let imod = vec![0u8; 10];
+    let igen = u16s(&[54, 1, 53, 0, 0, 0]); // Loop an, Sample 0, Terminator
+    let mut shdr = name20("sine");
+    for x in [0u32, len as u32, 0, len as u32, 48_000] {
+        shdr.extend(x.to_le_bytes());
+    }
+    shdr.extend([69u8, 0]); // Grundton A4 (Sample ist 480 Hz, egal für den Test)
+    shdr.extend(u16s(&[0, 1]));
+    shdr.extend(name20("EOS"));
+    shdr.extend([0u8; 26]);
+    let pdta = list(
+        b"pdta",
+        &[
+            chunk(b"phdr", &phdr),
+            chunk(b"pbag", &pbag),
+            chunk(b"pmod", &pmod),
+            chunk(b"pgen", &pgen),
+            chunk(b"inst", &inst),
+            chunk(b"ibag", &ibag),
+            chunk(b"imod", &imod),
+            chunk(b"igen", &igen),
+            chunk(b"shdr", &shdr),
+        ],
+    );
+    let mut body = b"sfbk".to_vec();
+    body.extend(info);
+    body.extend(sdta);
+    body.extend(pdta);
+    chunk(b"RIFF", &body)
+}

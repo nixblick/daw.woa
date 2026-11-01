@@ -413,12 +413,10 @@ impl PartyView {
         theme::card_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(format!("{} BIBLIOTHEK", theme::ic::MAGNIFYING_GLASS))
-                        .size(11.5)
-                        .strong()
-                        .color(theme::text_dim()),
-                );
+                ui.label(theme::panel_label(format!(
+                    "{} BIBLIOTHEK",
+                    theme::ic::MAGNIFYING_GLASS
+                )));
                 if let Some(w) = &self.wish_for {
                     ui.label(
                         egui::RichText::new(format!(
@@ -499,12 +497,7 @@ impl PartyView {
         use crate::widgets::{Tone, ctl_key};
         theme::card_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(
-                egui::RichText::new("WUNSCHLISTE")
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label("WUNSCHLISTE"));
             ui.horizontal(|ui| {
                 let r = ui.add(
                     egui::TextEdit::singleline(&mut self.wish_input)
@@ -625,7 +618,7 @@ impl PartyView {
 
     /// Musikordner laden (Dialog); hängt alle Titel hinten an die Playlist.
     pub fn load_folder(desk: &RadioDesk) {
-        if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+        if let Some(dir) = crate::ordner::dialog_musik().pick_folder() {
             let files = audio_files_in(&dir, 3);
             if files.is_empty() {
                 tracing::info!(dir = %dir.display(), "party: no audio files in folder");
@@ -665,12 +658,10 @@ fn playlist_card(ui: &mut egui::Ui, desk: &RadioDesk, v: &woa_radio::station::Vi
     theme::card_frame().show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(format!("{} PLAYLIST", theme::ic::PLAYLIST))
-                    .size(11.5)
-                    .strong()
-                    .color(theme::text_dim()),
-            );
+            ui.label(theme::panel_label(format!(
+                "{} PLAYLIST",
+                theme::ic::PLAYLIST
+            )));
             let name = v
                 .playlists
                 .get(v.active_playlist)

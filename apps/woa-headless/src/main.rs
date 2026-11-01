@@ -488,6 +488,8 @@ fn cmd_mcp_http(path: &std::path::Path, bind: std::net::IpAddr, port: u16) -> Re
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    // Zusatzbänke (Paket J7) liegen im Datenordner, wie in der App.
+    woa_engine::banks::set_bank_dir(woa_radio::data_dir().join("banks"));
     let result = match cli.cmd {
         Cmd::New { path, name } => cmd_new(&path, name),
         Cmd::Info { path, json } => cmd_info(&path, json),

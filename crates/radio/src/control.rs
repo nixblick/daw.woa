@@ -342,10 +342,19 @@ impl Controller {
         };
         self.send(Cmd::SetStopFade(stop));
         self.send(Cmd::SetDuck(db_to_gain(self.show.duck_db)));
+        self.send(Cmd::SetCartDuck(self.show.cart_duck));
         self.send(Cmd::SetTarget(self.show.target_lufs));
         self.send(Cmd::SetProcessing {
             bus: self.show.bus_processing,
             mic: self.show.mic_processing,
+        });
+        self.send(Cmd::SetLevel {
+            bus: crate::mixer::LevelBus::Monitor,
+            gain: self.show.out_monitor.gain(),
+        });
+        self.send(Cmd::SetLevel {
+            bus: crate::mixer::LevelBus::Stream,
+            gain: self.show.out_stream.gain(),
         });
     }
 
@@ -625,6 +634,12 @@ impl Controller {
         self.apply_settings();
     }
 
+    /// Carts senken die Musik ab (#149), gespeichert in der Sendung.
+    pub fn set_cart_duck(&mut self, on: bool) {
+        self.show.cart_duck = on;
+        self.apply_settings();
+    }
+
     pub fn set_duck(&mut self, db: f64) {
         self.show.duck_db = db;
         self.show.sanitize();
@@ -659,6 +674,17 @@ impl Controller {
     /// und zählt nicht zu [`Self::remaining_total`].
     pub fn first_open_index(&self) -> usize {
         self.current_index().unwrap_or_else(|| self.cue_index())
+    }
+
+    /// Regler eines Ausgangs (#96): „Wiedergabe Notebook“ oder „Stream senden“, mit Stumm;
+    /// gespeichert in der Sendung, im Audio-Thread geglättet.
+    pub fn set_output(&mut self, out: crate::show::Output, level: crate::show::OutLevel) {
+        match out {
+            crate::show::Output::Monitor => self.show.out_monitor = level,
+            crate::show::Output::Stream => self.show.out_stream = level,
+        }
+        self.show.sanitize();
+        self.apply_settings();
     }
 
     /// Sendebus- und Mikro-Processing an/aus.
@@ -1469,13 +1495,18 @@ impl Controller {
 
     /// Startet den Mitschnitt nach `<data_dir>/mitschnitte/`.
     pub fn start_recording(&mut self, data_dir: &Path) {
+        self.start_recording_in(&data_dir.join(RECORDINGS_DIR));
+    }
+
+    /// Startet den Mitschnitt direkt in den Ordner `dir` (WOA-Ordner „Mitschnitte“).
+    pub fn start_recording_in(&mut self, dir: &Path) {
         if self.recording.is_some() {
             return;
         }
         let cap = self.rate as usize * 2 * RECORD_QUEUE_SECONDS;
         let (producer, consumer) = rtrb::RingBuffer::new(cap);
         self.recording = Some(Recording {
-            dir: data_dir.join(RECORDINGS_DIR),
+            dir: dir.to_path_buf(),
             consumer,
             writer: None,
             frames_in_file: 0,

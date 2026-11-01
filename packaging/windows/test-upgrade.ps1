@@ -44,7 +44,7 @@ Run-Msi @('/i', "`"$newMsi`"", '/qn', '/norestart', '/l*v', "`"$log`"")
 $inst = Get-Installed
 Assert ($inst.Count -eq 1) 'nach dem Update genau ein Eintrag (die alte Version wurde ersetzt)'
 Assert ($inst[0].DisplayVersion -eq $Version) "neue Version $Version installiert"
-foreach ($f in 'woa.exe', 'woa-headless.exe', 'woa-streamd.exe', 'LICENSE.txt') {
+foreach ($f in 'woa.exe', 'woa-headless.exe', 'woa-streamd.exe', 'LICENSE.txt', 'sounds\GeneralUser-GS.sf2', 'sounds\GeneralUser-GS-LICENSE.txt') {
   Assert (Test-Path (Join-Path $dir $f)) "$f vorhanden"
 }
 Assert ((Get-Item (Join-Path $dir 'woa.exe')).Length -eq (Get-Item (Join-Path $Bin 'woa.exe')).Length) 'woa.exe stammt aus dem neuen Paket'
