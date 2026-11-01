@@ -892,26 +892,26 @@ mod tests {
 
     #[test]
     fn home_paths_are_shortened() {
-        let home = Path::new("/home/robert");
+        let home = Path::new("/home/nutzer");
         assert_eq!(
-            shorten_home("lade /home/robert/Musik/a.mp3 fehlgeschlagen", Some(home)),
+            shorten_home("lade /home/nutzer/Musik/a.mp3 fehlgeschlagen", Some(home)),
             "lade ~/Musik/a.mp3 fehlgeschlagen"
         );
-        let win = Path::new("C:\\Users\\Robert");
+        let win = Path::new("C:\\Users\\nutzer");
         assert_eq!(
             shorten_home(
-                "[C:\\Users\\Robert\\Music\\b.wav] und C:/Users/Robert/x",
+                "[C:\\Users\\nutzer\\Music\\b.wav] und C:/Users/nutzer/x",
                 Some(win)
             ),
             "[~\\Music\\b.wav] und ~/x"
         );
-        assert_eq!(shorten_home("/home/robert/a", None), "/home/robert/a");
+        assert_eq!(shorten_home("/home/nutzer/a", None), "/home/nutzer/a");
     }
 
     #[test]
     fn log_goes_only_when_ticked() {
-        let home = Path::new("/home/robert");
-        let lines = vec!["12:00 Fehler /home/robert/a.mp3 kaputt".to_string()];
+        let home = Path::new("/home/nutzer");
+        let lines = vec!["12:00 Fehler /home/nutzer/a.mp3 kaputt".to_string()];
         let mut d = FeedbackDialog::default();
         d.open();
         d.text = "Knackt".into();
@@ -921,7 +921,7 @@ mod tests {
         d.send_log = true;
         let b = d.body(&lines, Some(home));
         assert!(b.contains(LOG_HEADER) && b.contains("~/a.mp3"), "{b}");
-        assert!(!b.contains("robert"), "{b}");
+        assert!(!b.contains("nutzer"), "{b}");
         // Too long: newest lines kept, whole body within the server limit.
         let many: Vec<String> = (0..5000)
             .map(|i| format!("Zeile {i} {}", "x".repeat(40)))
