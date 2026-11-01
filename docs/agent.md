@@ -24,7 +24,8 @@ Anfrage braucht `Authorization: Bearer <Token>`. Optionen: `--port N`, `--bind A
 `127.0.0.1`; `0.0.0.0` öffnet den Server für das Netz, nur in einem vertrauten Netz).
 
 Bequemer geht es in WOA unter **Einstellungen → KI & MCP**: Token erzeugen, Server im Hintergrund
-an- und ausschalten, fertige Einträge für Claude Code, Claude Desktop und andere Clients kopieren.
+an- und ausschalten (er startet nur mit „Speichern“, nie von selbst beim Start von WOA, und endet
+mit WOA), fertige Einträge für Claude Code, Claude Desktop und andere Clients kopieren.
 
 Alle Sitzungen eines Servers teilen sich ein Projekt. Läuft die WOA-App, reicht `woa-headless mcp`
 (Stdio) an sie durch: Claude arbeitet live im offenen Fenster, jeder Schritt ist rückgängig zu machen,

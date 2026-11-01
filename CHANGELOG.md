@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.89 — 2026-11-01
+
+- **MCP-HTTP-Server nur auf Wunsch (#243):** Der zweite Server `woa-headless mcp … --http` (Port 8765) startet nicht mehr beim Start der App, auch wenn er in einer früheren Sitzung eingeschaltet war. Er startet nur, wenn man unter KI & MCP den Haken „HTTP-Server im Hintergrund“ setzt und speichert, und endet mit WOA. Port, Reichweite und Projektordner bleiben gespeichert. Der Live-Server der App (Stdio-Weiterleitung) ist unverändert. Test `app_start_never_starts_http_server`.
+
 ## 0.34.88 — 2026-11-01
 
 - **J7 Bänke (#271, Paket aus #262):** Zwei Zusatzbänke neben GeneralUser GS, geladen beim ersten Gebrauch: MuseScore General 0.2.0 (MIT, SF2, 206 MB; SF3 lädt rustysynth nicht) und AVL Drumkits „Red Zeppelin 4pc“ (CC BY-SA 3.0, nur für Kits). Katalog mit Datei, Grösse, SHA-256, URL und Lizenz in `docs/sounds/banks.tsv`, gelesen von der App (`crates/engine/src/banks.rs`) und von `packaging/fetch-soundfont.sh <ordner> <bank>`. Download nur über https ohne Weiterleitungen in den Datenordner (`banks/`), erst als `.part`, Name erst nach stimmender Prüfsumme, Lizenz daneben. Bis die Bank da ist und ohne Netz spielt GeneralUser GS. Die Bank steht je Spur im Klang (Projektformat 6, nur wenn eine Bank gewählt ist; alte Projekte laden unverändert, unbekannte Bänke spielen GeneralUser GS). Wahl im Klang-Menü des Mixers unter „BANK“ mit Ladefortschritt und per MCP `track_sound` mit `bank` (Antwort mit `bank_state` und `banks`). Ein Klang- oder Bankwechsel baut jetzt sofort den Graphen neu. Dank im Fenster „Über WOA“. Die fertige Bank wird noch im Download-Thread eingelesen (kein Ruckeln der Oberfläche), ein hängender Download gibt nach einer Stunde auf.
