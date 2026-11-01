@@ -104,6 +104,19 @@ impl std::fmt::Debug for HttpOptions {
     }
 }
 
+/// Die Sitzungsverwaltung. rmcp verwirft eine Sitzung nach 5 min ohne Aufruf; ein Client,
+/// der danach weiterspricht (Claude Desktop nach einer Pause), bekäme nur noch HTTP 404.
+/// Nur auf 127.0.0.1 läuft eine Sitzung deshalb ohne Leerlauf-Grenze: Dort hängen ein
+/// oder zwei Clients desselben Nutzers, jede Sitzung kostet wenig und endet mit dem
+/// Client (DELETE) oder dem Server. Vom Netz erreichbar bleibt die Grenze.
+fn sessions(reachable_from_network: bool) -> LocalSessionManager {
+    let mut m = LocalSessionManager::default();
+    if !reachable_from_network {
+        m.session_config.keep_alive = None;
+    }
+    m
+}
+
 /// Bedient `agent` auf `listener`, bis `opts.cancel` gesetzt wird. Alle Sitzungen teilen
 /// sich das eine Projekt von `agent` ([`WoaAgent`] oder der Live-Agent der App).
 pub async fn serve_http<S>(
@@ -130,7 +143,7 @@ where
     }
     let service = StreamableHttpService::new(
         move || Ok(agent.clone()),
-        Arc::new(LocalSessionManager::default()),
+        Arc::new(sessions(opts.reachable_from_network)),
         config,
     );
     let token: Arc<(String, Option<String>)> = Arc::new((
@@ -265,6 +278,12 @@ pub fn run_http(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn local_sessions_never_expire_network_ones_do() {
+        assert_eq!(super::sessions(false).session_config.keep_alive, None);
+        assert!(super::sessions(true).session_config.keep_alive.is_some());
+    }
+
     use super::*;
 
     /// Ein Body aus `n` Stücken zu 64 KiB; zählt, wie viele gelesen wurden.

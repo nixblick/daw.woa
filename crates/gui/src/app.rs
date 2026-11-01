@@ -767,12 +767,12 @@ impl WoaApp {
         self.save_config();
     }
 
-    /// Fenster „KI & MCP“. Beim ersten Bild startet auch der MCP-Server im Hintergrund,
-    /// falls er eingeschaltet ist.
+    /// Fenster „KI & MCP“. Der HTTP-Server im Hintergrund startet beim ersten Bild nicht
+    /// (#243), nur nach „Speichern“ mit Haken.
     fn ki_window(&mut self, ctx: &egui::Context) {
         if !self.ki_started {
             self.ki_started = true;
-            self.ki_ui.apply(&self.config.ki, &self.data_dir);
+            self.ki_ui.app_started(&mut self.config.ki);
         }
         let project = self
             .state
@@ -5420,12 +5420,58 @@ impl WoaApp {
         self.capture_plugins();
         let project = self.state.project().clone();
         let name = project.meta.name.clone();
+        if let Some(j) = req.jingle {
+            self.state.status = self.export_jingle(&project, j);
+            return;
+        }
         let status = match req.stems {
             None => self.export_file(&project, &name, ext, &req.spec),
             Some(opts) => self.export_stem_folder(&project, &name, &req.spec, opts),
         };
         if let Some(s) = status {
             self.state.status = s;
+        }
+    }
+
+    /// „Als Jingle“ (J6): rendern wie der Export, dann derselbe Weg wie das MCP-Werkzeug
+    /// `export_jingle` (Lautheit, Limiter, Jingle-Ordner, Bibliothek, Cart).
+    fn export_jingle(
+        &mut self,
+        project: &woa_model::Project,
+        j: crate::export_dialog::JingleOptions,
+    ) -> Status {
+        let state = &self.state;
+        let Some(player) = self.player.as_mut() else {
+            return Status::Error("Jingle fehlgeschlagen: keine Audio-Engine".into());
+        };
+        let rate = player.sample_rate();
+        let to = woa_agent::jingle::Target {
+            dir: crate::ordner::dir(crate::ordner::Art::Jingles),
+            name: j.name,
+            target_lufs: j.target_lufs,
+            cart: j.cart,
+            db: self.data_dir.join(crate::library::DB_FILE),
+            radio: self.data_dir.join(woa_radio::RADIO_FILE),
+        };
+        let result = player
+            .render_mix(project, &|rel| state.resolve_audio(rel))
+            .and_then(|(mut l, mut r, _)| woa_agent::jingle::publish(&mut l, &mut r, rate, &to));
+        match result {
+            Ok(p) => {
+                tracing::info!(cart = ?p.cart, "jingle exported");
+                self.library.refresh();
+                let cart = p.cart.map_or(String::new(), |c| format!(", auf Cart {c}"));
+                Status::Info(format!(
+                    "Jingle: {} ({:.1} LUFS, Spitze {:.1} dBFS, in der Bibliothek{cart})",
+                    p.path.display(),
+                    p.lufs.unwrap_or(f64::NAN),
+                    p.peak_db.unwrap_or(f64::NAN),
+                ))
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "jingle export failed");
+                Status::Error(format!("Jingle fehlgeschlagen: {e}"))
+            }
         }
     }
 

@@ -23,8 +23,10 @@ tokio-util = "0.7"
 tower-service = "0.3"
 ureq = { version = "3.5.0", default-features = false }
 woa-dsp = { path = "../dsp", version = "0.34" }
+woa-plugins = { path = "../plugins", version = "0.34" }
 woa-engine = { path = "../engine", version = "0.34" }
 woa-model = { path = "../model", version = "0.34" }
+woa-library = { path = "../library", version = "0.34" }
 woa-radio = { path = "../radio", version = "0.34" }
 woa-stream = { path = "../stream", version = "0.34" }
 

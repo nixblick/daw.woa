@@ -20,6 +20,9 @@ use rusqlite::{Connection, OptionalExtension, params, params_from_iter, types::V
 
 pub use hash::file_hash;
 
+/// Datei der Bibliothek im Datenordner (App und MCP nutzen dieselbe).
+pub const DB_FILE: &str = "bibliothek.sqlite3";
+
 /// Aktuelle Schemaversion.
 pub const SCHEMA_VERSION: i64 = 4;
 /// Längste Tag-Bezeichnung (Zeichen).
@@ -390,6 +393,27 @@ impl Library {
         // WAL: die Oberfläche liest, während der Import schreibt.
         conn.pragma_update(None, "journal_mode", "WAL")?;
         Self::prepare(conn)
+    }
+
+    /// Öffnet eine vorhandene Datenbank nur lesend: kein WAL-Pragma, keine Migration, nichts
+    /// wird geschrieben. Eine andere Schemaversion als die eigene wird abgelehnt.
+    pub fn open_read_only(path: &Path) -> Result<Self> {
+        let conn = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.busy_timeout(std::time::Duration::from_secs(10))?;
+        let lib = Self { conn };
+        let v = lib.schema_version()?;
+        if v > SCHEMA_VERSION {
+            return Err(Error::TooNew(v));
+        }
+        if v != SCHEMA_VERSION {
+            return Err(Error::Invalid(format!(
+                "Bibliothek hat Schema {v}, erwartet {SCHEMA_VERSION}; einmal in WOA öffnen"
+            )));
+        }
+        Ok(lib)
     }
 
     /// Flüchtige Bibliothek im Speicher (Tests).

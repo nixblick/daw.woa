@@ -1,8 +1,28 @@
 # Changelog
 
-## 0.34.91 — 2026-11-01
+## 0.34.95 — 2026-11-01
 
 - **Fernbedienung (WAN, #162):** Falsche PINs würfeln die DJ-PIN nicht mehr neu, und es gibt keine globale Sperre, mit der ein Angreifer den echten DJ aussperren könnte. Fehlversuche zählen je Adresse; nur globale IPv6-Adressen zählen je /64-Netz, damit ein Internet-Anschluss nicht mit jeder neuen Adresse weiterraten kann. Link-local, ULA und IPv4 bleiben je Adresse, ein Gast im WLAN sperrt den DJ also nicht mit aus. PIN und Token werden nie geloggt. Tests für beide Angriffe dazu.
+## 0.34.94 — 2026-11-01
+
+- **Weiterleitung verliert unter Windows keine Aufrufe mehr (#245):** `woa-headless mcp` nutzte eine ruhende HTTP-Verbindung erneut, die die Gegenseite schon geschlossen hatte; unter Windows scheiterte der nächste Aufruf (und das abschließende DELETE) dann still. Die Weiterleitung öffnet jetzt je Anfrage eine neue lokale Verbindung, das DELETE gibt nach 2 s auf. Test `forward_does_not_wait_for_an_open_sse_stream…` prüft zusätzlich, dass der Werkzeugaufruf ein Ergebnis statt eines Fehlers liefert.
+- **KI-Sitzung überlebt Pausen (#243):** Unter Windows bekam `woa-headless mcp` nach rund 5 Minuten ohne Aufruf von der App nur noch HTTP 404, weil rmcp eine Sitzung nach 300 s Leerlauf verwirft. Der Server auf 127.0.0.1 hält Sitzungen jetzt ohne Leerlauf-Grenze (vom Netz erreichbar bleibt sie). Zusätzlich meldet sich die stdio-Weiterleitung bei 404 still mit der gespeicherten Anmeldung neu an und wiederholt den Aufruf einmal; endet der Client, beendet sie ihre Sitzung. Test: `forward_reinitializes_after_the_app_dropped_the_session` in `crates/agent/src/live.rs`.
+
+## 0.34.93 — 2026-11-01
+
+- **J9 MCP-Ausbau (#277, Paket aus #262):** Neues MCP-Werkzeug `list_instruments`: GeneralUser GS und die Zusatzbänke mit Zustand, Grösse und Lizenz, dazu die Klang-Presets (derselbe Katalog wie `track_sound`). Mit `clap: true` sucht es die CLAP-Instrumente und -Effekte des Rechners, nur geschützt je Datei im eigenen Prozess (`woa-plugin-host`) mit der Sperrliste der App, nie im MCP-Prozess. Neues Werkzeug `list_samples`: sucht die Bibliothek nach Art (`sample`, `jingle`, `music`), Tag und Name, oder mit `folder` einen Ordner (z. B. Jingle-FX, bis 4 Ebenen) nach Audiodateien; nur lesend (`Library::open_read_only`, ohne WAL-Umstellung und Migration, fremde Schemaversion abgelehnt), eine fehlende Bibliothek wird nicht angelegt, `library` nur im WOA-Datenordner oder Projektordner. `insert_effect` nimmt statt `kind` auch `clap_id` und setzt einen CLAP-Effekt auf eine Spur (nicht auf Busse, ein Undo-Schritt); `set_insert_bypass` und `remove_insert` wirken auch auf ihn. Ein fehlendes Plugin reicht das Signal durch. Tests: `crates/agent/tests/j9_tools.rs`. Nebenbei: der Testserver in `live.rs` schickt `connection: close`, damit `forward_does_not_wait_for_an_open_sse_stream_and_keeps_the_session` nicht mehr wackelt.
+
+## 0.34.92 — 2026-11-01
+
+- **Updater Stufe B (#136):** `packaging/windows/updater.pub` enthält jetzt den echten öffentlichen minisign-Schlüssel. Ab dieser Version verlangt der Updater eine gültige Signatur über das MSI, ohne Rückfall auf die reine SHA-256-Prüfung. Das Secret `WOA_UPDATER_KEY` für den Release-Workflow ist gesetzt. Der Stufe-A-Pfad bleibt im Code, bis das erste signierte Release draußen ist. Doku `docs/updater.md` nachgezogen.
+
+## 0.34.91 — 2026-11-01
+
+- **MCP-HTTP-Server nur auf Wunsch (#243):** Der zweite Server `woa-headless mcp … --http` (Port 8765) startet nicht mehr beim Start der App, auch wenn er in einer früheren Sitzung eingeschaltet war. Er startet nur, wenn man unter KI & MCP den Haken „HTTP-Server im Hintergrund“ setzt und speichert, und endet mit WOA. Port, Reichweite und Projektordner bleiben gespeichert. Der Live-Server der App (Stdio-Weiterleitung) ist unverändert. Test `app_start_never_starts_http_server`.
+
+## 0.34.89 — 2026-11-01
+
+- **J6 Ausgabe (#275, Paket aus #261):** Im Fenster „Exportieren“ neuer Schalter „Als Jingle“ mit Name, Lautheit („wie die Sendung (Auto-Gain)“ oder eigene in LUFS) und Cart (keine, 1–16). „Als Jingle exportieren“ rendert den Mixdown wie der normale Export, bringt ihn auf die Ziel-Lautheit und begrenzt die Spitzen mit dem vorhandenen Limiter auf −1 dBFS (neu `woa_engine::loudness::master`; anders als der bisherige Angleich erreicht das auch spitzenreiche Mischungen, der bisherige Export bleibt unverändert). Die WAV landet im Jingle-Ordner (#260, auch ein eigener aus „Speicherorte“), steht sofort als Art Jingle in der Bibliothek und liegt auf Wunsch auf der Cart (über `radio.json`, die laufende Sendung übernimmt es nach wenigen Sekunden). Nichts wird überschrieben: bei gleichem Namen kommt „Name 2“, bei gleichem Inhalt gilt das vorhandene Jingle. Neues MCP-Werkzeug `export_jingle` (`name`, `target_lufs`, `cart`) geht durch dieselbe Funktion `woa_agent::jingle::publish`. Dafür liegt die Ordner-Logik ohne Oberfläche jetzt in `woa_radio::ordner` (liest den Abschnitt `ordner` aus `config.json`) und `DB_FILE` in `woa_library`; die Oberfläche nutzt beides unverändert weiter. Kein neues Projektformat. Tests: `crates/engine/src/loudness.rs` (Ziel trotz Spitzen erreicht), `crates/agent/src/jingle.rs` (Ordner, Bibliothek, Cart, Ziel der Sendung, kein Überschreiben, falsche Namen und Carts), `crates/agent/tests/jingle_export.rs` (MCP mit eigenem Jingle-Ordner aus `config.json`), `crates/radio/src/ordner.rs`, `crates/gui/src/export_dialog.rs`.
 
 ## 0.34.88 — 2026-11-01
 

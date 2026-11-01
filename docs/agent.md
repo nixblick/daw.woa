@@ -24,7 +24,8 @@ Anfrage braucht `Authorization: Bearer <Token>`. Optionen: `--port N`, `--bind A
 `127.0.0.1`; `0.0.0.0` öffnet den Server für das Netz, nur in einem vertrauten Netz).
 
 Bequemer geht es in WOA unter **Einstellungen → KI & MCP**: Token erzeugen, Server im Hintergrund
-an- und ausschalten, fertige Einträge für Claude Code, Claude Desktop und andere Clients kopieren.
+an- und ausschalten (er startet nur mit „Speichern“, nie von selbst beim Start von WOA, und endet
+mit WOA), fertige Einträge für Claude Code, Claude Desktop und andere Clients kopieren.
 
 Alle Sitzungen eines Servers teilen sich ein Projekt. Läuft die WOA-App, reicht `woa-headless mcp`
 (Stdio) an sie durch: Claude arbeitet live im offenen Fenster, jeder Schritt ist rückgängig zu machen,
@@ -79,6 +80,7 @@ live; gleichzeitiges Speichern in ihm und im Fenster überschreibt sich.
 | `analyze` | `track` (optional) | rendert offline (48 kHz bis zum Ende des letzten Clips): integrierte LUFS, höchste momentane und kurzzeitige Lautheit, Sample-Peak und True Peak, Clipping, Länge, Spektrum (Spitze in Hz, Oktavbänder), Stereo (Korrelation, Balance, Seiten zu Mitte) und Hinweise; ohne `track` zusätzlich Peak je Audio-Spur, mit `track` nur diese Spur; ändert nichts |
 | `spectrogram_png` | `path` (`.png`, relativ im Projektordner), `width` (16..4096, 800), `height` (16..2048, 400), `track` (optional) | Spektrogramm mit Logachse von 20 Hz bis zur halben Abtastrate als PNG |
 | `export` | `path` (`.wav`/`.flac`/`.mp3`, nur relativ im Projektordner; absolut oder `..` wird abgelehnt), `target_lufs` (optional) | Mixdown wie in der GUI; mit `target_lufs` angeglichen, Spitzen bleiben unter −1 dBFS; liefert LUFS und Peak der geschriebenen Daten |
+| `export_jingle` | `name` (nur Dateiname, kein Pfad), `target_lufs` (optional, Vorgabe: Ziel der Sendung aus `radio.json`), `cart` (optional, 1–16) | Fertiges Jingle (J6): Verstärkung auf die Ziel-Lautheit, Limiter auf −1 dBFS, WAV in den Jingle-Ordner der App (`WOA/Jingles` oder der eigene aus den Einstellungen), Eintrag als Jingle in der Bibliothek, auf Wunsch auf die Cart. Vorhandene Dateien bleiben, der nächste freie Name wird genommen; gleicher Inhalt gilt als schon vorhanden. Derselbe Weg wie „Exportieren → Als Jingle“ |
 | `undo` / `redo` | – | letzten Schritt zurück / wieder her |
 | `save` | – | atomar in den Projektordner schreiben |
 
