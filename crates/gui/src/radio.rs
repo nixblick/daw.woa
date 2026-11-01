@@ -93,6 +93,22 @@ pub(crate) fn played_count(v: &View) -> usize {
 
 const RESERVED_KEYS: [egui::Key; 2] = [egui::Key::M, egui::Key::Space];
 
+/// Was `RadioDesk::open` geöffnet hat, bevor das Pult zusammengesetzt wird.
+struct Parts {
+    radio_path: PathBuf,
+    data_dir: PathBuf,
+    station: Option<Station>,
+    opened: crate::outputs::Opened,
+    output_warnings: Vec<String>,
+    error: Option<String>,
+    rate: u32,
+    buffer_frames: Option<u32>,
+    device: String,
+    underruns: Arc<AtomicU64>,
+    pfl_output: Option<woa_engine::device::ManagedOutput>,
+    pfl_note: Option<String>,
+}
+
 /// Die laufende Sendung samt Gerät.
 pub struct RadioDesk {
     /// Beginn des laufenden Mitschnitts (Dauer im REC-Tooltip).
@@ -700,34 +716,75 @@ impl RadioDesk {
                 None
             }
         };
-        Self::assemble(
+        Self::assemble(Parts {
             radio_path,
             data_dir,
             station,
             opened,
-            (rate, device, buffer_frames),
+            output_warnings,
+            error,
+            rate,
+            buffer_frames,
+            device,
             underruns,
-            (error, pfl_output, pfl_note),
-        )
+            pfl_output,
+            pfl_note,
+        })
         .reattach()
     }
 
-    /// Baut den Tisch aus den geöffneten Teilen (ohne Gerät: Layout-Tests, #303).
-    fn assemble(
-        radio_path: PathBuf,
-        data_dir: PathBuf,
-        station: Option<Station>,
-        opened: crate::outputs::Opened,
-        (rate, device, buffer_frames): (u32, String, Option<u32>),
-        underruns: Arc<AtomicU64>,
-        (error, pfl_output, pfl_note): (
-            Option<String>,
-            Option<woa_engine::device::ManagedOutput>,
-            Option<String>,
-        ),
-    ) -> Self {
+    /// Pult ohne Audiogerät für Oberflächen-Tests: Steuerung und Mixer laufen, nichts klingt
+    /// (der Mixer rechnet zehn Sekunden lang in einen Puffer, der nirgends hingeht).
+    #[cfg(test)]
+    pub(crate) fn headless(dir: &std::path::Path) -> Self {
+        let (controller, mut mixer) = Controller::new(RadioShow::default(), 48_000);
+        std::thread::spawn(move || {
+            let (mut l, mut r) = (vec![0.0f32; 256], vec![0.0f32; 256]);
+            let end = Instant::now() + Duration::from_secs(10);
+            while Instant::now() < end {
+                mixer.process(&mut l, &mut r);
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        });
+        Self::assemble(Parts {
+            radio_path: dir.join("radio.json"),
+            data_dir: dir.to_path_buf(),
+            station: Station::spawn(controller).ok(),
+            opened: crate::outputs::Opened {
+                _master: None,
+                _followers: Vec::new(),
+                warnings: Vec::new(),
+                faults: Vec::new(),
+                links: Vec::new(),
+            },
+            output_warnings: Vec::new(),
+            error: None,
+            rate: 48_000,
+            buffer_frames: None,
+            device: String::new(),
+            underruns: Arc::new(AtomicU64::new(0)),
+            pfl_output: None,
+            pfl_note: None,
+        })
+    }
+
+    /// Setzt das Pult aus schon geöffneten Teilen zusammen (von `open` und den Tests).
+    fn assemble(p: Parts) -> Self {
+        let Parts {
+            radio_path,
+            data_dir,
+            station,
+            opened,
+            output_warnings,
+            error,
+            rate,
+            buffer_frames,
+            device,
+            underruns,
+            pfl_output,
+            pfl_note,
+        } = p;
         let known_mtime = mtime(&radio_path);
-        let output_warnings = opened.warnings.clone();
         Self {
             rec_since: None,
             radio_path,
@@ -2879,6 +2936,9 @@ impl RadioDesk {
                     .inner_margin(egui::Margin::symmetric(8, 5));
                 let resp = frame.show(ui, |ui| {
                     ui.set_width(ui.available_width());
+                    // Texte der Zeile nicht markierbar: markierbare Labels fangen das Ziehen
+                    // ab (Griff #92, Titel), dann landet nichts auf dem Deck (#298).
+                    ui.style_mut().interaction.selectable_labels = false;
                     ui.horizontal(|ui| {
                         // Griff zum Ziehen (#92): die ganze Zeile lässt sich ziehen (#166).
                         ui.label(
@@ -3997,28 +4057,6 @@ fn onair_lamp_lit(on_air: bool, _mic_open: bool) -> bool {
 mod tests {
     use eframe::egui;
 
-    /// Radio-Tisch ohne Audiogerät und ohne Station, nur für Layout-Tests.
-    fn offline_desk(dir: &std::path::Path) -> super::RadioDesk {
-        let opened = crate::outputs::Opened {
-            _master: None,
-            _followers: Vec::new(),
-            warnings: Vec::new(),
-            faults: Vec::new(),
-            links: Vec::new(),
-        };
-        let mut d = super::RadioDesk::assemble(
-            dir.join("radio.json"),
-            dir.to_path_buf(),
-            None,
-            opened,
-            (48_000, String::new(), None),
-            std::sync::Arc::default(),
-            (None, None, None),
-        );
-        d.view.cart_sets = (1..=5).map(|i| format!("Satz {i}")).collect();
-        d
-    }
-
     /// Alle 16 Cart-Pads liegen im Fenster, bei 1366×768 und 1920×1080 (#303). Die Fläche ist
     /// die des Radio-Modus: Fenster minus Menüleiste (rund 36 px, hier 40), mit dem Rand des
     /// CentralPanel aus `app.rs`.
@@ -4052,7 +4090,11 @@ mod tests {
                             .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(14, 12)))
                             .show(ui, |ui| d.ui(ui));
                     },
-                    offline_desk(dir.path()),
+                    {
+                        let mut d = super::RadioDesk::headless(dir.path());
+                        d.view.cart_sets = (1..=5).map(|i| format!("Satz {i}")).collect();
+                        d
+                    },
                 );
             harness.run_steps(3);
             let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h - MENU_BAR));
@@ -4512,5 +4554,203 @@ mod pfl_hint_tests {
         assert_eq!(pfl_hint_for(Some(e)), e);
         assert_eq!(pfl_hint_for(Some(PFL_OFF)), PFL_OFF);
         assert_eq!(pfl_hint_for(None), NO_PFL);
+    }
+}
+
+#[cfg(test)]
+mod deck_drop_tests {
+    //! #298: Titel per Ziehen auf ein Deck, im echten Pult-Layout (ohne Audiogerät).
+    use super::*;
+    use eframe::egui::{self, Event, PointerButton, pos2};
+
+    fn wav(dir: &std::path::Path, name: &str) -> PathBuf {
+        let p = dir.join(name);
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(&p, spec).unwrap();
+        for _ in 0..48_000 {
+            w.write_sample(0i16).unwrap();
+            w.write_sample(0i16).unwrap();
+        }
+        w.finalize().unwrap();
+        p
+    }
+
+    fn run(ctx: &egui::Context, desk: &mut RadioDesk, n: u32, input: egui::RawInput) {
+        let mut input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            time: Some(f64::from(n) * 0.05),
+            ..input
+        };
+        if n == 0 {
+            crate::theme::install_fonts(ctx);
+        }
+        input.viewports.entry(egui::ViewportId::ROOT).or_default();
+        desk.tick(false);
+        desk.shortcuts(ctx);
+        let _ = ctx.run_ui(input, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| desk.ui(ui));
+        });
+    }
+
+    fn events(ev: Vec<Event>) -> egui::RawInput {
+        egui::RawInput {
+            events: ev,
+            ..Default::default()
+        }
+    }
+
+    /// Bilder zeichnen, bis `ok` gilt (Steuerung läuft im eigenen Thread).
+    fn settle(
+        ctx: &egui::Context,
+        desk: &mut RadioDesk,
+        n: &mut u32,
+        ok: impl Fn(&View) -> bool,
+    ) -> bool {
+        for _ in 0..100 {
+            *n += 1;
+            run(ctx, desk, *n, egui::RawInput::default());
+            if ok(desk.view()) {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        false
+    }
+
+    fn deck_title(v: &View, k: usize) -> Option<String> {
+        v.decks.get(k).and_then(|d| d.title.clone())
+    }
+
+    #[test]
+    fn library_title_dropped_on_a_deck_lands_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let song = wav(dir.path(), "bibliothek.wav");
+        let ctx = egui::Context::default();
+        let mut desk = RadioDesk::headless(dir.path());
+        let mut n = 0;
+        run(&ctx, &mut desk, n, egui::RawInput::default());
+        settle(&ctx, &mut desk, &mut n, |_| true);
+        let deck = desk.deck_rects[1];
+        assert!(
+            deck.width() > 0.0 && deck.height() > 0.0,
+            "Deck B gezeichnet: {deck:?}"
+        );
+        assert!(
+            desk.drop_library_path(song, deck.center()),
+            "Ablegen angenommen"
+        );
+        assert!(
+            settle(&ctx, &mut desk, &mut n, |v| deck_title(v, 1).is_some()),
+            "Titel liegt auf Deck B: {:?} {:?} {:?}",
+            desk.view().messages,
+            desk.error,
+            desk.view().decks
+        );
+    }
+
+    #[test]
+    fn explorer_file_dropped_on_a_deck_lands_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let song = wav(dir.path(), "explorer.wav");
+        let ctx = egui::Context::default();
+        let mut desk = RadioDesk::headless(dir.path());
+        let mut n = 0;
+        run(&ctx, &mut desk, n, egui::RawInput::default());
+        settle(&ctx, &mut desk, &mut n, |_| true);
+        let p = desk.deck_rects[0].center();
+        n += 1;
+        run(&ctx, &mut desk, n, events(vec![Event::PointerMoved(p)]));
+        n += 1;
+        let input = egui::RawInput {
+            events: vec![Event::PointerMoved(p)],
+            dropped_files: vec![egui::DroppedFile {
+                path: Some(song),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        run(&ctx, &mut desk, n, input);
+        assert!(
+            settle(&ctx, &mut desk, &mut n, |v| deck_title(v, 0).is_some()),
+            "Titel liegt auf Deck A"
+        );
+    }
+
+    #[test]
+    fn playlist_row_dragged_by_its_grip_lands_on_a_deck() {
+        drag_row_to_deck_c(8.0);
+    }
+
+    #[test]
+    fn playlist_row_dragged_by_its_title_lands_on_a_deck() {
+        // Hinter Griff, Nummer und Cover beginnt der Titeltext.
+        drag_row_to_deck_c(110.0);
+    }
+
+    fn drag_row_to_deck_c(x: f32) {
+        let dir = tempfile::tempdir().unwrap();
+        let song = wav(dir.path(), "playlist.wav");
+        let ctx = egui::Context::default();
+        let mut desk = RadioDesk::headless(dir.path());
+        let mut n = 0;
+        run(&ctx, &mut desk, n, egui::RawInput::default());
+        if let Some(s) = &desk.station {
+            s.add_files(vec![song]);
+        }
+        assert!(settle(&ctx, &mut desk, &mut n, |v| v.playlist.len() == 1));
+        settle(&ctx, &mut desk, &mut n, |_| true);
+        let row = desk.row_rects[0];
+        let deck = desk.deck_rects[2].center();
+        // Bei `x` packen, dann schrittweise aufs Deck C.
+        let from = pos2(row.left() + x, row.center().y);
+        n += 1;
+        run(&ctx, &mut desk, n, events(vec![Event::PointerMoved(from)]));
+        n += 1;
+        run(
+            &ctx,
+            &mut desk,
+            n,
+            events(vec![Event::PointerButton {
+                pos: from,
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            }]),
+        );
+        for k in 1..=10 {
+            let t = k as f32 / 10.0;
+            n += 1;
+            run(
+                &ctx,
+                &mut desk,
+                n,
+                events(vec![Event::PointerMoved(from + (deck - from) * t)]),
+            );
+        }
+        assert_eq!(desk.row_drag, Some(0), "Ziehen hat begonnen, Zeile {row:?}");
+        n += 1;
+        run(
+            &ctx,
+            &mut desk,
+            n,
+            events(vec![Event::PointerButton {
+                pos: deck,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }]),
+        );
+        assert!(
+            settle(&ctx, &mut desk, &mut n, |v| deck_title(v, 2).is_some()),
+            "Titel liegt auf Deck C"
+        );
     }
 }

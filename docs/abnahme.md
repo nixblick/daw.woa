@@ -4,13 +4,29 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Radio rechts: Decks kompakt, Cart-Wall als Zweites (0.35.6, offen)
+## Radio rechts: Decks kompakt, Cart-Wall als Zweites (0.35.8, offen)
 
 1. Windows, Radio-Modus, Fenster 1366×768 und maximiert bei 1920×1080: rechts oben die drei Decks in je einer Zeile mit den Pegelreglern, darunter die Cart-Wall mit den Reitern „1“ bis „5“ und allen 16 Pads, nichts rechts abgeschnitten.
 2. Reiter wechseln, Pad belegen und abspielen, Rechtsklick „Taste ändern …“: der Hinweis zur Tastenwahl erscheint neben den Reitern.
 3. Pegel- und Ausgangsregler (Notebook, Stream, M) bedienen wie bisher.
 
 Selbst geprüft von Claude: Layout-Test im egui-Harness (16 Pads im Fenster bei beiden Größen, mit dem alten Trennstrich rot), Screenshots per `WOA_SCREENSHOT` und `WOA_WINDOW` vorher und nachher unter Linux. Nicht unter Windows gesehen, kein Ton abgespielt.
+## Feedback in der Party-Ansicht (0.35.7, offen)
+
+1. Party-Ansicht: grüne Feedback-Taste oben rechts: das Feedback-Fenster erscheint mittig, ohne zu Radio zu wechseln.
+2. In der Party-Ansicht Hilfe → „Über WOA“ und Einstellungen → Ausgabe: die Fenster erscheinen ebenfalls.
+
+Selbst geprüft von Claude: Test über die echte Oberfläche in Party und Radio, Party war vor dem Fix rot. Nicht am Gerät gesehen.
+
+## Titel per Ziehen aufs Deck (0.35.6, offen)
+
+1. Radio-Modus: einen Playlist-Titel am Griff (sechs Punkte links) packen und auf Deck A ziehen: der Titel liegt auf Deck A.
+2. Denselben Weg am Titeltext statt am Griff: liegt auf Deck B.
+3. Einen Titel aus der Bibliothek auf Deck C ziehen: liegt auf Deck C.
+4. Eine Audiodatei aus dem Explorer auf ein Deck ziehen: liegt auf dem Deck.
+5. Ziehen innerhalb der Playlist verschiebt weiter, Klick auf die Nummer zum Eintippen geht weiter.
+
+Selbst geprüft von Claude: vier Tests im echten Pult-Layout ohne Audiogerät; der Griff-Test war vor dem Fix rot. Nicht am Windows-Rechner gesehen, Explorer-Ziehen nur über das egui-Ereignis geprüft.
 
 ## Gleichbleibende Lautstärke in Playlist und Decks (0.35.5, offen)
 
