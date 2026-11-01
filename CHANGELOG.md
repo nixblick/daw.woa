@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.35.5 — 2026-11-01
+## 0.35.6 — 2026-11-01
 
 - **Ganze Zeile anklickbar (#302):** In der Sende-Playlist und in den Decks ist die ganze Zeile eine Klickfläche, man muss nicht mehr den Titel treffen. Playlist: Klick wählt aus (Rahmen in Akzentfarbe), Doppelklick setzt „als Nächstes“, Rechtsklick öffnet überall das Titelmenü (Umbenennen, Titelinfos …), Ziehen wie bisher von jeder Stelle. Decks: Rechtsklick irgendwo auf der Deck-Zeile öffnet das Menü (Datei laden, Schneiden, Leeren). Nur Knöpfe und die Nummer (eintippen) behalten ihren eigenen Klick. Die Cart-Pads waren schon ganz klickbar. Technisch: neue Hilfsfunktion `row_area` (Klickfläche unter dem Inhalt per `UiBuilder::sense`), Beschriftungen in der Zeile sind nicht mehr markierbar, der lange Hover-Text wird erst beim Zeigen gebaut. Trägheit gemessen: 300 Zeilen etwa 18 ms je Bild im Debug-Bau, unter der `ui.frame_slow`-Schwelle von 50 ms; Wellenformen werden in den Zeilen nicht gezeichnet. Tests: `whole_row_selects_and_opens_the_menu_anywhere`, `many_rows_stay_fast` in `crates/gui/src/radio.rs`.
+
+## 0.35.5 — 2026-11-01
+
+- **Lautstärke innerhalb eines Titels konstant (#297, Refs #147):** Die Lautheitsregelung im Sendebus (`woa_radio::dynamics::BusProcessor`, seit Paket 9) führte die Verstärkung gleitend zum Ziel, mit bis zu 3 dB je Sekunde im Bereich ±12 dB. Damit hob sie leise Passagen eines Titels an und senkte laute ab, und nach jedem Ducking pumpte sie nach. Seit #149 (0.34.69) ducken auch die Carts, so fiel das öfter auf. Die Regelung regelt jetzt nicht mehr nach. Jeder Titel behält seine feste Verstärkung zum Ziel (Auto-Gain beim Bereitlegen); Kompressor und Limiter bleiben als Schutz unter „Sendebus“. Die Lautheitsanzeige am Ausgang bleibt, die Angabe „Regelung … dB“ entfällt. Die Decks A/B/C werden beim Laden jetzt gemessen und bekommen denselben Auto-Gain wie die Playlist (bisher 0 dB, Entscheidung André in #147). Erlaubt bleiben nur die Blenden am Anfang und Ende und das Ducking bei Mikro, Telefon oder Cart. Test: `crates/radio/tests/constant_gain.rs` (ein Titel mit leisem, lautem und leisem Teil über Playlist und Deck mit eingeschaltetem Sendebus, die Verstärkung schwankt um weniger als 0,5 dB, vorher 24 dB bzw. 21 dB; nach einem Cart kommt die Musik auf ihren alten Pegel zurück, vorher 7,8 dB daneben), alle Blöcke unter `assert_no_alloc`.
 
 ## 0.35.4 — 2026-11-01
 

@@ -14,7 +14,7 @@ use basedrop::{Collector, Owned, Shared};
 use crate::audio::{Stereo, load_stereo, measure};
 use crate::cues::{CueEdit, CueHistory, Cues};
 use crate::events::{Action, EventClock, EventTable, MissedWhy};
-use crate::level::db_to_gain;
+use crate::level::{auto_gain_db, db_to_gain};
 use crate::mixer::{Cmd, Mixer, NONE, Status};
 
 mod duo;
@@ -1111,13 +1111,17 @@ impl Controller {
         let (path, cues) = (e.path.clone(), e.cues);
         match load_stereo(&path, self.rate) {
             Ok(s) => {
+                // Feste Verstärkung zum Ziel wie in der Playlist (#147, #297); gemessen im
+                // Control-Thread beim Laden, nie im Audio-Thread.
+                let m = measure(&s, self.rate);
+                let gain = auto_gain_db(m.lufs, m.peak_db, self.show.target_lufs);
                 let buf = Shared::new(&self.collector.handle(), s);
                 self.decks[deck] = Some(buf.clone());
                 let f = cues.frames(self.rate, buf.frames());
                 self.send(Cmd::DeckLoad {
                     deck,
                     buf,
-                    gain: 1.0,
+                    gain: db_to_gain(gain),
                     start: f.start,
                     end: f.end,
                 });

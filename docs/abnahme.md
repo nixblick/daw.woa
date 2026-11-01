@@ -4,6 +4,12 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Gleichbleibende Lautstärke in Playlist und Decks (0.35.5, offen)
+
+1. Radio-Modus, Sendebus an: einen Titel mit leisem Intro und lautem Refrain in der Playlist abspielen, danach denselben Titel auf Deck A. Das Intro bleibt leise, der Refrain laut, nichts zieht während des Titels nach; Deck und Playlist klingen gleich laut.
+
+Selbst geprüft von Claude: Offline-Render ohne Ton (`crates/radio/tests/constant_gain.rs`), Clippy und Tests von `woa-radio` grün. Nicht am Gerät gehört.
+
 ## Windows-Taskleiste mit WOA-Logo (0.35.4, offen)
 
 1. ZIP auspacken, `woa.exe` starten: Taskleiste zeigt WOA-Logo, auch aus der ZIP gestartet. Im Explorer trägt `woa.exe` dasselbe Logo.
@@ -1227,7 +1233,7 @@ Mit drei kurzen Titeln und 5 s Crossfade, Lautstärke nach Wunsch (der Ablauf ge
 
 Selbst geprüft von Claude: Tests ohne Ton für Constant Power, die Glättung des Faders, Auto an und aus, „die Hand gewinnt“, „über die Mitte ist kein Weiter“, das Ende lädt vor, ohne zu starten, Ein- und Austritt ohne Lücke, den Wunschordner (einmal je Datei, entfernt bleibt weg, Datei bleibt) und Mixer-Blöcke unter `assert_no_alloc`. Clippy und Tests von `woa-radio`, `woa-remote` und `woa-gui` grün. Nicht am Gerät gehört.
 
-## Ganze Zeile anklickbar (0.35.5, offen)
+## Ganze Zeile anklickbar (0.35.6, offen)
 
 1. Radio-Modus, ein paar Titel in der Playlist. Rechts neben der Dauer (leere Fläche) klicken: Die Zeile bekommt einen Rahmen in Akzentfarbe.
 2. Irgendwo auf der Zeile rechtsklicken, auch auf dem Cover oder dem Griff: Das Titelmenü (Umbenennen, Titelinfos …) geht auf.

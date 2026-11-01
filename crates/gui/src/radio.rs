@@ -2211,8 +2211,7 @@ impl RadioDesk {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(
                         egui::RichText::new(format!(
-                            "{lufs}  ·  Regelung {:+.1} dB  ·  Begrenzer −{:.1} dB",
-                            v.bus_agc_db,
+                            "{lufs}  ·  Begrenzer −{:.1} dB",
                             v.bus_reduction_db.max(0.0)
                         ))
                         .small()
