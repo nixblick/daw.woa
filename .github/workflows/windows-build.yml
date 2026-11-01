@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - packaging/windows/**
+      - packaging/fetch-soundfont.sh
       - .github/workflows/windows-build.yml
 
 jobs:
@@ -21,12 +22,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p woa -p woa-headless -p woa-streamd
+      - name: SoundFont laden (feste SHA-256, #265)
+        shell: bash
+        run: packaging/fetch-soundfont.sh dist/sounds
       - name: Paket packen
         shell: pwsh
         run: |
           $v = (cargo metadata --format-version 1 --no-deps | ConvertFrom-Json).packages | Where-Object name -eq 'woa' | Select-Object -ExpandProperty version
           New-Item -ItemType Directory -Force woa-windows | Out-Null
           Copy-Item target/release/woa.exe, target/release/woa-headless.exe, target/release/woa-streamd.exe, LICENSE, README.md, CHANGELOG.md woa-windows/
+          Copy-Item -Recurse dist/sounds woa-windows/sounds
+          if (-not (Test-Path woa-windows/sounds/GeneralUser-GS.sf2)) { throw 'SoundFont fehlt im ZIP' }
           Compress-Archive -Path woa-windows/* -DestinationPath "woa-$v-windows-x64.zip"
           "WOA_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: MSI bauen (WiX 5)
@@ -37,6 +43,13 @@ jobs:
       - name: MSI-Upgrade alt nach neu prüfen
         shell: pwsh
         run: ./packaging/windows/test-upgrade.ps1 -Version $env:WOA_VERSION -Bin target\release -Msi "woa-$env:WOA_VERSION-x64.msi"
+      - name: SoundFont im ZIP und MSI prüfen
+        shell: pwsh
+        run: |
+          Expand-Archive "woa-$env:WOA_VERSION-windows-x64.zip" "$env:RUNNER_TEMP/zip"
+          if (-not (Test-Path "$env:RUNNER_TEMP/zip/sounds/GeneralUser-GS.sf2")) { throw 'ZIP: sounds/GeneralUser-GS.sf2 fehlt' }
+          if (-not (Test-Path "$env:RUNNER_TEMP/zip/sounds/GeneralUser-GS-LICENSE.txt")) { throw 'ZIP: Lizenz fehlt' }
+          Write-Host 'ok: ZIP enthält sounds/GeneralUser-GS.sf2 und Lizenz (MSI prüft test-upgrade.ps1 nach der Installation)'
       - uses: actions/upload-artifact@v4
         with:
           name: woa-${{ env.WOA_VERSION }}-windows-x64
