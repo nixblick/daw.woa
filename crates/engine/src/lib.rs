@@ -42,6 +42,7 @@ pub mod plugin_node;
 pub mod project;
 #[cfg(feature = "device")]
 pub mod record;
+pub mod soundfont;
 pub mod stems;
 pub mod tap;
 pub mod transport;

@@ -4,6 +4,19 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## J1 Klänge: SoundFont auf MIDI-Spuren (0.34.84, offen)
+
+Vorher: `GeneralUser-GS.sf2` (Quelle in `docs/sounds/README.md`) nach `sounds/` neben die ausführbare Datei legen oder `WOA_SOUNDFONT=<pfad>` setzen. Die Pakete legen sie noch nicht bei.
+
+1. MIDI-Spur anlegen, Noten spielen: klingt wie bisher (Synth).
+2. Im Mixer-Streifen der Spur unter dem Klang-Menü „E-Bass“ wählen: dieselben Noten klingen als Bass.
+3. „Standard-Kit“ wählen, Noten 36/38/42 einspielen: Kick, Snare, Hi-Hat.
+4. Speichern, schließen, öffnen: der Klang ist noch gewählt. Strg+Z setzt ihn zurück.
+5. Ohne `.sf2` starten: gewählter Klang spielt den Synth, nichts stürzt ab.
+6. Claude per MCP: „Setz Spur 2 auf Streicher“ (`track_sound`) und „Drums als MIDI“ (`generate_drums` mit `midi: true`).
+
+Selbst geprüft von Claude: Offline-Render mit winziger Test-SF2 klingt anders als der Synth (`crates/engine/tests/soundfont.rs`, unter `assert_no_alloc`), Speichern/Laden und Undo (`crates/model/tests/sound.rs`), MCP-Werkzeug (`crates/agent/tests/track_sound.rs`). Nicht selbst geprüft: Klang mit der echten GeneralUser-GS am Gerät (kein Ton über Lautsprecher).
+
 ## Kopfleiste aus einem Guss und REC für alle Modi (0.34.56, offen)
 
 1. Oben rechts: MIDI, ON AIR, REC (und KI, wenn der Live-Server läuft), dann Produzent · Party · Radio, ganz rechts Feedback. Alles gleich hoch, gleiche Schrift, sichtbar mehr Luft, Gruppen mit größerem Abstand.

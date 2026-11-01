@@ -7402,6 +7402,49 @@ impl WoaApp {
     }
 
     /// CLAP-Plugins einer Spur (Paket 31): Instrument und Effekte, Regler, Browser.
+    /// Klang der MIDI-Spur (Paket J1): eingebauter Synth oder ein GM-Klang je Rolle.
+    fn sound_combo(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: TrackId,
+        current: Option<woa_model::TrackSound>,
+    ) {
+        const SYNTH: &str = "Synth (eingebaut)";
+        let text = match current {
+            None => SYNTH.to_owned(),
+            Some(s) => woa_model::preset_name(s).map_or_else(
+                || format!("GM {}{}", s.program, if s.drums { " Kit" } else { "" }),
+                str::to_owned,
+            ),
+        };
+        let mut chosen = None;
+        egui::ComboBox::from_id_salt(("track_sound", id.0))
+            .selected_text(format!("{} {text}", theme::ic::MUSIC_NOTE))
+            .show_ui(ui, |ui| {
+                if ui.selectable_label(current.is_none(), SYNTH).clicked() {
+                    chosen = Some(None);
+                }
+                let mut role = None;
+                for p in woa_model::SOUND_PRESETS {
+                    if role != Some(p.role) {
+                        role = Some(p.role);
+                        ui.separator();
+                    }
+                    if ui
+                        .selectable_label(current == Some(p.sound), p.name)
+                        .clicked()
+                    {
+                        chosen = Some(Some(p.sound));
+                    }
+                }
+            })
+            .response
+            .on_hover_text("Klang aus der GM-SoundFont; ohne SoundFont spielt der Synth");
+        if let Some(sound) = chosen {
+            self.state.set_track_sound(id, sound);
+        }
+    }
+
     fn strip_plugins(&mut self, ui: &mut egui::Ui, id: TrackId, kind: woa_model::TrackKind) {
         use woa_model::PluginRole;
         let Some(track) = self.state.project().track(id) else {
@@ -7414,6 +7457,9 @@ impl WoaApp {
                 .color(theme::text_dim())
         };
         let has_instrument = slots.iter().any(|s| s.role == PluginRole::Instrument);
+        if kind == woa_model::TrackKind::Midi && !has_instrument {
+            self.sound_combo(ui, id, track.sound);
+        }
         if !slots.is_empty() {
             ui.label(small("PLUGINS"));
         }

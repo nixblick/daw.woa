@@ -10,9 +10,10 @@ use std::sync::atomic::AtomicU32;
 
 use rtrb::Consumer;
 use woa_dsp::instrument::{Instrument, NoteEvent, NoteEventKind};
+use woa_dsp::soundfont::{SoundFont, SoundFontPlayer};
 use woa_dsp::synth::{PolySynth, Waveform};
 use woa_dsp::{Node, ProcessBuffers};
-use woa_model::{CC_SUSTAIN, Clip, Track};
+use woa_model::{CC_SUSTAIN, Clip, Track, TrackSound};
 
 use crate::transport::{TransportHandle, beats_to_samples};
 
@@ -24,6 +25,73 @@ pub const TRACK_WAVEFORM: Waveform = Waveform::Saw;
 /// Neues Instrument einer MIDI-Spur.
 pub fn track_instrument() -> PolySynth {
     PolySynth::new(TRACK_VOICES, TRACK_WAVEFORM)
+}
+
+/// Instrument einer MIDI-Spur: eingebauter Synth oder GM-SoundFont (Paket J1).
+pub enum TrackInstrument {
+    Synth(PolySynth),
+    SoundFont(Box<SoundFontPlayer>),
+}
+
+/// Puffergröße des SoundFont-Players (beliebige Blöcke werden darin gestückelt).
+const SOUNDFONT_CHUNK: usize = 512;
+
+impl TrackInstrument {
+    /// Baut das Instrument (Control-Thread). Ohne Klang oder ohne `font`: der Synth.
+    /// Mit Klang wird das GM-Programm auf dem Kanal des Klangs gesetzt.
+    pub fn new(sound: Option<TrackSound>, font: Option<Arc<SoundFont>>, rate: f32) -> Self {
+        let (Some(sound), Some(font)) = (sound, font) else {
+            return Self::Synth(track_instrument());
+        };
+        match SoundFontPlayer::new(font, rate.round() as u32, SOUNDFONT_CHUNK) {
+            Ok(mut p) => {
+                p.handle_event(&NoteEvent {
+                    offset: 0,
+                    channel: sound.channel(),
+                    kind: NoteEventKind::ProgramChange {
+                        program: sound.program.min(127),
+                    },
+                });
+                Self::SoundFont(Box::new(p))
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "soundfont player failed, using the built-in synth");
+                Self::Synth(track_instrument())
+            }
+        }
+    }
+
+    /// `true`, wenn die SoundFont spielt.
+    pub fn is_soundfont(&self) -> bool {
+        matches!(self, Self::SoundFont(_))
+    }
+}
+
+impl Instrument for TrackInstrument {
+    fn prepare(&mut self, sample_rate: f32) {
+        match self {
+            Self::Synth(s) => s.prepare(sample_rate),
+            Self::SoundFont(s) => s.prepare(sample_rate),
+        }
+    }
+    fn set_param(&mut self, param: u32, value: f32) {
+        match self {
+            Self::Synth(s) => s.set_param(param, value),
+            Self::SoundFont(s) => s.set_param(param, value),
+        }
+    }
+    fn handle_event(&mut self, event: &NoteEvent) {
+        match self {
+            Self::Synth(s) => s.handle_event(event),
+            Self::SoundFont(s) => s.handle_event(event),
+        }
+    }
+    fn render(&mut self, out: &mut [f32]) {
+        match self {
+            Self::Synth(s) => s.render(out),
+            Self::SoundFont(s) => s.render(out),
+        }
+    }
 }
 
 /// Ein Event auf der Zeitachse.
@@ -110,6 +178,8 @@ pub struct MidiTrackPlayer<I: Instrument = PolySynth> {
     expected: Option<u64>,
     cursor: usize,
     meter: Option<Arc<AtomicU32>>,
+    /// MIDI-Kanal aller Events (9 = Drums auf Kanal 10).
+    channel: u8,
 }
 
 impl<I: Instrument> MidiTrackPlayer<I> {
@@ -127,7 +197,18 @@ impl<I: Instrument> MidiTrackPlayer<I> {
             expected: None,
             cursor: 0,
             meter: None,
+            channel: 0,
         }
+    }
+
+    /// Spielt alle Events (Clip und live) auf diesem MIDI-Kanal.
+    pub fn on_channel(mut self, channel: u8) -> Self {
+        self.channel = channel.min(15);
+        self
+    }
+
+    pub fn instrument(&self) -> &I {
+        &self.inner
     }
 
     /// Meldet den Spitzenpegel jedes Blocks in `meter`.
@@ -143,7 +224,7 @@ impl<I: Instrument> MidiTrackPlayer<I> {
         ] {
             self.inner.handle_event(&NoteEvent {
                 offset: 0,
-                channel: 0,
+                channel: self.channel,
                 kind,
             });
         }
@@ -163,7 +244,8 @@ impl<I: Instrument> Node for MidiTrackPlayer<I> {
         let out = buffers.output;
         let len = out.len();
         if let Some(live) = self.live.as_mut() {
-            while let Ok(ev) = live.pop() {
+            while let Ok(mut ev) = live.pop() {
+                ev.channel = self.channel;
                 self.inner.handle_event(&ev);
             }
         }
@@ -190,7 +272,7 @@ impl<I: Instrument> Node for MidiTrackPlayer<I> {
                 let kind = e.kind;
                 self.inner.handle_event(&NoteEvent {
                     offset: 0,
-                    channel: 0,
+                    channel: self.channel,
                     kind,
                 });
                 self.cursor += 1;
@@ -209,24 +291,40 @@ impl<I: Instrument> Node for MidiTrackPlayer<I> {
 }
 
 /// Baut die Quelle einer MIDI-Spur aus ihren MIDI-Clips; `None`, wenn die Spur weder
-/// MIDI-Clips noch eine Live-Queue hat.
+/// MIDI-Clips noch eine Live-Queue hat. Mit GM-Klang spielt die SoundFont des Prozesses
+/// ([`crate::soundfont::default_soundfont`]), fehlt sie, der eingebaute Synth.
 pub fn midi_track_source(
     track: &Track,
     tempo_bpm: f64,
     rate: f32,
     transport: &TransportHandle,
     live: Option<Consumer<NoteEvent>>,
-) -> Option<MidiTrackPlayer> {
+) -> Option<MidiTrackPlayer<TrackInstrument>> {
+    let font = track
+        .sound
+        .and_then(|_| crate::soundfont::default_soundfont());
+    midi_track_source_with(track, tempo_bpm, rate, transport, live, font)
+}
+
+/// Wie [`midi_track_source`], mit ausdrücklich gegebener SoundFont.
+pub fn midi_track_source_with(
+    track: &Track,
+    tempo_bpm: f64,
+    rate: f32,
+    transport: &TransportHandle,
+    live: Option<Consumer<NoteEvent>>,
+    font: Option<Arc<SoundFont>>,
+) -> Option<MidiTrackPlayer<TrackInstrument>> {
     let events = track_events(&track.clips, tempo_bpm, rate);
     if events.is_empty() && live.is_none() {
         return None;
     }
-    Some(MidiTrackPlayer::new(
-        track_instrument(),
-        events,
-        transport.clone(),
-        live,
-    ))
+    let inst = TrackInstrument::new(track.sound, font, rate);
+    let channel = match (&inst, track.sound) {
+        (TrackInstrument::SoundFont(_), Some(s)) => s.channel(),
+        _ => 0,
+    };
+    Some(MidiTrackPlayer::new(inst, events, transport.clone(), live).on_channel(channel))
 }
 
 #[cfg(test)]
@@ -272,5 +370,19 @@ mod tests {
             vec![(4, 1), (5, 2), (6, 0), (7, 2), (8, 0), (8, 1)],
             "pedal, C on/off, D on, D cut at clip end, pedal up; E dropped"
         );
+    }
+
+    #[test]
+    fn without_soundfont_a_gm_sound_keeps_the_synth() {
+        let sound = Some(TrackSound {
+            program: 33,
+            drums: false,
+        });
+        assert!(!TrackInstrument::new(sound, None, 48_000.0).is_soundfont());
+        assert!(!TrackInstrument::new(None, None, 48_000.0).is_soundfont());
+        let bytes = woa_dsp::soundfont::tiny_sf2();
+        let font = woa_dsp::soundfont::load_soundfont(&mut bytes.as_slice()).ok();
+        assert!(TrackInstrument::new(sound, font.clone(), 48_000.0).is_soundfont());
+        assert!(!TrackInstrument::new(None, font, 48_000.0).is_soundfont());
     }
 }

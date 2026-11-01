@@ -39,6 +39,7 @@ pub mod midi;
 pub mod plugin;
 mod project;
 mod session;
+pub mod sound;
 pub mod store;
 pub mod takes;
 
@@ -59,6 +60,7 @@ pub use project::{
     STRETCH_RANGE, Send, Track, TrackId, TrackKind, is_safe_audio_path,
 };
 pub use session::Session;
+pub use sound::{SOUND_PRESETS, SoundPreset, SoundRole, TrackSound, preset_name};
 pub use store::{FORMAT_VERSION, ProjectFile, required_version};
 pub use takes::{
     ClipPlan, CompSegment, MAX_COMP_SEGMENTS, MAX_TAKES, RecordInput, RecordPlan, TakeEntry,

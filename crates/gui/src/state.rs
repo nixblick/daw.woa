@@ -166,6 +166,22 @@ impl AppState {
         self.apply(Command::SetGain { track, gain_db })
     }
 
+    /// Sets the GM sound of a MIDI track (`None`: built-in synth); one undo step.
+    pub fn set_track_sound(
+        &mut self,
+        track: TrackId,
+        sound: Option<woa_model::TrackSound>,
+    ) -> bool {
+        if self
+            .project()
+            .track(track)
+            .is_some_and(|t| t.sound == sound)
+        {
+            return false;
+        }
+        self.apply(Command::SetTrackSound { track, sound })
+    }
+
     /// Toggles mute.
     pub fn toggle_mute(&mut self, track: TrackId) -> bool {
         let Some(mute) = self.project().track(track).map(|t| !t.mute) else {

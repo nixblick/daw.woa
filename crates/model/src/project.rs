@@ -310,6 +310,9 @@ pub struct Track {
     /// Fremd-Plugins (Paket 31): höchstens ein Instrument, dazu Effekte in Kettenreihenfolge.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plugins: Vec<crate::plugin::PluginSlot>,
+    /// GM-Klang einer MIDI-Spur (Paket J1); `None`: eingebauter Synth.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sound: Option<crate::sound::TrackSound>,
 }
 
 /// A send from a track to a bus.
@@ -358,6 +361,7 @@ impl Track {
             automation: Vec::new(),
             take_folders: Vec::new(),
             plugins: Vec::new(),
+            sound: None,
         }
     }
 
