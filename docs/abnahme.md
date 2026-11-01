@@ -4,6 +4,13 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Windows-Taskleiste mit WOA-Logo (0.34.99, offen)
+
+1. ZIP auspacken, `woa.exe` starten: Taskleiste zeigt WOA-Logo, auch aus der ZIP gestartet. Im Explorer trägt `woa.exe` dasselbe Logo.
+2. Mit dem MSI installiert und über das Startmenü gestartet: ebenfalls das WOA-Logo in der Taskleiste.
+
+Selbst geprüft von Claude: der Windows-Bau prüft, dass `woa.exe` ein eigenes Icon trägt (anders als das Standardsymbol). Linux-Bau unverändert. Nicht am Windows-Rechner gesehen.
+
 ## J4 Assistent „Jingle bauen“ (0.34.98, offen)
 
 1. Stoppuhr an. „Jingle bauen …“ → 10 s, „Party“ → „Jingle anlegen“: neues Projekt mit Drums, Akkorde, Bass, Arpeggio, Stimme; Tempo 120, Loop über 5 Takte.

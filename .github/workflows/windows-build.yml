@@ -13,6 +13,8 @@ on:
       - packaging/windows/**
       - packaging/fetch-soundfont.sh
       - .github/workflows/windows-build.yml
+      - apps/woa/build.rs
+      - apps/woa/Cargo.toml
 
 jobs:
   build:
@@ -22,6 +24,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p woa -p woa-headless -p woa-streamd
+      - name: Icon-Ressource in woa.exe prüfen
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          function IconHash($p) {
+            $ico = [System.Drawing.Icon]::ExtractAssociatedIcon((Resolve-Path $p))
+            $ms = New-Object System.IO.MemoryStream
+            $ico.ToBitmap().Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+            [Convert]::ToBase64String([System.Security.Cryptography.SHA256]::Create().ComputeHash($ms.ToArray()))
+          }
+          # woa-headless.exe hat keine Ressource und zeigt das Windows-Standardsymbol.
+          $woa = IconHash 'target/release/woa.exe'; $std = IconHash 'target/release/woa-headless.exe'
+          if ($woa -eq $std) { throw 'woa.exe hat kein eigenes Icon (Standardsymbol)' }
+          Write-Host "ok: woa.exe trägt das WOA-Icon ($woa), Standard wäre $std"
       - name: SoundFont laden (feste SHA-256, #265)
         shell: bash
         run: packaging/fetch-soundfont.sh dist/sounds
