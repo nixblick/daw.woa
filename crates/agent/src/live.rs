@@ -703,13 +703,15 @@ mod tests {
                             let reply = r#"{"jsonrpc":"2.0","id":2,"result":{"content":[]}}"#;
                             let _ = write!(
                                 w,
-                                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{reply}",
+                                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{reply}",
                                 reply.len()
                             );
                         } else {
                             let _ =
-                                w.write_all(b"HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\n\r\n");
+                                w.write_all(b"HTTP/1.1 202 Accepted\r\nconnection: close\r\ncontent-length: 0\r\n\r\n");
                         }
+                        // Eine Anfrage je Verbindung; `connection: close` verhindert, dass der
+                        // Client die geschlossene Verbindung wiederverwendet (CI-Wackler).
                         let _ = n;
                     });
                 }

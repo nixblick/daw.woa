@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## J9 MCP-Ausbau (0.34.90, offen)
+## J9 MCP-Ausbau (0.34.93, offen)
 
 Mit einem MCP-Client (z. B. Claude) an WOA.
 

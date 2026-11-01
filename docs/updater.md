@@ -33,7 +33,7 @@ Welche Stufe gilt, entscheidet die Datei `packaging/windows/updater.pub`, die zu
 
 | | Stufe A | Stufe B |
 |---|---|---|
-| Wann | `updater.pub` ist ein Platzhalter (Stand heute) | `updater.pub` ist ein echter minisign-Schlüssel |
+| Wann | `updater.pub` ist ein Platzhalter (bis 0.34.91) | `updater.pub` ist ein echter minisign-Schlüssel (seit 0.34.92) |
 | Prüfung | SHA-256 des MSI aus `latest.json` | minisign-Signatur über die MSI-Bytes, Pflicht |
 | Fehlt der Prüfwert | abgelehnt | abgelehnt (kein Rückfall auf A) |
 | Downgrade-Wächter | ja | ja |
@@ -112,9 +112,9 @@ dem Windows-Bau oder dem Release doppelklicken). Erst von da an aktualisiert sie
 
 ## Stufe B einschalten
 
-Der Code ist fertig (Pflicht-Signatur sobald `updater.pub` ein echter Schlüssel ist, Release-Workflow
-signiert, sobald das Secret `WOA_UPDATER_KEY` existiert). Es fehlt nur der Schlüssel, und den erzeugt
-und hinterlegt nur der Maintainer:
+Stand 01.11.2026: Schritte 1 bis 3 sind erledigt. Der Schlüssel ist erzeugt, das Secret
+`WOA_UPDATER_KEY` gesetzt und `packaging/windows/updater.pub` enthält seit 0.34.92 den echten
+öffentlichen Schlüssel. Offen sind Schritt 4 (erstes signiertes Release) und Schritt 5.
 
 1. `minisign -G -W -p updater.pub -s updater.key` (`-W`: ohne Passwort, der Workflow signiert unbeaufsichtigt).
 2. Inhalt von `updater.key` als Actions-Secret `WOA_UPDATER_KEY` setzen, `updater.key` danach in den Vault, nie ins Repo.
