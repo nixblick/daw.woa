@@ -129,7 +129,11 @@ pub fn bar_chords<'a>(
     for (beat, n) in notes {
         let end = beat + n.length_beats;
         let first = (beat / 4.0).floor().max(0.0) as usize;
-        let last = ((end - 1e-9) / 4.0).floor().max(0.0) as usize;
+        if first >= bars {
+            continue;
+        }
+        // Obergrenze: eine absurd lange Note darf die Schleife nicht endlos machen.
+        let last = (((end - 1e-9) / 4.0).floor().max(0.0) as usize).min(bars - 1);
         for bar in first..=last {
             let b0 = bar as f64 * 4.0;
             // Klingt im ersten Schlag des Takts?
@@ -308,6 +312,13 @@ mod tests {
             velocity: 90,
         };
         assert!(bar_chords([(0.0, &one)], 0).is_empty(), "null Takte");
+        let huge = MidiNote {
+            length_beats: 1e300,
+            ..one
+        };
+        let t = std::time::Instant::now();
+        assert_eq!(bar_chords([(0.0, &huge), (1e300, &one)], 2).len(), 2);
+        assert!(t.elapsed().as_secs() < 1, "Schleife begrenzt");
         assert_eq!(detect_key(std::iter::empty()), None);
     }
 }
