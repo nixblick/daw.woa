@@ -37,6 +37,7 @@ pub mod drums;
 pub mod effect;
 mod error;
 mod history;
+pub mod jingle;
 pub mod midi;
 pub mod plugin;
 mod project;

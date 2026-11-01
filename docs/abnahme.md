@@ -4,6 +4,18 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## J4 Assistent „Jingle bauen“ (0.34.98, offen)
+
+1. Stoppuhr an. „Jingle bauen …“ → 10 s, „Party“ → „Jingle anlegen“: neues Projekt mit Drums, Akkorde, Bass, Arpeggio, Stimme; Tempo 120, Loop über 5 Takte.
+2. Leertaste: der Loop spielt. „Weiter“ → anderes Beat-Preset oder „Würfeln“: sofort zu hören. „Im Raster bearbeiten“ öffnet das Drum-Raster.
+3. „Weiter“ → eine andere Akkordfolge anklicken: Akkorde, Bass und Arpeggio wechseln zusammen.
+4. „Weiter“ → auf der Spur „Stimme“ aufnehmen oder eine Datei daraufziehen, „Stimme über Bett“: die Musik wird unter der Stimme leiser.
+5. „Weiter“ → „Schluss-Stab“: der letzte Takt ist ein einzelner Schlag. Optional „Riser davor“.
+6. „Weiter“ → Name prüfen, „Als Jingle exportieren …“: Export-Fenster mit „Als Jingle“, Cart wählen, exportieren. Stoppuhr unter 10 Minuten?
+7. Speichern, WOA schließen, Projekt öffnen: alles da, normale Clips in Pianoroll und Zeitleiste. Strg+Z mehrmals geht Schritt für Schritt zurück.
+
+Selbst geprüft von Claude: `crates/model/src/jingle.rs`, `crates/gui/src/state.rs` (`jingle_wizard_builds_a_normal_project_in_one_undo_step`), `crates/gui/src/jingle_assistent.rs` (Klickweg durch alle sechs Schritte). Clippy und Tests von `woa-model` und `woa-gui` grün. Kein Ton abgespielt; die Stoppuhr-Probe mit einem Laien steht aus.
+
 ## J5 Stimme und Ducking (0.34.97, offen)
 
 1. Zwei Spuren: eine mit Musik oder Akkorden (Bett), eine mit Stimme (Strg+R aufnehmen oder Datei hineinziehen).
