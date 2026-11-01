@@ -149,10 +149,18 @@ pub struct ListEffectsParams {
 /// Parameters of `insert_effect`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InsertEffectParams {
-    /// Track id (audio, MIDI or bus).
+    /// Track id (audio, MIDI or bus; CLAP effects not on buses).
     pub track: u64,
-    /// Effect kind.
-    pub kind: AgentEffectKind,
+    /// Built-in effect kind. Give either `kind` or `clap_id`.
+    #[serde(default)]
+    pub kind: Option<AgentEffectKind>,
+    /// CLAP plugin id of an effect (see `list_instruments` with `clap: true`), instead of `kind`.
+    /// The project stores only the id; a plugin missing on this computer passes the signal through.
+    #[serde(default)]
+    pub clap_id: Option<String>,
+    /// Display name of the CLAP effect. Default: the name from the last plugin scan, else the id.
+    #[serde(default)]
+    pub name: Option<String>,
     /// Position in the chain, 0 = first. Default: at the end.
     #[serde(default)]
     pub index: Option<usize>,
@@ -345,6 +353,15 @@ fn resolve_auto_target(
         }
     };
     Ok((track, target))
+}
+
+/// Spur eines CLAP-Plugins mit dieser Kennung (teilt den Zahlenraum mit Inserts).
+fn plugin_track(s: &Session, id: InsertId) -> Option<TrackId> {
+    s.project()
+        .tracks
+        .iter()
+        .find(|t| t.plugins.iter().any(|p| p.id == id))
+        .map(|t| t.id)
 }
 
 /// Finds the track that holds `insert`, and the effect kind.
@@ -804,6 +821,39 @@ pub struct RunOrderParams {
     pub radio_json: Option<String>,
 }
 
+/// Parameters of `list_instruments`.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct ListInstrumentsParams {
+    /// `true`: also search the CLAP plugins on this computer (each file in its own process,
+    /// takes a few seconds; the result is kept until the next `clap: true`).
+    #[serde(default)]
+    pub clap: bool,
+}
+
+/// Parameters of `list_samples`.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct ListSamplesParams {
+    /// Words that must all appear in title, tags or path (prefix match, case does not matter).
+    #[serde(default)]
+    pub text: Option<String>,
+    /// Library kind: `sample`, `jingle` or `music`. Default: all. Ignored with `folder`.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Library tag that must be set. Ignored with `folder`.
+    #[serde(default)]
+    pub tag: Option<String>,
+    /// Library database file. Default: the library of the WOA data folder.
+    #[serde(default)]
+    pub library: Option<String>,
+    /// Search this folder (and up to 4 levels below) for audio files instead of the library,
+    /// e.g. a Jingle-FX folder. Not together with `library`.
+    #[serde(default)]
+    pub folder: Option<String>,
+    /// Most results, default 100, at most 1000.
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
 /// Parameters of `stream_status`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StreamStatusParams {
@@ -1005,6 +1055,109 @@ fn bank_license(bank: woa_model::SoundBank) -> &'static str {
         woa_model::SoundBank::AvlRedZeppelin => "CC BY-SA 3.0 (AVL Drumkits, Glen MacArthur)",
         woa_model::SoundBank::Unknown => "",
     }
+}
+
+/// Presets, Bänke und SoundFont-Zustand: gemeinsam für `track_sound` und `list_instruments`.
+fn sound_catalog_json() -> serde_json::Value {
+    let presets: Vec<_> = woa_model::SOUND_PRESETS
+        .iter()
+        .map(|x| {
+            serde_json::json!({
+                "role": x.role.name(),
+                "name": x.name,
+                "program": x.sound.program,
+                "drums": x.sound.drums,
+            })
+        })
+        .collect();
+    let banks: Vec<_> = woa_model::SoundBank::ALL
+        .iter()
+        .map(|&b| {
+            let entry = woa_engine::banks::entry(b);
+            serde_json::json!({
+                "id": b.id(),
+                "name": b.name(),
+                "drums_only": b.drums_only(),
+                "state": woa_engine::banks::state(b).name(),
+                "bytes": entry.map(|e| e.bytes),
+                "license": bank_license(b),
+            })
+        })
+        .collect();
+    let available = woa_engine::soundfont::default_soundfont().is_some();
+    serde_json::json!({
+        "default_bank": {
+            "id": "generaluser",
+            "name": "GeneralUser GS",
+            "available": available,
+            "license": "GeneralUser GS License v2.0",
+        },
+        "soundfont_available": available,
+        "presets": presets,
+        "banks": banks,
+    })
+}
+
+/// Zuletzt gefundene CLAP-Plugins (`list_instruments` mit `clap: true`).
+static CLAP_CATALOG: Mutex<Option<Vec<woa_plugins::PluginInfo>>> = Mutex::new(None);
+
+/// Sucht CLAP-Plugins nur geschützt: je Datei ein eigener Prozess (`woa-plugin-host`), mit der
+/// Sperrliste der App. Ohne Plugin-Prozess wird nicht gesucht; eine kaputte Bibliothek darf den
+/// MCP-Server nicht mitreißen.
+fn scan_clap() -> Result<Vec<woa_plugins::PluginInfo>, String> {
+    let host = woa_plugins::HostConfig::discover()
+        .ok_or("kein Plugin-Prozess (woa-plugin-host) gefunden, Suche ausgelassen")?;
+    let path = woa_plugins::Blocklist::default_path(&woa_radio::config_dir());
+    let mut blocklist = woa_plugins::Blocklist::load(&path);
+    let catalog = woa_plugins::Catalog::scan_default_guarded(&host, &mut blocklist);
+    Ok(catalog.plugins().to_vec())
+}
+
+fn plugin_json(p: &woa_plugins::PluginInfo) -> serde_json::Value {
+    serde_json::json!({"clap_id": p.clap_id, "name": p.name, "vendor": p.vendor})
+}
+
+/// Audiodateien unter `root` (höchstens 4 Ebenen, 5000 Dateien), deren Name `words` enthält.
+fn audio_files(root: &Path, words: &[String], limit: usize) -> Vec<PathBuf> {
+    const EXT: [&str; 9] = [
+        "wav", "flac", "mp3", "mp2", "ogg", "m4a", "aif", "aiff", "caf",
+    ];
+    let mut out = Vec::new();
+    let mut seen = 0usize;
+    let mut stack = vec![(root.to_path_buf(), 0usize)];
+    while let Some((dir, depth)) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut entries: Vec<_> = rd.flatten().map(|e| e.path()).collect();
+        entries.sort();
+        for path in entries {
+            seen += 1;
+            if seen > 5000 || out.len() >= limit {
+                return out;
+            }
+            if path.is_dir() {
+                if depth < 4 && !path.is_symlink() {
+                    stack.push((path, depth + 1));
+                }
+                continue;
+            }
+            let ext_ok = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| EXT.contains(&e.to_ascii_lowercase().as_str()));
+            let name = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_lowercase();
+            if ext_ok && words.iter().all(|w| name.contains(w.as_str())) {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
 }
 
 fn fail(e: impl std::fmt::Display) -> CallToolResult {
@@ -1896,40 +2049,11 @@ impl WoaAgent {
             Some(_) => return Ok(fail(ModelError::NotMidiTrack(track))),
             None => return Ok(fail(ModelError::TrackNotFound(track))),
         };
-        let presets: Vec<_> = woa_model::SOUND_PRESETS
-            .iter()
-            .map(|x| {
-                serde_json::json!({
-                    "role": x.role.name(),
-                    "name": x.name,
-                    "program": x.sound.program,
-                    "drums": x.sound.drums,
-                })
-            })
-            .collect();
         // Erster Gebrauch: fehlt die Bank, lädt sie jetzt im Hintergrund.
         let state = t.sound.and_then(|x| x.bank).map(woa_engine::banks::ensure);
-        let banks: Vec<_> = woa_model::SoundBank::ALL
-            .iter()
-            .map(|&b| {
-                let entry = woa_engine::banks::entry(b);
-                serde_json::json!({
-                    "id": b.id(),
-                    "name": b.name(),
-                    "drums_only": b.drums_only(),
-                    "state": woa_engine::banks::state(b).name(),
-                    "bytes": entry.map(|e| e.bytes),
-                    "license": bank_license(b),
-                })
-            })
-            .collect();
-        let mut out = serde_json::json!({
-            "track": t.id.0,
-            "sound": sound_json(t.sound),
-            "soundfont_available": woa_engine::soundfont::default_soundfont().is_some(),
-            "presets": presets,
-            "banks": banks,
-        });
+        let mut out = sound_catalog_json();
+        out["track"] = t.id.0.into();
+        out["sound"] = sound_json(t.sound);
         if let Some(st) = state {
             out["bank_state"] = st.name().into();
             match st {
@@ -2306,7 +2430,44 @@ impl WoaAgent {
         Parameters(p): Parameters<InsertEffectParams>,
     ) -> Result<CallToolResult, McpError> {
         self.agent_step(|s| {
-            let kind: EffectKind = p.kind.into();
+            let kind = match (p.kind, p.clap_id.as_deref()) {
+                (Some(k), None) => EffectKind::from(k),
+                (None, Some(clap_id)) => {
+                    let clap_id = clap_id.trim();
+                    if clap_id.is_empty() {
+                        return Err(ModelError::InvalidArgument("clap_id is empty".into()));
+                    }
+                    let found = CLAP_CATALOG.lock().ok().and_then(|c| {
+                        c.as_ref()?
+                            .iter()
+                            .find(|x| x.clap_id == clap_id)
+                            .map(|x| x.name.clone())
+                    });
+                    let name = p
+                        .name
+                        .clone()
+                        .filter(|n| !n.trim().is_empty())
+                        .or(found)
+                        .unwrap_or_else(|| clap_id.to_string());
+                    let id = s.new_insert_id();
+                    s.apply(Command::AddPlugin {
+                        track: TrackId(p.track),
+                        plugin: woa_model::PluginSlot::new(
+                            id,
+                            clap_id,
+                            name,
+                            woa_model::PluginRole::Effect,
+                        ),
+                        index: p.index,
+                    })?;
+                    return Ok(serde_json::json!({ "insert": id.0, "clap_id": clap_id }));
+                }
+                _ => {
+                    return Err(ModelError::InvalidArgument(
+                        "give either kind or clap_id".into(),
+                    ));
+                }
+            };
             let id = s.new_insert_id();
             let mut insert = match &p.preset {
                 Some(name) => Insert::with_preset(id, kind, name)?,
@@ -2360,6 +2521,127 @@ impl WoaAgent {
     }
 
     #[tool(
+        description = "List what can make sound: the SoundFont banks (default GeneralUser GS plus downloadable banks with state, size and license), the sound presets, and with clap: true the CLAP instruments and effects found on this computer (searched safely, one process per file). Set a sound with track_sound, a CLAP effect with insert_effect clap_id."
+    )]
+    async fn list_instruments(
+        &self,
+        Parameters(p): Parameters<ListInstrumentsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if p.clap {
+            off_runtime(move || {
+                let mut out = sound_catalog_json();
+                match scan_clap() {
+                    Ok(found) => {
+                        out["clap"] = serde_json::json!({
+                            "instruments": found.iter().filter(|x| x.is_instrument()).map(plugin_json).collect::<Vec<_>>(),
+                            "effects": found.iter().filter(|x| x.is_effect()).map(plugin_json).collect::<Vec<_>>(),
+                        });
+                        if let Ok(mut c) = CLAP_CATALOG.lock() {
+                            *c = Some(found);
+                        }
+                    }
+                    Err(e) => out["clap_error"] = e.into(),
+                }
+                Ok(ok_json(out))
+            })
+            .await
+        } else {
+            let mut out = sound_catalog_json();
+            out["clap"] = serde_json::Value::Null;
+            Ok(ok_json(out))
+        }
+    }
+
+    #[tool(
+        description = "Search samples: the WOA library by kind (sample, jingle, music), tag and name, or with folder an audio folder (e.g. Jingle-FX) by file name. Read only; returns path, title, kind, duration and tags. Put a hit on a track with add_clip."
+    )]
+    async fn list_samples(
+        &self,
+        Parameters(p): Parameters<ListSamplesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let limit = p.limit.unwrap_or(100).clamp(1, 1000);
+        let text = p.text.clone().unwrap_or_default();
+        if let Some(folder) = &p.folder {
+            if p.library.is_some() {
+                return Ok(fail("folder und library nicht zusammen"));
+            }
+            let root = self.resolve_media(folder);
+            if !root.is_dir() {
+                return Ok(fail(format!("Ordner {} gibt es nicht", shown(&root))));
+            }
+            let words: Vec<String> = text.split_whitespace().map(str::to_lowercase).collect();
+            return off_runtime(move || {
+                let samples: Vec<_> = audio_files(&root, &words, limit)
+                    .iter()
+                    .map(|f| {
+                        serde_json::json!({
+                            "path": f.to_string_lossy(),
+                            "title": f.file_stem().map(|x| x.to_string_lossy().into_owned()),
+                        })
+                    })
+                    .collect();
+                Ok(ok_json(serde_json::json!({ "samples": samples })))
+            })
+            .await;
+        }
+        let db = match &p.library {
+            Some(l) => self.resolve_media(l),
+            None => woa_radio::data_dir().join(woa_library::DB_FILE),
+        };
+        let kind = match p.kind.as_deref() {
+            None => None,
+            Some(k) => match woa_library::Kind::ALL.iter().find(|x| x.as_str() == k) {
+                Some(&x) => Some(x),
+                None => {
+                    return Ok(fail(format!(
+                        "Art {k:?} gibt es nicht (sample, jingle, music)"
+                    )));
+                }
+            },
+        };
+        let tag = p.tag.clone();
+        off_runtime(move || {
+            // Nur lesen: eine fehlende Bibliothek wird nicht angelegt.
+            if !db.is_file() {
+                return Ok(ok_json(
+                    serde_json::json!({ "samples": [], "library": false }),
+                ));
+            }
+            let lib = match woa_library::Library::open(&db) {
+                Ok(l) => l,
+                Err(e) => return Ok(fail(e)),
+            };
+            let q = woa_library::Query {
+                text,
+                tag,
+                kind,
+                limit,
+                ..woa_library::Query::default()
+            };
+            let hits = match lib.search(&q) {
+                Ok(h) => h,
+                Err(e) => return Ok(fail(e)),
+            };
+            let samples: Vec<_> = hits
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "path": t.path,
+                        "title": t.title,
+                        "kind": t.kind.as_str(),
+                        "duration": t.duration,
+                        "tags": t.tags,
+                    })
+                })
+                .collect();
+            Ok(ok_json(
+                serde_json::json!({ "samples": samples, "library": true }),
+            ))
+        })
+        .await
+    }
+
+    #[tool(
         description = "Insert the template 'Sprachkette' (voice chain) at the end of the insert chain of a track: highpass EQ, gate, EQ, compressor, de-esser. One undo step. Returns the five insert ids in order."
     )]
     async fn insert_voice_chain(
@@ -2410,6 +2692,14 @@ impl WoaAgent {
         Parameters(p): Parameters<SetInsertBypassParams>,
     ) -> Result<CallToolResult, McpError> {
         self.agent_step(|s| {
+            if let Some(track) = plugin_track(s, InsertId(p.insert)) {
+                s.apply(Command::SetPluginBypass {
+                    track,
+                    plugin: InsertId(p.insert),
+                    bypass: p.bypass,
+                })?;
+                return Ok(serde_json::json!({ "ok": true }));
+            }
             let (track, _) = find_insert(s, InsertId(p.insert))?;
             s.apply(Command::SetInsertBypass {
                 track,
@@ -2426,6 +2716,13 @@ impl WoaAgent {
         Parameters(p): Parameters<RemoveInsertParams>,
     ) -> Result<CallToolResult, McpError> {
         self.agent_step(|s| {
+            if let Some(track) = plugin_track(s, InsertId(p.insert)) {
+                s.apply(Command::RemovePlugin {
+                    track,
+                    plugin: InsertId(p.insert),
+                })?;
+                return Ok(serde_json::json!({ "ok": true }));
+            }
             let (track, _) = find_insert(s, InsertId(p.insert))?;
             s.apply(Command::RemoveInsert {
                 track,

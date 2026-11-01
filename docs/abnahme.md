@@ -4,6 +4,19 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## J9 MCP-Ausbau (0.34.89, offen)
+
+Mit einem MCP-Client (z. B. Claude) an WOA.
+
+1. `list_instruments`: Liste zeigt GeneralUser GS, MuseScore General und AVL je mit Zustand und Lizenz, dazu 16 Presets.
+2. `list_instruments` mit `clap: true`: nach ein paar Sekunden stehen die installierten CLAP-Instrumente und -Effekte da; WOA läuft weiter, auch wenn ein Plugin kaputt ist.
+3. `list_samples` mit `text: "impact"`: findet passende Samples der Bibliothek; mit `kind: "jingle"` nur Jingles; mit `folder` auf den Jingle-FX-Ordner die Dateien darin.
+4. `insert_effect` mit einer `clap_id` aus Schritt 2 auf eine Audiospur: der Effekt steht im Insert-Rack der Spur. Undo nimmt ihn weg, Redo bringt ihn wieder; `set_insert_bypass` schaltet ihn stumm.
+
+Der Impact-Teil aus #262 wartet auf J8 (Kenney-Samples).
+
+Selbst geprüft von Claude: `crates/agent/tests/j9_tools.rs` (Bänke und Presets ohne Plugin-Suche, Bibliothek nach Name und Art, fehlende Bibliothek bleibt fehlend, Ordnersuche, CLAP-Effekt mit Bypass, Entfernen, Undo und Export ohne installiertes Plugin, Fehlerwege). Clippy und Tests von `woa-agent` grün. Keine echte Plugin-Suche im Test.
+
 ## J7 Bänke (0.34.88, offen)
 
 1. MIDI-Spur, Klang „Klavier“, im Klang-Menü unter BANK „MuseScore General · wird beim Wählen geladen“ wählen. Das Menü zeigt „lädt … %“ (206 MB); bis dahin spielt GeneralUser GS weiter.

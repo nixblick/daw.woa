@@ -17,7 +17,7 @@ use crate::tag_editor::{Item as TagItem, TagEditor};
 use crate::theme;
 
 /// Datei der Bibliothek im Datenordner.
-pub const DB_FILE: &str = "bibliothek.sqlite3";
+pub const DB_FILE: &str = woa_library::DB_FILE;
 /// Zeilenhöhe der Trefferliste.
 const ROW_H: f32 = 24.0;
 /// Während eines Imports wird die Liste höchstens so oft neu gesucht.
