@@ -258,6 +258,7 @@ pub struct WoaApp {
     mcp_live: crate::mcp_live::McpLive,
     /// Fenster „Produktionen“: Audio-Dateien des Projekts, neueste oben.
     produktionen: crate::produktionen::ProduktionenWindow,
+    akkorde: crate::akkorde::AkkordFenster,
     /// Export-Fenster (Paket 26).
     export_dialog: crate::export_dialog::ExportDialog,
     /// „Spur exportieren“ (Ticket 229): offenes Fenster und laufender Export.
@@ -614,6 +615,7 @@ impl WoaApp {
             ),
             mcp_live: crate::mcp_live::McpLive::new(woa_radio::data_dir(), open_audio),
             produktionen: crate::produktionen::ProduktionenWindow::default(),
+            akkorde: crate::akkorde::AkkordFenster::default(),
             export_dialog: crate::export_dialog::ExportDialog::new(),
             track_export: None,
             track_export_job: None,
@@ -2909,6 +2911,22 @@ impl WoaApp {
                 {
                     self.create_midi_clip_at_playhead(self.selected_track);
                 }
+                if ui
+                    .add_sized(
+                        [128.0, 32.0],
+                        egui::Button::new(
+                            egui::RichText::new(format!("{} Akkordfolge …", theme::ic::PIANO_KEYS))
+                                .small()
+                                .strong()
+                                .color(theme::cue()),
+                        )
+                        .fill(theme::well()),
+                    )
+                    .on_hover_text("Fertige Akkordfolge wählen: Akkorde, Bass und Arpeggio als MIDI-Spuren")
+                    .clicked()
+                {
+                    self.akkorde.open = true;
+                }
             });
             if self.state.project().tracks.is_empty() {
                 ui.add_space(24.0);
@@ -5168,6 +5186,19 @@ impl WoaApp {
         self.apply_pick(out);
     }
 
+    /// Fenster „Akkordfolge“ (Paket J3), erzeugt ab dem Takt am Abspielkopf.
+    fn akkorde_window(&mut self, ctx: &egui::Context) {
+        if !self.akkorde.open {
+            return;
+        }
+        let tempo = self.state.project().tempo_bpm;
+        let at = self
+            .player
+            .as_ref()
+            .map_or(0.0, |p| ((p.position_beats(tempo) / 4.0).floor()) * 4.0);
+        self.akkorde.show(ctx, &mut self.state, at);
+    }
+
     /// Fenster „Produktionen“: gleicher Weg wie die Bibliothek (Vorhören, Ablegen).
     fn produktionen_window(&mut self, ctx: &egui::Context) {
         let pfl = self.radio.as_ref().is_some_and(RadioDesk::pfl_available);
@@ -6344,6 +6375,7 @@ impl eframe::App for WoaApp {
         self.analysis_window(&ctx);
         self.library_window(&ctx);
         self.produktionen_window(&ctx);
+        self.akkorde_window(&ctx);
         self.clock_editor.show(&ctx);
         self.event_editor
             .show(&ctx, self.radio.as_ref().map(|r| r.view()));

@@ -474,6 +474,34 @@ pub struct GenerateNotesParams {
     pub midi: bool,
 }
 
+/// Parameters of `generate_chords`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GenerateChordsParams {
+    /// Progression from the catalog (same as the app window "Akkordfolge"), e.g.
+    /// "I–V–vi–IV", "I–IV–V–I", "vi–IV–I–V", "i–VI–III–VII"; "-" works for "–".
+    /// An unknown name returns the list.
+    pub progression: String,
+    /// Key root: C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B (also Db, A#, ...). Default C.
+    /// Minor progressions (lower-case i) use natural minor of this root.
+    #[serde(default)]
+    pub key: Option<String>,
+    /// Length in 4/4 bars, one chord per bar, the progression repeats. Default 4.
+    #[serde(default)]
+    pub bars: Option<u32>,
+    /// Clip start on the timeline in beats.
+    #[serde(default)]
+    pub start_beats: f64,
+}
+
+/// Parameters of `transpose_notes`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TransposeNotesParams {
+    /// MIDI clip ids, e.g. the three clips of generate_chords.
+    pub clips: Vec<u64>,
+    /// Semitones, -24..=24 (key change C to D = 2).
+    pub semitones: i8,
+}
+
 /// Parameters of `edit_notes`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct EditNotesParams {
@@ -1601,6 +1629,123 @@ impl WoaAgent {
             "notes": notes,
             "cc": cc,
         })))
+    }
+
+    #[tool(
+        description = "Build chords, bass and arpeggio from a chord progression of the catalog (the same as the app window \"Akkordfolge\"): three new MIDI tracks (Akkorde = pad, Bass, Arpeggio = piano) with one MIDI clip each, all notes in the key, one chord per bar. Change the key afterwards with transpose_notes on the three clips. One undo step. Returns tracks and clips."
+    )]
+    async fn generate_chords(
+        &self,
+        Parameters(p): Parameters<GenerateChordsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        use woa_model::chords;
+        let Some(prog) = chords::progression(&p.progression) else {
+            return Ok(fail(format!(
+                "unbekannte Akkordfolge {:?}, bekannt: {}",
+                p.progression,
+                chords::CHORD_PROGRESSIONS
+                    .iter()
+                    .map(|c| c.name)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        };
+        let key_name = p.key.as_deref().unwrap_or("C");
+        let Some(key) = chords::key_index(key_name) else {
+            return Ok(fail(format!(
+                "unbekannte Tonart {key_name:?}, bekannt: {}",
+                chords::KEYS.join(", ")
+            )));
+        };
+        if !(p.start_beats.is_finite() && p.start_beats >= 0.0) {
+            return Ok(fail(format!(
+                "start_beats muss >= 0 sein, war {}",
+                p.start_beats
+            )));
+        }
+        let bars = p.bars.unwrap_or(4).clamp(1, 64);
+        let length = f64::from(bars) * 4.0;
+        let made = chords::generate(prog, key, bars);
+        let mut s = self.lock()?;
+        let mut parts = Vec::new();
+        let r = s.group(AGENT_LABEL, |s| {
+            for (role, name, sound_role, midi) in [
+                ("chords", "Akkorde", woa_model::SoundRole::Pad, made.chords),
+                ("bass", "Bass", woa_model::SoundRole::Bass, made.bass),
+                ("arp", "Arpeggio", woa_model::SoundRole::Lead, made.arp),
+            ] {
+                let track = s.new_track_id();
+                s.apply(Command::add_track(track, name.to_string(), TrackKind::Midi))?;
+                let sound = woa_model::SOUND_PRESETS
+                    .iter()
+                    .find(|x| x.role == sound_role)
+                    .map(|x| x.sound);
+                s.apply(Command::SetTrackSound { track, sound })?;
+                let clip = s.new_clip_id();
+                let notes = midi.notes.len();
+                s.apply(Command::AddClip {
+                    track,
+                    clip: Clip::new_midi(clip, name, p.start_beats, length, midi),
+                    index: None,
+                })?;
+                parts.push(serde_json::json!({
+                    "role": role,
+                    "track": track.0,
+                    "clip": clip.0,
+                    "notes": notes,
+                    "sound": sound_json(sound),
+                }));
+            }
+            Ok::<(), ModelError>(())
+        });
+        Ok(match r {
+            Ok(()) => ok_json(serde_json::json!({
+                "progression": prog.name,
+                "key": chords::KEYS[usize::from(key)],
+                "minor": prog.minor,
+                "length_beats": audio::round(length, 4),
+                "parts": parts,
+            })),
+            Err(e) => fail(e),
+        })
+    }
+
+    #[tool(
+        description = "Transpose all notes of one or more MIDI clips by semitones (key change, e.g. the three clips of generate_chords). Pitches stay within 0..127. One undo step."
+    )]
+    async fn transpose_notes(
+        &self,
+        Parameters(p): Parameters<TransposeNotesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if !(-24..=24).contains(&p.semitones) {
+            return Ok(fail(format!(
+                "semitones muss -24..=24 sein, war {}",
+                p.semitones
+            )));
+        }
+        let mut s = self.lock()?;
+        let mut todo = Vec::new();
+        for &id in &p.clips {
+            let clip = match Self::clip_of(&s, id) {
+                Ok(c) => c,
+                Err(e) => return Ok(fail(e)),
+            };
+            let Some(midi) = &clip.midi else {
+                return Ok(fail(ModelError::NotMidiClip(clip.id)));
+            };
+            todo.push((clip.id, woa_model::chords::transpose(midi, p.semitones)));
+        }
+        let n = todo.len();
+        let r = s.group(AGENT_LABEL, |s| {
+            for (clip, midi) in todo {
+                s.apply(Command::SetNotes { clip, midi })?;
+            }
+            Ok::<(), ModelError>(())
+        });
+        Ok(match r {
+            Ok(()) => ok_json(serde_json::json!({ "clips": n, "semitones": p.semitones })),
+            Err(e) => fail(e),
+        })
     }
 
     #[tool(

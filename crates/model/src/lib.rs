@@ -31,6 +31,7 @@
 //! No function in this crate panics on bad input; all failures are [`ModelError`].
 
 pub mod automation;
+pub mod chords;
 mod command;
 pub mod drums;
 pub mod effect;
@@ -47,6 +48,7 @@ pub mod takes;
 pub use automation::{
     AutoMode, AutoPoint, AutoRange, AutoTarget, AutomationLane, MAX_AUTOMATION_POINTS,
 };
+pub use chords::{CHORD_PROGRESSIONS, ChordProgression};
 pub use command::Command;
 pub use drums::{DRUM_PRESETS, DRUM_ROWS, DrumPreset, DrumRow, drum_preset};
 pub use effect::{
