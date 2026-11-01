@@ -121,6 +121,14 @@ pub struct PianoRoll {
     preview: Option<u8>,
     /// Scroll to the notes on the first frame.
     centre: bool,
+    /// Drum-Raster statt Notenfläche (Paket J2); `None`: an, wenn die Spur ein Kit hat.
+    drum_grid: Option<bool>,
+    /// Dichte für Presets: -1 weniger, 0, +1 mehr.
+    density: i8,
+    /// Zuletzt gewähltes Preset (Index in `DRUM_PRESETS`).
+    preset: Option<usize>,
+    /// Zähler für den Würfel.
+    dice_seed: u64,
 }
 
 impl PianoRoll {
@@ -138,6 +146,10 @@ impl PianoRoll {
             velocity: 100,
             preview: None,
             centre: true,
+            drum_grid: None,
+            density: 0,
+            preset: None,
+            dice_seed: 0,
         }
     }
 
@@ -231,9 +243,7 @@ impl PianoRoll {
             .min_size([480.0, 320.0])
             .resizable(true)
             .show(ctx, |ui| {
-                self.toolbar(ui, state, &midi);
-                ui.separator();
-                self.editor(ui, state, &midi, length, sink);
+                self.body(ui, state, &midi, length, sink);
             });
         if !open && let Some(p) = self.preview.take() {
             Self::send(sink, NoteEvent::note_off(p));
@@ -253,10 +263,181 @@ impl PianoRoll {
             return false;
         };
         self.sel.retain(|&i| i < midi.notes.len());
-        self.toolbar(ui, state, &midi);
-        ui.separator();
-        self.editor(ui, state, &midi, length, sink);
+        self.body(ui, state, &midi, length, sink);
         true
+    }
+
+    /// Toolbar plus Notenfläche oder, auf einer Drum-Spur, wahlweise das Drum-Raster.
+    fn body(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: &mut AppState,
+        midi: &MidiData,
+        length: f64,
+        sink: Option<&woa_io::midi::EventSink>,
+    ) {
+        let kit = state
+            .project()
+            .clip(self.clip)
+            .is_some_and(|(t, _)| t.sound.is_some_and(|s| s.drums));
+        let grid = self.drum_grid.unwrap_or(kit);
+        ui.horizontal(|ui| {
+            let mut on = grid;
+            if ui
+                .toggle_value(&mut on, "Drum-Raster")
+                .on_hover_text(
+                    "16tel-Schritte je Drum (GM-Kit); dieselben Noten wie in der Piano-Roll",
+                )
+                .changed()
+            {
+                self.drum_grid = Some(on);
+            }
+            if grid {
+                self.drum_toolbar(ui, state, midi, length);
+            }
+        });
+        if grid {
+            ui.separator();
+            self.drum_editor(ui, state, midi, length);
+        } else {
+            self.toolbar(ui, state, midi);
+            ui.separator();
+            self.editor(ui, state, midi, length, sink);
+        }
+    }
+
+    /// Presets, Dichte und Würfel des Drum-Rasters.
+    fn drum_toolbar(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: &mut AppState,
+        midi: &MidiData,
+        length: f64,
+    ) {
+        use woa_model::{DRUM_PRESETS, drums};
+        ui.separator();
+        let name = self
+            .preset
+            .and_then(|i| DRUM_PRESETS.get(i))
+            .map_or("Preset wählen", |p| p.name);
+        let mut chosen = None;
+        egui::ComboBox::from_id_salt(("drum_preset", self.clip.0))
+            .selected_text(name)
+            .show_ui(ui, |ui| {
+                for (i, p) in DRUM_PRESETS.iter().enumerate() {
+                    if ui
+                        .selectable_label(self.preset == Some(i), p.name)
+                        .clicked()
+                    {
+                        chosen = Some(i);
+                    }
+                }
+            });
+        let before = self.density;
+        ui.add(
+            egui::Slider::new(&mut self.density, -1..=1)
+                .show_value(false)
+                .text("weniger / mehr"),
+        )
+        .on_hover_text("Wechselt zwischen sparsamer, normaler und dichter Variante des Presets");
+        if before != self.density && chosen.is_none() {
+            chosen = self.preset;
+        }
+        if let Some(i) = chosen
+            && let Some(p) = DRUM_PRESETS.get(i)
+        {
+            self.preset = Some(i);
+            state.set_notes(
+                self.clip,
+                drums::apply_preset(midi, length, p, self.density),
+            );
+        }
+        if ui
+            .button(format!("{} Würfeln", theme::ic::SHUFFLE))
+            .on_hover_text("Zufälliger Beat aus einem Preset mit kleinen Abweichungen")
+            .clicked()
+        {
+            self.dice_seed = self.dice_seed.wrapping_add(1);
+            let seed = self.dice_seed
+                ^ (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_nanos() as u64));
+            state.set_notes(self.clip, drums::dice(midi, length, seed));
+            self.preset = None;
+        }
+        ui.label(
+            egui::RichText::new("Klick: Schlag an/aus · Rechtsklick: leise · Strg+Z: zurück")
+                .small()
+                .weak(),
+        );
+    }
+
+    /// Das Raster: Zeilen = GM-Drumnoten, Spalten = 16tel. Jede Änderung ist ein `SetNotes`.
+    fn drum_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: &mut AppState,
+        midi: &MidiData,
+        length: f64,
+    ) {
+        use woa_model::{DRUM_ROWS, drums};
+        const NAME_W: f32 = 90.0;
+        let pal = Palette::of(ui);
+        let total = drums::steps(length);
+        let avail = ui.available_width() - NAME_W;
+        let cell = (avail / total.min(drums::STEPS_PER_BAR * 2) as f32).clamp(14.0, 40.0);
+        let row_h = 26.0;
+        egui::ScrollArea::horizontal()
+            .id_salt(("drum_grid", self.clip.0))
+            .show(ui, |ui| {
+                let size = vec2(NAME_W + cell * total as f32, row_h * DRUM_ROWS.len() as f32);
+                let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+                let painter = ui.painter_at(rect);
+                painter.rect_filled(rect, 0.0, pal.bg);
+                for (r, row) in DRUM_ROWS.iter().enumerate() {
+                    let y = rect.top() + r as f32 * row_h;
+                    painter.text(
+                        pos2(rect.left() + 4.0, y + row_h / 2.0),
+                        egui::Align2::LEFT_CENTER,
+                        row.name,
+                        egui::FontId::proportional(12.0),
+                        pal.text,
+                    );
+                    for step in 0..total {
+                        let x = rect.left() + NAME_W + step as f32 * cell;
+                        let c = Rect::from_min_size(pos2(x, y), vec2(cell, row_h)).shrink(2.0);
+                        let beat_group = (step / 4) % 2 == 1;
+                        let fill = match drums::step_velocity(midi, row.pitch, step) {
+                            Some(v) if v > drums::SOFT => pal.note,
+                            Some(_) => theme::mix(pal.bg, pal.note, 0.45),
+                            None if beat_group => pal.row_black,
+                            None => theme::mix(pal.bg, pal.line, 0.5),
+                        };
+                        painter.rect_filled(c, 3.0, fill);
+                        if step % drums::STEPS_PER_BAR == 0 {
+                            painter.line_segment(
+                                [pos2(x, y), pos2(x, y + row_h)],
+                                Stroke::new(1.0, pal.bar),
+                            );
+                        }
+                    }
+                }
+                let hit = |p: Pos2| {
+                    let col = ((p.x - rect.left() - NAME_W) / cell).floor();
+                    let r = ((p.y - rect.top()) / row_h).floor();
+                    (col >= 0.0 && r >= 0.0)
+                        .then_some((r as usize, col as usize))
+                        .filter(|(r, c)| *r < DRUM_ROWS.len() && *c < total)
+                };
+                let soft = resp.secondary_clicked();
+                if (resp.clicked() || soft)
+                    && let Some(p) = resp.interact_pointer_pos()
+                    && let Some((r, step)) = hit(p)
+                    && let Some(row) = DRUM_ROWS.get(r)
+                {
+                    state.set_notes(self.clip, drums::toggle_step(midi, row.pitch, step, soft));
+                }
+            });
     }
 
     fn toolbar(&mut self, ui: &mut egui::Ui, state: &mut AppState, midi: &MidiData) {

@@ -535,6 +535,17 @@ pub struct GenerateDrumsParams {
     /// is installed). Default `false`: render synthetic drums to audio.
     #[serde(default)]
     pub midi: bool,
+    /// Starter pattern instead of kick/snare/hihat (same presets as the drum grid in the
+    /// app): "Pop", "Four on the Floor", "Rock", "Hip-Hop", "Nachrichten", "Party",
+    /// "Halbes Tempo", "Shuffle". Implies `midi: true` and adds clap, open hi-hat and crash.
+    #[serde(default)]
+    pub preset: Option<String>,
+    /// With `preset`: -1 less, 0 as is, 1 more (hi-hat on every 16th).
+    #[serde(default)]
+    pub density: i8,
+    /// With `preset`: clip length in 4/4 bars, default 1.
+    #[serde(default)]
+    pub bars: Option<u32>,
 }
 
 /// Parameters of `track_sound`.
@@ -1191,7 +1202,32 @@ impl WoaAgent {
         if !(p.start_beats.is_finite() && p.start_beats >= 0.0) {
             return fail(format!("start_beats muss >= 0 sein, war {}", p.start_beats));
         }
-        let (midi, length) = match audio::drums_midi(&p.kick, &p.snare, &p.hihat) {
+        let built = match p.preset.as_deref() {
+            Some(name) => match woa_model::drum_preset(name) {
+                Some(preset) => {
+                    let length = f64::from(p.bars.unwrap_or(1).clamp(1, 64)) * 4.0;
+                    Ok((
+                        woa_model::drums::apply_preset(
+                            &woa_model::MidiData::default(),
+                            length,
+                            preset,
+                            p.density.clamp(-1, 1),
+                        ),
+                        length,
+                    ))
+                }
+                None => Err(format!(
+                    "unbekanntes Preset {name:?}, bekannt: {}",
+                    woa_model::DRUM_PRESETS
+                        .iter()
+                        .map(|p| p.name)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )),
+            },
+            None => audio::drums_midi(&p.kick, &p.snare, &p.hihat),
+        };
+        let (midi, length) = match built {
             Ok(m) => m,
             Err(e) => return fail(e),
         };
@@ -1685,14 +1721,14 @@ impl WoaAgent {
     }
 
     #[tool(
-        description = "Render a drum pattern (synthetic kick, snare, hi-hat) into a new audio clip. One character per 16th note: x = hit, o = soft hit, . = rest; 16 characters = one 4/4 bar. Clip length = longest pattern. With midi: true on a MIDI track the pattern becomes an editable MIDI clip with GM drum notes and the track gets the GM standard kit (see track_sound). Returns the clip id."
+        description = "Render a drum pattern (synthetic kick, snare, hi-hat) into a new audio clip. One character per 16th note: x = hit, o = soft hit, . = rest; 16 characters = one 4/4 bar. Clip length = longest pattern. With midi: true on a MIDI track the pattern becomes an editable MIDI clip with GM drum notes and the track gets the GM standard kit (see track_sound). preset picks a starter pattern of the in-app drum grid instead (MIDI, with density and bars). Returns the clip id."
     )]
     async fn generate_drums(
         &self,
         Parameters(p): Parameters<GenerateDrumsParams>,
     ) -> Result<CallToolResult, McpError> {
         let mut s = self.lock()?;
-        if p.midi {
+        if p.midi || p.preset.is_some() {
             return Ok(Self::add_drum_midi(&mut s, p));
         }
         if let Err(e) = Self::check_target(&s, p.track, p.start_beats) {

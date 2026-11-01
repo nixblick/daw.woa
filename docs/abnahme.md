@@ -4,6 +4,17 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## J2 Drum-Raster (0.34.86, offen)
+
+1. MIDI-Spur anlegen, Klang „Standard-Kit“ wählen, einen MIDI-Clip anlegen und öffnen: die Piano-Roll zeigt das Drum-Raster (sechs Zeilen Becken bis Kick, 16 Schritte je Takt). Der Knopf „Drum-Raster“ schaltet zur normalen Piano-Roll und zurück.
+2. Preset „Pop“ wählen: der Beat steht im Raster. Loop über den Clip legen, abspielen: jede Änderung ist sofort zu hören.
+3. Klick auf einen Schritt schaltet ihn an/aus, Rechtsklick macht ihn leise (blasser). Strg+Z nimmt jeden Klick einzeln zurück.
+4. Regler „weniger / mehr“ und „Würfeln“: der Beat wird sparsamer, dichter oder neu.
+5. „Drum-Raster“ aus: dieselben Noten liegen in der Piano-Roll. Eine Melodienote auf anderer Tonhöhe bleibt beim Preset-Wechsel erhalten.
+6. Claude per MCP: „Leg einen Pop-Beat über zwei Takte an“ (`generate_drums` mit `preset`, `bars`).
+
+Selbst geprüft von Claude: Raster-Logik (`crates/model/tests/drums.rs`), Undo je Klick über `AppState` (`crates/gui/tests/drum_grid.rs`), MCP-Preset gleich Raster (`crates/agent/tests/drum_grid.rs`). Nicht selbst geprüft: Bedienung und Klang am Gerät (kein Ton über Lautsprecher).
+
 ## J1 Klänge: SoundFont auf MIDI-Spuren (0.34.84, offen)
 
 Vorher: `GeneralUser-GS.sf2` (Quelle in `docs/sounds/README.md`) nach `sounds/` neben die ausführbare Datei legen oder `WOA_SOUNDFONT=<pfad>` setzen. Die Pakete legen sie noch nicht bei.

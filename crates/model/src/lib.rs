@@ -32,6 +32,7 @@
 
 pub mod automation;
 mod command;
+pub mod drums;
 pub mod effect;
 mod error;
 mod history;
@@ -47,6 +48,7 @@ pub use automation::{
     AutoMode, AutoPoint, AutoRange, AutoTarget, AutomationLane, MAX_AUTOMATION_POINTS,
 };
 pub use command::Command;
+pub use drums::{DRUM_PRESETS, DRUM_ROWS, DrumPreset, DrumRow, drum_preset};
 pub use effect::{
     DELAY_SYNC_CHOICES, EffectKind, Insert, InsertId, ParamSpec, Preset, VOICE_CHAIN,
 };
