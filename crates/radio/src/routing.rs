@@ -157,6 +157,40 @@ impl OutputMap {
     }
 }
 
+/// Pult-Modus (#301), gespeichert in `config.json`: Ist er an, kommt die Sendung (Mitschnitt,
+/// Stream) vom Eingang des externen Mischpults; WOAs interne Mischung geht nur noch auf die
+/// Ausgänge (Richtung Pult). Fehlt der Eintrag, ist alles wie bisher.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Pult {
+    /// „Sendung kommt vom Pult“.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub on: bool,
+    /// Eingang vom Pult: Gerät und Kanalpaar (`device_id: None` = keiner gewählt).
+    #[serde(skip_serializing_if = "Route::is_unset")]
+    pub input: Route,
+}
+
+impl Pult {
+    pub fn is_default(&self) -> bool {
+        *self == Pult::default()
+    }
+}
+
+impl Route {
+    fn is_unset(&self) -> bool {
+        *self == Route::default()
+    }
+}
+
+/// Aufgelöster Pult-Eingang: so wird er geöffnet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PultIn {
+    pub open_id: String,
+    pub name: String,
+    pub pair: u8,
+}
+
 /// Ziel-Nummer je Quelle für den Mixer. Ziel 0 ist der Hauptausgang (Playlist).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Routes {
@@ -200,6 +234,8 @@ pub struct Plan {
     pub dest_count: usize,
     /// Meldungen für die Oberfläche (fehlende Geräte, ungültige Paare, Ersatz).
     pub warnings: Vec<String>,
+    /// Pult-Modus: der Eingang vom Pult, `None` = Sendung aus WOAs interner Mischung.
+    pub pult: Option<PultIn>,
 }
 
 /// Paar `pair` gibt es auf einem Gerät mit `channels` Kanälen (ein Kanal: nur Paar 0).
@@ -356,7 +392,80 @@ impl Plan {
             routes,
             dest_count,
             warnings,
+            pult: None,
         }
+    }
+
+    /// Wie [`Plan::build`], dazu der Pult-Modus (#301). `probe_in(id)` prüft ein Eingangsgerät.
+    /// Fehlt der Eingang oder passt sein Kanalpaar nicht, kommt die Sendung weiter aus WOA (mit
+    /// Meldung), damit sie nicht verstummt. Eine Quelle auf einem anderen Gerät als dem der
+    /// Playlist (dem Pult) geht nicht über das Pult und fehlt dann in der Sendung: das meldet
+    /// der Plan.
+    pub fn build_with_pult(
+        map: &OutputMap,
+        pult: &Pult,
+        probe: &dyn Fn(Option<&str>) -> Result<DeviceInfo, String>,
+        probe_in: &dyn Fn(Option<&str>) -> Result<DeviceInfo, String>,
+        reserved_main: &[usize],
+    ) -> Plan {
+        let mut plan = Plan::build(map, probe, reserved_main);
+        if !pult.on {
+            return plan;
+        }
+        let r = &pult.input;
+        let Some(id) = r.device_id.as_deref() else {
+            plan.warnings.push(
+                "Pult-Modus: kein Eingang vom Pult gewählt. Die Sendung kommt weiter aus WOA."
+                    .into(),
+            );
+            return plan;
+        };
+        let info = match probe_in(Some(id)) {
+            Ok(i) => i,
+            Err(e) => {
+                plan.warnings.push(format!(
+                    "Pult-Modus: Eingang {} fehlt ({e}). Die Sendung kommt weiter aus WOA.",
+                    r.device_label()
+                ));
+                return plan;
+            }
+        };
+        let pair = usize::from(r.pair);
+        if !pair_fits(pair, info.channels) {
+            plan.warnings.push(format!(
+                "Pult-Modus: {} hat keinen Eingang {}/{}. Die Sendung kommt weiter aus WOA.",
+                info.name,
+                2 * pair + 1,
+                2 * pair + 2
+            ));
+            return plan;
+        }
+        for s in Source::ALL {
+            if s == Source::Playlist || s == Source::PhoneReturn {
+                continue;
+            }
+            if plan.routes.dest[s.index()] == 0 {
+                continue;
+            }
+            let on_main = plan.devices[0]
+                .dests
+                .iter()
+                .any(|(d, _)| *d == usize::from(plan.routes.dest[s.index()]));
+            if !on_main {
+                plan.warnings.push(format!(
+                    "Pult-Modus: {} liegt nicht auf dem Gerät der Playlist ({}) und fehlt in der \
+                     Sendung, wenn dieses Gerät nicht ins Pult geht.",
+                    s.label(),
+                    plan.devices[0].info.name
+                ));
+            }
+        }
+        plan.pult = Some(PultIn {
+            open_id: id.to_string(),
+            name: info.name,
+            pair: r.pair,
+        });
+        plan
     }
 }
 
@@ -552,5 +661,124 @@ mod tests {
         assert_eq!(serde_json::from_str::<OutputMap>(&json).unwrap(), m);
         m.clear(Source::Carts);
         assert!(m.is_default());
+    }
+}
+
+#[cfg(test)]
+mod pult_tests {
+    use super::*;
+
+    fn dev(id: &str, channels: u16) -> DeviceInfo {
+        DeviceInfo {
+            id: id.into(),
+            name: format!("Karte {id}"),
+            rate: 48_000,
+            channels,
+        }
+    }
+
+    /// Ausgänge: „intern“ (Standard, 2 Kanäle) und „pult“ (2 Kanäle).
+    fn probe_out(id: Option<&str>) -> Result<DeviceInfo, String> {
+        match id {
+            None | Some("intern") => Ok(dev("intern", 2)),
+            Some("pult") => Ok(dev("pult", 2)),
+            Some(_) => Err("nicht gefunden".into()),
+        }
+    }
+
+    /// Eingänge: nur „pult“ mit 2 Kanälen.
+    fn probe_in(id: Option<&str>) -> Result<DeviceInfo, String> {
+        match id {
+            Some("pult") => Ok(dev("pult", 2)),
+            _ => Err("nicht gefunden".into()),
+        }
+    }
+
+    fn route(id: &str, pair: u8) -> Route {
+        Route {
+            device_id: Some(id.into()),
+            device_name: String::new(),
+            pair,
+        }
+    }
+
+    fn pult(on: bool, id: Option<&str>, pair: u8) -> Pult {
+        Pult {
+            on,
+            input: id.map(|i| route(i, pair)).unwrap_or_default(),
+        }
+    }
+
+    #[test]
+    fn pult_mode_resolves_output_and_input_device() {
+        let mut m = OutputMap::default();
+        m.set(Source::Playlist, route("pult", 0));
+        let p = Plan::build_with_pult(&m, &pult(true, Some("pult"), 0), &probe_out, &probe_in, &[]);
+        assert_eq!(p.devices.len(), 1);
+        assert_eq!(p.devices[0].open_id.as_deref(), Some("pult"));
+        assert_eq!(
+            p.pult,
+            Some(PultIn {
+                open_id: "pult".into(),
+                name: "Karte pult".into(),
+                pair: 0
+            })
+        );
+        assert!(p.warnings.is_empty(), "{:?}", p.warnings);
+    }
+
+    #[test]
+    fn switch_off_is_the_old_plan() {
+        let mut m = OutputMap::default();
+        m.set(Source::Carts, route("pult", 0));
+        let old = Plan::build(&m, &probe_out, &[1]);
+        let p = Plan::build_with_pult(
+            &m,
+            &pult(false, Some("pult"), 0),
+            &probe_out,
+            &probe_in,
+            &[1],
+        );
+        assert_eq!(p, old);
+        assert_eq!(p.pult, None);
+    }
+
+    #[test]
+    fn missing_or_bad_input_keeps_the_internal_mix_on_air() {
+        let m = OutputMap::default();
+        for (cfg, word) in [
+            (pult(true, None, 0), "kein Eingang"),
+            (pult(true, Some("weg"), 0), "fehlt"),
+            (pult(true, Some("pult"), 1), "3/4"),
+        ] {
+            let p = Plan::build_with_pult(&m, &cfg, &probe_out, &probe_in, &[]);
+            assert_eq!(p.pult, None);
+            assert!(p.warnings[0].contains(word), "{:?}", p.warnings);
+            assert!(p.warnings[0].contains("weiter aus WOA"));
+        }
+    }
+
+    #[test]
+    fn source_on_another_device_is_reported_in_pult_mode() {
+        let mut m = OutputMap::default();
+        m.set(Source::Playlist, route("pult", 0));
+        m.set(Source::Carts, route("intern", 0));
+        let p = Plan::build_with_pult(&m, &pult(true, Some("pult"), 0), &probe_out, &probe_in, &[]);
+        assert!(p.pult.is_some());
+        assert!(
+            p.warnings
+                .iter()
+                .any(|w| w.contains("Cart-Wall") && w.contains("fehlt in der"))
+        );
+    }
+
+    #[test]
+    fn old_config_without_pult_loads_and_default_writes_nothing() {
+        assert_eq!(serde_json::from_str::<Pult>("{}").unwrap(), Pult::default());
+        assert_eq!(serde_json::to_string(&Pult::default()).unwrap(), "{}");
+        let p = pult(true, Some("pult"), 1);
+        let json = serde_json::to_string(&p).unwrap();
+        assert_eq!(json, r#"{"on":true,"input":{"device_id":"pult","pair":1}}"#);
+        assert_eq!(serde_json::from_str::<Pult>(&json).unwrap(), p);
     }
 }
