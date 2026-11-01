@@ -1,9 +1,13 @@
 # Changelog
 
-## 0.34.93 — 2026-11-01
+## 0.34.94 — 2026-11-01
 
 - **Weiterleitung verliert unter Windows keine Aufrufe mehr (#245):** `woa-headless mcp` nutzte eine ruhende HTTP-Verbindung erneut, die die Gegenseite schon geschlossen hatte; unter Windows scheiterte der nächste Aufruf (und das abschließende DELETE) dann still. Die Weiterleitung öffnet jetzt je Anfrage eine neue lokale Verbindung, das DELETE gibt nach 2 s auf. Test `forward_does_not_wait_for_an_open_sse_stream…` prüft zusätzlich, dass der Werkzeugaufruf ein Ergebnis statt eines Fehlers liefert.
 - **KI-Sitzung überlebt Pausen (#243):** Unter Windows bekam `woa-headless mcp` nach rund 5 Minuten ohne Aufruf von der App nur noch HTTP 404, weil rmcp eine Sitzung nach 300 s Leerlauf verwirft. Der Server auf 127.0.0.1 hält Sitzungen jetzt ohne Leerlauf-Grenze (vom Netz erreichbar bleibt sie). Zusätzlich meldet sich die stdio-Weiterleitung bei 404 still mit der gespeicherten Anmeldung neu an und wiederholt den Aufruf einmal; endet der Client, beendet sie ihre Sitzung. Test: `forward_reinitializes_after_the_app_dropped_the_session` in `crates/agent/src/live.rs`.
+
+## 0.34.93 — 2026-11-01
+
+- **J9 MCP-Ausbau (#277, Paket aus #262):** Neues MCP-Werkzeug `list_instruments`: GeneralUser GS und die Zusatzbänke mit Zustand, Grösse und Lizenz, dazu die Klang-Presets (derselbe Katalog wie `track_sound`). Mit `clap: true` sucht es die CLAP-Instrumente und -Effekte des Rechners, nur geschützt je Datei im eigenen Prozess (`woa-plugin-host`) mit der Sperrliste der App, nie im MCP-Prozess. Neues Werkzeug `list_samples`: sucht die Bibliothek nach Art (`sample`, `jingle`, `music`), Tag und Name, oder mit `folder` einen Ordner (z. B. Jingle-FX, bis 4 Ebenen) nach Audiodateien; nur lesend (`Library::open_read_only`, ohne WAL-Umstellung und Migration, fremde Schemaversion abgelehnt), eine fehlende Bibliothek wird nicht angelegt, `library` nur im WOA-Datenordner oder Projektordner. `insert_effect` nimmt statt `kind` auch `clap_id` und setzt einen CLAP-Effekt auf eine Spur (nicht auf Busse, ein Undo-Schritt); `set_insert_bypass` und `remove_insert` wirken auch auf ihn. Ein fehlendes Plugin reicht das Signal durch. Tests: `crates/agent/tests/j9_tools.rs`. Nebenbei: der Testserver in `live.rs` schickt `connection: close`, damit `forward_does_not_wait_for_an_open_sse_stream_and_keeps_the_session` nicht mehr wackelt.
 
 ## 0.34.92 — 2026-11-01
 

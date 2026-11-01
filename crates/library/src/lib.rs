@@ -395,6 +395,27 @@ impl Library {
         Self::prepare(conn)
     }
 
+    /// Öffnet eine vorhandene Datenbank nur lesend: kein WAL-Pragma, keine Migration, nichts
+    /// wird geschrieben. Eine andere Schemaversion als die eigene wird abgelehnt.
+    pub fn open_read_only(path: &Path) -> Result<Self> {
+        let conn = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.busy_timeout(std::time::Duration::from_secs(10))?;
+        let lib = Self { conn };
+        let v = lib.schema_version()?;
+        if v > SCHEMA_VERSION {
+            return Err(Error::TooNew(v));
+        }
+        if v != SCHEMA_VERSION {
+            return Err(Error::Invalid(format!(
+                "Bibliothek hat Schema {v}, erwartet {SCHEMA_VERSION}; einmal in WOA öffnen"
+            )));
+        }
+        Ok(lib)
+    }
+
     /// Flüchtige Bibliothek im Speicher (Tests).
     pub fn open_in_memory() -> Result<Self> {
         Self::prepare(Connection::open_in_memory()?)
