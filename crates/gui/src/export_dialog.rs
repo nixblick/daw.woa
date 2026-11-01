@@ -20,6 +20,30 @@ pub struct ExportRequest {
     pub spec: ExportSpec,
     /// Stems: eine Datei je Spur in einen Ordner; sonst eine Datei.
     pub stems: Option<StemOptions>,
+    /// Als Jingle (J6): WAV mit Ziel-Lautheit und Limiter in den Jingle-Ordner, in die
+    /// Bibliothek und auf Wunsch auf eine Cart ([`woa_agent::jingle`], derselbe Weg wie MCP).
+    pub jingle: Option<JingleOptions>,
+}
+
+/// Optionen für „Als Jingle“.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JingleOptions {
+    /// Dateiname ohne Endung.
+    pub name: String,
+    /// `None` = Ziel-Lautheit der Sendung.
+    pub target_lufs: Option<f64>,
+    /// Cart 1 bis 16; `None` = keine.
+    pub cart: Option<usize>,
+}
+
+impl Default for JingleOptions {
+    fn default() -> Self {
+        Self {
+            name: "Jingle".into(),
+            target_lufs: None,
+            cart: None,
+        }
+    }
 }
 
 /// Optionen für Stems.
@@ -49,6 +73,7 @@ pub struct ExportDialog {
     stems: bool,
     buses: bool,
     mixdown: bool,
+    jingle: Option<JingleOptions>,
     probe: Probe,
 }
 
@@ -68,6 +93,7 @@ impl ExportDialog {
             stems: false,
             buses: true,
             mixdown: true,
+            jingle: None,
             probe: Probe::Pending,
         }
     }
@@ -147,7 +173,20 @@ impl ExportDialog {
     }
 
     /// Die Anfrage aus dem aktuellen Zustand, wenn das Format geht.
+    /// Schaltet „Als Jingle“ ein (`Some`) oder aus.
+    pub fn set_jingle(&mut self, jingle: Option<JingleOptions>) {
+        self.jingle = jingle;
+    }
+
     pub fn request(&self) -> Result<ExportRequest, String> {
+        if let Some(j) = &self.jingle {
+            woa_agent::jingle::check_name(&j.name)?;
+            return Ok(ExportRequest {
+                spec: ExportSpec::new(ExportFormat::Wav),
+                stems: None,
+                jingle: Some(j.clone()),
+            });
+        }
         self.available(self.format)?;
         let mut spec = ExportSpec::new(self.format);
         spec.depth = self.depth;
@@ -166,6 +205,7 @@ impl ExportDialog {
                 },
                 mixdown: self.mixdown,
             }),
+            jingle: None,
         })
     }
 
@@ -189,6 +229,98 @@ impl ExportDialog {
     }
 
     fn body(&mut self, ui: &mut egui::Ui) -> Option<ExportRequest> {
+        self.jingle_ui(ui);
+        let mut out = None;
+        ui.add_enabled_ui(self.jingle.is_none(), |ui| out = self.file_ui(ui));
+        if self.jingle.is_some() {
+            ui.add_space(8.0);
+            let go = ui.add(
+                egui::Button::new(
+                    egui::RichText::new("Als Jingle exportieren")
+                        .color(theme::bg())
+                        .strong(),
+                )
+                .fill(theme::accent()),
+            );
+            if go.clicked() {
+                match self.request() {
+                    Ok(r) => out = Some(r),
+                    Err(e) => tracing::warn!(error = %e, "jingle name refused"),
+                }
+            }
+        }
+        out
+    }
+
+    /// Abschnitt „Als Jingle“ (J6): Name, Ziel-Lautheit, Cart.
+    fn jingle_ui(&mut self, ui: &mut egui::Ui) {
+        let mut on = self.jingle.is_some();
+        if ui
+            .checkbox(
+                &mut on,
+                "Als Jingle: Lautheit und Limiter, in den Jingle-Ordner und die Bibliothek",
+            )
+            .changed()
+        {
+            self.jingle = on.then(JingleOptions::default);
+        }
+        let Some(j) = self.jingle.as_mut() else {
+            ui.separator();
+            return;
+        };
+        ui.indent("jingle_opts", |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Name");
+                ui.text_edit_singleline(&mut j.name);
+            });
+            if let Err(e) = woa_agent::jingle::check_name(&j.name) {
+                ui.label(egui::RichText::new(e).small().color(theme::warn()));
+            }
+            ui.horizontal(|ui| {
+                let mut own = j.target_lufs.is_some();
+                ui.checkbox(&mut own, "Eigene Lautheit");
+                if own {
+                    let mut t = j.target_lufs.unwrap_or(-16.0);
+                    ui.add(
+                        egui::DragValue::new(&mut t)
+                            .range(-30.0..=-6.0)
+                            .speed(0.1)
+                            .suffix(" LUFS"),
+                    );
+                    j.target_lufs = Some(t);
+                } else {
+                    j.target_lufs = None;
+                    ui.label(
+                        egui::RichText::new("wie die Sendung (Auto-Gain)")
+                            .small()
+                            .color(theme::text_dim()),
+                    );
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Cart");
+                let shown = j.cart.map_or("keine".to_string(), |c| c.to_string());
+                egui::ComboBox::from_id_salt("jingle_cart")
+                    .selected_text(shown)
+                    .show_ui(ui, |ui| {
+                        if ui.selectable_label(j.cart.is_none(), "keine").clicked() {
+                            j.cart = None;
+                        }
+                        for c in 1..=woa_radio::CARTS {
+                            if ui
+                                .selectable_label(j.cart == Some(c), c.to_string())
+                                .clicked()
+                            {
+                                j.cart = Some(c);
+                            }
+                        }
+                    });
+            });
+        });
+        ui.separator();
+    }
+
+    fn file_ui(&mut self, ui: &mut egui::Ui) -> Option<ExportRequest> {
         ui.label(theme::panel_label("FORMAT"));
         ui.horizontal_wrapped(|ui| {
             for f in ExportFormat::ALL {
@@ -391,5 +523,33 @@ mod tests {
             });
         }
         assert!(d.open);
+    }
+
+    #[test]
+    fn jingle_request_is_wav_without_stems_and_checks_the_name() {
+        let mut d = ExportDialog::new();
+        d.set_ffmpeg(Some(("/usr/bin/ffmpeg".into(), all())));
+        assert!(d.select(ExportFormat::Opus));
+        d.set_stems(true);
+        d.set_jingle(Some(JingleOptions {
+            name: "Station Ident".into(),
+            target_lufs: Some(-14.0),
+            cart: Some(3),
+        }));
+        let r = d.request().unwrap();
+        assert_eq!(r.spec.format, ExportFormat::Wav, "Jingle ist immer WAV");
+        assert!(r.stems.is_none());
+        let j = r.jingle.unwrap();
+        assert_eq!(
+            (j.name.as_str(), j.target_lufs, j.cart),
+            ("Station Ident", Some(-14.0), Some(3))
+        );
+        d.set_jingle(Some(JingleOptions {
+            name: "../weg".into(),
+            ..JingleOptions::default()
+        }));
+        assert!(d.request().is_err());
+        d.set_jingle(None);
+        assert!(d.request().unwrap().jingle.is_none());
     }
 }
