@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.35.1 — 2026-11-01
+## 0.35.2 — 2026-11-01
 
 - **Cart-Wall-Sätze 1–5, Cart-Dauer, Umbenennen (#292):** Über der Cart-Wall stehen fünf kleine Reiter, je ein Satz mit eigenem Namen (etwa Morgen, Mittag, Sondersendung) und eigener Belegung. Klick wechselt, Rechtsklick → „Umbenennen …“. Gespeichert in `radio.json` wie die Playlisten: der aktive Satz in `carts`, die anderen in `cart_sets`, der aktive in `cart_set`. Alte Dateien: die Belegung wird Satz 1. Tasten gelten je Platz. Ein laufender Cart läuft beim Wechsel weiter. Jedes Pad zeigt rechts unten seine Dauer (Start bis Ende des Schnitts), im Lauf wie bisher den Countdown; der Name ist größer (15 statt 13 px). Umbenennen überall per Rechtsklick → „Umbenennen …“: Cart, Satz, Playlist-Titel (neues Feld `name` am Eintrag, die Datei bleibt) und in der Bibliothek (öffnet die Titelinfos). Grund, warum André die Titel nicht fand: Die Playlist zeigte immer den Dateinamen, „Titelinfos bearbeiten“ schrieb nur die Tags der Datei, die Änderung war also unsichtbar. Leerer Name heißt zurück zum Dateinamen. MCP: neue Werkzeuge `select_cart_set` und `rename` (`cart_set`, `cart`, `title`), über dieselben Funktionen wie die App; Spuren weiter mit `rename_track`. Tests: `crates/radio/src/cart_sets.rs`, `crates/radio/tests/rt.rs` (laufender Cart über den Wechsel), `crates/gui/src/radio.rs` und `widgets/pad.rs` (Dauer am Pad), `crates/agent/src/lib.rs` (`cart_set_tests`).
+
+## 0.35.1 — 2026-11-01
+
+- **PIN-Bremse: wechselnde IPv6-Adressen im LAN umgehen sie nicht mehr (#294, zu #234):** Link-local- und ULA-Adressen zählen jetzt wie alle IPv6-Adressen je /64. Dazu gibt es wieder eine Obergrenze, die nicht von der Adresse abhängt: höchstens 30 falsche PINs je Minute insgesamt (`Limits::global_failures_per_minute`); ist sie erreicht, wird jede Anmeldung von Adressen ohne DJ-Sitzung abgelehnt, ohne die PIN zu prüfen (kein Treffer als Orakel). Die PIN wird nicht neu gewürfelt. Adressen, die schon eine DJ-Sitzung haben, sind von beiden Sperren ausgenommen, der angemeldete DJ kommt also weiter herein. Folge: Wer noch nicht angemeldet ist, kann während eines Angriffs bis zu einer Minute nicht anmelden. Tests: `changing_ula_addresses_cannot_bypass_the_brake`, `real_dj_gets_in_during_a_guessing_attack`.
 
 ## 0.35.0 — 2026-11-01
 

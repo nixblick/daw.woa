@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Cart-Wall-Sätze und Umbenennen (0.35.1, offen)
+## Cart-Wall-Sätze und Umbenennen (0.35.2, offen)
 
 1. Radio-Modus: Über der Cart-Wall stehen fünf kleine Reiter „1 Satz 1“ bis „5 Satz 5“. Die bisherige Belegung steht in Satz 1, nichts fehlt.
 2. Rechtsklick auf Reiter 1 → „Umbenennen …“ → „Morgen“, Enter. Reiter 2 → „Mittag“, Reiter 5 → „Sondersendung“.
