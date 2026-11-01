@@ -14,6 +14,15 @@ static ALLOC: AllocDisabler = AllocDisabler;
 
 const SR: u32 = 48_000;
 const BLOCK: usize = 256;
+/// Pegel eines Decks am Ausgang: Gleichwert 0,25 mit seinem Auto-Gain (#297).
+static LEVEL: std::sync::LazyLock<f32> = std::sync::LazyLock::new(|| {
+    let tmp = tempfile::tempdir().unwrap();
+    let f = tmp.path().join("deck.wav");
+    write_dc(&f, 2.0, 0.25);
+    let m = woa_radio::audio::measure_file(&f, SR).unwrap();
+    let g = woa_radio::level::auto_gain_db(m.lufs, m.peak_db, woa_radio::level::TARGET_LUFS);
+    0.25 * woa_radio::level::db_to_gain(g)
+});
 
 fn write_dc(path: &Path, seconds: f64, amp: f32) {
     let spec = hound::WavSpec {
@@ -79,7 +88,7 @@ fn deck_starts_stops_and_counts_down() {
     assert_eq!(state(&c, 0), DECK_PLAYING);
     let played = pos(&c, 0);
     assert_eq!(played, 100 * BLOCK as u64);
-    assert!((out[out.len() - 1] - 0.25).abs() < 1e-5);
+    assert!((out[out.len() - 1] - *LEVEL).abs() < 1e-5);
 
     // Stopp: kurz ausgeblendet, danach stumm, die Stelle bleibt.
     c.deck_stop(0);
@@ -118,7 +127,7 @@ fn deck_plays_only_between_cue_in_and_cue_out() {
     out.clear();
     c.deck_play(1);
     blocks(&mut c, &mut m, 300, &mut out);
-    let loud = out.iter().filter(|v| (**v - 0.25).abs() < 1e-5).count();
+    let loud = out.iter().filter(|v| (**v - *LEVEL).abs() < 1e-5).count();
     assert_eq!(loud, (0.75 * f64::from(SR)) as usize);
     assert_eq!(state(&c, 1), DECK_READY);
     // Schnitt ändern, solange es steht: springt an den neuen Anfang.
@@ -155,7 +164,7 @@ fn deck_on_its_own_pair_is_absent_from_the_main_pair() {
         deck.extend_from_slice(&pairs[1].l[..BLOCK]);
     }
     assert!(main.iter().all(|v| v.abs() < 1e-6), "Deck im Hauptausgang");
-    assert!((deck[deck.len() - 1] - 0.25).abs() < 1e-5);
+    assert!((deck[deck.len() - 1] - *LEVEL).abs() < 1e-5);
 }
 
 #[test]
@@ -169,14 +178,14 @@ fn unrouted_deck_is_part_of_the_main_output_and_three_decks_add_up() {
     c.deck_play(0);
     c.deck_play(2);
     blocks(&mut c, &mut m, 20, &mut out);
-    assert!((out[out.len() - 1] - 0.5).abs() < 1e-5);
+    assert!((out[out.len() - 1] - 2.0 * *LEVEL).abs() < 1e-5);
     c.deck_play(1);
     blocks(&mut c, &mut m, 20, &mut out);
-    assert!((out[out.len() - 1] - 0.75).abs() < 1e-5);
+    assert!((out[out.len() - 1] - 3.0 * *LEVEL).abs() < 1e-5);
     c.deck_eject(2);
     blocks(&mut c, &mut m, 2, &mut out);
     assert_eq!(state(&c, 2), DECK_EMPTY);
-    assert!((out[out.len() - 1] - 0.5).abs() < 1e-5);
+    assert!((out[out.len() - 1] - 2.0 * *LEVEL).abs() < 1e-5);
 }
 
 #[test]

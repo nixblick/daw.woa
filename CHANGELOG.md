@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.35.5 — 2026-11-01
+## 0.35.6 — 2026-11-01
 
 - **Pult-Modus: Sendung kommt vom externen Mischpult (#301):** Neuer Schalter „Sendung kommt vom Pult“ unter Einstellungen → Ausgänge, dazu Eingang vom Pult (Gerät und Kanalpaar). Ist er an, gehen Playlist, Carts und Decks wie bisher auf die gewählten Ausgänge (Richtung Pult), aber ohne Sendebus und ohne WOAs Mikro; Stream und Mitschnitt bekommen nur noch den Pult-Eingang (Taktverbindung wie beim Telefon), die Musik geht also nicht doppelt raus. Der Sendebus (Lautheitsregelung, Kompressor, Limiter) läuft mit seinem bisherigen Schalter auf dem Pult-Signal. WOAs Mikro ist im Pult-Modus aus (es hängt am Pult, sonst Rückkopplung); Telefon und Gäste gehen mit der Musik ins Pult. Vorhören auf Kanal 3/4 des Pult-Geräts wird abgelehnt (käme auf Sendung), ein eigenes Kopfhörer-Gerät bleibt. Pegel des Pult-Eingangs als LED-Meter neben dem Telefon. Fehlt der Eingang oder passt das Kanalpaar nicht, kommt die Sendung mit Meldung weiter aus WOA. `config.json` ohne Eintrag `pult` lädt unverändert, ohne Schalter ist die Sendung bit-gleich zu vorher. Noch nicht über MCP (die Ausgänge in `config.json` hat MCP bisher gar nicht). Tests: `crates/radio/tests/pult.rs` (nur Pult-Sinus auf Sendung, keine Playlist-Musik; Ausgang unbearbeitet; ohne Schalter bit-gleich; Pegel), `routing::pult_tests` (Geräte, Ausfall, Quelle auf fremdem Gerät, altes Format).
+
+## 0.35.5 — 2026-11-01
+
+- **Lautstärke innerhalb eines Titels konstant (#297, Refs #147):** Die Lautheitsregelung im Sendebus (`woa_radio::dynamics::BusProcessor`, seit Paket 9) führte die Verstärkung gleitend zum Ziel, mit bis zu 3 dB je Sekunde im Bereich ±12 dB. Damit hob sie leise Passagen eines Titels an und senkte laute ab, und nach jedem Ducking pumpte sie nach. Seit #149 (0.34.69) ducken auch die Carts, so fiel das öfter auf. Die Regelung regelt jetzt nicht mehr nach. Jeder Titel behält seine feste Verstärkung zum Ziel (Auto-Gain beim Bereitlegen); Kompressor und Limiter bleiben als Schutz unter „Sendebus“. Die Lautheitsanzeige am Ausgang bleibt, die Angabe „Regelung … dB“ entfällt. Die Decks A/B/C werden beim Laden jetzt gemessen und bekommen denselben Auto-Gain wie die Playlist (bisher 0 dB, Entscheidung André in #147). Erlaubt bleiben nur die Blenden am Anfang und Ende und das Ducking bei Mikro, Telefon oder Cart. Test: `crates/radio/tests/constant_gain.rs` (ein Titel mit leisem, lautem und leisem Teil über Playlist und Deck mit eingeschaltetem Sendebus, die Verstärkung schwankt um weniger als 0,5 dB, vorher 24 dB bzw. 21 dB; nach einem Cart kommt die Musik auf ihren alten Pegel zurück, vorher 7,8 dB daneben), alle Blöcke unter `assert_no_alloc`.
 
 ## 0.35.4 — 2026-11-01
 
