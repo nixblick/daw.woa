@@ -171,4 +171,5 @@ fn rejected_request_is_read_before_the_answer() {
     let n = c.read(&mut buf).unwrap();
     let head = String::from_utf8_lossy(&buf[..n]);
     assert!(head.starts_with("HTTP/1.1 401"), "{head}");
+    assert!(head.contains("connection: close"), "{head}");
 }
