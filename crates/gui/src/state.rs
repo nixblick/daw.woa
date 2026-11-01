@@ -555,6 +555,39 @@ impl AppState {
             .find(|p| std::fs::symlink_metadata(p).is_ok_and(|m| m.is_file()))
     }
 
+    /// Paket J8: Jingle-Effekt (Riser, Whoosh, Downlifter) als Audio-Clip auf `track`
+    /// (oder einer neuen Audio-Spur), Länge in Beats im Projekttempo. Gleicher Klang wie
+    /// `generate_fx` über MCP.
+    pub fn add_fx(
+        &mut self,
+        track: Option<TrackId>,
+        kind: woa_agent::audio::AgentFxKind,
+        length_beats: f64,
+        start_beats: f64,
+    ) -> Option<ClipId> {
+        use woa_agent::audio::{AgentFxKind, RATE, free_take_path, fx_buffer, write_take};
+        let bpm = self.project().tempo_bpm;
+        let buf = match fx_buffer(kind, length_beats, bpm) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("woa: jingle fx: {e}");
+                return None;
+            }
+        };
+        let name = AgentFxKind::ALL
+            .iter()
+            .find(|(k, _)| *k == kind)
+            .map_or("FX", |(_, n)| n);
+        let base = self.takes_dir().parent()?.to_path_buf();
+        let (_, abs) = free_take_path(&base, name, "wav");
+        if let Err(e) = write_take(&abs, &buf) {
+            eprintln!("woa: jingle fx: {e}");
+            return None;
+        }
+        let seconds = buf.len() as f64 / f64::from(RATE);
+        self.add_take(track, &abs, start_beats, seconds, 0.0)
+    }
+
     /// Puts a recorded take on `track` (or on a new audio track) as one undo step.
     /// `file` must lie in [`AppState::takes_dir`].
     pub fn add_take(
