@@ -31,7 +31,7 @@ const HEADER_W: f32 = 264.0;
 pub const FEEDBACK_W: f32 = 600.0;
 /// Abstand zwischen den Elementen rechts in der Kopfleiste (André 31.10.: „bisl weiter auseinander“).
 use crate::widgets::topbar::{
-    ChipLook, TOPBAR_COMPACT_BELOW, TOPBAR_GAP, TOPBAR_GROUP_GAP, TOPBAR_SEGMENT_GAP, topbar_chip,
+    Chip, ChipLook, TOPBAR_COMPACT_BELOW, TOPBAR_GROUP_GAP, status_bar, status_sep, topbar_chip,
 };
 /// Widmung im Über-Dialog (André 31.10.2026).
 pub const ABOUT_TAGLINE: &str = "WOA – built with love, coffee and AI";
@@ -1172,7 +1172,12 @@ impl WoaApp {
 
     /// Untermenü „MIDI-Eingang“: Aus oder ein Gerät; gespeichert in `config.json`.
     fn midi_menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button("MIDI-Eingang", |ui| {
+        ui.menu_button("MIDI-Eingang", |ui| self.midi_choices(ui));
+    }
+
+    /// Gerätewahl des MIDI-Eingangs: im Menü Einstellungen und per Klick auf MIDI in der Kopfleiste.
+    fn midi_choices(&mut self, ui: &mut egui::Ui) {
+        {
             let wanted = self.midi.wanted().map(str::to_string);
             let mut ports: Vec<String> = self.midi.ports().to_vec();
             if let Some(w) = &wanted
@@ -1205,7 +1210,7 @@ impl WoaApp {
                     tracing::warn!(error = %e, "config not saved");
                 }
             }
-        });
+        }
     }
 
     /// Die MIDI-Spur, die das Keyboard spielt: die erste scharf geschaltete MIDI-Spur
@@ -1243,28 +1248,22 @@ impl WoaApp {
             .1
             .is_some_and(|t| now.duration_since(t).as_millis() < 150);
         let status = self.midi.status();
-        let (color, active) = match (&status, lit) {
-            (MidiStatus::Off, _) => (theme::text_dim(), false),
-            (MidiStatus::Waiting(_), _) => (theme::warn(), true),
-            (MidiStatus::Connected(_), true) => (theme::ok(), true),
-            (MidiStatus::Connected(_), false) => (theme::cue(), false),
+        // Eigene Farbe `cue`; leuchtet bei eingehenden Noten, `warn`, solange das Gerät fehlt.
+        let look = match (&status, lit) {
+            (MidiStatus::Waiting(_), _) => ChipLook::On(theme::warn()),
+            (MidiStatus::Connected(_), true) => ChipLook::On(theme::cue()),
+            _ => ChipLook::Off(theme::cue()),
         };
-        let look = if active {
-            ChipLook::Lit(color)
-        } else {
-            ChipLook::Quiet
-        };
-        let resp = topbar_chip(ui, theme::ic::PIANO_KEYS, "MIDI", look, compact, false);
+        let resp = topbar_chip(ui, theme::ic::PIANO_KEYS, "MIDI", look, compact, true);
+        egui::Popup::menu(&resp).show(|ui| self.midi_choices(ui));
         let target = self
             .live_midi_track()
             .and_then(|id| self.state.project().track(id).map(|t| t.name.clone()));
         let text = match status {
-            MidiStatus::Off => {
-                "MIDI: kein Gerät gewählt (Einstellungen → MIDI-Eingang)".to_string()
-            }
+            MidiStatus::Off => "MIDI: kein Gerät gewählt. Klick: Gerät wählen".to_string(),
             MidiStatus::Waiting(n) => format!("MIDI: {n} nicht da, suche alle 2 s"),
             MidiStatus::Connected(n) => format!(
-                "MIDI: {n}\nSpielt: {}",
+                "MIDI: {n}\nSpielt: {}\nKlick: Gerät wählen",
                 target.as_deref().unwrap_or("keine MIDI-Spur scharf")
             ),
         };
@@ -1275,65 +1274,55 @@ impl WoaApp {
         }
     }
 
-    /// Modus-Umschalter: drei gleiche Pillen, der aktive Modus in der Akzentfarbe. Läuft die
-    /// Sendung, zeigt Radio das Sende-Symbol; Rot bleibt allein der ON-AIR-Pille.
+    /// Modus-Umschalter: Produzent · Radio · Party, jeder in seiner Modusfarbe (TopBar-README).
+    /// Läuft die Sendung, zeigt Radio in der schmalen Ansicht das Sende-Symbol.
     fn mode_switch(&mut self, ui: &mut egui::Ui, compact: bool) {
         let mut mode = self.config.mode;
         let on_air = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
-        let look = |active: bool| {
-            if active {
-                ChipLook::Solid(theme::accent())
-            } else {
-                ChipLook::Quiet
-            }
+        let radio_icon = if on_air {
+            theme::ic::BROADCAST
+        } else {
+            theme::ic::RADIO
         };
-        ui.scope(|ui| {
-            ui.spacing_mut().item_spacing.x = TOPBAR_SEGMENT_GAP;
-            let radio_icon = if on_air {
-                theme::ic::BROADCAST
-            } else {
-                theme::ic::RADIO
-            };
-            if topbar_chip(
-                ui,
-                radio_icon,
-                "Radio",
-                look(mode == Mode::Radio),
-                compact,
-                true,
-            )
-            .on_hover_text("Radio – Sendeablauf: Playlist, Uhr, Carts, Mikro")
-            .clicked()
-            {
-                mode = Mode::Radio;
-            }
-            if topbar_chip(
-                ui,
-                theme::ic::CONFETTI,
-                "Party",
-                look(mode == Mode::Party),
-                compact,
-                true,
-            )
-            .on_hover_text("Party – Abspielmodus: große Anzeige, Wunschliste, Vollbild")
-            .clicked()
-            {
-                mode = Mode::Party;
-            }
-            if topbar_chip(
-                ui,
+        for (m, icon, word, color, tip) in [
+            (
+                Mode::Produzent,
                 theme::ic::SLIDERS_HORIZONTAL,
                 "Produzent",
-                look(mode == Mode::Produzent),
-                compact,
-                true,
-            )
-            .on_hover_text("Produzent – Zeitleiste mit Spuren und Clips")
-            .clicked()
+                theme::mode_studio(),
+                "Produzent – Zeitleiste mit Spuren und Clips (Strg+1)",
+            ),
+            (
+                Mode::Radio,
+                radio_icon,
+                "Radio",
+                theme::mode_radio(),
+                "Radio – Sendeablauf: Playlist, Uhr, Carts, Mikro (Strg+2)",
+            ),
+            (
+                Mode::Party,
+                theme::ic::CONFETTI,
+                "Party",
+                theme::mode_party(),
+                "Party – Abspielmodus: große Anzeige, Wunschliste, Vollbild (Strg+3)",
+            ),
+        ]
+        .into_iter()
+        // Von rechts gefüllt: rückwärts, damit Produzent links steht.
+        .rev()
+        {
+            let look = if mode == m {
+                ChipLook::On(color)
+            } else {
+                ChipLook::Off(color)
+            };
+            if topbar_chip(ui, icon, word, look, compact, true)
+                .on_hover_text(tip)
+                .clicked()
             {
-                mode = Mode::Produzent;
+                mode = m;
             }
-        });
+        }
         self.set_mode(mode);
     }
 
@@ -2479,18 +2468,25 @@ impl WoaApp {
         egui::MenuBar::new().ui(ui, |ui| {
             self.menu_items(ui);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Rechts nach links: Feedback | Modus | Status (KI, ON AIR, MIDI) | Update.
+                // Rechts ein Block (TopBar-README): Modus | MIDI · ON AIR · REC · KI | Feedback,
+                // links davon nur bei Bedarf die Update-Info.
                 let compact = ui.available_width() < TOPBAR_COMPACT_BELOW;
-                ui.spacing_mut().item_spacing.x = TOPBAR_GAP;
-                self.feedback_button(ui, ctx, compact);
-                ui.add_space(TOPBAR_GROUP_GAP - TOPBAR_GAP);
-                self.mode_switch(ui, compact);
-                ui.add_space(TOPBAR_GROUP_GAP - TOPBAR_GAP);
-                self.mcp_live.chip(ui, compact);
-                self.rec_chip(ui, compact);
-                self.onair_lamp(ui, compact);
-                self.midi_lamp(ui, compact);
-                ui.add_space(TOPBAR_GROUP_GAP - TOPBAR_GAP);
+                // Der Block füllt von rechts: Aufrufe in umgekehrter Lesereihenfolge.
+                status_bar(ui, |ui| {
+                    self.feedback_button(ui, ctx, compact);
+                    status_sep(ui);
+                    if let Some(r) = self.mcp_live.chip(ui, compact)
+                        && r.clicked()
+                    {
+                        self.ki_ui.open(&self.config.ki, &self.data_dir);
+                    }
+                    self.rec_chip(ui, compact);
+                    self.onair_lamp(ui, compact);
+                    self.midi_lamp(ui, compact);
+                    status_sep(ui);
+                    self.mode_switch(ui, compact);
+                });
+                ui.add_space(TOPBAR_GROUP_GAP);
                 self.update_info(ui);
             });
         });
@@ -2504,13 +2500,13 @@ impl WoaApp {
         }
     }
 
-    /// Feedback-Taste: grün und immer ganz rechts (TopBar-README), öffnet das Fenster.
+    /// Feedback-Taste: neutral mit Symbol, immer ganz rechts im Block (TopBar-README).
     fn feedback_button(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, compact: bool) {
         let btn = topbar_chip(
             ui,
             theme::ic::CHAT_CIRCLE_TEXT,
             "Feedback",
-            ChipLook::Solid(theme::ok()),
+            ChipLook::Plain,
             compact,
             true,
         );
@@ -2535,11 +2531,25 @@ impl WoaApp {
                 .map(|(p, t)| (p.map(std::path::Path::to_path_buf), t))
         });
         let look = if rec.is_some() {
-            ChipLook::Solid(theme::on_air())
+            ChipLook::On(theme::on_air())
         } else {
-            ChipLook::Quiet
+            ChipLook::Off(theme::on_air())
         };
-        let resp = topbar_chip(ui, theme::ic::RECORD, "REC", look, compact, true);
+        // Läuft der Mitschnitt, blinkt die LED und die Laufzeit steht hinter dem Wort.
+        let since = rec.as_ref().map(|(_, t)| {
+            let secs = t.map_or(0, |t| t.elapsed().as_secs());
+            format!("{}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
+        });
+        let resp = Chip {
+            icon: theme::ic::RECORD,
+            word: "REC",
+            look,
+            compact,
+            click: true,
+            suffix: since.as_deref(),
+            blink: rec.is_some(),
+        }
+        .show(ui);
         let dir = crate::ordner::dir(crate::ordner::Art::Mitschnitte);
         let mut tip = match &rec {
             Some((path, since)) => {
@@ -2585,18 +2595,24 @@ impl WoaApp {
     fn onair_lamp(&mut self, ui: &mut egui::Ui, compact: bool) {
         let live = self.radio.as_ref().is_some_and(RadioDesk::is_live);
         let look = if live {
-            ChipLook::Solid(theme::on_air())
+            ChipLook::On(theme::on_air())
         } else {
-            ChipLook::Quiet
+            ChipLook::Off(theme::on_air())
         };
         let word = if live { "ON AIR an" } else { "ON AIR aus" };
-        let resp = topbar_chip(ui, theme::ic::BROADCAST, "ON AIR", look, compact, false);
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, word));
-        resp.on_hover_text(if live {
-            "ON AIR – Auf Sendung: der Stream läuft"
-        } else {
-            "ON AIR – Nicht auf Sendung"
-        });
+        let resp = topbar_chip(ui, theme::ic::BROADCAST, "ON AIR", look, compact, true);
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, word));
+        // Klick öffnet die Stream-Verbindung (wie Einstellungen → Sendung).
+        if resp
+            .on_hover_text(if live {
+                "ON AIR – Auf Sendung: der Stream läuft. Klick: Stream-Verbindung"
+            } else {
+                "ON AIR – Nicht auf Sendung. Klick: Stream-Verbindung"
+            })
+            .clicked()
+        {
+            self.stream_ui.open(&self.config.stream, &self.data_dir);
+        }
     }
 
     fn menu_items(&mut self, ui: &mut egui::Ui) {

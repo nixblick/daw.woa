@@ -1,5 +1,17 @@
 # ScreenRadio
 
-Entwurf Radio-Modus: Sendepult mit Studio-Uhr, Restzeit-LCD, ON-AIR-Lampe, Playlist, Cart-Wall und Mikro-/Gäste-Pult.
+Entwurf 1920 × 1030: Radio mit deiner Sendung.
 
-Seite, kein Baustein. Thema `data-woa-mode="radio"` (Studio-Uhr-Rot). Aufteilung wie `docs/ui-analyse-und-ziele.md`: oben links Deck & Uhr, unten links Playlist, rechts Cart-Wall und Pult.
+Seite, kein Baustein.
+
+- **Links:**
+  - Sende-Deck: Studio-Uhr, LCD mit Cue-Titel, Restzeit und Ende der Playlist.
+  - Eine Tastenreihe: Start · Stopp · Blende · Mikro · Telefon, dann Springen als Symbol-Tasten.
+  - Darunter die Stream-Zeile mit ON-AIR-Lampe und „Auf Sendung“.
+- **Sende-Playlist:**
+  - Spalten #, Titel, Lautheit, Dauer.
+  - Die Dauer ist neutral (nicht rot); Rot nur für ON AIR und Restzeit < 10 s.
+  - Verschieben und Entfernen erscheinen bei Hover.
+- **Rechts:**
+  - Decks A · B · C, Cart-Wall mit Satz 1–5 (Pads neutral mit Farbbalken, nicht grün gefüllt).
+  - Pegel und Processing nebeneinander, Wunschtitel als eine Zeile.

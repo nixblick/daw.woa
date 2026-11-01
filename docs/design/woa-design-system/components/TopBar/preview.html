@@ -1,18 +1,32 @@
-<!-- @dsCard group="Grundlagen" height=110 subtitle="Gemeinsame Kopfleiste aller Modi" -->
+<!-- @dsCard group="Grundlagen" height=250 width=1180 subtitle="Kopfleiste: Logo, Menüs, ein Block für Modus · Status · Feedback" -->
 <!doctype html>
 <html lang="de">
 <head><meta charset="utf-8"><title>WOA</title>
-<style>body{padding:16px}</style></head>
+<style>body{padding:16px}.cap{font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0 0 6px}</style></head>
 <body>
 
-<div class="woa-topbar" style="border:1px solid var(--border);border-radius:var(--radius-lg)">
- <span class="woa-topbar__brand"><span data-woa-mark="26"></span>WOA</span>
- <nav class="woa-menu"><a href="#">Datei</a><a href="#">Bearbeiten</a><a href="#">Einstellungen</a></nav>
- <span class="woa-spacer"></span>
- <span class="woa-pill is-active">MIDI</span>
- <button class="woa-key woa-key--rec woa-key--sm is-on" data-woa-icon="rec">Mitschnitt</button>
- <div class="woa-modes"><button class="woa-mode is-active" data-m="studio">Produzent</button><button class="woa-mode" data-m="radio">Radio</button><button class="woa-mode" data-m="party">Party</button></div>
- <button class="woa-key woa-key--sm" data-woa-icon="feedback">Feedback</button>
+<div class="woa-col" style="gap:14px">
+ <div><p class="cap">Produzent, nichts läuft</p><div style="border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden"><div class="woa-topbar"><span class="woa-topbar__brand"><span data-woa-mark="26"></span>WOA</span><nav class="woa-menu"><a href="#">Datei</a><a href="#">Bearbeiten</a><a href="#">Ansicht</a><a href="#">Einstellungen</a><a href="#">Hilfe</a></nav><span class="woa-spacer"></span><div class="woa-strip-bar" role="toolbar" aria-label="Modus und Status">
+ <button class="woa-sb is-on" data-k="studio" data-tip="Produzent" data-kbd="Strg+1">Produzent</button><button class="woa-sb" data-k="radio" data-tip="Radio" data-kbd="Strg+2">Radio</button><button class="woa-sb" data-k="party" data-tip="Party" data-kbd="Strg+3">Party</button>
+ <span class="woa-sb__sep"></span>
+ <button class="woa-sb" data-k="midi" data-tip="MIDI-Eingang" data-hint="Leuchtet bei eingehenden Noten; Klick: Gerät wählen">MIDI</button><button class="woa-sb" data-k="air" data-tip="Auf Sendung" data-hint="Stream verbunden und Sendebus mit Signal">On Air</button><button class="woa-sb" data-k="rec" data-tip="Mitschnitt" data-kbd="Strg+Umschalt+R">Rec</button><button class="woa-sb is-on" data-k="ki" data-tip="KI-Assistent" data-hint="Grün = bereit">KI</button>
+ <span class="woa-sb__sep"></span>
+ <button class="woa-sb woa-sb--icon" data-k="fb" data-tip="Feedback mit Screenshot" data-kbd="F1"><span data-woa-icon="feedback" style="display:contents"></span>Feedback</button>
+</div></div></div></div>
+ <div><p class="cap">Radio, Sendung läuft und wird mitgeschnitten, Keyboard spielt</p><div style="border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden" data-woa-mode="radio"><div class="woa-topbar"><span class="woa-topbar__brand"><span data-woa-mark="26"></span>WOA</span><nav class="woa-menu"><a href="#">Datei</a><a href="#">Bearbeiten</a><a href="#">Ansicht</a><a href="#">Einstellungen</a><a href="#">Hilfe</a></nav><span class="woa-spacer"></span><div class="woa-strip-bar" role="toolbar" aria-label="Modus und Status">
+ <button class="woa-sb" data-k="studio" data-tip="Produzent" data-kbd="Strg+1">Produzent</button><button class="woa-sb is-on" data-k="radio" data-tip="Radio" data-kbd="Strg+2">Radio</button><button class="woa-sb" data-k="party" data-tip="Party" data-kbd="Strg+3">Party</button>
+ <span class="woa-sb__sep"></span>
+ <button class="woa-sb is-on" data-k="midi" data-tip="MIDI-Eingang" data-hint="Leuchtet bei eingehenden Noten; Klick: Gerät wählen">MIDI</button><button class="woa-sb is-on" data-k="air" data-tip="Auf Sendung" data-hint="Stream verbunden und Sendebus mit Signal">On Air</button><button class="woa-sb is-on is-blink" data-k="rec" data-tip="Mitschnitt" data-kbd="Strg+Umschalt+R">Rec <span class="woa-sb__t">1:04:12</span></button><button class="woa-sb is-on" data-k="ki" data-tip="KI-Assistent" data-hint="Grün = bereit">KI</button>
+ <span class="woa-sb__sep"></span>
+ <button class="woa-sb woa-sb--icon" data-k="fb" data-tip="Feedback mit Screenshot" data-kbd="F1"><span data-woa-icon="feedback" style="display:contents"></span>Feedback</button>
+</div></div></div></div>
+ <div><p class="cap">Party, KI aus</p><div style="border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden" data-woa-mode="party"><div class="woa-topbar"><span class="woa-topbar__brand"><span data-woa-mark="26"></span>WOA</span><nav class="woa-menu"><a href="#">Datei</a><a href="#">Bearbeiten</a><a href="#">Ansicht</a><a href="#">Einstellungen</a><a href="#">Hilfe</a></nav><span class="woa-spacer"></span><div class="woa-strip-bar" role="toolbar" aria-label="Modus und Status">
+ <button class="woa-sb" data-k="studio" data-tip="Produzent" data-kbd="Strg+1">Produzent</button><button class="woa-sb" data-k="radio" data-tip="Radio" data-kbd="Strg+2">Radio</button><button class="woa-sb is-on" data-k="party" data-tip="Party" data-kbd="Strg+3">Party</button>
+ <span class="woa-sb__sep"></span>
+ <button class="woa-sb" data-k="midi" data-tip="MIDI-Eingang" data-hint="Leuchtet bei eingehenden Noten; Klick: Gerät wählen">MIDI</button><button class="woa-sb" data-k="air" data-tip="Auf Sendung" data-hint="Stream verbunden und Sendebus mit Signal">On Air</button><button class="woa-sb" data-k="rec" data-tip="Mitschnitt" data-kbd="Strg+Umschalt+R">Rec</button><button class="woa-sb" data-k="ki" data-tip="KI-Assistent" data-hint="Grün = bereit">KI</button>
+ <span class="woa-sb__sep"></span>
+ <button class="woa-sb woa-sb--icon" data-k="fb" data-tip="Feedback mit Screenshot" data-kbd="F1"><span data-woa-icon="feedback" style="display:contents"></span>Feedback</button>
+</div></div></div></div>
 </div>
 <script>WOA.init();</script>
 </body>

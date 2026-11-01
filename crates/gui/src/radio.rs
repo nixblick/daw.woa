@@ -48,6 +48,8 @@ type Stream = Box<dyn std::any::Any>;
 /// Tasten, die schon etwas anderes tun und keinem Cart gehören können.
 /// Breite der Restzeit-Spalte eines Decks (Uhr und Fortschrittsbalken).
 const DECK_CLOCK_WIDTH: f32 = 110.0;
+/// Gleiche Höhe aller Deck-Zeilen, ob leer oder geladen (RadioDecks).
+const DECK_ROW_H: f32 = 36.0;
 
 /// Wohin eine gezogene Playlist-Zeile fällt (#166).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +104,107 @@ pub(crate) fn row_area<R>(
 fn typed_position(text: &str, len: usize) -> Option<usize> {
     let n: usize = text.trim().parse().ok()?;
     (len > 0).then(|| n.clamp(1, len) - 1)
+}
+
+/// Breite der Hover-Knöpfe (hoch, runter, entfernen) am rechten Rand einer Playlist-Zeile.
+const ROW_TOOLS_W: f32 = 66.0;
+/// Spalte Dauer und Spalte Lautheit der Playlist.
+const DUR_W: f32 = 48.0;
+const LUFS_W: f32 = 52.0;
+/// Platz für das Badge ON AIR / CUE vor der Lautheit.
+const ROW_BADGE_W: f32 = 90.0;
+
+/// Höhe der Haupttasten (Start, Stopp, Blende, Mikro, Telefon) und der Symboltasten.
+const KEY_H: f32 = 44.0;
+const SYMBOL_KEY: f32 = 32.0;
+
+/// Haupttaste der Konsole (`woa-key`): neutral auf `surface`; an, dann Rand und Symbol in der
+/// eigenen Farbe auf deren getönter Fläche. Das Wort steht in Versalien neben dem Symbol.
+fn console_key(
+    ui: &mut egui::Ui,
+    icon: &str,
+    word: &str,
+    tone: egui::Color32,
+    on: bool,
+    h: f32,
+) -> egui::Response {
+    let ink = theme::text();
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        icon,
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::new(
+                16.0,
+                egui::FontFamily::Name(theme::FAMILY_ICON_FILL.into()),
+            ),
+            color: if on { tone } else { theme::text_dim() },
+            valign: egui::Align::Center,
+            ..Default::default()
+        },
+    );
+    job.append(
+        &word.to_uppercase(),
+        8.0,
+        egui::TextFormat {
+            font_id: theme::label_font(13.0),
+            color: ink,
+            extra_letter_spacing: 0.8,
+            valign: egui::Align::Center,
+            ..Default::default()
+        },
+    );
+    let b = egui::Button::new(job)
+        .fill(if on {
+            theme::mix(tone, theme::surface(), 0.80)
+        } else {
+            theme::surface()
+        })
+        .stroke(egui::Stroke::new(
+            1.0,
+            if on { tone } else { theme::border_strong() },
+        ))
+        .corner_radius(theme::RADIUS_MD)
+        .min_size(egui::vec2(96.0, h));
+    let r = ui.add(b);
+    let label = word.to_string();
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+    r
+}
+
+/// Symboltaste 32 × 32 (`woa-key--icon`); `on` hebt sie in `accent` hervor. Text ohne
+/// Symbolzeichen (−10, +10) steht in Mono.
+fn symbol_key(ui: &mut egui::Ui, icon: &str, tip: &str, on: bool) -> egui::Response {
+    let symbol = icon
+        .chars()
+        .next()
+        .is_some_and(|c| ('\u{E000}'..='\u{F8FF}').contains(&c));
+    let color = if on { theme::accent() } else { theme::text() };
+    let text = if symbol {
+        egui::RichText::new(icon)
+            .family(egui::FontFamily::Name(theme::FAMILY_ICON_FILL.into()))
+            .size(15.0)
+    } else {
+        egui::RichText::new(icon).monospace().size(12.0)
+    }
+    .color(color);
+    let b = egui::Button::new(text)
+        .fill(if on {
+            theme::accent_soft()
+        } else {
+            theme::surface()
+        })
+        .stroke(egui::Stroke::new(
+            1.0,
+            if on {
+                theme::accent()
+            } else {
+                theme::border_strong()
+            },
+        ))
+        .corner_radius(theme::RADIUS_MD)
+        .min_size(egui::vec2(SYMBOL_KEY, SYMBOL_KEY));
+    ui.add(b).on_hover_text(tip)
 }
 
 pub(crate) fn played_count(v: &View) -> usize {
@@ -196,6 +299,8 @@ pub struct RadioDesk {
     row_drag: Option<usize>,
     /// Angeklickte Playlist-Zeile (#302), nur Hervorhebung.
     row_selected: Option<usize>,
+    /// Playlist-Zeile unter der Maus im letzten Bild (zeigt Verschieben und Entfernen).
+    row_hover: Option<usize>,
     /// Nummer einer Playlist-Zeile wird gerade eingetippt (#92): Zeile und Text.
     pos_edit: Option<(usize, String)>,
     /// Cart, das die nächste gedrückte Taste als neue Taste bekommt.
@@ -341,13 +446,41 @@ fn meter_strip(ui: &mut egui::Ui, m: MeterHold, name: &str, size: egui::Vec2) {
 /// LED-Meter daneben, Wert darunter; als fünfte Spalte das Meter „Master“ (Sendemix, ohne
 /// Fader). `dbs` in der Reihenfolge von [`FADER_BUSES`], `meters` dazu plus Master. Liefert je
 /// Regler die Antwort (`changed()`, wenn der Wert sich geändert hat; Doppelklick = 0 dB).
-/// Höhe der senkrechten Pegelregler; niedriger als früher (150), damit die Cart-Wall unter
-/// den Decks ganz ins Fenster passt (#303).
-const FADER_HEIGHT: f32 = 76.0;
-/// Breite der Decks, ab der die Pegelregler daneben statt darunter stehen (#303).
-const DECK_MIN_WIDTH: f32 = 430.0;
-/// Breite der Reglergruppe (vier Pegel, Master, zwei Ausgänge).
-const FADER_GROUP_WIDTH: f32 = 400.0;
+/// Fader-Weg der Kanalzüge (RadioLevels: 130 px). Die Pegel stehen seit Design-Runde 2 in einer
+/// eigenen Karte unter der Cart-Wall, die Cart-Wall bleibt dadurch ganz im Fenster (#303).
+const FADER_HEIGHT: f32 = 130.0;
+/// Breite, ab der Pegel und Processing nebeneinander stehen statt untereinander.
+const LEVELS_SIDE_BY_SIDE: f32 = 720.0;
+
+/// Farbiges Namensschild über einem Kanalzug (Scribble-Strip, RadioLevels).
+fn scribble(ui: &mut egui::Ui, name: &str, color: egui::Color32, w: f32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 16.0), egui::Sense::hover());
+    let p = ui.painter();
+    p.rect_filled(
+        rect,
+        theme::RADIUS_XS,
+        theme::mix(color, theme::surface(), 0.78),
+    );
+    p.rect_filled(
+        egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 2.0)),
+        theme::RADIUS_XS,
+        color,
+    );
+    p.text(
+        rect.center() + egui::vec2(0.0, 1.0),
+        egui::Align2::CENTER_CENTER,
+        name.to_uppercase(),
+        theme::label_font(10.0),
+        theme::text(),
+    );
+}
+
+/// 1-px-Trennlinie zwischen den Gruppen der Pegelkarte.
+fn group_sep(ui: &mut egui::Ui, h: f32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(9.0, h), egui::Sense::hover());
+    let line = egui::Rect::from_center_size(rect.center(), egui::vec2(1.0, h));
+    ui.painter().rect_filled(line, 0.0, theme::border());
+}
 /// Höhe eines Cart-Pads.
 const CART_PAD_HEIGHT: f32 = 52.0;
 
@@ -366,10 +499,15 @@ pub(crate) fn level_faders(
     };
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
-        for (((_, name), db), m) in FADER_BUSES.iter().zip(dbs.iter_mut()).zip(meters) {
+        for (k, (((_, name), db), m)) in FADER_BUSES
+            .iter()
+            .zip(dbs.iter_mut())
+            .zip(meters)
+            .enumerate()
+        {
             ui.vertical(|ui| {
-                ui.set_width(48.0);
-                caption(ui, name);
+                ui.set_width(52.0);
+                scribble(ui, name, theme::track_color(k), 52.0);
                 let r = ui
                     .horizontal_top(|ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
@@ -400,6 +538,7 @@ pub(crate) fn level_faders(
                 )));
             });
         }
+        group_sep(ui, FADER_HEIGHT + 40.0);
         ui.vertical(|ui| {
             caption(ui, "Master");
             meter_strip(ui, meters[4], "Master", egui::vec2(12.0, FADER_HEIGHT));
@@ -900,6 +1039,7 @@ impl RadioDesk {
             deck_rects: [egui::Rect::NOTHING; woa_radio::DECKS],
             row_rects: Vec::new(),
             row_drag: None,
+            row_hover: None,
             row_selected: None,
             pos_edit: None,
             key_capture: None,
@@ -1475,41 +1615,58 @@ impl RadioDesk {
 
     /// Die Wunschtitel: Liste mit einem Klick in die Playlist oder auf ein Deck.
     fn wish_card(&mut self, ui: &mut egui::Ui) {
+        // Eine Zeile (ScreenRadio): Kopf, Ordner, Zahl der Wünsche, Ordnerwahl; die Wünsche
+        // selbst stehen nur darunter, wenn es welche gibt.
+        let list = self
+            .wishes
+            .as_ref()
+            .map(|w| (w.dir().display().to_string(), w.list()));
         ui.horizontal(|ui| {
             ui.label(theme::panel_label("WUNSCHTITEL"));
-            if ui
-                .small_button("Ordner wählen …")
-                .on_hover_text("Alles, was hier hineinkommt, erscheint sofort in der Liste")
-                .clicked()
-                && let Some(dir) = crate::ordner::dialog_musik().pick_folder()
-            {
-                self.set_wish_folder(Some(dir.clone()));
-                self.wish_chosen = Some(dir);
+            match &list {
+                None => {
+                    ui.label(
+                        egui::RichText::new("Kein Wunschordner.")
+                            .small()
+                            .color(theme::text_dim()),
+                    );
+                }
+                Some((dir, l)) => {
+                    let n = l.files.len();
+                    let fresh = l.fresh.len();
+                    let t = match (n, fresh) {
+                        (0, _) => "Noch kein Wunsch im Ordner.".to_string(),
+                        (n, 0) => format!("{n} im Ordner"),
+                        (n, f) => format!("{n} im Ordner, {f} neu"),
+                    };
+                    ui.label(egui::RichText::new(t).small().color(if fresh > 0 {
+                        theme::accent()
+                    } else {
+                        theme::text_dim()
+                    }));
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(dir).small().color(theme::text_dim()))
+                            .truncate(),
+                    );
+                }
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .small_button("Ordner wählen …")
+                    .on_hover_text("Alles, was hier hineinkommt, erscheint sofort in der Liste")
+                    .clicked()
+                    && let Some(dir) = crate::ordner::dialog_musik().pick_folder()
+                {
+                    self.set_wish_folder(Some(dir.clone()));
+                    self.wish_chosen = Some(dir);
+                }
+            });
         });
-        let Some(w) = self.wishes.as_ref() else {
-            ui.label(
-                egui::RichText::new("Kein Wunschordner.")
-                    .small()
-                    .color(theme::text_dim()),
-            );
+        let Some((_, list)) = list else {
             return;
         };
-        let list = w.list();
-        ui.label(
-            egui::RichText::new(w.dir().display().to_string())
-                .small()
-                .color(theme::text_dim()),
-        );
         if let Some(e) = &list.error {
             ui.colored_label(theme::on_air(), e);
-        }
-        if list.files.is_empty() && list.error.is_none() {
-            ui.label(
-                egui::RichText::new("Noch kein Wunsch im Ordner.")
-                    .small()
-                    .color(theme::text_dim()),
-            );
         }
         // Die Liste ändert sich ohne Eingabe: ab und zu neu zeichnen.
         ui.ctx().request_repaint_after(Duration::from_secs(1));
@@ -1770,11 +1927,33 @@ impl RadioDesk {
                     theme::card_frame().show(ui, |ui| {
                         self.cart_wall(ui, &v);
                     });
+                    // Pegel und Processing nebeneinander (ScreenRadio), schmal untereinander.
+                    if ui.available_width() >= LEVELS_SIDE_BY_SIDE {
+                        ui.horizontal_top(|ui| {
+                            let w = ui.available_width();
+                            let left = theme::card_frame()
+                                .show(ui, |ui| ui.vertical(|ui| self.levels_card(ui)))
+                                .response
+                                .rect
+                                .width();
+                            let rest = w - left - ui.spacing().item_spacing.x;
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(rest, 0.0),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    theme::card_frame().show(ui, |ui| {
+                                        ui.set_width(ui.available_width());
+                                        self.processing_rack(ui);
+                                    });
+                                },
+                            );
+                        });
+                    } else {
+                        theme::card_frame().show(ui, |ui| self.levels_card(ui));
+                        theme::card_frame().show(ui, |ui| self.processing_rack(ui));
+                    }
                     theme::card_frame().show(ui, |ui| {
                         self.wish_card(ui);
-                    });
-                    theme::card_frame().show(ui, |ui| {
-                        self.processing_rack(ui);
                     });
                     theme::card_frame().show(ui, |ui| {
                         self.guests_card(ui);
@@ -1796,14 +1975,13 @@ impl RadioDesk {
                     .unwrap_or_else(|| "– Kein Titel geladen –".to_string())
             });
         let total_title_secs = entry.and_then(|e| e.seconds).unwrap_or(0.0);
-        // Cover des laufenden Titels (vor dem Start: des Titels, der als Nächstes kommt).
-        let cover_path = entry.map(|e| e.path.clone());
+        // Das große Cover entfällt (ScreenRadio: die Studio-Uhr steht vorn); die kleinen Cover
+        // der Playlist laden weiter.
         let ctx = ui.ctx().clone();
         let covers = self
             .covers
             .get_or_insert_with(|| crate::covers::Covers::new(&ctx));
         covers.poll(&ctx);
-        let (now, before, t) = covers.big(&ctx, cover_path.as_deref());
 
         // Modul-Kopfzeile: Status-Badges links, Sendestatus rechts.
         ui.horizontal(|ui| {
@@ -1839,18 +2017,8 @@ impl RadioDesk {
         });
         ui.add_space(4.0);
 
-        // Haupt-Display: Cover links, tiefschwarzes LCD-Cockpit rechts.
+        // Haupt-Display: Studio-Uhr links, LCD-Cockpit rechts.
         ui.horizontal(|ui| {
-            egui::Frame::new()
-                .fill(theme::well())
-                .stroke(egui::Stroke::new(1.0, theme::border()))
-                .corner_radius(6)
-                .inner_margin(egui::Margin::same(3))
-                .show(ui, |ui| {
-                    crate::covers::paint_square(ui, 152.0, now.as_ref(), before.as_ref(), t)
-                        .on_hover_text("Cover des Titels (aus der Datei)");
-                });
-
             // Studio-Uhr: 60 Sekunden-LEDs und Digitalzeit (Ortszeit der Stundenuhr).
             let (h, m, s) = time_parts(crate::clock_editor::now_unix(), self.zone);
             crate::widgets::studio_clock(ui, 152.0, h, m, s);
@@ -2004,32 +2172,20 @@ impl RadioDesk {
 
         ui.add_space(6.0);
 
-        // Hardware-Tastenreihe (Broadcast-Konsole)
+        // Tastenreihe (Design-Runde 2, ScreenRadio): Start · Stopp · Blende · Mikro · Telefon als
+        // 44-px-Tasten, darunter Sprung- und Spieltasten als 32-px-Symboltasten und die Decks.
         ui.horizontal_wrapped(|ui| {
-            let big = |t: &str| egui::RichText::new(t).size(15.0).strong();
+            ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
             let (go_icon, go_text) = if v.running {
                 (theme::icf::PAUSE, "Pause")
             } else {
-                (theme::icf::PLAY, "Play")
+                (theme::icf::PLAY, "Start")
             };
-            let go_btn = egui::Button::new(theme::fill_label(
-                go_icon,
-                go_text,
-                15.0,
-                if v.running {
-                    theme::well()
-                } else {
-                    theme::text()
-                },
-            ))
-            .fill(if v.running {
-                theme::ok()
-            } else {
-                theme::mix(theme::ok(), theme::surface(), 0.72)
-            })
-            .stroke(egui::Stroke::new(1.0, theme::ok()))
-            .min_size(egui::vec2(104.0, 38.0));
-            let r = ui.add(go_btn).on_hover_text("Play / Pause (Leertaste)");
+            let r = console_key(ui, go_icon, go_text, theme::ok(), v.running, KEY_H)
+                .on_hover_text("Start / Pause (Leertaste)");
+            r.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Play / Pause")
+            });
             if r.clicked() {
                 for e in woa_radio::party::PartyState::default()
                     .apply(woa_radio::party::PartyCommand::PlayPause, v.running)
@@ -2039,196 +2195,56 @@ impl RadioDesk {
             }
             self.learn_menu(&r, Target::StartNext);
 
-            let r = ui
-                .add(
-                    egui::Button::new(theme::fill_label(
-                        theme::icf::STOP,
-                        "Stopp",
-                        15.0,
-                        theme::text(),
-                    ))
-                    .fill(theme::surface())
-                    .min_size(egui::vec2(88.0, 38.0)),
-                )
+            let r = console_key(ui, theme::icf::STOP, "Stopp", theme::on_air(), false, KEY_H)
                 .on_hover_text("Stopp: 1× hält an wie Pause, 2× stoppt");
             if r.clicked() {
                 self.with(|c| c.stop_or_pause());
             }
             self.learn_menu(&r, Target::Stop);
 
-            // Deck startet und löst die Playlist ab (mit Blende, Umschalt: sofort).
-            if let Some((k, fade)) = deck_take_buttons(ui, &v.decks, v.crossfade_seconds) {
-                self.with(move |c| {
-                    if let Err(e) = c.deck_take_over(k, fade) {
-                        c.report(e);
-                    }
-                });
-            }
-
-            // Weitere Transportknöpfe: derselbe Weg wie im Party-Modus und am Handy
-            // (`PartyState::apply` und die Effekte in `party_effect`).
-            let mut state = woa_radio::party::PartyState::default();
-            for (label, cmd, tip) in [
-                (
-                    theme::icf::SKIP_BACK,
-                    woa_radio::party::PartyCommand::Previous,
-                    "Vorheriger Titel (P)",
-                ),
-                (
-                    theme::icf::SKIP_FORWARD,
-                    woa_radio::party::PartyCommand::Next,
-                    "Nächster Titel (N)",
-                ),
-                (
-                    theme::icf::ARROW_COUNTER_CLOCKWISE,
-                    woa_radio::party::PartyCommand::Restart,
-                    "Titel von vorn",
-                ),
-                (
-                    "−10 s",
-                    woa_radio::party::PartyCommand::SeekBack,
-                    "10 s zurück",
-                ),
-                (
-                    "+10 s",
-                    woa_radio::party::PartyCommand::SeekForward,
-                    "10 s vor",
-                ),
-            ] {
-                // Symbole (Fill-Stil) stehen in `theme::icf`, reiner Text ("−10 s") bleibt Text.
-                let text: egui::WidgetText = if label
-                    .chars()
-                    .next()
-                    .is_some_and(|c| ('\u{E000}'..='\u{F8FF}').contains(&c))
-                {
-                    theme::fill_label(label, "", 15.0, theme::text()).into()
-                } else {
-                    big(label).into()
-                };
-                let b = egui::Button::new(text)
-                    .fill(theme::surface())
-                    .min_size(egui::vec2(48.0, 38.0));
-                if ui.add(b).on_hover_text(tip).clicked() {
-                    for e in state.apply(cmd, v.running) {
-                        self.party_effect(e);
-                    }
-                }
-            }
-            let (rep_label, rep_tip) = match v.repeat {
-                woa_radio::control::Repeat::Off => (theme::icf::REPEAT, "Wiederholen: aus"),
-                woa_radio::control::Repeat::All => {
-                    (theme::icf::REPEAT, "Wiederholen: ganze Playlist")
-                }
-                woa_radio::control::Repeat::One => {
-                    (theme::icf::REPEAT_ONCE, "Wiederholen: ein Titel")
-                }
-            };
-            let on = v.repeat != woa_radio::control::Repeat::Off;
-            let b = egui::Button::new(theme::fill_label(
-                rep_label,
-                "",
-                15.0,
-                if on { theme::well() } else { theme::text() },
-            ))
-            .fill(if on {
-                theme::accent()
-            } else {
-                theme::surface()
-            })
-            .min_size(egui::vec2(48.0, 38.0));
-            if ui.add(b).on_hover_text(rep_tip).clicked() {
-                self.party_effect(woa_radio::party::Effect::CycleRepeat);
-            }
-            let b = egui::Button::new(theme::fill_label(
-                theme::icf::SHUFFLE,
-                "",
-                15.0,
-                if v.shuffle {
-                    theme::well()
-                } else {
-                    theme::text()
-                },
-            ))
-            .fill(if v.shuffle {
-                theme::accent()
-            } else {
-                theme::surface()
-            })
-            .min_size(egui::vec2(48.0, 38.0));
-            if ui
-                .add(b)
-                .on_hover_text(if v.shuffle {
-                    "Zufall: an"
-                } else {
-                    "Zufall: aus"
-                })
-                .clicked()
-            {
-                self.party_effect(woa_radio::party::Effect::ToggleShuffle);
-            }
-
-            let mic = egui::Button::new(
-                big(&format!("{} Mikro (M)", theme::ic::MICROPHONE)).color(if v.mic_open {
-                    egui::Color32::WHITE
-                } else {
-                    theme::text()
-                }),
+            let r = console_key(
+                ui,
+                theme::icf::SHUFFLE_ANGULAR,
+                "Blende",
+                theme::accent(),
+                false,
+                KEY_H,
             )
-            .fill(if v.mic_open {
-                theme::on_air()
-            } else {
-                theme::surface()
-            })
-            .stroke(egui::Stroke::new(
-                1.0,
-                if v.mic_open {
-                    theme::emphasize(theme::on_air(), 0.35)
-                } else {
-                    theme::border()
-                },
-            ))
-            .min_size(egui::vec2(108.0, 38.0));
-            let r = ui.add(mic).on_hover_text("Taste M");
+            .on_hover_text(format!(
+                "Blende: läuft nichts, startet die Playlist; sonst blendet sie in {:.1} s auf den \
+                 nächsten Titel",
+                v.crossfade_seconds
+            ));
+            if r.clicked() {
+                self.with(|c| c.start_or_next());
+            }
+
+            let r = console_key(
+                ui,
+                theme::icf::MICROPHONE,
+                "Mikro",
+                theme::on_air(),
+                v.mic_open,
+                KEY_H,
+            )
+            .on_hover_text("Mikro (M)");
+            r.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Mikro (M)")
+            });
             if r.clicked() {
                 self.toggle_mic();
             }
             self.learn_menu(&r, Target::Mic);
 
             let ph = v.phone_on;
-            let phone = egui::Button::new(
-                big(&format!(
-                    "{} {}",
-                    theme::ic::PHONE,
-                    if ph { "Telefon auf Sendung" } else { "Telefon" }
-                ))
-                .color(if ph {
-                    egui::Color32::WHITE
+            let r = console_key(ui, theme::icf::PHONE, "Telefon", theme::on_air(), ph, KEY_H)
+                .on_hover_text(if ph {
+                    "Telefon auf Sendung. Klick: Anrufer von der Sendung nehmen"
                 } else {
-                    theme::text()
-                }),
-            )
-            .fill(if ph {
-                theme::on_air()
-            } else {
-                theme::surface()
-            })
-            .stroke(egui::Stroke::new(
-                1.0,
-                if ph {
-                    theme::mix(theme::on_air(), egui::Color32::WHITE, 0.35)
-                } else {
-                    theme::border()
-                },
-            ))
-            .min_size(egui::vec2(176.0, 38.0));
-            if ui
-                .add(phone)
-                .on_hover_text(
                     "Anrufer auf die Sendung legen. Der Pegel rechts zeigt ihn auch vorher; \
-                     den Rückweg zum Anrufer wählst du unter Ausgänge.",
-                )
-                .clicked()
-            {
+                     den Rückweg zum Anrufer wählst du unter Ausgänge."
+                });
+            if r.clicked() {
                 self.toggle_phone();
             }
             let (rect, _) = ui.allocate_exact_size(egui::vec2(70.0, 12.0), egui::Sense::hover());
@@ -2246,8 +2262,77 @@ impl RadioDesk {
             if let Some(e) = &self.phone_error {
                 ui.colored_label(theme::on_air(), e);
             }
-
             // Mitschnitt: seit 0.34.56 als REC-Pille in der Kopfleiste, in jedem Modus.
+        });
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+            // Sprungtasten: derselbe Weg wie im Party-Modus und am Handy
+            // (`PartyState::apply` und die Effekte in `party_effect`).
+            let mut state = woa_radio::party::PartyState::default();
+            for (icon, cmd, tip) in [
+                (
+                    theme::icf::SKIP_BACK,
+                    woa_radio::party::PartyCommand::Previous,
+                    "Vorheriger Titel (P)",
+                ),
+                (
+                    theme::icf::SKIP_FORWARD,
+                    woa_radio::party::PartyCommand::Next,
+                    "Nächster Titel (N)",
+                ),
+                (
+                    theme::icf::ARROW_COUNTER_CLOCKWISE,
+                    woa_radio::party::PartyCommand::Restart,
+                    "Titel von vorn",
+                ),
+                (
+                    "−10",
+                    woa_radio::party::PartyCommand::SeekBack,
+                    "10 s zurück",
+                ),
+                (
+                    "+10",
+                    woa_radio::party::PartyCommand::SeekForward,
+                    "10 s vor",
+                ),
+            ] {
+                if symbol_key(ui, icon, tip, false).clicked() {
+                    for e in state.apply(cmd, v.running) {
+                        self.party_effect(e);
+                    }
+                }
+            }
+            let (rep_icon, rep_tip) = match v.repeat {
+                woa_radio::control::Repeat::Off => (theme::icf::REPEAT, "Wiederholen: aus"),
+                woa_radio::control::Repeat::All => {
+                    (theme::icf::REPEAT, "Wiederholen: ganze Playlist")
+                }
+                woa_radio::control::Repeat::One => {
+                    (theme::icf::REPEAT_ONCE, "Wiederholen: ein Titel")
+                }
+            };
+            let on = v.repeat != woa_radio::control::Repeat::Off;
+            if symbol_key(ui, rep_icon, rep_tip, on).clicked() {
+                self.party_effect(woa_radio::party::Effect::CycleRepeat);
+            }
+            let tip = if v.shuffle {
+                "Zufall: an"
+            } else {
+                "Zufall: aus"
+            };
+            if symbol_key(ui, theme::icf::SHUFFLE, tip, v.shuffle).clicked() {
+                self.party_effect(woa_radio::party::Effect::ToggleShuffle);
+            }
+            ui.add_space(8.0);
+            // Deck startet und löst die Playlist ab (mit Blende, Umschalt: sofort).
+            if let Some((k, fade)) = deck_take_buttons(ui, &v.decks, v.crossfade_seconds) {
+                self.with(move |c| {
+                    if let Err(e) = c.deck_take_over(k, fade) {
+                        c.report(e);
+                    }
+                });
+            }
         });
 
         ui.add_space(4.0);
@@ -2974,25 +3059,20 @@ impl RadioDesk {
                                 .color(theme::text_dim()),
                         );
                         ui.add_space(30.0);
-                        ui.label(
-                            egui::RichText::new("TITEL & LAUTHEIT")
-                                .small()
-                                .strong()
-                                .color(theme::text_dim()),
-                        );
+                        let head = |t: &str| theme::panel_label(t);
+                        ui.label(head("TITEL"));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(
-                                egui::RichText::new("AKTION  ·  DAUER")
-                                    .small()
-                                    .strong()
-                                    .color(theme::text_dim()),
-                            );
+                            // Platz der Hover-Knöpfe, damit die Köpfe über ihren Spalten stehen.
+                            ui.add_space(ROW_TOOLS_W);
+                            ui.add_sized([DUR_W, 14.0], egui::Label::new(head("DAUER")));
+                            ui.add_sized([LUFS_W, 14.0], egui::Label::new(head("LAUTHEIT")));
                         });
                     });
                 });
         }
 
         let mut released: Option<(usize, egui::Pos2)> = None;
+        let mut hover_now = None;
         self.row_rects.clear();
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 3.0;
@@ -3009,12 +3089,13 @@ impl RadioDesk {
                 }
                 let on_air = v.current == Some(i);
                 let is_cue = i == v.cue && !v.running;
+                let tools = self.row_hover == Some(i) || self.row_selected == Some(i);
                 let row_fill = if on_air {
-                    theme::mix(theme::on_air(), theme::panel(), 0.72)
+                    theme::mix(theme::on_air(), theme::panel(), 0.86)
                 } else if is_cue {
-                    theme::mix(theme::cue(), theme::panel(), 0.82)
-                } else if i % 2 == 1 {
-                    theme::mix(theme::well(), theme::panel(), 0.65)
+                    theme::mix(theme::cue(), theme::panel(), 0.90)
+                } else if self.row_hover == Some(i) {
+                    theme::surface()
                 } else {
                     theme::well()
                 };
@@ -3127,50 +3208,87 @@ impl RadioDesk {
                                 .map(|l| format!("{l:.1} LUFS ({:+.1} dB)", e.gain_db));
                             // Der Titel klickt nicht selbst: Klick, Doppelklick und Menü gehören
                             // der ganzen Zeile (#302).
-                            ui.add(
-                                egui::Label::new(
-                                    egui::RichText::new(&e.title).strong().color(theme::text()),
-                                )
-                                .truncate(),
-                            );
+                            // Rechts bleiben Badge, Lautheit, Dauer und Knöpfe frei.
+                            let right = ROW_TOOLS_W + DUR_W + LUFS_W + ROW_BADGE_W;
+                            let w = (ui.available_width() - right).max(40.0);
+                            ui.allocate_ui(egui::vec2(w, 20.0), |ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(&e.title).strong().color(theme::text()),
+                                    )
+                                    .truncate(),
+                                );
+                            });
 
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    if ui.small_button("x").on_hover_text("Entfernen").clicked() {
-                                        self.with(move |c| {
-                                            c.remove(i);
-                                        });
-                                    }
-                                    if ui.small_button("v").on_hover_text("Nach unten").clicked() {
-                                        self.with(move |c| {
-                                            c.move_entry(i, i + 1);
-                                        });
-                                    }
-                                    if ui.small_button("^").on_hover_text("Nach oben").clicked()
-                                        && i > 0
-                                    {
-                                        self.with(move |c| {
-                                            c.move_entry(i, i - 1);
-                                        });
-                                    }
-                                    ui.label(
-                                        egui::RichText::new(
-                                            e.seconds
-                                                .map(|s| clock(e.cues.play_seconds(s)))
-                                                .unwrap_or_else(|| "--:--".into()),
-                                        )
-                                        .monospace()
-                                        .strong()
-                                        .color(theme::accent()),
+                                    // Verschieben und Entfernen beim Hover (und an der gewählten
+                                    // Zeile); der Platz bleibt immer frei, damit nichts springt.
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(ROW_TOOLS_W, 22.0),
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            ui.set_min_width(ROW_TOOLS_W);
+                                            if !tools {
+                                                return;
+                                            }
+                                            ui.spacing_mut().item_spacing.x = 2.0;
+                                            let icon = |ui: &mut egui::Ui, t: &str, tip: &str| {
+                                                ui.add(egui::Button::new(t).small().frame(false))
+                                                    .on_hover_text(tip)
+                                                    .clicked()
+                                            };
+                                            if icon(ui, theme::ic::X, "Entfernen") {
+                                                self.with(move |c| {
+                                                    c.remove(i);
+                                                });
+                                            }
+                                            if icon(ui, theme::ic::CARET_DOWN, "Nach unten") {
+                                                self.with(move |c| {
+                                                    c.move_entry(i, i + 1);
+                                                });
+                                            }
+                                            if icon(ui, theme::ic::CARET_UP, "Nach oben") && i > 0 {
+                                                self.with(move |c| {
+                                                    c.move_entry(i, i - 1);
+                                                });
+                                            }
+                                        },
+                                    );
+                                    // Dauer neutral (Design-Runde 2), rechtsbündig in Mono.
+                                    ui.add_sized(
+                                        [DUR_W, 18.0],
+                                        egui::Label::new(
+                                            egui::RichText::new(
+                                                e.seconds
+                                                    .map(|s| clock(e.cues.play_seconds(s)))
+                                                    .unwrap_or_else(|| "--:--".into()),
+                                            )
+                                            .monospace()
+                                            .color(theme::text()),
+                                        ),
+                                    );
+                                    let lufs = ui.add_sized(
+                                        [LUFS_W, 18.0],
+                                        egui::Label::new(
+                                            egui::RichText::new(
+                                                e.lufs
+                                                    .map(|l| format!("{l:.1}"))
+                                                    .unwrap_or_else(|| "–".into()),
+                                            )
+                                            .size(11.0)
+                                            .monospace()
+                                            .color(theme::text_dim()),
+                                        ),
                                     );
                                     if let Some(lb) = lufs_badge {
-                                        ui.label(
-                                            egui::RichText::new(lb)
-                                                .size(10.5)
-                                                .monospace()
-                                                .color(theme::text_dim()),
-                                        );
+                                        lufs.on_hover_text(lb);
+                                    }
+                                    if on_air {
+                                        theme::status_pill(ui, "ON AIR", theme::on_air(), true);
+                                    } else if is_cue {
+                                        theme::status_pill(ui, "CUE", theme::cue(), true);
                                     }
                                 },
                             );
@@ -3197,6 +3315,9 @@ impl RadioDesk {
                     });
                 if drag.clicked() {
                     self.row_selected = Some(i);
+                }
+                if drag.contains_pointer() {
+                    hover_now = Some(i);
                 }
                 if drag.double_clicked() {
                     self.with(move |c| c.set_cue(i));
@@ -3251,6 +3372,10 @@ impl RadioDesk {
                 }
             }
         });
+        if self.row_hover != hover_now {
+            self.row_hover = hover_now;
+            ui.ctx().request_repaint();
+        }
         if let Some((from, pos)) = released {
             match row_drop_target(
                 pos,
@@ -3483,6 +3608,26 @@ impl RadioDesk {
         }
         if v.pfl_playing && ui.button("Vorhören anhalten").clicked() {
             self.with(Controller::pfl_stop);
+            ui.close();
+        }
+        // Verschieben und Entfernen: auch ohne Hover-Knöpfe erreichbar.
+        ui.separator();
+        if i > 0 && ui.button("Nach oben").clicked() {
+            self.with(move |c| {
+                c.move_entry(i, i - 1);
+            });
+            ui.close();
+        }
+        if i + 1 < v.playlist.len() && ui.button("Nach unten").clicked() {
+            self.with(move |c| {
+                c.move_entry(i, i + 1);
+            });
+            ui.close();
+        }
+        if ui.button("Entfernen").clicked() {
+            self.with(move |c| {
+                c.remove(i);
+            });
             ui.close();
         }
     }
@@ -3952,21 +4097,14 @@ impl RadioDesk {
     fn deck_card(&mut self, ui: &mut egui::Ui, v: &View) {
         ui.label(theme::panel_label("DECKS A · B · C"));
         ui.add_space(4.0);
-        // Decks links, die senkrechten Pegelregler als eine Gruppe rechts daneben; ist die
-        // Spalte dafür zu schmal, stehen die Regler darunter. Nie breiter als die Spalte: was
-        // rechts übersteht, schneidet die Spalte ab (#303).
-        let avail = ui.available_width();
-        if avail >= DECK_MIN_WIDTH + FADER_GROUP_WIDTH {
-            ui.horizontal_top(|ui| {
-                ui.allocate_ui(egui::vec2(avail - FADER_GROUP_WIDTH, 0.0), |ui| {
-                    ui.vertical(|ui| self.deck_rows(ui, v));
-                });
-                self.level_fader_group(ui);
-            });
-        } else {
-            self.deck_rows(ui, v);
-            ui.horizontal_top(|ui| self.level_fader_group(ui));
-        }
+        self.deck_rows(ui, v);
+    }
+
+    /// Karte PEGEL (RadioLevels): vier Kanalzüge, Master-Meter, Notebook und Stream.
+    fn levels_card(&mut self, ui: &mut egui::Ui) {
+        ui.label(theme::panel_label("PEGEL"));
+        ui.add_space(4.0);
+        ui.horizontal_top(|ui| self.level_fader_group(ui));
     }
 
     /// Pegel Playlist, Carts, Decks, Mikro als senkrechte Fader (Werte wie bisher).
@@ -3981,7 +4119,7 @@ impl RadioDesk {
         }
         // Kein `separator()`: senkrecht in der rollenden Spalte nimmt er die ganze Höhe und
         // schob die Karten darunter (Cart-Wall) aus dem Bild (#303).
-        ui.add_space(10.0);
+        group_sep(ui, FADER_HEIGHT + 40.0);
         let mut outs = [self.view.out_monitor, self.view.out_stream];
         let ch = output_faders(ui, &mut outs);
         for ((out, _, _), (o, c)) in OUTPUTS.iter().zip(outs.into_iter().zip(ch)) {
@@ -4002,31 +4140,61 @@ impl RadioDesk {
             let name = woa_radio::show::deck_name(k);
             let loaded = d.title.is_some();
             let urgent = d.playing && d.remaining < 10.0;
-            let fill = if d.playing {
-                theme::mix(theme::accent(), theme::surface(), 0.2)
+            // Unter 10 s blinkt die Restzeit rot (RadioDecks).
+            let urgent_on = urgent && crate::widgets::blink_on(ui.input(|i| i.time), 2.0);
+            if urgent {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(120));
+            }
+            // Zieht jemand gerade eine Playlist-Zeile über dieses Deck: „Hier ablegen“ (#298).
+            let drop_here = self.row_drag.is_some()
+                && ui
+                    .ctx()
+                    .pointer_latest_pos()
+                    .is_some_and(|p| self.deck_rects[k].contains(p));
+            let fill = if drop_here {
+                theme::mix(theme::accent_2(), theme::surface(), 0.88)
+            } else if d.playing {
+                theme::mix(theme::accent(), theme::surface(), 0.90)
+            } else if loaded {
+                theme::surface()
             } else {
-                theme::well()
+                egui::Color32::TRANSPARENT
+            };
+            let edge = if drop_here {
+                theme::accent_2()
+            } else if d.playing {
+                theme::accent()
+            } else if loaded {
+                theme::border_strong()
+            } else {
+                egui::Color32::TRANSPARENT
             };
             let frame = egui::Frame::new()
                 .fill(fill)
-                .stroke(egui::Stroke::new(
-                    if d.playing { 2.0 } else { 1.0 },
-                    if d.playing {
-                        theme::accent()
-                    } else {
-                        theme::border()
-                    },
-                ))
-                .corner_radius(5)
-                .inner_margin(egui::Margin::symmetric(8, 3));
+                .stroke(egui::Stroke::new(1.0, edge))
+                .corner_radius(theme::RADIUS_MD)
+                .inner_margin(egui::Margin::symmetric(8, 5));
             // Die ganze Deck-Zeile ist eine Klickfläche (#302), die Knöpfe klicken selbst.
             let out = row_area(ui, ("deck_row", k), egui::Sense::click(), frame, |ui| {
+                ui.set_width(ui.available_width());
+                ui.set_min_height(DECK_ROW_H);
                 ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(name.to_string())
-                            .size(20.0)
-                            .strong()
-                            .color(theme::text()),
+                    // Buchstabe im LCD-Kästchen.
+                    let (lr, _) =
+                        ui.allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::hover());
+                    ui.painter()
+                        .rect_filled(lr, theme::RADIUS_SM, theme::lcd_bg());
+                    ui.painter().text(
+                        lr.center(),
+                        egui::Align2::CENTER_CENTER,
+                        name.to_string(),
+                        theme::label_font(17.0),
+                        if d.playing {
+                            theme::accent()
+                        } else {
+                            theme::lcd_text()
+                        },
                     );
                     ui.vertical(|ui| {
                         ui.set_min_width(DECK_CLOCK_WIDTH);
@@ -4036,13 +4204,15 @@ impl RadioDesk {
                             } else {
                                 "--:--".into()
                             })
-                            .size(22.0)
-                            .monospace()
-                            .strong()
-                            .color(if urgent {
+                            .font(theme::seg_font(22.0))
+                            .color(if urgent_on {
                                 theme::on_air()
-                            } else {
+                            } else if urgent {
+                                theme::mix(theme::on_air(), theme::surface(), 0.5)
+                            } else if loaded {
                                 theme::text()
+                            } else {
+                                theme::text_dim()
                             }),
                         );
                         let frac = if d.length > 0.0 {
@@ -4103,25 +4273,43 @@ impl RadioDesk {
                         let on = !d.back_to_playlist;
                         self.with(move |c| c.set_deck_return(k, on));
                     }
+                    let text = if drop_here {
+                        "Hier ablegen".to_string()
+                    } else {
+                        d.title.clone().unwrap_or_else(|| {
+                            "Titel hierher ziehen · Rechtsklick: Datei laden".into()
+                        })
+                    };
                     ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(
-                                d.title
-                                    .clone()
-                                    .unwrap_or_else(|| "leer: Datei hierher ziehen".into()),
-                            )
-                            .small()
-                            .color(if loaded {
-                                theme::text()
-                            } else {
-                                theme::text_dim()
-                            }),
-                        )
+                        egui::Label::new(egui::RichText::new(text).color(if drop_here {
+                            theme::accent_2()
+                        } else if loaded {
+                            theme::text()
+                        } else {
+                            theme::text_dim()
+                        }))
                         .truncate(),
                     );
                 });
             });
             self.deck_rects[k] = out.response.rect;
+            if !loaded && !drop_here {
+                // Leeres Deck: gestrichelter Rand.
+                let q = out.response.rect.shrink(0.5);
+                let pts = [
+                    q.left_top(),
+                    q.right_top(),
+                    q.right_bottom(),
+                    q.left_bottom(),
+                    q.left_top(),
+                ];
+                ui.painter().extend(egui::Shape::dashed_line(
+                    &pts,
+                    egui::Stroke::new(1.0, theme::border_strong()),
+                    4.0,
+                    3.0,
+                ));
+            }
             out.response.context_menu(|ui| {
                 if ui.button("Datei laden …").clicked() {
                     self.pick_deck_file(k);

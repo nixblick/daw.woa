@@ -1,0 +1,17 @@
+<!-- @dsCard group="Party" height=380 width=1000 subtitle="Party-Pult: drei Gruppen, eine Tastengröße, Zustand nur über Füllung" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}.cap{font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0 0 6px}</style></head>
+<body>
+<div style="max-width:920px"><div class="woa-pctl">
+ <div class="woa-pctl__g"><span class="woa-label">Abspielen</span></div>
+ <button class="woa-bigkey " data-woa-icon="prev" data-tip="Zurück" data-kbd="←">Zurück</button><button class="woa-bigkey is-on is-pulse" data-woa-icon="pause" data-tip="Pause" data-kbd="Leertaste">Pause</button><button class="woa-bigkey " data-woa-icon="stop" data-tip="Stopp">Stopp</button><button class="woa-bigkey " data-woa-icon="next" data-tip="Weiter" data-kbd="→">Weiter</button>
+ <div class="woa-pctl__g"><span class="woa-label">Springen</span></div>
+ <button class="woa-bigkey " data-woa-icon="undo" data-tip="Von vorn">Von vorn</button><button class="woa-bigkey " data-woa-icon="rewind" data-tip="−10 s">−10 s</button><button class="woa-bigkey " data-woa-icon="ffwd" data-tip="+10 s">+10 s</button><button class="woa-bigkey " data-woa-icon="loop" data-tip="Playlist wiederholen">Wdh.</button>
+ <div class="woa-pctl__g"><span class="woa-label">Lautstärke</span></div>
+ <button class="woa-bigkey " data-woa-icon="vol-down" data-tip="Leiser" data-kbd="−">Leiser</button><div class="woa-lcd woa-pvol"><div class="woa-col" style="gap:4px;flex:1"><span class="woa-lcd__cap">Party</span><div class="woa-progress" style="--p:62%;height:8px"><i></i></div></div><span class="woa-tc" style="font-size:22px">+0 dB</span></div><button class="woa-bigkey " data-woa-icon="speaker" data-tip="Lauter" data-kbd="+">Lauter</button><button class="woa-bigkey " data-woa-icon="mute" data-tip="Stumm" data-kbd="M">Stumm</button>
+</div></div>
+<script>WOA.init();</script>
+</body>
+</html>

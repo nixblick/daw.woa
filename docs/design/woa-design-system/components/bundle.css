@@ -464,3 +464,310 @@ svg.woa-i{width:16px;height:16px;fill:currentColor;flex:none}
  .woa-ci .woa-num--l>.woa-num__u:first-child{display:none}
  .woa-ci__g{padding:0 8px}
 }
+
+/* =====================================================================
+   Fassung 3: Kopfleisten-Block, Radio-Decks, Pegelgruppe, Party-Pult,
+   Komponieren (Browser, Klang, Akkorde, Piano-Roll, Drum-Raster, FX, Assistent)
+   ===================================================================== */
+
+/* ---------- Kopfleisten-Block: Modi · Status · Feedback in einem Stil ---------- */
+.woa-strip-bar{display:inline-flex;align-items:center;gap:3px;padding:3px;background:var(--well);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-well)}
+.woa-sb{--m:var(--text-dim);appearance:none;display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 11px;border:1px solid transparent;border-radius:var(--radius-sm);
+  background:transparent;color:var(--text-dim);font-family:var(--font-label);font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap}
+.woa-sb::before{content:"";width:7px;height:7px;border-radius:50%;flex:none;background:color-mix(in srgb,var(--m) 30%,var(--led-off))}
+.woa-sb>svg.woa-i{width:14px;height:14px;margin-right:-2px}
+.woa-sb:hover{color:var(--text);background:color-mix(in srgb,var(--surface) 55%,transparent)}
+.woa-sb.is-on{background:var(--surface);border-color:var(--m);color:var(--text);box-shadow:var(--shadow-key)}
+.woa-sb.is-on::before{background:var(--m)}
+.woa-sb.is-blink::before{animation:woa-blink 1s steps(1) infinite}
+.woa-sb--icon::before{display:none}
+.woa-sb[data-k=studio]{--m:var(--mode-studio)}.woa-sb[data-k=radio]{--m:var(--mode-radio)}.woa-sb[data-k=party]{--m:var(--mode-party)}
+.woa-sb[data-k=midi]{--m:var(--cue)}.woa-sb[data-k=air]{--m:var(--on-air)}.woa-sb[data-k=rec]{--m:var(--on-air)}.woa-sb[data-k=ki]{--m:var(--ok)}
+.woa-sb[data-k=fb]{--m:var(--text)}
+.woa-sb__sep{width:1px;height:20px;background:var(--border);margin:0 4px;flex:none}
+.woa-sb__t{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--text-dim)}
+
+/* ---------- Radio-Decks A · B · C ---------- */
+.woa-rdeck{--c:var(--border-strong);display:grid;grid-template-columns:44px 132px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:64px;padding:6px 8px 6px 6px;
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);position:relative}
+.woa-rdeck+.woa-rdeck{margin-top:6px}
+.woa-rdeck__k{display:grid;place-items:center;width:44px;height:52px;border-radius:var(--radius-md);background:var(--lcd-bg);border:1px solid var(--border);box-shadow:var(--shadow-well);
+  font-family:var(--font-label);font-size:30px;font-weight:800;color:color-mix(in srgb,var(--lcd-text) 45%,var(--lcd-bg))}
+.woa-rdeck__lcd{display:flex;flex-direction:column;justify-content:center;gap:4px;height:52px;padding:4px 10px;background:var(--lcd-bg);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-well)}
+.woa-rdeck__lcd .woa-seg{font-size:26px}
+.woa-rdeck__t{min-width:0}
+.woa-rdeck__t b{display:block;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.woa-rdeck__t span{display:block;font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.woa-rdeck.is-play{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--panel))}
+.woa-rdeck.is-play .woa-rdeck__k{color:var(--lcd-ink);text-shadow:0 0 10px color-mix(in srgb,var(--lcd-ink) 60%,transparent)}
+.woa-rdeck.is-empty{background:transparent;border-style:dashed;border-color:var(--border-strong)}
+.woa-rdeck.is-empty .woa-rdeck__t span{color:var(--text-dim)}
+.woa-rdeck.is-drop{border-style:solid;border-color:var(--accent-2);background:color-mix(in srgb,var(--accent-2) 10%,var(--panel))}
+
+/* ---------- Pegelgruppe (Radio) ---------- */
+.woa-lvl{display:flex;align-items:flex-end;gap:10px;padding:10px 12px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg)}
+.woa-lvl__ch{display:flex;flex-direction:column;align-items:center;gap:6px;width:56px}
+.woa-lvl__ch .woa-strip__name{width:56px;font-size:11px;padding:2px}
+.woa-lvl__fm{display:flex;gap:4px;align-items:stretch}
+.woa-lvl__sep{width:1px;align-self:stretch;background:var(--border);margin:0 2px}
+
+/* ---------- Party-Pult ---------- */
+.woa-pctl{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.woa-pctl .woa-bigkey{--key-party-h:64px;font-size:18px;padding:0 12px;min-width:0;gap:10px}
+.woa-pctl .woa-bigkey svg.woa-i{width:24px;height:24px}
+.woa-pctl__g{grid-column:1/-1;display:flex;align-items:center;gap:10px;margin-top:4px}
+.woa-pctl__g .woa-label{white-space:nowrap}
+.woa-pctl__g::after{content:"";flex:1;height:1px;background:var(--border)}
+.woa-bigkey--ghost{background:transparent;box-shadow:none;border-style:solid}
+.woa-pvol{display:flex;align-items:center;gap:12px}
+.woa-pdeck{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center}
+.woa-pdeck__badge{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:var(--radius-md);font-family:var(--font-mono);font-size:11px;font-weight:700;
+  background:var(--well);border:1px solid var(--border);color:var(--text-dim)}
+.woa-pdeck__badge.is-live{border-color:var(--accent);color:var(--text);background:color-mix(in srgb,var(--accent) 18%,var(--well))}
+.woa-pdeck__badge.is-next{border-color:var(--accent-2);color:var(--text);background:color-mix(in srgb,var(--accent-2) 16%,var(--well))}
+
+/* ---------- Browser (Komponieren, links) ---------- */
+.woa-br{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;min-width:0}
+.woa-br__tabs{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;padding:4px;background:var(--panel-header);border-bottom:1px solid var(--border)}
+.woa-br__tab{appearance:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 0 4px;border:1px solid transparent;border-radius:var(--radius-sm);background:transparent;color:var(--text-dim);
+  font-family:var(--font-label);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.woa-br__tab svg.woa-i{width:18px;height:18px}
+.woa-br__tab:hover{color:var(--text);background:var(--surface)}
+.woa-br__tab[aria-selected=true]{color:var(--text);background:var(--surface);border-color:var(--border-strong);box-shadow:var(--shadow-key)}
+.woa-br__tab[aria-selected=true] svg.woa-i{color:var(--accent)}
+.woa-br__search{margin:8px 8px 4px}
+.woa-br__list{display:flex;flex-direction:column;padding:4px;gap:2px;overflow:auto}
+.woa-br__h{padding:8px 8px 4px;font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim)}
+.woa-br__i{display:grid;grid-template-columns:14px minmax(0,1fr) auto;align-items:center;gap:8px;min-height:40px;padding:4px 6px;border-radius:var(--radius-md);border:1px solid transparent;cursor:grab}
+.woa-br__i:hover{background:var(--surface)}
+.woa-br__i.is-sel{background:var(--accent-soft);border-color:var(--accent)}
+.woa-br__i .woa-slot__grip{width:14px}
+.woa-br__n{min-width:0}
+.woa-br__n b{display:block;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.woa-br__n span{display:block;font-size:11px;line-height:14px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.woa-br__detail{border-top:1px solid var(--border);padding:10px;display:flex;flex-direction:column;gap:8px;background:color-mix(in srgb,var(--panel-header) 50%,var(--panel))}
+.woa-br__foot{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim)}
+.woa-lic{font-family:var(--font-mono);font-size:10px;padding:0 4px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);color:var(--text-dim)}
+
+/* Akkord-Chips */
+.woa-chords{display:flex;gap:3px;flex-wrap:wrap}
+.woa-chord{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;min-width:36px;height:34px;padding:0 6px;border-radius:var(--radius-sm);
+  background:var(--well);border:1px solid var(--border);line-height:1}
+.woa-chord b{font-family:var(--font-label);font-size:15px;font-weight:800;color:var(--text)}
+.woa-chord i{font-style:normal;font-family:var(--font-mono);font-size:9.5px;color:var(--text-dim);margin-top:2px}
+.woa-chords--sm .woa-chord{height:24px;min-width:28px;flex-direction:row;gap:4px}
+.woa-chords--sm .woa-chord b{font-size:12px}
+.woa-chords--sm .woa-chord i{margin:0}
+.woa-chord.is-now{border-color:var(--accent);background:var(--accent-soft)}
+
+/* Tonart-Wahl */
+.woa-keys12{display:grid;grid-template-columns:repeat(12,1fr);gap:2px}
+.woa-keys12 button{appearance:none;height:26px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--well);color:var(--text-dim);font-family:var(--font-label);font-size:12px;font-weight:700;cursor:pointer;padding:0}
+.woa-keys12 button.is-blk{background:color-mix(in srgb,var(--lcd-bg) 60%,var(--well))}
+.woa-keys12 button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.woa-segs{display:inline-flex;padding:2px;gap:2px;background:var(--well);border:1px solid var(--border);border-radius:var(--radius-md)}
+.woa-segs button{appearance:none;height:22px;min-width:30px;padding:0 8px;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--text-dim);font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer}
+.woa-segs button[aria-pressed=true]{background:var(--surface);color:var(--text);box-shadow:var(--shadow-key)}
+.woa-out3{display:flex;flex-direction:column;gap:4px}
+.woa-out3 label{display:flex;align-items:center;gap:8px;height:26px;padding:0 8px;border-radius:var(--radius-sm);background:var(--well);border:1px solid var(--border);font-size:12px;cursor:pointer}
+.woa-out3 label i{width:10px;height:10px;border-radius:2px;background:var(--t)}
+.woa-out3 label span{flex:1}
+.woa-out3 label svg.woa-i{color:var(--accent);width:14px;height:14px}
+
+/* Akkord-Clip in der Zeitleiste */
+.woa-clip__chords{position:absolute;left:0;right:0;top:15px;height:18px;display:flex}
+.woa-clip__chords span{flex:1;display:flex;align-items:center;padding-left:5px;border-left:1px solid color-mix(in srgb,var(--t) 50%,transparent);font-family:var(--font-label);font-size:12px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden}
+.woa-clip__chords span:first-child{border-left:0}
+.woa-clip__chords small{font-family:var(--font-mono);font-size:9px;font-weight:500;color:var(--text-dim);margin-left:4px}
+.woa-clip__sound{position:absolute;right:4px;top:1px;font-family:var(--font-label);font-size:10px;font-weight:700;color:color-mix(in srgb,var(--lcd-bg) 75%,var(--t))}
+.woa-chordlane{height:26px;position:relative;background:var(--panel-header);border-bottom:1px solid var(--border)}
+.woa-chordlane span{position:absolute;top:3px;height:20px;display:flex;align-items:center;padding:0 6px;border-radius:var(--radius-sm);background:var(--surface);border:1px solid var(--border-strong);font-family:var(--font-label);font-size:12px;font-weight:800}
+.woa-chordlane span small{font-family:var(--font-mono);font-weight:500;font-size:9px;color:var(--text-dim);margin-left:4px}
+
+/* ---------- Instrument (Klang) im Rack ---------- */
+.woa-snd{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border-strong);box-shadow:var(--shadow-key)}
+.woa-snd__ic{display:grid;place-items:center;width:36px;height:36px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--t) 22%,var(--well));color:var(--t);flex:none}
+.woa-snd__ic svg.woa-i{width:20px;height:20px}
+.woa-snd__n{flex:1;min-width:0}
+.woa-snd__n b{display:block;font-size:14px;font-weight:700}
+.woa-snd__n span{display:block;font-size:11px;color:var(--text-dim)}
+.woa-roles{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:2px;background:var(--well);border:1px solid var(--border);border-radius:var(--radius-md)}
+.woa-roles button{appearance:none;display:flex;align-items:center;justify-content:center;gap:5px;height:26px;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--text-dim);font-family:var(--font-label);font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
+.woa-roles button svg.woa-i{width:14px;height:14px}
+.woa-roles button[aria-pressed=true]{background:var(--surface);color:var(--text);box-shadow:var(--shadow-key)}
+.woa-tiles{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.woa-tile{appearance:none;display:flex;align-items:center;gap:6px;height:34px;padding:0 8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--well);color:var(--text);font:inherit;font-size:12px;font-weight:600;cursor:pointer;text-align:left}
+.woa-tile:hover{border-color:var(--text-dim)}
+.woa-tile[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft)}
+.woa-tile .woa-ib{margin-left:auto;width:22px;height:22px}
+.woa-tile .woa-ib svg.woa-i{width:12px;height:12px}
+
+/* ---------- Piano-Roll ---------- */
+.woa-pr{--t:var(--track-3);display:grid;grid-template-columns:44px minmax(0,1fr);background:var(--well);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden}
+.woa-pr__bar{grid-column:1/-1;display:flex;align-items:center;gap:8px;height:38px;padding:0 8px;background:var(--panel);border-bottom:1px solid var(--border)}
+.woa-pr__ruler{grid-column:2;height:24px;position:relative;background:var(--panel-header);border-bottom:1px solid var(--border)}
+.woa-pr__ruler .woa-chordlane{position:absolute;inset:0;background:transparent;border:0}
+.woa-pr__keys{display:flex;flex-direction:column;border-right:1px solid var(--border)}
+.woa-pr__key{height:14px;border-bottom:1px solid var(--border);background:#e9ecf2;position:relative;font-family:var(--font-mono);font-size:8px;line-height:14px;text-align:right;padding-right:3px;color:#5a6372}
+.woa-pr__key.is-blk{background:#1a1d24;color:#8a94a6}
+.woa-pr__grid{position:relative}
+.woa-pr__row{height:14px;border-bottom:1px solid color-mix(in srgb,var(--grid) 70%,transparent)}
+.woa-pr__row.is-blk{background:color-mix(in srgb,var(--lcd-bg) 35%,transparent)}
+.woa-pr__row.in-key{background:color-mix(in srgb,var(--t) 7%,transparent)}
+.woa-pr__row.is-blk.in-key{background:color-mix(in srgb,var(--t) 5%,color-mix(in srgb,var(--lcd-bg) 35%,transparent))}
+.woa-pr__grid::before{content:"";position:absolute;inset:0;pointer-events:none;background-image:repeating-linear-gradient(to right,var(--border-strong) 0 1px,transparent 1px var(--bar,160px)),repeating-linear-gradient(to right,var(--grid) 0 1px,transparent 1px calc(var(--bar,160px)/4))}
+.woa-note{position:absolute;height:12px;margin-top:1px;border-radius:2px;background:var(--t);border:1px solid color-mix(in srgb,var(--t) 60%,#000);opacity:calc(.45 + var(--vel,.8) * .55)}
+.woa-note.is-sel{outline:2px solid var(--text);outline-offset:0}
+.woa-pr__vel{grid-column:2;height:44px;position:relative;border-top:1px solid var(--border);background:var(--panel)}
+.woa-pr__vel i{position:absolute;bottom:4px;width:3px;background:var(--t);border-radius:1px}
+.woa-pr__vel i::after{content:"";position:absolute;top:-3px;left:-2px;width:7px;height:7px;border-radius:50%;background:var(--t)}
+.woa-pr__vlabel{grid-column:1;border-top:1px solid var(--border);background:var(--panel);font-family:var(--font-label);font-size:9px;font-weight:700;letter-spacing:.06em;color:var(--text-dim);display:grid;place-items:center;writing-mode:vertical-rl;transform:rotate(180deg)}
+
+/* ---------- Drum-Raster ---------- */
+.woa-dg{display:grid;grid-template-columns:120px repeat(16,minmax(0,1fr));gap:3px;padding:8px;background:var(--well);border:1px solid var(--border);border-radius:var(--radius-lg)}
+.woa-dg__n{display:flex;align-items:center;gap:6px;height:30px;padding:0 6px;border-radius:var(--radius-sm);background:var(--panel);border-left:4px solid var(--c);font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden}
+.woa-dg__n .woa-ib{margin-left:auto;width:20px;height:20px}
+.woa-dg__s{appearance:none;height:30px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface);cursor:pointer;padding:0}
+.woa-dg__s.q2{background:color-mix(in srgb,var(--surface) 70%,var(--well))}
+.woa-dg__s.on{background:var(--c);border-color:color-mix(in srgb,var(--c) 60%,#000);box-shadow:0 0 8px -2px var(--c)}
+.woa-dg__s.soft{background:color-mix(in srgb,var(--c) 45%,var(--surface));border-color:var(--c)}
+.woa-dg__s.now{outline:2px solid var(--text);outline-offset:-1px}
+.woa-dg__hd{height:16px;font-family:var(--font-mono);font-size:10px;color:var(--text-dim);text-align:center}
+.woa-dg__hd.b{color:var(--text);font-weight:700}
+
+/* ---------- FX-Formen ---------- */
+.woa-fxs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.woa-fxc{appearance:none;display:flex;flex-direction:column;gap:4px;padding:6px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--well);color:var(--text);cursor:pointer;font:inherit;text-align:left}
+.woa-fxc svg.woa-curve{width:100%;height:36px;display:block}
+.woa-fxc b{font-size:12px;font-weight:700}
+.woa-fxc span{font-size:10px;color:var(--text-dim);line-height:12px}
+.woa-fxc[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft)}
+
+/* ---------- Assistent (Schritte) ---------- */
+.woa-wiz{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border-strong);border-radius:var(--radius-xl);box-shadow:var(--shadow-card);overflow:hidden}
+.woa-wiz__steps{display:flex;align-items:center;gap:0;padding:12px 16px;background:var(--panel-header);border-bottom:1px solid var(--border)}
+.woa-wiz__st{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--text-dim);white-space:nowrap}
+.woa-wiz__st i{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;border:1px solid var(--border-strong);font-style:normal;font-family:var(--font-mono);font-size:11px;font-weight:700;background:var(--well)}
+.woa-wiz__st.is-done i{background:var(--surface);color:var(--accent);border-color:var(--accent)}
+.woa-wiz__st.is-now{color:var(--text)}
+.woa-wiz__st.is-now i{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.woa-wiz__ln{flex:1;min-width:14px;height:1px;background:var(--border);margin:0 8px}
+.woa-wiz__body{padding:16px;display:flex;flex-direction:column;gap:14px}
+.woa-wiz__q{font-family:var(--font-label);font-size:16px;font-weight:700}
+.woa-moods{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.woa-mood{appearance:none;display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--well);color:var(--text);text-align:left;cursor:pointer;font:inherit}
+.woa-mood svg.woa-i{width:22px;height:22px;color:var(--text-dim)}
+.woa-mood b{font-size:14px}
+.woa-mood span{font-size:11px;line-height:14px;color:var(--text-dim)}
+.woa-mood[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft)}
+.woa-mood[aria-pressed=true] svg.woa-i{color:var(--accent)}
+.woa-wiz__foot{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--border);background:var(--panel-header)}
+.woa-wiz__sum{flex:1;font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
+
+.woa-key:disabled,.woa-bigkey:disabled{opacity:.35;pointer-events:none;box-shadow:none}
+
+/* =====================================================================
+   Fassung 4: Piano-Roll 2, Dock-Reiter, Arbeitsbereich 1920
+   ===================================================================== */
+/* Dock-Reiter (Studio-Dock) */
+.woa-dock{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;min-height:0}
+.woa-dock__tabs{display:flex;align-items:center;gap:2px;height:36px;padding:0 6px;background:var(--panel-header);border-bottom:1px solid var(--border)}
+.woa-dock__tab{appearance:none;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border:1px solid transparent;border-radius:var(--radius-sm);background:transparent;color:var(--text-dim);font-family:var(--font-label);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.woa-dock__tab svg.woa-i{width:14px;height:14px}
+.woa-dock__tab:hover{color:var(--text)}
+.woa-dock__tab[aria-selected=true]{background:var(--surface);border-color:var(--border-strong);color:var(--text);box-shadow:var(--shadow-key)}
+.woa-dock__tab[aria-selected=true] svg.woa-i{color:var(--accent)}
+
+/* Transportleiste 1920: Gruppen mit gleicher Höhe */
+.woa-tbar{display:flex;align-items:center;gap:12px;height:56px;padding:0 12px;background:var(--panel);border-bottom:1px solid var(--border)}
+.woa-tbar__g{display:flex;align-items:center;gap:6px}
+.woa-tbar__sep{width:1px;height:32px;background:var(--border)}
+.woa-tbar .woa-lcd{height:44px;display:flex;align-items:center;gap:14px;padding:0 12px}
+
+/* Piano-Roll 2 */
+.woa-pr2{--t:var(--track-1);--row:14px;--bar:240px;display:grid;grid-template-columns:72px minmax(0,1fr);grid-template-rows:auto 26px minmax(0,1fr) 64px;background:var(--well);min-height:0;flex:1}
+.woa-pr2__bar{grid-column:1/-1;display:flex;align-items:center;gap:8px;height:44px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--border)}
+.woa-pr2__clip{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 10px 0 8px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--t) 16%,var(--panel));box-shadow:inset 3px 0 0 var(--t);font-weight:700;font-size:13px}
+.woa-pr2__clip span{font-weight:500;font-size:11px;color:var(--text-dim);font-family:var(--font-mono)}
+.woa-pr2__corner{background:var(--panel-header);border-bottom:1px solid var(--border);border-right:1px solid var(--border)}
+.woa-pr2__ruler{position:relative;background:var(--panel-header);border-bottom:1px solid var(--border);overflow:hidden;font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
+.woa-pr2__ruler span{position:absolute;top:5px;padding-left:4px;border-left:1px solid var(--border-strong);height:20px}
+.woa-pr2__ruler .woa-pr2__range{position:absolute;bottom:0;height:4px;background:var(--t);border-radius:2px 2px 0 0}
+.woa-pr2__keys{position:relative;overflow:hidden;border-right:1px solid var(--border-strong);background:#eef0f4}
+.woa-pr2__k{height:var(--row);border-bottom:1px solid #c9ced8;font-family:var(--font-mono);font-size:9px;line-height:var(--row);text-align:right;padding-right:4px;color:#5a6372;position:relative}
+.woa-pr2__k.blk{background:linear-gradient(to right,#1b1e26 0 62%,#eef0f4 62%);border-bottom-color:#1b1e26;color:transparent}
+.woa-pr2__k.c{border-bottom:1px solid #8a94a6;color:#161a22;font-weight:700}
+.woa-pr2__k.hot{background:color-mix(in srgb,var(--t) 55%,#eef0f4)}
+.woa-pr2__k.blk.hot{background:linear-gradient(to right,color-mix(in srgb,var(--t) 70%,#1b1e26) 0 62%,#eef0f4 62%)}
+.woa-pr2__grid{position:relative;overflow:hidden}
+.woa-pr2__r{height:var(--row);border-bottom:1px solid color-mix(in srgb,var(--grid) 55%,transparent)}
+.woa-pr2__r.blk{background:color-mix(in srgb,var(--lcd-bg) 45%,transparent)}
+.woa-pr2__r.scale{background:color-mix(in srgb,var(--t) 6%,transparent)}
+.woa-pr2__r.blk.scale{background:color-mix(in srgb,var(--t) 4%,color-mix(in srgb,var(--lcd-bg) 45%,transparent))}
+.woa-pr2__r.c{border-bottom-color:var(--border-strong)}
+.woa-pr2__grid::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;
+  background-image:repeating-linear-gradient(to right,var(--border-strong) 0 1px,transparent 1px var(--bar)),repeating-linear-gradient(to right,var(--grid) 0 1px,transparent 1px calc(var(--bar)/4)),repeating-linear-gradient(to right,color-mix(in srgb,var(--grid) 45%,transparent) 0 1px,transparent 1px calc(var(--bar)/16))}
+.woa-pr2__out{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--lcd-bg) 55%,transparent);z-index:2;pointer-events:none}
+.woa-pr2__n{position:absolute;z-index:3;height:calc(var(--row) - 2px);margin-top:1px;border-radius:3px;background:color-mix(in srgb,var(--t) calc(45% + var(--v,80) * .55%),var(--lcd-bg));border:1px solid color-mix(in srgb,var(--t) 55%,#000);
+  font-family:var(--font-mono);font-size:9px;line-height:calc(var(--row) - 4px);padding-left:4px;color:color-mix(in srgb,var(--lcd-bg) 80%,var(--t));overflow:hidden;white-space:nowrap}
+.woa-pr2__n::after{content:"";position:absolute;right:0;top:2px;bottom:2px;width:3px;border-left:1px solid color-mix(in srgb,var(--lcd-bg) 35%,transparent)}
+.woa-pr2__n.sel{outline:2px solid var(--text);outline-offset:0;z-index:4}
+.woa-pr2__n.ghost{background:transparent;border:1px dashed color-mix(in srgb,var(--text-dim) 60%,transparent);color:transparent}
+.woa-pr2__vl{display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:2px;padding-right:8px;background:var(--panel);border-top:1px solid var(--border);border-right:1px solid var(--border-strong);font-family:var(--font-label);font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--text-dim)}
+.woa-pr2__vel{position:relative;background:var(--panel);border-top:1px solid var(--border);overflow:hidden}
+.woa-pr2__vel::before{content:"";position:absolute;left:0;right:0;top:50%;border-top:1px dashed var(--border)}
+.woa-pr2__vel i{position:absolute;bottom:6px;width:3px;margin-left:1px;background:color-mix(in srgb,var(--t) 70%,var(--panel));border-radius:1px}
+.woa-pr2__vel i::before{content:"";position:absolute;top:-4px;left:-3px;width:9px;height:9px;border-radius:50%;background:var(--t);box-shadow:0 0 0 2px var(--panel)}
+.woa-pr2__vel i.sel{background:var(--text)}
+.woa-pr2__vel i.sel::before{background:var(--text)}
+.woa-pr2 .woa-playhead{z-index:5}
+
+/* Playlist 1920 */
+.woa-pl{display:flex;flex-direction:column;min-height:0}
+.woa-pl__hd,.woa-pl__r{display:grid;grid-template-columns:18px 30px 32px minmax(0,1fr) 140px 64px 84px;align-items:center;gap:10px;padding:0 10px}
+.woa-pl__hd{height:28px;font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);border-bottom:1px solid var(--border)}
+.woa-pl__r{height:44px;border-bottom:1px solid var(--border);position:relative}
+.woa-pl__r:nth-child(odd){background:color-mix(in srgb,var(--panel-header) 45%,var(--panel))}
+.woa-pl__r .woa-slot__grip{width:18px;visibility:hidden}
+.woa-pl__r:hover .woa-slot__grip{visibility:visible}
+.woa-pl__no{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);text-align:right}
+.woa-pl__cv{width:32px;height:32px;border-radius:var(--radius-sm);background:var(--surface);border:1px solid var(--border);display:grid;place-items:center;color:var(--text-dim)}
+.woa-pl__cv svg.woa-i{width:14px;height:14px}
+.woa-pl__t{min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.woa-pl__l{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);text-align:right;white-space:nowrap}
+.woa-pl__d{font-family:var(--font-mono);font-size:13px;font-weight:500;text-align:right}
+.woa-pl__a{display:flex;justify-content:flex-end;gap:2px;visibility:hidden}
+.woa-pl__r:hover .woa-pl__a,.woa-pl__r.is-hover .woa-pl__a{visibility:visible}
+.woa-pl__r.is-hover .woa-slot__grip{visibility:visible}
+.woa-pl__r.is-air{box-shadow:inset 4px 0 0 var(--on-air);background:color-mix(in srgb,var(--on-air) 9%,var(--panel))}
+.woa-pl__r.is-cue{box-shadow:inset 4px 0 0 var(--cue)}
+.woa-pl__r.is-sel{outline:1px solid var(--accent);outline-offset:-1px}
+.woa-pl__r.is-done .woa-pl__t,.woa-pl__r.is-done .woa-pl__d{color:var(--text-dim)}
+.woa-pl__tag{display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-family:var(--font-label);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-2)}
+.woa-pl__tag svg.woa-i{width:12px;height:12px}
+
+/* Kompakte Pads (Cart-Wall 1920) */
+.woa-cartwall--c .woa-cart{min-height:60px;padding:6px 10px 10px;flex-direction:row;align-items:center;gap:10px}
+.woa-cartwall--c .woa-cart__no{font-family:var(--font-label);font-size:22px;font-weight:800;color:var(--text-dim);width:24px}
+.woa-cartwall--c .woa-cart__title{margin:0;flex:1;font-size:14px;-webkit-line-clamp:2}
+.woa-cartwall--c .woa-cart__len{font-size:12px;align-self:flex-end}
+.woa-cartwall--c .woa-cart.is-empty .woa-cart__no{color:color-mix(in srgb,var(--text-dim) 55%,transparent)}
+
+/* Einstellungszeilen (Processing) */
+.woa-set{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 12px}
+.woa-set>span{font-size:13px}
+.woa-set>span small{display:block;font-size:11px;color:var(--text-dim)}
+.woa-tog{appearance:none;width:36px;height:20px;border-radius:10px;border:1px solid var(--border-strong);background:var(--well);position:relative;cursor:pointer;flex:none}
+.woa-tog::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:var(--text-dim);transition:left .1s}
+.woa-tog[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent)}
+.woa-tog[aria-pressed=true]::after{left:18px;background:var(--accent)}
+
+.woa-lane--c .woa-clip{top:2px;bottom:2px}
+.woa-lane--c .woa-clip>i,.woa-lane--c .woa-clip canvas{display:none}
+.woa-lane--c .woa-clip__h{height:100%;line-height:30px}
+/* Piano-Roll 2: Flächen themenneutral (hell und dunkel) */
+.woa-pr2__r.blk{background:color-mix(in srgb,var(--text) 6%,transparent)}
+.woa-pr2__r.scale{background:color-mix(in srgb,var(--t) 8%,transparent)}
+.woa-pr2__r.blk.scale{background:color-mix(in srgb,var(--t) 8%,color-mix(in srgb,var(--text) 6%,transparent))}
+.woa-pr2__out{background:color-mix(in srgb,var(--text) 9%,transparent);background-image:repeating-linear-gradient(135deg,transparent 0 6px,color-mix(in srgb,var(--text) 5%,transparent) 6px 7px)}
+.woa-pr2__n{background:color-mix(in srgb,var(--t) calc(55% + var(--v,80) * .45%),var(--well));color:color-mix(in srgb,var(--t) 22%,#000)}

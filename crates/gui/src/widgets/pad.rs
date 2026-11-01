@@ -1,11 +1,11 @@
-//! Cart-Pad der Cart-Wall: Tastennummer, Titel, Status-LED und Spurfarben-Balken. Das
-//! laufende Pad leuchtet in der Modusfarbe und blinkt als einziges Pad. Belegte Pads sind
-//! freundlich grün, leere grau; die Nummer steht groß vorn, der Titel daneben auf höchstens
-//! zwei Zeilen (#97).
+//! Cart-Pad der Cart-Wall (Design-Runde 2, CartPad-README): neutral auf `surface`, die Farbe
+//! steckt nur im Balken unten und in der LED. Das laufende Pad hat `accent-soft` als Fläche,
+//! `accent` als Rand und füllt den Balken mit seinem Fortschritt; leere Pads sind gestrichelt.
+//! Die Nummer steht groß vorn, der Titel daneben auf höchstens zwei Zeilen (#97).
 
 use eframe::egui::{self, Color32, CornerRadius, Rect, Sense, Stroke, StrokeKind, Vec2};
 
-use super::{blink_on, contrast_text, with_alpha};
+use super::{blink_on, with_alpha};
 use crate::theme;
 
 /// Welcher Zustand ein Pad hat, für Farbe und Licht.
@@ -26,14 +26,24 @@ pub fn pad_state(filled: bool, playing: bool) -> PadState {
     }
 }
 
-/// Fläche je Zustand: laufend Modusfarbe, belegt Grün (`ok`) auf der Fläche, leer grau.
+/// Fläche je Zustand (Design-Runde 2, CartPad-README): belegt neutral `surface` (bzw. Hover),
+/// laufend `accent-soft`, leer ohne Fläche (nur gestrichelter Rand).
 pub fn pad_fill(state: PadState, base: Color32) -> Color32 {
     match state {
-        PadState::Playing => theme::accent(),
-        PadState::Ready => theme::mix(theme::ok(), base, 0.55),
-        PadState::Empty => theme::well(),
+        PadState::Playing => theme::accent_soft(),
+        PadState::Ready => base,
+        PadState::Empty => Color32::TRANSPARENT,
     }
 }
+
+/// Farbbalken unten: Spurfarbe zu 35 % auf `surface`; beim Laufen füllt die volle Farbe den
+/// Fortschritt darüber.
+pub fn bar_color(color: Color32) -> Color32 {
+    theme::mix(color, theme::surface(), 0.65)
+}
+
+/// Höhe des Farbbalkens.
+pub const BAR_H: f32 = 5.0;
 
 /// Höhe der großen Nummer: fast so hoch wie das Pad.
 pub fn number_size(pad_height: f32) -> f32 {
@@ -91,8 +101,7 @@ impl CartPad<'_> {
     pub fn ui(self, ui: &mut egui::Ui, size: Vec2) -> egui::Response {
         let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
         let state = pad_state(self.title.is_some(), self.playing);
-        let r = CornerRadius::same(theme::RADIUS_LG);
-        let pressed = resp.is_pointer_button_down_on();
+        let r = CornerRadius::same(theme::RADIUS_MD);
         let p = ui.painter();
         let accent = theme::accent();
         let base = if resp.hovered() {
@@ -100,65 +109,45 @@ impl CartPad<'_> {
         } else {
             theme::surface()
         };
-        let fill = pad_fill(state, base);
-        if state == PadState::Playing {
-            for (grow, a) in [(4.0, 24u8), (2.0, 44)] {
-                p.rect_filled(
-                    rect.expand(grow),
-                    CornerRadius::same(theme::RADIUS_LG + 3),
-                    with_alpha(accent, a),
-                );
+        p.rect_filled(rect, r, pad_fill(state, base));
+        match state {
+            PadState::Empty => {
+                let s = Stroke::new(1.0, theme::border_strong());
+                let q = rect.shrink(0.5);
+                let pts = [
+                    q.left_top(),
+                    q.right_top(),
+                    q.right_bottom(),
+                    q.left_bottom(),
+                    q.left_top(),
+                ];
+                p.extend(egui::Shape::dashed_line(&pts, s, 4.0, 3.0));
+            }
+            _ => {
+                let edge = if state == PadState::Playing {
+                    accent
+                } else {
+                    theme::border_strong()
+                };
+                p.rect_stroke(rect, r, Stroke::new(1.0, edge), StrokeKind::Inside);
             }
         }
-        p.rect_filled(rect, r, fill);
-        if state != PadState::Empty {
-            let inner = rect.shrink(1.0);
-            let (top, bottom) = if pressed || state == PadState::Playing {
-                (
-                    with_alpha(Color32::BLACK, 100),
-                    with_alpha(Color32::WHITE, 18),
-                )
-            } else {
-                (
-                    with_alpha(Color32::WHITE, 40),
-                    with_alpha(Color32::BLACK, 110),
-                )
-            };
-            p.hline(inner.x_range(), inner.top() + 3.0, Stroke::new(1.0, top));
-            p.hline(
-                inner.x_range(),
-                inner.bottom() - 5.0,
-                Stroke::new(1.0, bottom),
-            );
-        }
-        let edge = match state {
-            PadState::Playing => accent,
-            PadState::Ready => theme::mix(theme::ok(), theme::border_strong(), 0.45),
-            PadState::Empty => theme::border(),
+        let ink = if state == PadState::Empty {
+            theme::text_dim()
+        } else {
+            theme::text()
         };
-        p.rect_stroke(
-            rect,
-            r,
-            Stroke::new(if state == PadState::Playing { 2.0 } else { 1.0 }, edge),
-            StrokeKind::Inside,
-        );
-        let ink = match state {
-            PadState::Playing => contrast_text(accent),
-            PadState::Ready => theme::text(),
-            PadState::Empty => theme::text_dim(),
-        };
-        // Große Nummer vorn, Titel daneben (zwei Zeilen), Tastenschild rechts oben.
+        // Große Nummer vorn in `text-dim`, Titel in Versalien daneben, Länge rechts.
         let number = p.layout_no_wrap(
             self.number.to_string(),
             theme::label_font(number_size(rect.height())),
-            ink,
+            theme::text_dim(),
         );
-        let body_mid = rect.center().y - 2.0;
+        let body_mid = rect.center().y - BAR_H / 2.0;
         let num_pos = egui::pos2(rect.left() + 8.0, body_mid - number.size().y / 2.0);
         let text_left = num_pos.x + number.size().x + 8.0;
         p.galley(num_pos, number, ink);
-        // Countdown rechts, groß; der Titel rückt dafür nur zusammen (bleibt zweizeilig).
-        let mut text_right = rect.right() - 8.0;
+        let mut text_right = rect.right() - 18.0;
         let count = self
             .remaining
             .filter(|_| state == PadState::Playing)
@@ -167,22 +156,23 @@ impl CartPad<'_> {
             .seconds
             .filter(|_| state == PadState::Ready)
             .map(duration);
-        if let Some((t, size)) = count
+        if let Some((t, size, c)) = count
             .as_ref()
-            .map(|t| (t, 18.0))
-            .or(total.as_ref().map(|t| (t, 12.0)))
+            .map(|t| (t, 15.0, accent))
+            .or(total.as_ref().map(|t| (t, 12.0, theme::text_dim())))
         {
-            let g = p.layout_no_wrap(t.clone(), theme::label_font(size), ink);
+            let g = p.layout_no_wrap(t.clone(), egui::FontId::monospace(size), c);
             let at = egui::pos2(
                 rect.right() - 8.0 - g.size().x,
-                rect.bottom() - 8.0 - g.size().y,
+                rect.bottom() - BAR_H - 5.0 - g.size().y,
             );
             text_right = at.x - 6.0;
-            p.galley(at, g, ink);
+            p.galley(at, g, c);
         }
         let shown = self.title.unwrap_or("leer");
-        let title = p.layout_job(title_job(shown, text_right - text_left, ink));
-        let title_pos = egui::pos2(text_left, body_mid - title.size().y / 2.0 + 4.0);
+        let upper = shown.to_uppercase();
+        let title = p.layout_job(title_job(&upper, text_right - text_left, ink));
+        let title_pos = egui::pos2(text_left, body_mid - title.size().y / 2.0);
         p.with_clip_rect(rect.shrink(2.0))
             .galley(title_pos, title, ink);
         if self.capturing || self.key.is_some() {
@@ -208,7 +198,7 @@ impl CartPad<'_> {
             p.rect_filled(tag, CornerRadius::same(theme::RADIUS_XS + 2), theme::well());
             p.galley(tag.min + egui::vec2(4.0, 1.0), galley, theme::text());
         }
-        // Status-LED rechts oben: laufend blinkt, belegt leuchtet in der Spurfarbe.
+        // Status-LED rechts oben: laufend blinkt sie in `accent`, belegt leuchtet die Spurfarbe.
         let motion = super::motion(ui.ctx());
         let blink = if state == PadState::Playing && motion {
             let t = ui.input(|i| i.time);
@@ -219,27 +209,34 @@ impl CartPad<'_> {
             true
         };
         let led = match state {
-            PadState::Playing if blink => theme::on_accent(),
-            PadState::Playing => with_alpha(theme::on_accent(), 70),
+            PadState::Playing if blink => accent,
+            PadState::Playing => with_alpha(accent, 70),
             PadState::Ready => self.color,
             PadState::Empty => theme::led_off(),
         };
         p.circle_filled(egui::pos2(rect.right() - 10.0, rect.top() + 10.0), 3.5, led);
-        // Spurfarben-Balken unten.
+        // Farbbalken unten: Spurfarbe 35 %, laufend der Fortschritt in voller Farbe.
         if state != PadState::Empty {
             let bar = Rect::from_min_max(
-                egui::pos2(rect.left() + 6.0, rect.bottom() - 6.0),
-                egui::pos2(rect.right() - 6.0, rect.bottom() - 3.0),
+                egui::pos2(rect.left() + 1.0, rect.bottom() - 1.0 - BAR_H),
+                egui::pos2(rect.right() - 1.0, rect.bottom() - 1.0),
             );
-            p.rect_filled(
-                bar,
-                CornerRadius::same(theme::RADIUS_XS),
-                if state == PadState::Playing {
-                    theme::on_accent()
-                } else {
-                    self.color
-                },
-            );
+            let br = CornerRadius {
+                nw: 0,
+                ne: 0,
+                sw: theme::RADIUS_MD - 1,
+                se: theme::RADIUS_MD - 1,
+            };
+            p.rect_filled(bar, br, bar_color(self.color));
+            if state == PadState::Playing
+                && let (Some(rem), Some(tot)) = (self.remaining, self.seconds)
+                && tot > 0.0
+            {
+                let done = (1.0 - rem / tot).clamp(0.0, 1.0) as f32;
+                let mut fill = bar;
+                fill.set_right(bar.left() + bar.width() * done);
+                p.rect_filled(fill, br, self.color);
+            }
         }
         let label = match (&count, &total) {
             (Some(t), _) | (None, Some(t)) => format!("Cart {}: {} {t}", self.number, shown),
@@ -254,18 +251,16 @@ impl CartPad<'_> {
 mod tests {
     use super::*;
 
-    /// #97: belegt grün, leer grau, laufend Modusfarbe; Nummer fast padhoch, Titel auf
-    /// höchstens zwei Zeilen.
+    /// Design-Runde 2: belegt neutral (`surface`), laufend `accent-soft`, leer ohne Fläche; der
+    /// Farbbalken unten trägt die Spurfarbe zu 35 %. Nummer fast padhoch, Titel höchstens zwei Zeilen.
     #[test]
-    fn filled_pads_are_green_empty_grey_and_titles_two_lines() {
+    fn pads_are_neutral_with_colour_bar_and_titles_two_lines() {
         let base = theme::surface();
-        let ready = pad_fill(PadState::Ready, base);
-        assert!(
-            ready.g() > ready.r() + 20 && ready.g() > ready.b() + 10,
-            "{ready:?}"
-        );
-        assert_eq!(pad_fill(PadState::Empty, base), theme::well());
-        assert_eq!(pad_fill(PadState::Playing, base), theme::accent());
+        assert_eq!(pad_fill(PadState::Ready, base), base);
+        assert_eq!(pad_fill(PadState::Empty, base), Color32::TRANSPARENT);
+        assert_eq!(pad_fill(PadState::Playing, base), theme::accent_soft());
+        let red = Color32::from_rgb(255, 0, 0);
+        assert_eq!(bar_color(red), theme::mix(red, theme::surface(), 0.65));
         assert!(number_size(68.0) >= 40.0);
 
         let ctx = egui::Context::default();
