@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.34.90 — 2026-11-01
+## 0.34.92 — 2026-11-01
 
 - **J9 MCP-Ausbau (#277, Paket aus #262):** Neues MCP-Werkzeug `list_instruments`: GeneralUser GS und die Zusatzbänke mit Zustand, Grösse und Lizenz, dazu die Klang-Presets (derselbe Katalog wie `track_sound`). Mit `clap: true` sucht es die CLAP-Instrumente und -Effekte des Rechners, nur geschützt je Datei im eigenen Prozess (`woa-plugin-host`) mit der Sperrliste der App, nie im MCP-Prozess. Neues Werkzeug `list_samples`: sucht die Bibliothek nach Art (`sample`, `jingle`, `music`), Tag und Name, oder mit `folder` einen Ordner (z. B. Jingle-FX, bis 4 Ebenen) nach Audiodateien; nur lesend (`Library::open_read_only`, ohne WAL-Umstellung und Migration, fremde Schemaversion abgelehnt), eine fehlende Bibliothek wird nicht angelegt, `library` nur im WOA-Datenordner oder Projektordner. `insert_effect` nimmt statt `kind` auch `clap_id` und setzt einen CLAP-Effekt auf eine Spur (nicht auf Busse, ein Undo-Schritt); `set_insert_bypass` und `remove_insert` wirken auch auf ihn. Ein fehlendes Plugin reicht das Signal durch. Tests: `crates/agent/tests/j9_tools.rs`.
+
+## 0.34.91 — 2026-11-01
+
+- **MCP-HTTP-Server nur auf Wunsch (#243):** Der zweite Server `woa-headless mcp … --http` (Port 8765) startet nicht mehr beim Start der App, auch wenn er in einer früheren Sitzung eingeschaltet war. Er startet nur, wenn man unter KI & MCP den Haken „HTTP-Server im Hintergrund“ setzt und speichert, und endet mit WOA. Port, Reichweite und Projektordner bleiben gespeichert. Der Live-Server der App (Stdio-Weiterleitung) ist unverändert. Test `app_start_never_starts_http_server`.
 
 ## 0.34.89 — 2026-11-01
 

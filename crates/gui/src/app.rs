@@ -767,12 +767,12 @@ impl WoaApp {
         self.save_config();
     }
 
-    /// Fenster „KI & MCP“. Beim ersten Bild startet auch der MCP-Server im Hintergrund,
-    /// falls er eingeschaltet ist.
+    /// Fenster „KI & MCP“. Der HTTP-Server im Hintergrund startet beim ersten Bild nicht
+    /// (#243), nur nach „Speichern“ mit Haken.
     fn ki_window(&mut self, ctx: &egui::Context) {
         if !self.ki_started {
             self.ki_started = true;
-            self.ki_ui.apply(&self.config.ki, &self.data_dir);
+            self.ki_ui.app_started(&mut self.config.ki);
         }
         let project = self
             .state
