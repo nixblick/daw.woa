@@ -256,6 +256,13 @@ pub enum Command {
         /// New parameter values.
         params: Vec<PluginParam>,
     },
+    /// Sets the GM sound of a MIDI track (Paket J1); `None`: built-in synth.
+    SetTrackSound {
+        /// Target MIDI track.
+        track: TrackId,
+        /// New sound.
+        sound: Option<crate::sound::TrackSound>,
+    },
     /// Bypasses a plugin or switches it back on.
     SetPluginBypass {
         /// Track holding the plugin.
@@ -364,6 +371,7 @@ impl Command {
             Command::SetPluginParam { .. } => "Set plugin parameter",
             Command::SetPluginState { .. } => "Set plugin state",
             Command::SetPluginBypass { .. } => "Bypass plugin",
+            Command::SetTrackSound { .. } => "Set sound",
             Command::AddInsert { .. } => "Add effect",
             Command::RemoveInsert { .. } => "Remove effect",
             Command::SetInsertParam { .. } => "Set effect parameter",
@@ -915,6 +923,22 @@ impl Command {
                     state: old_state,
                     params: old_params,
                 })
+            }
+            Command::SetTrackSound { track, sound } => {
+                if let Some(snd) = sound
+                    && snd.program > 127
+                {
+                    return Err(ModelError::InvalidValue {
+                        field: "program",
+                        value: f64::from(snd.program),
+                    });
+                }
+                let t = find(project, track)?;
+                if t.kind != TrackKind::Midi {
+                    return Err(ModelError::NotMidiTrack(track));
+                }
+                let old = std::mem::replace(&mut t.sound, sound);
+                Ok(Command::SetTrackSound { track, sound: old })
             }
             Command::SetPluginBypass {
                 track,

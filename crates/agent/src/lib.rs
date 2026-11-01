@@ -22,7 +22,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use woa_model::{
     AutoMode, AutoPoint, AutoTarget, Clip, ClipId, Command, EffectKind, FadeCurve, Insert,
-    InsertId, ModelError, Send as SendRoute, Session, TrackId, TrackKind, VOICE_CHAIN, store,
+    InsertId, ModelError, Send as SendRoute, Session, TrackId, TrackKind, TrackSound, VOICE_CHAIN,
+    store,
 };
 
 pub mod audio;
@@ -529,6 +530,30 @@ pub struct GenerateDrumsParams {
     /// Hi-hat pattern, same notation.
     #[serde(default)]
     pub hihat: String,
+    /// `true`: write GM drum notes (36 kick, 38 snare, 42 hi-hat) as a MIDI clip on a
+    /// MIDI track and give the track the GM standard kit (played by the SoundFont if one
+    /// is installed). Default `false`: render synthetic drums to audio.
+    #[serde(default)]
+    pub midi: bool,
+}
+
+/// Parameters of `track_sound`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TrackSoundParams {
+    /// MIDI track id.
+    pub track: u64,
+    /// Set this preset by name (see the returned `presets`, e.g. "E-Bass", "Standard-Kit").
+    #[serde(default)]
+    pub preset: Option<String>,
+    /// Set this GM program 0..=127 (with `drums: true` the kit number, 0 = standard).
+    #[serde(default)]
+    pub program: Option<u8>,
+    /// With `program`: drum kit on MIDI channel 10.
+    #[serde(default)]
+    pub drums: bool,
+    /// `true`: back to the built-in synth.
+    #[serde(default)]
+    pub synth: bool,
 }
 
 /// Parameters of `import_audio`.
@@ -913,6 +938,18 @@ fn lock_err() -> McpError {
     McpError::internal_error("Sitzung nicht verfügbar (vergiftete Sperre)", None)
 }
 
+/// Klang einer MIDI-Spur als JSON (`null`: eingebauter Synth).
+fn sound_json(sound: Option<TrackSound>) -> serde_json::Value {
+    match sound {
+        None => serde_json::Value::Null,
+        Some(x) => serde_json::json!({
+            "program": x.program,
+            "drums": x.drums,
+            "preset": woa_model::preset_name(x),
+        }),
+    }
+}
+
 fn fail(e: impl std::fmt::Display) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(e.to_string())])
 }
@@ -1137,6 +1174,55 @@ impl WoaAgent {
                 "midi": true,
                 "notes": notes,
                 "length_beats": audio::round(p.length_beats, 4),
+            })),
+            Err(e) => fail(e),
+        }
+    }
+
+    fn add_drum_midi(s: &mut Session, p: GenerateDrumsParams) -> CallToolResult {
+        let track = TrackId(p.track);
+        let current = match s.project().track(track) {
+            None => return fail(ModelError::TrackNotFound(track)),
+            Some(t) if t.kind != TrackKind::Midi => {
+                return fail(format!("Spur {} ist keine MIDI-Spur", p.track));
+            }
+            Some(t) => t.sound,
+        };
+        if !(p.start_beats.is_finite() && p.start_beats >= 0.0) {
+            return fail(format!("start_beats muss >= 0 sein, war {}", p.start_beats));
+        }
+        let (midi, length) = match audio::drums_midi(&p.kick, &p.snare, &p.hihat) {
+            Ok(m) => m,
+            Err(e) => return fail(e),
+        };
+        let notes = midi.notes.len();
+        let id = s.new_clip_id();
+        let name = p.name.unwrap_or_else(|| "Drums".into());
+        let clip = Clip::new_midi(id, name, p.start_beats, length, midi);
+        let kit = current.filter(|k| k.drums).unwrap_or(TrackSound {
+            program: 0,
+            drums: true,
+        });
+        let r = s.group(AGENT_LABEL, |s| {
+            if current != Some(kit) {
+                s.apply(Command::SetTrackSound {
+                    track,
+                    sound: Some(kit),
+                })?;
+            }
+            s.apply(Command::AddClip {
+                track,
+                clip,
+                index: None,
+            })
+        });
+        match r {
+            Ok(()) => ok_json(serde_json::json!({
+                "clip": id.0,
+                "midi": true,
+                "notes": notes,
+                "length_beats": audio::round(length, 4),
+                "sound": sound_json(Some(kit)),
             })),
             Err(e) => fail(e),
         }
@@ -1541,13 +1627,74 @@ impl WoaAgent {
     }
 
     #[tool(
-        description = "Render a drum pattern (synthetic kick, snare, hi-hat) into a new audio clip. One character per 16th note: x = hit, o = soft hit, . = rest; 16 characters = one 4/4 bar. Clip length = longest pattern. Returns the clip id."
+        description = "Read or set the sound of a MIDI track. Without preset/program/synth it only reads. A sound is a General MIDI program from the SoundFont (GeneralUser GS) or, with drums, a GM drum kit on channel 10; without a sound, or if no SoundFont is installed (soundfont_available: false), the track plays the built-in synth. Returns the current sound and the presets (four per role: lead, bass, pad, kit). One undo step."
+    )]
+    async fn track_sound(
+        &self,
+        Parameters(p): Parameters<TrackSoundParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut s = self.lock()?;
+        let track = TrackId(p.track);
+        let wanted = if p.synth {
+            Some(None)
+        } else if let Some(name) = &p.preset {
+            match woa_model::SOUND_PRESETS
+                .iter()
+                .find(|x| x.name.eq_ignore_ascii_case(name))
+            {
+                Some(x) => Some(Some(x.sound)),
+                None => return Ok(fail(format!("Preset {name:?} gibt es nicht"))),
+            }
+        } else {
+            p.program.map(|program| {
+                Some(TrackSound {
+                    program,
+                    drums: p.drums,
+                })
+            })
+        };
+        if let Some(sound) = wanted
+            && let Err(e) = s.group(AGENT_LABEL, |s| {
+                s.apply(Command::SetTrackSound { track, sound })
+            })
+        {
+            return Ok(fail(e));
+        }
+        let t = match s.project().track(track) {
+            Some(t) if t.kind == TrackKind::Midi => t,
+            Some(_) => return Ok(fail(ModelError::NotMidiTrack(track))),
+            None => return Ok(fail(ModelError::TrackNotFound(track))),
+        };
+        let presets: Vec<_> = woa_model::SOUND_PRESETS
+            .iter()
+            .map(|x| {
+                serde_json::json!({
+                    "role": x.role.name(),
+                    "name": x.name,
+                    "program": x.sound.program,
+                    "drums": x.sound.drums,
+                })
+            })
+            .collect();
+        Ok(ok_json(serde_json::json!({
+            "track": t.id.0,
+            "sound": sound_json(t.sound),
+            "soundfont_available": woa_engine::soundfont::default_soundfont().is_some(),
+            "presets": presets,
+        })))
+    }
+
+    #[tool(
+        description = "Render a drum pattern (synthetic kick, snare, hi-hat) into a new audio clip. One character per 16th note: x = hit, o = soft hit, . = rest; 16 characters = one 4/4 bar. Clip length = longest pattern. With midi: true on a MIDI track the pattern becomes an editable MIDI clip with GM drum notes and the track gets the GM standard kit (see track_sound). Returns the clip id."
     )]
     async fn generate_drums(
         &self,
         Parameters(p): Parameters<GenerateDrumsParams>,
     ) -> Result<CallToolResult, McpError> {
         let mut s = self.lock()?;
+        if p.midi {
+            return Ok(Self::add_drum_midi(&mut s, p));
+        }
         if let Err(e) = Self::check_target(&s, p.track, p.start_beats) {
             return Ok(fail(e));
         }
