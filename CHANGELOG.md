@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.35.9 — 2026-11-01
+## 0.35.10 — 2026-11-01
 
 - **Ganze Zeile anklickbar (#302):** In der Sende-Playlist und in den Decks ist die ganze Zeile eine Klickfläche, man muss nicht mehr den Titel treffen. Playlist: Klick wählt aus (Rahmen in Akzentfarbe), Doppelklick setzt „als Nächstes“, Rechtsklick öffnet überall das Titelmenü (Umbenennen, Titelinfos …), Ziehen wie bisher von jeder Stelle. Decks: Rechtsklick irgendwo auf der Deck-Zeile öffnet das Menü (Datei laden, Schneiden, Leeren). Nur Knöpfe und die Nummer (eintippen) behalten ihren eigenen Klick. Die Cart-Pads waren schon ganz klickbar. Technisch: neue Hilfsfunktion `row_area` (Klickfläche unter dem Inhalt per `UiBuilder::sense`), Beschriftungen in der Zeile sind nicht mehr markierbar, der lange Hover-Text wird erst beim Zeigen gebaut. Trägheit gemessen: 300 Zeilen etwa 15 ms je Bild mit Klickfläche gegen 13 ms ohne (Debug-Bau, Notebook), unter der `ui.frame_slow`-Schwelle von 50 ms; der Test vergleicht relativ, weil die CI langsamer ist; Wellenformen werden in den Zeilen nicht gezeichnet. Tests: `whole_row_selects_and_opens_the_menu_anywhere`, `many_rows_stay_fast` in `crates/gui/src/radio.rs`.
+
+## 0.35.9 — 2026-11-01
+
+- **Cart-Wall wieder sichtbar, Decks kompakter (#303):** Seit den Ausgangsreglern (#96, 0.35.x) stand in der Deck-Karte ein `separator()` zwischen Pegel- und Ausgangsreglern. In der rollenden rechten Spalte nahm dieser senkrechte Strich die ganze Höhe ein; die Deck-Karte wurde so hoch wie die Spalte und schob Wunschtitel und Cart-Wall aus dem Bild. Dazu waren Decks plus Regler breiter als die Spalte und wurden rechts abgeschnitten. Neu im Radio-Modus rechts: oben die Decks, je Deck eine Zeile (Name, Uhr, Start, Cue, Vorhören, Playlist, Titel), die Pegelregler daneben oder bei schmaler Spalte darunter (niedriger, 76 statt 150 px). Als Zweites die Cart-Wall mit den Satz-Reitern, die Reiter brechen um statt die Spalte zu verbreitern; der Bedienhinweis steht als Tooltip am Titel „CART-WALL“, die laufende Tastenwahl weiter sichtbar. Danach Wunschtitel, Rack und Gäste wie bisher. Alle 16 Pads sind bei 1366×768 und 1920×1080 ganz sichtbar. Test im egui-Harness (`all_cart_pads_fit_the_window`, vorher rot: Cart 1 lag unterhalb des Fensters). Fotomodus: `WOA_WINDOW=1366x768` setzt die Fenstergröße beim Start (zusammen mit `WOA_SCREENSHOT`).
 
 ## 0.35.8 — 2026-11-01
 

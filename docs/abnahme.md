@@ -4,6 +4,13 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Radio rechts: Decks kompakt, Cart-Wall als Zweites (0.35.9, offen)
+
+1. Windows, Radio-Modus, Fenster 1366×768 und maximiert bei 1920×1080: rechts oben die drei Decks in je einer Zeile mit den Pegelreglern, darunter die Cart-Wall mit den Reitern „1“ bis „5“ und allen 16 Pads, nichts rechts abgeschnitten.
+2. Reiter wechseln, Pad belegen und abspielen, Rechtsklick „Taste ändern …“: der Hinweis zur Tastenwahl erscheint neben den Reitern.
+3. Pegel- und Ausgangsregler (Notebook, Stream, M) bedienen wie bisher.
+
+Selbst geprüft von Claude: Layout-Test im egui-Harness (16 Pads im Fenster bei beiden Größen, mit dem alten Trennstrich rot), Screenshots per `WOA_SCREENSHOT` und `WOA_WINDOW` vorher und nachher unter Linux. Nicht unter Windows gesehen, kein Ton abgespielt.
 ## Pult-Modus (0.35.8, offen)
 
 1. Pult per USB anstecken. Einstellungen → Ausgänge: Playlist (und Carts, Decks) auf das Pult-Gerät, unten „Sendung kommt vom Pult“ an, Eingang vom Pult wählen (Gerät, Kanal 1/2), Übernehmen. Ohne laufende Sendung öffnet die Ausgabe neu.
@@ -1261,7 +1268,7 @@ Mit drei kurzen Titeln und 5 s Crossfade, Lautstärke nach Wunsch (der Ablauf ge
 
 Selbst geprüft von Claude: Tests ohne Ton für Constant Power, die Glättung des Faders, Auto an und aus, „die Hand gewinnt“, „über die Mitte ist kein Weiter“, das Ende lädt vor, ohne zu starten, Ein- und Austritt ohne Lücke, den Wunschordner (einmal je Datei, entfernt bleibt weg, Datei bleibt) und Mixer-Blöcke unter `assert_no_alloc`. Clippy und Tests von `woa-radio`, `woa-remote` und `woa-gui` grün. Nicht am Gerät gehört.
 
-## Ganze Zeile anklickbar (0.35.9, offen)
+## Ganze Zeile anklickbar (0.35.10, offen)
 
 1. Radio-Modus, ein paar Titel in der Playlist. Rechts neben der Dauer (leere Fläche) klicken: Die Zeile bekommt einen Rahmen in Akzentfarbe.
 2. Irgendwo auf der Zeile rechtsklicken, auch auf dem Cover oder dem Griff: Das Titelmenü (Umbenennen, Titelinfos …) geht auf.
