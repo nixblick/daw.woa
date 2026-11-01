@@ -37,6 +37,9 @@ pub struct PlaylistEntry {
     /// ihren Nachbarn über die Musik gelegt wird. `path` ist dann die Sprachdatei.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice: Option<crate::voicetrack::VoiceTrack>,
+    /// Eigener Anzeigename (#292); `None` = Dateiname.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// Laufzeit-Kennung (nicht gespeichert), vom Controller vergeben.
     #[serde(skip)]
     pub uid: u32,
@@ -52,13 +55,14 @@ impl PlaylistEntry {
             stamp: None,
             cues: Cues::default(),
             voice: None,
+            name: None,
             uid: 0,
         }
     }
 
-    /// Anzeigename: Dateiname ohne Endung.
+    /// Anzeigename: eigener Name, sonst Dateiname ohne Endung.
     pub fn title(&self) -> String {
-        title_of(&self.path)
+        self.name.clone().unwrap_or_else(|| title_of(&self.path))
     }
 
     /// Ist die gecachte Messung noch gültig?
@@ -238,6 +242,12 @@ pub struct RadioShow {
     /// Genau [`CARTS`] Felder, `null` = frei.
     #[serde(default)]
     pub carts: Vec<Option<CartEntry>>,
+    /// Die Cart-Wall-Sätze 1–5 (#292); die Belegung des aktiven steht in `carts`.
+    #[serde(default)]
+    pub cart_sets: Vec<crate::cart_sets::CartSet>,
+    /// Index des aktiven Satzes in `cart_sets`.
+    #[serde(default)]
+    pub cart_set: usize,
     /// Taste je Cart (Name wie `egui::Key::name`), leer = Standard ([`default_cart_key`]),
     /// [`NO_KEY`] = keine. Genau [`CARTS`] Felder.
     #[serde(default, skip_serializing_if = "all_empty")]
@@ -294,6 +304,8 @@ impl Default for RadioShow {
             )],
             active: 0,
             carts: vec![None; CARTS],
+            cart_sets: crate::cart_sets::default_sets(),
+            cart_set: 0,
             cart_keys: vec![String::new(); CARTS],
             decks: vec![None; DECKS],
             deck_return: vec![false; DECKS],
@@ -352,6 +364,7 @@ impl RadioShow {
             }
         }
         self.sanitize_playlists();
+        self.sanitize_cart_sets();
         for e in &mut self.playlist {
             if let Some(v) = e.voice.as_mut() {
                 v.params = v.params.sanitized();

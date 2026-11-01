@@ -116,6 +116,11 @@ pub struct View {
     pub carts_playing: u32,
     /// Restzeit je Cart in Sekunden (0 = steht).
     pub cart_remaining: Vec<f64>,
+    /// Gesamtdauer je Cart in Sekunden (#292), `None` = frei oder nicht geladen.
+    pub cart_seconds: Vec<Option<f64>>,
+    /// Namen der Cart-Wall-Sätze und der aktive (#292).
+    pub cart_sets: Vec<String>,
+    pub cart_set: usize,
     /// Die Decks A bis C.
     pub decks: Vec<DeckView>,
     /// Party mit zwei Decks (`None`: aus). Dann sind `current`, `running`, `paused` und
@@ -463,6 +468,9 @@ fn run(
                 .iter()
                 .map(|r| r.load(Ordering::Acquire) as f64 / f64::from(c.rate()))
                 .collect(),
+            cart_seconds: (0..CARTS).map(|i| c.cart_seconds(i)).collect(),
+            cart_sets: c.show().cart_set_names(),
+            cart_set: c.show().cart_set,
             decks: (0..crate::DECKS).map(|k| deck_view(&c, k)).collect(),
             party,
             mic_open: st.mic_open.load(Ordering::Acquire),

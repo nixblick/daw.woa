@@ -1365,6 +1365,44 @@ impl Controller {
         }
     }
 
+    /// Wechselt den Cart-Wall-Satz (#292). Ein laufender Cart spielt zu Ende; nur Plätze,
+    /// deren Belegung sich ändert, werden neu geladen.
+    pub fn select_cart_set(&mut self, i: usize) -> Result<(), String> {
+        let old = self.show.carts.clone();
+        self.show.switch_cart_set(i)?;
+        for slot in 0..CARTS {
+            if old.get(slot) != self.show.carts.get(slot) {
+                self.carts[slot] = None;
+                self.load_cart(slot);
+            }
+        }
+        tracing::info!(set = i + 1, "cart set selected");
+        Ok(())
+    }
+
+    /// Benennt Satz `i` um.
+    pub fn rename_cart_set(&mut self, i: usize, name: &str) -> Result<(), String> {
+        self.show.rename_cart_set(i, name)
+    }
+
+    /// Benennt Cart `slot` um (leer = Dateiname).
+    pub fn rename_cart(&mut self, slot: usize, name: &str) -> Result<(), String> {
+        self.show.rename_cart(slot, name)
+    }
+
+    /// Benennt Titel `i` der aktiven Playlist um (leer = Dateiname).
+    pub fn rename_title(&mut self, i: usize, name: &str) -> Result<(), String> {
+        self.show.rename_title(i, name)
+    }
+
+    /// Gespielte Länge von Cart `slot` (Start bis Ende des Schnitts), wenn geladen.
+    pub fn cart_seconds(&self, slot: usize) -> Option<f64> {
+        let buf = self.carts.get(slot)?.as_ref()?;
+        let cues = self.show.carts.get(slot)?.as_ref()?.cues;
+        let f = cues.frames(self.rate, buf.frames());
+        Some(f.end.saturating_sub(f.start) as f64 / f64::from(self.rate))
+    }
+
     /// Spielt Cart `slot` (überlagert die Musik); läuft er schon, hält er an.
     pub fn trigger_cart(&mut self, slot: usize) {
         if self.status.carts.load(Ordering::Acquire) & (1 << slot) != 0 {
