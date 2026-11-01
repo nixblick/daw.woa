@@ -204,6 +204,8 @@ pub fn download(
     }
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_connect(Some(Duration::from_secs(20)))
+        // Ein hängender Download gibt nach einer Stunde auf; `ensure` versucht es dann erneut.
+        .timeout_global(Some(Duration::from_secs(3600)))
         .https_only(true)
         .max_redirects(0)
         .http_status_as_error(false)
@@ -320,6 +322,8 @@ pub fn ensure(bank: SoundBank) -> BankState {
             match r {
                 Ok(path) => {
                     tracing::info!(bank = bank.id(), path = %path.display(), "bank installed");
+                    // Hier einlesen, nicht beim nächsten Graphen im Oberflächen-Thread.
+                    let _ = crate::soundfont::bank_font(bank);
                     mark_ready(bank);
                 }
                 Err(e) => {

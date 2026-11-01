@@ -76,7 +76,7 @@ pub fn soundfont_for(sound: TrackSound) -> Option<Arc<SoundFont>> {
         .or_else(default_soundfont)
 }
 
-fn bank_font(bank: SoundBank) -> Option<Arc<SoundFont>> {
+pub(crate) fn bank_font(bank: SoundBank) -> Option<Arc<SoundFont>> {
     static BANKS: OnceLock<Mutex<HashMap<SoundBank, Arc<SoundFont>>>> = OnceLock::new();
     let cache = BANKS.get_or_init(Mutex::default);
     if let Some(f) = cache.lock().ok().and_then(|c| c.get(&bank).cloned()) {
