@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.34.95 — 2026-11-01
+
+- **Fernbedienung (WAN, #162):** Falsche PINs würfeln die DJ-PIN nicht mehr neu, und es gibt keine globale Sperre, mit der ein Angreifer den echten DJ aussperren könnte. Fehlversuche zählen je Adresse; nur globale IPv6-Adressen zählen je /64-Netz, damit ein Internet-Anschluss nicht mit jeder neuen Adresse weiterraten kann. Link-local, ULA und IPv4 bleiben je Adresse, ein Gast im WLAN sperrt den DJ also nicht mit aus. PIN und Token werden nie geloggt. Tests für beide Angriffe dazu.
 ## 0.34.94 — 2026-11-01
 
 - **Weiterleitung verliert unter Windows keine Aufrufe mehr (#245):** `woa-headless mcp` nutzte eine ruhende HTTP-Verbindung erneut, die die Gegenseite schon geschlossen hatte; unter Windows scheiterte der nächste Aufruf (und das abschließende DELETE) dann still. Die Weiterleitung öffnet jetzt je Anfrage eine neue lokale Verbindung, das DELETE gibt nach 2 s auf. Test `forward_does_not_wait_for_an_open_sse_stream…` prüft zusätzlich, dass der Werkzeugaufruf ein Ergebnis statt eines Fehlers liefert.
