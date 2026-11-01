@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.80 — 2026-11-01
+
+- **Controller-Test misst das Cart-Ducking mit (#254):** `port::virtual_controller_drives_mixer_and_carts` in `crates/gui/tests/controller.rs` war lokal rot und in der CI nur scheinbar grün. Ursache: Der Test stammt aus 0.9.0 und erwartete beim Cart die volle Musik plus Cart. Seit #149 senkt ein Cart die Musik ab (Standard −12 dB), der gemessene Pegel (0,57) blieb unter der alten Schwelle. In der CI fehlt der ALSA-Sequencer, dort überspringt sich der Test selbst. Der Test lässt die Absenkung jetzt ausschwingen und prüft beides: Cart hörbar über der abgesenkten Musik, und die Musik unter dem Cart tatsächlich abgesenkt. Das Ducking bleibt unverändert.
+
 ## 0.34.79 — 2026-11-01
 
 - **Lesbare Warnungen und Insert-Rack (#246):** Fehler- und Warntexte (Stream, Gäste, Plugins, Fernbedienung, KI, Feedback) nutzen im dunklen Thema `danger_text()`: `on-air` leicht aufgehellt, damit sie auf `panel` WCAG AA (mindestens 4,5:1 statt rund 4:1) erreichen. Im hellen Thema bleibt alles wie bisher, Lampe und ON-AIR-Schriftzug ebenso. Hinweise, Plugin-Fehler und Log im Insert-Rack stehen jetzt in 12 px statt 9–9,5 px. Die Gruppentitel des Racks („EINGANG“, „AUSGANG“ …) sind Modulköpfe wie überall sonst. Rein optisch, keine Bedienung geändert.
