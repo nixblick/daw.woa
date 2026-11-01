@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## J6 Ausgabe (0.34.88, offen)
+## J6 Ausgabe (0.34.89, offen)
 
 1. Ein kurzes Jingle bauen (z. B. Akkordfolge aus J3 über 2 Takte), „Exportieren“ öffnen, „Als Jingle“ anhaken: Name, Lautheit „wie die Sendung“, Cart „keine“. Format und Stems sind ausgegraut.
 2. Name „Test Ident“, Cart 5, „Als Jingle exportieren“: Statuszeile nennt Datei, LUFS und Spitze (höchstens −1,0 dBFS). Die Datei liegt in `Musik/WOA/Jingles`.
@@ -15,6 +15,18 @@ eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt,
 7. Claude per MCP: „Exportier das als Jingle ‚Morgen-Ident‘ auf Cart 6“ (`export_jingle`): gleiches Ergebnis wie 2 bis 4.
 
 Selbst geprüft von Claude: Ziel-Lautheit trotz Spitzen erreicht, Spitze höchstens −1 dBFS (`crates/engine/src/loudness.rs`), Datei, Bibliotheks-Art Jingle, Cart in `radio.json`, Ziel der Sendung als Vorgabe, kein Überschreiben, falsche Namen und Carts abgelehnt (`crates/agent/src/jingle.rs`), MCP mit eigenem Jingle-Ordner aus `config.json` (`crates/agent/tests/jingle_export.rs`), Fenster-Zustand (`crates/gui/src/export_dialog.rs`). Alles offline gerendert. Nicht selbst geprüft: Fenster, Cart-Wall und Klang am Gerät.
+
+## J7 Bänke (0.34.88, offen)
+
+1. MIDI-Spur, Klang „Klavier“, im Klang-Menü unter BANK „MuseScore General · wird beim Wählen geladen“ wählen. Das Menü zeigt „lädt … %“ (206 MB); bis dahin spielt GeneralUser GS weiter.
+2. Nach dem Laden: Abspielen klingt mit dem MuseScore-Klavier (ohne Neustart). Die Datei liegt mit `MuseScore_General-LICENSE.md` im Datenordner unter `banks/`.
+3. Kit-Spur (z. B. Drum-Raster aus J2), BANK „AVL Red Zeppelin“: echte Drums. Auf einer Melodie-Spur fehlt AVL im Menü.
+4. Speichern, schließen, öffnen: die Bankwahl steht noch im Menü.
+5. Ohne Netz (WLAN aus) eine nicht geladene Bank wählen: Menü zeigt „Fehler: …“, die Spur spielt GeneralUser GS, nichts bricht ab.
+6. Über WOA: Dank an MuseScore General und AVL Drumkits.
+7. Claude per MCP: „Setz die Keys-Spur auf MuseScore-Klavier“ (`track_sound` mit `bank`, danach `bank_state` bis `ready`).
+
+Selbst geprüft von Claude: Katalog nur https, Prüfsumme und Grösse beim Einspielen, nichts bleibt bei falscher Prüfsumme, Rückfall auf GeneralUser GS, reine Drum-Bank nur für Kits (`crates/engine/tests/banks.rs`), Bank bleibt nach Speichern und unbekannte Bank lädt (`crates/model/tests/sound.rs`), MCP mit und ohne Bank-Ordner (`crates/agent/tests/track_bank*.rs`). Lokal mit den echten Dateien: beide Katalog-Prüfsummen stimmen, Offline-Render Klavier und AVL-Noten 36/38/42 klingen, echter https-Download der AVL-Bank über die App-Funktion. Nicht selbst geprüft: Menü und Klang am Gerät (kein Ton über Lautsprecher), Download der 206-MB-Bank in der App.
 
 ## J3 Akkorde und Muster (0.34.87, offen)
 

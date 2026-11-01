@@ -14,6 +14,58 @@ pub struct TrackSound {
     /// `true`: Drumkit auf Kanal 10 (GM-Drumnoten, 36 = Kick, 38 = Snare, 42 = Hi-Hat).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub drums: bool,
+    /// Zusatzbank (Paket J7); `None`: GeneralUser GS. Fehlt die Bank, spielt GeneralUser GS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bank: Option<SoundBank>,
+}
+
+/// Zusatzbank, die beim ersten Gebrauch geladen wird (Paket J7, Issue #271). Der Katalog mit
+/// URL, Prüfsumme und Lizenz steht in `docs/sounds/banks.tsv` (gelesen von `woa_engine::banks`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SoundBank {
+    /// MuseScore General 0.2.0 (MIT), General MIDI.
+    MusescoreGeneral,
+    /// AVL Drumkits „Red Zeppelin 4pc“ (CC BY-SA 3.0), nur Drums.
+    AvlRedZeppelin,
+    /// Eine Bank, die dieser Bau nicht kennt; spielt GeneralUser GS.
+    #[serde(other)]
+    Unknown,
+}
+
+impl SoundBank {
+    /// Alle bekannten Bänke, in Anzeigereihenfolge.
+    pub const ALL: [SoundBank; 2] = [Self::MusescoreGeneral, Self::AvlRedZeppelin];
+
+    /// Kennung in Projektdatei, Katalog und MCP.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::MusescoreGeneral => "musescore-general",
+            Self::AvlRedZeppelin => "avl-red-zeppelin",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    /// Anzeigename.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::MusescoreGeneral => "MuseScore General",
+            Self::AvlRedZeppelin => "AVL Red Zeppelin",
+            Self::Unknown => "Unbekannte Bank",
+        }
+    }
+
+    /// `true`: die Bank hat nur ein Drumkit und gilt nur für Klänge mit `drums`.
+    pub fn drums_only(self) -> bool {
+        self == Self::AvlRedZeppelin
+    }
+
+    /// Bank zur Kennung (Gross-/Kleinschreibung egal).
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|b| b.id().eq_ignore_ascii_case(id))
+    }
 }
 
 impl TrackSound {
@@ -60,6 +112,7 @@ const fn gm(role: SoundRole, name: &'static str, program: u8) -> SoundPreset {
         sound: TrackSound {
             program,
             drums: false,
+            bank: None,
         },
     }
 }
@@ -71,6 +124,7 @@ const fn kit(name: &'static str, program: u8) -> SoundPreset {
         sound: TrackSound {
             program,
             drums: true,
+            bank: None,
         },
     }
 }
@@ -95,11 +149,11 @@ pub const SOUND_PRESETS: &[SoundPreset] = &[
     kit("Elektro-Kit", 24),
 ];
 
-/// Der Preset-Name zu einem Klang, falls er in der Auswahl steht.
+/// Der Preset-Name zu einem Klang, falls er in der Auswahl steht (die Bank zählt nicht).
 pub fn preset_name(sound: TrackSound) -> Option<&'static str> {
     SOUND_PRESETS
         .iter()
-        .find(|p| p.sound == sound)
+        .find(|p| p.sound.program == sound.program && p.sound.drums == sound.drums)
         .map(|p| p.name)
 }
 
@@ -117,14 +171,16 @@ mod tests {
         assert_eq!(
             preset_name(TrackSound {
                 program: 0,
-                drums: true
+                drums: true,
+                bank: None,
             }),
             Some("Standard-Kit")
         );
         assert_eq!(
             TrackSound {
                 program: 0,
-                drums: true
+                drums: true,
+                bank: None,
             }
             .channel(),
             9

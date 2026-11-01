@@ -30,6 +30,7 @@ pub mod device;
 /// Steht außerhalb von `device`, weil auch Builds ohne Gerät (`woa-headless`) sie als Vorgabe zeigen.
 pub const RADIO_BUFFER_FRAMES: u32 = 0;
 
+pub mod banks;
 pub mod compensate;
 pub mod export;
 pub mod ffmpeg;

@@ -30,11 +30,19 @@ use crate::project::Project;
 /// written with the lowest version that can hold it ([`required_version`]), so projects
 /// without automation and sidechain stay readable by older builds; a build that does not
 /// know version 3 refuses such a file instead of silently dropping the curves on re-save.
-pub const FORMAT_VERSION: u32 = 5;
+pub const FORMAT_VERSION: u32 = 6;
 
-/// The lowest format version that can hold `project`: 4 with plugins, 3 with automation, a sidechain, a
+/// The lowest format version that can hold `project`: 6 with a sound bank, 5 with a sound, 4 with plugins, 3 with automation, a sidechain, a
 /// clip gain or a fade curve, otherwise 2.
 pub fn required_version(project: &Project) -> u32 {
+    // Version 6 (Paket J7) adds `bank` to the sound of MIDI tracks.
+    if project
+        .tracks
+        .iter()
+        .any(|t| t.sound.is_some_and(|s| s.bank.is_some()))
+    {
+        return 6;
+    }
     // Version 5 (Paket J1) adds `sound` to MIDI tracks.
     if project.tracks.iter().any(|t| t.sound.is_some()) {
         return 5;
