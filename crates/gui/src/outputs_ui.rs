@@ -2,7 +2,8 @@
 
 use eframe::egui;
 use woa_engine::device::{OutputDeviceInfo, list_output_devices};
-use woa_radio::routing::{OutputMap, Route, Source};
+use woa_engine::record::list_input_devices;
+use woa_radio::routing::{OutputMap, Pult, Route, Source};
 
 use crate::theme;
 
@@ -13,7 +14,10 @@ const PAIRS: u8 = 4;
 pub struct OutputsUi {
     open: bool,
     draft: OutputMap,
+    /// Pult-Modus (#301) samt Eingang.
+    pult: Pult,
     devices: Vec<OutputDeviceInfo>,
+    inputs: Vec<OutputDeviceInfo>,
     list_error: Option<String>,
 }
 
@@ -38,9 +42,10 @@ fn follow_label(s: Source) -> &'static str {
 
 impl OutputsUi {
     /// Öffnet das Fenster mit der gespeicherten Zuordnung und liest die Geräte neu.
-    pub fn open(&mut self, saved: &OutputMap) {
+    pub fn open(&mut self, saved: &OutputMap, pult: &Pult) {
         self.open = true;
         self.draft = saved.clone();
+        self.pult = pult.clone();
         self.refresh();
     }
 
@@ -55,6 +60,7 @@ impl OutputsUi {
                 self.list_error = Some(format!("Geräte nicht lesbar: {e}"));
             }
         }
+        self.inputs = list_input_devices().unwrap_or_default();
     }
 
     /// Zeichnet das Fenster. `lines`: Meldungen und Zustand der Ausgänge der laufenden
@@ -64,7 +70,7 @@ impl OutputsUi {
         ctx: &egui::Context,
         lines: &[String],
         on_air: bool,
-    ) -> Option<OutputMap> {
+    ) -> Option<(OutputMap, Pult)> {
         if !self.open {
             return None;
         }
@@ -116,13 +122,15 @@ impl OutputsUi {
                 if let Some(e) = &self.list_error {
                     ui.colored_label(theme::on_air(), e);
                 }
+                ui.separator();
+                self.pult_section(ui);
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui.button("Geräte neu lesen").clicked() {
                         refresh = true;
                     }
                     if ui.button("Übernehmen").clicked() {
-                        applied = Some(self.draft.clone());
+                        applied = Some((self.draft.clone(), self.pult.clone()));
                     }
                 });
                 if on_air {
@@ -149,6 +157,51 @@ impl OutputsUi {
             self.open = false;
         }
         applied
+    }
+
+    /// Pult-Modus (#301): ein Schalter und der Eingang vom Pult (Gerät, Kanalpaar).
+    fn pult_section(&mut self, ui: &mut egui::Ui) {
+        ui.checkbox(&mut self.pult.on, "Sendung kommt vom Pult");
+        ui.label(
+            egui::RichText::new(
+                "An: Playlist, Carts und Decks gehen auf die Ausgänge oben (Richtung Pult). \
+                 Stream und Mitschnitt bekommen nur den Eingang vom Pult, der Sendebus läuft \
+                 darauf. Das Mikro hängt am Pult (WOAs Mikro ist aus). Vorhören braucht ein \
+                 eigenes Gerät.",
+            )
+            .small()
+            .color(theme::text_dim()),
+        );
+        ui.add_enabled_ui(self.pult.on, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Eingang vom Pult");
+                let r = &mut self.pult.input;
+                let shown = if r.device_id.is_none() {
+                    "Kein Eingang".to_string()
+                } else {
+                    r.device_label()
+                };
+                egui::ComboBox::from_id_salt("pult-device")
+                    .width(240.0)
+                    .selected_text(shown)
+                    .show_ui(ui, |ui| {
+                        for d in &self.inputs {
+                            let on = r.device_id.as_deref() == Some(d.id.as_str());
+                            if ui.selectable_label(on, &d.name).clicked() {
+                                r.device_id = Some(d.id.clone());
+                                r.device_name = d.name.clone();
+                            }
+                        }
+                    });
+                egui::ComboBox::from_id_salt("pult-pair")
+                    .selected_text(pair_label(r.pair))
+                    .show_ui(ui, |ui| {
+                        for p in 0..PAIRS {
+                            ui.selectable_value(&mut r.pair, p, pair_label(p));
+                        }
+                    });
+            });
+        });
     }
 
     fn device_combo(&self, ui: &mut egui::Ui, s: Source, route: &mut Route, follow: &mut bool) {

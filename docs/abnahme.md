@@ -4,13 +4,24 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Radio rechts: Decks kompakt, Cart-Wall als Zweites (0.35.8, offen)
+## Radio rechts: Decks kompakt, Cart-Wall als Zweites (0.35.9, offen)
 
 1. Windows, Radio-Modus, Fenster 1366×768 und maximiert bei 1920×1080: rechts oben die drei Decks in je einer Zeile mit den Pegelreglern, darunter die Cart-Wall mit den Reitern „1“ bis „5“ und allen 16 Pads, nichts rechts abgeschnitten.
 2. Reiter wechseln, Pad belegen und abspielen, Rechtsklick „Taste ändern …“: der Hinweis zur Tastenwahl erscheint neben den Reitern.
 3. Pegel- und Ausgangsregler (Notebook, Stream, M) bedienen wie bisher.
 
 Selbst geprüft von Claude: Layout-Test im egui-Harness (16 Pads im Fenster bei beiden Größen, mit dem alten Trennstrich rot), Screenshots per `WOA_SCREENSHOT` und `WOA_WINDOW` vorher und nachher unter Linux. Nicht unter Windows gesehen, kein Ton abgespielt.
+## Pult-Modus (0.35.8, offen)
+
+1. Pult per USB anstecken. Einstellungen → Ausgänge: Playlist (und Carts, Decks) auf das Pult-Gerät, unten „Sendung kommt vom Pult“ an, Eingang vom Pult wählen (Gerät, Kanal 1/2), Übernehmen. Ohne laufende Sendung öffnet die Ausgabe neu.
+2. Neben dem Telefon-Knopf steht „PULT“ mit Pegel; am Pult Mikro aufziehen: der Pegel schlägt aus.
+3. Vorhören auf ein eigenes Gerät (Laptop-Kopfhörer) stellen; Vorhören läuft, ohne auf Sendung zu kommen. Kanal 3/4 des Pult-Geräts wird mit Meldung abgelehnt.
+4. Stream starten, Playlist spielen, am Pult Mikro, Bluetooth und Telefon dazu: Der Stream hat alles einmal, die Musik nicht doppelt. Mitschnitt hat dasselbe.
+5. Mikro-Taste in WOA: Meldung „Mikrofon im Pult-Modus aus“.
+6. 30 min Stream ohne Aussetzer.
+7. Schalter aus, Übernehmen: alles wie vorher.
+
+Selbst geprüft von Claude: Offline-Tests ohne Ton (`crates/radio/tests/pult.rs`, `routing::pult_tests`): im Pult-Modus ist nur der Pult-Sinus auf Sendung, die Playlist-Musik nicht, der Ausgang Richtung Pult ist bit-gleich zur unbearbeiteten Musik; ohne Schalter ist die Sendung bit-gleich zu vorher (auch gegen den Stand vor der Änderung per Prüfsumme); der Plan löst Ausgangs- und Eingangsgerät auf und meldet Ausfälle. Kein Gerät geöffnet, nichts gehört. Noch nicht über MCP.
 ## Feedback in der Party-Ansicht (0.35.7, offen)
 
 1. Party-Ansicht: grüne Feedback-Taste oben rechts: das Feedback-Fenster erscheint mittig, ohne zu Radio zu wechseln.

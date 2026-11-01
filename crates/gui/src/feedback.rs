@@ -63,6 +63,9 @@ pub struct GuiConfig {
     /// Telefon-Eingang (Anrufer): Gerät und Kanalpaar. Vorgabe: keiner.
     #[serde(skip_serializing_if = "crate::phone::PhoneInput::is_default")]
     pub phone: crate::phone::PhoneInput,
+    /// Pult-Modus (#301): Sendung kommt vom Eingang des externen Mischpults. Vorgabe: aus.
+    #[serde(skip_serializing_if = "woa_radio::routing::Pult::is_default")]
+    pub pult: woa_radio::routing::Pult,
     /// Wunschordner (Wunschtitel). Vorgabe: `Wunschtitel` im Datenordner der Sendung.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wish_folder: Option<std::path::PathBuf>,
@@ -149,6 +152,7 @@ impl Default for GuiConfig {
             pfl_output: PflOutput::Aus,
             outputs: woa_radio::routing::OutputMap::default(),
             phone: crate::phone::PhoneInput::default(),
+            pult: woa_radio::routing::Pult::default(),
             wish_folder: None,
             ordner: crate::ordner::Ordner::default(),
             auto_update: true,
