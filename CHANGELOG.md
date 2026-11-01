@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.35.3 — 2026-11-01
+## 0.35.4 — 2026-11-01
 
 - **WOA-Logo in der Windows-Taskleiste:** Die `woa.exe` trägt jetzt `packaging/windows/woa.ico` (16 bis 256 px) als Icon-Ressource, eingebettet per `apps/woa/build.rs` mit `winresource` (Build-Abhängigkeit nur unter Windows). Bisher zeigte die Taskleiste einen Platzhalter, weil das Fensterbild aus dem PNG nur als kleines Symbol ankommt und die Exe kein eigenes Icon hatte; aus der ZIP gestartet fehlte es ganz. Der Windows-Bau prüft das jetzt (Icon der `woa.exe` ungleich Standardsymbol). `woa-headless` und `woa-streamd` sind Konsolenprogramme ohne Fenster und bleiben ohne. Linux unverändert.
+
+## 0.35.3 — 2026-11-01
+
+- **PIN-Bremse nachgezogen (#294, drei Folgebefunde):** (1) Die globale Grenze (30 falsche PINs je Minute) sperrt nicht mehr alle aus, sondern verlangsamt: darüber wird nur noch ein Versuch je 2 s geprüft, die übrigen bekommen 429 ohne PIN-Vergleich; so kommt auch die richtige PIN durch. (2) Die Ausnahme hängt nicht mehr an der IP, sondern an einem gültigen DJ-Token (`Auth::login_with_token`, der Server liest es aus dem `Authorization`-Header); eine DJ-Adresse allein genügt nicht mehr. (3) Gezählt wird je volle Adresse statt je /64, ein Störer sperrt also nicht das ganze LAN; das Wechseln der Adresse fängt die globale Verlangsamung ab. Folge: Ein DJ ohne Token (neues Gerät) kann während eines Angriffs bis zu etwa 2 s warten müssen. Tests: `changing_ula_addresses_is_slowed_down_globally`, `real_dj_gets_in_during_a_guessing_attack`, `dj_address_alone_does_not_exempt_from_the_brake`, `ipv6_addresses_are_counted_individually`.
 
 ## 0.35.2 — 2026-11-01
 

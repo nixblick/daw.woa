@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Windows-Taskleiste mit WOA-Logo (0.35.3, offen)
+## Windows-Taskleiste mit WOA-Logo (0.35.4, offen)
 
 1. ZIP auspacken, `woa.exe` starten: Taskleiste zeigt WOA-Logo, auch aus der ZIP gestartet. Im Explorer trägt `woa.exe` dasselbe Logo.
 2. Mit dem MSI installiert und über das Startmenü gestartet: ebenfalls das WOA-Logo in der Taskleiste.

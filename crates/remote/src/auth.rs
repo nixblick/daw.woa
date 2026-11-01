@@ -3,11 +3,11 @@
 //! Bei jedem Einschalten der Fernbedienung entstehen zwei neue PINs: die Gast-PIN (steht im
 //! QR-Code) und die DJ-PIN (nur auf dem Bildschirm, zum Eintippen). „Einmal“ heißt: pro
 //! Einschalten; mehrere Gäste scannen denselben Code. Falsch geratene PINs werden je Adresse
-//! gezählt (IPv6 je /64-Netz, auch Link-local und ULA) und sperren nach wenigen Fehlversuchen
-//! für eine Weile. Zusätzlich gibt es eine Obergrenze für falsche PINs insgesamt je Minute,
-//! unabhängig von der Adresse (#294): wer im selben Netz die Adresse wechselt, kommt so nicht
-//! an der Zählung vorbei. Adressen mit einer DJ-Sitzung sind von beiden Sperren ausgenommen,
-//! der echte DJ bleibt also drin. Es gibt keinen PIN-Wechsel nach Fehlversuchen: sonst könnte
+//! gezählt (je volle Adresse) und sperren nach wenigen Fehlversuchen
+//! für eine Weile. Zusätzlich werden falsche PINs insgesamt je Minute gezählt,
+//! unabhängig von der Adresse (#294): wer die Adresse wechselt, wird darüber hinaus nur noch
+//! alle paar Sekunden geprüft (Verlangsamung, keine Sperre für alle). Wer ein gültiges
+//! DJ-Token mitschickt, ist von beiden Bremsen ausgenommen; die bloße Adresse genügt nicht. Es gibt keinen PIN-Wechsel nach Fehlversuchen: sonst könnte
 //! ein Angreifer dem DJ die PIN wegwürfeln (#162).
 //!
 //! Alle Zeiten kommen als Parameter herein, damit die Regeln ohne Warten testbar sind.
@@ -41,8 +41,9 @@ pub struct Limits {
     pub max_connections: usize,
     /// Falsche PINs je Adresse, bis gesperrt wird.
     pub login_failures: u32,
-    /// Falsche PINs insgesamt (alle Adressen zusammen) je Minute. Ist die Grenze erreicht,
-    /// wird jede Anmeldung von Adressen ohne DJ-Sitzung abgelehnt, ohne die PIN zu prüfen.
+    /// Falsche PINs insgesamt (alle Adressen zusammen) je Minute. Darüber wird nur verlangsamt:
+    /// höchstens ein Versuch je `SLOW_GAP` wird geprüft, die anderen bekommen 429, ohne dass die
+    /// PIN verglichen wird. Wer ein gültiges DJ-Token mitschickt, ist davon nicht betroffen.
     pub global_failures_per_minute: u32,
     /// So lange gilt die Sperre (und das Zählfenster).
     pub lockout: Duration,
@@ -77,6 +78,9 @@ impl Default for Limits {
 /// Zählfenster der globalen Grenze für falsche PINs.
 const GLOBAL_WINDOW: Duration = Duration::from_secs(60);
 
+/// Abstand zwischen zwei geprüften Versuchen, solange die globale Grenze überschritten ist.
+const SLOW_GAP: Duration = Duration::from_secs(2);
+
 /// Sechsstellige PIN aus dem Zufallsgenerator des Systems (ohne Verzerrung).
 pub fn random_pin() -> Option<String> {
     loop {
@@ -103,21 +107,14 @@ pub fn random_dj_pin() -> Option<String> {
     }
 }
 
-/// Quelle für die Fehlerzählung: IPv4 je Adresse, IPv6 je /64 (auch Link-local und ULA: wer im
-/// LAN die Adresse wechselt, bliebe sonst ungezählt, #294). Dass ein Gast im selben Netz den
-/// echten DJ mitsperrt, verhindert die Ausnahme für Adressen mit DJ-Sitzung (`has_dj_session`).
+/// Quelle für die Fehlerzählung: je volle Adresse (IPv4-in-IPv6 als IPv4). Ein Zähler je /64
+/// würde alle Geräte eines LANs in einen Topf werfen und einen Störer alle aussperren lassen.
+/// Wer die Adresse wechselt, wird von der globalen Verlangsamung aufgefangen (#294).
 fn source(ip: IpAddr) -> IpAddr {
-    let IpAddr::V6(v6) = ip else {
-        return ip;
-    };
-    if let Some(v4) = v6.to_ipv4_mapped() {
-        return IpAddr::V4(v4);
+    match ip {
+        IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(ip, IpAddr::V4),
+        _ => ip,
     }
-    let s = v6.segments();
-    if v6.is_loopback() || v6.is_unspecified() {
-        return ip;
-    }
-    IpAddr::V6(std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0))
 }
 
 /// 128-Bit-Token als Hex.
@@ -182,6 +179,8 @@ pub struct Auth {
     fails: HashMap<IpAddr, (u32, Instant)>,
     /// Falsche PINs insgesamt im laufenden Fenster: (Anzahl, Beginn).
     global_fails: Option<(u32, Instant)>,
+    /// Letzter geprüfter Versuch, während die globale Grenze überschritten war.
+    slow_last: Option<Instant>,
     wishes: HashMap<IpAddr, Instant>,
     limits: Limits,
 }
@@ -206,6 +205,7 @@ impl Auth {
             sessions: HashMap::new(),
             fails: HashMap::new(),
             global_fails: None,
+            slow_last: None,
             wishes: HashMap::new(),
             limits,
         })
@@ -219,6 +219,7 @@ impl Auth {
             sessions: HashMap::new(),
             fails: HashMap::new(),
             global_fails: None,
+            slow_last: None,
             wishes: HashMap::new(),
             limits,
         }
@@ -246,6 +247,7 @@ impl Auth {
         self.sessions.clear();
         self.fails.clear();
         self.global_fails = None;
+        self.slow_last = None;
         true
     }
 
@@ -256,9 +258,20 @@ impl Auth {
         pin: &str,
         now: Instant,
     ) -> Result<(String, Role), LoginError> {
+        self.login_with_token(ip, pin, None, now)
+    }
+
+    /// Wie [`Auth::login`]; ein gültiges DJ-Token (`token`) nimmt die Sperren aus dem Weg, die
+    /// bloße Adresse tut das nicht.
+    pub fn login_with_token(
+        &mut self,
+        ip: IpAddr,
+        pin: &str,
+        token: Option<&str>,
+        now: Instant,
+    ) -> Result<(String, Role), LoginError> {
         let src = source(ip);
-        // Wer schon als DJ angemeldet ist (diese genaue Adresse), kommt an den Sperren vorbei.
-        let trusted = self.has_dj_session(ip);
+        let trusted = token.is_some_and(|t| self.role_of(t) == Some(Role::Dj));
         if !trusted {
             if let Some((n, since)) = self.fails.get(&src).copied() {
                 let age = now.duration_since(since);
@@ -273,12 +286,20 @@ impl Auth {
                 let age = now.duration_since(since);
                 if age >= GLOBAL_WINDOW {
                     self.global_fails = None;
+                    self.slow_last = None;
                 } else if n >= self.limits.global_failures_per_minute {
-                    // Die PIN wird gar nicht erst verglichen: sonst verriete ein Treffer
-                    // dem Angreifer, dass er richtig geraten hat.
-                    return Err(LoginError::Locked(
-                        GLOBAL_WINDOW.saturating_sub(age).as_secs() + 1,
-                    ));
+                    // Verlangsamung statt Sperre: je SLOW_GAP wird ein Versuch geprüft, so
+                    // kommt auch die richtige PIN durch. Die übrigen werden nicht verglichen
+                    // (ein Treffer wäre sonst ein Orakel).
+                    if let Some(last) = self.slow_last {
+                        let since_last = now.duration_since(last);
+                        if since_last < SLOW_GAP {
+                            return Err(LoginError::Locked(
+                                SLOW_GAP.saturating_sub(since_last).as_secs() + 1,
+                            ));
+                        }
+                    }
+                    self.slow_last = Some(now);
                 }
             }
         }
@@ -321,13 +342,6 @@ impl Auth {
             },
         );
         Ok((token, role))
-    }
-
-    /// Hat genau diese Adresse eine DJ-Sitzung?
-    fn has_dj_session(&self, ip: IpAddr) -> bool {
-        self.sessions
-            .values()
-            .any(|s| s.role == Role::Dj && s.ip == ip)
     }
 
     /// Schafft Platz für eine neue Sitzung: erst je Adresse und Rolle, dann je Rolle.
@@ -544,36 +558,12 @@ mod tests {
         }
         // Die PIN bleibt, der echte DJ kommt von seiner Adresse sofort wieder herein (#162).
         assert_eq!(a.dj_pin(), "222222");
-        assert_eq!(a.login(ip(1), "222222", t0).map(|(_, r)| r), Ok(Role::Dj));
-        assert_eq!(a.role_of(&td), Some(Role::Dj));
-    }
-
-    #[test]
-    fn ipv6_addresses_of_one_network_share_the_lockout() {
-        let mut a = auth();
-        let t0 = Instant::now();
-        let v6 = |net: u16, host: u16| {
-            IpAddr::V6(std::net::Ipv6Addr::new(
-                0x2001, 0xdb8, 0, net, 0, 0, 0, host,
-            ))
-        };
-        // Ein Angreifer wechselt in seinem /64 die Adresse: das zählt als eine Quelle.
-        let mut wrong = 0;
-        for h in 0..50u16 {
-            if a.login(v6(1, h), "000000", t0) == Err(LoginError::WrongPin) {
-                wrong += 1;
-            }
-        }
-        assert_eq!(wrong, 5);
-        assert!(matches!(
-            a.login(v6(1, 999), "222222", t0),
-            Err(LoginError::Locked(_))
-        ));
-        // Ein anderes Netz (der echte DJ) ist nicht betroffen.
         assert_eq!(
-            a.login(v6(2, 1), "222222", t0).map(|(_, r)| r),
+            a.login_with_token(ip(1), "222222", Some(&td), t0)
+                .map(|(_, r)| r),
             Ok(Role::Dj)
         );
+        assert_eq!(a.role_of(&td), Some(Role::Dj));
     }
 
     fn lan(n: u16) -> IpAddr {
@@ -581,89 +571,88 @@ mod tests {
     }
 
     #[test]
-    fn changing_ula_addresses_cannot_bypass_the_brake() {
+    fn ipv6_addresses_are_counted_individually() {
         let mut a = auth();
         let t0 = Instant::now();
-        // Viele wechselnde Adressen derselben ULA-/64 zählen als eine Quelle.
-        let wrong = (1..=100u16)
-            .filter(|n| a.login(lan(*n), "000000", t0) == Err(LoginError::WrongPin))
-            .count();
-        assert_eq!(wrong, 5);
-        // Link-local ebenso.
-        let ll = |n: u16| IpAddr::V6(std::net::Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, n));
-        let wrong = (1..=100u16)
-            .filter(|n| a.login(ll(*n), "000000", t0) == Err(LoginError::WrongPin))
-            .count();
-        assert_eq!(wrong, 5);
-        // Auch über viele /64 und IPv4-Adressen zusammen gibt es höchstens 30 Versuche je Minute,
-        // und danach prüft niemand mehr eine PIN: nicht einmal die richtige geht durch.
-        let mut tried = 10;
-        for i in 0..2000u16 {
-            let src = IpAddr::V6(std::net::Ipv6Addr::new(0xfd00, 1, 2, i, 0, 0, 0, 1));
-            if a.login(src, "000000", t0) == Err(LoginError::WrongPin) {
-                tried += 1;
+        for _ in 0..10 {
+            let _ = a.login(lan(1), "000000", t0);
+        }
+        assert!(matches!(
+            a.login(lan(1), "222222", t0),
+            Err(LoginError::Locked(_))
+        ));
+        // Ein Nachbar im selben /64 ist nicht betroffen.
+        assert_eq!(a.login(lan(2), "222222", t0).map(|(_, r)| r), Ok(Role::Dj));
+    }
+
+    #[test]
+    fn changing_ula_addresses_is_slowed_down_globally() {
+        let mut a = auth();
+        let t0 = Instant::now();
+        let mut checked = 0;
+        for n in 1..=2000u16 {
+            if a.login(lan(n), "000000", t0) == Err(LoginError::WrongPin) {
+                checked += 1;
             }
         }
-        assert_eq!(tried, 30);
-        let other = IpAddr::V6(std::net::Ipv6Addr::new(0xfd00, 9, 9, 9, 0, 0, 0, 1));
-        assert!(matches!(
-            a.login(other, "222222", t0),
-            Err(LoginError::Locked(_))
-        ));
-        assert!(matches!(
-            a.login(other, "111111", t0),
-            Err(LoginError::Locked(_))
-        ));
-        // Nach einer Minute geht es wieder.
-        let t1 = t0 + Duration::from_secs(61);
-        assert_eq!(a.login(other, "222222", t1).map(|(_, r)| r), Ok(Role::Dj));
+        // 30 in der Minute plus ein geprüfter Versuch in der Verlangsamung.
+        assert_eq!(checked, 31);
+        // Dauerfeuer über 30 Sekunden mit immer neuen Adressen: höchstens ein Versuch je 2 s.
+        let t1 = t0 + Duration::from_secs(120);
+        let mut checked = 0;
+        for s in 0..60u16 {
+            for n in 0..50u16 {
+                let ip = IpAddr::V6(std::net::Ipv6Addr::new(0xfd00, 1, 2, 4, 0, 0, s, n));
+                let t = t1 + Duration::from_millis(u64::from(s) * 500);
+                if a.login(ip, "000000", t) == Err(LoginError::WrongPin) {
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked <= 30 + 15, "{checked} geprüfte Versuche in 30 s");
     }
 
     #[test]
     fn real_dj_gets_in_during_a_guessing_attack() {
         let mut a = auth();
         let t0 = Instant::now();
-        // Der DJ ist angemeldet (gleiche ULA-/64 wie die Angreifer).
         let (dj, _) = a.login(lan(1), "222222", t0).unwrap();
         for n in 2..=2000u16 {
-            let src = IpAddr::V6(std::net::Ipv6Addr::new(0xfd00, 1, 2, n, 0, 0, 0, n));
-            let _ = a.login(src, "000000", t0);
             let _ = a.login(lan(n), "000000", t0);
         }
-        // Weder die Zähler der /64 noch die globale Grenze halten ihn draußen.
-        assert_eq!(a.login(lan(1), "222222", t0).map(|(_, r)| r), Ok(Role::Dj));
-        assert_eq!(a.role_of(&dj), Some(Role::Dj));
+        // Mit gültigem Token kommt der DJ trotz Angriff herein.
+        assert_eq!(
+            a.login_with_token(lan(1), "222222", Some(&dj), t0)
+                .map(|(_, r)| r),
+            Ok(Role::Dj)
+        );
+        // Ohne Token genügt die Adresse nicht.
+        assert!(matches!(
+            a.login(lan(1), "000000", t0),
+            Err(LoginError::Locked(_))
+        ));
+        // Mit PIN ohne Token: langsamer, aber nach 2 s ist ein Versuch frei.
+        assert_eq!(
+            a.login(lan(5000), "222222", t0 + Duration::from_secs(3))
+                .map(|(_, r)| r),
+            Ok(Role::Dj)
+        );
         assert_eq!(a.dj_pin(), "222222");
+        assert_eq!(a.role_of(&dj), Some(Role::Dj));
     }
 
     #[test]
-    fn lan_neighbour_does_not_lock_out_the_dj() {
+    fn dj_address_alone_does_not_exempt_from_the_brake() {
+        let mut a = auth();
         let t0 = Instant::now();
-        let pairs = [
-            ("fe80::1", "fe80::2"),
-            ("fd00:1:2:3::1", "fd00:1:2:3::2"),
-            ("192.168.1.10", "192.168.1.11"),
-        ];
-        for (guest, dj) in pairs {
-            let mut a = auth();
-            let g: IpAddr = guest.parse().unwrap();
-            let d: IpAddr = dj.parse().unwrap();
-            // Der DJ war schon angemeldet; seine Adresse ist von der Sperre ausgenommen.
-            a.login(d, "222222", t0).unwrap();
-            for _ in 0..10 {
-                let _ = a.login(g, "000000", t0);
-            }
-            assert!(matches!(
-                a.login(g, "222222", t0),
-                Err(LoginError::Locked(_))
-            ));
-            // Der Nachbar im selben Netz (der echte DJ) kommt herein.
-            assert_eq!(
-                a.login(d, "222222", t0).map(|(_, r)| r),
-                Ok(Role::Dj),
-                "{dj}"
-            );
+        a.login(ip(1), "222222", t0).unwrap();
+        for _ in 0..5 {
+            let _ = a.login(ip(1), "000000", t0);
         }
+        assert!(matches!(
+            a.login(ip(1), "000000", t0),
+            Err(LoginError::Locked(_))
+        ));
     }
 
     #[test]
