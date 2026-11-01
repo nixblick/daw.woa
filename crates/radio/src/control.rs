@@ -1466,6 +1466,19 @@ impl Controller {
         self.send(Cmd::PhoneInput(owned));
     }
 
+    /// Hängt den Pult-Eingang (Summe des externen Mischpults, #301) ein oder aus, über eine
+    /// Taktverbindung ([`woa_engine::pairs::link`]) in der Rate des Mixers.
+    pub fn set_pult_input(&mut self, rx: Option<woa_engine::pairs::LinkRx>) {
+        let owned = rx.map(|c| Owned::new(&self.collector.handle(), c));
+        self.send(Cmd::PultInput(owned));
+    }
+
+    /// Pult-Modus (#301): Mitschnitt und Stream bekommen nur den Pult-Eingang, die interne
+    /// Mischung geht nur noch auf die Ausgänge.
+    pub fn set_pult_mode(&mut self, on: bool) {
+        self.send(Cmd::PultMode(on));
+    }
+
     /// Telefon auf Sendung: Der Anrufer liegt auf der Sendung, die Musik wird abgesenkt.
     pub fn set_phone_on(&mut self, on: bool) {
         self.send(Cmd::PhoneOn(on));

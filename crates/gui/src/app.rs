@@ -840,11 +840,12 @@ impl WoaApp {
             (lines, r.is_on_air())
         });
         let (lines, on_air) = status.unwrap_or_default();
-        let Some(map) = self.outputs_ui.show(ctx, &lines, on_air) else {
+        let Some((map, pult)) = self.outputs_ui.show(ctx, &lines, on_air) else {
             return;
         };
-        tracing::info!("output map applied");
+        tracing::info!(pult = pult.on, "output map applied");
         self.config.outputs = map;
+        self.config.pult = pult;
         self.save_config();
         if self.radio.as_ref().is_some_and(|r| !r.is_on_air()) {
             self.radio = None;
@@ -1088,6 +1089,7 @@ impl WoaApp {
                 self.config.radio_buffer(),
                 &self.config.pfl_output,
                 &self.config.outputs,
+                &self.config.pult,
             ));
             if let Some(r) = self.radio.as_mut() {
                 r.set_phone_config(self.config.phone.clone());
@@ -2690,7 +2692,7 @@ impl WoaApp {
                     .color(theme::text_dim()),
             );
             if ui.button("Ausgänge (Soundkarten) …").clicked() {
-                self.outputs_ui.open(&self.config.outputs);
+                self.outputs_ui.open(&self.config.outputs, &self.config.pult);
                 ui.close();
             }
             self.pfl_menu(ui);

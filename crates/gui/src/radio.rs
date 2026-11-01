@@ -112,6 +112,10 @@ pub struct RadioDesk {
     phone_stats: Option<Arc<woa_engine::pairs::LinkStats>>,
     phone_lost: Arc<std::sync::atomic::AtomicBool>,
     phone_level: f32,
+    /// Pult-Modus (#301): Strom des Pult-Eingangs (lebt, solange das Feld lebt) und Pegel.
+    /// `None`: Die Sendung kommt aus WOAs interner Mischung.
+    pult: Option<Stream>,
+    pult_level: f32,
     /// LED-Meter neben den Fadern und Master (#216).
     meters: [MeterHold; 5],
     /// Gespielte ausblenden: lokal sofort, bis der Schnappschuss nachzieht.
@@ -582,6 +586,7 @@ impl RadioDesk {
         buffer_frames: Option<u32>,
         pfl: &PflOutput,
         output_map: &woa_radio::routing::OutputMap,
+        pult_cfg: &woa_radio::routing::Pult,
     ) -> Self {
         let (show, mut error) = match RadioShow::load(&radio_path) {
             Ok(s) => (s, None),
@@ -594,7 +599,10 @@ impl RadioDesk {
         } else {
             &[]
         };
-        let plan = crate::outputs::plan(output_map, reserved);
+        let mut plan = crate::outputs::plan(output_map, pult_cfg, reserved);
+        // Pult-Modus: Vorhören auf Kanal 3/4 des Pult-Geräts käme über das Pult auf Sendung.
+        let pfl_refused = plan.pult.is_some() && matches!(pfl, PflOutput::Kanal34);
+        let pfl = if pfl_refused { &PflOutput::Aus } else { pfl };
         let config = woa_engine::device::OutputConfig {
             device_id: plan.devices[0].open_id.clone(),
             buffer_frames,
@@ -608,6 +616,15 @@ impl RadioDesk {
         // Der PFL-Spieler hat keinen Weg in den Mixer, den Mitschnitt oder den Sende-Ring.
         let mut pfl_note: Option<String> = None;
         let (aux, pfl_output) = match pfl {
+            PflOutput::Aus if pfl_refused => {
+                pfl_note = Some(
+                    "Vorhören aus: Im Pult-Modus käme Kanal 3/4 des Pult-Geräts auf Sendung. \
+                     Bitte ein eigenes Kopfhörer-Gerät wählen."
+                        .into(),
+                );
+                error.clone_from(&pfl_note);
+                (None, None)
+            }
             PflOutput::Aus => {
                 pfl_note = Some(PFL_OFF.into());
                 (None, None)
@@ -664,6 +681,32 @@ impl RadioDesk {
                 }
             }
         };
+        // Pult-Eingang öffnen; geht er nicht, kommt die Sendung weiter aus WOA (mit Meldung).
+        let mut pult_stream: Option<Stream> = None;
+        if let Some(p) = plan.pult.take() {
+            let cfg = woa_engine::record::InputConfig {
+                device_id: Some(p.open_id.clone()),
+                pair: p.pair,
+            };
+            match woa_engine::record::start_pair_input(&cfg, rate, |e| {
+                tracing::warn!(error = %e, "pult input");
+            }) {
+                Ok((stream, rx, _stats, in_rate)) => {
+                    tracing::info!(device = %p.name, rate = in_rate, "pult input open, pult mode on");
+                    controller.set_pult_input(Some(rx));
+                    controller.set_pult_mode(true);
+                    pult_stream = Some(Box::new(stream));
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, device = %p.name, "pult input failed");
+                    plan.warnings.push(format!(
+                        "Pult-Modus: Eingang {} lässt sich nicht öffnen ({e}). Die Sendung kommt \
+                         weiter aus WOA.",
+                        p.name
+                    ));
+                }
+            }
+        }
         let opened = crate::outputs::open(
             &mut controller,
             mixer,
@@ -705,6 +748,8 @@ impl RadioDesk {
             phone_stats: None,
             phone_lost: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             phone_level: 0.0,
+            pult: pult_stream,
+            pult_level: 0.0,
             meters: Default::default(),
             hide_played: None,
             wishes: None,
@@ -871,6 +916,7 @@ impl RadioDesk {
         let Some(st) = &self.station else { return };
         self.view = st.view();
         self.phone_level = self.view.phone_peak.max(self.phone_level * 0.9);
+        self.pult_level = self.view.pult_peak.max(self.pult_level * 0.9);
         for (m, v) in self.meters.iter_mut().zip(self.view.meters) {
             m.step(v, now_s());
         }
@@ -1169,7 +1215,21 @@ impl RadioDesk {
         });
     }
 
+    /// Pult-Modus an: Die Sendung kommt vom Eingang des externen Mischpults (#301).
+    pub fn pult_mode(&self) -> bool {
+        self.pult.is_some()
+    }
+
     fn toggle_mic(&mut self) {
+        if self.pult.is_some() {
+            // Das Mikro hängt am Pult; WOAs Mikro ginge sonst zurück ins Pult (Rückkopplung).
+            self.error = Some(
+                "Mikrofon im Pult-Modus aus: Das Mikro hängt am Pult und kommt mit dem \
+                 Pult-Eingang auf Sendung."
+                    .into(),
+            );
+            return;
+        }
         if self.mic.is_none() {
             let (producer, consumer) = rtrb::RingBuffer::new(self.rate as usize);
             match woa_engine::record::start_live_input(
@@ -2053,6 +2113,16 @@ impl RadioDesk {
             }
             let (rect, _) = ui.allocate_exact_size(egui::vec2(70.0, 12.0), egui::Sense::hover());
             theme::led_meter(ui.painter(), rect, self.phone_level);
+            if self.pult.is_some() {
+                ui.label(egui::RichText::new("PULT").small().strong())
+                    .on_hover_text(
+                        "Pult-Modus: Stream und Mitschnitt kommen vom Pult-Eingang. Mikro aus; \
+                         Telefon und Gäste gehen mit der Musik ins Pult.",
+                    );
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(70.0, 12.0), egui::Sense::hover());
+                theme::led_meter(ui.painter(), rect, self.pult_level);
+            }
             if let Some(e) = &self.phone_error {
                 ui.colored_label(theme::on_air(), e);
             }

@@ -141,6 +141,12 @@ pub enum Cmd {
     PhoneInput(Option<Owned<woa_engine::pairs::LinkRx>>),
     /// Telefon auf Sendung: Der Anrufer liegt auf der Sendung und die Musik wird abgesenkt.
     PhoneOn(bool),
+    /// Pult-Eingang (Summe des externen Mischpults) über eine Taktverbindung in Mixer-Rate,
+    /// `None` = keiner (#301).
+    PultInput(Option<Owned<woa_engine::pairs::LinkRx>>),
+    /// Pult-Modus (#301): Mitschnitt und Stream bekommen nur den Pult-Eingang (mit Sendebus,
+    /// wenn an); die interne Mischung geht ohne Sendebus und ohne Mikro auf die Ausgänge.
+    PultMode(bool),
     /// Cart abspielen (von vorn, wenn er schon läuft).
     Cart {
         slot: usize,
@@ -243,6 +249,8 @@ pub struct Status {
     pub phone_on: AtomicBool,
     /// Spitze des Telefon-Eingangs seit dem letzten Abholen (auch, wenn es nicht auf Sendung ist).
     pub phone_peak: AtomicU32,
+    /// Spitze des Pult-Eingangs seit dem letzten Abholen (auch außerhalb des Pult-Modus).
+    pub pult_peak: AtomicU32,
     /// Ein Voice-Track läuft (Stimme oder Absenkung davor und danach).
     pub voice: AtomicBool,
     /// Gerechnete Frames insgesamt.
@@ -297,6 +305,7 @@ impl Default for Status {
             mic_open: AtomicBool::new(false),
             phone_on: AtomicBool::new(false),
             phone_peak: AtomicU32::new(0),
+            pult_peak: AtomicU32::new(0),
             voice: AtomicBool::new(false),
             clock: AtomicU64::new(0),
             music_end: AtomicU64::new(0),
@@ -337,6 +346,11 @@ impl Status {
     /// Spitze des Telefon-Eingangs seit dem letzten Aufruf.
     pub fn take_phone_peak(&self) -> f32 {
         f32::from_bits(self.phone_peak.swap(0, Ordering::Relaxed))
+    }
+
+    /// Spitze des Pult-Eingangs seit dem letzten Aufruf.
+    pub fn take_pult_peak(&self) -> f32 {
+        f32::from_bits(self.pult_peak.swap(0, Ordering::Relaxed))
     }
 
     /// Größte Absenkung des Sendebusses (dB) seit dem letzten Aufruf.
@@ -617,6 +631,11 @@ pub struct Mixer {
     phone_gain: Smoother,
     phone_l: [f32; PHONE_CHUNK],
     phone_r: [f32; PHONE_CHUNK],
+    /// Pult-Modus (#301): Eingang vom Mischpult als Taktverbindung, an/aus, Zwischenblock.
+    pult: Option<Owned<woa_engine::pairs::LinkRx>>,
+    pult_on: bool,
+    pult_l: [f32; PHONE_CHUNK],
+    pult_r: [f32; PHONE_CHUNK],
     duck_lin: f32,
     /// Carts senken die Musik ab (#149).
     cart_duck: bool,
@@ -693,6 +712,10 @@ impl Mixer {
             phone_gain: Smoother::new(0.0, MIC_TAU, r),
             phone_l: [0.0; PHONE_CHUNK],
             phone_r: [0.0; PHONE_CHUNK],
+            pult: None,
+            pult_on: false,
+            pult_l: [0.0; PHONE_CHUNK],
+            pult_r: [0.0; PHONE_CHUNK],
             duck_lin: 0.25,
             cart_duck: true,
             carts_on: false,
@@ -816,6 +839,8 @@ impl Mixer {
                     self.retarget_duck();
                 }
                 Cmd::MicMonitor(on) => self.mic_monitor = on,
+                Cmd::PultInput(c) => self.pult = c,
+                Cmd::PultMode(on) => self.pult_on = on,
                 Cmd::MicInput(c) => self.mic = c,
                 Cmd::Cart {
                     slot,
@@ -1128,6 +1153,7 @@ impl Mixer {
         let mut peak = 0.0f32;
         let mut mic_peak = 0.0f32;
         let mut phone_peak = 0.0f32;
+        let mut pult_peak = 0.0f32;
         let mut bus_peaks = [0.0f32; 3];
         let ret_dest = match self.routes.dest[crate::routing::Source::PhoneReturn.index()] as usize
         {
@@ -1290,6 +1316,17 @@ impl Mixer {
             let pg = self.phone_gain.tick();
             pl *= pg;
             pr *= pg;
+            // Pult-Eingang: gelesen, sobald er hängt (Pegel), auf Sendung nur im Pult-Modus.
+            let (mut xl, mut xr) = (0.0f32, 0.0f32);
+            if let Some(p) = self.pult.as_mut() {
+                let k = i % PHONE_CHUNK;
+                if k == 0 {
+                    let m = (n - i).min(PHONE_CHUNK);
+                    p.pull(&mut self.pult_l[..m], &mut self.pult_r[..m]);
+                }
+                (xl, xr) = (self.pult_l[k], self.pult_r[k]);
+            }
+            pult_peak = pult_peak.max(xl.abs()).max(xr.abs());
             let [lm, lc, li, _, lo, ls] = &mut self.levels;
             let (out_mon, out_stream) = (lo.tick(), ls.tick());
             let (lm, lc) = (lm.tick(), lc.tick());
@@ -1320,7 +1357,20 @@ impl Mixer {
                 .guests
                 .monitor()
                 .map(|g| self.guests.return_bus(g, (bl, br)));
-            if self.bus_on {
+            // Pult-Modus: die interne Mischung (ohne Mikro, ohne Sendebus) geht auf die
+            // Ausgänge, die Sendung ist der Pult-Eingang.
+            let pult = self.pult_on.then_some((ql, qr));
+            if pult.is_some() {
+                (sl, sr) = (xl, xr);
+                if self.bus_on {
+                    let g = self.bus.gain(sl, sr);
+                    sl = self.bus.clip(sl * g);
+                    sr = self.bus.clip(sr * g);
+                    let m = self.bus.meter();
+                    reduction = reduction.max(m.comp_db + m.limit_db);
+                }
+                self.guests.send_returns((bl, br), |l, r| (l, r));
+            } else if self.bus_on {
                 let g = self.bus.gain(sl, sr);
                 gain_out = g;
                 sl = self.bus.clip(sl * g);
@@ -1358,10 +1408,11 @@ impl Mixer {
                     self.status.stream_dropped.fetch_add(2, Ordering::Relaxed);
                 }
             }
-            let (ol, or) = match ret {
-                Some(r) => r,
-                None if self.mic_monitor => (sl, sr),
-                None => (ql, qr),
+            let (ol, or) = match (ret, pult) {
+                (_, Some(q)) => q,
+                (Some(r), None) => r,
+                (None, None) if self.mic_monitor => (sl, sr),
+                (None, None) => (ql, qr),
             };
             left[i] = ol;
             right[i] = or;
@@ -1388,6 +1439,7 @@ impl Mixer {
         self.guests.end_block();
         self.publish(peak, mic_peak, reduction);
         store_max(&self.status.phone_peak, phone_peak);
+        store_max(&self.status.pult_peak, pult_peak);
         for (cell, v) in self.status.bus_peaks.iter().zip(bus_peaks) {
             store_max(cell, v);
         }
