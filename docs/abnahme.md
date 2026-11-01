@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## J8 Jingle-FX (0.34.95, offen)
+## J8 Jingle-FX (0.34.96, offen)
 
 1. Eine Audio-Spur wählen, Abspielkopf auf Takt 2, „Jingle-FX …“: Riser, 4 Beats, „Erzeugen“. Ein Clip „Riser“ mit genau einem Takt Länge steht ab Takt 2.
 2. Whoosh und Downlifter ebenso; Tempo vorher auf 90 BPM: der Clip ist wieder genau so lang wie die gewählten Beats.
