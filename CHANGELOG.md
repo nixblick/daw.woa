@@ -1,8 +1,16 @@
 # Changelog
 
-## 0.35.6 — 2026-11-01
+## 0.35.8 — 2026-11-01
 
 - **Pult-Modus: Sendung kommt vom externen Mischpult (#301):** Neuer Schalter „Sendung kommt vom Pult“ unter Einstellungen → Ausgänge, dazu Eingang vom Pult (Gerät und Kanalpaar). Ist er an, gehen Playlist, Carts und Decks wie bisher auf die gewählten Ausgänge (Richtung Pult), aber ohne Sendebus und ohne WOAs Mikro; Stream und Mitschnitt bekommen nur noch den Pult-Eingang (Taktverbindung wie beim Telefon), die Musik geht also nicht doppelt raus. Der Sendebus (Lautheitsregelung, Kompressor, Limiter) läuft mit seinem bisherigen Schalter auf dem Pult-Signal. WOAs Mikro ist im Pult-Modus aus (es hängt am Pult, sonst Rückkopplung); Telefon und Gäste gehen mit der Musik ins Pult. Vorhören auf Kanal 3/4 des Pult-Geräts wird abgelehnt (käme auf Sendung), ein eigenes Kopfhörer-Gerät bleibt. Pegel des Pult-Eingangs als LED-Meter neben dem Telefon. Fehlt der Eingang oder passt das Kanalpaar nicht, kommt die Sendung mit Meldung weiter aus WOA. `config.json` ohne Eintrag `pult` lädt unverändert, ohne Schalter ist die Sendung bit-gleich zu vorher. Noch nicht über MCP (die Ausgänge in `config.json` hat MCP bisher gar nicht). Tests: `crates/radio/tests/pult.rs` (nur Pult-Sinus auf Sendung, keine Playlist-Musik; Ausgang unbearbeitet; ohne Schalter bit-gleich; Pegel), `routing::pult_tests` (Geräte, Ausfall, Quelle auf fremdem Gerät, altes Format).
+
+## 0.35.7 — 2026-11-01
+
+- **Feedback geht auch in der Party-Ansicht (#288):** Die Party-Ansicht zeichnete nur ihr eigenes Pult und kehrte dann zurück, ohne die Fenster aus dem Menü zu zeichnen. Die Feedback-Taste öffnete das Fenster also unsichtbar, erst nach dem Wechsel zu Radio erschien es. Jetzt zeichnen alle drei Ansichten dieselben Fenster über `WoaApp::app_windows` (Feedback, Über WOA, Ausgabe, Telefon, Ordner, Stream, KI, Telemetrie, Export, Controller). Tests: `party_feedback_tests` in `crates/gui/src/app.rs` (Party war vor dem Fix rot, Radio als Gegenprobe).
+
+## 0.35.6 — 2026-11-01
+
+- **Playlist-Titel lassen sich wieder am Griff auf ein Deck ziehen (#298):** Seit dem Griff-Symbol aus #92 (0.34.74, Commit `1933917`) war der Griff am linken Zeilenrand ein markierbarer Text. egui gibt das Ziehen dann der Textauswahl statt der Zeile; die Zeile bewegte sich nicht, und auf dem Deck kam nichts an. Jetzt sind alle Texte einer Playlist-Zeile nicht markierbar, Ziehen am Griff wie am Titel lädt aufs Deck oder verschiebt in der Playlist. Klick, Doppelklick, Nummer eintippen und Kontextmenü bleiben. Bibliothek und Dateien aus dem Explorer waren nicht betroffen und sind jetzt mit abgedeckt. Tests im echten Pult-Layout ohne Audiogerät (`RadioDesk::headless`, der Mixer rechnet nur in einen Puffer): `deck_drop_tests` in `crates/gui/src/radio.rs` (Bibliothek, Explorer-Datei, Playlist am Griff, Playlist am Titel).
 
 ## 0.35.5 — 2026-11-01
 

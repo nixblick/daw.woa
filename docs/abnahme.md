@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Pult-Modus (0.35.6, offen)
+## Pult-Modus (0.35.8, offen)
 
 1. Pult per USB anstecken. Einstellungen → Ausgänge: Playlist (und Carts, Decks) auf das Pult-Gerät, unten „Sendung kommt vom Pult“ an, Eingang vom Pult wählen (Gerät, Kanal 1/2), Übernehmen. Ohne laufende Sendung öffnet die Ausgabe neu.
 2. Neben dem Telefon-Knopf steht „PULT“ mit Pegel; am Pult Mikro aufziehen: der Pegel schlägt aus.
@@ -15,6 +15,23 @@ eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt,
 7. Schalter aus, Übernehmen: alles wie vorher.
 
 Selbst geprüft von Claude: Offline-Tests ohne Ton (`crates/radio/tests/pult.rs`, `routing::pult_tests`): im Pult-Modus ist nur der Pult-Sinus auf Sendung, die Playlist-Musik nicht, der Ausgang Richtung Pult ist bit-gleich zur unbearbeiteten Musik; ohne Schalter ist die Sendung bit-gleich zu vorher (auch gegen den Stand vor der Änderung per Prüfsumme); der Plan löst Ausgangs- und Eingangsgerät auf und meldet Ausfälle. Kein Gerät geöffnet, nichts gehört. Noch nicht über MCP.
+## Feedback in der Party-Ansicht (0.35.7, offen)
+
+1. Party-Ansicht: grüne Feedback-Taste oben rechts: das Feedback-Fenster erscheint mittig, ohne zu Radio zu wechseln.
+2. In der Party-Ansicht Hilfe → „Über WOA“ und Einstellungen → Ausgabe: die Fenster erscheinen ebenfalls.
+
+Selbst geprüft von Claude: Test über die echte Oberfläche in Party und Radio, Party war vor dem Fix rot. Nicht am Gerät gesehen.
+
+## Titel per Ziehen aufs Deck (0.35.6, offen)
+
+1. Radio-Modus: einen Playlist-Titel am Griff (sechs Punkte links) packen und auf Deck A ziehen: der Titel liegt auf Deck A.
+2. Denselben Weg am Titeltext statt am Griff: liegt auf Deck B.
+3. Einen Titel aus der Bibliothek auf Deck C ziehen: liegt auf Deck C.
+4. Eine Audiodatei aus dem Explorer auf ein Deck ziehen: liegt auf dem Deck.
+5. Ziehen innerhalb der Playlist verschiebt weiter, Klick auf die Nummer zum Eintippen geht weiter.
+
+Selbst geprüft von Claude: vier Tests im echten Pult-Layout ohne Audiogerät; der Griff-Test war vor dem Fix rot. Nicht am Windows-Rechner gesehen, Explorer-Ziehen nur über das egui-Ereignis geprüft.
+
 ## Gleichbleibende Lautstärke in Playlist und Decks (0.35.5, offen)
 
 1. Radio-Modus, Sendebus an: einen Titel mit leisem Intro und lautem Refrain in der Playlist abspielen, danach denselben Titel auf Deck A. Das Intro bleibt leise, der Refrain laut, nichts zieht während des Titels nach; Deck und Playlist klingen gleich laut.
