@@ -140,7 +140,7 @@ impl RemoteView {
             }
             if let Some(e) = &self.error {
                 ui.add_space(4.0);
-                ui.label(egui::RichText::new(e).color(theme::on_air()));
+                ui.label(egui::RichText::new(e).color(theme::danger_text()));
             }
         });
     }
@@ -196,7 +196,7 @@ impl RemoteView {
                     ui.label(
                         egui::RichText::new(format!("OSC an {o}"))
                             .small()
-                            .color(theme::on_air()),
+                            .color(theme::danger_text()),
                     );
                 }
             });

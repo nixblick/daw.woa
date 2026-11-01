@@ -580,7 +580,7 @@ fn result_line(ui: &mut egui::Ui, r: Option<&Result<String, String>>) {
             ui.label(egui::RichText::new(t).small().color(theme::ok()));
         }
         Some(Err(e)) => {
-            ui.label(egui::RichText::new(e).small().color(theme::on_air()));
+            ui.label(egui::RichText::new(e).small().color(theme::danger_text()));
         }
         None => {}
     }
