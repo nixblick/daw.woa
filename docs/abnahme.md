@@ -4,6 +4,12 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Gleichbleibende Lautstärke in Playlist und Decks (0.35.5, offen)
+
+1. Radio-Modus, Sendebus an: einen Titel mit leisem Intro und lautem Refrain in der Playlist abspielen, danach denselben Titel auf Deck A. Das Intro bleibt leise, der Refrain laut, nichts zieht während des Titels nach; Deck und Playlist klingen gleich laut.
+
+Selbst geprüft von Claude: Offline-Render ohne Ton (`crates/radio/tests/constant_gain.rs`), Clippy und Tests von `woa-radio` grün. Nicht am Gerät gehört.
+
 ## Windows-Taskleiste mit WOA-Logo (0.35.4, offen)
 
 1. ZIP auspacken, `woa.exe` starten: Taskleiste zeigt WOA-Logo, auch aus der ZIP gestartet. Im Explorer trägt `woa.exe` dasselbe Logo.

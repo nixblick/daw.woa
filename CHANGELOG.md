@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.35.5 — 2026-11-01
+
+- **Lautstärke innerhalb eines Titels konstant (#297, Refs #147):** Die Lautheitsregelung im Sendebus (`woa_radio::dynamics::BusProcessor`, seit Paket 9) führte die Verstärkung gleitend zum Ziel, mit bis zu 3 dB je Sekunde im Bereich ±12 dB. Damit hob sie leise Passagen eines Titels an und senkte laute ab, und nach jedem Ducking pumpte sie nach. Seit #149 (0.34.69) ducken auch die Carts, so fiel das öfter auf. Die Regelung regelt jetzt nicht mehr nach. Jeder Titel behält seine feste Verstärkung zum Ziel (Auto-Gain beim Bereitlegen); Kompressor und Limiter bleiben als Schutz unter „Sendebus“. Die Lautheitsanzeige am Ausgang bleibt, die Angabe „Regelung … dB“ entfällt. Die Decks A/B/C werden beim Laden jetzt gemessen und bekommen denselben Auto-Gain wie die Playlist (bisher 0 dB, Entscheidung André in #147). Erlaubt bleiben nur die Blenden am Anfang und Ende und das Ducking bei Mikro, Telefon oder Cart. Test: `crates/radio/tests/constant_gain.rs` (ein Titel mit leisem, lautem und leisem Teil über Playlist und Deck mit eingeschaltetem Sendebus, die Verstärkung schwankt um weniger als 0,5 dB, vorher 24 dB bzw. 21 dB; nach einem Cart kommt die Musik auf ihren alten Pegel zurück, vorher 7,8 dB daneben), alle Blöcke unter `assert_no_alloc`.
+
 ## 0.35.4 — 2026-11-01
 
 - **WOA-Logo in der Windows-Taskleiste:** Die `woa.exe` trägt jetzt `packaging/windows/woa.ico` (16 bis 256 px) als Icon-Ressource, eingebettet per `apps/woa/build.rs` mit `winresource` (Build-Abhängigkeit nur unter Windows). Bisher zeigte die Taskleiste einen Platzhalter, weil das Fensterbild aus dem PNG nur als kleines Symbol ankommt und die Exe kein eigenes Icon hatte; aus der ZIP gestartet fehlte es ganz. Der Windows-Bau prüft das jetzt (Icon der `woa.exe` ungleich Standardsymbol). `woa-headless` und `woa-streamd` sind Konsolenprogramme ohne Fenster und bleiben ohne. Linux unverändert.
