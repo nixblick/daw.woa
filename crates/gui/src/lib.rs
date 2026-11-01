@@ -3,6 +3,7 @@
 //! Die Logik steckt fensterunabhängig in [`state`] und [`feedback`] (testbar ohne
 //! Display); [`app`] ist nur die dünne eframe-Schicht darüber.
 
+pub mod akkorde;
 pub mod analysis;
 pub mod app;
 mod assistant_ui;

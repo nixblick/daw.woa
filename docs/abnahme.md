@@ -4,6 +4,17 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## J3 Akkorde und Muster (0.34.87, offen)
+
+1. Knopf „Akkordfolge …“ (neben „+ MIDI-Clip“): Fenster mit Folge, Tonart, Takte.
+2. Folge „I–V–vi–IV“, Tonart C, 4 Takte, „Erzeugen“: drei neue MIDI-Spuren Akkorde, Bass, Arpeggio mit je einem 4-Takt-Clip ab dem Takt am Abspielkopf; Klänge Streicher, E-Bass, Klavier.
+3. Abspielen: klingt harmonisch, kein Ton schief. Strg+Z nimmt alle drei Spuren auf einmal zurück.
+4. Erneut erzeugen, dann im Fenster Tonart auf D stellen: alle drei Clips rutschen zwei Halbtöne hoch (Piano-Roll zeigen), Strg+Z stellt alle drei zurück.
+5. Moll-Folge „i–VI–III–VII“ in A: Tonart-Liste zeigt „A Moll“.
+6. Claude per MCP: „Leg I–V–vi–IV in G über 4 Takte an und dann nach A“ (`generate_chords`, `transpose_notes`).
+
+Selbst geprüft von Claude: Katalog, Stufen, Tonart, Transposition (`crates/model/tests/chords.rs`), drei Spuren mit Klang und Undo über `AppState` (`crates/gui/tests/chords.rs`), MCP gleich Oberfläche (`crates/agent/tests/chords.rs`). Nicht selbst geprüft: Fenster und Klang am Gerät (kein Ton über Lautsprecher).
+
 ## J2 Drum-Raster (0.34.86, offen)
 
 1. MIDI-Spur anlegen, Klang „Standard-Kit“ wählen, einen MIDI-Clip anlegen und öffnen: die Piano-Roll zeigt das Drum-Raster (sechs Zeilen Becken bis Kick, 16 Schritte je Takt). Der Knopf „Drum-Raster“ schaltet zur normalen Piano-Roll und zurück.

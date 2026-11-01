@@ -796,6 +796,74 @@ impl AppState {
         ok.then_some(id)
     }
 
+    /// Paket J3: legt für eine Akkordfolge drei MIDI-Spuren (Akkorde, Bass, Arpeggio) mit
+    /// je einem Clip über `bars` Takte an, jede mit dem ersten GM-Klang ihrer Rolle.
+    /// Ein Undo-Schritt. Gibt Spur und Clip je Rolle zurück.
+    pub fn add_chord_tracks(
+        &mut self,
+        progression: &woa_model::ChordProgression,
+        key: u8,
+        bars: u32,
+        start_beats: f64,
+    ) -> Option<[(TrackId, ClipId); 3]> {
+        use woa_model::sound::{SOUND_PRESETS, SoundRole};
+        let bars = bars.clamp(1, 64);
+        let made = woa_model::chords::generate(progression, key, bars);
+        let length = f64::from(bars) * 4.0;
+        let label = "Akkordfolge";
+        self.session.begin_group(label);
+        let mut out = Vec::new();
+        for (name, role, midi) in [
+            ("Akkorde", SoundRole::Pad, made.chords),
+            ("Bass", SoundRole::Bass, made.bass),
+            ("Arpeggio", SoundRole::Lead, made.arp),
+        ] {
+            let track = self.session.new_track_id();
+            let sound = SOUND_PRESETS
+                .iter()
+                .find(|p| p.role == role)
+                .map(|p| p.sound);
+            let clip = self.session.new_clip_id();
+            let ok = self.apply(Command::add_track(track, name.to_string(), TrackKind::Midi))
+                && self.apply(Command::SetTrackSound { track, sound })
+                && self.apply(Command::AddClip {
+                    track,
+                    clip: Clip::new_midi(clip, name, start_beats.max(0.0), length, midi),
+                    index: None,
+                });
+            if !ok {
+                break;
+            }
+            out.push((track, clip));
+        }
+        let closed = self.session.end_group();
+        self.report(label, closed);
+        out.try_into().ok()
+    }
+
+    /// Paket J3: verschiebt alle Noten der Clips um `semitones` (Tonartwechsel), ein Undo-Schritt.
+    pub fn transpose_clips(&mut self, clips: &[ClipId], semitones: i8) -> bool {
+        if semitones == 0 {
+            return false;
+        }
+        let label = "Tonart ändern";
+        self.session.begin_group(label);
+        let mut ok = true;
+        for &clip in clips {
+            let Some(midi) = self.project().clip(clip).and_then(|(_, c)| c.midi.clone()) else {
+                ok = false;
+                continue;
+            };
+            ok &= self.apply(Command::SetNotes {
+                clip,
+                midi: woa_model::chords::transpose(&midi, semitones),
+            });
+        }
+        let closed = self.session.end_group();
+        self.report(label, closed);
+        ok
+    }
+
     /// Moves a clip on its track to `start_beats` (clamped to >= 0).
     pub fn move_clip(&mut self, clip: ClipId, start_beats: f64) -> bool {
         self.move_clip_to(clip, None, start_beats)
