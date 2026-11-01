@@ -1495,13 +1495,18 @@ impl Controller {
 
     /// Startet den Mitschnitt nach `<data_dir>/mitschnitte/`.
     pub fn start_recording(&mut self, data_dir: &Path) {
+        self.start_recording_in(&data_dir.join(RECORDINGS_DIR));
+    }
+
+    /// Startet den Mitschnitt direkt in den Ordner `dir` (WOA-Ordner „Mitschnitte“).
+    pub fn start_recording_in(&mut self, dir: &Path) {
         if self.recording.is_some() {
             return;
         }
         let cap = self.rate as usize * 2 * RECORD_QUEUE_SECONDS;
         let (producer, consumer) = rtrb::RingBuffer::new(cap);
         self.recording = Some(Recording {
-            dir: data_dir.join(RECORDINGS_DIR),
+            dir: dir.to_path_buf(),
             consumer,
             writer: None,
             frames_in_file: 0,

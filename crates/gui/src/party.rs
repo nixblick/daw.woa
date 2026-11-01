@@ -618,7 +618,7 @@ impl PartyView {
 
     /// Musikordner laden (Dialog); hängt alle Titel hinten an die Playlist.
     pub fn load_folder(desk: &RadioDesk) {
-        if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+        if let Some(dir) = crate::ordner::dialog_musik().pick_folder() {
             let files = audio_files_in(&dir, 3);
             if files.is_empty() {
                 tracing::info!(dir = %dir.display(), "party: no audio files in folder");

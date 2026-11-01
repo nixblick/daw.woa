@@ -20,6 +20,7 @@ mod ki_ui;
 pub mod library;
 pub mod manage;
 pub mod mcp_live;
+pub mod ordner;
 mod outputs;
 mod outputs_ui;
 pub mod party;

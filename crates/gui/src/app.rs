@@ -302,6 +302,7 @@ pub struct WoaApp {
     ki_started: bool,
     /// Fenster „Telefon“ (Eingang für den Anrufer).
     phone_ui: crate::phone::PhoneUi,
+    ordner_ui: crate::ordner::OrdnerUi,
 }
 
 /// Ein Controller-Wert, der erst nach einer Ruhepause als ein Undo-Schritt ins Projekt geht
@@ -524,6 +525,7 @@ impl WoaApp {
             chat_ui: crate::chat_ui::ChatUi::default(),
             ki_started: false,
             phone_ui: crate::phone::PhoneUi::default(),
+            ordner_ui: crate::ordner::OrdnerUi::default(),
             midi,
             midi_seen: (0, None),
             piano_roll: None,
@@ -845,6 +847,17 @@ impl WoaApp {
     }
 
     /// Fenster „Telefon“: Der gewählte Eingang wird gespeichert und sofort geöffnet.
+    /// Fenster „Speicherorte“ (#258): jede Änderung wird gespeichert und angewendet.
+    fn ordner_window(&mut self, ctx: &egui::Context) {
+        let Some(ordner) = self.ordner_ui.show(ctx, &self.config.ordner) else {
+            return;
+        };
+        tracing::info!("folder settings applied");
+        crate::ordner::apply(&ordner);
+        self.config.ordner = ordner;
+        self.save_config();
+    }
+
     fn phone_window(&mut self, ctx: &egui::Context) {
         let status: Vec<String> = self
             .radio
@@ -2017,7 +2030,7 @@ impl WoaApp {
 
     fn save_as(&mut self) {
         self.capture_plugins();
-        if let Some(dir) = rfd::FileDialog::new()
+        if let Some(dir) = crate::ordner::dialog(crate::ordner::Art::Projekte)
             .set_title("Projekt speichern")
             .set_file_name(format!("{}.woa", self.state.project().meta.name))
             .save_file()
@@ -2028,7 +2041,7 @@ impl WoaApp {
 
     /// Schreibt das Projekt als `.dawproject` (Austausch mit Bitwig, Studio One, Cubase …).
     fn export_dawproject(&mut self) {
-        let Some(out) = rfd::FileDialog::new()
+        let Some(out) = crate::ordner::dialog(crate::ordner::Art::Exporte)
             .set_title("Als DAWproject exportieren")
             .add_filter("DAWproject", &["dawproject"])
             .set_file_name(format!("{}.dawproject", self.state.project().meta.name))
@@ -2066,7 +2079,7 @@ impl WoaApp {
         if !self.save_before_replace("DAWproject öffnen") {
             return;
         }
-        let Some(file) = rfd::FileDialog::new()
+        let Some(file) = crate::ordner::dialog(crate::ordner::Art::Projekte)
             .set_title("DAWproject öffnen")
             .add_filter("DAWproject", &["dawproject"])
             .pick_file()
@@ -2132,7 +2145,7 @@ impl WoaApp {
         if !self.save_before_replace("Öffnen") {
             return;
         }
-        if let Some(dir) = rfd::FileDialog::new()
+        if let Some(dir) = crate::ordner::dialog(crate::ordner::Art::Projekte)
             .set_title("Projektordner (.woa) öffnen")
             .pick_folder()
         {
@@ -2517,7 +2530,7 @@ impl WoaApp {
             ChipLook::Quiet
         };
         let resp = topbar_chip(ui, theme::ic::RECORD, "REC", look, compact, true);
-        let dir = self.data_dir.join(woa_radio::RECORDINGS_DIR);
+        let dir = crate::ordner::dir(crate::ordner::Art::Mitschnitte);
         let mut tip = match &rec {
             Some((path, since)) => {
                 let secs = since.map_or(0, |t| t.elapsed().as_secs());
@@ -2725,6 +2738,14 @@ impl WoaApp {
                     self.chat_ui
                         .open(&self.config.ki, &self.data_dir, project.as_deref());
                 }
+                ui.close();
+            }
+            if ui
+                .button("Speicherorte …")
+                .on_hover_text("Wo WOA Projekte, Mitschnitte, Exporte … ablegt (WOA-Ordner)")
+                .clicked()
+            {
+                self.ordner_ui.open = true;
                 ui.close();
             }
             if ui.button("Telefon (Eingang für den Anrufer) …").clicked() {
@@ -3040,7 +3061,7 @@ impl WoaApp {
     fn import_audio(&mut self) {
         let exts = woa_engine::decode::dialog_extensions();
         let ext_refs: Vec<&str> = exts.iter().map(String::as_str).collect();
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = crate::ordner::dialog_musik()
             .set_title("Audiodatei importieren")
             .add_filter(woa_engine::decode::FILTER_NAME, &ext_refs)
             .pick_file()
@@ -3135,7 +3156,7 @@ impl WoaApp {
 
     /// Importiert eine `.mid`-Datei als MIDI-Clip am Kopf (Paket 12).
     fn import_midi(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = crate::ordner::dialog(crate::ordner::Art::Midi)
             .set_title("MIDI importieren")
             .add_filter("MIDI", &["mid", "midi"])
             .pick_file()
@@ -3185,7 +3206,7 @@ impl WoaApp {
             self.state.status = Status::Error("Erst einen MIDI-Clip auswählen".into());
             return;
         };
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = crate::ordner::dialog(crate::ordner::Art::Midi)
             .set_title("MIDI exportieren")
             .set_file_name(format!("{name}.mid"))
             .add_filter("MIDI", &["mid"])
@@ -5305,7 +5326,7 @@ impl WoaApp {
             return;
         }
         let ext = req.format.extension();
-        let Some(out) = rfd::FileDialog::new()
+        let Some(out) = crate::ordner::dialog(crate::ordner::Art::Exporte)
             .set_title("Spur exportieren")
             .set_file_name(&req.file_name)
             .add_filter(req.format.label(), &[ext])
@@ -5399,7 +5420,7 @@ impl WoaApp {
         ext: &str,
         spec: &woa_engine::export::ExportSpec,
     ) -> Option<Status> {
-        let out = rfd::FileDialog::new()
+        let out = crate::ordner::dialog(crate::ordner::Art::Exporte)
             .set_title("Exportieren")
             .set_file_name(format!("{name}.{ext}"))
             .add_filter(spec.format.label(), &[ext])
@@ -5443,7 +5464,7 @@ impl WoaApp {
         spec: &woa_engine::export::ExportSpec,
         opts: crate::export_dialog::StemOptions,
     ) -> Option<Status> {
-        let parent = rfd::FileDialog::new()
+        let parent = crate::ordner::dialog(crate::ordner::Art::Exporte)
             .set_title("Ordner für die Stems wählen")
             .pick_folder()?;
         // Eigener Unterordner „<Projekt> Stems“, damit nichts Fremdes überschrieben wird.
@@ -6253,6 +6274,7 @@ impl eframe::App for WoaApp {
             self.feedback_window(&ctx);
             self.outputs_window(&ctx);
             self.phone_window(&ctx);
+            self.ordner_window(&ctx);
             self.stream_window(&ctx);
             self.ki_window(&ctx);
             self.telemetry_window(&ctx);
@@ -6330,6 +6352,7 @@ impl eframe::App for WoaApp {
         self.feedback_window(&ctx);
         self.outputs_window(&ctx);
         self.phone_window(&ctx);
+        self.ordner_window(&ctx);
         self.stream_window(&ctx);
         self.ki_window(&ctx);
         self.telemetry_window(&ctx);
