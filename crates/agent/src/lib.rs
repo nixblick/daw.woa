@@ -139,6 +139,13 @@ pub struct InsertVoiceChainParams {
     pub track: u64,
 }
 
+/// Parameters of `voice_over`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VoiceOverParams {
+    /// Track id of the voice (audio or MIDI track, recorded or imported).
+    pub voice: u64,
+}
+
 /// Parameters of `list_effects`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListEffectsParams {
@@ -2761,6 +2768,25 @@ impl WoaAgent {
                 ids.push(id.0);
             }
             Ok(serde_json::json!({ "inserts": ids }))
+        })
+    }
+
+    #[tool(
+        description = "Voice over the bed (jingle step 'Stimme'): puts the voice chain on the voice track (unless it has one) and ducks every other audio and MIDI track without a voice chain under it with a compressor whose sidechain is the voice (buses cannot take a sidechain). One undo step; calling again adds nothing twice. Returns the chain insert ids and per bed track the ducker. Check the result with analyze."
+    )]
+    async fn voice_over(
+        &self,
+        Parameters(p): Parameters<VoiceOverParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            let r = s.voice_over(TrackId(p.voice))?;
+            let ducks: Vec<_> = r
+                .ducks
+                .iter()
+                .map(|(t, i)| serde_json::json!({ "track": t.0, "insert": i.0 }))
+                .collect();
+            let chain: Vec<u64> = r.chain.iter().map(|i| i.0).collect();
+            Ok(serde_json::json!({ "chain": chain, "ducks": ducks }))
         })
     }
 

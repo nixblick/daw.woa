@@ -4,6 +4,15 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## J5 Stimme und Ducking (0.34.97, offen)
+
+1. Zwei Spuren: eine mit Musik oder Akkorden (Bett), eine mit Stimme (Strg+R aufnehmen oder Datei hineinziehen).
+2. Auf der Stimmspur „+ Effekt“ → „Stimme über Bett“: Die Stimme hat die fünf Effekte der Sprachkette, die Bett-Spur einen Kompressor mit Sidechain „Stimme“.
+3. Abspielen: Sobald die Stimme spricht, wird das Bett hörbar leiser und kommt in den Pausen zurück. Strg+Z nimmt alles in einem Schritt weg; ein zweiter Klick legt nichts doppelt an.
+4. Über MCP: `voice_over` mit der Stimmspur, danach `analyze`: die Mischung ist leiser als vorher.
+
+Selbst geprüft von Claude: `crates/model/src/voice_over.rs`, `crates/agent/tests/j5_voice_over.rs` (−11,4 → −14,7 LUFS), `crates/gui/tests/voice_over.rs`, nur Offline-Render. Clippy und Tests von `woa-model`, `woa-agent`, `woa-gui` grün.
+
 ## J8 Jingle-FX (0.34.96, offen)
 
 1. Eine Audio-Spur wählen, Abspielkopf auf Takt 2, „Jingle-FX …“: Riser, 4 Beats, „Erzeugen“. Ein Clip „Riser“ mit genau einem Takt Länge steht ab Takt 2.

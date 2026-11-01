@@ -509,6 +509,14 @@ impl AppState {
         self.report("Vorlage Sprachkette", result)
     }
 
+    /// Paket J5: Stimme über das Bett. Sprachkette auf `voice`, jede andere Audio- und
+    /// MIDI-Spur wird per Sidechain unter die Stimme geduckt; ein Undo-Schritt. Gleiche
+    /// Funktion wie `voice_over` über MCP.
+    pub fn voice_over(&mut self, voice: TrackId) -> bool {
+        let result = self.session.voice_over(voice).map(|_| ());
+        self.report("Stimme über Bett", result)
+    }
+
     /// Sets the project tempo in BPM (20..=400) as one undo step.
     pub fn set_tempo(&mut self, bpm: f64) -> bool {
         if (self.project().tempo_bpm - bpm).abs() < 1e-6 {
