@@ -6429,6 +6429,7 @@ impl eframe::App for WoaApp {
                 )
                 .show(ui, |ui| cmds = self.party.ui(ui, radio, &mut self.library));
             self.party.run(cmds, radio, &ctx);
+            self.app_windows(&ctx);
             return;
         }
         if self.config.mode == Mode::Radio
@@ -6451,16 +6452,7 @@ impl eframe::App for WoaApp {
             self.clock_editor.show(&ctx);
             self.event_editor
                 .show(&ctx, self.radio.as_ref().map(|r| r.view()));
-            self.export_window(&ctx);
-            self.controller_window(&ctx);
-            self.feedback_window(&ctx);
-            self.outputs_window(&ctx);
-            self.phone_window(&ctx);
-            self.ordner_window(&ctx);
-            self.stream_window(&ctx);
-            self.ki_window(&ctx);
-            self.telemetry_window(&ctx);
-            self.about_window(&ctx);
+            self.app_windows(&ctx);
             return;
         }
         egui::Panel::top("transport")
@@ -6532,16 +6524,24 @@ impl eframe::App for WoaApp {
         self.clock_editor.show(&ctx);
         self.event_editor
             .show(&ctx, self.radio.as_ref().map(|r| r.view()));
-        self.export_window(&ctx);
-        self.controller_window(&ctx);
-        self.feedback_window(&ctx);
-        self.outputs_window(&ctx);
-        self.phone_window(&ctx);
-        self.ordner_window(&ctx);
-        self.stream_window(&ctx);
-        self.ki_window(&ctx);
-        self.telemetry_window(&ctx);
-        self.about_window(&ctx);
+        self.app_windows(&ctx);
+    }
+}
+
+impl WoaApp {
+    /// Fenster, die das Menü in jeder Ansicht öffnet (Feedback, Über, Ausgabe …). Auch die
+    /// Party-Ansicht zeichnet sie; vorher blieb dort etwa Feedback unsichtbar (#288).
+    fn app_windows(&mut self, ctx: &egui::Context) {
+        self.export_window(ctx);
+        self.controller_window(ctx);
+        self.feedback_window(ctx);
+        self.outputs_window(ctx);
+        self.phone_window(ctx);
+        self.ordner_window(ctx);
+        self.stream_window(ctx);
+        self.ki_window(ctx);
+        self.telemetry_window(ctx);
+        self.about_window(ctx);
     }
 }
 
@@ -8690,5 +8690,127 @@ fn bank_hint(state: &woa_engine::banks::BankState) -> String {
             format!(" · lädt {} %", done * 100 / (*total).max(1))
         }
         BankState::Failed(e) => format!(" · Fehler: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod party_feedback_tests {
+    //! #288: In der Party-Ansicht öffnet die Feedback-Taste ihr Fenster wie im Radio.
+    use super::*;
+
+    struct Rig {
+        ctx: egui::Context,
+        app: WoaApp,
+        frame: eframe::Frame,
+        n: u32,
+        nodes: Vec<(String, egui::Rect)>,
+    }
+
+    impl Rig {
+        fn step(&mut self, events: Vec<egui::Event>) {
+            self.n += 1;
+            let mut input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1600.0, 1000.0),
+                )),
+                time: Some(f64::from(self.n) * 0.05),
+                events,
+                ..Default::default()
+            };
+            input.viewports.entry(egui::ViewportId::ROOT).or_default();
+            let (app, frame) = (&mut self.app, &mut self.frame);
+            let out = self.ctx.run_ui(input, |ui| {
+                eframe::App::logic(app, ui.ctx(), frame);
+                eframe::App::ui(app, ui, frame);
+            });
+            self.nodes.clear();
+            if let Some(u) = out.platform_output.accesskit_update {
+                for (_, node) in u.nodes {
+                    let label = node.label().map(str::to_string).unwrap_or_default();
+                    if let Some(b) = node.bounds() {
+                        let r = egui::Rect::from_min_max(
+                            egui::pos2(b.x0 as f32, b.y0 as f32),
+                            egui::pos2(b.x1 as f32, b.y1 as f32),
+                        );
+                        self.nodes.push((label, r));
+                    }
+                }
+            }
+        }
+
+        fn find(&self, text: &str) -> Option<egui::Rect> {
+            self.nodes
+                .iter()
+                .find(|(l, r)| l.contains(text) && r.center().y < 40.0 || l == text)
+                .map(|(_, r)| *r)
+        }
+
+        fn has(&self, text: &str) -> bool {
+            self.nodes.iter().any(|(l, _)| l.contains(text))
+        }
+    }
+
+    fn rig(mode: Mode) -> (Rig, tempfile::TempDir) {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = GuiConfig {
+            telemetry_enabled: Some(false),
+            ..GuiConfig::default()
+        };
+        let mut app = WoaApp::without_audio(config, tmp.path().join("rec"));
+        app.radio = Some(RadioDesk::headless(tmp.path()));
+        app.config.mode = mode;
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut rig = Rig {
+            ctx,
+            app,
+            frame: eframe::Frame::_new_kittest(),
+            n: 0,
+            nodes: Vec::new(),
+        };
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        (rig, tmp)
+    }
+
+    fn feedback_opens(mode: Mode) -> bool {
+        let (mut rig, _tmp) = rig(mode);
+        let at = rig.find("Feedback").expect("Feedback-Taste oben").center();
+        let ev = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        rig.step(vec![egui::Event::PointerMoved(at)]);
+        rig.step(vec![ev(true)]);
+        rig.step(vec![ev(false)]);
+        rig.step(Vec::new());
+        // Das Bildschirmfoto, das die Taste anfordert, kommt wie vom Backend zurück.
+        let image =
+            std::sync::Arc::new(egui::ColorImage::new([2, 2], vec![egui::Color32::BLACK; 4]));
+        rig.step(vec![egui::Event::Screenshot {
+            viewport_id: egui::ViewportId::ROOT,
+            user_data: egui::UserData::default(),
+            image,
+        }]);
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        assert_eq!(rig.app.config.mode, mode, "Ansicht bleibt");
+        rig.has("Abschicken")
+    }
+
+    #[test]
+    fn feedback_window_opens_in_party_view() {
+        assert!(
+            feedback_opens(Mode::Party),
+            "Feedback-Fenster in der Party-Ansicht"
+        );
+    }
+
+    #[test]
+    fn feedback_window_opens_in_radio_view() {
+        assert!(feedback_opens(Mode::Radio));
     }
 }

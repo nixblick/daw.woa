@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.35.7 — 2026-11-01
+
+- **Feedback geht auch in der Party-Ansicht (#288):** Die Party-Ansicht zeichnete nur ihr eigenes Pult und kehrte dann zurück, ohne die Fenster aus dem Menü zu zeichnen. Die Feedback-Taste öffnete das Fenster also unsichtbar, erst nach dem Wechsel zu Radio erschien es. Jetzt zeichnen alle drei Ansichten dieselben Fenster über `WoaApp::app_windows` (Feedback, Über WOA, Ausgabe, Telefon, Ordner, Stream, KI, Telemetrie, Export, Controller). Tests: `party_feedback_tests` in `crates/gui/src/app.rs` (Party war vor dem Fix rot, Radio als Gegenprobe).
+
 ## 0.35.6 — 2026-11-01
 
 - **Playlist-Titel lassen sich wieder am Griff auf ein Deck ziehen (#298):** Seit dem Griff-Symbol aus #92 (0.34.74, Commit `1933917`) war der Griff am linken Zeilenrand ein markierbarer Text. egui gibt das Ziehen dann der Textauswahl statt der Zeile; die Zeile bewegte sich nicht, und auf dem Deck kam nichts an. Jetzt sind alle Texte einer Playlist-Zeile nicht markierbar, Ziehen am Griff wie am Titel lädt aufs Deck oder verschiebt in der Playlist. Klick, Doppelklick, Nummer eintippen und Kontextmenü bleiben. Bibliothek und Dateien aus dem Explorer waren nicht betroffen und sind jetzt mit abgedeckt. Tests im echten Pult-Layout ohne Audiogerät (`RadioDesk::headless`, der Mixer rechnet nur in einen Puffer): `deck_drop_tests` in `crates/gui/src/radio.rs` (Bibliothek, Explorer-Datei, Playlist am Griff, Playlist am Titel).
