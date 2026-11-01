@@ -7526,6 +7526,17 @@ impl WoaApp {
                 self.fx_search.clear();
                 ui.close();
             }
+            if ui
+                .button("Stimme über Bett")
+                .on_hover_text(
+                    "Sprachkette auf diese Spur, alle anderen Spuren werden leiser, solange die Stimme spricht (Ducking)",
+                )
+                .clicked()
+            {
+                self.state.voice_over(id);
+                self.fx_search.clear();
+                ui.close();
+            }
         });
     }
 

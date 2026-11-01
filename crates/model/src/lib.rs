@@ -44,6 +44,7 @@ mod session;
 pub mod sound;
 pub mod store;
 pub mod takes;
+pub mod voice_over;
 
 pub use automation::{
     AutoMode, AutoPoint, AutoRange, AutoTarget, AutomationLane, MAX_AUTOMATION_POINTS,
@@ -70,3 +71,4 @@ pub use takes::{
     ClipPlan, CompSegment, MAX_COMP_SEGMENTS, MAX_TAKES, RecordInput, RecordPlan, TakeEntry,
     TakeFolder, beats_for_samples, plan_recording,
 };
+pub use voice_over::{DUCK_COMPRESSOR, VoiceOver};

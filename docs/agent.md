@@ -50,6 +50,7 @@ live; gleichzeitiges Speichern in ihm und im Fenster überschreibt sich.
 | `list_effects` | `kind` (optional) | alle Effekte mit Reglern (Name, Einheit, Bereich, Vorgabe, Auswahlstufen) und Voreinstellungen |
 | `insert_effect` | `track`, `kind` (`eq`/`compressor`/`limiter`/`gate`/`de_esser`/`reverb`/`delay`/`chorus`/`saturation`/`denoise`), `index`, `preset`, `params` (Name → Wert, über dem Preset) | Effekt in die Insert-Kette einer Spur oder eines Busses (vor dem Fader), liefert `insert`-ID |
 | `insert_voice_chain` | `track` | Vorlage „Sprachkette“ (Hochpass-EQ, Gate, EQ, Kompressor, De-Esser) ans Ende der Kette, ein Undo-Schritt, liefert die fünf `inserts` |
+| `voice_over` | `voice` | Stimme über das Bett (J5): Sprachkette auf die Stimme (falls noch keine), jede andere Audio- und MIDI-Spur ohne Sprachkette bekommt einen Kompressor mit der Stimme als Sidechain. Ein Undo-Schritt, nichts doppelt; liefert `chain` und je Bett-Spur `ducks` (`track`, `insert`) |
 | `set_param` | `insert`, `param` (z. B. `bell_db`, `threshold_db`), `value` | Effekt-Regler setzen, Wert wird gegen den Bereich geprüft |
 | `set_insert_bypass` | `insert`, `bypass` | Effekt knackfrei ein- oder ausschalten |
 | `remove_insert` | `insert` | Effekt entfernen |
