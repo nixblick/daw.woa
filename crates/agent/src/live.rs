@@ -778,6 +778,14 @@ mod tests {
         assert_eq!(lines.len(), 2, "{out}");
         assert!(lines[0].contains("protocolVersion"), "{out}");
         assert!(lines[1].contains("\"id\":2"), "{out}");
+        // Der Testserver notiert das DELETE in seinem eigenen Faden; unter Windows kommt
+        // das oft erst nach der Rückkehr von `forward` an (#256).
+        for _ in 0..200 {
+            if seen.lock().unwrap().len() >= 4 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 4, "{seen:?}");
         // Zum Schluss beendet die Weiterleitung ihre Sitzung.
