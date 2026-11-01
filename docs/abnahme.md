@@ -1268,6 +1268,17 @@ Mit drei kurzen Titeln und 5 s Crossfade, Lautstärke nach Wunsch (der Ablauf ge
 
 Selbst geprüft von Claude: Tests ohne Ton für Constant Power, die Glättung des Faders, Auto an und aus, „die Hand gewinnt“, „über die Mitte ist kein Weiter“, das Ende lädt vor, ohne zu starten, Ein- und Austritt ohne Lücke, den Wunschordner (einmal je Datei, entfernt bleibt weg, Datei bleibt) und Mixer-Blöcke unter `assert_no_alloc`. Clippy und Tests von `woa-radio`, `woa-remote` und `woa-gui` grün. Nicht am Gerät gehört.
 
+## Ganze Zeile anklickbar (0.35.10, offen)
+
+1. Radio-Modus, ein paar Titel in der Playlist. Rechts neben der Dauer (leere Fläche) klicken: Die Zeile bekommt einen Rahmen in Akzentfarbe.
+2. Irgendwo auf der Zeile rechtsklicken, auch auf dem Cover oder dem Griff: Das Titelmenü (Umbenennen, Titelinfos …) geht auf.
+3. Doppelklick auf eine freie Stelle der Zeile: Der Titel ist „als Nächstes“ markiert.
+4. Die Zeile an einer freien Stelle greifen und auf ein Deck oder an eine andere Stelle ziehen: geht wie bisher.
+5. Auf die Nummer klicken: Das Eingabefeld kommt, die Zeile wird nicht ausgewählt. „x“, „^“, „v“ tun weiter nur ihr Eigenes.
+6. Rechtsklick irgendwo auf eine Deck-Zeile (neben der Uhr): Das Deck-Menü geht auf. „Start“, „Cue“ und PFL klicken wie bisher.
+
+Selbst geprüft von Claude: Test im egui-Harness (Klick auf den rechten Rand wählt aus, Rechtsklick in der Mitte öffnet das Menü, die Nummer behält ihren Klick) und Messung mit 300 Zeilen (etwa 15 ms je Bild mit Klickfläche, 13 ms ohne, Debug-Bau). Clippy und Tests von `woa-gui` grün. Nicht am Gerät geklickt.
+
 ## Abgenommen
 
 - Paket 10 Dauertest (0.5.0): 30.10.2026, André „2 abgenommen“ (Sammelabnahme Pakete 5, 9, 10 und Nachtrag #43).

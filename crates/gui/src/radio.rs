@@ -82,6 +82,23 @@ fn row_drop_target(
 
 /// Anzahl gespielter Titel am Anfang der Playlist (vor dem laufenden bzw. nächsten).
 /// Eingetippte Playlist-Nummer (#92, 1-basiert) als Zielindex, auf die Liste begrenzt.
+/// Eine Zeile als eine Klickfläche (#302): Auswahl, Doppelklick, Rechtsklick-Menü und Ziehen
+/// greifen an jeder Stelle der Zeile. Die Fläche liegt unter dem Inhalt; nur Knöpfe und Felder,
+/// die selbst klicken (Nummer eintippen, x, ^, v, Start …), behalten den Klick für sich.
+/// Beschriftungen in der Zeile sind nicht markierbar, sonst fingen sie den Klick ab.
+pub(crate) fn row_area<R>(
+    ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
+    sense: egui::Sense,
+    frame: egui::Frame,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    ui.scope_builder(egui::UiBuilder::new().id_salt(id_salt).sense(sense), |ui| {
+        ui.style_mut().interaction.selectable_labels = false;
+        frame.show(ui, add).inner
+    })
+}
+
 fn typed_position(text: &str, len: usize) -> Option<usize> {
     let n: usize = text.trim().parse().ok()?;
     (len > 0).then(|| n.clamp(1, len) - 1)
@@ -177,6 +194,8 @@ pub struct RadioDesk {
     row_rects: Vec<egui::Rect>,
     /// Gezogene Playlist-Zeile (Index), solange die Maus gedrückt ist (#166).
     row_drag: Option<usize>,
+    /// Angeklickte Playlist-Zeile (#302), nur Hervorhebung.
+    row_selected: Option<usize>,
     /// Nummer einer Playlist-Zeile wird gerade eingetippt (#92): Zeile und Text.
     pos_edit: Option<(usize, String)>,
     /// Cart, das die nächste gedrückte Taste als neue Taste bekommt.
@@ -881,6 +900,7 @@ impl RadioDesk {
             deck_rects: [egui::Rect::NOTHING; woa_radio::DECKS],
             row_rects: Vec::new(),
             row_drag: None,
+            row_selected: None,
             pos_edit: None,
             key_capture: None,
             rename: None,
@@ -3002,6 +3022,8 @@ impl RadioDesk {
                     egui::Stroke::new(1.0, theme::on_air())
                 } else if is_cue {
                     egui::Stroke::new(1.0, theme::cue())
+                } else if self.row_selected == Some(i) {
+                    egui::Stroke::new(1.5, theme::accent())
                 } else {
                     egui::Stroke::new(1.0, theme::mix(theme::border(), theme::well(), 0.5))
                 };
@@ -3010,159 +3032,176 @@ impl RadioDesk {
                     .stroke(stroke)
                     .corner_radius(4)
                     .inner_margin(egui::Margin::symmetric(8, 5));
-                let resp = frame.show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    // Texte der Zeile nicht markierbar: markierbare Labels fangen das Ziehen
-                    // ab (Griff #92, Titel), dann landet nichts auf dem Deck (#298).
-                    ui.style_mut().interaction.selectable_labels = false;
-                    ui.horizontal(|ui| {
-                        // Griff zum Ziehen (#92): die ganze Zeile lässt sich ziehen (#166).
-                        ui.label(
-                            egui::RichText::new(theme::ic::DOTS_SIX_VERTICAL)
-                                .color(theme::text_dim()),
-                        )
-                        .on_hover_text("Ziehen zum Verschieben");
-                        // Nummer eintippen (#92): Klick, Zahl, Enter verschiebt den Titel.
-                        let editing = self.pos_edit.as_ref().is_some_and(|(k, _)| *k == i);
-                        if editing {
-                            let len = v.playlist.len();
-                            let mut done = None;
-                            if let Some((_, text)) = self.pos_edit.as_mut() {
-                                let r = ui.add(
-                                    egui::TextEdit::singleline(text)
-                                        .desired_width(26.0)
-                                        .font(egui::TextStyle::Monospace),
-                                );
-                                r.request_focus();
-                                if r.lost_focus() {
-                                    let enter = ui.input(|inp| inp.key_pressed(egui::Key::Enter));
-                                    done = Some(enter.then(|| typed_position(text, len)).flatten());
-                                }
-                            }
-                            if let Some(target) = done {
-                                self.pos_edit = None;
-                                if let Some(to) = target.filter(|&to| to != i) {
-                                    self.with(move |c| {
-                                        c.move_entry(i, to);
-                                    });
-                                }
-                            }
-                        } else {
-                            let r = ui
-                                .add(
-                                    egui::Label::new(
-                                        egui::RichText::new(format!("{:>2}", i + 1))
-                                            .monospace()
-                                            .strong()
-                                            .color(if on_air {
-                                                theme::on_air()
-                                            } else if is_cue {
-                                                theme::cue()
-                                            } else {
-                                                theme::text_dim()
-                                            }),
-                                    )
-                                    .sense(egui::Sense::click()),
-                                )
-                                .on_hover_text("Klicken und neue Nummer eintippen (Enter)");
-                            if r.clicked() {
-                                self.pos_edit = Some((i, (i + 1).to_string()));
-                            }
-                        }
-                        let thumb = self.covers.as_mut().and_then(|c| c.thumb(&e.path));
-                        crate::covers::paint_square(ui, 34.0, thumb.as_ref(), None, 1.0);
-                        crate::protokoll::damage_badge(ui, &e.path);
-                        if let Some(vb) = e.voice {
+                let resp = row_area(
+                    ui,
+                    ("playlist_row", i),
+                    egui::Sense::click_and_drag(),
+                    frame,
+                    |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            // Griff zum Ziehen (#92): die ganze Zeile lässt sich ziehen (#166).
                             ui.label(
-                                egui::RichText::new("VOICE")
-                                    .small()
-                                    .strong()
-                                    .color(theme::accent()),
-                            );
-                            if vb.check {
+                                egui::RichText::new(theme::ic::DOTS_SIX_VERTICAL)
+                                    .color(theme::text_dim()),
+                            )
+                            .on_hover_text("Ziehen zum Verschieben");
+                            // Nummer eintippen (#92): Klick, Zahl, Enter verschiebt den Titel.
+                            let editing = self.pos_edit.as_ref().is_some_and(|(k, _)| *k == i);
+                            if editing {
+                                let len = v.playlist.len();
+                                let mut done = None;
+                                if let Some((_, text)) = self.pos_edit.as_mut() {
+                                    let r = ui.add(
+                                        egui::TextEdit::singleline(text)
+                                            .desired_width(26.0)
+                                            .font(egui::TextStyle::Monospace),
+                                    );
+                                    r.request_focus();
+                                    if r.lost_focus() {
+                                        let enter =
+                                            ui.input(|inp| inp.key_pressed(egui::Key::Enter));
+                                        done = Some(
+                                            enter.then(|| typed_position(text, len)).flatten(),
+                                        );
+                                    }
+                                }
+                                if let Some(target) = done {
+                                    self.pos_edit = None;
+                                    if let Some(to) = target.filter(|&to| to != i) {
+                                        self.with(move |c| {
+                                            c.move_entry(i, to);
+                                        });
+                                    }
+                                }
+                            } else {
+                                let r = ui
+                                    .add(
+                                        egui::Label::new(
+                                            egui::RichText::new(format!("{:>2}", i + 1))
+                                                .monospace()
+                                                .strong()
+                                                .color(if on_air {
+                                                    theme::on_air()
+                                                } else if is_cue {
+                                                    theme::cue()
+                                                } else {
+                                                    theme::text_dim()
+                                                }),
+                                        )
+                                        .sense(egui::Sense::click()),
+                                    )
+                                    .on_hover_text("Klicken und neue Nummer eintippen (Enter)");
+                                if r.clicked() {
+                                    self.pos_edit = Some((i, (i + 1).to_string()));
+                                }
+                            }
+                            let thumb = self.covers.as_mut().and_then(|c| c.thumb(&e.path));
+                            crate::covers::paint_square(ui, 34.0, thumb.as_ref(), None, 1.0);
+                            crate::protokoll::damage_badge(ui, &e.path);
+                            if let Some(vb) = e.voice {
                                 ui.label(
-                                    egui::RichText::new("prüfen")
+                                    egui::RichText::new("VOICE")
                                         .small()
                                         .strong()
-                                        .color(theme::danger_text()),
-                                )
-                                .on_hover_text(
-                                    "Ein Nachbar hat sich geändert: der Voice-Track geht erst \
-                                     nach der Bestätigung im Editor auf Sendung",
+                                        .color(theme::accent()),
                                 );
+                                if vb.check {
+                                    ui.label(
+                                        egui::RichText::new("prüfen")
+                                            .small()
+                                            .strong()
+                                            .color(theme::danger_text()),
+                                    )
+                                    .on_hover_text(
+                                        "Ein Nachbar hat sich geändert: der Voice-Track geht erst \
+                                     nach der Bestätigung im Editor auf Sendung",
+                                    );
+                                }
                             }
-                        }
 
-                        // Rechte Seite zuerst reservieren (Steuerung + Dauer + LUFS-Badge),
-                        // damit der Titel links sauber abschneidet.
-                        let lufs_badge = e
-                            .lufs
-                            .map(|l| format!("{l:.1} LUFS ({:+.1} dB)", e.gain_db));
-                        let title_resp = ui
-                            .add(
+                            // Rechte Seite zuerst reservieren (Steuerung + Dauer + LUFS-Badge),
+                            // damit der Titel links sauber abschneidet.
+                            let lufs_badge = e
+                                .lufs
+                                .map(|l| format!("{l:.1} LUFS ({:+.1} dB)", e.gain_db));
+                            // Der Titel klickt nicht selbst: Klick, Doppelklick und Menü gehören
+                            // der ganzen Zeile (#302).
+                            ui.add(
                                 egui::Label::new(
                                     egui::RichText::new(&e.title).strong().color(theme::text()),
                                 )
-                                .truncate()
-                                .sense(egui::Sense::click()),
-                            )
-                            .on_hover_text(format!(
-                                "{}\n{}\nDoppelklick: als Nächstes beim Start",
-                                e.path.display(),
-                                e.lufs
-                                    .map(|l| format!("{l:.1} LUFS, Auto-Gain {:+.1} dB", e.gain_db))
-                                    .unwrap_or_else(|| "noch nicht gemessen".into())
-                            ));
-                        if title_resp.double_clicked() {
-                            self.with(move |c| c.set_cue(i));
-                        }
-                        title_resp.context_menu(|ui| self.title_menu(ui, i, e, v));
-
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("x").on_hover_text("Entfernen").clicked() {
-                                self.with(move |c| {
-                                    c.remove(i);
-                                });
-                            }
-                            if ui.small_button("v").on_hover_text("Nach unten").clicked() {
-                                self.with(move |c| {
-                                    c.move_entry(i, i + 1);
-                                });
-                            }
-                            if ui.small_button("^").on_hover_text("Nach oben").clicked() && i > 0 {
-                                self.with(move |c| {
-                                    c.move_entry(i, i - 1);
-                                });
-                            }
-                            ui.label(
-                                egui::RichText::new(
-                                    e.seconds
-                                        .map(|s| clock(e.cues.play_seconds(s)))
-                                        .unwrap_or_else(|| "--:--".into()),
-                                )
-                                .monospace()
-                                .strong()
-                                .color(theme::accent()),
+                                .truncate(),
                             );
-                            if let Some(lb) = lufs_badge {
-                                ui.label(
-                                    egui::RichText::new(lb)
-                                        .size(10.5)
+
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.small_button("x").on_hover_text("Entfernen").clicked() {
+                                        self.with(move |c| {
+                                            c.remove(i);
+                                        });
+                                    }
+                                    if ui.small_button("v").on_hover_text("Nach unten").clicked() {
+                                        self.with(move |c| {
+                                            c.move_entry(i, i + 1);
+                                        });
+                                    }
+                                    if ui.small_button("^").on_hover_text("Nach oben").clicked()
+                                        && i > 0
+                                    {
+                                        self.with(move |c| {
+                                            c.move_entry(i, i - 1);
+                                        });
+                                    }
+                                    ui.label(
+                                        egui::RichText::new(
+                                            e.seconds
+                                                .map(|s| clock(e.cues.play_seconds(s)))
+                                                .unwrap_or_else(|| "--:--".into()),
+                                        )
                                         .monospace()
-                                        .color(theme::text_dim()),
-                                );
-                            }
+                                        .strong()
+                                        .color(theme::accent()),
+                                    );
+                                    if let Some(lb) = lufs_badge {
+                                        ui.label(
+                                            egui::RichText::new(lb)
+                                                .size(10.5)
+                                                .monospace()
+                                                .color(theme::text_dim()),
+                                        );
+                                    }
+                                },
+                            );
                         });
-                    });
-                });
-                // Ziehen (#166): Zeile auf ein Deck (laden) oder an eine andere Stelle der
-                // Playlist (verschieben). Nur Ziehen: Klick, Doppelklick und Kontextmenü auf dem
-                // Titel und die Knöpfe bleiben, wie sie sind.
+                    },
+                );
+                // Die ganze Zeile (#302): Klick wählt aus, Doppelklick setzt „als Nächstes“,
+                // Rechtsklick öffnet das Titelmenü, Ziehen (#166) legt auf ein Deck oder an eine
+                // andere Stelle. Knöpfe und die Nummer behalten ihren eigenen Klick.
                 let row = resp.response.rect;
                 self.row_rects.push(row);
-                let drag = ui
-                    .interact(row, ui.id().with(("playlist_row", i)), egui::Sense::drag())
-                    .on_hover_cursor(egui::CursorIcon::Grab);
+                let drag = resp
+                    .response
+                    .clone()
+                    .on_hover_cursor(egui::CursorIcon::Grab)
+                    .on_hover_ui(|ui| {
+                        ui.label(format!(
+                            "{}\n{}\nDoppelklick: als Nächstes beim Start · Rechtsklick: Menü",
+                            e.path.display(),
+                            e.lufs
+                                .map(|l| format!("{l:.1} LUFS, Auto-Gain {:+.1} dB", e.gain_db))
+                                .unwrap_or_else(|| "noch nicht gemessen".into())
+                        ));
+                    });
+                if drag.clicked() {
+                    self.row_selected = Some(i);
+                }
+                if drag.double_clicked() {
+                    self.with(move |c| c.set_cue(i));
+                }
+                drag.context_menu(|ui| self.title_menu(ui, i, e, v));
                 if drag.drag_started() {
                     self.row_drag = Some(i);
                 }
@@ -3980,8 +4019,8 @@ impl RadioDesk {
                 ))
                 .corner_radius(5)
                 .inner_margin(egui::Margin::symmetric(8, 3));
-            let mut title_r: Option<egui::Response> = None;
-            let out = frame.show(ui, |ui| {
+            // Die ganze Deck-Zeile ist eine Klickfläche (#302), die Knöpfe klicken selbst.
+            let out = row_area(ui, ("deck_row", k), egui::Sense::click(), frame, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new(name.to_string())
@@ -4064,32 +4103,26 @@ impl RadioDesk {
                         let on = !d.back_to_playlist;
                         self.with(move |c| c.set_deck_return(k, on));
                     }
-                    title_r = Some(
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(
-                                    d.title
-                                        .clone()
-                                        .unwrap_or_else(|| "leer: Datei hierher ziehen".into()),
-                                )
-                                .small()
-                                .color(if loaded {
-                                    theme::text()
-                                } else {
-                                    theme::text_dim()
-                                }),
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(
+                                d.title
+                                    .clone()
+                                    .unwrap_or_else(|| "leer: Datei hierher ziehen".into()),
                             )
-                            .truncate()
-                            .sense(egui::Sense::click()),
-                        ),
+                            .small()
+                            .color(if loaded {
+                                theme::text()
+                            } else {
+                                theme::text_dim()
+                            }),
+                        )
+                        .truncate(),
                     );
                 });
             });
             self.deck_rects[k] = out.response.rect;
-            let Some(r) = title_r else {
-                continue;
-            };
-            r.context_menu(|ui| {
+            out.response.context_menu(|ui| {
                 if ui.button("Datei laden …").clicked() {
                     self.pick_deck_file(k);
                     ui.close();
@@ -4342,6 +4375,141 @@ mod tests {
             .iter()
             .find(|(l, _, _)| l.contains(text))
             .unwrap_or_else(|| panic!("„{text}“ fehlt: {nodes:?}"))
+    }
+
+    /// Zeile wie in der Playlist: Griff, Nummer (eigener Klick), Titel, Knopf rechts.
+    fn demo_row(ui: &mut eframe::egui::Ui, number_hit: &mut bool) -> eframe::egui::Response {
+        use eframe::egui;
+        super::row_area(
+            ui,
+            "demo_row",
+            egui::Sense::click_and_drag(),
+            egui::Frame::new().inner_margin(5),
+            |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.label("::");
+                    if ui
+                        .add(egui::Label::new(" 1").sense(egui::Sense::click()))
+                        .clicked()
+                    {
+                        *number_hit = true;
+                    }
+                    ui.label("Ein Titel");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label("03:21");
+                    });
+                });
+            },
+        )
+        .response
+    }
+
+    /// Trägheit (#302): 300 Zeilen je Bild mit Klickfläche gegen dieselben Zeilen ohne. Die
+    /// absolute Zeit hängt am Rechner (die CI ist langsamer), daher der Vergleich: Die Klickfläche
+    /// darf die Zeilen nicht spürbar langsamer machen. Die Zeiten stehen in der Testausgabe.
+    #[test]
+    fn many_rows_stay_fast() {
+        use eframe::egui;
+        fn ms(with_area: bool) -> f64 {
+            let ctx = egui::Context::default();
+            let mut hit = false;
+            let mut ui = |ui: &mut egui::Ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for _ in 0..300 {
+                        if with_area {
+                            demo_row(ui, &mut hit);
+                        } else {
+                            egui::Frame::new().inner_margin(5).show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.horizontal(|ui| {
+                                    ui.label("::");
+                                    ui.label(" 1");
+                                    ui.label("Ein Titel");
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| ui.label("03:21"),
+                                    );
+                                });
+                            });
+                        }
+                    }
+                });
+            };
+            frame(&ctx, 0, vec![], &mut ui);
+            (1..=3)
+                .map(|k| {
+                    let t = std::time::Instant::now();
+                    for n in 1..=10 {
+                        frame(&ctx, k * 10 + n, vec![], &mut ui);
+                    }
+                    t.elapsed().as_secs_f64() * 100.0
+                })
+                .fold(f64::MAX, f64::min)
+        }
+        let plain = ms(false);
+        let area = ms(true);
+        eprintln!("300 Zeilen: {area:.2} ms je Bild mit Klickfläche, {plain:.2} ms ohne");
+        assert!(area < plain * 2.0 + 2.0, "{area:.1} ms gegen {plain:.1} ms");
+    }
+
+    #[test]
+    fn whole_row_selects_and_opens_the_menu_anywhere() {
+        use eframe::egui::{self, Event, Modifiers, PointerButton};
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let rect = std::cell::Cell::new(egui::Rect::NOTHING);
+        let mut clicked = false;
+        let mut secondary = false;
+        let mut number = false;
+        let mut n = 0;
+        let mut step = |events: Vec<Event>, number: &mut bool| {
+            let mut c = false;
+            let mut s = false;
+            frame(&ctx, n, events, |ui| {
+                let r = demo_row(ui, number);
+                rect.set(r.rect);
+                c |= r.clicked();
+                s |= r.secondary_clicked();
+            });
+            n += 1;
+            (c, s)
+        };
+        step(vec![], &mut number);
+        step(vec![], &mut number);
+        let rect = rect.get();
+        // Rechter Rand der Zeile, neben der Dauer: kein Text, trotzdem Auswahl.
+        let edge = egui::pos2(rect.right() - 2.0, rect.center().y);
+        let (c, _) = step(click_at(edge, false), &mut number);
+        clicked |= c;
+        assert!(clicked, "Klick auf den rechten Rand wählt aus: {rect:?}");
+        step(vec![], &mut number);
+        // Rechtsklick mitten auf den Titel öffnet das Menü der Zeile.
+        let mid = egui::pos2(rect.center().x, rect.center().y);
+        let right = vec![
+            Event::PointerMoved(mid),
+            Event::PointerButton {
+                pos: mid,
+                button: PointerButton::Secondary,
+                pressed: true,
+                modifiers: Modifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: mid,
+                button: PointerButton::Secondary,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            },
+        ];
+        let (_, s) = step(right, &mut number);
+        secondary |= s;
+        assert!(secondary, "Rechtsklick irgendwo öffnet das Menü");
+        step(vec![], &mut number);
+        // Die Nummer behält ihren eigenen Klick (eintippen), die Zeile wählt dann nicht aus.
+        let num = egui::pos2(rect.left() + 22.0, rect.center().y);
+        let (c, _) = step(click_at(num, false), &mut number);
+        assert!(number, "Nummer bekommt den Klick");
+        assert!(!c, "Klick auf die Nummer wählt die Zeile nicht aus");
     }
 
     #[test]
