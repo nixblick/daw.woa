@@ -23,6 +23,8 @@ const PREFERRED_PORT: u16 = 8787;
 const OSC_PORT: u16 = 9000;
 /// So oft geht der Zustand höchstens an die Handys.
 const PUBLISH_EVERY: Duration = Duration::from_millis(250);
+/// Kantenlänge des QR-Codes in der Karte.
+const QR_SIDE: f32 = 120.0;
 
 /// Zustand der Karte.
 #[derive(Default)]
@@ -119,52 +121,65 @@ impl RemoteView {
     /// Zeichnet die Karte.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        theme::card_frame().show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.label(theme::panel_label("FERNBEDIENUNG"));
-                if let Some(r) = &self.remote {
-                    theme::status_pill(
-                        ui,
-                        &format!("an · {} verbunden", r.clients()),
-                        theme::ok(),
-                        true,
-                    );
+        theme::card_frame()
+            .inner_margin(egui::Margin::same(14))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.label(theme::panel_label("FERNBEDIENUNG").color(theme::accent_2()));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // An/Aus als ein Schalter: an = gefüllt (Entwurf ScreenParty).
+                        let on = self.remote.is_some();
+                        let label = format!("{} AN", theme::ic::WIFI_HIGH);
+                        let r = crate::widgets::Key::new(&label, egui::vec2(72.0, 32.0))
+                            .font(theme::label_font(14.0))
+                            .radius(theme::RADIUS_MD)
+                            .on(on)
+                            .ui(ui)
+                            .on_hover_text(if on {
+                                "Fernbedienung im WLAN ist an. Klick: aus (Handys werden getrennt)"
+                            } else {
+                                "Fernbedienung im WLAN einschalten"
+                            });
+                        if r.clicked() {
+                            if on {
+                                self.stop();
+                            } else {
+                                self.start(&ctx);
+                            }
+                        }
+                    });
+                });
+                if self.remote.is_none() {
+                    self.ui_off(ui);
+                } else {
+                    self.ui_on(ui);
+                }
+                if let Some(e) = &self.error {
+                    ui.label(egui::RichText::new(e).color(theme::danger_text()));
                 }
             });
-            ui.add_space(4.0);
-            if self.remote.is_none() {
-                self.ui_off(ui, &ctx);
-            } else {
-                self.ui_on(ui);
-            }
-            if let Some(e) = &self.error {
-                ui.add_space(4.0);
-                ui.label(egui::RichText::new(e).color(theme::danger_text()));
-            }
-        });
     }
 
-    fn ui_off(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+    fn ui_off(&mut self, ui: &mut egui::Ui) {
         ui.label(
             egui::RichText::new("Handys im WLAN zeigen die Party und wünschen Titel.")
                 .color(theme::text_dim()),
         );
-        ui.checkbox(
-            &mut self.osc_on,
-            format!("OSC-Eingang (Port {OSC_PORT}, ohne PIN, volle DJ-Rechte)"),
-        );
-        let btn = egui::Button::new(
-            egui::RichText::new("Fernbedienung an")
-                .size(18.0)
-                .strong()
-                .color(theme::well()),
-        )
-        .fill(theme::ok())
-        .min_size(egui::vec2(ui.available_width(), 48.0));
-        if ui.add(btn).clicked() {
-            self.start(ctx);
-        }
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.label(egui::RichText::new("OSC-Eingang").size(13.0));
+                ui.label(
+                    egui::RichText::new(format!("Port {OSC_PORT}, ohne PIN, volle DJ-Rechte"))
+                        .size(11.0)
+                        .color(theme::text_dim()),
+                );
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add(egui::Checkbox::without_text(&mut self.osc_on))
+                    .on_hover_text("OSC-Eingang beim Einschalten mit öffnen (TouchOSC & Co.)");
+            });
+        });
     }
 
     fn ui_on(&mut self, ui: &mut egui::Ui) {
@@ -174,23 +189,34 @@ impl RemoteView {
         let dj_pin = r.dj_pin();
         let dj_url = r.join_url(&dj_pin);
         let osc = r.osc_addr();
+        let phones = r.clients();
         let plain = guest_url.split("/?").next().unwrap_or("").to_string();
+        let host = plain
+            .trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .trim_end_matches('/')
+            .to_string();
         if self.qr.as_ref().map(|(u, _)| u) != Some(&guest_url) {
             self.qr = qr(&guest_url).map(|m| (guest_url.clone(), m));
         }
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 14.0;
             if let Some((_, m)) = &self.qr {
-                draw_qr(ui, m, 170.0);
+                draw_qr(ui, m, QR_SIDE).on_hover_text(&plain);
             }
             ui.vertical(|ui| {
-                ui.label(egui::RichText::new("Gäste scannen den Code").strong());
-                ui.label(egui::RichText::new(&plain).monospace().color(theme::cue()));
+                ui.label(egui::RichText::new("Handy scannen").size(15.0).strong());
                 ui.label(
-                    egui::RichText::new(format!("Gast-PIN {pin}"))
-                        .size(22.0)
+                    egui::RichText::new(format!("{host} · PIN {pin}"))
                         .monospace()
-                        .strong()
-                        .color(theme::accent()),
+                        .size(12.0)
+                        .color(theme::text_dim()),
+                );
+                theme::status_pill(
+                    ui,
+                    &format!("{phones} {}", if phones == 1 { "Handy" } else { "Handys" }),
+                    theme::ok(),
+                    phones > 0,
                 );
                 if let Some(o) = osc {
                     ui.label(
@@ -201,11 +227,10 @@ impl RemoteView {
                 }
             });
         });
-        ui.add_space(6.0);
         if self.show_dj {
             ui.label(
                 egui::RichText::new(format!("DJ-PIN {dj_pin}"))
-                    .size(22.0)
+                    .size(18.0)
                     .monospace()
                     .strong()
                     .color(theme::accent()),
@@ -226,7 +251,6 @@ impl RemoteView {
             );
         }
         let mut renew = false;
-        let mut off = false;
         ui.horizontal(|ui| {
             let t = if self.show_dj {
                 "DJ-PIN verbergen"
@@ -243,17 +267,9 @@ impl RemoteView {
             {
                 renew = true;
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Aus").clicked() {
-                    off = true;
-                }
-            });
         });
         if renew && let Some(r) = &self.remote {
             r.renew_pins();
-        }
-        if off {
-            self.stop();
         }
     }
 }
