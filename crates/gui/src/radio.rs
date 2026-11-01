@@ -161,6 +161,8 @@ pub struct RadioDesk {
     pos_edit: Option<(usize, String)>,
     /// Cart, das die nächste gedrückte Taste als neue Taste bekommt.
     key_capture: Option<usize>,
+    /// Offenes Umbenennen (#292): was, Text, Fokus schon gesetzt.
+    rename: Option<(Rename, String, bool)>,
     /// Ortszeit für die Uhrzeit-Anzeige (von der Stundenuhr).
     zone: Zone,
     /// Offener Cue-Editor (Paket 15).
@@ -527,6 +529,34 @@ pub fn time_parts(unix: i64, zone: Zone) -> (u32, u32, u32) {
     (l.hour as u32, l.minute as u32, l.second as u32)
 }
 
+/// Was „Umbenennen …“ umbenennt (#292); ein Dialog für alles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rename {
+    CartSet(usize),
+    Cart(usize),
+    Title(usize),
+}
+
+impl Rename {
+    /// Überschrift des Dialogs.
+    pub fn heading(self) -> String {
+        match self {
+            Self::CartSet(i) => format!("Cart-Wall-Satz {} umbenennen", i + 1),
+            Self::Cart(s) => format!("Cart {} umbenennen", s + 1),
+            Self::Title(i) => format!("Titel {} umbenennen", i + 1),
+        }
+    }
+
+    /// Führt das Umbenennen am Controller aus (dieselben Funktionen wie der MCP).
+    pub fn apply(self, c: &mut Controller, name: &str) -> Result<(), String> {
+        match self {
+            Self::CartSet(i) => c.rename_cart_set(i, name),
+            Self::Cart(s) => c.rename_cart(s, name),
+            Self::Title(i) => c.rename_title(i, name),
+        }
+    }
+}
+
 /// Name der Zifferntaste, die zur Nummer von Cart `slot` passt (1–9, 0 für 10).
 fn cart_number_key(slot: usize) -> Option<String> {
     woa_radio::show::default_cart_key(slot).map(str::to_string)
@@ -708,6 +738,7 @@ impl RadioDesk {
             row_drag: None,
             pos_edit: None,
             key_capture: None,
+            rename: None,
             zone: Zone::CENTRAL_EUROPE,
             cue_editor: None,
             tag_wish: None,
@@ -3032,7 +3063,29 @@ impl RadioDesk {
 
     fn cart_wall(&mut self, ui: &mut egui::Ui, v: &View) {
         ui.horizontal(|ui| {
-            ui.label(theme::panel_label("CART-WALL (JINGLES & SOUNDS)"));
+            ui.label(theme::panel_label("CART-WALL"));
+            // Sätze 1–5 als kleine Reiter (#292): Klick wechselt, Rechtsklick benennt um.
+            for (i, name) in v.cart_sets.iter().enumerate() {
+                let r = ui
+                    .selectable_label(
+                        i == v.cart_set,
+                        egui::RichText::new(format!("{} {name}", i + 1)).small(),
+                    )
+                    .on_hover_text("Cart-Wall-Satz wechseln · Rechtsklick: Umbenennen");
+                if r.clicked() && i != v.cart_set {
+                    self.with(move |c| {
+                        if let Err(e) = c.select_cart_set(i) {
+                            c.report(e);
+                        }
+                    });
+                }
+                r.context_menu(|ui| {
+                    if ui.button("Umbenennen …").clicked() {
+                        self.rename = Some((Rename::CartSet(i), name.clone(), false));
+                        ui.close();
+                    }
+                });
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
                     egui::RichText::new(match self.key_capture {
@@ -3041,7 +3094,7 @@ impl RadioDesk {
                             n + 1
                         ),
                         None => {
-                            "Taste startet und stoppt · Rechtsklick: Belegen, Taste, Schnitt".into()
+                            "Taste startet und stoppt · Rechtsklick: Umbenennen, Belegen, Taste, Schnitt".into()
                         }
                     })
                     .small()
@@ -3075,6 +3128,7 @@ impl RadioDesk {
                         playing,
                         color: theme::track_color(slot),
                         remaining: v.cart_remaining.get(slot).copied().filter(|r| *r > 0.0),
+                        seconds: v.cart_seconds.get(slot).copied().flatten(),
                     }
                     .ui(ui, egui::vec2(w, 68.0));
                     if self.cart_rects.len() <= slot {
@@ -3092,6 +3146,12 @@ impl RadioDesk {
                     r.context_menu(|ui| {
                         if ui.button("Belegen …").clicked() {
                             self.assign_cart(slot);
+                            ui.close();
+                        }
+                        if let Some(name) = &label
+                            && ui.button("Umbenennen …").clicked()
+                        {
+                            self.rename = Some((Rename::Cart(slot), name.clone(), false));
                             ui.close();
                         }
                         if let Some(t) = crate::controls::learn_menu(ui, Target::Cart(slot), None) {
@@ -3147,6 +3207,10 @@ impl RadioDesk {
             }
         } else if ui.button("Voice-Track danach einfügen …").clicked() {
             self.add_voice_dialog(i + 1);
+            ui.close();
+        }
+        if ui.button("Umbenennen …").clicked() {
+            self.rename = Some((Rename::Title(i), e.title.clone(), false));
             ui.close();
         }
         // Doppelklick setzt hier schon „als Nächstes“, darum Titelinfos nur im Kontextmenü.
@@ -3462,7 +3526,60 @@ impl RadioDesk {
     }
 
     /// Zeichnet den Cue-Editor, falls offen, und reicht seine Aufträge weiter.
+    /// Dialog „Umbenennen“ für Satz, Cart und Titel (#292). Enter übernimmt, Esc bricht ab;
+    /// ein leerer Name setzt den Dateinamen (bzw. „Satz n“) zurück.
+    fn rename_window(&mut self, ctx: &egui::Context) {
+        let Some((what, buf, focused)) = self.rename.as_mut() else {
+            return;
+        };
+        let what = *what;
+        let mut done = None;
+        let mut open = true;
+        egui::Window::new(what.heading())
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut open)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                let r = ui.add(egui::TextEdit::singleline(buf).desired_width(260.0));
+                if !*focused {
+                    r.request_focus();
+                    *focused = true;
+                }
+                let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                ui.label(
+                    egui::RichText::new("Leer: zurück zum Dateinamen")
+                        .small()
+                        .color(theme::text_dim()),
+                );
+                ui.horizontal(|ui| {
+                    if ui.button("Übernehmen").clicked() || enter {
+                        done = Some(true);
+                    }
+                    if ui.button("Abbrechen").clicked()
+                        || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                    {
+                        done = Some(false);
+                    }
+                });
+            });
+        if !open {
+            done = Some(false);
+        }
+        if let Some(apply) = done
+            && let Some((what, name, _)) = self.rename.take()
+            && apply
+        {
+            self.with(move |c| {
+                if let Err(e) = what.apply(c, &name) {
+                    c.report(e);
+                }
+            });
+        }
+    }
+
     pub fn cue_window(&mut self, ctx: &egui::Context) {
+        self.rename_window(ctx);
         let Some(ed) = self.cue_editor.as_mut() else {
             return;
         };
@@ -4179,12 +4296,35 @@ mod tests {
                 playing: true,
                 color: eframe::egui::Color32::RED,
                 remaining: Some(12.0),
+                seconds: Some(15.0),
             }
             .ui(ui, eframe::egui::vec2(200.0, 68.0));
         };
         frame(&ctx, 0, vec![], &mut ui);
         let nodes = frame(&ctx, 1, vec![], &mut ui);
         find(&nodes, "Cart 3: Station-ID -12 s");
+    }
+
+    #[test]
+    fn idle_cart_shows_its_length() {
+        let ctx = eframe::egui::Context::default();
+        ctx.enable_accesskit();
+        let mut ui = |ui: &mut eframe::egui::Ui| {
+            crate::widgets::CartPad {
+                number: 2,
+                title: Some("Wetter"),
+                key: None,
+                capturing: false,
+                playing: false,
+                color: eframe::egui::Color32::RED,
+                remaining: None,
+                seconds: Some(90.0),
+            }
+            .ui(ui, eframe::egui::vec2(200.0, 68.0));
+        };
+        frame(&ctx, 0, vec![], &mut ui);
+        let nodes = frame(&ctx, 1, vec![], &mut ui);
+        find(&nodes, "Cart 2: Wetter 1:30");
     }
 
     #[test]
