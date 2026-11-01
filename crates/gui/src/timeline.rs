@@ -227,9 +227,118 @@ pub fn region_peak(peaks: &[f32], ppb: f64, offset_beats: f64, length_beats: f64
     peaks[a..b].iter().fold(0.0f32, |m, s| m.max(s.abs()))
 }
 
+/// Harmonie ab `origin` (Beat): Tonart und Akkord je Takt aus allen Noten der MIDI-Spuren
+/// ohne Kit (Design `ChordTrack`). `key` ist `None`, wenn es keine solchen Noten gibt.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Harmony {
+    pub key: Option<woa_model::harmony::Key>,
+    pub bars: Vec<Option<woa_model::harmony::Chord>>,
+}
+
+/// Siehe [`Harmony`]; `bars` Takte ab `origin`.
+pub fn harmony(project: &woa_model::Project, origin: f64, bars: usize) -> Harmony {
+    use woa_model::MidiNote;
+    let mut notes: Vec<(f64, &MidiNote)> = Vec::new();
+    for t in &project.tracks {
+        if t.kind != woa_model::TrackKind::Midi || t.sound.is_some_and(|s| s.drums) {
+            continue;
+        }
+        for c in &t.clips {
+            let Some(midi) = &c.midi else { continue };
+            for n in &midi.notes {
+                // Nur der hörbare Teil des Clips zählt.
+                if n.beat + n.length_beats <= c.offset_beats
+                    || n.beat >= c.offset_beats + c.length_beats
+                {
+                    continue;
+                }
+                notes.push((c.start_beats + n.beat - c.offset_beats - origin, n));
+            }
+        }
+    }
+    Harmony {
+        key: woa_model::harmony::detect_key(notes.iter().map(|(_, n)| *n)),
+        bars: woa_model::harmony::bar_chords(notes.iter().copied(), bars),
+    }
+}
+
+/// Klang im Clip-Kopf (Design `ChordTrack`): Preset-Name in Versalien, „SYNTH“ ohne Klang.
+pub fn sound_caption(sound: Option<woa_model::TrackSound>) -> String {
+    match sound {
+        None => "SYNTH".to_owned(),
+        Some(s) => {
+            woa_model::preset_name(s).map_or_else(|| format!("GM {}", s.program), str::to_uppercase)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn harmony_reads_chords_and_key_from_midi_tracks() {
+        use woa_model::{Clip, ClipId, Project, Track, TrackKind, TrackSound};
+        let p = woa_model::chords::progression("I–V–vi–IV").expect("pop");
+        let made = woa_model::chords::generate(p, 2, 4);
+        let mut project = Project::new("Test");
+        let mut t = Track::new(TrackId(1), "Akkorde", TrackKind::Midi);
+        t.clips
+            .push(Clip::new_midi(ClipId(1), "Akkorde", 4.0, 16.0, made.chords));
+        project.tracks.push(t);
+        let mut d = Track::new(TrackId(2), "Drums", TrackKind::Midi);
+        d.sound = Some(TrackSound {
+            program: 0,
+            drums: true,
+            bank: None,
+        });
+        d.clips.push(Clip::new_midi(
+            ClipId(2),
+            "Beat",
+            0.0,
+            16.0,
+            woa_model::chords::generate(p, 3, 4).chords,
+        ));
+        project.tracks.push(d);
+        let h = harmony(&project, 0.0, 6);
+        let names: Vec<String> = h
+            .bars
+            .iter()
+            .map(|c| c.map(|c| c.name()).unwrap_or_default())
+            .collect();
+        assert_eq!(names, ["", "D", "A", "Bm", "G", ""]);
+        assert_eq!(h.key.map(|k| k.name()).as_deref(), Some("D Dur"));
+        // Ab dem Clip-Anfang gezählt (Piano-Roll).
+        assert_eq!(
+            harmony(&project, 4.0, 1).bars[0]
+                .map(|c| c.name())
+                .as_deref(),
+            Some("D")
+        );
+        assert_eq!(
+            harmony(&Project::new("Leer"), 0.0, 2),
+            Harmony {
+                key: None,
+                bars: vec![None, None]
+            }
+        );
+    }
+
+    #[test]
+    fn sound_caption_is_upper_case() {
+        let s = |program, drums| {
+            Some(woa_model::TrackSound {
+                program,
+                drums,
+                bank: None,
+            })
+        };
+        assert_eq!(sound_caption(s(48, false)), "STREICHER");
+        assert_eq!(sound_caption(s(33, false)), "E-BASS");
+        assert_eq!(sound_caption(s(0, true)), "STANDARD-KIT");
+        assert_eq!(sound_caption(s(100, false)), "GM 100");
+        assert_eq!(sound_caption(None), "SYNTH");
+    }
 
     #[test]
     fn snap_rounds_and_never_goes_negative() {

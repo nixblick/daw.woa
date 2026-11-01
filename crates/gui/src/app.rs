@@ -47,6 +47,8 @@ pub fn donate_qr() -> Option<&'static woa_remote::qr::QrMatrix> {
 pub const DONATE_KOFI: &str = "https://ko-fi.com/nixblick";
 /// Höhe einer Spur (Design `TrackHeader`: 64 px, zwei Zeilen).
 const ROW_H: f32 = 64.0;
+/// Höhe der Akkordspur unter dem Lineal (Design `ChordTrack`: 26 px).
+const CHORD_LANE_H: f32 = 26.0;
 /// Pan auch im Spurkopf (zusätzlich zum Rack-Ausgang). Offene Entscheidung von André
 /// (31.10.2026): `false` nimmt die Anzeige aus dem Spurkopf.
 const HEADER_PAN: bool = true;
@@ -127,6 +129,8 @@ pub struct WoaApp {
     fx_open: std::collections::HashSet<woa_model::InsertId>,
     /// Suchtext in der Liste „+ Effekt“.
     fx_search: String,
+    /// Aufgeklappte Klangwahl (Design `SoundPicker`): Spur und gezeigte Rolle.
+    sound_pick: Option<(TrackId, woa_model::SoundRole)>,
     /// Raster für „Quantisieren“ im Clip-Inspektor (Teiler: 4 = 1/4 … 32 = 1/32).
     quantize_div: u32,
     /// Stereo-Panorama beim Ziehen (wird beim Loslassen als ein Undo-Schritt übernommen).
@@ -594,6 +598,7 @@ impl WoaApp {
             now: 0.0,
             fx_open: std::collections::HashSet::new(),
             fx_search: String::new(),
+            sound_pick: None,
             quantize_div: 16,
             pan_drag: None,
             tempo_drag: None,
@@ -2882,22 +2887,27 @@ impl WoaApp {
             .collect();
         egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 5.0;
-            ui.horizontal(|ui| {
-                let (corner_rect, _) =
-                    ui.allocate_exact_size(egui::vec2(HEADER_W - 30.0, 24.0), egui::Sense::hover());
-                ui.painter()
-                    .rect_filled(corner_rect, 4.0, theme::panel_header());
-                ui.painter().text(
-                    corner_rect.left_center() + egui::vec2(10.0, 0.0),
-                    egui::Align2::LEFT_CENTER,
-                    format!("SPUREN ({})  ·  KANALZUG", tracks.len()),
-                    egui::FontId::proportional(11.0),
-                    theme::text_dim(),
-                );
-                ui.add_space(-ui.spacing().item_spacing.x);
-                self.new_track_menu(ui);
-                self.ruler(ui);
-            });
+            let ruler = ui
+                .horizontal(|ui| {
+                    let (corner_rect, _) = ui.allocate_exact_size(
+                        egui::vec2(HEADER_W - 30.0, 24.0),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter()
+                        .rect_filled(corner_rect, 4.0, theme::panel_header());
+                    ui.painter().text(
+                        corner_rect.left_center() + egui::vec2(10.0, 0.0),
+                        egui::Align2::LEFT_CENTER,
+                        format!("SPUREN ({})  ·  KANALZUG", tracks.len()),
+                        egui::FontId::proportional(11.0),
+                        theme::text_dim(),
+                    );
+                    ui.add_space(-ui.spacing().item_spacing.x);
+                    self.new_track_menu(ui);
+                    self.ruler(ui)
+                })
+                .inner;
+            self.chord_lane(ui, ruler.left());
             for (i, (id, name, gain, pan, mute, solo)) in tracks.into_iter().enumerate() {
                 ui.horizontal(|ui| {
                     self.track_header(ui, i, id, &name, gain, pan, mute, solo);
@@ -2942,7 +2952,7 @@ impl WoaApp {
     }
 
     /// Lineal über der Zeitleiste: Taktnummern, Klick setzt den Kopf.
-    fn ruler(&mut self, ui: &mut egui::Ui) {
+    fn ruler(&mut self, ui: &mut egui::Ui) -> egui::Rect {
         let px = self.zoom;
         let end = self.timeline_end();
         let (rect, resp) = ui.allocate_exact_size(
@@ -3023,6 +3033,91 @@ impl WoaApp {
         {
             p.seek_beats(f64::from(((pos.x - rect.left()) / px).max(0.0)), tempo);
         }
+        rect
+    }
+
+    /// Akkordspur unter dem Lineal (Design `ChordTrack`): Kopf „Akkorde · C Dur“ und je Takt
+    /// ein Chip mit Akkord und Stufe. Nur, wenn MIDI-Spuren mit Tönen da sind; Tonart und
+    /// Akkorde folgen aus den Noten, also auch jedem Tonartwechsel.
+    fn chord_lane(&mut self, ui: &mut egui::Ui, lane_left: f32) {
+        let px = self.zoom;
+        let end = self.timeline_end() + 16.0;
+        let h = crate::timeline::harmony(self.state.project(), 0.0, (end / 4.0).ceil() as usize);
+        let Some(key) = h.key else {
+            return;
+        };
+        ui.horizontal(|ui| {
+            let gap = ui.spacing().item_spacing.x;
+            let head_w = (lane_left - ui.cursor().left() - gap).max(40.0);
+            let label = format!("Akkorde · {}", key.name());
+            let (head, resp) =
+                ui.allocate_exact_size(egui::vec2(head_w, CHORD_LANE_H), egui::Sense::hover());
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &label));
+            ui.painter().rect_filled(head, 4.0, theme::panel_header());
+            ui.painter().text(
+                head.left_center() + egui::vec2(10.0, 0.0),
+                egui::Align2::LEFT_CENTER,
+                label.to_uppercase(),
+                theme::panel_label_font(),
+                theme::text_dim(),
+            );
+            let (rect, _) = ui.allocate_exact_size(
+                egui::vec2(end as f32 * px, CHORD_LANE_H),
+                egui::Sense::hover(),
+            );
+            let painter = ui.painter_at(rect);
+            painter.rect_filled(rect, 4.0, theme::well());
+            for (bar, chord) in h.bars.iter().enumerate() {
+                let Some(chord) = chord else { continue };
+                let x = rect.left() + (bar * 4) as f32 * px;
+                painter.vline(x, rect.y_range(), egui::Stroke::new(1.0, theme::border()));
+                let name = chord.name();
+                let degree = chord.degree(key).unwrap_or("");
+                let chip_w = (4.0 * px - 6.0).min(64.0);
+                if chip_w < 18.0 {
+                    continue;
+                }
+                let chip = egui::Rect::from_min_size(
+                    egui::pos2(x + 3.0, rect.top() + 4.0),
+                    egui::vec2(chip_w, CHORD_LANE_H - 8.0),
+                );
+                painter.rect_filled(chip, 3.0, theme::surface());
+                painter.rect_stroke(
+                    chip,
+                    3.0,
+                    egui::Stroke::new(1.0, theme::border_strong()),
+                    egui::StrokeKind::Inside,
+                );
+                let g = painter.layout_no_wrap(
+                    name.clone(),
+                    egui::FontId::new(12.0, egui::FontFamily::Name("ui-bold".into())),
+                    theme::text(),
+                );
+                let nx = chip.left() + 5.0;
+                painter.galley(
+                    egui::pos2(nx, chip.center().y - g.size().y / 2.0),
+                    g.clone(),
+                    theme::text(),
+                );
+                painter.text(
+                    egui::pos2(nx + g.size().x + 4.0, chip.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    degree,
+                    egui::FontId::monospace(10.0),
+                    theme::text_dim(),
+                );
+                let tip = format!("{name} {degree}");
+                let chip_resp = ui.interact(
+                    chip,
+                    ui.id().with(("chord_chip", bar)),
+                    egui::Sense::hover(),
+                );
+                chip_resp.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::WidgetType::Label, true, tip.trim())
+                });
+                chip_resp.on_hover_text(format!("Takt {}: {}", bar + 1, tip.trim()));
+            }
+        });
     }
 
     /// Längste Spur in Beats, mindestens 64.
@@ -3594,6 +3689,11 @@ impl WoaApp {
 
     /// Eingang einer Spur (Spurkopf und Rack): Quelle aus der Liste, darin „Mithören“.
     fn source_combo(&mut self, ui: &mut egui::Ui, id: TrackId, is_midi: bool, width: f32) {
+        if is_midi {
+            // MIDI-Spuren spielen vom MIDI-Eingang, nie vom Mikrofon (Design `ChordTrack`).
+            self.midi_input_combo(ui, id, width);
+            return;
+        }
         let busy = self.recording();
         let current = self.track_source.get(&id).cloned().unwrap_or_default();
         let mut chosen = None;
@@ -3663,6 +3763,23 @@ impl WoaApp {
                 self.track_source.insert(id, key);
             }
         }
+    }
+
+    /// Eingang einer MIDI-Spur: das MIDI-Gerät (Klaviatur-Symbol), Auswahl wie im Menü
+    /// Einstellungen › MIDI-Eingang.
+    fn midi_input_combo(&mut self, ui: &mut egui::Ui, id: TrackId, width: f32) {
+        let text = midi_input_label(&self.midi.status());
+        egui::ComboBox::from_id_salt(("midi_source", id))
+            .selected_text(
+                egui::RichText::new(format!("{} {text}", theme::ic::PIANO_KEYS))
+                    .small()
+                    .color(theme::text_dim()),
+            )
+            .width(width)
+            .truncate()
+            .show_ui(ui, |ui| self.midi_choices(ui))
+            .response
+            .on_hover_text("MIDI-Eingang: spielt die scharf geschaltete MIDI-Spur");
     }
 
     /// Zahlenfeld für den Spur-Gain in dB (Spurkopf und Rack): ziehen, Doppelklick = 0 dB,
@@ -4040,6 +4157,9 @@ impl WoaApp {
             return;
         };
         let clips = t.clips.clone();
+        let caption =
+            (t.kind == woa_model::TrackKind::Midi).then(|| crate::timeline::sound_caption(t.sound));
+        let key = crate::timeline::harmony(self.state.project(), 0.0, 0).key;
         let index = self
             .state
             .project()
@@ -4215,11 +4335,46 @@ impl WoaApp {
                 }
             }
             // MIDI-Noten-Vorschau (Mini-Piano-Roll direkt im Clip wie in Ableton)
+            // Akkord-Clip (Design `ChordTrack`): je Takt der Akkord, Trennlinien in Spurfarbe.
+            let mut body_top = r.top() + 18.0;
+            if let Some(midi) = &c.midi
+                && woa_model::harmony::is_chord_clip(&midi.notes)
+                && r.height() > 44.0
+            {
+                let row = egui::Rect::from_min_max(
+                    egui::pos2(r.left(), r.top() + 16.0),
+                    egui::pos2(r.right(), r.top() + 30.0),
+                );
+                let bars = (len / 4.0).ceil().max(1.0) as usize;
+                let local = midi.notes.iter().map(|n| (n.beat - offset, n));
+                let row_view = painter.with_clip_rect(row.intersect(rect));
+                for (bar, chord) in woa_model::harmony::bar_chords(local, bars)
+                    .into_iter()
+                    .enumerate()
+                {
+                    let x = r.left() + (bar * 4) as f32 * px;
+                    if bar > 0 {
+                        row_view.vline(x, row.y_range(), egui::Stroke::new(1.0, base));
+                    }
+                    if let Some(ch) = chord {
+                        let deg = key.and_then(|k| ch.degree(k)).unwrap_or("");
+                        row_view.text(
+                            egui::pos2(x + 4.0, row.center().y),
+                            egui::Align2::LEFT_CENTER,
+                            format!("{} {deg}", ch.name()).trim_end(),
+                            egui::FontId::new(11.0, egui::FontFamily::Name("ui-bold".into())),
+                            theme::text(),
+                        );
+                    }
+                }
+                row_view.hline(row.x_range(), row.bottom(), egui::Stroke::new(1.0, base));
+                body_top = row.bottom() + 2.0;
+            }
             if let Some(midi) = &c.midi
                 && !midi.notes.is_empty()
             {
                 let body = egui::Rect::from_min_max(
-                    egui::pos2(r.left() + 2.0, r.top() + 18.0),
+                    egui::pos2(r.left() + 2.0, body_top),
                     egui::pos2(r.right() - 2.0, r.bottom() - 3.0),
                 );
                 let min_p = midi.notes.iter().map(|n| n.pitch).min().unwrap_or(48);
@@ -4351,6 +4506,18 @@ impl WoaApp {
                 egui::FontId::proportional(11.5),
                 theme::well(),
             );
+            // Klang rechts im Clip-Kopf, in Versalien (Design `ChordTrack`).
+            if let Some(cap) = &caption
+                && head.width() > 120.0
+            {
+                painter.with_clip_rect(head.intersect(rect)).text(
+                    head.right_center() - egui::vec2(6.0, 0.0),
+                    egui::Align2::RIGHT_CENTER,
+                    cap,
+                    theme::label_font(10.5),
+                    theme::well(),
+                );
+            }
             if cresp.clicked() || cresp.drag_started() {
                 let m = ui.input(|i| i.modifiers);
                 if m.command || m.shift {
@@ -7204,6 +7371,9 @@ impl WoaApp {
             );
         });
 
+        if kind == woa_model::TrackKind::Midi {
+            self.instrument_section(ui, id, color);
+        }
         self.strip_effects(ui, id, kind);
         self.strip_routing(ui, id);
         self.pan_field(ui, id, pan, "Pan ");
@@ -7601,67 +7771,166 @@ impl WoaApp {
         });
     }
 
-    /// CLAP-Plugins einer Spur (Paket 31): Instrument und Effekte, Regler, Browser.
-    /// Klang der MIDI-Spur (Paket J1): eingebauter Synth oder ein GM-Klang je Rolle.
-    fn sound_combo(
-        &mut self,
-        ui: &mut egui::Ui,
-        id: TrackId,
-        current: Option<woa_model::TrackSound>,
-    ) {
-        const SYNTH: &str = "Synth (eingebaut)";
-        let text = match current {
-            None => SYNTH.to_owned(),
+    /// Abschnitt „Instrument“ im Rack (Design `SoundPicker`, Paket J1/J7): Kachel mit Klang,
+    /// aufgeklappt Rollen Lead · Bass · Pad · Kit, je Rolle vier Klänge, darunter Klangbank und
+    /// eingebauter Synth. Ein CLAP-Instrument ersetzt den Klang; dann steht hier nur sein Name.
+    fn instrument_section(&mut self, ui: &mut egui::Ui, id: TrackId, color: egui::Color32) {
+        use woa_model::{PluginRole, SOUND_PRESETS, SoundRole, TrackSound};
+        let Some(track) = self.state.project().track(id) else {
+            return;
+        };
+        let current = track.sound;
+        let plugin = track
+            .plugins
+            .iter()
+            .find(|s| s.role == PluginRole::Instrument)
+            .map(|s| s.name.clone());
+        ui.label(rack_title("INSTRUMENT"));
+        if let Some(name) = plugin {
+            ui.label(
+                egui::RichText::new(format!("{} {name}", theme::ic::PLUGS)).color(theme::text()),
+            )
+            .on_hover_text("Plugin-Instrument; Klang und Bank gelten erst ohne es wieder");
+            return;
+        }
+        let bank = current.and_then(|s| s.bank);
+        let role = current.and_then(sound_role);
+        let open = self.sound_pick.filter(|(t, _)| *t == id).map(|(_, r)| r);
+        let (name, sub, icon) = match current {
+            None => (
+                "Eingebauter Synth".to_owned(),
+                "Synth · ohne Klangbank".to_owned(),
+                theme::ic::WAVE_SINE,
+            ),
             Some(s) => {
-                let name = woa_model::preset_name(s).map_or_else(
-                    || format!("GM {}{}", s.program, if s.drums { " Kit" } else { "" }),
-                    str::to_owned,
-                );
-                match s.bank {
-                    Some(b) => format!("{name} · {}", b.name()),
-                    None => name,
-                }
+                let name = woa_model::preset_name(s)
+                    .map_or_else(|| format!("GM {}", s.program), str::to_owned);
+                let (r, ic) = role.map_or(("GM", theme::ic::MUSIC_NOTE), role_label);
+                let b = bank.map_or("GeneralUser GS", |b| b.name());
+                (name, format!("{r} · {b}"), ic)
             }
         };
-        let bank = current.and_then(|s| s.bank);
-        let mut chosen = None;
-        egui::ComboBox::from_id_salt(("track_sound", id.0))
-            .selected_text(format!("{} {text}", theme::ic::MUSIC_NOTE))
-            .show_ui(ui, |ui| {
-                if ui.selectable_label(current.is_none(), SYNTH).clicked() {
-                    chosen = Some(None);
+        // Zu: eine Kachel; ein Klick klappt die Auswahl auf oder zu.
+        let tile = egui::Frame::new()
+            .fill(theme::surface())
+            .stroke(egui::Stroke::new(1.0, theme::border_strong()))
+            .corner_radius(theme::RADIUS_MD)
+            .inner_margin(egui::Margin::symmetric(6, 5))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    let (sq, _) =
+                        ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
+                    ui.painter()
+                        .rect_filled(sq, 4.0, theme::mix(theme::panel(), color, 0.22));
+                    ui.painter().text(
+                        sq.center(),
+                        egui::Align2::CENTER_CENTER,
+                        icon,
+                        egui::FontId::proportional(16.0),
+                        color,
+                    );
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        ui.label(egui::RichText::new(&name).strong().color(theme::text()));
+                        ui.label(
+                            egui::RichText::new(&sub)
+                                .size(theme::TYPE_SMALL)
+                                .color(theme::text_dim()),
+                        );
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            egui::RichText::new(if open.is_some() {
+                                theme::ic::CARET_UP
+                            } else {
+                                theme::ic::CARET_DOWN
+                            })
+                            .color(theme::text_dim()),
+                        );
+                    });
+                });
+            });
+        let tip = format!("Klang wählen: {name}");
+        let click = ui
+            .interact(
+                tile.response.rect,
+                ui.id().with(("sound_tile", id.0)),
+                egui::Sense::click(),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text("Klang wählen");
+        click.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &tip));
+        if click.clicked() {
+            self.sound_pick = match open {
+                Some(_) => None,
+                None => Some((id, role.unwrap_or(SoundRole::Lead))),
+            };
+        }
+        let Some(shown) = open else {
+            return;
+        };
+        let mut chosen: Option<Option<TrackSound>> = None;
+        // Rollen als Segmentschalter.
+        let gap = ui.spacing().item_spacing.x;
+        ui.horizontal(|ui| {
+            let w = ((ui.available_width() - 3.0 * gap) / 4.0).floor();
+            for r in [
+                SoundRole::Lead,
+                SoundRole::Bass,
+                SoundRole::Pad,
+                SoundRole::Kit,
+            ] {
+                let (label, ic) = role_label(r);
+                if ui
+                    .add_sized(
+                        [w, 26.0],
+                        egui::Button::selectable(r == shown, format!("{ic} {label}")),
+                    )
+                    .clicked()
+                {
+                    self.sound_pick = Some((id, r));
                 }
-                let mut role = None;
-                for p in woa_model::SOUND_PRESETS {
-                    if role != Some(p.role) {
-                        role = Some(p.role);
-                        ui.separator();
-                    }
+            }
+        });
+        // Vier Klänge der Rolle als Kacheln, zwei je Zeile.
+        let presets: Vec<_> = SOUND_PRESETS.iter().filter(|p| p.role == shown).collect();
+        for pair in presets.chunks(2) {
+            ui.horizontal(|ui| {
+                let w = ((ui.available_width() - gap) / 2.0).floor();
+                for p in pair {
                     let same = current
                         .is_some_and(|c| c.program == p.sound.program && c.drums == p.sound.drums);
-                    if ui.selectable_label(same, p.name).clicked() {
+                    if ui
+                        .add_sized([w, 30.0], egui::Button::selectable(same, p.name))
+                        .clicked()
+                    {
                         // Die Bank bleibt, solange sie zum Klang passt (Paket J7).
                         let keep = bank.filter(|b| p.sound.drums || !b.drums_only());
-                        chosen = Some(Some(woa_model::TrackSound {
+                        chosen = Some(Some(TrackSound {
                             bank: keep,
                             ..p.sound
                         }));
                     }
                 }
-                // Bank (Paket J7): GeneralUser GS ist eingebaut, die übrigen kommen beim
-                // ersten Gebrauch aus dem Netz; bis dahin spielt GeneralUser GS.
-                if let Some(cur) = current {
-                    ui.separator();
-                    ui.label(
-                        egui::RichText::new("BANK")
-                            .size(theme::TYPE_SMALL)
-                            .color(theme::text_dim()),
-                    );
+            });
+        }
+        // Klangbank (Paket J7): GeneralUser GS ist eingebaut, die übrigen kommen beim ersten
+        // Gebrauch aus dem Netz; bis dahin spielt GeneralUser GS.
+        if let Some(cur) = current {
+            let text = bank.map_or_else(
+                || "GeneralUser GS (eingebaut)".to_owned(),
+                |b| format!("{}{}", b.name(), bank_hint(&woa_engine::banks::state(b))),
+            );
+            egui::ComboBox::from_id_salt(("track_bank", id.0))
+                .selected_text(format!("{} {text}", theme::ic::FOLDER))
+                .width(ui.available_width() - 8.0)
+                .show_ui(ui, |ui| {
                     if ui
                         .selectable_label(bank.is_none(), "GeneralUser GS (eingebaut)")
                         .clicked()
                     {
-                        chosen = Some(Some(woa_model::TrackSound { bank: None, ..cur }));
+                        chosen = Some(Some(TrackSound { bank: None, ..cur }));
                     }
                     for b in woa_model::SoundBank::ALL {
                         if b.drums_only() && !cur.drums {
@@ -7670,29 +7939,42 @@ impl WoaApp {
                         let label =
                             format!("{}{}", b.name(), bank_hint(&woa_engine::banks::state(b)));
                         if ui.selectable_label(bank == Some(b), label).clicked() {
-                            chosen = Some(Some(woa_model::TrackSound {
+                            chosen = Some(Some(TrackSound {
                                 bank: Some(b),
                                 ..cur
                             }));
                         }
                     }
-                }
-            })
-            .response
-            .on_hover_text(match bank {
-                Some(b) => format!(
-                    "Bank {}: {}",
-                    b.name(),
-                    match woa_engine::banks::state(b) {
-                        woa_engine::banks::BankState::Ready => "geladen".to_owned(),
-                        s => format!(
-                            "{}, bis dahin spielt GeneralUser GS",
-                            bank_hint(&s).trim_start_matches(" · ")
-                        ),
-                    }
+                })
+                .response
+                .on_hover_text(match bank {
+                    Some(b) => format!(
+                        "Bank {}: {}",
+                        b.name(),
+                        match woa_engine::banks::state(b) {
+                            woa_engine::banks::BankState::Ready => "geladen".to_owned(),
+                            s => format!(
+                                "{}, bis dahin spielt GeneralUser GS",
+                                bank_hint(&s).trim_start_matches(" · ")
+                            ),
+                        }
+                    ),
+                    None => "Klangbank; GeneralUser GS ist eingebaut".to_owned(),
+                });
+        }
+        if ui
+            .add_sized(
+                [ui.available_width(), 26.0],
+                egui::Button::selectable(
+                    current.is_none(),
+                    format!("{} Eingebauter Synth", theme::ic::WAVE_SINE),
                 ),
-                None => "Klang aus der GM-SoundFont; ohne SoundFont spielt der Synth".to_owned(),
-            });
+            )
+            .on_hover_text("Ohne Klangbank: eingebauter Synth, lädt nichts")
+            .clicked()
+        {
+            chosen = Some(None);
+        }
         if let Some(sound) = chosen {
             if let Some(b) = sound.and_then(|s| s.bank) {
                 woa_engine::banks::ensure(b);
@@ -7701,6 +7983,7 @@ impl WoaApp {
         }
     }
 
+    /// CLAP-Plugins einer Spur (Paket 31): Instrument und Effekte, Regler, Browser.
     fn strip_plugins(&mut self, ui: &mut egui::Ui, id: TrackId, kind: woa_model::TrackKind) {
         use woa_model::PluginRole;
         let Some(track) = self.state.project().track(id) else {
@@ -7713,9 +7996,6 @@ impl WoaApp {
                 .color(theme::text_dim())
         };
         let has_instrument = slots.iter().any(|s| s.role == PluginRole::Instrument);
-        if kind == woa_model::TrackKind::Midi && !has_instrument {
-            self.sound_combo(ui, id, track.sound);
-        }
         if !slots.is_empty() {
             ui.label(small("PLUGINS"));
         }
@@ -8685,6 +8965,35 @@ mod pfl_switch_tests {
 }
 
 /// Zustand einer Bank als Zusatz im Menü (Paket J7): leer, wenn sie da ist.
+/// Anzeige des MIDI-Eingangs im Spurkopf.
+fn midi_input_label(status: &woa_io::midi::MidiStatus) -> String {
+    use woa_io::midi::MidiStatus;
+    match status {
+        MidiStatus::Off => "Kein MIDI-Gerät".to_owned(),
+        MidiStatus::Connected(n) => n.clone(),
+        MidiStatus::Waiting(n) => format!("{n} (nicht verbunden)"),
+    }
+}
+
+/// Rollenname und Symbol im `SoundPicker`.
+fn role_label(role: woa_model::SoundRole) -> (&'static str, &'static str) {
+    use woa_model::SoundRole;
+    match role {
+        SoundRole::Lead => ("Lead", theme::ic::PIANO_KEYS),
+        SoundRole::Bass => ("Bass", theme::ic::WAVE_SINE),
+        SoundRole::Pad => ("Pad", theme::ic::CLOUD),
+        SoundRole::Kit => ("Kit", theme::ic::GRID_FOUR),
+    }
+}
+
+/// Rolle eines Klangs aus der Auswahl (`None` für GM-Klänge außerhalb der Auswahl).
+fn sound_role(sound: woa_model::TrackSound) -> Option<woa_model::SoundRole> {
+    woa_model::SOUND_PRESETS
+        .iter()
+        .find(|p| p.sound.program == sound.program && p.sound.drums == sound.drums)
+        .map(|p| p.role)
+}
+
 fn bank_hint(state: &woa_engine::banks::BankState) -> String {
     use woa_engine::banks::BankState;
     match state {

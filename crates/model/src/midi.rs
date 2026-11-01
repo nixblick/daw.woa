@@ -11,6 +11,9 @@ use crate::error::{ModelError, Result};
 pub const CC_SUSTAIN: u8 = 64;
 /// Most notes or controller values one clip may hold (memory guard for hostile files).
 pub const MAX_MIDI_EVENTS: usize = 1 << 20;
+/// Obergrenze für Lage und Länge einer Note in Schlägen (über 2 Tage bei 400 BPM);
+/// schützt Schleifen über Takte vor manipulierten Projektdateien.
+pub const MAX_NOTE_BEATS: f64 = 1_048_576.0;
 
 /// One note of a MIDI clip.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -80,10 +83,13 @@ impl MidiData {
             ));
         }
         for n in &self.notes {
-            if !(n.beat.is_finite() && n.beat >= 0.0) {
+            if !(n.beat.is_finite() && (0.0..=MAX_NOTE_BEATS).contains(&n.beat)) {
                 return Err(invalid("note beat", n.beat));
             }
-            if !(n.length_beats.is_finite() && n.length_beats > 0.0) {
+            if !(n.length_beats.is_finite()
+                && n.length_beats > 0.0
+                && n.length_beats <= MAX_NOTE_BEATS)
+            {
                 return Err(invalid("note length_beats", n.length_beats));
             }
             if n.pitch > 127 {
@@ -386,6 +392,14 @@ mod tests {
             },
             MidiNote {
                 beat: f64::NAN,
+                ..good
+            },
+            MidiNote {
+                beat: MAX_NOTE_BEATS * 2.0,
+                ..good
+            },
+            MidiNote {
+                length_beats: 1e300,
                 ..good
             },
         ] {

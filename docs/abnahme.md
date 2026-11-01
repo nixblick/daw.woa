@@ -4,6 +4,16 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design-Runde 2: Akkordspur, Klangwahl, Spurfarben (0.35.15, offen)
+
+1. Browser › Akkorde › Einfügen: unter dem Lineal „Akkorde · C Dur“ mit C I · G V · Am vi · F IV; andere Tonart tippen, Spur und Clips zeigen die neue Tonart.
+2. Akkord-Clip zeigt je Takt den Akkord, MIDI-Clips rechts oben den Klang.
+3. MIDI-Spur wählen: im Rack „Instrument“ zwischen Eingang und Inserts; Kachel klicken, Rolle Bass, „E-Bass“ wählen, Klangbank wechseln, „Eingebauter Synth“.
+4. Eingang einer MIDI-Spur zeigt das MIDI-Gerät, nicht Mikrofon.
+5. Piano-Roll und Drum-Raster: Noten in Spurfarbe, Töne der Tonart getönt, Lineal mit Takten und Akkorden.
+
+Selbst geprüft von Claude: `cargo test -p woa-gui`, `-p woa-model` und Clippy grün, Screenshots bei 1920×1030 und 1366×768 unter Linux. Nicht unter Windows gesehen, kein Ton abgespielt.
+
 ## Design-Runde 2: Produzent mit Browser (0.35.14, offen)
 
 1. Produzent bei 1920×1030 und 1366×768: links der Browser mit Klänge · Beats · Akkorde · FX · Samples · Jingles, unter den Spuren keine Knopfreihe mehr.

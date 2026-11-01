@@ -36,6 +36,7 @@ mod command;
 pub mod drums;
 pub mod effect;
 mod error;
+pub mod harmony;
 mod history;
 pub mod jingle;
 pub mod midi;
