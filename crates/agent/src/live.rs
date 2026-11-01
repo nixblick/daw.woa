@@ -766,13 +766,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         assert_eq!(running_app(tmp.path()), None);
         let me = u64::from(std::process::id());
-        // Port, auf dem niemand hört: erst binden, Port merken, wieder freigeben.
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        lock(tmp.path(), port, me, "s");
+        // Port, auf dem niemand hört: 0. Ein gebundener und wieder freigegebener Port taugt
+        // nicht, den vergibt das System sofort an den nächsten Test (Windows-CI, #256).
+        lock(tmp.path(), 0, me, "s");
         assert_eq!(running_app(tmp.path()), None);
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();

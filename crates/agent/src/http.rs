@@ -152,6 +152,7 @@ where
                 let token = token.clone();
                 async move {
                     let resp: http::Response<Body> = if req.uri().path() != MCP_PATH {
+                        drain(req).await;
                         plain(404, "nicht gefunden")
                     } else if !{
                         let h = req
@@ -161,6 +162,7 @@ where
                         bearer_matches(h, &token.0)
                             || token.1.as_deref().is_some_and(|s| bearer_matches(h, s))
                     } {
+                        drain(req).await;
                         plain(401, "Zugriffstoken fehlt oder stimmt nicht")
                     } else {
                         match service.call(req).await {
@@ -180,6 +182,14 @@ where
             }
         });
     }
+}
+
+/// Liest den Body einer abgewiesenen Anfrage weg (höchstens 1 MiB, höchstens 2 s). Schließt
+/// der Server mit ungelesenen Bytes, wird unter Windows aus der Antwort ein RST, und der
+/// Client sieht statt der 401 „connection aborted (os error 10053)“ (#256).
+async fn drain(req: http::Request<Incoming>) {
+    let body = http_body_util::Limited::new(req.into_body(), 1024 * 1024);
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), body.collect()).await;
 }
 
 // Der Crate hat kein `tracing`; Verbindungsfehler gehören auf stderr (stdout bleibt MCP).

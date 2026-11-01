@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.34.81 — 2026-11-01
+
+- **Drei wackelige Windows-Tests an der Ursache behoben (#256):**
+  - `live::tests::stale_lock_is_not_a_running_app`: Der Test band einen Port, gab ihn frei und erwartete, dass dort niemand hört. Windows vergab den Port sofort an einen parallel laufenden Test (`Some(RunningApp { port: 51369 })`). Jetzt prüft er mit Port 0, auf dem nie jemand hört.
+  - `after_token_change_the_old_token_gets_401` (os error 10053): Der MCP-Server beantwortete abgewiesene Anfragen (401, 404), ohne den Body zu lesen, und schloss die Verbindung. Ungelesene Bytes beim Schließen werden unter Windows zu einem RST, der Client sah dann den Abbruch statt der 401. Der Server liest den Body jetzt weg (höchstens 1 MiB, 2 s). Neuer Test `rejected_request_is_read_before_the_answer`.
+  - `guest_tone_arrives_and_return_has_music_but_not_the_guest`: Browser und Bank laufen im Test im selben Thread, die Bank rechnete nach der Wanduhr. Hing der Thread auf dem Runner, holte die Bank die Pause in einem Zug nach, bevor die Pakete ankamen, und las Stille (-14,0 und -16,9 dB statt -10,4). Nachgestellt mit einer Pause von 600 ms: -14,4 dB. Die Bank läuft jetzt im Takt des Mikrofons, die Pause ist fest im Test, gemessen -10,4 dB. Die Schwelle steht wieder auf -14 dB (0.34.64 hatte sie auf -16 gelockert).
+
 ## 0.34.80 — 2026-11-01
 
 - **Controller-Test misst das Cart-Ducking mit (#254):** `port::virtual_controller_drives_mixer_and_carts` in `crates/gui/tests/controller.rs` war lokal rot und in der CI nur scheinbar grün. Ursache: Der Test stammt aus 0.9.0 und erwartete beim Cart die volle Musik plus Cart. Seit #149 senkt ein Cart die Musik ab (Standard −12 dB), der gemessene Pegel (0,57) blieb unter der alten Schwelle. In der CI fehlt der ALSA-Sequencer, dort überspringt sich der Test selbst. Der Test lässt die Absenkung jetzt ausschwingen und prüft beides: Cart hörbar über der abgesenkten Musik, und die Musik unter dem Cart tatsächlich abgesenkt. Das Ducking bleibt unverändert.

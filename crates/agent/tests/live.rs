@@ -140,3 +140,35 @@ fn after_token_change_the_old_token_gets_401() {
         assert_eq!(!out.contains("HTTP 401"), ok, "{out}");
     }
 }
+
+/// Eine abgewiesene Anfrage liest der Server trotzdem zu Ende. Sonst schließt er mit
+/// ungelesenen Bytes, Windows schickt dann ein RST statt der 401, und der Client sieht
+/// „connection aborted (os error 10053)“ (#256).
+#[test]
+fn rejected_request_is_read_before_the_answer() {
+    use std::io::{Read, Write};
+    let tmp = tempfile::tempdir().unwrap();
+    let server = LiveServer::start(tmp.path(), TOKEN.into(), 0, Arc::new(|| {})).unwrap();
+    let body = LINES.lines().next().unwrap();
+    let mut c = std::net::TcpStream::connect(("127.0.0.1", server.port())).unwrap();
+    write!(
+        c,
+        "POST {} HTTP/1.1\r\nhost: 127.0.0.1\r\nauthorization: Bearer falsch\r\n\
+         content-type: application/json\r\ncontent-length: {}\r\n\r\n",
+        woa_agent::http::MCP_PATH,
+        body.len()
+    )
+    .unwrap();
+    c.set_read_timeout(Some(Duration::from_millis(300)))
+        .unwrap();
+    let mut buf = [0u8; 4096];
+    assert!(
+        c.read(&mut buf).is_err(),
+        "401 kam, bevor der Body gelesen war"
+    );
+    c.write_all(body.as_bytes()).unwrap();
+    c.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let n = c.read(&mut buf).unwrap();
+    let head = String::from_utf8_lossy(&buf[..n]);
+    assert!(head.starts_with("HTTP/1.1 401"), "{head}");
+}
