@@ -4175,27 +4175,52 @@ mod tests {
         .response
     }
 
-    /// Trägheit (#302): 300 Zeilen mit Klickfläche je Bild, gemessen wie `ui.frame_slow`
-    /// (Schwelle dort 50 ms). Die Zeilen selbst dürfen kein langsames Bild verursachen.
+    /// Trägheit (#302): 300 Zeilen je Bild mit Klickfläche gegen dieselben Zeilen ohne. Die
+    /// absolute Zeit hängt am Rechner (die CI ist langsamer), daher der Vergleich: Die Klickfläche
+    /// darf die Zeilen nicht spürbar langsamer machen. Die Zeiten stehen in der Testausgabe.
     #[test]
     fn many_rows_stay_fast() {
-        let ctx = eframe::egui::Context::default();
-        let mut hit = false;
-        let mut ui = |ui: &mut eframe::egui::Ui| {
-            eframe::egui::ScrollArea::vertical().show(ui, |ui| {
-                for _ in 0..300 {
-                    demo_row(ui, &mut hit);
-                }
-            });
-        };
-        frame(&ctx, 0, vec![], &mut ui);
-        let t = std::time::Instant::now();
-        for n in 1..=20 {
-            frame(&ctx, n, vec![], &mut ui);
+        use eframe::egui;
+        fn ms(with_area: bool) -> f64 {
+            let ctx = egui::Context::default();
+            let mut hit = false;
+            let mut ui = |ui: &mut egui::Ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for _ in 0..300 {
+                        if with_area {
+                            demo_row(ui, &mut hit);
+                        } else {
+                            egui::Frame::new().inner_margin(5).show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.horizontal(|ui| {
+                                    ui.label("::");
+                                    ui.label(" 1");
+                                    ui.label("Ein Titel");
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| ui.label("03:21"),
+                                    );
+                                });
+                            });
+                        }
+                    }
+                });
+            };
+            frame(&ctx, 0, vec![], &mut ui);
+            (1..=3)
+                .map(|k| {
+                    let t = std::time::Instant::now();
+                    for n in 1..=10 {
+                        frame(&ctx, k * 10 + n, vec![], &mut ui);
+                    }
+                    t.elapsed().as_secs_f64() * 100.0
+                })
+                .fold(f64::MAX, f64::min)
         }
-        let per = t.elapsed().as_secs_f64() * 1000.0 / 20.0;
-        eprintln!("300 Zeilen: {per:.2} ms je Bild");
-        assert!(per < 50.0, "{per:.1} ms je Bild");
+        let plain = ms(false);
+        let area = ms(true);
+        eprintln!("300 Zeilen: {area:.2} ms je Bild mit Klickfläche, {plain:.2} ms ohne");
+        assert!(area < plain * 2.0 + 2.0, "{area:.1} ms gegen {plain:.1} ms");
     }
 
     #[test]

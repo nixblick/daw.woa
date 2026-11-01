@@ -1242,7 +1242,7 @@ Selbst geprüft von Claude: Tests ohne Ton für Constant Power, die Glättung de
 5. Auf die Nummer klicken: Das Eingabefeld kommt, die Zeile wird nicht ausgewählt. „x“, „^“, „v“ tun weiter nur ihr Eigenes.
 6. Rechtsklick irgendwo auf eine Deck-Zeile (neben der Uhr): Das Deck-Menü geht auf. „Start“, „Cue“ und PFL klicken wie bisher.
 
-Selbst geprüft von Claude: Test im egui-Harness (Klick auf den rechten Rand wählt aus, Rechtsklick in der Mitte öffnet das Menü, die Nummer behält ihren Klick) und Messung mit 300 Zeilen (etwa 18 ms je Bild im Debug-Bau). Clippy und Tests von `woa-gui` grün. Nicht am Gerät geklickt.
+Selbst geprüft von Claude: Test im egui-Harness (Klick auf den rechten Rand wählt aus, Rechtsklick in der Mitte öffnet das Menü, die Nummer behält ihren Klick) und Messung mit 300 Zeilen (etwa 15 ms je Bild mit Klickfläche, 13 ms ohne, Debug-Bau). Clippy und Tests von `woa-gui` grün. Nicht am Gerät geklickt.
 
 ## Abgenommen
 
