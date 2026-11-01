@@ -10,6 +10,15 @@ use std::process::ExitCode;
 
 use woa_gui::{GuiConfig, WoaApp};
 
+/// Fenstergröße beim Start: 900×600, mit `WOA_WINDOW=1366x768` eine andere (für Screenshots
+/// in fester Größe, #303).
+fn window_size(spec: Option<&str>) -> [f32; 2] {
+    spec.and_then(|s| s.split_once(['x', 'X']))
+        .and_then(|(w, h)| Some([w.trim().parse().ok()?, h.trim().parse().ok()?]))
+        .filter(|[w, h]: &[f32; 2]| *w >= 200.0 && *h >= 200.0)
+        .unwrap_or([900.0, 600.0])
+}
+
 fn main() -> ExitCode {
     // Als Plugin-Prozess gerufen (Absturzschutz, Paket 33): nur das Plugin bedienen, keine Oberfläche.
     if let Some(code) = woa_plugins::child::dispatch() {
@@ -52,7 +61,7 @@ fn main() -> ExitCode {
 
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_title("WOA")
-        .with_inner_size([900.0, 600.0]);
+        .with_inner_size(window_size(std::env::var("WOA_WINDOW").ok().as_deref()));
     if let Some(icon) = woa_gui::theme::app_icon() {
         viewport = viewport.with_icon(icon);
     }
@@ -158,8 +167,16 @@ fn info_text(arg: Option<&std::ffi::OsStr>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::info_text;
+    use super::{info_text, window_size};
     use std::ffi::OsStr;
+
+    #[test]
+    fn window_size_reads_env_spec() {
+        assert_eq!(window_size(Some("1366x768")), [1366.0, 768.0]);
+        assert_eq!(window_size(Some("1920X1080")), [1920.0, 1080.0]);
+        assert_eq!(window_size(Some("kaputt")), [900.0, 600.0]);
+        assert_eq!(window_size(None), [900.0, 600.0]);
+    }
 
     #[test]
     fn version_flag_prints_package_version() {

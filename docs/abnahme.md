@@ -4,6 +4,14 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Radio rechts: Decks kompakt, Cart-Wall als Zweites (0.35.6, offen)
+
+1. Windows, Radio-Modus, Fenster 1366×768 und maximiert bei 1920×1080: rechts oben die drei Decks in je einer Zeile mit den Pegelreglern, darunter die Cart-Wall mit den Reitern „1“ bis „5“ und allen 16 Pads, nichts rechts abgeschnitten.
+2. Reiter wechseln, Pad belegen und abspielen, Rechtsklick „Taste ändern …“: der Hinweis zur Tastenwahl erscheint neben den Reitern.
+3. Pegel- und Ausgangsregler (Notebook, Stream, M) bedienen wie bisher.
+
+Selbst geprüft von Claude: Layout-Test im egui-Harness (16 Pads im Fenster bei beiden Größen, mit dem alten Trennstrich rot), Screenshots per `WOA_SCREENSHOT` und `WOA_WINDOW` vorher und nachher unter Linux. Nicht unter Windows gesehen, kein Ton abgespielt.
+
 ## Gleichbleibende Lautstärke in Playlist und Decks (0.35.5, offen)
 
 1. Radio-Modus, Sendebus an: einen Titel mit leisem Intro und lautem Refrain in der Playlist abspielen, danach denselben Titel auf Deck A. Das Intro bleibt leise, der Refrain laut, nichts zieht während des Titels nach; Deck und Playlist klingen gleich laut.
