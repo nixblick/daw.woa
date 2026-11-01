@@ -1,5 +1,12 @@
 # ScreenStudio
 
-Entwurf Produzenten-Modus: Tonstudio mit Clip-Inspektor, Spurköpfen, Mixer mit „+ Bus“, Insert-Rack und Pegelansicht im Dock rechts.
+Entwurf 1920 × 1030: Produzent mit deinem Projekt (Gitarre, Bass, Klavier, Drums, Sax, Stimme).
 
-Seite, kein Baustein. Thema über `data-woa-mode="studio"`. Zeigt die durchgehende Auswahl: Clip „Sprecher Take 4“ gewählt → Spur „Jingle-Stimme“ gewählt in Spurkopf, Kanalzug und Insert-Rack.
+Seite, kein Baustein. Aufbau:
+
+- Kopfleiste.
+- Transportleiste in Gruppen: Transport · Loop/Punch/Stopp am Ende · Zeit-LCD mit Tempo · Pegel · Latenz · Ansicht/Raster/Zoom · Export.
+- Browser links.
+- Clip-Inspektor, Arrangement.
+- Dock mit Reitern Mixer · Piano-Roll · Automation · KI-Chat · Analyse; im Mixer-Reiter rechts das Insert-Rack der gewählten Spur.
+- Keine Knopfreihe unter den Spuren; neue Spur über „+“ im Spurenkopf.

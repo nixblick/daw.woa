@@ -136,34 +136,37 @@ impl McpLive {
 
     /// Pille „KI“ in der Status-Gruppe der Kopfleiste: grün leuchtend, wenn Claude live
     /// verbunden ist, ruhig, wenn sie bereit ist; „KI aus“, wenn der Live-Server nicht starten konnte.
-    pub fn chip(&self, ui: &mut egui::Ui, compact: bool) {
+    pub fn chip(&self, ui: &mut egui::Ui, compact: bool) -> Option<egui::Response> {
         use crate::theme;
         use crate::widgets::{ChipLook, topbar_chip};
         if !self.enabled {
-            return;
+            return None;
         }
         let (icon, word, look, hint) = match self.status() {
             LiveStatus::Off => (
                 theme::ic::PLUGS,
                 "KI aus",
-                ChipLook::Quiet,
+                ChipLook::Off(theme::ok()),
                 "Live-Modus nicht gestartet (siehe Protokoll). Claude arbeitet dann nur auf der \
                  gespeicherten Projektdatei, nicht live in diesem Fenster",
             ),
             LiveStatus::Ready => (
                 theme::ic::PLUGS,
                 "KI bereit",
-                ChipLook::Quiet,
+                ChipLook::Off(theme::ok()),
                 "KI bereit – Claude kann sich verbinden: `woa-headless mcp` reicht an diese App durch",
             ),
             LiveStatus::Connected => (
                 theme::ic::PLUGS_CONNECTED,
                 "KI verbunden",
-                ChipLook::Lit(theme::ok()),
+                ChipLook::On(theme::ok()),
                 "KI verbunden – Claude arbeitet live auf diesem Projekt; jeder Schritt ist rückgängig zu machen",
             ),
         };
-        topbar_chip(ui, icon, word, look, compact, false).on_hover_text(hint);
+        // Angezeigt wird nur „KI“, der Zustand steht in LED, Tooltip und Bildschirmleser.
+        let r = topbar_chip(ui, icon, "KI", look, compact, true);
+        r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, word));
+        Some(r.on_hover_text(format!("{hint}\nKlick: KI-Einstellungen")))
     }
 }
 

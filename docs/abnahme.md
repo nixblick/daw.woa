@@ -4,6 +4,17 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design-Runde 2: Kopfleiste und Radio-Modus (0.35.12, offen)
+
+1. Kopfleiste in jedem Modus: rechts ein Block Produzent · Radio · Party | MIDI · ON AIR · REC · KI | Feedback, der aktive Modus in seiner Farbe. Klick auf MIDI: Gerätewahl; auf ON AIR: Stream-Verbindung; REC: Mitschnitt mit Laufzeit.
+2. Radio-Modus bei 1366×768 und 1920×1080: Tasten Start · Stopp · Blende · Mikro · Telefon, darunter die Symboltasten und Deck A/B/C. Blende während ein Titel läuft: weiche Blende auf den nächsten.
+3. Decks: Titel aus der Playlist auf ein Deck ziehen („Hier ablegen“), leeres Deck gestrichelt, Rechtsklick „Datei laden …“.
+4. Cart-Wall: Pads neutral mit Farbbalken, laufendes Pad füllt den Balken; alle 16 Pads sichtbar, Satz-Reiter wie bisher.
+5. Playlist: Maus über eine Zeile zeigt Hoch, Runter, Entfernen; Dauer weiß, Lautheit in eigener Spalte.
+6. Pegel-Karte neben Processing: Fader, M bei Notebook und Stream.
+
+Selbst geprüft von Claude: `cargo test -p woa-gui` und Clippy grün, Screenshots vorher und nachher bei 1920×1030 und 1366×768 unter Linux neben den Entwurfsbildern. Nicht unter Windows gesehen, kein Ton abgespielt.
+
 ## Radio rechts: Decks kompakt, Cart-Wall als Zweites (0.35.9, offen)
 
 1. Windows, Radio-Modus, Fenster 1366×768 und maximiert bei 1920×1080: rechts oben die drei Decks in je einer Zeile mit den Pegelreglern, darunter die Cart-Wall mit den Reitern „1“ bis „5“ und allen 16 Pads, nichts rechts abgeschnitten.

@@ -20,7 +20,7 @@ pub use jog::jog;
 pub use key::Key;
 pub use lamp::onair_lamp;
 pub use pad::CartPad;
-pub use topbar::{ChipLook, topbar_chip};
+pub use topbar::{Chip, ChipLook, status_bar, status_sep, topbar_chip};
 pub use vu::{VuView, vu_meter};
 
 use eframe::egui::{self, Color32};

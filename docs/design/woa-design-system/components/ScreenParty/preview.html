@@ -1,57 +1,59 @@
-<!-- @dsCard group="Entwürfe" height=820 width=1280 page subtitle="Party – DJ auf der Party" -->
+<!-- @dsCard group="Entwürfe" height=1030 width=1920 page subtitle="Party 1920 × 1030 – deine Party: Decks, Crossfader, Party-Pult, Playlist, Wünsche, Fernbedienung" -->
 <!doctype html>
 <html lang="de">
 <head><meta charset="utf-8"><title>WOA</title>
-<style>body{padding:16px}</style></head>
+<style>body{padding:16px}.cap{font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0 0 6px}body{padding:0;background:var(--bg);overflow:hidden}.scr{height:100vh;display:flex;flex-direction:column;background:var(--bg);color:var(--text)}</style></head>
 <body>
-<style>body{padding:0;background:var(--bg)}.scr{min-height:100vh;background:var(--bg);color:var(--text)}</style>
-<div class="scr" data-woa-mode="party">
- <div class="woa-topbar"><span class="woa-topbar__brand"><span data-woa-mark="26"></span>WOA</span><nav class="woa-menu"><a href="#">Datei</a><a href="#">Bearbeiten</a><a href="#">Einstellungen</a></nav><span class="woa-spacer"></span><span class="woa-pill is-active">MIDI</span><button class="woa-key woa-key--rec woa-key--sm is-on" data-woa-icon="rec">Mitschnitt 1:04:12</button><div class="woa-modes"><button class="woa-mode" data-m="studio">Produzent</button><button class="woa-mode" data-m="radio">Radio</button><button class="woa-mode is-active" data-m="party">Party</button></div><button class="woa-key woa-key--sm" data-woa-icon="feedback">Feedback</button></div>
- <div style="padding:24px 40px 12px;display:flex;align-items:flex-end;gap:32px">
-  <div class="woa-nowplaying" style="flex:1"><span class="woa-label" style="color:var(--accent-2)">Jetzt läuft</span><div class="woa-nowplaying__t">Midnight Drive</div><div class="woa-nowplaying__a">The Neon Coast</div></div>
-  <div class="woa-lcd" style="text-align:right;padding:10px 16px"><div class="woa-lcd__cap">Noch</div><span class="woa-seg" data-ghost="88:88" style="font-size:54px"><span>02:18</span></span></div>
- </div>
- <div style="display:grid;grid-template-columns:1fr 1fr 360px;gap:16px;padding:0 40px 24px">
-  <div class="woa-deck" style="">
- <div style="display:flex;justify-content:space-between;align-items:center"><span class="woa-label" style="color:var(--accent)">Deck A</span><span class="woa-pill woa-pill--ok is-active">LÄUFT</span></div>
- <div style="display:flex;gap:20px;align-items:center">
-  <div class="woa-jog" style="--d:170px"><div class="woa-jog__mark"></div><div class="woa-jog__center"></div></div>
-  <div class="woa-col" style="flex:1;min-width:0;gap:6px">
-   <div class="woa-li__t" style="font-size:20px;line-height:24px;font-family:var(--font-label);text-transform:uppercase;font-weight:700">Midnight Drive</div>
-   <div class="woa-li__m">The Neon Coast · 3:42</div>
-   <div class="woa-lcd woa-bpm"><span class="woa-seg" data-ghost="888.8"><span>124.0</span></span><span class="woa-lcd__cap">BPM</span><span class="woa-lcd__cap" style="margin-left:auto">8A</span></div>
+<div class="scr" data-woa-mode="party"><div class="woa-topbar"><span class="woa-topbar__brand"><span data-woa-mark="26"></span>WOA</span><nav class="woa-menu"><a href="#">Datei</a><a href="#">Bearbeiten</a><a href="#">Ansicht</a><a href="#">Einstellungen</a><a href="#">Hilfe</a></nav><span class="woa-spacer"></span><div class="woa-strip-bar" role="toolbar" aria-label="Modus und Status">
+ <button class="woa-sb" data-k="studio" data-tip="Produzent" data-kbd="Strg+1">Produzent</button><button class="woa-sb" data-k="radio" data-tip="Radio" data-kbd="Strg+2">Radio</button><button class="woa-sb is-on" data-k="party" data-tip="Party" data-kbd="Strg+3">Party</button>
+ <span class="woa-sb__sep"></span>
+ <button class="woa-sb is-on" data-k="midi" data-tip="MIDI-Eingang" data-hint="Leuchtet bei eingehenden Noten; Klick: Gerät wählen">MIDI</button><button class="woa-sb" data-k="air" data-tip="Auf Sendung" data-hint="Stream verbunden und Sendebus mit Signal">On Air</button><button class="woa-sb" data-k="rec" data-tip="Mitschnitt" data-kbd="Strg+Umschalt+R">Rec</button><button class="woa-sb is-on" data-k="ki" data-tip="KI-Assistent" data-hint="Grün = bereit">KI</button>
+ <span class="woa-sb__sep"></span>
+ <button class="woa-sb woa-sb--icon" data-k="fb" data-tip="Feedback mit Screenshot" data-kbd="F1"><span data-woa-icon="feedback" style="display:contents"></span>Feedback</button>
+</div></div><div style="display:flex;gap:10px;padding:10px 10px 0"><div class="woa-deck" style="padding:16px;gap:12px;flex:1;min-width:0">
+ <div style="display:flex;gap:18px;align-items:center;min-width:0">
+  <div class="woa-jog" style="--d:150px"><div class="woa-jog__mark"></div><div class="woa-jog__center"></div></div>
+  <div class="woa-col" style="flex:1;min-width:0;gap:8px">
+   <div class="woa-row" style="gap:8px"><span class="woa-label" style="color:var(--accent)">Deck A</span><span class="woa-pdeck__badge is-live">LÄUFT</span></div>
+   <div style="font-family:var(--font-label);font-size:30px;line-height:32px;font-weight:800;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Du bist nicht da, wo du denkst!</div>
+   <div class="woa-row" style="gap:14px;flex-wrap:nowrap"><div class="woa-lcd" style="padding:6px 12px"><span class="woa-seg" data-ghost="88:88" style="font-size:34px"><span>09:22</span></span></div><button class="woa-bigkey is-on is-pulse" style="--key-party-h:56px;font-size:18px" data-woa-icon="pause" data-tip="Pause">Pause</button></div>
   </div>
  </div>
- <canvas class="woa-wave" data-woa-wave data-seed="4" data-played=".38" data-beats="16"></canvas>
- <div class="woa-deck__keys"><button class="woa-bigkey is-on is-pulse" data-woa-icon="pause">Pause</button><button class="woa-bigkey woa-bigkey--alt">Cue</button><button class="woa-bigkey">Sync</button></div>
-</div>
-  <div class="woa-deck" style="">
- <div style="display:flex;justify-content:space-between;align-items:center"><span class="woa-label" style="color:var(--accent)">Deck B</span><span class="woa-pill woa-pill--cue is-active">BEREIT</span></div>
- <div style="display:flex;gap:20px;align-items:center">
-  <div class="woa-jog is-paused" style="--d:170px"><div class="woa-jog__mark"></div><div class="woa-jog__center"></div></div>
-  <div class="woa-col" style="flex:1;min-width:0;gap:6px">
-   <div class="woa-li__t" style="font-size:20px;line-height:24px;font-family:var(--font-label);text-transform:uppercase;font-weight:700">Feuerwerk über dem Main</div>
-   <div class="woa-li__m">Rheinklang · 3:58</div>
-   <div class="woa-lcd woa-bpm"><span class="woa-seg" data-ghost="888.8"><span>126.0</span></span><span class="woa-lcd__cap">BPM</span><span class="woa-lcd__cap" style="margin-left:auto">9A</span></div>
+ <canvas class="woa-wave" data-woa-wave data-seed="4" data-played=".12" style="height:52px"></canvas>
+</div><div class="woa-deck" style="padding:16px;gap:12px;flex:1;min-width:0">
+ <div style="display:flex;gap:18px;align-items:center;min-width:0">
+  <div class="woa-jog is-paused" style="--d:150px"><div class="woa-jog__mark"></div><div class="woa-jog__center"></div></div>
+  <div class="woa-col" style="flex:1;min-width:0;gap:8px">
+   <div class="woa-row" style="gap:8px"><span class="woa-label" style="color:var(--accent)">Deck B</span><span class="woa-pdeck__badge is-next">VORGELADEN</span></div>
+   <div style="font-family:var(--font-label);font-size:30px;line-height:32px;font-weight:800;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Ändere deine Gedanken! CB</div>
+   <div class="woa-row" style="gap:14px;flex-wrap:nowrap"><div class="woa-lcd" style="padding:6px 12px"><span class="woa-seg" data-ghost="88:88" style="font-size:34px"><span>03:02</span></span></div><button class="woa-bigkey" style="--key-party-h:56px;font-size:18px" data-woa-icon="play" data-tip="Nur dieses Deck starten" data-hint="Geblendet wird mit dem Crossfader">Play</button></div>
   </div>
  </div>
- <canvas class="woa-wave" data-woa-wave data-seed="8" data-played="0" data-beats="16"></canvas>
- <div class="woa-deck__keys"><button class="woa-bigkey " data-woa-icon="play">Play</button><button class="woa-bigkey woa-bigkey--alt">Cue</button><button class="woa-bigkey">Sync</button></div>
+ <canvas class="woa-wave" data-woa-wave data-seed="8" data-played="0" style="height:52px"></canvas>
+</div></div>
+<div style="display:grid;grid-template-columns:minmax(0,1fr) 520px;gap:10px;padding:10px;flex:1;min-height:0">
+ <div class="woa-col" style="gap:10px;min-height:0">
+  <div style="display:flex;align-items:center;gap:12px"><button style="--key-party-h:48px;font-size:15px;padding:0 14px" class="woa-bigkey woa-bigkey--alt is-on" data-woa-icon="fade" data-tip="Am Titelende von selbst blenden">Auto-Übergang</button><button style="--key-party-h:48px;font-size:15px;padding:0 14px" class="woa-bigkey woa-bigkey--alt" data-woa-icon="shuffle" data-tip="Zufällige Reihenfolge">Zufall</button><div class="woa-fader woa-fader--h" data-fmt="pct" style="--v:.0;flex:1;width:auto"><div class="woa-fader__track" role="slider" aria-label="Crossfader"><div class="woa-fader__cap"></div></div><div class="woa-fader__scale woa-scale" style="justify-content:space-between"><span>A</span><span>|</span><span>B</span></div></div></div>
+  <div class="woa-pctl">
+ <div class="woa-pctl__g"><span class="woa-label">Abspielen</span></div>
+ <button class="woa-bigkey " data-woa-icon="prev" data-tip="Zurück" data-kbd="←">Zurück</button><button class="woa-bigkey is-on is-pulse" data-woa-icon="pause" data-tip="Pause" data-kbd="Leertaste">Pause</button><button class="woa-bigkey " data-woa-icon="stop" data-tip="Stopp">Stopp</button><button class="woa-bigkey " data-woa-icon="next" data-tip="Weiter" data-kbd="→">Weiter</button>
+ <div class="woa-pctl__g"><span class="woa-label">Springen</span></div>
+ <button class="woa-bigkey " data-woa-icon="undo" data-tip="Von vorn">Von vorn</button><button class="woa-bigkey " data-woa-icon="rewind" data-tip="−10 s">−10 s</button><button class="woa-bigkey " data-woa-icon="ffwd" data-tip="+10 s">+10 s</button><button class="woa-bigkey " data-woa-icon="loop" data-tip="Playlist wiederholen">Wdh.</button>
+ <div class="woa-pctl__g"><span class="woa-label">Lautstärke</span></div>
+ <button class="woa-bigkey " data-woa-icon="vol-down" data-tip="Leiser" data-kbd="−">Leiser</button><div class="woa-lcd woa-pvol"><div class="woa-col" style="gap:4px;flex:1"><span class="woa-lcd__cap">Party</span><div class="woa-progress" style="--p:62%;height:8px"><i></i></div></div><span class="woa-tc" style="font-size:22px">+0 dB</span></div><button class="woa-bigkey " data-woa-icon="speaker" data-tip="Lauter" data-kbd="+">Lauter</button><button class="woa-bigkey " data-woa-icon="mute" data-tip="Stumm" data-kbd="M">Stumm</button>
 </div>
-  <div class="woa-deck" style="gap:12px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="woa-label" style="color:var(--accent-2)">Wunschliste</span><span class="woa-pill woa-pill--ok is-active">WLAN · 9 Handys</span></div>
-   <div class="woa-list">
-    <div class="woa-li" style="grid-template-columns:22px minmax(0,1fr) auto"><span class="woa-li__no">1</span><div style="min-width:0"><div class="woa-li__t">Sommer in der Stadt</div><div class="woa-li__m">Kiezgold · von Jana</div></div><span class="woa-vote is-on">♥ 12</span></div><div class="woa-li" style="grid-template-columns:22px minmax(0,1fr) auto"><span class="woa-li__no">2</span><div style="min-width:0"><div class="woa-li__t">Tanz auf dem Dach</div><div class="woa-li__m">Die Frequenzen · von Mo</div></div><span class="woa-vote">♥ 8</span></div><div class="woa-li" style="grid-template-columns:22px minmax(0,1fr) auto"><span class="woa-li__no">3</span><div style="min-width:0"><div class="woa-li__t">Alles auf Anfang</div><div class="woa-li__m">Nachtzug · von Tim</div></div><span class="woa-vote">♥ 5</span></div><div class="woa-li" style="grid-template-columns:22px minmax(0,1fr) auto"><span class="woa-li__no">4</span><div style="min-width:0"><div class="woa-li__t">Polaroid</div><div class="woa-li__m">Lichtblick · von Eva</div></div><span class="woa-vote">♥ 3</span></div><div class="woa-li" style="grid-template-columns:22px minmax(0,1fr) auto"><span class="woa-li__no">5</span><div style="min-width:0"><div class="woa-li__t">Main Ufer Funk</div><div class="woa-li__m">Bembel Brothers · von André</div></div><span class="woa-vote">♥ 2</span></div>
-   </div>
-   <button class="woa-bigkey woa-bigkey--alt" style="--key-party-h:56px;font-size:18px" data-woa-icon="plus">Als nächstes</button>
-  </div>
+  <div class="woa-card" style="flex:1;min-height:0"><div class="woa-card__head"><span class="woa-label" style="flex:none">Playlist</span><span class="woa-select" role="button" data-tip="Playlist wählen" style="width:160px"><span>Playlist 1</span><span data-woa-icon="down" style="display:contents"></span></span><span class="woa-dim woa-mono" style="font-size:12px;flex:1">75 Titel</span><button class="woa-key woa-key--sm" data-woa-icon="folder" data-tip="Ordner als Playlist laden">Ordner laden</button><button class="woa-ib woa-ib--sm" data-woa-icon="fullscreen" data-tip="Vollbild" data-kbd="F11"></button></div><div class="woa-pl" style="overflow:hidden"><div class="woa-pl__r is-air" style="grid-template-columns:18px 30px minmax(0,1fr) 64px;height:40px"><span class="woa-slot__grip" data-woa-icon="grip"></span><span class="woa-pl__no">1</span><span class="woa-pl__t">Du bist nicht da, wo du denkst! [0unvBW91wY0]<span class=woa-pl__tag style=color:var(--accent)>läuft</span></span><span class="woa-pl__d">09:20</span></div><div class="woa-pl__r" style="grid-template-columns:18px 30px minmax(0,1fr) 64px;height:40px"><span class="woa-slot__grip" data-woa-icon="grip"></span><span class="woa-pl__no">2</span><span class="woa-pl__t">Ändere deine Gedanken! CB<span class=woa-pl__tag>als Nächstes</span></span><span class="woa-pl__d">03:02</span></div><div class="woa-pl__r" style="grid-template-columns:18px 30px minmax(0,1fr) 64px;height:40px"><span class="woa-slot__grip" data-woa-icon="grip"></span><span class="woa-pl__no">3</span><span class="woa-pl__t">Best Motivational Speech Compilation EVER #14 – DISCIPLINE · 30 Minutes of the Best Motivation [sEmZli_0Kj8]</span><span class="woa-pl__d">32:40</span></div><div class="woa-pl__r" style="grid-template-columns:18px 30px minmax(0,1fr) 64px;height:40px"><span class="woa-slot__grip" data-woa-icon="grip"></span><span class="woa-pl__no">4</span><span class="woa-pl__t">Einmalig! Motivation (Deutsch · German) [NsNPH_JFItw]</span><span class="woa-pl__d">03:02</span></div><div class="woa-pl__r" style="grid-template-columns:18px 30px minmax(0,1fr) 64px;height:40px"><span class="woa-slot__grip" data-woa-icon="grip"></span><span class="woa-pl__no">5</span><span class="woa-pl__t">David Goggins – How To Get Up Early Every Day – WNSZ6xouNv4</span><span class="woa-pl__d">10:00</span></div><div class="woa-pl__r" style="grid-template-columns:18px 30px minmax(0,1fr) 64px;height:40px"><span class="woa-slot__grip" data-woa-icon="grip"></span><span class="woa-pl__no">6</span><span class="woa-pl__t">Dein Leben liegt in deinen Händen · Selbstmeisterschaft · Shi Heng Yi [-ndFHOEQTWE]</span><span class="woa-pl__d">04:37</span></div><div class="woa-pl__r" style="grid-template-columns:18px 30px minmax(0,1fr) 64px;height:40px"><span class="woa-slot__grip" data-woa-icon="grip"></span><span class="woa-pl__no">7</span><span class="woa-pl__t">GET SOME – Best David Goggins and Jocko Willink Motivational Compilation Ever [9WOoP1A6glg]</span><span class="woa-pl__d">30:13</span></div><div class="woa-pl__r" style="grid-template-columns:18px 30px minmax(0,1fr) 64px;height:40px"><span class="woa-slot__grip" data-woa-icon="grip"></span><span class="woa-pl__no">8</span><span class="woa-pl__t">Lebensweg! Motivation (Deutsch · German) [pXHIMCIntD8]</span><span class="woa-pl__d">02:42</span></div><div class="woa-pl__r" style="grid-template-columns:18px 30px minmax(0,1fr) 64px;height:40px"><span class="woa-slot__grip" data-woa-icon="grip"></span><span class="woa-pl__no">9</span><span class="woa-pl__t">NOBODY GIVES A F*CK ABOUT YOU EXCUSES · David Goggins Motivation for 2023 [rSzrvCOutTw]</span><span class="woa-pl__d">10:48</span></div></div></div>
  </div>
- <div style="display:flex;align-items:center;justify-content:center;gap:24px;padding:0 40px 24px">
-  <button class="woa-bigkey woa-bigkey--alt is-on" data-woa-icon="fade">Auto-Blende</button>
-  <div class="woa-fader woa-fader--h" data-fmt="pct" style="--v:.3;width:360px"><div class="woa-fader__track" role="slider" aria-label="Crossfader"><div class="woa-fader__cap"></div></div><div class="woa-fader__scale woa-scale" style="justify-content:space-between"><span>A</span><span>|</span><span>B</span></div></div>
-  <button class="woa-bigkey" data-woa-icon="next">Weiter</button>
-  <div class="woa-meter woa-meter--h" data-ch="2" data-segs="30" data-level=".82"></div>
- </div>
+ <div class="woa-col" style="gap:10px;min-height:0">
+ <div class="woa-deck" style="padding:14px;gap:10px"><span class="woa-label" style="color:var(--accent-2)">Bibliothek</span><div class="woa-input" data-woa-icon="search"><span class="woa-dim">Titel oder Interpret suchen …</span></div></div>
+ <div class="woa-deck" style="padding:14px;gap:10px;flex:1"><div class="woa-row"><span class="woa-label" style="color:var(--accent-2);flex:1">Wunschliste</span><span class="woa-pill" style="align-self:flex-start">0 Wünsche</span></div>
+  <div class="woa-row" style="gap:8px;flex-wrap:nowrap"><div class="woa-input" style="flex:1"><span class="woa-dim">Wer: Titel / Interpret</span></div><button class="woa-bigkey woa-bigkey--alt" style="--key-party-h:44px;font-size:15px;padding:0 14px" data-woa-icon="plus">Wunsch</button></div>
+  <div class="woa-col" style="align-items:center;justify-content:center;flex:1;gap:6px;color:var(--text-dim);text-align:center"><span data-woa-icon="heart" style="display:contents"></span><span style="font-size:14px">Noch keine Wünsche.</span><span style="font-size:12px">Handys im WLAN können wünschen, sobald die Fernbedienung an ist.</span></div></div>
+ <div class="woa-deck" style="padding:14px;gap:10px"><div class="woa-row"><span class="woa-label" style="color:var(--accent-2);flex:1">Fernbedienung</span><button class="woa-key is-lit" data-tip="Fernbedienung im WLAN"><span class="woa-key__led"></span>An</button></div>
+  <div class="woa-row" style="gap:14px;flex-wrap:nowrap"><div style="width:84px;height:84px;flex:none;border-radius:var(--radius-md);background:repeating-conic-gradient(var(--text) 0 25%,var(--panel) 0 50%) 0 0/21px 21px;border:5px solid var(--text)"></div><div class="woa-col" style="gap:4px;min-width:0"><b style="font-size:15px">Handy scannen</b><span class="woa-dim woa-mono" style="font-size:12px">woa.local:8080 · PIN 4711</span><span class="woa-pill woa-pill--ok is-active" style="align-self:flex-start">0 Handys</span></div></div>
+  <div class="woa-set" style="font-size:12px"><span>OSC-Eingang <small>Port 9000, ohne PIN, volle DJ-Rechte</small></span><button class="woa-tog" aria-pressed="false" data-tip="OSC-Eingang"></button></div></div>
 </div>
+</div></div>
 <script>WOA.init();</script>
 </body>
 </html>

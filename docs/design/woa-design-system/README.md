@@ -86,6 +86,30 @@ WOA – Wir on Air ist eine DAW mit eingebautem Sendestudio und Party-Player. Ei
 | Alle Inserts umgehen | Umschalt+B |
 | Umbenennen | F2 |
 
+## Komponieren (Produzent)
+
+- **Ein Ort zum Holen:** der Browser links (Klänge, Beats, Akkorde, FX, Samples, Jingles). Alles lässt sich in die Zeitleiste ziehen oder mit „Einfügen · Takt n“ am Abspielkopf einsetzen. Keine Knopfreihe unter den Spuren.
+- **Harmonie sichtbar:** Akkordspur unter dem Lineal, Akkordnamen in Akkord-Clips und im Piano-Roll-Lineal, Töne der Tonart im Raster hervorgehoben.
+- **Klang gehört zur Spur:** Abschnitt „Instrument“ im Rack (Rolle Lead/Bass/Pad/Kit, vier Klänge je Rolle, Probeton). Der Klangname steht im Clip-Kopf.
+- **Noten in Spurfarbe** – in Clips, Piano-Roll, Velocity-Spur und Drum-Raster.
+- **Assistenten** (Jingle bauen) führen Schritt für Schritt mit Wahlkarten; einfache Erzeuger (FX, Akkorde) sind Browser-Einträge mit wenigen Feldern, keine Fenster.
+
+## Radio und Party
+
+- **Radio:** Decks A · B · C sind gleich hohe Zeilen mit Buchstabe, 7-Segment-Restzeit, Titel und Tasten; die Pegel aller Quellen und Ausgänge stehen als Kanalzüge in einer Pegelgruppe.
+- **Party:** Großtasten in drei Gruppen (Abspielen, Springen, Lautstärke), Schalter (Auto-Übergang, Zufall) neben dem Crossfader. Zustand nur über Füllung.
+- **Kopfleiste:** ein Block für Modus · Status · Feedback, alles im selben Stil, nur die Farben unterscheiden die Funktion.
+
+## Arbeitsfläche 1920 × 1030
+
+- Die Entwürfe `ScreenStudio`, `ScreenPianoRoll`, `ScreenRadio` und `ScreenParty` zeigen die echte Fenstergröße mit echten Inhalten. Sie sind das Zielbild für die Umsetzung.
+- **Ein Raster:** 10 px Außenabstand, 10 px zwischen Karten. Karten haben immer Kopfzeile (`panel-label`) und Inhalt.
+- **Drei Tastenhöhen:** 24 px (in Listen und Kanälen), 32 px (Standard), 44 px (Hauptaktionen); Party 48–64 px.
+- **Ruhig statt bunt:**
+  - Farbflächen nur für „läuft“ (`accent`), „eingeschaltet“ (`accent-soft` bzw. `accent-2`) und Live-Status (`on-air-fill`).
+  - Listen, Pads und Zeiten bleiben neutral; Spurfarben nur als Kante oder Balken.
+- **Text-Knopfwüsten** werden zu Gruppen: Hauptaktion als Taste mit Wort, Nebenaktionen als Symbol-Tasten mit Tooltip.
+
 ## Logo
 
 - Fünf LED-Säulen, deren Oberkanten ein W zeichnen, darüber die rote ON-AIR-Lampe; in der Wortmarke ist das O selbst die Lampe. „WIR ON AIR“ steht darunter und läuft exakt von der linken Kante des W bis zur rechten Kante des A.
@@ -95,7 +119,7 @@ WOA – Wir on Air ist eine DAW mit eingebautem Sendestudio und Party-Player. Ei
 ## Umsetzung in egui
 
 - `crates/gui/src/theme.rs` bleibt die Quelle für die Rust-Konstanten; Studio-dunkel entspricht den heutigen Werten. Neu: ein `Mode`-Parameter für `accent`, `accent-2`, `lcd-ink` und die Flächen, plus `BORDER_STRONG`, `LCD_BG`, `LED_OFF`, `VU_FACE`, `VU_INK`.
-- `card_frame`, `lcd_frame`, `status_pill`, `led_meter` gibt es schon; neu nach diesen Vorlagen: `key`, `knob`, `fader`, `vu_meter`, `studio_clock`, `onair_lamp`, `cart_pad`, `jog`, außerdem `icon_button`, `tooltip`, `number_field`, `select_field`, `context_menu`, `track_header`, `clip_inspector`, `insert_rack`, `fx_slot`, `undo_toast`.
+- `card_frame`, `lcd_frame`, `status_pill`, `led_meter` gibt es schon; neu nach diesen Vorlagen: `key`, `knob`, `fader`, `vu_meter`, `studio_clock`, `onair_lamp`, `cart_pad`, `jog`, außerdem `icon_button`, `tooltip`, `number_field`, `select_field`, `context_menu`, `track_header`, `clip_inspector`, `insert_rack`, `fx_slot`, `undo_toast`, `status_bar` (Kopfleisten-Block), `radio_deck`, `level_group`, `party_controls`, `browser`, `chord_lane`, `sound_section`, `piano_roll`, `drum_grid`, `wizard`.
 - Auswahl ist ein einziger Zustand im Modell (gewählte Spur, gewählte Clips); alle Ansichten lesen ihn, keine hält eine eigene Kopie.
 - Die Entwürfe unter „Entwürfe“ sind Zielbilder, keine pixelgenaue Vorgabe; Abstände und Tokens sind verbindlich.
 
