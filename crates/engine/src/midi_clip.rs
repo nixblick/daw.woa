@@ -291,8 +291,8 @@ impl<I: Instrument> Node for MidiTrackPlayer<I> {
 }
 
 /// Baut die Quelle einer MIDI-Spur aus ihren MIDI-Clips; `None`, wenn die Spur weder
-/// MIDI-Clips noch eine Live-Queue hat. Mit GM-Klang spielt die SoundFont des Prozesses
-/// ([`crate::soundfont::default_soundfont`]), fehlt sie, der eingebaute Synth.
+/// MIDI-Clips noch eine Live-Queue hat. Mit GM-Klang spielt die Bank des Klangs bzw. die
+/// SoundFont des Prozesses ([`crate::soundfont::soundfont_for`]), fehlt sie, der eingebaute Synth.
 pub fn midi_track_source(
     track: &Track,
     tempo_bpm: f64,
@@ -300,9 +300,7 @@ pub fn midi_track_source(
     transport: &TransportHandle,
     live: Option<Consumer<NoteEvent>>,
 ) -> Option<MidiTrackPlayer<TrackInstrument>> {
-    let font = track
-        .sound
-        .and_then(|_| crate::soundfont::default_soundfont());
+    let font = track.sound.and_then(crate::soundfont::soundfont_for);
     midi_track_source_with(track, tempo_bpm, rate, transport, live, font)
 }
 
@@ -377,6 +375,7 @@ mod tests {
         let sound = Some(TrackSound {
             program: 33,
             drums: false,
+            bank: None,
         });
         assert!(!TrackInstrument::new(sound, None, 48_000.0).is_soundfont());
         assert!(!TrackInstrument::new(None, None, 48_000.0).is_soundfont());

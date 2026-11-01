@@ -50,7 +50,15 @@ fn routing_key(project: &Project) -> String {
     use std::fmt::Write;
     let mut key = String::new();
     for t in &project.tracks {
-        let _ = write!(key, "{}:{:?}:{:?}", t.id.0, t.kind, t.output.map(|o| o.0));
+        // Klang und Bank (Pakete J1, J7) wählen die SoundFont des Graphen.
+        let _ = write!(
+            key,
+            "{}:{:?}:{:?}:{:?}",
+            t.id.0,
+            t.kind,
+            t.output.map(|o| o.0),
+            t.sound
+        );
         for s in &t.sends {
             let _ = write!(key, "|s{}{}", s.target.0, u8::from(s.pre_fader));
         }
@@ -291,7 +299,13 @@ impl Player {
                 })
                 .collect(),
             live,
-            format!("{}#{}", routing_key(project), self.plugin_epoch),
+            // Eine fertig geladene Bank (Paket J7) baut den Graphen neu.
+            format!(
+                "{}#{}#{}",
+                routing_key(project),
+                self.plugin_epoch,
+                woa_engine::banks::generation()
+            ),
         );
         if self.structure.as_ref() != Some(&structure) {
             let (live_graph, producer) = match live {

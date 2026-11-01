@@ -4,6 +4,18 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## J7 Bänke (0.34.88, offen)
+
+1. MIDI-Spur, Klang „Klavier“, im Klang-Menü unter BANK „MuseScore General · wird beim Wählen geladen“ wählen. Das Menü zeigt „lädt … %“ (206 MB); bis dahin spielt GeneralUser GS weiter.
+2. Nach dem Laden: Abspielen klingt mit dem MuseScore-Klavier (ohne Neustart). Die Datei liegt mit `MuseScore_General-LICENSE.md` im Datenordner unter `banks/`.
+3. Kit-Spur (z. B. Drum-Raster aus J2), BANK „AVL Red Zeppelin“: echte Drums. Auf einer Melodie-Spur fehlt AVL im Menü.
+4. Speichern, schließen, öffnen: die Bankwahl steht noch im Menü.
+5. Ohne Netz (WLAN aus) eine nicht geladene Bank wählen: Menü zeigt „Fehler: …“, die Spur spielt GeneralUser GS, nichts bricht ab.
+6. Über WOA: Dank an MuseScore General und AVL Drumkits.
+7. Claude per MCP: „Setz die Keys-Spur auf MuseScore-Klavier“ (`track_sound` mit `bank`, danach `bank_state` bis `ready`).
+
+Selbst geprüft von Claude: Katalog nur https, Prüfsumme und Grösse beim Einspielen, nichts bleibt bei falscher Prüfsumme, Rückfall auf GeneralUser GS, reine Drum-Bank nur für Kits (`crates/engine/tests/banks.rs`), Bank bleibt nach Speichern und unbekannte Bank lädt (`crates/model/tests/sound.rs`), MCP mit und ohne Bank-Ordner (`crates/agent/tests/track_bank*.rs`). Lokal mit den echten Dateien: beide Katalog-Prüfsummen stimmen, Offline-Render Klavier und AVL-Noten 36/38/42 klingen, echter https-Download der AVL-Bank über die App-Funktion. Nicht selbst geprüft: Menü und Klang am Gerät (kein Ton über Lautsprecher), Download der 206-MB-Bank in der App.
+
 ## J3 Akkorde und Muster (0.34.87, offen)
 
 1. Knopf „Akkordfolge …“ (neben „+ MIDI-Clip“): Fenster mit Folge, Tonart, Takte.

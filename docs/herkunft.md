@@ -150,3 +150,16 @@ Lizenztext gehört zu jeder Weitergabe).
 Quellen werden nur mit Repository, Datei und Commit genannt, nie mit Pfaden einer Maschine.
 Wird Code (nicht nur eine Idee) aus einem fremden Projekt übernommen, steht hier vorher Lizenz
 und Wortlaut, und André entscheidet.
+
+## Klangbänke (Paket J7, #271)
+
+Keine Übernahme von Quelltext. WOA lädt zwei Bänke als Daten beim ersten Gebrauch; Quelle,
+Prüfsumme und Wortlaut der Lizenz stehen in [`sounds/README.md`](sounds/README.md), die Lizenztexte
+liegen in `docs/sounds/`.
+
+- **MuseScore General 0.2.0** (`ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/`), MIT,
+  gelesen in `MuseScore_General_License.md` an der Quelle.
+- **AVL Drumkits „Red Zeppelin 4pc“** (Glen MacArthur, SF2 aus `x42/avldrums.lv2` Commit
+  `9389f16f139410d9a55f9006976bd54cbd8b7806`), CC BY-SA 3.0, gelesen in `sf2/README` an der Quelle
+  und auf https://www.bandshed.net/avldrumkits/ („licensed CC-BY-SA 3.0“).
+

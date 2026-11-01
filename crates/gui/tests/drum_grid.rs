@@ -15,7 +15,8 @@ fn preset_and_step_are_undo_steps_on_a_drum_track() {
         track,
         Some(TrackSound {
             program: 0,
-            drums: true
+            drums: true,
+            bank: None,
         })
     ));
     let clip = st
