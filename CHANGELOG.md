@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.92 — 2026-11-01
+
+- **Updater Stufe B (#136):** `packaging/windows/updater.pub` enthält jetzt den echten öffentlichen minisign-Schlüssel. Ab dieser Version verlangt der Updater eine gültige Signatur über das MSI, ohne Rückfall auf die reine SHA-256-Prüfung. Das Secret `WOA_UPDATER_KEY` für den Release-Workflow ist gesetzt. Der Stufe-A-Pfad bleibt im Code, bis das erste signierte Release draußen ist. Doku `docs/updater.md` nachgezogen.
+
 ## 0.34.91 — 2026-11-01
 
 - **MCP-HTTP-Server nur auf Wunsch (#243):** Der zweite Server `woa-headless mcp … --http` (Port 8765) startet nicht mehr beim Start der App, auch wenn er in einer früheren Sitzung eingeschaltet war. Er startet nur, wenn man unter KI & MCP den Haken „HTTP-Server im Hintergrund“ setzt und speichert, und endet mit WOA. Port, Reichweite und Projektordner bleiben gespeichert. Der Live-Server der App (Stdio-Weiterleitung) ist unverändert. Test `app_start_never_starts_http_server`.
