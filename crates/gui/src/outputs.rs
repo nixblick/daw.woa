@@ -12,7 +12,7 @@ use woa_engine::device::{
     ManagedOutput, OutputConfig, OutputProbe, PairsRender, Reconnect, is_xrun, probe_output,
 };
 use woa_engine::pairs::{LinkStats, link};
-use woa_radio::routing::{DeviceInfo, OutputMap, Plan, SOURCES};
+use woa_radio::routing::{DeviceInfo, OutputMap, Plan, Pult, SOURCES};
 use woa_radio::{Controller, Mixer};
 
 /// Ein Gerät, das mitten in der Sendung ausfallen kann.
@@ -106,9 +106,25 @@ pub fn probe(id: Option<&str>) -> Result<DeviceInfo, String> {
         .map_err(|e| e.to_string())
 }
 
-/// Löst die Zuordnung gegen die vorhandenen Geräte auf.
-pub fn plan(map: &OutputMap, reserved_main: &[usize]) -> Plan {
-    Plan::build(map, &probe, reserved_main)
+/// Fragt ein Eingangsgerät ab (Pult-Eingang).
+pub fn probe_in(id: Option<&str>) -> Result<DeviceInfo, String> {
+    let config = woa_engine::record::InputConfig {
+        device_id: id.map(str::to_string),
+        pair: 0,
+    };
+    woa_engine::record::probe_input(&config)
+        .map(|p| DeviceInfo {
+            id: p.id,
+            name: p.name,
+            rate: p.rate,
+            channels: p.channels,
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Löst die Zuordnung samt Pult-Modus gegen die vorhandenen Geräte auf.
+pub fn plan(map: &OutputMap, pult: &Pult, reserved_main: &[usize]) -> Plan {
+    Plan::build_with_pult(map, pult, &probe, &probe_in, reserved_main)
 }
 
 /// Öffnet alle Ströme des Plans. `aux`: Vorhören auf Kanal 3/4 des Hauptgeräts (Paar 1).

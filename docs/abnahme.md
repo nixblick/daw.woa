@@ -4,6 +4,17 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Pult-Modus (0.35.8, offen)
+
+1. Pult per USB anstecken. Einstellungen → Ausgänge: Playlist (und Carts, Decks) auf das Pult-Gerät, unten „Sendung kommt vom Pult“ an, Eingang vom Pult wählen (Gerät, Kanal 1/2), Übernehmen. Ohne laufende Sendung öffnet die Ausgabe neu.
+2. Neben dem Telefon-Knopf steht „PULT“ mit Pegel; am Pult Mikro aufziehen: der Pegel schlägt aus.
+3. Vorhören auf ein eigenes Gerät (Laptop-Kopfhörer) stellen; Vorhören läuft, ohne auf Sendung zu kommen. Kanal 3/4 des Pult-Geräts wird mit Meldung abgelehnt.
+4. Stream starten, Playlist spielen, am Pult Mikro, Bluetooth und Telefon dazu: Der Stream hat alles einmal, die Musik nicht doppelt. Mitschnitt hat dasselbe.
+5. Mikro-Taste in WOA: Meldung „Mikrofon im Pult-Modus aus“.
+6. 30 min Stream ohne Aussetzer.
+7. Schalter aus, Übernehmen: alles wie vorher.
+
+Selbst geprüft von Claude: Offline-Tests ohne Ton (`crates/radio/tests/pult.rs`, `routing::pult_tests`): im Pult-Modus ist nur der Pult-Sinus auf Sendung, die Playlist-Musik nicht, der Ausgang Richtung Pult ist bit-gleich zur unbearbeiteten Musik; ohne Schalter ist die Sendung bit-gleich zu vorher (auch gegen den Stand vor der Änderung per Prüfsumme); der Plan löst Ausgangs- und Eingangsgerät auf und meldet Ausfälle. Kein Gerät geöffnet, nichts gehört. Noch nicht über MCP.
 ## Feedback in der Party-Ansicht (0.35.7, offen)
 
 1. Party-Ansicht: grüne Feedback-Taste oben rechts: das Feedback-Fenster erscheint mittig, ohne zu Radio zu wechseln.
@@ -1250,7 +1261,7 @@ Mit drei kurzen Titeln und 5 s Crossfade, Lautstärke nach Wunsch (der Ablauf ge
 
 Selbst geprüft von Claude: Tests ohne Ton für Constant Power, die Glättung des Faders, Auto an und aus, „die Hand gewinnt“, „über die Mitte ist kein Weiter“, das Ende lädt vor, ohne zu starten, Ein- und Austritt ohne Lücke, den Wunschordner (einmal je Datei, entfernt bleibt weg, Datei bleibt) und Mixer-Blöcke unter `assert_no_alloc`. Clippy und Tests von `woa-radio`, `woa-remote` und `woa-gui` grün. Nicht am Gerät gehört.
 
-## Ganze Zeile anklickbar (0.35.8, offen)
+## Ganze Zeile anklickbar (0.35.9, offen)
 
 1. Radio-Modus, ein paar Titel in der Playlist. Rechts neben der Dauer (leere Fläche) klicken: Die Zeile bekommt einen Rahmen in Akzentfarbe.
 2. Irgendwo auf der Zeile rechtsklicken, auch auf dem Cover oder dem Griff: Das Titelmenü (Umbenennen, Titelinfos …) geht auf.

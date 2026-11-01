@@ -131,6 +131,8 @@ pub struct View {
     pub phone_on: bool,
     /// Spitze des Telefon-Eingangs seit der letzten Ansicht (0..1).
     pub phone_peak: f32,
+    /// Spitze des Pult-Eingangs seit der letzten Ansicht (0..1, #301).
+    pub pult_peak: f32,
     /// Spitzen seit der letzten Ansicht (linear) für die LED-Meter: Playlist, Carts, Decks,
     /// Mikro nach ihrem Fader und der Sendemix (Master), #216.
     pub meters: [f32; 5],
@@ -476,6 +478,7 @@ fn run(
             mic_open: st.mic_open.load(Ordering::Acquire),
             phone_on: st.phone_on.load(Ordering::Acquire),
             phone_peak: st.take_phone_peak(),
+            pult_peak: st.take_pult_peak(),
             meters: {
                 let [m, c, d] = st.take_bus_peaks();
                 [m, c, d, st.take_mic_peak(), st.take_peak()]
