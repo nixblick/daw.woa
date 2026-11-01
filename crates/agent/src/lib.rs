@@ -27,6 +27,7 @@ use woa_model::{
 };
 
 pub mod audio;
+pub mod freesound;
 pub mod http;
 pub mod jingle;
 pub mod live;
@@ -900,6 +901,31 @@ pub struct ListSamplesParams {
     pub limit: Option<usize>,
 }
 
+/// Parameters of `search_samples`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SearchSamplesParams {
+    /// Search words, e.g. `riser` or `impact metal`.
+    pub text: String,
+    /// Most results, default 15, at most 50.
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// Parameters of `import_sample`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ImportSampleParams {
+    /// Freesound id from `search_samples`.
+    pub id: u64,
+    /// Audio track that gets the new clip.
+    pub track: u64,
+    /// Clip start in beats.
+    #[serde(default)]
+    pub start_beats: f64,
+    /// Clip name; default the sound's name.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
 /// Parameters of `stream_status`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StreamStatusParams {
@@ -937,6 +963,8 @@ pub struct WoaAgent {
     dir: PathBuf,
     /// Takes written by `generate_*` this run; declared after `session` so it drops last.
     takes: Arc<Takes>,
+    /// Freesound access for `search_samples` and `import_sample` (J10).
+    samples: freesound::Source,
     // Read by the code generated from `#[tool_handler]`.
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
@@ -1273,8 +1301,15 @@ impl WoaAgent {
             session,
             takes,
             dir,
+            samples: freesound::Source::default(),
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// Replaces the Freesound access (address and key source), e.g. for tests.
+    pub fn with_sample_source(mut self, source: freesound::Source) -> Self {
+        self.samples = source;
+        self
     }
 
     /// Shared handle to the session, e.g. for a GUI that shows the agent's work live.
@@ -2240,6 +2275,88 @@ impl WoaAgent {
         ))
     }
 
+    #[tool(
+        description = "Search Freesound for samples (riser, whoosh, impact ...). Only CC0 and CC BY sounds are returned. Needs the user's own Freesound key, stored in WOA under Settings, KI. Returns id, name, author, license, duration, url and tags; put a hit on a track with import_sample."
+    )]
+    async fn search_samples(
+        &self,
+        Parameters(p): Parameters<SearchSamplesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let text = p.text.trim().to_string();
+        if text.is_empty() {
+            return Ok(fail("text ist leer"));
+        }
+        let limit = p.limit.unwrap_or(15).clamp(1, 50);
+        let src = self.samples.clone();
+        off_runtime(move || {
+            Ok(match src.search(&text, limit) {
+                Ok(hits) => ok_json(serde_json::json!({
+                    "samples": hits.iter().map(freesound::Hit::json).collect::<Vec<_>>(),
+                })),
+                Err(e) => fail(e),
+            })
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Download a Freesound sound (id from search_samples, CC0 or CC BY only) as MP3 preview into the project folder (aufnahmen/), add it as a clip on an audio track and write its credit line (title, author, license, link) to notizen.md in the project folder. Returns the clip id and its length in beats."
+    )]
+    async fn import_sample(
+        &self,
+        Parameters(p): Parameters<ImportSampleParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Err(e) = Self::check_target(&*self.lock()?, p.track, p.start_beats) {
+            return Ok(fail(e));
+        }
+        let (src, dir, session) = (self.samples.clone(), self.dir.clone(), self.session());
+        off_runtime(move || {
+            let hit = match src.sound(p.id) {
+                Ok(h) => h,
+                Err(e) => return Ok(fail(e)),
+            };
+            let (rel, abs) = audio::free_take_path(
+                &dir,
+                &format!("freesound-{}", hit.id),
+                &freesound::preview_ext(&hit.preview),
+            );
+            if let Some(parent) = abs.parent()
+                && let Err(e) = std::fs::create_dir_all(parent)
+            {
+                return Ok(fail(format!("{}: {e}", parent.display())));
+            }
+            if let Err(e) = src.download(&hit, &abs) {
+                return Ok(fail(e));
+            }
+            let mut s = session.lock().map_err(|_| lock_err())?;
+            let added = Self::check_target(&s, p.track, p.start_beats).and_then(|()| {
+                audio::wav_length_beats(&abs, s.project().tempo_bpm)
+            });
+            let length = match added {
+                Ok(l) => l,
+                Err(e) => {
+                    let _ = std::fs::remove_file(&abs);
+                    return Ok(fail(e));
+                }
+            };
+            let id = s.new_clip_id();
+            let name = p.name.unwrap_or_else(|| hit.name.clone());
+            let r = Self::add_file_clip(&mut s, id, p.track, name, p.start_beats, length, rel);
+            if r.is_error == Some(true) {
+                let _ = std::fs::remove_file(&abs);
+                return Ok(r);
+            }
+            if let Err(e) = freesound::append_credit(&dir, &hit) {
+                return Ok(fail(format!(
+                    "Clip angelegt, aber Herkunftszeile nicht geschrieben ({e}); bitte von Hand nachtragen: {}",
+                    hit.credit_line()
+                )));
+            }
+            Ok(r)
+        })
+        .await
+    }
+
     #[tool(description = "Move a clip to another start (beats) and optionally another track.")]
     async fn move_clip(
         &self,
@@ -2653,7 +2770,7 @@ impl WoaAgent {
     }
 
     #[tool(
-        description = "Search samples: the WOA library by kind (sample, jingle, music), tag and name, or with folder an audio folder (e.g. Jingle-FX) by file name. Read only; returns path, title, kind, duration and tags. Put a hit on a track with add_clip."
+        description = "Search samples: the WOA library by kind (sample, jingle, music), tag and name, or with folder an audio folder (e.g. Jingle-FX) by file name. Read only; returns path, title, kind, duration and tags. Put a hit on a track with add_clip. For Freesound use search_samples."
     )]
     async fn list_samples(
         &self,

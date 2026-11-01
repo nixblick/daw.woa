@@ -4,6 +4,15 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## J10 Sample-Suche (0.35.0, offen)
+
+1. Bei freesound.org anmelden, unter freesound.org/apiv2/apply einen API-Schlüssel holen. In WOA Einstellungen → KI → „Freesound-Schlüssel“ einfügen, „Speichern“: das Feld zeigt „gespeichert …“.
+2. Claude per MCP: `search_samples` mit `text: "riser"`: jeder Treffer hat `license` CC0 oder CC BY.
+3. `import_sample` mit einer `id` aus Schritt 2 auf eine Audio-Spur: Clip steht da und klingt; im Projektordner steht in `notizen.md` eine Zeile mit Titel, Urheber, Lizenz und Link.
+4. `project.json` und `notizen.md` öffnen: der Schlüssel steht nirgends.
+
+Selbst geprüft von Claude: `crates/agent/src/freesound.rs`, `crates/agent/tests/j10_samples.rs` (gegen einen lokalen Test-Server, nicht gegen das echte Freesound), `crates/gui/src/ki_setup.rs`. Gegen das echte Freesound nicht geprüft (kein Schlüssel). Clippy und Tests von `woa-agent` und `woa-gui` grün.
+
 ## J4 Assistent „Jingle bauen“ (0.34.98, offen)
 
 1. Stoppuhr an. „Jingle bauen …“ → 10 s, „Party“ → „Jingle anlegen“: neues Projekt mit Drums, Akkorde, Bass, Arpeggio, Stimme; Tempo 120, Loop über 5 Takte.
