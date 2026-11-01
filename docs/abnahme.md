@@ -4,6 +4,13 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Windows-Taskleiste mit WOA-Logo (0.35.4, offen)
+
+1. ZIP auspacken, `woa.exe` starten: Taskleiste zeigt WOA-Logo, auch aus der ZIP gestartet. Im Explorer trägt `woa.exe` dasselbe Logo.
+2. Mit dem MSI installiert und über das Startmenü gestartet: ebenfalls das WOA-Logo in der Taskleiste.
+
+Selbst geprüft von Claude: der Windows-Bau prüft, dass `woa.exe` ein eigenes Icon trägt (anders als das Standardsymbol). Linux-Bau unverändert. Nicht am Windows-Rechner gesehen.
+
 ## Cart-Wall-Sätze und Umbenennen (0.35.2, offen)
 
 1. Radio-Modus: Über der Cart-Wall stehen fünf kleine Reiter „1 Satz 1“ bis „5 Satz 5“. Die bisherige Belegung steht in Satz 1, nichts fehlt.
