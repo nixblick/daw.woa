@@ -13,10 +13,10 @@ rtrb = "0.4.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tracing = "0.1.44"
-woa-dsp = { version = "0.34", path = "../dsp" }
-woa-engine = { version = "0.34", path = "../engine" }
-woa-guests = { version = "0.34", path = "../guests" }
-woa-telemetry = { version = "0.34", path = "../telemetry" }
+woa-dsp = { version = "0.35", path = "../dsp" }
+woa-engine = { version = "0.35", path = "../engine" }
+woa-guests = { version = "0.35", path = "../guests" }
+woa-telemetry = { version = "0.35", path = "../telemetry" }
 
 [dev-dependencies]
 assert_no_alloc = "1.1.2"

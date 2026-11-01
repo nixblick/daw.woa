@@ -22,8 +22,8 @@ clack-plugin = { version = "0.2.0", optional = true }
 tracing = "0.1.44"
 memmap2 = "0.9"
 
-woa-dsp = { version = "0.34", path = "../dsp" }
-woa-model = { version = "0.34", path = "../model" }
+woa-dsp = { version = "0.35", path = "../dsp" }
+woa-model = { version = "0.35", path = "../model" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -32,5 +32,5 @@ libc = "0.2"
 assert_no_alloc = "1.1.2"
 tempfile = "3.27.0"
 tracing-subscriber = "0.3.23"
-woa-telemetry = { version = "0.34", path = "../telemetry" }
-woa-plugins = { version = "0.34", path = ".", features = ["test-plugin"] }
+woa-telemetry = { version = "0.35", path = "../telemetry" }
+woa-plugins = { version = "0.35", path = ".", features = ["test-plugin"] }

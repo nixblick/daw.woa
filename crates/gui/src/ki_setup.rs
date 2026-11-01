@@ -88,6 +88,8 @@ enum Msg {
 pub struct KiSetup {
     /// Neuer Schlüssel im Eingabefeld (maskiert); leer = unverändert.
     key_input: String,
+    /// Neuer Freesound-Schlüssel (J10), maskiert; leer = unverändert.
+    fs_input: String,
     keys: KeyStatus,
     models: HashMap<String, Vec<String>>,
     busy: bool,
@@ -196,6 +198,7 @@ impl KiSetup {
         let (tx, rx) = channel();
         Self {
             key_input: String::new(),
+            fs_input: String::new(),
             keys: KeyStatus::with_lookup(lookup),
             models: HashMap::new(),
             busy: false,
@@ -233,6 +236,10 @@ impl KiSetup {
     /// Legt den eingetippten Schlüssel im Hintergrund ab; das Feld ist danach leer.
     fn save_key(&mut self, data_dir: &Path, account: &str) {
         let key = std::mem::take(&mut self.key_input);
+        self.store_key(data_dir, account, key);
+    }
+
+    fn store_key(&mut self, data_dir: &Path, account: &str, key: String) {
         if key.trim().is_empty() {
             return;
         }
@@ -350,10 +357,45 @@ impl KiSetup {
             ui.add_space(6.0);
             self.mcp_card(ui, draft, client, exe.as_deref(), project);
         }
+        ui.add_space(6.0);
+        self.freesound_row(ui, data_dir);
         if let Some(n) = &self.note {
             ui.label(egui::RichText::new(n).small().color(theme::text_dim()));
         }
         *draft != before
+    }
+
+    /// Eigener Freesound-Schlüssel für die Sample-Suche (`search_samples`, J10).
+    fn freesound_row(&mut self, ui: &mut egui::Ui, data_dir: &Path) {
+        let account = woa_agent::freesound::KEY_ACCOUNT;
+        ui.horizontal(|ui| {
+            ui.label("Freesound-Schlüssel");
+            let hint = match self.keys.get(data_dir, account) {
+                None => "wird nachgesehen …".to_string(),
+                Some(Some(o)) => format!("gespeichert {}", o.label()),
+                Some(None) => "für die Sample-Suche (optional)".to_string(),
+            };
+            ui.add(
+                egui::TextEdit::singleline(&mut self.fs_input)
+                    .password(true)
+                    .hint_text(hint)
+                    .desired_width(220.0),
+            );
+            if ui
+                .add_enabled(
+                    !self.fs_input.trim().is_empty() && !self.busy,
+                    egui::Button::new("Speichern"),
+                )
+                .on_hover_text(
+                    "Kostenlos unter freesound.org/apiv2/apply. Claude findet damit Klänge \
+                     unter CC0 und CC BY; der Schlüssel bleibt im Schlüsselbund.",
+                )
+                .clicked()
+            {
+                let key = std::mem::take(&mut self.fs_input);
+                self.store_key(data_dir, account, key);
+            }
+        });
     }
 
     fn provider_fields(&mut self, ui: &mut egui::Ui, draft: &mut KiConfig, data_dir: &Path) {
@@ -584,5 +626,26 @@ pub(crate) mod tests {
         let text = log.lock().unwrap().clone();
         assert!(text.contains("ki key stored"), "Log: {text}");
         assert!(!text.contains(KEY) && !text.contains("0123456789"));
+    }
+
+    #[test]
+    fn freesound_key_goes_to_its_own_keyring_entry() {
+        static SEEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
+        fn rec(_: &Path, acc: &str, _: &str) -> Result<Ort, String> {
+            SEEN.lock().unwrap().push(acc.to_string());
+            Ok(Ort::Datei)
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let mut s = KiSetup::with_store(none, rec);
+        s.fs_input = "fs-fake-key".into();
+        let key = std::mem::take(&mut s.fs_input);
+        s.store_key(tmp.path(), woa_agent::freesound::KEY_ACCOUNT, key);
+        let t0 = std::time::Instant::now();
+        while !s.keys.known.contains_key("freesound") && t0.elapsed().as_secs() < 5 {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            s.drain();
+        }
+        assert_eq!(*SEEN.lock().unwrap(), ["freesound"]);
+        assert!(s.fs_input.is_empty());
     }
 }
