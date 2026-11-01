@@ -49,6 +49,57 @@ pub fn normalize(
     })
 }
 
+/// Ergebnis von [`master`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Mastered {
+    /// Gemessen vorher.
+    pub before_lufs: f64,
+    /// Gesamte Verstärkung vor dem Limiter in dB.
+    pub gain_db: f64,
+    /// Stärkste Absenkung durch den Limiter in dB (0 = nie eingegriffen).
+    pub reduction_db: f32,
+}
+
+/// Fertiger Klang für ein Jingle (J6): Verstärkung auf `target_lufs`, dann Spitzenbegrenzer
+/// ([`woa_dsp::dynamics::Limiter`]) auf `ceiling_db`. Anders als [`normalize`] erreicht das
+/// auch spitzenreiche Mischungen; der Limiter kostet etwas Lautheit, deshalb bis zu vier
+/// Durchgänge. `None` bei Stille. Nur offline (allokiert nicht, läuft aber über den ganzen Mix).
+pub fn master(
+    left: &mut [f32],
+    right: &mut [f32],
+    rate: u32,
+    target_lufs: f64,
+    ceiling_db: f64,
+) -> Option<Mastered> {
+    let before = integrated_lufs(left, right, rate)?;
+    let ceiling = 10f64.powf(ceiling_db / 20.0) as f32;
+    let mut now = before;
+    let mut gain_db = 0.0;
+    let mut reduction = 0.0f32;
+    for _ in 0..4 {
+        let step = target_lufs - now;
+        if step.abs() < 0.1 {
+            break;
+        }
+        gain_db += step;
+        let g = 10f64.powf(step / 20.0) as f32;
+        let mut lim = woa_dsp::dynamics::Limiter::new(ceiling_db, 0.05, rate as f32);
+        for (l, r) in left.iter_mut().zip(right.iter_mut()) {
+            let (a, b) = (*l * g, *r * g);
+            let k = lim.gain(a.abs().max(b.abs()));
+            reduction = reduction.max(lim.reduction_db());
+            *l = (a * k).clamp(-ceiling, ceiling);
+            *r = (b * k).clamp(-ceiling, ceiling);
+        }
+        now = integrated_lufs(left, right, rate)?;
+    }
+    Some(Mastered {
+        before_lufs: before,
+        gain_db,
+        reduction_db: reduction,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,5 +131,28 @@ mod tests {
         assert!(n.peak_limited);
         let peak = l.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         assert!((20.0 * peak.log10() + 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn master_reaches_target_where_normalize_stops_at_the_peak() {
+        // Kurze laute Spitzen auf leisem Grund: normalize bleibt an der Spitzengrenze hängen.
+        let mut l = sine(0.02, 4);
+        for i in (0..l.len()).step_by(12_000) {
+            l[i] = 0.9;
+        }
+        let mut r = l.clone();
+        let (mut nl, mut nr) = (l.clone(), r.clone());
+        assert!(
+            normalize(&mut nl, &mut nr, 48_000, -14.0, -1.0)
+                .unwrap()
+                .peak_limited
+        );
+        let m = master(&mut l, &mut r, 48_000, -14.0, -1.0).unwrap();
+        let after = integrated_lufs(&l, &r, 48_000).unwrap();
+        assert!((after + 14.0).abs() <= 0.5, "{after}");
+        let peak = l.iter().chain(&r).fold(0.0f32, |a, s| a.max(s.abs()));
+        assert!(20.0 * f64::from(peak).log10() <= -1.0 + 1e-3, "{peak}");
+        assert!(m.reduction_db > 0.0);
+        assert!(master(&mut [0.0; 48_000], &mut [0.0; 48_000], 48_000, -14.0, -1.0).is_none());
     }
 }

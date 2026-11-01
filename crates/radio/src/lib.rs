@@ -25,6 +25,7 @@ pub mod dynamics;
 pub mod events;
 pub mod level;
 pub mod mixer;
+pub mod ordner;
 pub mod party;
 pub mod pfl;
 pub mod playlists;
