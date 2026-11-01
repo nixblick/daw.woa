@@ -4,6 +4,17 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Party nach Designsystem 2 (0.35.12, offen)
+
+1. Party-Modus bei 1920×1030 und 1366×768: oben zwei Decks (Plattenteller, Marke, Titel, Restzeit, Play), darunter links Auto-Übergang, Zufall und Crossfader, dann das Pult in drei Gruppen (Abspielen, Springen, Lautstärke), darunter die Playlist; rechts Bibliothek, Wunschliste, Fernbedienung. Nichts abgeschnitten, nirgends grüne Flächen.
+2. Ordner laden, Play: die Play-Taste wird zu Pause und ist in der Modusfarbe gefüllt; Stumm, Wiederholen, Zufall, Auto-Übergang füllen sich beim Einschalten, beim Ausschalten wieder neutral.
+3. Leiser/Lauter: Balken und dB in der Anzeige ändern sich. Crossfader ziehen, Auto-Übergang am Titelende.
+4. Wunsch eintragen, suchen, → Playlist, erledigt, entfernen (Symbol-Tasten mit Tooltip). Datei in den Wunschtitel-Ordner legen: wird Wunsch.
+5. Fernbedienung „An“: QR, Adresse, PIN, Handyzahl; Handy scannen; DJ-PIN zeigen, Neue PINs; „An“ erneut: aus.
+6. Vollbild über die Taste im Playlist-Kopf und mit F/F11; Feedback oben rechts öffnet sein Fenster.
+
+Selbst geprüft von Claude: Tests ohne Fenster (Pult: drei Gruppen, elf Tasten in einer Größe; Füllung statt Farbe, kein Grün in allen Paletten; Spaltenbreiten), Screenshots per `WOA_SCREENSHOT` und `WOA_WINDOW` vorher und nachher bei beiden Größen unter Linux, leere Playlist. Nicht unter Windows gesehen, kein Ton abgespielt, Fernbedienung nicht mit einem Handy probiert.
+
 ## Radio rechts: Decks kompakt, Cart-Wall als Zweites (0.35.9, offen)
 
 1. Windows, Radio-Modus, Fenster 1366×768 und maximiert bei 1920×1080: rechts oben die drei Decks in je einer Zeile mit den Pegelreglern, darunter die Cart-Wall mit den Reitern „1“ bis „5“ und allen 16 Pads, nichts rechts abgeschnitten.
