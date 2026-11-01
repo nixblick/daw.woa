@@ -471,6 +471,13 @@ pub fn running_app(data_dir: &Path) -> Option<RunningApp> {
     Some(RunningApp { port, key: secret })
 }
 
+/// Eine Eingabezeile ohne Rand und ohne führendes UTF-8-BOM. Manche Clients (der
+/// StreamWriter von .NET) schreiben eines vor die erste Zeile; sonst ginge `initialize`
+/// still verloren (#243).
+fn request_line(line: &str) -> &str {
+    line.trim().trim_start_matches('\u{feff}').trim_start()
+}
+
 /// Reicht JSON-RPC-Zeilen von `input` mit dem Bearer `token` (das Live-Geheimnis aus
 /// [`running_app`]) an die App auf `port` durch und schreibt ihre
 /// Antworten zeilenweise nach `output`, bis `input` endet. So spricht ein stdio-Client
@@ -492,7 +499,7 @@ pub fn forward(
     let mut protocol: Option<String> = None;
     for line in input.lines() {
         let line = line.map_err(io)?;
-        let line = line.trim();
+        let line = request_line(&line);
         if line.is_empty() {
             continue;
         }
@@ -638,6 +645,13 @@ pub fn forward_stdio(port: u16, token: &str) -> Result<(), AgentError> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn request_line_drops_a_leading_bom() {
+        let init = r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#;
+        assert_eq!(request_line(&format!("\u{feff}{init}\r")), init);
+        assert_eq!(request_line(&format!("  {init} ")), init);
+    }
+
     /// Wie die App unter Windows: Die SSE-Antwort auf `initialize` bleibt nach der Nachricht
     /// offen. Die Weiterleitung darf darauf nicht warten, muss die Session-Id übernehmen und
     /// jede Zeile als `application/json` schicken.
@@ -752,13 +766,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         assert_eq!(running_app(tmp.path()), None);
         let me = u64::from(std::process::id());
-        // Port, auf dem niemand hört: erst binden, Port merken, wieder freigeben.
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        lock(tmp.path(), port, me, "s");
+        // Port, auf dem niemand hört: 0. Ein gebundener und wieder freigegebener Port taugt
+        // nicht, den vergibt das System sofort an den nächsten Test (Windows-CI, #256).
+        lock(tmp.path(), 0, me, "s");
         assert_eq!(running_app(tmp.path()), None);
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();

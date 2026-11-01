@@ -11,6 +11,9 @@ use woa_model::{
 };
 
 /// Subfolder for recorded takes, inside the project or recovery folder.
+/// Name of a fresh project, until it is saved under a file name.
+const NEW_PROJECT: &str = "Neues Projekt";
+
 pub const TAKES_DIR: &str = "aufnahmen";
 
 /// Autosave interval (rule 7).
@@ -50,7 +53,7 @@ impl AppState {
     /// A fresh, empty project. `recovery_dir` receives autosaves of unsaved projects.
     pub fn new(recovery_dir: PathBuf, now: Instant) -> Self {
         Self {
-            session: limited(Session::new("Neues Projekt")),
+            session: limited(Session::new(NEW_PROJECT)),
             recovery_dir,
             last_autosave: now,
             status: Status::Idle,
@@ -81,10 +84,22 @@ impl AppState {
             .to_path_buf()
     }
 
-    /// Window title: project name, folder, dirty marker.
+    /// Window title: project name, dirty marker. Is the name empty or still the default,
+    /// a saved project shows its file name instead (#243).
     pub fn title(&self) -> String {
         let dirty = if self.session.is_dirty() { " *" } else { "" };
-        format!("WOA – {}{}", self.project().meta.name, dirty)
+        let name = self.project().meta.name.trim();
+        let file = self
+            .session
+            .path()
+            .and_then(|p| p.file_stem())
+            .map(|s| s.to_string_lossy());
+        let shown = match file {
+            Some(f) if name.is_empty() || name == NEW_PROJECT => f.into_owned(),
+            _ if name.is_empty() => NEW_PROJECT.to_string(),
+            _ => name.to_string(),
+        };
+        format!("WOA – {shown}{dirty}")
     }
 
     fn report(&mut self, what: &str, result: Result<(), ModelError>) -> bool {
@@ -149,6 +164,22 @@ impl AppState {
             return false;
         }
         self.apply(Command::SetGain { track, gain_db })
+    }
+
+    /// Sets the GM sound of a MIDI track (`None`: built-in synth); one undo step.
+    pub fn set_track_sound(
+        &mut self,
+        track: TrackId,
+        sound: Option<woa_model::TrackSound>,
+    ) -> bool {
+        if self
+            .project()
+            .track(track)
+            .is_some_and(|t| t.sound == sound)
+        {
+            return false;
+        }
+        self.apply(Command::SetTrackSound { track, sound })
     }
 
     /// Toggles mute.
@@ -765,6 +796,74 @@ impl AppState {
         ok.then_some(id)
     }
 
+    /// Paket J3: legt für eine Akkordfolge drei MIDI-Spuren (Akkorde, Bass, Arpeggio) mit
+    /// je einem Clip über `bars` Takte an, jede mit dem ersten GM-Klang ihrer Rolle.
+    /// Ein Undo-Schritt. Gibt Spur und Clip je Rolle zurück.
+    pub fn add_chord_tracks(
+        &mut self,
+        progression: &woa_model::ChordProgression,
+        key: u8,
+        bars: u32,
+        start_beats: f64,
+    ) -> Option<[(TrackId, ClipId); 3]> {
+        use woa_model::sound::{SOUND_PRESETS, SoundRole};
+        let bars = bars.clamp(1, 64);
+        let made = woa_model::chords::generate(progression, key, bars);
+        let length = f64::from(bars) * 4.0;
+        let label = "Akkordfolge";
+        self.session.begin_group(label);
+        let mut out = Vec::new();
+        for (name, role, midi) in [
+            ("Akkorde", SoundRole::Pad, made.chords),
+            ("Bass", SoundRole::Bass, made.bass),
+            ("Arpeggio", SoundRole::Lead, made.arp),
+        ] {
+            let track = self.session.new_track_id();
+            let sound = SOUND_PRESETS
+                .iter()
+                .find(|p| p.role == role)
+                .map(|p| p.sound);
+            let clip = self.session.new_clip_id();
+            let ok = self.apply(Command::add_track(track, name.to_string(), TrackKind::Midi))
+                && self.apply(Command::SetTrackSound { track, sound })
+                && self.apply(Command::AddClip {
+                    track,
+                    clip: Clip::new_midi(clip, name, start_beats.max(0.0), length, midi),
+                    index: None,
+                });
+            if !ok {
+                break;
+            }
+            out.push((track, clip));
+        }
+        let closed = self.session.end_group();
+        self.report(label, closed);
+        out.try_into().ok()
+    }
+
+    /// Paket J3: verschiebt alle Noten der Clips um `semitones` (Tonartwechsel), ein Undo-Schritt.
+    pub fn transpose_clips(&mut self, clips: &[ClipId], semitones: i8) -> bool {
+        if semitones == 0 {
+            return false;
+        }
+        let label = "Tonart ändern";
+        self.session.begin_group(label);
+        let mut ok = true;
+        for &clip in clips {
+            let Some(midi) = self.project().clip(clip).and_then(|(_, c)| c.midi.clone()) else {
+                ok = false;
+                continue;
+            };
+            ok &= self.apply(Command::SetNotes {
+                clip,
+                midi: woa_model::chords::transpose(&midi, semitones),
+            });
+        }
+        let closed = self.session.end_group();
+        self.report(label, closed);
+        ok
+    }
+
     /// Moves a clip on its track to `start_beats` (clamped to >= 0).
     pub fn move_clip(&mut self, clip: ClipId, start_beats: f64) -> bool {
         self.move_clip_to(clip, None, start_beats)
@@ -1181,7 +1280,7 @@ impl AppState {
 
     /// Starts a new, empty project.
     pub fn new_project(&mut self) {
-        self.session = limited(Session::new("Neues Projekt"));
+        self.session = limited(Session::new(NEW_PROJECT));
         self.status = Status::Info("Neues Projekt".into());
     }
 
@@ -1574,6 +1673,22 @@ mod tests {
         assert!(s.project().track(t).unwrap().sends.is_empty());
         s.undo();
         assert_eq!(s.project().track(t).unwrap().sends.len(), 1);
+    }
+
+    /// Ein gespeichertes Projekt mit dem Vorgabenamen heißt im Titel wie seine Datei (#243).
+    #[test]
+    fn title_uses_file_name_for_default_or_empty_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        assert_eq!(s.title(), "WOA – Neues Projekt");
+        assert!(s.save_as(&tmp.path().join("Morgenshow")));
+        assert_eq!(s.title(), "WOA – Morgenshow");
+        s.session = limited(Session::new(""));
+        assert!(s.save_as(&tmp.path().join("Leer.woa")));
+        assert_eq!(s.title(), "WOA – Leer");
+        s.session = limited(Session::new("Sendung"));
+        assert!(s.save_as(&tmp.path().join("Datei")));
+        assert_eq!(s.title(), "WOA – Sendung");
     }
 
     #[test]

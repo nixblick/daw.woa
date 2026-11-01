@@ -4,6 +4,53 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## J7 Bänke (0.34.88, offen)
+
+1. MIDI-Spur, Klang „Klavier“, im Klang-Menü unter BANK „MuseScore General · wird beim Wählen geladen“ wählen. Das Menü zeigt „lädt … %“ (206 MB); bis dahin spielt GeneralUser GS weiter.
+2. Nach dem Laden: Abspielen klingt mit dem MuseScore-Klavier (ohne Neustart). Die Datei liegt mit `MuseScore_General-LICENSE.md` im Datenordner unter `banks/`.
+3. Kit-Spur (z. B. Drum-Raster aus J2), BANK „AVL Red Zeppelin“: echte Drums. Auf einer Melodie-Spur fehlt AVL im Menü.
+4. Speichern, schließen, öffnen: die Bankwahl steht noch im Menü.
+5. Ohne Netz (WLAN aus) eine nicht geladene Bank wählen: Menü zeigt „Fehler: …“, die Spur spielt GeneralUser GS, nichts bricht ab.
+6. Über WOA: Dank an MuseScore General und AVL Drumkits.
+7. Claude per MCP: „Setz die Keys-Spur auf MuseScore-Klavier“ (`track_sound` mit `bank`, danach `bank_state` bis `ready`).
+
+Selbst geprüft von Claude: Katalog nur https, Prüfsumme und Grösse beim Einspielen, nichts bleibt bei falscher Prüfsumme, Rückfall auf GeneralUser GS, reine Drum-Bank nur für Kits (`crates/engine/tests/banks.rs`), Bank bleibt nach Speichern und unbekannte Bank lädt (`crates/model/tests/sound.rs`), MCP mit und ohne Bank-Ordner (`crates/agent/tests/track_bank*.rs`). Lokal mit den echten Dateien: beide Katalog-Prüfsummen stimmen, Offline-Render Klavier und AVL-Noten 36/38/42 klingen, echter https-Download der AVL-Bank über die App-Funktion. Nicht selbst geprüft: Menü und Klang am Gerät (kein Ton über Lautsprecher), Download der 206-MB-Bank in der App.
+
+## J3 Akkorde und Muster (0.34.87, offen)
+
+1. Knopf „Akkordfolge …“ (neben „+ MIDI-Clip“): Fenster mit Folge, Tonart, Takte.
+2. Folge „I–V–vi–IV“, Tonart C, 4 Takte, „Erzeugen“: drei neue MIDI-Spuren Akkorde, Bass, Arpeggio mit je einem 4-Takt-Clip ab dem Takt am Abspielkopf; Klänge Streicher, E-Bass, Klavier.
+3. Abspielen: klingt harmonisch, kein Ton schief. Strg+Z nimmt alle drei Spuren auf einmal zurück.
+4. Erneut erzeugen, dann im Fenster Tonart auf D stellen: alle drei Clips rutschen zwei Halbtöne hoch (Piano-Roll zeigen), Strg+Z stellt alle drei zurück.
+5. Moll-Folge „i–VI–III–VII“ in A: Tonart-Liste zeigt „A Moll“.
+6. Claude per MCP: „Leg I–V–vi–IV in G über 4 Takte an und dann nach A“ (`generate_chords`, `transpose_notes`).
+
+Selbst geprüft von Claude: Katalog, Stufen, Tonart, Transposition (`crates/model/tests/chords.rs`), drei Spuren mit Klang und Undo über `AppState` (`crates/gui/tests/chords.rs`), MCP gleich Oberfläche (`crates/agent/tests/chords.rs`). Nicht selbst geprüft: Fenster und Klang am Gerät (kein Ton über Lautsprecher).
+
+## J2 Drum-Raster (0.34.86, offen)
+
+1. MIDI-Spur anlegen, Klang „Standard-Kit“ wählen, einen MIDI-Clip anlegen und öffnen: die Piano-Roll zeigt das Drum-Raster (sechs Zeilen Becken bis Kick, 16 Schritte je Takt). Der Knopf „Drum-Raster“ schaltet zur normalen Piano-Roll und zurück.
+2. Preset „Pop“ wählen: der Beat steht im Raster. Loop über den Clip legen, abspielen: jede Änderung ist sofort zu hören.
+3. Klick auf einen Schritt schaltet ihn an/aus, Rechtsklick macht ihn leise (blasser). Strg+Z nimmt jeden Klick einzeln zurück.
+4. Regler „weniger / mehr“ und „Würfeln“: der Beat wird sparsamer, dichter oder neu.
+5. „Drum-Raster“ aus: dieselben Noten liegen in der Piano-Roll. Eine Melodienote auf anderer Tonhöhe bleibt beim Preset-Wechsel erhalten.
+6. Claude per MCP: „Leg einen Pop-Beat über zwei Takte an“ (`generate_drums` mit `preset`, `bars`).
+
+Selbst geprüft von Claude: Raster-Logik (`crates/model/tests/drums.rs`), Undo je Klick über `AppState` (`crates/gui/tests/drum_grid.rs`), MCP-Preset gleich Raster (`crates/agent/tests/drum_grid.rs`). Nicht selbst geprüft: Bedienung und Klang am Gerät (kein Ton über Lautsprecher).
+
+## J1 Klänge: SoundFont auf MIDI-Spuren (0.34.84, offen)
+
+Vorher: `GeneralUser-GS.sf2` (Quelle in `docs/sounds/README.md`) nach `sounds/` neben die ausführbare Datei legen oder `WOA_SOUNDFONT=<pfad>` setzen. Die Pakete legen sie noch nicht bei.
+
+1. MIDI-Spur anlegen, Noten spielen: klingt wie bisher (Synth).
+2. Im Mixer-Streifen der Spur unter dem Klang-Menü „E-Bass“ wählen: dieselben Noten klingen als Bass.
+3. „Standard-Kit“ wählen, Noten 36/38/42 einspielen: Kick, Snare, Hi-Hat.
+4. Speichern, schließen, öffnen: der Klang ist noch gewählt. Strg+Z setzt ihn zurück.
+5. Ohne `.sf2` starten: gewählter Klang spielt den Synth, nichts stürzt ab.
+6. Claude per MCP: „Setz Spur 2 auf Streicher“ (`track_sound`) und „Drums als MIDI“ (`generate_drums` mit `midi: true`).
+
+Selbst geprüft von Claude: Offline-Render mit winziger Test-SF2 klingt anders als der Synth (`crates/engine/tests/soundfont.rs`, unter `assert_no_alloc`), Speichern/Laden und Undo (`crates/model/tests/sound.rs`), MCP-Werkzeug (`crates/agent/tests/track_sound.rs`). Nicht selbst geprüft: Klang mit der echten GeneralUser-GS am Gerät (kein Ton über Lautsprecher).
+
 ## Kopfleiste aus einem Guss und REC für alle Modi (0.34.56, offen)
 
 1. Oben rechts: MIDI, ON AIR, REC (und KI, wenn der Live-Server läuft), dann Produzent · Party · Radio, ganz rechts Feedback. Alles gleich hoch, gleiche Schrift, sichtbar mehr Luft, Gruppen mit größerem Abstand.

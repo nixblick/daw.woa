@@ -3,6 +3,7 @@
 //! Die Logik steckt fensterunabhängig in [`state`] und [`feedback`] (testbar ohne
 //! Display); [`app`] ist nur die dünne eframe-Schicht darüber.
 
+pub mod akkorde;
 pub mod analysis;
 pub mod app;
 mod assistant_ui;
@@ -20,6 +21,7 @@ mod ki_ui;
 pub mod library;
 pub mod manage;
 pub mod mcp_live;
+pub mod ordner;
 mod outputs;
 mod outputs_ui;
 pub mod party;
@@ -37,6 +39,7 @@ pub mod tag_editor;
 pub mod theme;
 pub mod timeline;
 pub mod titel_tab;
+pub mod track_export;
 pub mod update;
 pub mod voice_editor;
 pub mod widgets;

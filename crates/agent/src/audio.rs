@@ -144,6 +144,50 @@ pub fn notes_buffer(
 
 /// Rendert Drum-Muster (je Zeichen ein 16tel: `x` laut, `o` leise, sonst Pause).
 /// Liefert Puffer und Länge in Beats (längstes Muster / 4).
+/// GM-Drumnoten (Kanal 10) aus denselben Mustern wie [`drums_buffer`]: Kick 36,
+/// Snare 38, Hi-Hat 42, je eine 16tel lang. Liefert die Noten und die Länge in Beats.
+pub fn drums_midi(
+    kick: &str,
+    snare: &str,
+    hihat: &str,
+) -> Result<(woa_model::MidiData, f64), String> {
+    let steps = kick
+        .chars()
+        .count()
+        .max(snare.chars().count())
+        .max(hihat.chars().count());
+    if steps == 0 {
+        return Err("kein Muster: kick, snare oder hihat angeben".into());
+    }
+    let length_beats = steps as f64 / 4.0;
+    check_length(length_beats)?;
+    let mut notes = Vec::new();
+    for (pattern, pitch) in [(kick, 36u8), (snare, 38), (hihat, 42)] {
+        for (i, c) in pattern.chars().enumerate() {
+            let velocity = match c {
+                'x' | 'X' => 110,
+                'o' | 'O' => 60,
+                '.' | '-' | '_' | ' ' => continue,
+                other => return Err(format!("unbekanntes Zeichen {other:?} im Muster")),
+            };
+            notes.push(woa_model::MidiNote {
+                beat: i as f64 / 4.0,
+                length_beats: 0.25,
+                pitch,
+                velocity,
+            });
+        }
+    }
+    notes.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+    Ok((
+        woa_model::MidiData {
+            notes,
+            cc: Vec::new(),
+        },
+        length_beats,
+    ))
+}
+
 pub fn drums_buffer(
     kick: &str,
     snare: &str,

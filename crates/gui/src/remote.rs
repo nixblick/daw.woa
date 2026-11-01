@@ -122,12 +122,7 @@ impl RemoteView {
         theme::card_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("FERNBEDIENUNG")
-                        .size(11.5)
-                        .strong()
-                        .color(theme::text_dim()),
-                );
+                ui.label(theme::panel_label("FERNBEDIENUNG"));
                 if let Some(r) = &self.remote {
                     theme::status_pill(
                         ui,
@@ -145,7 +140,7 @@ impl RemoteView {
             }
             if let Some(e) = &self.error {
                 ui.add_space(4.0);
-                ui.label(egui::RichText::new(e).color(theme::on_air()));
+                ui.label(egui::RichText::new(e).color(theme::danger_text()));
             }
         });
     }
@@ -201,7 +196,7 @@ impl RemoteView {
                     ui.label(
                         egui::RichText::new(format!("OSC an {o}"))
                             .small()
-                            .color(theme::on_air()),
+                            .color(theme::danger_text()),
                     );
                 }
             });
@@ -264,8 +259,8 @@ impl RemoteView {
 }
 
 /// Zeichnet den QR-Code mit hellem Rand (ohne ihn lesen Kameras schlecht).
-pub(crate) fn draw_qr(ui: &mut egui::Ui, m: &QrMatrix, side: f32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+pub(crate) fn draw_qr(ui: &mut egui::Ui, m: &QrMatrix, side: f32) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 4.0, egui::Color32::WHITE);
     let quiet = 4.0;
@@ -283,4 +278,5 @@ pub(crate) fn draw_qr(ui: &mut egui::Ui, m: &QrMatrix, side: f32) {
             }
         }
     }
+    resp
 }

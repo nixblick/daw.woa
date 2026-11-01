@@ -243,7 +243,9 @@ mod port {
         // Pad „Cart 2“: trigger_cart, der Mixer spielt ihn (Bit gesetzt, Pegel steigt).
         dev.send(&[0x99, 37, 100]).unwrap();
         assert!(wait(&mut desk, &mut d, &mut config, &|d, _| d.carts == 1));
-        for _ in 0..4 {
+        // Ein Cart senkt die Musik ab (#149, Standard −12 dB, Zeitkonstante 80 ms): erst
+        // ausschwingen lassen (64 Blöcke ≈ 340 ms), dann gegen die abgesenkte Musik messen.
+        for _ in 0..64 {
             block(&mut d, &mut m, &mut l, &mut r);
         }
         assert_ne!(
@@ -251,10 +253,15 @@ mod port {
             0,
             "Cart 2 läuft"
         );
+        let ducked = want * 10f32.powf(RadioShow::default().duck_db as f32 / 20.0);
+        let with_cart = l[BLOCK - 1];
         assert!(
-            l[BLOCK - 1] > want + 0.15,
-            "Cart hörbar im Pegel: {}",
-            l[BLOCK - 1]
+            with_cart > ducked + 0.15,
+            "Cart hörbar im Pegel: {with_cart} (Musik abgesenkt {ducked})"
+        );
+        assert!(
+            with_cart < want + 0.15,
+            "Musik unter dem Cart abgesenkt: {with_cart} (Musik {want})"
         );
         // Zweites Drücken hält ihn an (wie ein Klick auf die Cart-Taste).
         dev.send(&[0x89, 37, 0]).unwrap();

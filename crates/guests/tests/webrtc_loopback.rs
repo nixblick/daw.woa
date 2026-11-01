@@ -135,8 +135,20 @@ impl Client {
     }
 }
 
+/// Vorsprung des Browsers vor der Bank: mehr als der Vorlauf des Jitterpuffers (60 ms), damit
+/// ein Paket Zeit hat, über den Netz-Thread in den Puffer zu kommen.
+const LAG_FRAMES: u64 = RATE as u64 / 10;
+
 /// Spielt `secs` Sekunden Echtzeit: der Browser spricht 440 Hz, die Bank rechnet Blöcke mit
 /// Musik 880 Hz und schreibt die Rückwege. Gibt zurück, was am Pult vom Gast ankam.
+///
+/// Browser und Bank laufen hier im selben Thread. Die Bank rechnet deshalb nach dem, was der
+/// Browser schon gesendet hat (Takt des Mikrofons), nicht nach der Wanduhr: Hält das System
+/// den Thread an (CI-Runner unter Last), holte die Bank nach der Wanduhr die ganze Pause in
+/// einem Zug nach, bevor die nachgeholten Pakete im Netz-Thread ankommen, und läse Stille
+/// (Issue #256: -14,0 und -16,9 dB am Pult statt -10,4). Echte Geräte haben zwei unabhängige
+/// Uhren; das lässt sich in einem Thread nicht nachstellen. Eine Pause von 600 ms ist deshalb
+/// fest eingebaut, damit der Test sie verträgt.
 fn session(
     client: &mut Client,
     bank: &mut GuestBank,
@@ -155,9 +167,22 @@ fn session(
     let mut bank_frames = 0u64;
     let mut at_bank: Vec<f32> = Vec::new();
     let mut mb = vec![0.0f32; BLOCK * 2];
+    let mut paused = false;
     while start.elapsed() < Duration::from_secs(secs) {
+        if !paused && start.elapsed() > Duration::from_millis(secs * 700) {
+            // Der Thread hängt, wie auf einem ausgelasteten Runner.
+            std::thread::sleep(Duration::from_millis(600));
+            paused = true;
+        }
         client.receive();
+        // Was vor diesem Durchlauf gesendet war, hatte einen Schlaf lang Zeit anzukommen.
+        let sent = rtp;
         let now = Instant::now();
+        // Hing der Thread, verliert das Mikrofon die Pause, statt sie in einem Schwall
+        // nachzuschicken (der liefe über die Obergrenze des Jitterpuffers).
+        if now.saturating_duration_since(next_audio) > Duration::from_millis(100) {
+            next_audio = now;
+        }
         // Mikrofon des Browsers: alle 20 ms ein Opus-Paket, erst wenn verbunden.
         while client.connected && next_audio <= now {
             mic.fill(&mut pcm);
@@ -183,8 +208,8 @@ fn session(
         if !client.connected {
             next_audio = now;
         }
-        // "Audio-Thread": so viele Blöcke, wie die Echtzeit hergibt.
-        let due = (start.elapsed().as_secs_f64() * f64::from(RATE)) as u64;
+        // "Audio-Thread": so viele Blöcke, wie der Browser gesprochen hat, minus Vorsprung.
+        let due = sent.saturating_sub(LAG_FRAMES);
         while bank_frames + BLOCK as u64 <= due {
             music.fill(&mut mb);
             bank.begin_block();
@@ -210,8 +235,8 @@ fn check_audio(at_bank: &[f32], client: &Client) {
     let n = at_bank.len();
     let g = db(tone(&at_bank[n - 48_000..], 440.0));
     println!("Pult: 440 Hz {g:.1} dB");
-    // -16 statt -14: auf dem Windows-Runner kostet eine Netzlücke im Messfenster ~0,1 dB (flaky, 31.10.2026).
-    assert!(g > -16.0 && g < -8.0, "Gastton am Pult: {g} dB");
+    // Erwartet -10,4 dB (Sinus 0,3); die Bank läuft im Takt des Mikrofons (#256).
+    assert!(g > -14.0 && g < -8.0, "Gastton am Pult: {g} dB");
     let h = &client.heard;
     assert!(h.len() > 96_000, "zu wenig Rückweg: {}", h.len());
     let tail = &h[h.len() - 48_000..];

@@ -66,6 +66,9 @@ pub struct GuiConfig {
     /// Wunschordner (Wunschtitel). Vorgabe: `Wunschtitel` im Datenordner der Sendung.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wish_folder: Option<std::path::PathBuf>,
+    /// WOA-Ordner (#258): Basisordner und eigene Ordner je Art. Vorgabe: `<Musik>/WOA/…`.
+    #[serde(skip_serializing_if = "crate::ordner::Ordner::is_default")]
+    pub ordner: crate::ordner::Ordner,
     /// Beim Start höchstens einmal am Tag nach einem neuen Release suchen. Vorgabe: an.
     pub auto_update: bool,
     /// Unix-Sekunden der letzten erfolgreichen Update-Suche.
@@ -147,6 +150,7 @@ impl Default for GuiConfig {
             outputs: woa_radio::routing::OutputMap::default(),
             phone: crate::phone::PhoneInput::default(),
             wish_folder: None,
+            ordner: crate::ordner::Ordner::default(),
             auto_update: true,
             last_update_check: None,
         }
@@ -715,6 +719,24 @@ mod tests {
     }
 
     #[test]
+    fn old_config_without_folders_loads_and_custom_folder_survives() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("config.json");
+        std::fs::write(&p, r#"{"mode":"radio","auto_update":false}"#).unwrap();
+        let c = GuiConfig::load(&p);
+        assert!(c.ordner.is_default());
+        assert_eq!(c.mode, Mode::Radio);
+        c.save(&p).unwrap();
+        assert!(!std::fs::read_to_string(&p).unwrap().contains("ordner"));
+        let mut c = GuiConfig::load(&p);
+        c.ordner
+            .eigene
+            .insert(crate::ordner::Art::Mitschnitte, tmp.path().join("rec"));
+        c.save(&p).unwrap();
+        assert_eq!(GuiConfig::load(&p).ordner, c.ordner);
+    }
+
+    #[test]
     fn config_load_defaults_and_parse() {
         let tmp = tempfile::tempdir().unwrap();
         let p = tmp.path().join("config.json");
@@ -870,26 +892,26 @@ mod tests {
 
     #[test]
     fn home_paths_are_shortened() {
-        let home = Path::new("/home/robert");
+        let home = Path::new("/home/nutzer");
         assert_eq!(
-            shorten_home("lade /home/robert/Musik/a.mp3 fehlgeschlagen", Some(home)),
+            shorten_home("lade /home/nutzer/Musik/a.mp3 fehlgeschlagen", Some(home)),
             "lade ~/Musik/a.mp3 fehlgeschlagen"
         );
-        let win = Path::new("C:\\Users\\Robert");
+        let win = Path::new("C:\\Users\\nutzer");
         assert_eq!(
             shorten_home(
-                "[C:\\Users\\Robert\\Music\\b.wav] und C:/Users/Robert/x",
+                "[C:\\Users\\nutzer\\Music\\b.wav] und C:/Users/nutzer/x",
                 Some(win)
             ),
             "[~\\Music\\b.wav] und ~/x"
         );
-        assert_eq!(shorten_home("/home/robert/a", None), "/home/robert/a");
+        assert_eq!(shorten_home("/home/nutzer/a", None), "/home/nutzer/a");
     }
 
     #[test]
     fn log_goes_only_when_ticked() {
-        let home = Path::new("/home/robert");
-        let lines = vec!["12:00 Fehler /home/robert/a.mp3 kaputt".to_string()];
+        let home = Path::new("/home/nutzer");
+        let lines = vec!["12:00 Fehler /home/nutzer/a.mp3 kaputt".to_string()];
         let mut d = FeedbackDialog::default();
         d.open();
         d.text = "Knackt".into();
@@ -899,7 +921,7 @@ mod tests {
         d.send_log = true;
         let b = d.body(&lines, Some(home));
         assert!(b.contains(LOG_HEADER) && b.contains("~/a.mp3"), "{b}");
-        assert!(!b.contains("robert"), "{b}");
+        assert!(!b.contains("nutzer"), "{b}");
         // Too long: newest lines kept, whole body within the server limit.
         let many: Vec<String> = (0..5000)
             .map(|i| format!("Zeile {i} {}", "x".repeat(40)))

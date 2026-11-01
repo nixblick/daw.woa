@@ -207,11 +207,7 @@ pub fn show(
     let mut new_mode = lane.mode;
     let mut clear = false;
     ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new("AUTOMATION")
-                .small()
-                .color(theme::text_dim()),
-        );
+        ui.label(theme::panel_label("AUTOMATION"));
         egui::ComboBox::from_id_salt("auto_target")
             .selected_text(name.clone())
             .width(180.0)

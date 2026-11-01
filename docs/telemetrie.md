@@ -32,8 +32,7 @@ Stand 28.10.2026. Grundsätze im Konzept, Abschnitt „Logging, Telemetrie & Dat
  "ereignisse":[{"zeit_ms":1761600000000,"stufe":"warn","modul":"woa_engine","art":"xrun","wert":1}]}
 ```
 
-Geprüft gegen `bretteins.infra/ansible/roles/feedback/files/app.py` (`ingest_zeilen`, Route bei
-`do_POST`), Stand 28.10.2026:
+Geprüft gegen den Server-Ingest, Stand 28.10.2026:
 
 | Server erwartet | WOA schickt |
 |---|---|
@@ -63,8 +62,7 @@ Folge: Der WOA-Server betreibt `/api/logs/ingest` ohne Token (wie bretteins mit 
 Gesendet wird nur, wenn der Nutzer zugestimmt hat: Ereigniscode, Stufe, Zahl, Zeitpunkt, dazu
 Installations-ID, App-Version und Betriebssystem. Keine Texte, Dateinamen, Pfade, Projektinhalte
 oder Aufnahmen. Die Installations-ID ist Zufall und lässt sich durch Löschen von `install_id` in
-`config.json` neu würfeln. Server: Instanz `daw.woa` der Rolle `feedback` (bretteins.infra) auf
-der eigene Server, Datenbank `woa_stats`; Aufbewahrung nach der Retention der Rolle.
+`config.json` neu würfeln. Server: eigene Instanz, Aufbewahrung nach der Retention des Servers.
 
 ## Feedback
 
@@ -80,12 +78,6 @@ der eigene Server, Datenbank `woa_stats`; Aufbewahrung nach der Retention der Ro
 Wie bretteins (`bretteins.desktop/app/core/src/feedback_req.rs`, Server `handle_feedback` und
 `save_images`): `type` aus bug|idee|frage|lob (sonst leer → `feedback`), Text bis 20000 Zeichen,
 Screenshot nur PNG bis 3 MB. Antwort 201/200 `{"ok":true,"issue":n}`; 429/502/503 → Fehler.
-
-## Offen
-
-- Server-Seite für Logs (DB `woa_stats`, Edge-Freigabe `/api/logs/ingest`): eigener PR in
-  bretteins.infra, Ausrollen durch André. Bis dahin antwortet der Edge mit 404 und die App behält
-  die Ereignisse im Puffer.
 
 ## Was ab 0.32.x zusätzlich gesendet wird (30.10.2026)
 

@@ -50,7 +50,15 @@ fn routing_key(project: &Project) -> String {
     use std::fmt::Write;
     let mut key = String::new();
     for t in &project.tracks {
-        let _ = write!(key, "{}:{:?}:{:?}", t.id.0, t.kind, t.output.map(|o| o.0));
+        // Klang und Bank (Pakete J1, J7) wählen die SoundFont des Graphen.
+        let _ = write!(
+            key,
+            "{}:{:?}:{:?}:{:?}",
+            t.id.0,
+            t.kind,
+            t.output.map(|o| o.0),
+            t.sound
+        );
         for s in &t.sends {
             let _ = write!(key, "|s{}{}", s.target.0, u8::from(s.pre_fader));
         }
@@ -291,7 +299,13 @@ impl Player {
                 })
                 .collect(),
             live,
-            format!("{}#{}", routing_key(project), self.plugin_epoch),
+            // Eine fertig geladene Bank (Paket J7) baut den Graphen neu.
+            format!(
+                "{}#{}#{}",
+                routing_key(project),
+                self.plugin_epoch,
+                woa_engine::banks::generation()
+            ),
         );
         if self.structure.as_ref() != Some(&structure) {
             let (live_graph, producer) = match live {
@@ -768,6 +782,65 @@ impl Player {
             lufs.and_then(|t| woa_engine::loudness::normalize(&mut l, &mut r, rate, t, -1.0));
         woa_engine::export::export_with(out, spec, &l, &r, rate).map_err(|e| e.to_string())?;
         Ok((seconds, norm))
+    }
+
+    /// Bereitet den Export einer Spur vor (Ticket 229): dekodiert die Audio-Dateien hier
+    /// (meist schon im Cache) und gibt eine Arbeit zurück, die in einem eigenen Thread rendert
+    /// und schreibt. Ergebnis: Länge in Sekunden.
+    pub fn track_export_job(
+        &mut self,
+        project: &Project,
+        resolve: &dyn Fn(&str) -> Option<PathBuf>,
+        track: TrackId,
+        out: PathBuf,
+        spec: ExportSpec,
+        tags: woa_engine::export::ExportTags,
+    ) -> Result<impl FnOnce() -> Result<f64, String> + std::marker::Send + 'static, String> {
+        let seconds = project_end_seconds(project);
+        if seconds <= 0.0 {
+            return Err("keine Clips zum Exportieren".into());
+        }
+        let rate = self.rate;
+        let mut audio: HashMap<String, Arc<[f32]>> = HashMap::new();
+        for t in &project.tracks {
+            for c in &t.clips {
+                if let Some(rel) = c.audio.as_deref()
+                    && !audio.contains_key(rel)
+                    && let Some(s) =
+                        resolve(rel).and_then(|f| load_cached(&mut self.cache, f, rate))
+                {
+                    audio.insert(rel.to_string(), s);
+                }
+            }
+        }
+        let make_rack = if project.tracks.iter().all(|t| t.plugins.is_empty()) {
+            None
+        } else {
+            self.rack.as_ref().map(|r| r.fresh_later())
+        };
+        let project = project.clone();
+        Ok(move || {
+            let rack = make_rack.map(|make| {
+                let mut r = make();
+                r.sync(&project);
+                r
+            });
+            let stem = woa_engine::stems::render_track(
+                &project,
+                rate,
+                seconds,
+                track,
+                &mut |rel: &str| audio.get(rel).cloned(),
+                &mut |t| {
+                    rack.as_ref()
+                        .map_or_else(Default::default, |r| r.track_plugins(t))
+                },
+            )
+            .map_err(|e| e.to_string())?;
+            woa_engine::export::export_tagged(&out, &spec, &stem.left, &stem.right, rate, &tags)
+                .map_err(|e| e.to_string())?;
+            Ok(seconds)
+        })
     }
 
     /// Rendert Stems (und den Mixdown) in einem Durchgang und schreibt sie in den Ordner

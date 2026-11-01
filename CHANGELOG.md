@@ -1,8 +1,97 @@
 # Changelog
 
-## 0.34.68 — 2026-10-31
+## 0.34.91 — 2026-11-01
 
 - **Fernbedienung (WAN, #162):** Falsche PINs würfeln die DJ-PIN nicht mehr neu, und es gibt keine globale Sperre, mit der ein Angreifer den echten DJ aussperren könnte. Fehlversuche zählen je Adresse; nur globale IPv6-Adressen zählen je /64-Netz, damit ein Internet-Anschluss nicht mit jeder neuen Adresse weiterraten kann. Link-local, ULA und IPv4 bleiben je Adresse, ein Gast im WLAN sperrt den DJ also nicht mit aus. PIN und Token werden nie geloggt. Tests für beide Angriffe dazu.
+
+## 0.34.88 — 2026-11-01
+
+- **J7 Bänke (#271, Paket aus #262):** Zwei Zusatzbänke neben GeneralUser GS, geladen beim ersten Gebrauch: MuseScore General 0.2.0 (MIT, SF2, 206 MB; SF3 lädt rustysynth nicht) und AVL Drumkits „Red Zeppelin 4pc“ (CC BY-SA 3.0, nur für Kits). Katalog mit Datei, Grösse, SHA-256, URL und Lizenz in `docs/sounds/banks.tsv`, gelesen von der App (`crates/engine/src/banks.rs`) und von `packaging/fetch-soundfont.sh <ordner> <bank>`. Download nur über https ohne Weiterleitungen in den Datenordner (`banks/`), erst als `.part`, Name erst nach stimmender Prüfsumme, Lizenz daneben. Bis die Bank da ist und ohne Netz spielt GeneralUser GS. Die Bank steht je Spur im Klang (Projektformat 6, nur wenn eine Bank gewählt ist; alte Projekte laden unverändert, unbekannte Bänke spielen GeneralUser GS). Wahl im Klang-Menü des Mixers unter „BANK“ mit Ladefortschritt und per MCP `track_sound` mit `bank` (Antwort mit `bank_state` und `banks`). Ein Klang- oder Bankwechsel baut jetzt sofort den Graphen neu. Dank im Fenster „Über WOA“. Die fertige Bank wird noch im Download-Thread eingelesen (kein Ruckeln der Oberfläche), ein hängender Download gibt nach einer Stunde auf.
+
+## 0.34.87 — 2026-11-01
+
+- **J3 Akkorde und Muster (#269, Paket aus #261):** Neuer Knopf „Akkordfolge …“ neben „+ MIDI-Clip“ öffnet ein kleines Fenster: Folge aus einem Katalog von elf (z. B. „I–V–vi–IV · hymnisch, der Pop-Klassiker“, „i–VI–III–VII · episch, groß“), Tonart (12 Grundtöne, Dur oder natürliches Moll je nach Folge), Takte (1–16), „Erzeugen“. Es entstehen drei MIDI-Spuren ab dem Takt am Abspielkopf: Akkorde (Dreiklänge, Klang Streicher), Bass (Grundton und Oktave, E-Bass), Arpeggio (Achtel aufwärts, Klavier), ein Akkord je Takt, alle Töne leitereigen, ein Undo-Schritt. Ein Tonartwechsel im Fenster danach transponiert alle drei Clips (ein Undo-Schritt). Es sind normale MIDI-Clips, Piano-Roll und Zeitleiste bleiben nutzbar. Der Katalog sind Daten in `crates/model/src/chords.rs` (mit Stimmung je Folge für J4). Neue MCP-Werkzeuge `generate_chords` (`progression`, `key`, `bars`, `start_beats`, derselbe Katalog) und `transpose_notes` (`clips`, `semitones`). Akkord-Pads (optional im Konzept) sind nicht gebaut. Tests: `crates/model/tests/chords.rs`, `crates/gui/tests/chords.rs`, `crates/agent/tests/chords.rs`.
+
+## 0.34.86 — 2026-11-01
+
+- **J2 Drum-Raster (#267, Paket aus #261):** Die Piano-Roll zeigt auf einer Spur mit GM-Kit ein 16-Schritt-Raster (Becken, Hi-Hat offen, Hi-Hat zu, Clap, Snare, Kick = GM-Noten 49/46/42/39/38/36); der Knopf „Drum-Raster“ schaltet zur normalen Piano-Roll. Klick schaltet einen Schritt an/aus, Rechtsklick macht ihn leise (Velocity 60). Acht Presets (Pop, Four on the Floor, Rock, Hip-Hop, Nachrichten, Party, Halbes Tempo, Shuffle), wiederholt über die ganze Clip-Länge, dazu Regler „weniger / mehr“ und „Würfeln“. Gespeichert werden normale MIDI-Noten über `SetNotes`, also ein Undo-Schritt je Klick; Noten außerhalb des Rasters bleiben erhalten. Die Logik liegt in `crates/model/src/drums.rs`; `generate_drums` nimmt dieselben Presets (`preset`, `density`, `bars`). Tests: `crates/model/tests/drums.rs`, `crates/gui/tests/drum_grid.rs`, `crates/agent/tests/drum_grid.rs`.
+
+## 0.34.85 — 2026-11-01
+
+- **SoundFont in allen Paketen (#265):** Die J1-Klänge (#263) fanden in der ausgelieferten App keine Bank und spielten immer den Synth. Jetzt bringt jeder Bau `GeneralUser-GS.sf2` (2.0.3, fester Commit, feste SHA-256) samt Lizenz mit, an den Pfad, den `crates/engine/src/soundfont.rs` sucht: MSI und Windows-ZIP `sounds\` neben `woa.exe`, AppImage und Flatpak `share/woa/sounds/`. Neues Skript `packaging/fetch-soundfont.sh` lädt und prüft (AppImage, Windows); Flatpak lädt als `sources`-Eintrag mit sha256 (Bau ohne Netz), ein CI-Schritt hält beide Werte gleich. Die `.sf2` bleibt aus dem Repo. CI prüft je Paket, dass die Datei am Suchpfad liegt (ZIP entpackt, MSI nach Installation in `test-upgrade.ps1`, AppImage entpackt, Flatpak installiert).
+
+## 0.34.84 — 2026-11-01
+
+- **J1 Klänge: SoundFont als Instrument der MIDI-Spur (#263, Paket aus #261):** Eine MIDI-Spur kann jetzt einen GM-Klang aus der SoundFont (GeneralUser GS) spielen statt des eingebauten Synths. Auswahl im Mixer-Streifen der Spur: „Synth (eingebaut)“ und je Rolle vier Klänge (Lead: Klavier, E-Piano, Glockenspiel, Synth-Lead · Bass: E-Bass, Kontrabass, Synth-Bass, Fretless · Pad: Streicher, Warm Pad, Orgel, Chor · Kit: Standard, Room, Power, Elektro auf MIDI-Kanal 10). Der Klang ist ein Undo-Schritt und steht in der Projektdatei (`sound` an der Spur, Format 5 nur wenn gesetzt; Projekte ohne Klang bleiben Format 4). Fehlt die `.sf2`, spielt der Synth wie bisher. Gesucht wird über `WOA_SOUNDFONT`, dann `sounds/GeneralUser-GS.sf2` neben der ausführbaren Datei, dann `../share/woa/sounds/` (`crates/engine/src/soundfont.rs`); geladen einmal je Prozess im Control-Thread. Befund: Die Paketskripte laden die `.sf2` entgegen `docs/sounds/README.md` noch nicht, die README sagt das jetzt. Neues MCP-Werkzeug `track_sound` (lesen, Preset, GM-Programm, zurück zum Synth); `generate_drums` mit `midi: true` schreibt GM-Drumnoten als MIDI-Clip und gibt der Spur das Standard-Kit, in einem Undo-Schritt. Tests: `crates/engine/tests/soundfont.rs` (Offline-Render mit winziger SF2 klingt anders als der Synth), `crates/model/tests/sound.rs`, `crates/agent/tests/track_sound.rs`.
+
+## 0.34.83 — 2026-11-01
+
+- **WOA-Ordner: feste Ablage im Musikordner (#258):** Beim Start legt WOA `<Musik>/WOA/` mit `Projekte`, `Aufnahmen`, `Mitschnitte`, `Exporte`, `Jingles`, `MIDI` und `Sendungen` an, falls sie fehlen (still, Fehler nur im Log, nichts wird verschoben oder überschrieben). Der Musikordner kommt unter Linux aus `user-dirs.dirs` (Rückfall `~/Musik`), unter Windows ist es `%USERPROFILE%\Music`; keine neue Abhängigkeit. Alle Speichern- und Öffnen-Dialoge starten im passenden Ordner (Projekt, Export, Stems, Spur-Export, DAWproject, MIDI, M3U, Carts, Events, Voice-Track, Gast-Datei); Titel- und Ordnerdialoge im Musikordner. Mitschnitte (REC) landen ohne Dialog in `Mitschnitte`, Dateiname wie bisher mit Datum und Uhrzeit; ältere Mitschnitte bleiben im Datenordner. Neues Fenster „Einstellungen → Speicherorte …“: eine Zeile je Art mit „Ändern …“, „Vorgabe“ nur bei eigenem Ordner. Gespeichert in `config.json` unter `ordner`, nur Abweichungen; alte Konfigurationen laden unverändert. Tests in `crates/gui/src/ordner.rs` und `old_config_without_folders_loads_and_custom_folder_survives`.
+
+## 0.34.82 — 2026-11-01
+
+- **Server-Doku auf das Nötigste gekürzt:** `server/README.md` ohne den längst umgesetzten Patch-Vorschlag, die überholte `server/feedback/daw-woa.vars.yml` ist entfernt, `docs/telemetrie.md` ohne „Offen“ und ohne Serverpfade. Testpfade in `crates/gui/src/feedback.rs` heißen jetzt `nutzer`.
+
+## 0.34.81 — 2026-11-01
+
+- **Drei wackelige Windows-Tests an der Ursache behoben (#256):**
+  - `live::tests::stale_lock_is_not_a_running_app`: Der Test band einen Port, gab ihn frei und erwartete, dass dort niemand hört. Windows vergab den Port sofort an einen parallel laufenden Test (`Some(RunningApp { port: 51369 })`). Jetzt prüft er mit Port 0, auf dem nie jemand hört.
+  - `after_token_change_the_old_token_gets_401` (os error 10053): Der MCP-Server beantwortete abgewiesene Anfragen (401, 404), ohne den Body zu lesen, und schloss die Verbindung. Ungelesene Bytes beim Schließen werden unter Windows zu einem RST, der Client sah dann den Abbruch statt der 401. Der Server liest den Body jetzt weg und verwirft ihn stückweise (höchstens 1 MiB, 2 s, 16 Anfragen gleichzeitig, nichts wird gepuffert) und antwortet mit `Connection: close`. Neuer Test `rejected_request_is_read_before_the_answer`.
+  - `guest_tone_arrives_and_return_has_music_but_not_the_guest`: Browser und Bank laufen im Test im selben Thread, die Bank rechnete nach der Wanduhr. Hing der Thread auf dem Runner, holte die Bank die Pause in einem Zug nach, bevor die Pakete ankamen, und las Stille (-14,0 und -16,9 dB statt -10,4). Nachgestellt mit einer Pause von 600 ms: -14,4 dB. Die Bank läuft jetzt im Takt des Mikrofons, die Pause ist fest im Test, gemessen -10,4 dB. Die Schwelle steht wieder auf -14 dB (0.34.64 hatte sie auf -16 gelockert).
+
+## 0.34.80 — 2026-11-01
+
+- **Controller-Test misst das Cart-Ducking mit (#254):** `port::virtual_controller_drives_mixer_and_carts` in `crates/gui/tests/controller.rs` war lokal rot und in der CI nur scheinbar grün. Ursache: Der Test stammt aus 0.9.0 und erwartete beim Cart die volle Musik plus Cart. Seit #149 senkt ein Cart die Musik ab (Standard −12 dB), der gemessene Pegel (0,57) blieb unter der alten Schwelle. In der CI fehlt der ALSA-Sequencer, dort überspringt sich der Test selbst. Der Test lässt die Absenkung jetzt ausschwingen und prüft beides: Cart hörbar über der abgesenkten Musik, und die Musik unter dem Cart tatsächlich abgesenkt. Das Ducking bleibt unverändert.
+
+## 0.34.79 — 2026-11-01
+
+- **Lesbare Warnungen und Insert-Rack (#246):** Fehler- und Warntexte (Stream, Gäste, Plugins, Fernbedienung, KI, Feedback) nutzen im dunklen Thema `danger_text()`: `on-air` leicht aufgehellt, damit sie auf `panel` WCAG AA (mindestens 4,5:1 statt rund 4:1) erreichen. Im hellen Thema bleibt alles wie bisher, Lampe und ON-AIR-Schriftzug ebenso. Hinweise, Plugin-Fehler und Log im Insert-Rack stehen jetzt in 12 px statt 9–9,5 px. Die Gruppentitel des Racks („EINGANG“, „AUSGANG“ …) sind Modulköpfe wie überall sonst. Rein optisch, keine Bedienung geändert.
+
+## 0.34.78 — 2026-11-01
+
+- **Regler für die Ausgänge (#96):** Neben den Pegelreglern stehen zwei weitere senkrechte Fader im selben Stil, „Notebook“ (Wiedergabe Notebook, der Abhörausgang) und „Stream“ (Stream senden an woa-streamd), darunter je ein roter Stumm-Knopf „M“. Der Gain je Ausgang wird im Audio-Thread geglättet, lockfrei und ohne Allokation; der Mitschnitt bekommt weiter die volle Sendung. Die Einstellung steht in `radio.json` (`out_monitor`, `out_stream`); alte Dateien laden mit 0 dB, nicht stumm. Tests: `output_faders_scale_monitor_and_stream_separately` und `output_levels_default_to_full_and_round_trip` in `crates/radio/tests/rt.rs`, `output_faders_have_level_and_mute` in `crates/gui/src/radio.rs`.
+
+## 0.34.77 — 2026-10-31
+
+- **Einheitliche Modulköpfe (#246):** Alle Kartenköpfe in Radio, Party, Fernbedienung, Bibliothek, Analyse, Export, Automation und Uhren-Editor („SENDE-PLAYLIST“, „CART-WALL“, „WUNSCHLISTE“ …) stehen jetzt einheitlich als `panel-label` des Design-Systems: Barlow Condensed Bold, 12 px, leicht gesperrt, `text-dim`. Bisher mischten sich Barlow 11,5 px fett, 10 px und `small`. Das Pianoroll nimmt für Noten im Dunkeln die Spurfarbe 1 statt eines eigenen Blaus. Neu in `theme.rs`: `panel_label()` und `danger_text()` (Fehlertext mit WCAG-AA-Kontrast). Rein optisch, keine Bedienung geändert.
+
+## 0.34.76 — 2026-10-31
+
+- **`next_id` beim Rückgängig (#243):** geprüft und als gewollt dokumentiert. Der Zähler steigt nur: Eine neue Id wird schon vor dem Befehl vergeben, und Rückgängig senkt den Zähler nicht. So bekommt kein neues Objekt die Id einer rückgängig gemachten Spur, und ein Agent mit einer alten Id trifft nicht stillschweigend etwas anderes. Kommentar an `Project::next_id`, Test `undo_never_reuses_an_id`.
+
+## 0.34.75 — 2026-10-31
+
+- **Fenstertitel (#243):** Heißt das Projekt noch „Neues Projekt“ oder hat es keinen Namen, zeigt der Titel nach dem Speichern oder Öffnen den Dateinamen des Projekts (ohne `.woa`). Ein selbst vergebener Name bleibt wie bisher.
+
+## 0.34.74 — 2026-10-31
+
+- **Playlist: Griff und Nummer eintippen (#92):** Vor der Nummer jeder Zeile der Sende-Playlist steht ein Griff-Symbol (sechs Punkte); gezogen wird wie bisher die ganze Zeile (#166). Ein Klick auf die Nummer macht sie zum Eingabefeld: neue Nummer eintippen, Enter verschiebt den Titel dorthin (zu groß: ans Ende), Esc oder Wegklicken lässt alles, wie es ist. Pfeile, Entfernen, Doppelklick und Kontextmenü bleiben unverändert. Test: `typed_position` in `crates/gui/src/radio.rs`.
+
+## 0.34.73 — 2026-10-31
+
+- **BOM vor der ersten Zeile (#243):** Die stdio-Weiterleitung an die offene App (`woa-headless mcp` bei laufender App) verwirft ein führendes UTF-8-BOM, wie es etwa der StreamWriter von .NET schreibt; vorher ging `initialize` still verloren. Der Headless-stdio-Modus ohne App vertrug es schon, ein Test hält das jetzt fest (`crates/agent/tests/mcp.rs`).
+
+## 0.34.72 — 2026-10-31
+
+- **QR-Code zum Spenden (#231):** Im Fenster „Über WOA“ steht unter den Knöpfen PayPal und Ko-fi ein QR-Code, der den PayPal-Link kodiert; mit dem Handy scannen genügt. Lokal erzeugt mit demselben Baustein wie der Code der Fernbedienung, ohne neue Abhängigkeit.
+
+## 0.34.71 — 2026-10-31
+
+### Behoben
+
+- **ON AIR nur bei Sendung (#225):** Die ON-AIR-Pille oben rechts leuchtete auch, wenn nur das Mikro offen war. Sie leuchtet jetzt nur noch bei „Auf Sendung“ (Stream läuft); das Mikro hat seine eigene Anzeige am Mikro-Knopf.
+
+## 0.34.70 — 2026-10-31
+
+- **Spur exportieren (#229):** Im Kontextmenü des Spurkopfs (Produzent) steht „Spur exportieren …“. Ein kleines Fenster fragt Dateiname (Vorgabe: Spurname), Format WAV oder MP3 sowie Titel, Interpret und Kommentar. Die Datei enthält nur diese Spur, genau wie ihr Stem (nach Fader und Pan, mit Plugins, ohne Master). Die Tags stehen in WAV als `LIST/INFO`, in MP3 als ID3v2.3; MP3 nutzt den eingebauten Encoder des Mixdown-Exports. Gerechnet und geschrieben wird in einem eigenen Thread, die Oberfläche bleibt bedienbar; die Statuszeile meldet das Ende. Eine stumme Spur meldet „kein Ton“.
+
+## 0.34.69 — 2026-10-31
+
+- **Ducking auch bei Carts (#149):** Spielt ein Cart, wird die Musik in den Playern auf die eingestellte Ducking-Tiefe abgesenkt und bleibt hörbar; nach dem Cart fährt sie sofort (80 ms Glättung) zurück. Abschaltbar mit dem Häkchen „auch bei Carts“ neben dem Ducking-Regler, Vorgabe an, gespeichert in `radio.json` (Feld `cart_duck`).
+
+## 0.34.68 — 2026-10-31
+
+- **Auto-Weiter abschaltbar (#148):** Im Kopf der Sende-Playlist steht neben „Gespielte ausblenden“ der Umschalter „Auto-Weiter“ (Vorgabe an, wie bisher). Aus: Nach jedem Titel hält die Playlist an, der nächste Titel steht als Cue bereit und startet mit „Play“; „Weiter“ springt sofort zum nächsten. Ausschalten mitten im Titel verwirft den schon bereitgelegten nächsten, der laufende spielt zu Ende. Gespeichert mit der Sendung (`auto_next`, alte Dateien laden unverändert). Decks, Party und Stopp-Verhalten bleiben unverändert. Test: `crates/radio/tests/auto_next.rs` unter `assert_no_alloc`.
 
 ## 0.34.67 — 2026-10-31
 

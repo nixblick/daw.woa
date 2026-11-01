@@ -409,7 +409,7 @@ impl KiUi {
                 ui.label(
                     egui::RichText::new("gestoppt")
                         .strong()
-                        .color(theme::on_air()),
+                        .color(theme::danger_text()),
                 );
                 ui.label(e);
             } else {

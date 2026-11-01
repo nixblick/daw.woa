@@ -310,6 +310,9 @@ pub struct Track {
     /// Fremd-Plugins (Paket 31): höchstens ein Instrument, dazu Effekte in Kettenreihenfolge.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plugins: Vec<crate::plugin::PluginSlot>,
+    /// GM-Klang einer MIDI-Spur (Paket J1); `None`: eingebauter Synth.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sound: Option<crate::sound::TrackSound>,
 }
 
 /// A send from a track to a bus.
@@ -358,6 +361,7 @@ impl Track {
             automation: Vec::new(),
             take_folders: Vec::new(),
             plugins: Vec::new(),
+            sound: None,
         }
     }
 
@@ -376,7 +380,11 @@ pub struct Project {
     pub tempo_bpm: f64,
     /// Tracks in display order.
     pub tracks: Vec<Track>,
-    /// Next free id for tracks and clips. Only grows.
+    /// Next free id for tracks and clips. Only grows, on purpose: undo and redo never
+    /// lower it, so an id is never handed out twice. A client (agent, GUI selection) that
+    /// still holds the id of an undone track or clip gets "not found" instead of silently
+    /// hitting a new object. Gaps in the ids are harmless; the counter is capped by
+    /// [`MAX_ID`] (#243).
     pub next_id: u64,
 }
 

@@ -43,6 +43,8 @@ fn main() -> ExitCode {
     if let Some(e) = save_err {
         tracing::warn!(error = %e, "config not saved");
     }
+    // WOA-Ordner (#258): fehlende Ordner still anlegen, Fehler nur im Log.
+    woa_gui::ordner::apply(&config.ordner);
     let (feedback, telemetry) = (
         !config.feedback_url.is_empty(),
         config.telemetry_enabled == Some(true),

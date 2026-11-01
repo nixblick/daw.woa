@@ -607,6 +607,35 @@ pub fn emphasize(c: Color32, t: f32) -> Color32 {
     }
 }
 
+/// Modulkopf wie auf ein Pult gedruckt (`panel-label`): Barlow Condensed Bold, 12 px,
+/// Sperrung 0,1 em, `text-dim`. Einheitlich für alle Karten in Radio, Party und Produzent.
+pub fn panel_label(text: impl Into<String>) -> egui::RichText {
+    egui::RichText::new(text)
+        .font(panel_label_font())
+        .extra_letter_spacing(TYPE_SMALL * 0.1)
+        .color(text_dim())
+}
+
+/// Schrift des Modulkopfs (`panel-label`).
+pub fn panel_label_font() -> FontId {
+    FontId::new(TYPE_SMALL, egui::FontFamily::Name(FAMILY_LABEL_BOLD.into()))
+}
+
+/// Farbe für Fehler- und Warntext. `on-air` erreicht als Statusmarke 3:1, im dunklen Thema
+/// als Text auf `panel` aber nur rund 4:1; aufgehellt sind es über 5,5:1 (WCAG AA).
+/// Lampe, ON-AIR-Schriftzug und rote Flächen bleiben bei [`on_air`].
+pub fn danger_text() -> Color32 {
+    danger_text_of(pal(), is_dark())
+}
+
+fn danger_text_of(p: &Palette, dark: bool) -> Color32 {
+    if dark {
+        mix(p.on_air, Color32::WHITE, 0.3)
+    } else {
+        p.on_air
+    }
+}
+
 /// Eingefasster Studio-Modul-Rahmen (Karte mit 1px-Bevel).
 pub fn card_frame() -> Frame {
     Frame::new()
@@ -968,6 +997,8 @@ pub const TYPE_TITLE: f32 = 22.0;
 pub const FAMILY_LABEL: &str = "label";
 /// Name der Familie für Leuchtziffern (DSEG7 Classic, `font-seg`).
 pub const FAMILY_SEG: &str = "seg";
+/// Fette Pult-Beschriftung (Barlow Condensed Bold, `panel-label`).
+pub const FAMILY_LABEL_BOLD: &str = "label-bold";
 /// Familie der Phosphor-Symbole im Fill-Stil (Transport). Regular und Fill teilen sich dieselben
 /// Codepunkte; deshalb liegt Fill in einer eigenen Familie und wird nur über [`fill_label`] benutzt.
 pub const FAMILY_ICON_FILL: &str = "icon-fill";
@@ -1159,7 +1190,7 @@ pub fn font_definitions() -> egui::FontDefinitions {
         ("ui-semibold", "Barlow-SemiBold"),
         ("ui-bold", "Barlow-Bold"),
         ("label-medium", "BarlowCondensed-Medium"),
-        ("label-bold", "BarlowCondensed-Bold"),
+        (FAMILY_LABEL_BOLD, "BarlowCondensed-Bold"),
         ("label-extrabold", "BarlowCondensed-ExtraBold"),
         ("mono-medium", "JetBrainsMono-Medium"),
         ("mono-bold", "JetBrainsMono-Bold"),
@@ -1404,6 +1435,29 @@ mod tests {
             serde_json::from_str::<Theme>("\"dunkel\"").unwrap(),
             Theme::Dunkel
         );
+    }
+
+    #[test]
+    fn panel_label_follows_token_and_danger_text_reaches_aa() {
+        let f = panel_label_font();
+        assert_eq!(f.size, 12.0);
+        assert_eq!(f.family, egui::FontFamily::Name(FAMILY_LABEL_BOLD.into()));
+        fn lum(c: Color32) -> f32 {
+            let ch = |v: u8| {
+                let v = f32::from(v) / 255.0;
+                if v <= 0.039_28 {
+                    v / 12.92
+                } else {
+                    ((v + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * ch(c.r()) + 0.7152 * ch(c.g()) + 0.0722 * ch(c.b())
+        }
+        for (i, p) in PALETTES.iter().enumerate() {
+            let (a, b) = (lum(danger_text_of(p, i < 3)), lum(p.panel));
+            let ratio = (a.max(b) + 0.05) / (a.min(b) + 0.05);
+            assert!(ratio >= 4.5, "Palette {i}: {ratio}");
+        }
     }
 
     #[test]
