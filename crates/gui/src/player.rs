@@ -746,6 +746,21 @@ impl Player {
         spec: &ExportSpec,
         lufs: Option<f64>,
     ) -> Result<(f64, Option<woa_engine::loudness::Normalized>), String> {
+        let (mut l, mut r, seconds) = self.render_mix(project, resolve)?;
+        let rate = self.rate;
+        let norm =
+            lufs.and_then(|t| woa_engine::loudness::normalize(&mut l, &mut r, rate, t, -1.0));
+        woa_engine::export::export_with(out, spec, &l, &r, rate).map_err(|e| e.to_string())?;
+        Ok((seconds, norm))
+    }
+
+    /// Mixdown offline mit Plugins, wie [`Self::export`] ihn schreibt: links, rechts, Sekunden
+    /// (Abtastrate der Engine, [`Self::sample_rate`]). Auch für das Jingle (J6).
+    pub fn render_mix(
+        &mut self,
+        project: &Project,
+        resolve: &dyn Fn(&str) -> Option<PathBuf>,
+    ) -> Result<(Vec<f32>, Vec<f32>, f64), String> {
         let seconds = project_end_seconds(project);
         if seconds <= 0.0 {
             return Err("keine Clips zum Exportieren".into());
@@ -753,7 +768,7 @@ impl Player {
         let rate = self.rate;
         let rack = self.offline_rack(project);
         let cache = &mut self.cache;
-        let (mut l, mut r) = woa_engine::clip::render_clips_plugins(
+        let (l, r) = woa_engine::clip::render_clips_plugins(
             project,
             rate,
             seconds,
@@ -764,10 +779,7 @@ impl Player {
             },
         )
         .map_err(|e| e.to_string())?;
-        let norm =
-            lufs.and_then(|t| woa_engine::loudness::normalize(&mut l, &mut r, rate, t, -1.0));
-        woa_engine::export::export_with(out, spec, &l, &r, rate).map_err(|e| e.to_string())?;
-        Ok((seconds, norm))
+        Ok((l, r, seconds))
     }
 
     /// Bereitet den Export einer Spur vor (Ticket 229): dekodiert die Audio-Dateien hier

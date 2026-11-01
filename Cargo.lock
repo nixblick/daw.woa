@@ -7285,6 +7285,7 @@ dependencies = [
  "ureq",
  "woa-dsp",
  "woa-engine",
+ "woa-library",
  "woa-model",
  "woa-radio",
  "woa-stream",

@@ -4,6 +4,18 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## J6 Ausgabe (0.34.88, offen)
+
+1. Ein kurzes Jingle bauen (z. B. Akkordfolge aus J3 über 2 Takte), „Exportieren“ öffnen, „Als Jingle“ anhaken: Name, Lautheit „wie die Sendung“, Cart „keine“. Format und Stems sind ausgegraut.
+2. Name „Test Ident“, Cart 5, „Als Jingle exportieren“: Statuszeile nennt Datei, LUFS und Spitze (höchstens −1,0 dBFS). Die Datei liegt in `Musik/WOA/Jingles`.
+3. Bibliothek öffnen, Filter „Jingle“: „Test Ident“ steht da.
+4. In den Radio-Modus wechseln: Cart 5 heißt „Test Ident“ und spielt das Jingle.
+5. Noch einmal exportieren, ohne etwas zu ändern: keine zweite Datei. Etwas ändern und exportieren: „Test Ident 2“ entsteht, die erste bleibt.
+6. „Eigene Lautheit“ auf −14 LUFS: die Statuszeile zeigt etwa −14 LUFS.
+7. Claude per MCP: „Exportier das als Jingle ‚Morgen-Ident‘ auf Cart 6“ (`export_jingle`): gleiches Ergebnis wie 2 bis 4.
+
+Selbst geprüft von Claude: Ziel-Lautheit trotz Spitzen erreicht, Spitze höchstens −1 dBFS (`crates/engine/src/loudness.rs`), Datei, Bibliotheks-Art Jingle, Cart in `radio.json`, Ziel der Sendung als Vorgabe, kein Überschreiben, falsche Namen und Carts abgelehnt (`crates/agent/src/jingle.rs`), MCP mit eigenem Jingle-Ordner aus `config.json` (`crates/agent/tests/jingle_export.rs`), Fenster-Zustand (`crates/gui/src/export_dialog.rs`). Alles offline gerendert. Nicht selbst geprüft: Fenster, Cart-Wall und Klang am Gerät.
+
 ## J3 Akkorde und Muster (0.34.87, offen)
 
 1. Knopf „Akkordfolge …“ (neben „+ MIDI-Clip“): Fenster mit Folge, Tonart, Takte.
