@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.35.5 — 2026-11-01
+
+- **Ganze Zeile anklickbar (#302):** In der Sende-Playlist und in den Decks ist die ganze Zeile eine Klickfläche, man muss nicht mehr den Titel treffen. Playlist: Klick wählt aus (Rahmen in Akzentfarbe), Doppelklick setzt „als Nächstes“, Rechtsklick öffnet überall das Titelmenü (Umbenennen, Titelinfos …), Ziehen wie bisher von jeder Stelle. Decks: Rechtsklick irgendwo auf der Deck-Zeile öffnet das Menü (Datei laden, Schneiden, Leeren). Nur Knöpfe und die Nummer (eintippen) behalten ihren eigenen Klick. Die Cart-Pads waren schon ganz klickbar. Technisch: neue Hilfsfunktion `row_area` (Klickfläche unter dem Inhalt per `UiBuilder::sense`), Beschriftungen in der Zeile sind nicht mehr markierbar, der lange Hover-Text wird erst beim Zeigen gebaut. Trägheit gemessen: 300 Zeilen etwa 18 ms je Bild im Debug-Bau, unter der `ui.frame_slow`-Schwelle von 50 ms; Wellenformen werden in den Zeilen nicht gezeichnet. Tests: `whole_row_selects_and_opens_the_menu_anywhere`, `many_rows_stay_fast` in `crates/gui/src/radio.rs`.
+
 ## 0.35.4 — 2026-11-01
 
 - **WOA-Logo in der Windows-Taskleiste:** Die `woa.exe` trägt jetzt `packaging/windows/woa.ico` (16 bis 256 px) als Icon-Ressource, eingebettet per `apps/woa/build.rs` mit `winresource` (Build-Abhängigkeit nur unter Windows). Bisher zeigte die Taskleiste einen Platzhalter, weil das Fensterbild aus dem PNG nur als kleines Symbol ankommt und die Exe kein eigenes Icon hatte; aus der ZIP gestartet fehlte es ganz. Der Windows-Bau prüft das jetzt (Icon der `woa.exe` ungleich Standardsymbol). `woa-headless` und `woa-streamd` sind Konsolenprogramme ohne Fenster und bleiben ohne. Linux unverändert.
