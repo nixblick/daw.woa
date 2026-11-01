@@ -76,6 +76,22 @@ In jedem Modus gibt es einen dauerhaft sichtbaren Aufnahme-Knopf, der den Gesamt
 - Marker während der Aufnahme setzen (z. B. „Jingle“, „Gast 2“), Titelliste der gespielten Songs als Textdatei daneben
 - Mitschnitte landen automatisch in der Bibliothek und lassen sich direkt im Produzenten-Modus öffnen
 
+### Ablage: der WOA-Ordner (#258)
+
+WOA legt seine Dateien systematisch in `<Musik>/WOA/` ab (Linux: XDG-Musikordner aus `user-dirs.dirs`, sonst `~/Musik`; Windows: `%USERPROFILE%\Music`). Beim Start entstehen fehlende Ordner still; vorhandene Dateien werden nie verschoben oder gelöscht.
+
+| Ordner | Was hinein kommt | Dialoge, die dort starten |
+|---|---|---|
+| `Projekte` | Projektordner `.woa` | Speichern unter, Öffnen, DAWproject öffnen |
+| `Aufnahmen` | Sprachaufnahmen | Voice-Track einfügen, Datei als Gast |
+| `Mitschnitte` | REC der Sendesumme, ohne Dialog, Datum und Uhrzeit im Namen | – |
+| `Exporte` | Mixdown, Spur-Export, Stems, DAWproject-Export | alle Export-Dialoge |
+| `Jingles` | Carts und Events | Cart belegen, Event hinzufügen |
+| `MIDI` | MIDI-Dateien | MIDI importieren und exportieren |
+| `Sendungen` | Playlists als M3U | M3U importieren und exportieren |
+
+Titel, Musikordner und Audio-Import starten im Musikordner selbst. Takes einer Aufnahme bleiben im Projekt (`<Projekt>.woa/aufnahmen/`). Unter „Einstellungen → Speicherorte …“ lassen sich Basisordner und ein eigener Ordner je Art festlegen; in `config.json` steht nur, was abweicht (`ordner`).
+
 ### Gemeinsam
 
 - Bibliothek für Musik, Samples, Jingles: Suche, Tags, Vorhören, BPM- und Tonart-Erkennung, Lautheitsanalyse

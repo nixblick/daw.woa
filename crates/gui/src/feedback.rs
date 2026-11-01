@@ -66,6 +66,9 @@ pub struct GuiConfig {
     /// Wunschordner (Wunschtitel). Vorgabe: `Wunschtitel` im Datenordner der Sendung.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wish_folder: Option<std::path::PathBuf>,
+    /// WOA-Ordner (#258): Basisordner und eigene Ordner je Art. Vorgabe: `<Musik>/WOA/…`.
+    #[serde(skip_serializing_if = "crate::ordner::Ordner::is_default")]
+    pub ordner: crate::ordner::Ordner,
     /// Beim Start höchstens einmal am Tag nach einem neuen Release suchen. Vorgabe: an.
     pub auto_update: bool,
     /// Unix-Sekunden der letzten erfolgreichen Update-Suche.
@@ -147,6 +150,7 @@ impl Default for GuiConfig {
             outputs: woa_radio::routing::OutputMap::default(),
             phone: crate::phone::PhoneInput::default(),
             wish_folder: None,
+            ordner: crate::ordner::Ordner::default(),
             auto_update: true,
             last_update_check: None,
         }
@@ -712,6 +716,24 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
         assert!(matches!(d.phase, Phase::Done(ref m) if m.starts_with("Senden fehlgeschlagen")));
+    }
+
+    #[test]
+    fn old_config_without_folders_loads_and_custom_folder_survives() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("config.json");
+        std::fs::write(&p, r#"{"mode":"radio","auto_update":false}"#).unwrap();
+        let c = GuiConfig::load(&p);
+        assert!(c.ordner.is_default());
+        assert_eq!(c.mode, Mode::Radio);
+        c.save(&p).unwrap();
+        assert!(!std::fs::read_to_string(&p).unwrap().contains("ordner"));
+        let mut c = GuiConfig::load(&p);
+        c.ordner
+            .eigene
+            .insert(crate::ordner::Art::Mitschnitte, tmp.path().join("rec"));
+        c.save(&p).unwrap();
+        assert_eq!(GuiConfig::load(&p).ordner, c.ordner);
     }
 
     #[test]

@@ -983,7 +983,7 @@ impl RadioDesk {
     }
 
     fn add_dialog(&self) {
-        if let Some(files) = rfd::FileDialog::new()
+        if let Some(files) = crate::ordner::dialog_musik()
             .add_filter(
                 woa_engine::decode::FILTER_NAME,
                 &woa_engine::decode::dialog_extensions(),
@@ -1271,7 +1271,7 @@ impl RadioDesk {
                 .small_button("Ordner wählen …")
                 .on_hover_text("Alles, was hier hineinkommt, erscheint sofort in der Liste")
                 .clicked()
-                && let Some(dir) = rfd::FileDialog::new().pick_folder()
+                && let Some(dir) = crate::ordner::dialog_musik().pick_folder()
             {
                 self.set_wish_folder(Some(dir.clone()));
                 self.wish_chosen = Some(dir);
@@ -1378,7 +1378,7 @@ impl RadioDesk {
 
     /// Ordner der Mitschnitte.
     pub fn recordings_dir(&self) -> PathBuf {
-        self.data_dir.join(woa_radio::RECORDINGS_DIR)
+        crate::ordner::dir(crate::ordner::Art::Mitschnitte)
     }
 
     /// Startet oder beendet den Mitschnitt der Sendesumme (REC in der Kopfleiste).
@@ -1394,8 +1394,8 @@ impl RadioDesk {
                 c.stop_recording();
             });
         } else {
-            let dir = self.data_dir.clone();
-            self.with(move |c| c.start_recording(&dir));
+            let dir = self.recordings_dir();
+            self.with(move |c| c.start_recording_in(&dir));
         }
     }
 
@@ -2195,7 +2195,7 @@ impl RadioDesk {
                         "Eine Audiodatei in Schleife als Testgast (kein Netz, kein Mikrofon)",
                     );
                 if file.clicked()
-                    && let Some(p) = rfd::FileDialog::new()
+                    && let Some(p) = crate::ordner::dialog(crate::ordner::Art::Aufnahmen)
                         .add_filter(
                             woa_engine::decode::FILTER_NAME,
                             &woa_engine::decode::dialog_extensions(),
@@ -3344,7 +3344,7 @@ impl RadioDesk {
 
     /// Wählt eine Sprachdatei und legt sie als Voice-Track bei `at` in die Playlist.
     fn add_voice_dialog(&self, at: usize) {
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(path) = crate::ordner::dialog(crate::ordner::Art::Aufnahmen)
             .add_filter(
                 woa_engine::decode::FILTER_NAME,
                 &woa_engine::decode::dialog_extensions(),
@@ -3598,7 +3598,7 @@ impl RadioDesk {
     }
 
     fn pick_deck_file(&self, k: usize) {
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(path) = crate::ordner::dialog_musik()
             .add_filter(
                 woa_engine::decode::FILTER_NAME,
                 &woa_engine::decode::dialog_extensions(),
@@ -3814,7 +3814,7 @@ impl RadioDesk {
     }
 
     fn assign_cart(&self, slot: usize) {
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(path) = crate::ordner::dialog(crate::ordner::Art::Jingles)
             .add_filter(
                 woa_engine::decode::FILTER_NAME,
                 &woa_engine::decode::dialog_extensions(),

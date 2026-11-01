@@ -591,7 +591,7 @@ impl LibraryWindow {
                         .stroke(egui::Stroke::new(1.0, theme::accent())),
                 )
                 .clicked()
-                && let Some(dir) = rfd::FileDialog::new()
+                && let Some(dir) = crate::ordner::dialog_musik()
                     .set_title("Ordner mit Musik, Samples oder Jingles")
                     .pick_folder()
             {

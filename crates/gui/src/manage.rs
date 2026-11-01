@@ -208,7 +208,7 @@ impl ManageWindow {
                     out.push(Action::New);
                 }
                 if ui.button("M3U importieren …").clicked()
-                    && let Some(p) = rfd::FileDialog::new()
+                    && let Some(p) = crate::ordner::dialog(crate::ordner::Art::Sendungen)
                         .add_filter("M3U", &["m3u", "m3u8"])
                         .pick_file()
                 {
@@ -266,7 +266,7 @@ impl ManageWindow {
                         self.playlist_menu(ui, sel, show, on_air, out)
                     });
                     if ui.button("+ Titel …").clicked()
-                        && let Some(files) = rfd::FileDialog::new()
+                        && let Some(files) = crate::ordner::dialog_musik()
                             .add_filter(
                                 woa_engine::decode::FILTER_NAME,
                                 &woa_engine::decode::dialog_extensions(),
@@ -383,7 +383,7 @@ impl ManageWindow {
                 .get(i)
                 .map(|p| p.name.clone())
                 .unwrap_or_default();
-            if let Some(p) = rfd::FileDialog::new()
+            if let Some(p) = crate::ordner::dialog(crate::ordner::Art::Sendungen)
                 .add_filter("M3U8", &["m3u8"])
                 .set_file_name(format!("{name}.m3u8"))
                 .save_file()

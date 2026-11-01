@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.82 — 2026-11-01
+
+- **WOA-Ordner: feste Ablage im Musikordner (#258):** Beim Start legt WOA `<Musik>/WOA/` mit `Projekte`, `Aufnahmen`, `Mitschnitte`, `Exporte`, `Jingles`, `MIDI` und `Sendungen` an, falls sie fehlen (still, Fehler nur im Log, nichts wird verschoben oder überschrieben). Der Musikordner kommt unter Linux aus `user-dirs.dirs` (Rückfall `~/Musik`), unter Windows ist es `%USERPROFILE%\Music`; keine neue Abhängigkeit. Alle Speichern- und Öffnen-Dialoge starten im passenden Ordner (Projekt, Export, Stems, Spur-Export, DAWproject, MIDI, M3U, Carts, Events, Voice-Track, Gast-Datei); Titel- und Ordnerdialoge im Musikordner. Mitschnitte (REC) landen ohne Dialog in `Mitschnitte`, Dateiname wie bisher mit Datum und Uhrzeit; ältere Mitschnitte bleiben im Datenordner. Neues Fenster „Einstellungen → Speicherorte …“: eine Zeile je Art mit „Ändern …“, „Vorgabe“ nur bei eigenem Ordner. Gespeichert in `config.json` unter `ordner`, nur Abweichungen; alte Konfigurationen laden unverändert. Tests in `crates/gui/src/ordner.rs` und `old_config_without_folders_loads_and_custom_folder_survives`.
+
 ## 0.34.81 — 2026-11-01
 
 - **Drei wackelige Windows-Tests an der Ursache behoben (#256):**
