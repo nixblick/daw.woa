@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.86 — 2026-11-01
+
+- **J2 Drum-Raster (#267, Paket aus #261):** Die Piano-Roll zeigt auf einer Spur mit GM-Kit ein 16-Schritt-Raster (Becken, Hi-Hat offen, Hi-Hat zu, Clap, Snare, Kick = GM-Noten 49/46/42/39/38/36); der Knopf „Drum-Raster“ schaltet zur normalen Piano-Roll. Klick schaltet einen Schritt an/aus, Rechtsklick macht ihn leise (Velocity 60). Acht Presets (Pop, Four on the Floor, Rock, Hip-Hop, Nachrichten, Party, Halbes Tempo, Shuffle), wiederholt über die ganze Clip-Länge, dazu Regler „weniger / mehr“ und „Würfeln“. Gespeichert werden normale MIDI-Noten über `SetNotes`, also ein Undo-Schritt je Klick; Noten außerhalb des Rasters bleiben erhalten. Die Logik liegt in `crates/model/src/drums.rs`; `generate_drums` nimmt dieselben Presets (`preset`, `density`, `bars`). Tests: `crates/model/tests/drums.rs`, `crates/gui/tests/drum_grid.rs`, `crates/agent/tests/drum_grid.rs`.
+
 ## 0.34.85 — 2026-11-01
 
 - **SoundFont in allen Paketen (#265):** Die J1-Klänge (#263) fanden in der ausgelieferten App keine Bank und spielten immer den Synth. Jetzt bringt jeder Bau `GeneralUser-GS.sf2` (2.0.3, fester Commit, feste SHA-256) samt Lizenz mit, an den Pfad, den `crates/engine/src/soundfont.rs` sucht: MSI und Windows-ZIP `sounds\` neben `woa.exe`, AppImage und Flatpak `share/woa/sounds/`. Neues Skript `packaging/fetch-soundfont.sh` lädt und prüft (AppImage, Windows); Flatpak lädt als `sources`-Eintrag mit sha256 (Bau ohne Netz), ein CI-Schritt hält beide Werte gleich. Die `.sf2` bleibt aus dem Repo. CI prüft je Paket, dass die Datei am Suchpfad liegt (ZIP entpackt, MSI nach Installation in `test-upgrade.ps1`, AppImage entpackt, Flatpak installiert).
