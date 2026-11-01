@@ -46,6 +46,8 @@ install -m644 "$here/icons/de.wironair.woa.png" "$appdir/usr/share/icons/hicolor
 install -m644 "$here/icons/de.wironair.woa.svg" "$appdir/usr/share/icons/hicolor/scalable/apps/"
 version="$("$here/render-metainfo.sh" "$appdir/usr/share/metainfo/de.wironair.woa.appdata.xml")"
 install -Dm644 "$root/LICENSE" "$appdir/usr/share/doc/woa/LICENSE"
+# SoundFont für die MIDI-Klänge: soundfont.rs sucht ../share/woa/sounds/ relativ zu usr/bin (#265).
+"$root/packaging/fetch-soundfont.sh" "$appdir/usr/share/woa/sounds" >/dev/null
 echo "X-AppImage-Version=$version" >> "$appdir/usr/share/applications/de.wironair.woa.desktop"
 
 # Die AppImage-Werkzeuge sind selbst AppImages; ohne FUSE (CI) entpackt sie sich selbst.

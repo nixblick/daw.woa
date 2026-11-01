@@ -12,7 +12,9 @@
     <Property Id="ARPPRODUCTICON" Value="woa.ico" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="WOA" />
+      <Directory Id="INSTALLFOLDER" Name="WOA">
+        <Directory Id="SOUNDSFOLDER" Name="sounds" />
+      </Directory>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
 
@@ -34,6 +36,17 @@
       </Component>
     </ComponentGroup>
 
+    <!-- SoundFont für die MIDI-Klänge (#265): soundfont.rs sucht sounds\ neben woa.exe.
+         Vorher: packaging/fetch-soundfont.sh dist/sounds (feste SHA-256). -->
+    <ComponentGroup Id="Klaenge" Directory="SOUNDSFOLDER">
+      <Component>
+        <File Source="dist\sounds\GeneralUser-GS.sf2" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Source="dist\sounds\GeneralUser-GS-LICENSE.txt" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
     <!-- Nach einem Update aus der App (msiexec ... RESTARTWOA=1): die neue Version starten.
          Läuft im Benutzerkontext des Aufrufers (nicht erhöht), nur bei Installation, nie bei
          Deinstallation, und nur mit der Eigenschaft: ein Doppelklick auf das MSI startet nichts. -->
@@ -44,6 +57,7 @@
 
     <Feature Id="Haupt" Title="WOA">
       <ComponentGroupRef Id="Programme" />
+      <ComponentGroupRef Id="Klaenge" />
     </Feature>
   </Package>
 </Wix>
