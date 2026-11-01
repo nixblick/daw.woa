@@ -491,6 +491,11 @@ pub fn forward(
     let io = |e: std::io::Error| AgentError::Transport(e.to_string());
     let http: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
+        // Keine Verbindung wiederverwenden: Schließt die App (oder unter Windows der
+        // Stapel) eine ruhende Verbindung, ginge die nächste Anfrage still verloren (#245).
+        // Lokal kostet eine neue Verbindung nichts.
+        .max_idle_connections(0)
+        .max_idle_connections_per_host(0)
         .build()
         .into();
     let url = format!("http://127.0.0.1:{port}{MCP_PATH}");
@@ -624,6 +629,9 @@ pub fn forward(
             .delete(&url)
             .header("Authorization", &auth)
             .header("Mcp-Session-Id", s)
+            .config()
+            .timeout_global(Some(Duration::from_secs(2)))
+            .build()
             .call();
     }
     Ok(())
@@ -778,6 +786,7 @@ mod tests {
         assert_eq!(lines.len(), 2, "{out}");
         assert!(lines[0].contains("protocolVersion"), "{out}");
         assert!(lines[1].contains("\"id\":2"), "{out}");
+        assert!(lines[1].contains("\"result\""), "{out}");
         // Der Testserver notiert das DELETE in seinem eigenen Faden; unter Windows kommt
         // das oft erst nach der Rückkehr von `forward` an (#256).
         for _ in 0..200 {
@@ -903,6 +912,7 @@ mod tests {
         assert!(lines[0].contains("protocolVersion"), "{out}");
         assert!(lines[1].contains("\"result\""), "{out}");
         assert!(lines[1].contains("\"id\":2"), "{out}");
+        assert!(lines[1].contains("\"result\""), "{out}");
         assert_eq!(
             inits.load(Ordering::SeqCst),
             2,

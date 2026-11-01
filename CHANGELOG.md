@@ -2,7 +2,7 @@
 
 ## 0.34.90 — 2026-11-01
 
-- Test `forward_does_not_wait_for_an_open_sse_stream…` wartet bis zu 2 s auf das DELETE des Testservers (wackelte unter Windows).
+- **Weiterleitung verliert unter Windows keine Aufrufe mehr (#245):** `woa-headless mcp` nutzte eine ruhende HTTP-Verbindung erneut, die die Gegenseite schon geschlossen hatte; unter Windows scheiterte der nächste Aufruf (und das abschließende DELETE) dann still. Die Weiterleitung öffnet jetzt je Anfrage eine neue lokale Verbindung, das DELETE gibt nach 2 s auf. Test `forward_does_not_wait_for_an_open_sse_stream…` prüft zusätzlich, dass der Werkzeugaufruf ein Ergebnis statt eines Fehlers liefert.
 - **KI-Sitzung überlebt Pausen (#243):** Unter Windows bekam `woa-headless mcp` nach rund 5 Minuten ohne Aufruf von der App nur noch HTTP 404, weil rmcp eine Sitzung nach 300 s Leerlauf verwirft. Der Server auf 127.0.0.1 hält Sitzungen jetzt ohne Leerlauf-Grenze (vom Netz erreichbar bleibt sie). Zusätzlich meldet sich die stdio-Weiterleitung bei 404 still mit der gespeicherten Anmeldung neu an und wiederholt den Aufruf einmal; endet der Client, beendet sie ihre Sitzung. Test: `forward_reinitializes_after_the_app_dropped_the_session` in `crates/agent/src/live.rs`.
 
 ## 0.34.89 — 2026-11-01
