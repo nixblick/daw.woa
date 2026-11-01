@@ -28,6 +28,7 @@ use woa_model::{
 
 pub mod audio;
 pub mod http;
+pub mod jingle;
 pub mod live;
 
 use audio::{AgentNote, AgentWaveform};
@@ -771,6 +772,21 @@ pub struct ExportParams {
     /// Peaks stay below -1 dBFS. Default: unchanged.
     #[serde(default)]
     pub target_lufs: Option<f64>,
+}
+
+/// Parameters of `export_jingle`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ExportJingleParams {
+    /// File name without extension and without a path, e.g. "Station Ident". An existing
+    /// file is never overwritten: the next free name ("Station Ident 2") is used.
+    pub name: String,
+    /// Target loudness in LUFS. Default: the station's target (radio.json), the same value
+    /// the playlist auto-gain aims for.
+    #[serde(default)]
+    pub target_lufs: Option<f64>,
+    /// Cart button 1 to 16 that plays the jingle. Default: none.
+    #[serde(default)]
+    pub cart: Option<usize>,
 }
 
 /// Parameters of `build_playlist`.
@@ -3038,6 +3054,32 @@ impl WoaAgent {
         }
         result["normalized"] = normalized;
         Ok(ok_json(result))
+    }
+
+    #[tool(
+        description = "Finish the mixdown as a radio jingle: gain to the target loudness, limiter at -1 dBFS (so the target is reached even with peaky drums), WAV into the WOA jingle folder (the one set in the app), entered in the library as kind Jingle, and optionally put on a cart (1-16) in radio.json. The app takes the cart over within seconds. Same path as the app's export dialog. Returns path, loudness, peak and cart."
+    )]
+    async fn export_jingle(
+        &self,
+        Parameters(p): Parameters<ExportJingleParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let me = self.clone();
+        off_runtime(move || {
+            let project = me.lock()?.project().clone();
+            let mut to = jingle::Target::standard(p.name);
+            to.target_lufs = p.target_lufs;
+            to.cart = p.cart;
+            let result = jingle::check_name(&to.name)
+                .and_then(|_| audio::render(&project, &me.dir))
+                .and_then(|mut mix| {
+                    jingle::publish(&mut mix.left, &mut mix.right, audio::RATE, &to)
+                });
+            Ok(match result {
+                Ok(j) => ok_json(jingle::to_json(&j)),
+                Err(e) => fail(e),
+            })
+        })
+        .await
     }
 
     #[tool(description = "Undo the last step (the agent's or the human's).")]

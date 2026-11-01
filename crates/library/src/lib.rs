@@ -20,8 +20,9 @@ use rusqlite::{Connection, OptionalExtension, params, params_from_iter, types::V
 
 pub use hash::file_hash;
 
-/// Dateiname der Bibliothek im WOA-Datenordner (Oberfläche und MCP).
+/// Datei der Bibliothek im Datenordner (App und MCP nutzen dieselbe).
 pub const DB_FILE: &str = "bibliothek.sqlite3";
+
 /// Aktuelle Schemaversion.
 pub const SCHEMA_VERSION: i64 = 4;
 /// Längste Tag-Bezeichnung (Zeichen).

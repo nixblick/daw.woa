@@ -137,7 +137,8 @@ pub fn display_title(path: &Path, h: &Header) -> String {
 }
 
 /// Liest Kennung, Tags und Länge einer Datei, nur aus dem Kopf; dekodiert wird nicht.
-fn probe(path: &Path, kind: Kind) -> std::result::Result<NewTrack, String> {
+/// Liest Kopf und Prüfsumme einer Datei für [`Library::add_track`].
+pub fn probe(path: &Path, kind: Kind) -> std::result::Result<NewTrack, String> {
     let path_str = path
         .to_str()
         .ok_or("Pfad ist kein gültiger Text")?

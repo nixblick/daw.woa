@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## J9 MCP-Ausbau (0.34.89, offen)
+## J9 MCP-Ausbau (0.34.90, offen)
 
 Mit einem MCP-Client (z. B. Claude) an WOA.
 
@@ -16,6 +16,17 @@ Mit einem MCP-Client (z. B. Claude) an WOA.
 Der Impact-Teil aus #262 wartet auf J8 (Kenney-Samples).
 
 Selbst geprüft von Claude: `crates/agent/tests/j9_tools.rs` (Bänke und Presets ohne Plugin-Suche, Bibliothek nach Name und Art, fehlende Bibliothek bleibt fehlend, Ordnersuche, CLAP-Effekt mit Bypass, Entfernen, Undo und Export ohne installiertes Plugin, Fehlerwege). Clippy und Tests von `woa-agent` grün. Keine echte Plugin-Suche im Test.
+## J6 Ausgabe (0.34.89, offen)
+
+1. Ein kurzes Jingle bauen (z. B. Akkordfolge aus J3 über 2 Takte), „Exportieren“ öffnen, „Als Jingle“ anhaken: Name, Lautheit „wie die Sendung“, Cart „keine“. Format und Stems sind ausgegraut.
+2. Name „Test Ident“, Cart 5, „Als Jingle exportieren“: Statuszeile nennt Datei, LUFS und Spitze (höchstens −1,0 dBFS). Die Datei liegt in `Musik/WOA/Jingles`.
+3. Bibliothek öffnen, Filter „Jingle“: „Test Ident“ steht da.
+4. In den Radio-Modus wechseln: Cart 5 heißt „Test Ident“ und spielt das Jingle.
+5. Noch einmal exportieren, ohne etwas zu ändern: keine zweite Datei. Etwas ändern und exportieren: „Test Ident 2“ entsteht, die erste bleibt.
+6. „Eigene Lautheit“ auf −14 LUFS: die Statuszeile zeigt etwa −14 LUFS.
+7. Claude per MCP: „Exportier das als Jingle ‚Morgen-Ident‘ auf Cart 6“ (`export_jingle`): gleiches Ergebnis wie 2 bis 4.
+
+Selbst geprüft von Claude: Ziel-Lautheit trotz Spitzen erreicht, Spitze höchstens −1 dBFS (`crates/engine/src/loudness.rs`), Datei, Bibliotheks-Art Jingle, Cart in `radio.json`, Ziel der Sendung als Vorgabe, kein Überschreiben, falsche Namen und Carts abgelehnt (`crates/agent/src/jingle.rs`), MCP mit eigenem Jingle-Ordner aus `config.json` (`crates/agent/tests/jingle_export.rs`), Fenster-Zustand (`crates/gui/src/export_dialog.rs`). Alles offline gerendert. Nicht selbst geprüft: Fenster, Cart-Wall und Klang am Gerät.
 
 ## J7 Bänke (0.34.88, offen)
 

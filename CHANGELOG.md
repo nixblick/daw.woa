@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.34.89 — 2026-11-01
+## 0.34.90 — 2026-11-01
 
 - **J9 MCP-Ausbau (#277, Paket aus #262):** Neues MCP-Werkzeug `list_instruments`: GeneralUser GS und die Zusatzbänke mit Zustand, Grösse und Lizenz, dazu die Klang-Presets (derselbe Katalog wie `track_sound`). Mit `clap: true` sucht es die CLAP-Instrumente und -Effekte des Rechners, nur geschützt je Datei im eigenen Prozess (`woa-plugin-host`) mit der Sperrliste der App, nie im MCP-Prozess. Neues Werkzeug `list_samples`: sucht die Bibliothek nach Art (`sample`, `jingle`, `music`), Tag und Name, oder mit `folder` einen Ordner (z. B. Jingle-FX, bis 4 Ebenen) nach Audiodateien; nur lesend (`Library::open_read_only`, ohne WAL-Umstellung und Migration, fremde Schemaversion abgelehnt), eine fehlende Bibliothek wird nicht angelegt, `library` nur im WOA-Datenordner oder Projektordner. `insert_effect` nimmt statt `kind` auch `clap_id` und setzt einen CLAP-Effekt auf eine Spur (nicht auf Busse, ein Undo-Schritt); `set_insert_bypass` und `remove_insert` wirken auch auf ihn. Ein fehlendes Plugin reicht das Signal durch. Tests: `crates/agent/tests/j9_tools.rs`.
+
+## 0.34.89 — 2026-11-01
+
+- **J6 Ausgabe (#275, Paket aus #261):** Im Fenster „Exportieren“ neuer Schalter „Als Jingle“ mit Name, Lautheit („wie die Sendung (Auto-Gain)“ oder eigene in LUFS) und Cart (keine, 1–16). „Als Jingle exportieren“ rendert den Mixdown wie der normale Export, bringt ihn auf die Ziel-Lautheit und begrenzt die Spitzen mit dem vorhandenen Limiter auf −1 dBFS (neu `woa_engine::loudness::master`; anders als der bisherige Angleich erreicht das auch spitzenreiche Mischungen, der bisherige Export bleibt unverändert). Die WAV landet im Jingle-Ordner (#260, auch ein eigener aus „Speicherorte“), steht sofort als Art Jingle in der Bibliothek und liegt auf Wunsch auf der Cart (über `radio.json`, die laufende Sendung übernimmt es nach wenigen Sekunden). Nichts wird überschrieben: bei gleichem Namen kommt „Name 2“, bei gleichem Inhalt gilt das vorhandene Jingle. Neues MCP-Werkzeug `export_jingle` (`name`, `target_lufs`, `cart`) geht durch dieselbe Funktion `woa_agent::jingle::publish`. Dafür liegt die Ordner-Logik ohne Oberfläche jetzt in `woa_radio::ordner` (liest den Abschnitt `ordner` aus `config.json`) und `DB_FILE` in `woa_library`; die Oberfläche nutzt beides unverändert weiter. Kein neues Projektformat. Tests: `crates/engine/src/loudness.rs` (Ziel trotz Spitzen erreicht), `crates/agent/src/jingle.rs` (Ordner, Bibliothek, Cart, Ziel der Sendung, kein Überschreiben, falsche Namen und Carts), `crates/agent/tests/jingle_export.rs` (MCP mit eigenem Jingle-Ordner aus `config.json`), `crates/radio/src/ordner.rs`, `crates/gui/src/export_dialog.rs`.
 
 ## 0.34.88 — 2026-11-01
 
