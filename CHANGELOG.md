@@ -1,8 +1,13 @@
 # Changelog
 
-## 0.34.94 — 2026-11-01
+## 0.34.95 — 2026-11-01
 
 - **J8 Jingle-FX (#283, Paket aus #262):** Neue Klangerzeugung `woa_dsp::generate::render_fx`: Riser (schwillt an, Filter öffnet sich), Whoosh (auf und zu, laut in der Mitte) und Downlifter (setzt laut ein, Filter schließt sich), aus Rauschen durch einen wandernden Tiefpass (150 Hz bis 12 kHz), Spitze −3 dBFS, Anfang und Ende ohne Knacken. Ein Weg für Mensch und MCP: neues MCP-Werkzeug `generate_fx` (`track`, `kind`, `length_beats`, Vorgabe 4, `start_beats`, `name`) und in der App der Knopf „Jingle-FX …“ neben „Akkordfolge …“ (Art, Länge in Beats, Clip am Takt des Abspielkopfs auf der gewählten Audio-Spur, sonst neue Spur, ein Undo-Schritt). Beide rechnen über `woa_agent::audio::fx_buffer`; die Länge folgt dem Projekttempo. Keine neue Abhängigkeit. Tests: `crates/dsp/src/generate.rs` (Form je Art, Grenze, kein Knacken), `crates/agent/tests/j8_fx.rs` (Länge bei 100 BPM, `analyze` ohne Clipping, Fehlerwege), `crates/gui/tests/jingle_fx.rs`. Offen: die Kenney „Impact Sounds“ (CC0) als Bibliotheksordner sind nicht dabei, die Seite kenney.nl lehnte den Abruf ab (HTTP 403), Datei und Prüfsumme sind daher nicht geprüft.
+
+## 0.34.94 — 2026-11-01
+
+- **Weiterleitung verliert unter Windows keine Aufrufe mehr (#245):** `woa-headless mcp` nutzte eine ruhende HTTP-Verbindung erneut, die die Gegenseite schon geschlossen hatte; unter Windows scheiterte der nächste Aufruf (und das abschließende DELETE) dann still. Die Weiterleitung öffnet jetzt je Anfrage eine neue lokale Verbindung, das DELETE gibt nach 2 s auf. Test `forward_does_not_wait_for_an_open_sse_stream…` prüft zusätzlich, dass der Werkzeugaufruf ein Ergebnis statt eines Fehlers liefert.
+- **KI-Sitzung überlebt Pausen (#243):** Unter Windows bekam `woa-headless mcp` nach rund 5 Minuten ohne Aufruf von der App nur noch HTTP 404, weil rmcp eine Sitzung nach 300 s Leerlauf verwirft. Der Server auf 127.0.0.1 hält Sitzungen jetzt ohne Leerlauf-Grenze (vom Netz erreichbar bleibt sie). Zusätzlich meldet sich die stdio-Weiterleitung bei 404 still mit der gespeicherten Anmeldung neu an und wiederholt den Aufruf einmal; endet der Client, beendet sie ihre Sitzung. Test: `forward_reinitializes_after_the_app_dropped_the_session` in `crates/agent/src/live.rs`.
 
 ## 0.34.93 — 2026-11-01
 
