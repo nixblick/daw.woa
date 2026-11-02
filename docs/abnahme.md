@@ -4,6 +4,17 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design-Runde 3: Party mit Lime, Wellenform, BPM (0.35.18, offen)
+
+1. Party öffnen, Titel mit Analyse laden: Restzeit als MM:SS mit Geistersegmenten, daneben BPM-LCD; Titel ohne Analyse zeigt kein BPM.
+2. Nach kurzer Zeit erscheint unter dem Deck die Wellenform mit Beatgrid; beim zweiten Laden sofort (Cache).
+3. Play: gespielter Teil in Pink, Play-Taste pulsiert im Takt.
+4. Auto-Übergang, Zufall, Wdh., Stumm einschalten: Lime gefüllt; „Wdh.“ ohne „aus“.
+5. Fernbedienung „An“: Lime, QR, Adresse, PIN und Handyzahl sofort sichtbar, auch bei 1366×768.
+6. Theme Hell: Lime dunkelgrün mit weißer Schrift.
+
+Selbst geprüft von Claude: `cargo test -p woa-library`, `-p woa-gui` und Clippy grün, Screenshots dunkel und hell bei 1920×1030 und 1366×768 unter Linux (ohne Abspielen). Nicht unter Windows gesehen, kein Ton abgespielt.
+
 ## Design-Runde 2: Akkordspur, Klangwahl, Spurfarben (0.35.15, offen)
 
 1. Browser › Akkorde › Einfügen: unter dem Lineal „Akkorde · C Dur“ mit C I · G V · Am vi · F IV; andere Tonart tippen, Spur und Clips zeigen die neue Tonart.
@@ -1322,7 +1333,7 @@ Selbst geprüft von Claude: Tests ohne Ton für Constant Power, die Glättung de
 
 Selbst geprüft von Claude: Test im egui-Harness (Klick auf den rechten Rand wählt aus, Rechtsklick in der Mitte öffnet das Menü, die Nummer behält ihren Klick) und Messung mit 300 Zeilen (etwa 15 ms je Bild mit Klickfläche, 13 ms ohne, Debug-Bau). Clippy und Tests von `woa-gui` grün. Nicht am Gerät geklickt.
 
-## Piano-Roll, Drum-Raster, Jingle-Assistent, Probeton (0.35.17, offen)
+## Piano-Roll, Drum-Raster, Jingle-Assistent, Probeton (0.35.18, offen)
 
 1. Produzent, Akkordfolge einfügen, einen Akkord-Clip doppelklicken: Die Piano-Roll zeigt oben eine Zeile mit Clip-Kennung, Werkzeugen, Raster, „3“, Länge, Quantisieren, Velocity, Tonart, Magnet, „Nur benutzte Töne“, Lautsprecher und Zoom. Keine Anleitungszeile, keine Überschrift „Drum-Raster“. Die Spuren oben sind niedriger (36 px).
 2. Noten sind in der Spurfarbe, laute heller. Tonart-Zeilen leicht getönt, rechts vom Clip schraffiert. E drücken und eine Note anklicken: weg. D drücken und ins Leere klicken: neue Note, kurzer Probeton.

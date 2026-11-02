@@ -134,6 +134,8 @@ impl RemoteView {
                         let r = crate::widgets::Key::new(&label, egui::vec2(72.0, 32.0))
                             .font(theme::label_font(14.0))
                             .radius(theme::RADIUS_MD)
+                            .color(theme::accent_2())
+                            .ink(theme::on_accent_2())
                             .on(on)
                             .ui(ui)
                             .on_hover_text(if on {
