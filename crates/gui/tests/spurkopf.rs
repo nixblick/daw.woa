@@ -61,3 +61,48 @@ fn track_header_ends_before_bar_one() {
         );
     }
 }
+
+/// #334: Mit offener Piano-Roll waren die Spuren nur 36 statt 64 px hoch, die zweite Zeile des
+/// Spurkopfs (Eingang, Pegel) war abgeschnitten. Die Spurhöhe bleibt jetzt gleich.
+#[test]
+fn tracks_keep_their_height_with_the_piano_roll_open() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let config = GuiConfig {
+        telemetry_enabled: Some(false),
+        ..GuiConfig::default()
+    };
+    let mut app = WoaApp::without_audio(config, tmp.path().join("rec"));
+    let prog = woa_model::chords::CHORD_PROGRESSIONS
+        .first()
+        .expect("Akkordfolge");
+    app.state_mut()
+        .add_chord_tracks(prog, 0, 4, 0.0)
+        .expect("Akkordspuren");
+    let clip = app
+        .state_mut()
+        .project()
+        .tracks
+        .iter()
+        .flat_map(|t| &t.clips)
+        .find(|c| c.midi.is_some())
+        .map(|c| c.id)
+        .expect("MIDI-Clip");
+    let ctx = egui::Context::default();
+    ctx.set_fonts(woa_gui::theme::font_definitions());
+    let mut frame = eframe::Frame::_new_kittest();
+    for n in 1..=3 {
+        step(&ctx, &mut app, &mut frame, n);
+    }
+    let closed: Vec<f32> = app.track_rects().iter().map(|(_, r)| r.height()).collect();
+    app.open_piano_roll_docked(clip);
+    for n in 4..=6 {
+        step(&ctx, &mut app, &mut frame, n);
+    }
+    assert!(app.piano_roll_open());
+    let open: Vec<f32> = app.track_rects().iter().map(|(_, r)| r.height()).collect();
+    assert!(!open.is_empty());
+    assert!(
+        open.iter().all(|h| (h - closed[0]).abs() < 0.5) && closed[0] >= 60.0,
+        "Spurhöhe mit Piano-Roll {open:?}, ohne {closed:?}"
+    );
+}

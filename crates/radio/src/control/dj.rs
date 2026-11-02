@@ -156,6 +156,10 @@ pub enum DjCommand {
         mix: f32,
         level: f32,
     },
+    /// „Weiter“ (#331): das andere Deck startet, der Crossfader fährt in der Crossfade-Länge
+    /// hinüber; danach hält das alte Deck an und bekommt den nächsten Titel. Ist das andere Deck
+    /// leer, kommt der nächste Titel erst dorthin. Steht alles, startet das hörbare Deck.
+    Transition,
 }
 
 /// Was die Analyse zum Titel eines Decks weiß (die Oberfläche liest es aus der Bibliothek).
@@ -233,6 +237,8 @@ pub(super) struct DjCtl {
     phones_mix: f32,
     phones_level: f32,
     dirty: Vec<DjMarksChange>,
+    /// Laufendes „Weiter“: dieses Deck hält an, sobald der Fader drüben ist.
+    handover: Option<usize>,
 }
 
 impl Default for DjCtl {
@@ -245,6 +251,7 @@ impl Default for DjCtl {
             phones_mix: 0.5,
             phones_level: 0.8,
             dirty: Vec::new(),
+            handover: None,
         }
     }
 }
@@ -490,6 +497,8 @@ impl Controller {
                 if !value.is_finite() {
                     return Err("Crossfader: keine Zahl".into());
                 }
+                // Die Hand schlägt die Automatik von „Weiter“.
+                self.dj.handover = None;
                 self.party_fader(value);
                 Ok(())
             }
@@ -513,6 +522,7 @@ impl Controller {
                 self.send(Cmd::Dj(DjCmd::Phones { mix, level }));
                 Ok(())
             }
+            DjCommand::Transition => self.dj_transition(),
         }
     }
 
@@ -742,11 +752,57 @@ impl Controller {
         Ok(())
     }
 
+    fn dj_transition(&mut self) -> Result<(), String> {
+        if !(0..PARTY_SIDES).any(|s| self.party_loaded_pub(s)) {
+            return Err("Auf den Decks liegt kein Titel".into());
+        }
+        if !self.party_playing() {
+            self.party_toggle();
+            return Ok(());
+        }
+        let l = self.party_live_side();
+        let o = 1 - l;
+        if !self.party_loaded_pub(o) {
+            let Some(i) = self.party_next_after(l) else {
+                return Err("Nach diesem Titel kommt keiner mehr".into());
+            };
+            if !self.party_load_side(o, i) {
+                return Err(self
+                    .message
+                    .clone()
+                    .unwrap_or_else(|| "Laden ging nicht".into()));
+            }
+        }
+        let xf = self.crossfade_frames().max(1);
+        self.party_transition(l, o, xf);
+        self.dj.handover = Some(l);
+        Ok(())
+    }
+
+    /// Nach „Weiter“: steht der Fader beim neuen Deck, hält das alte an und lädt den nächsten Titel.
+    fn dj_handover_tick(&mut self) {
+        let Some(from) = self.dj.handover else {
+            return;
+        };
+        let to = 1 - from;
+        let x = f32::from_bits(self.status.party_fader.load(Ordering::Acquire));
+        if (x - to as f32).abs() > 1e-3 {
+            return;
+        }
+        self.dj.handover = None;
+        self.party_pause(from);
+        if let Some(i) = self.party_next_after(to) {
+            self.party_load_side(from, i);
+        }
+    }
+
     /// Sync hält das Tempo am anderen Deck (dessen Fader kann sich bewegen).
     pub(super) fn dj_tick(&mut self) {
         if !self.dj.view {
+            self.dj.handover = None;
             return;
         }
+        self.dj_handover_tick();
         for s in 0..PARTY_SIDES {
             if !self.dj.decks[s].sync || self.dj.decks[1 - s].sync {
                 continue;

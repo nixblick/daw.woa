@@ -166,6 +166,8 @@ pub enum MixerControl {
     PhonesMix,
     /// Kopfhörer-Pegel 0..1.
     PhonesLevel,
+    /// „Weiter“: zum anderen Deck blenden, danach lädt das alte den nächsten Titel (`value` egal).
+    Transition,
 }
 
 /// Parameter von `dj_mixer`.
@@ -281,6 +283,7 @@ pub fn mixer_command(p: &DjMixerParams, phones: (f32, f32)) -> Result<DjCommand,
             mix: phones.0,
             level: f,
         },
+        MixerControl::Transition => DjCommand::Transition,
     })
 }
 
@@ -362,6 +365,10 @@ mod tests {
         assert_eq!(
             m(r#"{"control":"view","value":1}"#),
             Ok(DjCommand::View { dj: true })
+        );
+        assert_eq!(
+            m(r#"{"control":"transition","value":1}"#),
+            Ok(DjCommand::Transition)
         );
     }
 

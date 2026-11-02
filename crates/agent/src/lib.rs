@@ -1873,7 +1873,7 @@ impl WoaAgent {
     }
 
     #[tool(
-        description = "Set a mixer control of the running app's party DJ view and return the DJ state. Controls: view (1 DJ, 0 simple), per deck (deck A or B): trim (dB -12..12), eq_lo, eq_mid, eq_hi (-1 kill, 0 neutral, +1 = +6 dB), filter (-1 low-pass .. 0 off .. +1 high-pass), fader (0..1), cue (1/0 headphone cue, needs a headphone output); global: crossfader (0 A .. 1 B), curve (1 hard, 0 soft), master (0..1), phones_mix (0 cue .. 1 master), phones_level (0..1). The headphone signal never reaches the broadcast. Read values with dj_state."
+        description = "Set a mixer control of the running app's party DJ view and return the DJ state. Controls: view (1 DJ, 0 simple), per deck (deck A or B): trim (dB -12..12), eq_lo, eq_mid, eq_hi (-1 kill, 0 neutral, +1 = +6 dB), filter (-1 low-pass .. 0 off .. +1 high-pass), fader (0..1), cue (1/0 headphone cue, needs a headphone output); global: crossfader (0 A .. 1 B), curve (1 hard, 0 soft), master (0..1), phones_mix (0 cue .. 1 master), phones_level (0..1), transition (any value: start the other deck, fade the crossfader over in the crossfade time, then stop the old deck and load the next title there). The headphone signal never reaches the broadcast. Read values with dj_state."
     )]
     async fn dj_mixer(
         &self,
