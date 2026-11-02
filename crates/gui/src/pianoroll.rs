@@ -1,28 +1,67 @@
-//! Piano-Roll (Paket 13): Editor für einen MIDI-Clip.
+//! Piano-Roll (Paket 13, Design-Runde 3 nach `PianoRoll`/`ScreenPianoRoll`): Editor für einen
+//! MIDI-Clip.
 //!
-//! Noten zeichnen (Klick ins Leere), verschieben (ziehen), Länge ziehen (rechter Rand),
-//! löschen (Doppelklick, Entf), Mehrfachauswahl (Strg/Umschalt+Klick, Rahmen ziehen,
-//! Strg+A), Raster und Quantisieren (1/4 bis 1/32, Triolen), Velocity-Leiste, Klaviatur
-//! mit Vorhören, Zoom. Jede Änderung geht als ein `SetNotes` durch [`AppState`], so
-//! haben Oberfläche und Agent denselben Weg und Strg+Z nimmt sie einzeln zurück.
+//! Leiste in einer Zeile: Clip-Kennung, Werkzeuge Zeichnen/Auswählen/Löschen (D/V/E), Raster
+//! mit Triolen „3“, Länge neuer Noten, Quantisieren (Q), Velocity, Tonart mit Magnet, „Nur
+//! benutzte Töne“, Probeton beim Zeichnen, Zoom. Darunter Lineal, echte Klaviatur, Noten in
+//! Spurfarbe und die Velocity-Spur. Kit-Spuren öffnen das Drum-Raster (`DrumGrid`). Jede
+//! Änderung geht als ein `SetNotes` durch [`AppState`], so haben Oberfläche und Agent denselben
+//! Weg und Strg+Z nimmt sie einzeln zurück.
 //!
-//! Vorhören läuft über die `rtrb`-Queue der Live-Spur (dieselbe wie das Keyboard); der
-//! Audio-Thread liest dort ohne Sperre. Ist kein Ausgang aktiv, bleibt es still.
+//! Vorhören und Probeton gehen als [`crate::probeton::Probe`] an die Spur des Clips; die App
+//! reicht sie an die `rtrb`-Queue der Live-Spur weiter.
 
 use eframe::egui;
 use egui::{Color32, Pos2, Rect, Sense, Stroke, pos2, vec2};
-use woa_dsp::instrument::NoteEvent;
-use woa_model::{ClipId, MidiData, MidiNote, grid_beats};
+use woa_model::harmony::Key;
+use woa_model::{ClipId, MidiData, MidiNote, TrackId, grid_beats};
 
 use crate::state::AppState;
 use crate::theme;
 
-const KEYS_W: f32 = 46.0;
+const KEYS_W: f32 = 52.0;
 const VEL_H: f32 = 64.0;
-/// Lineal über den Noten: Taktnummern und Akkordnamen (Design `PianoRoll`).
-const RULER_H: f32 = 20.0;
+/// Lineal über den Noten: Taktnummern, Clip-Bereich und Akkordnamen (Design `PianoRoll`).
+const RULER_H: f32 = 22.0;
 const RESIZE_PX: f32 = 6.0;
 const DIVISIONS: [u32; 4] = [4, 8, 16, 32];
+/// Längen neuer Noten (Notenwert); `None` in [`PianoRoll::note_len`] heißt „wie das Raster“.
+const LENGTHS: [u32; 6] = [1, 2, 4, 8, 16, 32];
+
+/// Werkzeug der Notenfläche.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tool {
+    /// Klick ins Leere zeichnet eine Note (Standard).
+    Draw,
+    /// Klick wählt nur, ins Leere ziehen zieht einen Rahmen.
+    Select,
+    /// Klick auf eine Note löscht sie.
+    Erase,
+}
+
+impl Tool {
+    const ALL: [(Self, &'static str, &'static str, &'static str); 3] = [
+        (
+            Self::Draw,
+            egui_phosphor::regular::PENCIL_SIMPLE,
+            "Zeichnen (D)",
+            "Klick ins Leere: Note im Raster · Ziehen: verschieben · rechter Rand: Länge · \
+             Alt: ohne Raster",
+        ),
+        (
+            Self::Select,
+            egui_phosphor::regular::CURSOR,
+            "Auswählen (V)",
+            "Klick: wählen · Strg/Umschalt+Klick: dazu · Rahmen ziehen · Strg+A: alle",
+        ),
+        (
+            Self::Erase,
+            egui_phosphor::regular::ERASER,
+            "Löschen (E)",
+            "Klick auf eine Note löscht sie · auch Doppelklick oder Entf",
+        ),
+    ];
+}
 
 /// What the pointer is doing in the note area.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -59,19 +98,19 @@ impl Palette {
         if ui.visuals().dark_mode {
             Self {
                 bg: theme::bg(),
-                row_black: theme::mix(theme::bg(), Color32::BLACK, 0.25),
+                row_black: theme::mix(theme::bg(), Color32::BLACK, 0.06),
                 line: theme::mix(theme::bg(), theme::grid(), 0.6),
                 bar: theme::mix(theme::grid(), theme::text_dim(), 0.35),
                 note,
                 note_sel: theme::text(),
                 text: theme::text_dim(),
-                key_white: Color32::from_rgb(214, 218, 226),
-                key_black: Color32::from_rgb(28, 30, 36),
+                key_white: Color32::from_rgb(226, 230, 236),
+                key_black: Color32::from_rgb(22, 24, 30),
             }
         } else {
             Self {
                 bg: theme::panel(),
-                row_black: theme::well(),
+                row_black: theme::mix(theme::panel(), Color32::BLACK, 0.06),
                 line: theme::grid(),
                 bar: theme::border_strong(),
                 note,
@@ -100,6 +139,99 @@ pub fn pitch_name(pitch: u8) -> String {
     )
 }
 
+/// Zeilen der Notenfläche von oben nach unten: alle 128 Töne oder nur die benutzten.
+pub fn rows(notes: &[MidiNote], fold: bool) -> Vec<u8> {
+    let mut used: Vec<u8> = notes.iter().map(|n| n.pitch).collect();
+    used.sort_unstable_by(|a, b| b.cmp(a));
+    used.dedup();
+    if fold && !used.is_empty() {
+        used
+    } else {
+        (0..=127u8).rev().collect()
+    }
+}
+
+/// Zeile der Tonhöhe in `rows` (absteigend); fehlt sie, die nächsttiefere.
+pub fn row_index(rows: &[u8], pitch: u8) -> usize {
+    rows.iter()
+        .position(|&r| r <= pitch)
+        .unwrap_or(rows.len().saturating_sub(1))
+}
+
+/// Magnet: nächster Ton der Tonart (bei Gleichstand der tiefere).
+pub fn snap_to_key(key: Option<Key>, pitch: u8) -> u8 {
+    let Some(k) = key else {
+        return pitch;
+    };
+    for d in 0..=6i16 {
+        for p in [i16::from(pitch) - d, i16::from(pitch) + d] {
+            if (0..=127).contains(&p) && k.contains(p as u8) {
+                return p as u8;
+            }
+        }
+    }
+    pitch
+}
+
+/// Drum-Raster: Was ein Klick aus dem Schritt macht. Klick: leer/leise → laut, laut → leer;
+/// Umschalt+Klick: leise (leise → leer); Rechtsklick: leer.
+pub fn drum_click(now: Option<u8>, shift: bool, right: bool) -> Option<u8> {
+    use woa_model::drums::{LOUD, SOFT};
+    match (right, shift, now) {
+        (true, _, _) => None,
+        (false, true, Some(v)) if v <= SOFT => None,
+        (false, true, _) => Some(SOFT),
+        (false, false, Some(v)) if v > SOFT => None,
+        (false, false, _) => Some(LOUD),
+    }
+}
+
+/// Spurfarben-Index je Drum-Zeile nach Design `DrumGrid` (Kick 1, Becken 2, Clap 3, …).
+fn drum_color(pitch: u8) -> Color32 {
+    let i = match pitch {
+        36 => 0,
+        49 => 1,
+        39 => 2,
+        42 => 3,
+        46 => 4,
+        _ => 5,
+    };
+    theme::track_color(i)
+}
+
+/// Schraffur (außerhalb des Clips).
+fn hatch(painter: &egui::Painter, r: Rect, c: Color32) {
+    if r.width() <= 0.0 || r.height() <= 0.0 {
+        return;
+    }
+    let p = painter.with_clip_rect(r.intersect(painter.clip_rect()));
+    let step = 8.0;
+    let mut x = r.left() - r.height();
+    while x < r.right() {
+        p.line_segment(
+            [pos2(x, r.bottom()), pos2(x + r.height(), r.top())],
+            Stroke::new(1.0, c),
+        );
+        x += step;
+    }
+}
+
+/// Segmentschalter-Knopf; `true` bei Klick.
+fn seg(ui: &mut egui::Ui, on: bool, text: &str, tip: &str) -> bool {
+    ui.add(egui::Button::selectable(on, text))
+        .on_hover_text(tip)
+        .clicked()
+}
+
+/// Symbol-Knopf mit Tooltip (und Namen für Screenreader und Tests).
+fn icon_button(ui: &mut egui::Ui, on: bool, icon: &str, name: &str, tip: &str) -> egui::Response {
+    let r = ui
+        .add(egui::Button::selectable(on, icon).min_size(vec2(26.0, 24.0)))
+        .on_hover_text(tip);
+    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, name));
+    r
+}
+
 /// Editor state of one open MIDI clip.
 pub struct PianoRoll {
     /// The clip being edited.
@@ -112,6 +244,20 @@ pub struct PianoRoll {
     pub triplet: bool,
     /// Horizontal zoom factor (1 = clip fits the window).
     pub zoom: f32,
+    /// Werkzeug der Notenfläche.
+    pub tool: Tool,
+    /// Länge neuer Noten als Notenwert; `None`: ein Rasterschritt.
+    pub note_len: Option<u32>,
+    /// Gewählte Tonart; `None`: aus den Noten erkannt.
+    pub key_pick: Option<Key>,
+    /// Neue und verschobene Noten rasten auf die Tonart ein.
+    pub magnet: bool,
+    /// Nur benutzte Töne als Zeilen.
+    pub fold: bool,
+    /// Probeton beim Zeichnen.
+    pub probe: bool,
+    /// Abspielkopf in Beats (für das Lauflicht im Drum-Raster), von der App je Bild gesetzt.
+    pub playhead: Option<f64>,
     /// First visible beat.
     x_off: f64,
     /// Row height in pixels (vertical zoom).
@@ -123,7 +269,7 @@ pub struct PianoRoll {
     preview: Option<u8>,
     /// Scroll to the notes on the first frame.
     centre: bool,
-    /// Drum-Raster statt Notenfläche (Paket J2); `None`: an, wenn die Spur ein Kit hat.
+    /// Kit-Spur: Raster (Standard) oder Noten.
     drum_grid: Option<bool>,
     /// Dichte für Presets: -1 weniger, 0, +1 mehr.
     density: i8,
@@ -131,11 +277,14 @@ pub struct PianoRoll {
     preset: Option<usize>,
     /// Zähler für den Würfel.
     dice_seed: u64,
-    /// Spurfarbe, Tonart und Clip-Anfang (Beat der Note 0), je Bild aus dem Projekt.
+    /// Spurfarbe, Spur, erkannte Tonart und Clip-Anfang (Beat der Note 0), je Bild.
     color: Color32,
-    key: Option<woa_model::harmony::Key>,
+    track: Option<TrackId>,
+    detected: Option<Key>,
     origin: f64,
     chords: Vec<Option<woa_model::harmony::Chord>>,
+    /// Zeilen der Notenfläche (Tonhöhen von oben nach unten).
+    rows: Vec<u8>,
 }
 
 impl PianoRoll {
@@ -147,6 +296,13 @@ impl PianoRoll {
             division: 16,
             triplet: false,
             zoom: 1.0,
+            tool: Tool::Draw,
+            note_len: None,
+            key_pick: None,
+            magnet: false,
+            fold: false,
+            probe: true,
+            playhead: None,
             x_off: 0.0,
             row_h: 12.0,
             drag: None,
@@ -158,9 +314,11 @@ impl PianoRoll {
             preset: None,
             dice_seed: 0,
             color: theme::track_color(0),
-            key: None,
+            track: None,
+            detected: None,
             origin: 0.0,
             chords: Vec::new(),
+            rows: rows(&[], false),
         }
     }
 
@@ -178,6 +336,17 @@ impl PianoRoll {
         grid_beats(self.division, self.triplet)
     }
 
+    /// Länge einer neu gezeichneten Note in Beats.
+    fn new_len(&self) -> f64 {
+        self.note_len
+            .map_or_else(|| self.grid(), |d| grid_beats(d, self.triplet))
+    }
+
+    /// Tonart für Zeilen-Tönung und Magnet: gewählt, sonst erkannt.
+    pub fn key(&self) -> Option<Key> {
+        self.key_pick.or(self.detected)
+    }
+
     fn notes(state: &AppState, clip: ClipId) -> Option<(MidiData, f64, String)> {
         let (_, c) = state.project().clip(clip)?;
         Some((c.midi.clone()?, c.length_beats, c.name.clone()))
@@ -190,15 +359,23 @@ impl PianoRoll {
             return true;
         }
         let n = egui::Modifiers::NONE;
-        let (del, back, all, quant, esc) = ctx.input_mut(|i| {
+        let (del, back, all, quant, esc, d, v, e) = ctx.input_mut(|i| {
             (
                 i.consume_key(n, egui::Key::Delete),
                 i.consume_key(n, egui::Key::Backspace),
                 i.consume_key(egui::Modifiers::COMMAND, egui::Key::A),
                 i.consume_key(n, egui::Key::Q),
                 i.consume_key(n, egui::Key::Escape),
+                i.consume_key(n, egui::Key::D),
+                i.consume_key(n, egui::Key::V),
+                i.consume_key(n, egui::Key::E),
             )
         });
+        for (hit, t) in [(d, Tool::Draw), (v, Tool::Select), (e, Tool::Erase)] {
+            if hit {
+                self.tool = t;
+            }
+        }
         let Some((midi, _, _)) = Self::notes(state, self.clip) else {
             return false;
         };
@@ -211,7 +388,16 @@ impl PianoRoll {
         if quant {
             self.quantize(state, &midi);
         }
+        if esc {
+            self.release(state);
+        }
         !esc
+    }
+
+    /// Lässt gehaltene Probetöne los (Editor geschlossen).
+    pub fn release(&mut self, state: &mut AppState) {
+        self.preview = None;
+        state.probeton.release_all();
     }
 
     fn delete(&mut self, state: &mut AppState, midi: &MidiData) {
@@ -227,24 +413,8 @@ impl PianoRoll {
         self.sel = sel;
     }
 
-    fn send(sink: Option<&woa_io::midi::EventSink>, ev: NoteEvent) {
-        if let Some(sink) = sink
-            && let Ok(mut g) = sink.lock()
-            && let Some(p) = g.as_mut()
-        {
-            // Volle Queue: Vorhören fällt aus, nichts blockiert.
-            let _ = p.push(ev);
-        }
-    }
-
     /// Draws the editor window. Returns `false` when it was closed or its clip is gone.
-    /// `sink` is the live instrument queue of the clip's track (preview), if active.
-    pub fn show(
-        &mut self,
-        ctx: &egui::Context,
-        state: &mut AppState,
-        sink: Option<&woa_io::midi::EventSink>,
-    ) -> bool {
+    pub fn show(&mut self, ctx: &egui::Context, state: &mut AppState) -> bool {
         let Some((midi, length, name)) = Self::notes(state, self.clip) else {
             return false;
         };
@@ -264,145 +434,177 @@ impl PianoRoll {
             .min_size([480.0, 320.0])
             .resizable(true)
             .show(ctx, |ui| {
-                self.body(ui, state, &midi, length, sink);
+                self.body(ui, state, &midi, length);
             });
-        if !open && let Some(p) = self.preview.take() {
-            Self::send(sink, NoteEvent::note_off(p));
+        if !open {
+            self.release(state);
         }
         open
     }
 
     /// Draws the Piano-Roll inline inside an existing panel (e.g. the docked bottom Studio panel).
     /// Returns `false` if the edited clip no longer exists.
-    pub fn show_inline(
-        &mut self,
-        ui: &mut egui::Ui,
-        state: &mut AppState,
-        sink: Option<&woa_io::midi::EventSink>,
-    ) -> bool {
+    pub fn show_inline(&mut self, ui: &mut egui::Ui, state: &mut AppState) -> bool {
         let Some((midi, length, _)) = Self::notes(state, self.clip) else {
+            self.release(state);
             return false;
         };
         self.sel.retain(|&i| i < midi.notes.len());
-        self.body(ui, state, &midi, length, sink);
+        self.body(ui, state, &midi, length);
         true
     }
 
-    /// Toolbar plus Notenfläche oder, auf einer Drum-Spur, wahlweise das Drum-Raster.
-    fn body(
-        &mut self,
-        ui: &mut egui::Ui,
-        state: &mut AppState,
-        midi: &MidiData,
-        length: f64,
-        sink: Option<&woa_io::midi::EventSink>,
-    ) {
-        let kit = state
+    /// Ist der Clip auf einer Kit-Spur?
+    fn is_kit(state: &AppState, clip: ClipId) -> bool {
+        state
             .project()
-            .clip(self.clip)
-            .is_some_and(|(t, _)| t.sound.is_some_and(|s| s.drums));
-        let grid = self.drum_grid.unwrap_or(kit);
+            .clip(clip)
+            .is_some_and(|(t, _)| t.sound.is_some_and(|s| s.drums))
+    }
+
+    /// Leiste plus Notenfläche, auf einer Kit-Spur das Drum-Raster.
+    fn body(&mut self, ui: &mut egui::Ui, state: &mut AppState, midi: &MidiData, length: f64) {
+        let kit = Self::is_kit(state, self.clip);
+        let grid = kit && self.drum_grid.unwrap_or(true);
         self.color = Self::note_color(state, self.clip);
-        self.key = crate::timeline::harmony(state.project(), 0.0, 0).key;
+        self.track = state.project().clip(self.clip).map(|(t, _)| t.id);
         self.origin = state
             .project()
             .clip(self.clip)
             .map_or(0.0, |(_, c)| c.start_beats - c.offset_beats);
         let h = crate::timeline::harmony(state.project(), self.origin, 128);
-        self.key = h.key;
+        self.detected = h.key;
         self.chords = h.bars;
-        ui.horizontal(|ui| {
-            let mut on = grid;
-            if ui
-                .toggle_value(&mut on, "Drum-Raster")
-                .on_hover_text(
-                    "16tel-Schritte je Drum (GM-Kit); dieselben Noten wie in der Piano-Roll",
-                )
-                .changed()
-            {
-                self.drum_grid = Some(on);
-            }
-            if grid {
-                self.drum_toolbar(ui, state, midi, length);
-            }
-        });
         if grid {
-            ui.separator();
+            self.drum_head(ui, state, midi, length);
+            ui.add_space(4.0);
             self.drum_editor(ui, state, midi, length);
         } else {
-            self.toolbar(ui, state, midi);
-            ui.separator();
-            self.editor(ui, state, midi, length, sink);
+            self.toolbar(ui, state, midi, length, kit);
+            ui.add_space(2.0);
+            self.editor(ui, state, midi, length);
         }
     }
 
-    /// Presets, Dichte und Würfel des Drum-Rasters.
-    fn drum_toolbar(
-        &mut self,
-        ui: &mut egui::Ui,
-        state: &mut AppState,
-        midi: &MidiData,
-        length: f64,
-    ) {
+    /// Noten | Raster auf Kit-Spuren.
+    fn kit_switch(&mut self, ui: &mut egui::Ui, grid: bool) {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        if seg(ui, !grid, "Noten", "Noten in der Piano-Roll bearbeiten") {
+            self.drum_grid = Some(false);
+        }
+        if seg(ui, grid, "Raster", "16 Schritte je Drum, dieselben Noten") {
+            self.drum_grid = Some(true);
+        }
+        ui.spacing_mut().item_spacing.x = 6.0;
+    }
+
+    /// Kopf des Drum-Rasters (Design `DrumGrid`): Noten | Raster, Muster, Länge, Dichte, Würfel.
+    fn drum_head(&mut self, ui: &mut egui::Ui, state: &mut AppState, midi: &MidiData, length: f64) {
+        use egui_phosphor::regular as ic;
         use woa_model::{DRUM_PRESETS, drums};
-        ui.separator();
-        let name = self
-            .preset
-            .and_then(|i| DRUM_PRESETS.get(i))
-            .map_or("Preset wählen", |p| p.name);
-        let mut chosen = None;
-        egui::ComboBox::from_id_salt(("drum_preset", self.clip.0))
-            .selected_text(name)
-            .show_ui(ui, |ui| {
-                for (i, p) in DRUM_PRESETS.iter().enumerate() {
-                    if ui
-                        .selectable_label(self.preset == Some(i), p.name)
-                        .clicked()
-                    {
-                        chosen = Some(i);
+        ui.horizontal(|ui| {
+            self.kit_switch(ui, true);
+            ui.separator();
+            let name = self
+                .preset
+                .and_then(|i| DRUM_PRESETS.get(i))
+                .map_or("Muster", |p| p.name);
+            let mut chosen = None;
+            egui::ComboBox::from_id_salt(("drum_preset", self.clip.0))
+                .selected_text(format!("{} {name}", ic::GRID_FOUR))
+                .width(150.0)
+                .show_ui(ui, |ui| {
+                    for (i, p) in DRUM_PRESETS.iter().enumerate() {
+                        if ui
+                            .selectable_label(self.preset == Some(i), p.name)
+                            .clicked()
+                        {
+                            chosen = Some(i);
+                        }
                     }
+                })
+                .response
+                .on_hover_text("Muster aus dem Beat-Katalog");
+            let bars = (length / 4.0).round().max(1.0) as u32;
+            let mut new_bars = bars;
+            egui::ComboBox::from_id_salt(("drum_bars", self.clip.0))
+                .selected_text(if bars == 1 {
+                    "1 Takt".to_owned()
+                } else {
+                    format!("{bars} Takte")
+                })
+                .width(80.0)
+                .show_ui(ui, |ui| {
+                    for b in [1u32, 2, 4, 8] {
+                        let t = if b == 1 {
+                            "1 Takt".to_owned()
+                        } else {
+                            format!("{b} Takte")
+                        };
+                        ui.selectable_value(&mut new_bars, b, t);
+                    }
+                })
+                .response
+                .on_hover_text("Länge des Clips in Takten");
+            let mut length = length;
+            if new_bars != bars
+                && let Some((_, c)) = state.project().clip(self.clip)
+            {
+                let (start, offset) = (c.start_beats, c.offset_beats);
+                length = f64::from(new_bars) * 4.0;
+                state.trim_clip(self.clip, start, length, offset);
+                if chosen.is_none() {
+                    chosen = self.preset;
                 }
-            });
-        let before = self.density;
-        ui.add(
-            egui::Slider::new(&mut self.density, -1..=1)
-                .show_value(false)
-                .text("weniger / mehr"),
-        )
-        .on_hover_text("Wechselt zwischen sparsamer, normaler und dichter Variante des Presets");
-        if before != self.density && chosen.is_none() {
-            chosen = self.preset;
-        }
-        if let Some(i) = chosen
-            && let Some(p) = DRUM_PRESETS.get(i)
-        {
-            self.preset = Some(i);
-            state.set_notes(
-                self.clip,
-                drums::apply_preset(midi, length, p, self.density),
-            );
-        }
-        if ui
-            .button(format!("{} Würfeln", theme::ic::SHUFFLE))
-            .on_hover_text("Zufälliger Beat aus einem Preset mit kleinen Abweichungen")
+            }
+            ui.separator();
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let before = self.density;
+            for (d, label, tip) in [
+                (-1i8, ic::MINUS, "Weniger: nur laute Schläge"),
+                (0, ic::EQUALS, "Wie das Muster"),
+                (1, ic::PLUS, "Mehr: dichte Hi-Hat, leise ergänzt"),
+            ] {
+                if icon_button(ui, self.density == d, label, tip, tip).clicked() {
+                    self.density = d;
+                }
+            }
+            ui.spacing_mut().item_spacing.x = 6.0;
+            if before != self.density && chosen.is_none() {
+                chosen = self.preset;
+            }
+            if let Some(i) = chosen
+                && let Some(p) = DRUM_PRESETS.get(i)
+            {
+                self.preset = Some(i);
+                let now = Self::notes(state, self.clip).map_or_else(|| midi.clone(), |n| n.0);
+                state.set_notes(
+                    self.clip,
+                    drums::apply_preset(&now, length, p, self.density),
+                );
+            }
+            if icon_button(
+                ui,
+                false,
+                ic::DICE_FIVE,
+                "Würfeln",
+                "Würfeln: zufälliger Beat aus einem Muster mit kleinen Abweichungen",
+            )
             .clicked()
-        {
-            self.dice_seed = self.dice_seed.wrapping_add(1);
-            let seed = self.dice_seed
-                ^ (std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_or(0, |d| d.as_nanos() as u64));
-            state.set_notes(self.clip, drums::dice(midi, length, seed));
-            self.preset = None;
-        }
-        ui.label(
-            egui::RichText::new("Klick: Schlag an/aus · Rechtsklick: leise · Strg+Z: zurück")
-                .small()
-                .weak(),
-        );
+            {
+                self.dice_seed = self.dice_seed.wrapping_add(1);
+                let seed = self.dice_seed
+                    ^ (std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_nanos() as u64));
+                state.set_notes(self.clip, drums::dice(midi, length, seed));
+                self.preset = None;
+            }
+        });
     }
 
-    /// Das Raster: Zeilen = GM-Drumnoten, Spalten = 16tel. Jede Änderung ist ein `SetNotes`.
+    /// Das Raster (Design `DrumGrid`): Kick oben, 16tel in Vierergruppen, Zählzeiten darüber,
+    /// laut/leise, Lauflicht. Jede Änderung ist ein `SetNotes`.
     fn drum_editor(
         &mut self,
         ui: &mut egui::Ui,
@@ -411,128 +613,403 @@ impl PianoRoll {
         length: f64,
     ) {
         use woa_model::{DRUM_ROWS, drums};
-        const NAME_W: f32 = 90.0;
+        const NAME_W: f32 = 128.0;
+        const HEAD_H: f32 = 16.0;
         let pal = Palette::of(ui, self.color);
         let total = drums::steps(length);
         let avail = ui.available_width() - NAME_W;
-        let cell = (avail / total.min(drums::STEPS_PER_BAR * 2) as f32).clamp(14.0, 40.0);
-        let row_h = 26.0;
+        let cell = (avail / total.min(drums::STEPS_PER_BAR * 2) as f32).clamp(16.0, 120.0);
+        let row_h = 30.0;
+        // Kick oben: DRUM_ROWS umgekehrt (die Reihenfolge dort gilt für Muster und MCP).
+        let order: Vec<&woa_model::DrumRow> = DRUM_ROWS.iter().rev().collect();
+        let run = self.playhead.and_then(|ph| {
+            let rel = ph - self.origin;
+            (rel >= 0.0 && rel < length).then(|| (rel * 4.0).floor() as usize)
+        });
         egui::ScrollArea::horizontal()
             .id_salt(("drum_grid", self.clip.0))
             .show(ui, |ui| {
-                let size = vec2(NAME_W + cell * total as f32, row_h * DRUM_ROWS.len() as f32);
-                let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-                let painter = ui.painter_at(rect);
-                painter.rect_filled(rect, 0.0, pal.bg);
-                for (r, row) in DRUM_ROWS.iter().enumerate() {
-                    let y = rect.top() + r as f32 * row_h;
-                    painter.text(
-                        pos2(rect.left() + 4.0, y + row_h / 2.0),
-                        egui::Align2::LEFT_CENTER,
-                        row.name,
-                        egui::FontId::proportional(12.0),
-                        pal.text,
+                // Zählzeiten.
+                let (head, _) = ui.allocate_exact_size(
+                    vec2(NAME_W + cell * total as f32, HEAD_H),
+                    Sense::hover(),
+                );
+                for step in 0..total {
+                    let x = head.left() + NAME_W + (step as f32 + 0.5) * cell;
+                    let beat = step % 4 == 0;
+                    ui.painter().text(
+                        pos2(x, head.center().y),
+                        egui::Align2::CENTER_CENTER,
+                        if beat {
+                            format!("{}", (step / 4) % 4 + 1)
+                        } else {
+                            "·".to_owned()
+                        },
+                        egui::FontId::monospace(10.0),
+                        if beat { theme::text() } else { pal.text },
                     );
-                    for step in 0..total {
-                        let x = rect.left() + NAME_W + step as f32 * cell;
-                        let c = Rect::from_min_size(pos2(x, y), vec2(cell, row_h)).shrink(2.0);
-                        let beat_group = (step / 4) % 2 == 1;
-                        let fill = match drums::step_velocity(midi, row.pitch, step) {
-                            Some(v) if v > drums::SOFT => pal.note,
-                            Some(_) => theme::mix(pal.bg, pal.note, 0.45),
-                            None if beat_group => pal.row_black,
-                            None => theme::mix(pal.bg, pal.line, 0.5),
-                        };
-                        painter.rect_filled(c, 3.0, fill);
-                        if step % drums::STEPS_PER_BAR == 0 {
-                            painter.line_segment(
-                                [pos2(x, y), pos2(x, y + row_h)],
-                                Stroke::new(1.0, pal.bar),
+                }
+                for row in &order {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                        let c = drum_color(row.pitch);
+                        let (name, _) = ui.allocate_exact_size(vec2(NAME_W, row_h), Sense::hover());
+                        let painter = ui.painter();
+                        let nr = name.shrink2(vec2(0.0, 2.0));
+                        painter.rect_filled(nr, 3.0, theme::surface());
+                        painter.rect_filled(
+                            Rect::from_min_size(nr.min, vec2(3.0, nr.height())),
+                            1.0,
+                            c,
+                        );
+                        painter.text(
+                            pos2(nr.left() + 10.0, nr.center().y),
+                            egui::Align2::LEFT_CENTER,
+                            row.name,
+                            egui::FontId::new(12.0, egui::FontFamily::Name("ui-bold".into())),
+                            theme::text(),
+                        );
+                        let sp = Rect::from_center_size(
+                            pos2(nr.right() - 14.0, nr.center().y),
+                            vec2(22.0, 22.0),
+                        );
+                        let listen = ui
+                            .put(
+                                sp,
+                                egui::Button::new(
+                                    egui::RichText::new(egui_phosphor::regular::SPEAKER_HIGH)
+                                        .size(12.0),
+                                )
+                                .frame(false),
+                            )
+                            .on_hover_text(format!("{} vorhören", row.name));
+                        let label = format!("{} vorhören", row.name);
+                        listen.widget_info(|| {
+                            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label)
+                        });
+                        if listen.clicked()
+                            && let Some(t) = self.track
+                        {
+                            state.probeton.tap(
+                                t,
+                                &[row.pitch],
+                                drums::LOUD,
+                                std::time::Instant::now(),
+                                std::time::Duration::ZERO,
                             );
                         }
-                    }
-                }
-                let hit = |p: Pos2| {
-                    let col = ((p.x - rect.left() - NAME_W) / cell).floor();
-                    let r = ((p.y - rect.top()) / row_h).floor();
-                    (col >= 0.0 && r >= 0.0)
-                        .then_some((r as usize, col as usize))
-                        .filter(|(r, c)| *r < DRUM_ROWS.len() && *c < total)
-                };
-                let soft = resp.secondary_clicked();
-                if (resp.clicked() || soft)
-                    && let Some(p) = resp.interact_pointer_pos()
-                    && let Some((r, step)) = hit(p)
-                    && let Some(row) = DRUM_ROWS.get(r)
-                {
-                    state.set_notes(self.clip, drums::toggle_step(midi, row.pitch, step, soft));
+                        let (steps, resp) = ui
+                            .allocate_exact_size(vec2(cell * total as f32, row_h), Sense::click());
+                        let painter = ui.painter_at(steps);
+                        for step in 0..total {
+                            let x = steps.left() + step as f32 * cell;
+                            let r = Rect::from_min_size(pos2(x, steps.top()), vec2(cell, row_h))
+                                .shrink(2.0);
+                            let group = (step / 4) % 2 == 1;
+                            let empty = if group {
+                                theme::mix(theme::surface(), pal.bg, 0.35)
+                            } else {
+                                theme::surface()
+                            };
+                            match drums::step_velocity(midi, row.pitch, step) {
+                                Some(v) if v > drums::SOFT => {
+                                    painter.rect_filled(r.expand(1.0), 4.0, c.gamma_multiply(0.35));
+                                    painter.rect_filled(r, 3.0, c);
+                                }
+                                Some(_) => {
+                                    painter.rect_filled(r, 3.0, theme::mix(empty, c, 0.5));
+                                    painter.rect_stroke(
+                                        r,
+                                        3.0,
+                                        Stroke::new(1.0, c),
+                                        egui::StrokeKind::Inside,
+                                    );
+                                }
+                                None => {
+                                    painter.rect_filled(r, 3.0, empty);
+                                    painter.rect_stroke(
+                                        r,
+                                        3.0,
+                                        Stroke::new(1.0, theme::border()),
+                                        egui::StrokeKind::Inside,
+                                    );
+                                }
+                            }
+                            if run == Some(step) {
+                                painter.rect_stroke(
+                                    r.expand(1.0),
+                                    3.0,
+                                    Stroke::new(2.0, theme::text()),
+                                    egui::StrokeKind::Outside,
+                                );
+                            }
+                        }
+                        let resp = resp.on_hover_text(
+                            "Klick: laut (nochmal: aus) · Umschalt+Klick: leise · \
+                             Rechtsklick: löschen · Strg+Z: zurück",
+                        );
+                        let right = resp.secondary_clicked();
+                        if (resp.clicked() || right)
+                            && let Some(p) = resp.interact_pointer_pos()
+                        {
+                            let step = ((p.x - steps.left()) / cell).floor();
+                            if step >= 0.0 && (step as usize) < total {
+                                let step = step as usize;
+                                let shift = ui.input(|i| i.modifiers.shift);
+                                let now = drums::step_velocity(midi, row.pitch, step);
+                                let next = drum_click(now, shift, right);
+                                state.set_notes(
+                                    self.clip,
+                                    drums::set_step(midi, row.pitch, step, next),
+                                );
+                                if self.probe
+                                    && let (Some(v), Some(t)) = (next, self.track)
+                                {
+                                    state.probeton.tap(
+                                        t,
+                                        &[row.pitch],
+                                        v,
+                                        std::time::Instant::now(),
+                                        std::time::Duration::ZERO,
+                                    );
+                                }
+                            }
+                        }
+                    });
                 }
             });
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui, state: &mut AppState, midi: &MidiData) {
+    /// Clip-Kennung: Spurfarbe, Name, Spur, Takte, Notenzahl, Auswahl.
+    fn clip_label(&self, ui: &mut egui::Ui, state: &AppState, midi: &MidiData, length: f64) {
+        let (track, start) = state
+            .project()
+            .clip(self.clip)
+            .map_or((String::new(), 0.0), |(t, c)| {
+                (t.name.clone(), c.start_beats)
+            });
+        let name = state
+            .project()
+            .clip(self.clip)
+            .map_or_else(String::new, |(_, c)| c.name.clone());
+        let first = (start / 4.0).floor() as i64 + 1;
+        let last = ((start + length) / 4.0).ceil() as i64;
+        let sel = match self.sel.as_slice() {
+            [] => String::new(),
+            [i] => midi.notes.get(*i).map_or_else(String::new, |n| {
+                format!(
+                    " · {} · Takt {:.2} · Länge {:.3} · Vel {}",
+                    pitch_name(n.pitch),
+                    n.beat / 4.0 + 1.0,
+                    n.length_beats,
+                    n.velocity
+                )
+            }),
+            s => format!(" · {} gewählt", s.len()),
+        };
+        egui::Frame::new()
+            .fill(theme::mix(theme::surface(), self.color, 0.12))
+            .corner_radius(theme::RADIUS_MD)
+            .inner_margin(egui::Margin {
+                left: 0,
+                right: 8,
+                top: 3,
+                bottom: 3,
+            })
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let (bar, _) = ui.allocate_exact_size(vec2(3.0, 18.0), Sense::hover());
+                    ui.painter().rect_filled(bar, 1.0, self.color);
+                    ui.label(egui::RichText::new(name).strong().color(theme::text()));
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{track} · Takt {first}–{last} · {} Noten{sel}",
+                            midi.notes.len()
+                        ))
+                        .monospace()
+                        .size(11.0)
+                        .color(theme::text_dim()),
+                    );
+                });
+            });
+    }
+
+    /// Leiste in einer Zeile, Gruppen durch Linien (Design `PianoRoll`).
+    fn toolbar(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: &mut AppState,
+        midi: &MidiData,
+        length: f64,
+        kit: bool,
+    ) {
+        use egui_phosphor::regular as ic;
+        use woa_model::chords::KEYS;
         ui.horizontal_wrapped(|ui| {
-            ui.label("Raster");
+            ui.spacing_mut().item_spacing.x = 6.0;
+            if kit {
+                self.kit_switch(ui, false);
+                ui.separator();
+            }
+            self.clip_label(ui, state, midi, length);
+            ui.separator();
+            // Werkzeuge.
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (t, icon, name, tip) in Tool::ALL {
+                if icon_button(ui, self.tool == t, icon, name, &format!("{name}: {tip}")).clicked()
+                {
+                    self.tool = t;
+                }
+            }
+            ui.spacing_mut().item_spacing.x = 6.0;
+            ui.separator();
+            // Raster, Triolen, Länge neuer Noten, Quantisieren.
             egui::ComboBox::from_id_salt(("pr_grid", self.clip.0))
-                .selected_text(format!("1/{}", self.division))
-                .width(64.0)
+                .selected_text(format!("{} 1/{}", ic::GRID_FOUR, self.division))
+                .width(74.0)
                 .show_ui(ui, |ui| {
                     for d in DIVISIONS {
                         ui.selectable_value(&mut self.division, d, format!("1/{d}"));
                     }
-                });
-            ui.checkbox(&mut self.triplet, "Triolen");
+                })
+                .response
+                .on_hover_text("Raster");
+            if icon_button(
+                ui,
+                self.triplet,
+                "3",
+                "Triolen",
+                "Triolen-Raster (für Shuffle)",
+            )
+            .clicked()
+            {
+                self.triplet = !self.triplet;
+            }
+            egui::ComboBox::from_id_salt(("pr_len", self.clip.0))
+                .selected_text(match self.note_len {
+                    None => format!("{} = Raster", ic::ARROWS_HORIZONTAL),
+                    Some(d) => format!("{} 1/{d}", ic::ARROWS_HORIZONTAL),
+                })
+                .width(88.0)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.note_len, None, "= Raster");
+                    for d in LENGTHS {
+                        ui.selectable_value(&mut self.note_len, Some(d), format!("1/{d}"));
+                    }
+                })
+                .response
+                .on_hover_text("Länge neuer Noten");
             let what = if self.sel.is_empty() {
                 "Alle quantisieren (Q)"
             } else {
                 "Auswahl quantisieren (Q)"
             };
-            if ui.button(what).clicked() {
+            if icon_button(ui, false, ic::MAGNET_STRAIGHT, what, what).clicked() {
                 self.quantize(state, midi);
             }
-            if ui
-                .add_enabled(!self.sel.is_empty(), egui::Button::new("Löschen (Entf)"))
-                .clicked()
-            {
-                self.delete(state, midi);
+            ui.separator();
+            // Velocity der Auswahl (sonst neuer Noten).
+            let mut v = self
+                .sel
+                .first()
+                .and_then(|&i| midi.notes.get(i))
+                .map_or(self.velocity, |n| n.velocity);
+            ui.label(egui::RichText::new(ic::GAUGE).color(theme::text_dim()))
+                .on_hover_text("Velocity");
+            let r = ui
+                .add(egui::DragValue::new(&mut v).range(1..=127))
+                .on_hover_text("Velocity der Auswahl, sonst neuer Noten");
+            if r.changed() {
+                self.velocity = v;
+            }
+            if (r.drag_stopped() || (r.changed() && !r.dragged())) && !self.sel.is_empty() {
+                state.set_notes(self.clip, midi.set_velocity(&self.sel, v));
             }
             ui.separator();
-            ui.label("Zoom");
-            ui.add(
-                egui::Slider::new(&mut self.zoom, 1.0..=16.0)
-                    .logarithmic(true)
-                    .show_value(false),
+            // Tonart, Magnet, nur benutzte Töne.
+            let shown = self.key();
+            egui::ComboBox::from_id_salt(("pr_key", self.clip.0))
+                .selected_text(shown.map_or_else(|| "Tonart".to_owned(), |k| k.name()))
+                .width(96.0)
+                .show_ui(ui, |ui| {
+                    let auto = self.detected.map_or_else(
+                        || "Erkannt: –".to_owned(),
+                        |k| format!("Erkannt: {}", k.name()),
+                    );
+                    ui.selectable_value(&mut self.key_pick, None, auto);
+                    for minor in [false, true] {
+                        for tonic in 0..12u8 {
+                            let k = Key { tonic, minor };
+                            ui.selectable_value(&mut self.key_pick, Some(k), k.name());
+                        }
+                    }
+                })
+                .response
+                .on_hover_text(format!(
+                    "Tonart: Zeilen der Tonart sind getönt (12 Grundtöne: {})",
+                    KEYS.join(" ")
+                ));
+            if icon_button(
+                ui,
+                self.magnet,
+                ic::MAGNET,
+                "Auf Tonart einrasten",
+                "Auf Tonart einrasten: neue und verschobene Noten treffen nur Töne der Tonart",
             )
-            .on_hover_text("Auch Strg+Mausrad über den Noten");
-            ui.add(
-                egui::Slider::new(&mut self.row_h, 6.0..=24.0)
-                    .show_value(false)
-                    .text("Höhe"),
-            );
-            ui.end_row();
-            let info = match self.sel.as_slice() {
-                [] => format!("{} Noten", midi.notes.len()),
-                [i] => midi.notes.get(*i).map_or_else(String::new, |n| {
-                    format!(
-                        "{} · Takt {:.2} · Länge {:.3} · Velocity {}",
-                        pitch_name(n.pitch),
-                        n.beat / 4.0 + 1.0,
-                        n.length_beats,
-                        n.velocity
-                    )
-                }),
-                s => format!("{} von {} Noten gewählt", s.len(), midi.notes.len()),
-            };
-            ui.label(egui::RichText::new(info).small());
-            ui.label(
-                egui::RichText::new(
-                    "Klick: zeichnen · Ziehen: verschieben · rechter Rand: Länge · \
-                     Doppelklick/Entf: löschen · Rahmen, Strg+Klick, Strg+A: Auswahl · \
-                     Alt: ohne Raster · Esc: schließen",
+            .clicked()
+            {
+                self.magnet = !self.magnet;
+            }
+            if icon_button(
+                ui,
+                self.fold,
+                ic::ARROWS_IN_LINE_VERTICAL,
+                "Nur benutzte Töne",
+                "Nur benutzte Töne: leere Tonhöhen ausblenden",
+            )
+            .clicked()
+            {
+                self.fold = !self.fold;
+                self.centre = true;
+            }
+            // Rechts: Probeton, Zoom.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                if icon_button(
+                    ui,
+                    false,
+                    ic::MAGNIFYING_GLASS_PLUS,
+                    "Vergrößern",
+                    "Vergrößern (Strg+Mausrad; Zeilenhöhe: Alt+Mausrad)",
                 )
-                .small()
-                .weak(),
-            );
+                .clicked()
+                {
+                    self.zoom = (self.zoom * 1.25).clamp(1.0, 16.0);
+                }
+                if icon_button(
+                    ui,
+                    false,
+                    ic::MAGNIFYING_GLASS_MINUS,
+                    "Verkleinern",
+                    "Verkleinern (Strg+Mausrad; Zeilenhöhe: Alt+Mausrad)",
+                )
+                .clicked()
+                {
+                    self.zoom = (self.zoom / 1.25).clamp(1.0, 16.0);
+                }
+                ui.add_space(6.0);
+                if icon_button(
+                    ui,
+                    self.probe,
+                    ic::SPEAKER_HIGH,
+                    "Probeton beim Zeichnen",
+                    "Probeton beim Zeichnen: neue Noten erklingen kurz (Klaviatur klingt immer)",
+                )
+                .clicked()
+                {
+                    self.probe = !self.probe;
+                }
+            });
         });
     }
 
@@ -541,25 +1018,20 @@ impl PianoRoll {
         left + ((beat - self.x_off) as f32) * px
     }
 
-    fn editor(
-        &mut self,
-        ui: &mut egui::Ui,
-        state: &mut AppState,
-        midi: &MidiData,
-        length: f64,
-        sink: Option<&woa_io::midi::EventSink>,
-    ) {
+    fn editor(&mut self, ui: &mut egui::Ui, state: &mut AppState, midi: &MidiData, length: f64) {
         let pal = Palette::of(ui, self.color);
         let avail = ui.available_size();
         let view_w = (avail.x - KEYS_W).max(100.0);
-        let shown = length.max(midi.end_beats()).max(4.0);
+        let shown = length.max(midi.end_beats()).max(4.0) + 4.0;
         let px = view_w / shown as f32 * self.zoom;
         let visible = f64::from(view_w / px);
         self.x_off = self.x_off.clamp(0.0, (shown - visible).max(0.0));
         let grid = self.grid();
         let notes_h = (avail.y - VEL_H - 22.0 - RULER_H).max(120.0);
         let row_h = self.row_h;
-        let full_h = 128.0 * row_h;
+        self.rows = rows(&midi.notes, self.fold);
+        let full_h = self.rows.len() as f32 * row_h;
+        let key = self.key();
 
         self.chord_ruler(ui, view_w, px, shown, length, &pal);
 
@@ -571,72 +1043,110 @@ impl PianoRoll {
         if self.centre {
             // Auf die Noten (sonst C4) zentrieren.
             let mid = if midi.notes.is_empty() {
-                60.0
+                60
             } else {
                 let (lo, hi) = midi.notes.iter().fold((127u8, 0u8), |(lo, hi), n| {
                     (lo.min(n.pitch), hi.max(n.pitch))
                 });
-                (f32::from(lo) + f32::from(hi)) / 2.0
+                ((u16::from(lo) + u16::from(hi)) / 2) as u8
             };
-            scroll =
-                scroll.vertical_scroll_offset(((127.0 - mid) * row_h - notes_h / 2.0).max(0.0));
+            let y = row_index(&self.rows, mid) as f32 * row_h;
+            scroll = scroll.vertical_scroll_offset((y - notes_h / 2.0).max(0.0));
             self.centre = false;
         }
+        let rows_now = self.rows.clone();
         scroll.show(ui, |ui| {
             let (rect, resp) =
                 ui.allocate_exact_size(vec2(KEYS_W + view_w, full_h), Sense::click_and_drag());
             let painter = ui.painter_at(rect);
             let keys = Rect::from_min_size(rect.min, vec2(KEYS_W, full_h));
             let area = Rect::from_min_max(pos2(keys.right(), rect.top()), rect.max);
-            let y_of = |pitch: u8| rect.top() + (127.0 - f32::from(pitch)) * row_h;
+            let top = rect.top();
+            let rws = rows_now.clone();
+            let y_of = move |pitch: u8| top + row_index(&rws, pitch) as f32 * row_h;
             // Zeilen.
-            for p in 0..=127u8 {
-                let y = y_of(p);
+            for (i, &p) in rows_now.iter().enumerate() {
+                let y = top + i as f32 * row_h;
                 let r = Rect::from_x_y_ranges(area.x_range(), y..=y + row_h);
                 let row = if is_black(p) { pal.row_black } else { pal.bg };
                 // Töne der Tonart: 8 % Spurfarbe (Design `PianoRoll`).
-                let row = match self.key {
+                let row = match key {
                     Some(k) if k.contains(p) => theme::mix(row, pal.note, 0.08),
                     _ => row,
                 };
                 painter.rect_filled(r, 0.0, row);
-                if p % 12 == 0 {
-                    painter.hline(area.x_range(), y + row_h, Stroke::new(1.0, pal.bar));
-                }
-            }
-            // Raster: Takte kräftig, Schläge und Rasterschritte fein.
-            self.grid_lines(&painter, area, px, grid, shown, &pal);
-            // Clip-Ende.
-            let xe = self.x(area.left(), px, length);
-            if xe < area.right() {
-                painter.rect_filled(
-                    Rect::from_x_y_ranges(xe..=area.right(), area.y_range()),
-                    0.0,
-                    pal.bg.gamma_multiply(0.6),
-                );
-                painter.vline(xe, area.y_range(), Stroke::new(2.0, pal.bar));
-            }
-            // Klaviatur.
-            for p in 0..=127u8 {
-                let y = y_of(p);
-                let r = Rect::from_x_y_ranges(keys.x_range(), y..=y + row_h);
-                let held = self.preview == Some(p);
-                let fill = match (held, is_black(p)) {
-                    (true, _) => pal.note,
-                    (false, true) => pal.key_black,
-                    (false, false) => pal.key_white,
-                };
-                painter.rect_filled(r.shrink2(vec2(0.0, 0.5)), 1.0, fill);
-                if p % 12 == 0 && row_h >= 8.0 {
-                    painter.text(
-                        pos2(keys.right() - 3.0, y + row_h / 2.0),
-                        egui::Align2::RIGHT_CENTER,
-                        pitch_name(p),
-                        egui::FontId::proportional((row_h - 2.0).min(11.0)),
-                        Color32::from_rgb(60, 64, 74),
+                if p % 12 == 0 || self.fold {
+                    painter.hline(
+                        area.x_range(),
+                        y + row_h,
+                        Stroke::new(if p % 12 == 0 { 1.0 } else { 0.5 }, pal.bar),
                     );
                 }
             }
+            // Raster: Takte kräftig, Schläge mittel, Rasterschritte zart.
+            self.grid_lines(&painter, area, px, grid, shown, &pal);
+            // Außerhalb des Clips: abgedunkelt und schraffiert.
+            let xe = self.x(area.left(), px, length);
+            if xe < area.right() {
+                let out = Rect::from_x_y_ranges(xe.max(area.left())..=area.right(), area.y_range());
+                painter.rect_filled(out, 0.0, Color32::from_black_alpha(70));
+                hatch(&painter, out, theme::mix(pal.bg, pal.bar, 0.45));
+                painter.vline(xe, area.y_range(), Stroke::new(2.0, pal.bar));
+            }
+            // Klaviatur: weiße Tasten hell, schwarze als kurze dunkle Balken.
+            let lit: Vec<u8> = self
+                .sel
+                .iter()
+                .filter_map(|&i| midi.notes.get(i).map(|n| n.pitch))
+                .chain(self.preview)
+                .collect();
+            painter.rect_filled(keys, 0.0, pal.key_white);
+            for (i, &p) in rows_now.iter().enumerate() {
+                let y = top + i as f32 * row_h;
+                let r = Rect::from_x_y_ranges(keys.x_range(), y..=y + row_h);
+                let on = lit.contains(&p);
+                if is_black(p) {
+                    let b = Rect::from_x_y_ranges(
+                        keys.left()..=keys.left() + KEYS_W * 0.62,
+                        y + 0.5..=y + row_h - 0.5,
+                    );
+                    painter.rect_filled(
+                        b,
+                        2.0,
+                        if on {
+                            theme::mix(pal.key_black, pal.note, 0.8)
+                        } else {
+                            pal.key_black
+                        },
+                    );
+                } else if on {
+                    painter.rect_filled(r.shrink2(vec2(0.0, 0.5)), 0.0, pal.note);
+                }
+                // Trennlinie zwischen weißen Tasten, an C kräftiger.
+                let line = if p % 12 == 0 {
+                    Stroke::new(1.2, Color32::from_gray(110))
+                } else if !is_black(p) && !is_black(p.saturating_add(1)) || p % 12 == 4 {
+                    Stroke::new(0.6, Color32::from_gray(170))
+                } else {
+                    Stroke::NONE
+                };
+                if line != Stroke::NONE {
+                    painter.hline(keys.x_range(), y + row_h, line);
+                }
+                if p % 12 == 0 && row_h >= 8.0 {
+                    painter.text(
+                        pos2(keys.right() - 4.0, y + row_h / 2.0),
+                        egui::Align2::RIGHT_CENTER,
+                        pitch_name(p),
+                        egui::FontId::new(
+                            (row_h - 2.0).min(10.0),
+                            egui::FontFamily::Name("ui-bold".into()),
+                        ),
+                        Color32::from_rgb(40, 44, 54),
+                    );
+                }
+            }
+            painter.vline(keys.right(), keys.y_range(), Stroke::new(1.0, pal.bar));
             // Noten (mit vorläufiger Verschiebung beim Ziehen).
             let (dm, dp, dl) = match self.drag {
                 Some(Drag::Move {
@@ -687,14 +1197,29 @@ impl PianoRoll {
                     Stroke::new(1.0, pal.note)
                 };
                 painter.rect_stroke(r, 2.0, edge, egui::StrokeKind::Inside);
+                // Griff für die Länge am rechten Rand.
+                if r.width() >= 12.0 {
+                    painter.vline(
+                        r.right() - 3.0,
+                        r.top() + 2.0..=r.bottom() - 2.0,
+                        Stroke::new(1.0, theme::mix(fill, Color32::BLACK, 0.35)),
+                    );
+                }
                 if r.width() >= 40.0 && row_h >= 10.0 {
                     painter.with_clip_rect(r).text(
                         pos2(r.left() + 4.0, r.center().y),
                         egui::Align2::LEFT_CENTER,
                         pitch_name(n.pitch),
-                        egui::FontId::proportional((row_h - 3.0).min(10.0)),
+                        egui::FontId::monospace((row_h - 3.0).min(10.0)),
                         theme::mix(pal.bg, Color32::BLACK, 0.4),
                     );
+                }
+            }
+            // Abspielkopf in `accent`.
+            if let Some(ph) = self.playhead {
+                let x = self.x(area.left(), px, ph - self.origin);
+                if area.x_range().contains(x) {
+                    painter.vline(x, area.y_range(), Stroke::new(1.5, theme::accent()));
                 }
             }
             if let Some(b) = band {
@@ -705,21 +1230,10 @@ impl PianoRoll {
                     egui::StrokeKind::Inside,
                 );
             }
-            self.note_input(
-                ui,
-                &resp,
-                keys,
-                area,
-                px,
-                y_of(127),
-                state,
-                midi,
-                sink,
-                &note_rect,
-            );
+            self.note_input(ui, &resp, keys, area, px, top, state, midi, &note_rect);
         });
 
-        // Velocity-Leiste unter der Notenfläche, gleiche Zeitachse.
+        // Velocity-Spur unter der Notenfläche, gleiche Zeitachse.
         let (vrect, vresp) =
             ui.allocate_exact_size(vec2(KEYS_W + view_w, VEL_H), Sense::click_and_drag());
         self.velocity_lane(ui, &vresp, vrect, px, state, midi, &pal);
@@ -740,8 +1254,8 @@ impl PianoRoll {
         }
     }
 
-    /// Lineal: Taktnummer, Clip-Bereich als Balken in Spurfarbe, je Takt der Akkord aller
-    /// MIDI-Spuren (dieselbe Erkennung wie die Akkordspur).
+    /// Lineal: Taktnummer, Clip-Bereich als Balken in Spurfarbe, außerhalb schraffiert, je Takt
+    /// der Akkord aller MIDI-Spuren (dieselbe Erkennung wie die Akkordspur).
     fn chord_ruler(
         &self,
         ui: &mut egui::Ui,
@@ -764,6 +1278,11 @@ impl PianoRoll {
                 0.0,
                 pal.note,
             );
+        }
+        if xe < area.right() {
+            let out = Rect::from_x_y_ranges(xe.max(area.left())..=area.right(), rect.y_range());
+            painter.rect_filled(out, 0.0, Color32::from_black_alpha(60));
+            hatch(&painter, out, theme::mix(theme::well(), pal.bar, 0.5));
         }
         for bar in 0..bars {
             let x = self.x(area.left(), px, bar as f64 * 4.0);
@@ -814,18 +1333,9 @@ impl PianoRoll {
                 } else if is_beat {
                     (1.0, theme::mix(pal.line, pal.bar, 0.4))
                 } else {
-                    (1.0, pal.line)
+                    (0.6, pal.line)
                 };
                 painter.vline(x, area.y_range(), Stroke::new(w, c));
-                if is_bar {
-                    painter.text(
-                        pos2(x + 3.0, area.top() + 2.0),
-                        egui::Align2::LEFT_TOP,
-                        format!("{}", (b / 4.0).round() as i64 + 1),
-                        egui::FontId::proportional(10.0),
-                        pal.text,
-                    );
-                }
             }
             b += step;
         }
@@ -842,22 +1352,31 @@ impl PianoRoll {
         top: f32,
         state: &mut AppState,
         midi: &MidiData,
-        sink: Option<&woa_io::midi::EventSink>,
         note_rect: &dyn Fn(&MidiNote, bool) -> Rect,
     ) {
         let grid = self.grid();
+        let key = self.key();
         let (mods, scroll) = ui.input(|i| (i.modifiers, i.smooth_scroll_delta));
-        // Zoom mit Strg+Mausrad, waagerecht blättern mit Umschalt+Mausrad.
+        // Zoom mit Strg+Mausrad, Zeilenhöhe mit Alt+Mausrad, waagerecht mit Umschalt+Mausrad.
         if resp.hovered() {
             if mods.command && scroll.y != 0.0 {
                 self.zoom = (self.zoom * (1.0 + scroll.y * 0.003)).clamp(1.0, 16.0);
+            } else if mods.alt && scroll.y != 0.0 {
+                self.row_h = (self.row_h + scroll.y * 0.02).clamp(6.0, 24.0);
             } else if mods.shift && (scroll.y != 0.0 || scroll.x != 0.0) {
                 self.x_off -= f64::from((scroll.x + scroll.y) / px);
             }
         }
         let (x_off, row_h) = (self.x_off, self.row_h);
+        let rows_now = self.rows.clone();
         let beat_at = move |x: f32| x_off + f64::from((x - area.left()) / px);
-        let pitch_at = move |y: f32| (127 - ((y - top) / row_h).floor() as i32).clamp(0, 127) as u8;
+        let pitch_at = move |y: f32| {
+            let i = ((y - top) / row_h).floor().max(0.0) as usize;
+            rows_now
+                .get(i.min(rows_now.len().saturating_sub(1)))
+                .copied()
+                .unwrap_or(60)
+        };
         let hit = |pos: Pos2| -> Option<(usize, bool)> {
             midi.notes.iter().enumerate().rev().find_map(|(i, n)| {
                 let r = note_rect(n, false);
@@ -866,16 +1385,17 @@ impl PianoRoll {
             })
         };
         let press = resp.interact_pointer_pos();
+        let track = self.track;
 
         // Klaviatur: Vorhören, solange gedrückt.
         let on_keys = press.is_some_and(|p| keys.contains(p)) && resp.is_pointer_button_down_on();
         let want = on_keys.then(|| press.map(|p| pitch_at(p.y))).flatten();
         if want != self.preview {
-            if let Some(p) = self.preview.take() {
-                Self::send(sink, NoteEvent::note_off(p));
+            if let (Some(p), Some(t)) = (self.preview.take(), track) {
+                state.probeton.note_off(t, p);
             }
-            if let Some(p) = want {
-                Self::send(sink, NoteEvent::note_on(p, self.velocity));
+            if let (Some(p), Some(t)) = (want, track) {
+                state.probeton.note_on(t, p, self.velocity);
                 self.preview = Some(p);
             }
         }
@@ -897,14 +1417,16 @@ impl PianoRoll {
             self.drag = None;
             return;
         }
+        let origin = ui.input(|i| i.pointer.press_origin());
         if resp.drag_started()
-            && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+            && let Some(origin) = origin
             && area.contains(origin)
         {
-            self.drag = Some(match hit(origin) {
-                Some((i, edge)) => {
+            self.drag = match (hit(origin), self.tool) {
+                (Some(_), Tool::Erase) => None,
+                (Some((i, edge)), _) => {
                     self.pick(i, mods);
-                    if edge {
+                    Some(if edge {
                         Drag::Resize {
                             d_beats: 0.0,
                             raw: 0.0,
@@ -915,15 +1437,15 @@ impl PianoRoll {
                             d_pitch: 0,
                             raw: egui::Vec2::ZERO,
                         }
-                    }
+                    })
                 }
-                None => {
+                (None, _) => {
                     if !(mods.command || mods.shift) {
                         self.sel.clear();
                     }
-                    Drag::Select { from: origin }
+                    Some(Drag::Select { from: origin })
                 }
-            });
+            };
         }
         if resp.dragged() {
             let delta = resp.drag_delta();
@@ -936,9 +1458,21 @@ impl PianoRoll {
                     } else {
                         (free / grid).round() * grid
                     };
+                    // Tonhöhe über die Zeilen (auch bei „Nur benutzte Töne“), Magnet rastet ein.
+                    let d_pitch = match origin {
+                        Some(o) => {
+                            let from = pitch_at(o.y);
+                            let mut to = pitch_at(o.y + raw.y);
+                            if self.magnet {
+                                to = snap_to_key(key, to);
+                            }
+                            i32::from(to) - i32::from(from)
+                        }
+                        None => 0,
+                    };
                     Some(Drag::Move {
                         d_beats,
-                        d_pitch: -(raw.y / self.row_h).round() as i32,
+                        d_pitch,
                         raw,
                     })
                 }
@@ -986,23 +1520,41 @@ impl PianoRoll {
             && let Some(pos) = press.or(resp.hover_pos())
             && area.contains(pos)
         {
-            match hit(pos) {
-                Some((i, _)) => self.pick_click(i, mods),
-                None if mods.command || mods.shift => {}
-                None => {
-                    // Klick ins Leere: Note im Raster zeichnen, einen Rasterschritt lang.
+            match (hit(pos), self.tool) {
+                (Some((i, _)), Tool::Erase) => {
+                    state.set_notes(self.clip, midi.delete_notes(&[i]));
+                    self.sel.clear();
+                }
+                (Some((i, _)), _) => self.pick_click(i, mods),
+                (None, _) if mods.command || mods.shift => {}
+                (None, Tool::Draw) => {
+                    // Klick ins Leere: Note im Raster zeichnen, Länge nach Leiste.
                     let beat = (beat_at(pos.x) / grid).floor() * grid;
+                    let mut pitch = pitch_at(pos.y);
+                    if self.magnet {
+                        pitch = snap_to_key(key, pitch);
+                    }
                     let (m, sel) = midi.add_note(MidiNote {
                         beat,
-                        length_beats: grid,
-                        pitch: pitch_at(pos.y),
+                        length_beats: self.new_len(),
+                        pitch,
                         velocity: self.velocity,
                     });
-                    Self::send(sink, NoteEvent::note_on(pitch_at(pos.y), self.velocity));
-                    Self::send(sink, NoteEvent::note_off(pitch_at(pos.y)));
+                    if self.probe
+                        && let Some(t) = track
+                    {
+                        state.probeton.tap(
+                            t,
+                            &[pitch],
+                            self.velocity,
+                            std::time::Instant::now(),
+                            std::time::Duration::ZERO,
+                        );
+                    }
                     state.set_notes(self.clip, m);
                     self.sel = sel;
                 }
+                (None, _) => self.sel.clear(),
             }
         }
     }
@@ -1044,16 +1596,24 @@ impl PianoRoll {
     ) {
         let painter = ui.painter_at(rect);
         let lane = Rect::from_min_max(pos2(rect.left() + KEYS_W, rect.top()), rect.max);
-        painter.rect_filled(rect, 0.0, pal.row_black);
+        painter.rect_filled(rect, 0.0, theme::well());
         painter.rect_filled(lane, 0.0, pal.bg);
         painter.text(
-            pos2(rect.left() + 4.0, rect.center().y),
+            pos2(rect.left() + 4.0, rect.top() + 12.0),
             egui::Align2::LEFT_CENTER,
-            "Velocity",
-            egui::FontId::proportional(10.0),
+            "VELOCITY",
+            egui::FontId::new(9.0, egui::FontFamily::Name("ui-bold".into())),
             pal.text,
         );
-        let inner = lane.shrink2(vec2(0.0, 4.0));
+        let inner = lane.shrink2(vec2(0.0, 6.0));
+        // Mittellinie gestrichelt (Velocity 64).
+        let mid = inner.bottom() - inner.height() * 64.0 / 127.0;
+        painter.extend(egui::Shape::dashed_line(
+            &[pos2(lane.left(), mid), pos2(lane.right(), mid)],
+            Stroke::new(1.0, pal.line),
+            4.0,
+            4.0,
+        ));
         let value_at = |y: f32| {
             (((inner.bottom() - y) / inner.height()) * 127.0)
                 .round()
@@ -1122,7 +1682,7 @@ impl PianoRoll {
             painter.vline(
                 x + 1.0,
                 inner.bottom() - h..=inner.bottom(),
-                Stroke::new(3.0, c),
+                Stroke::new(2.0, c),
             );
             painter.circle_filled(pos2(x + 1.0, inner.bottom() - h), 3.5, c);
         }
@@ -1131,10 +1691,10 @@ impl PianoRoll {
     }
 }
 
-/// Namen und Tastenfarben der Klaviatur.
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui_kittest::kittest::Queryable;
 
     #[test]
     fn notes_take_the_colour_of_their_track() {
@@ -1153,5 +1713,153 @@ mod tests {
         assert_eq!(pitch_name(69), "A4");
         assert_eq!(pitch_name(0), "C-1");
         assert!(is_black(61) && !is_black(64));
+    }
+
+    fn note(pitch: u8) -> MidiNote {
+        MidiNote {
+            beat: 0.0,
+            length_beats: 1.0,
+            pitch,
+            velocity: 100,
+        }
+    }
+
+    #[test]
+    fn only_used_pitches_fold_the_rows() {
+        let notes = [note(64), note(60), note(64), note(67)];
+        assert_eq!(rows(&notes, true), vec![67, 64, 60]);
+        assert_eq!(rows(&notes, false).len(), 128);
+        assert_eq!(rows(&[], true).len(), 128, "ohne Noten alle Zeilen");
+        let r = rows(&notes, true);
+        assert_eq!(row_index(&r, 64), 1);
+        assert_eq!(
+            row_index(&r, 62),
+            2,
+            "fehlende Tonhöhe: nächsttiefere Zeile"
+        );
+        assert_eq!(row_index(&rows(&[], false), 127), 0);
+    }
+
+    #[test]
+    fn magnet_snaps_to_the_key() {
+        let c = Some(Key {
+            tonic: 0,
+            minor: false,
+        });
+        assert_eq!(snap_to_key(c, 61), 60, "Cis → C");
+        assert_eq!(snap_to_key(c, 64), 64);
+        assert_eq!(snap_to_key(None, 61), 61);
+        let a = Some(Key {
+            tonic: 9,
+            minor: false,
+        });
+        assert_eq!(snap_to_key(a, 60), 59, "A Dur: C → H");
+    }
+
+    #[test]
+    fn drum_clicks_follow_the_design() {
+        use woa_model::drums::{LOUD, SOFT};
+        assert_eq!(drum_click(None, false, false), Some(LOUD));
+        assert_eq!(drum_click(Some(LOUD), false, false), None);
+        assert_eq!(drum_click(Some(SOFT), false, false), Some(LOUD));
+        assert_eq!(drum_click(None, true, false), Some(SOFT));
+        assert_eq!(drum_click(Some(LOUD), true, false), Some(SOFT));
+        assert_eq!(drum_click(Some(SOFT), true, false), None);
+        assert_eq!(drum_click(Some(LOUD), false, true), None);
+    }
+
+    struct Probe {
+        state: AppState,
+        pr: PianoRoll,
+    }
+
+    fn harness(kit: bool) -> (tempfile::TempDir, egui_kittest::Harness<'static, Probe>) {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let mut state = AppState::new(tmp.path().join("rec"), std::time::Instant::now());
+        let track = state.add_midi_track().expect("track");
+        if kit {
+            state.set_track_sound(
+                track,
+                Some(woa_model::TrackSound {
+                    program: 0,
+                    drums: true,
+                    bank: None,
+                }),
+            );
+        }
+        let clip = state
+            .add_midi_clip(Some(track), "Gitarre", 0.0, 16.0, MidiData::default())
+            .expect("clip");
+        let probe = Probe {
+            state,
+            pr: PianoRoll::new(clip),
+        };
+        let h = egui_kittest::Harness::builder()
+            .with_size(vec2(1600.0, 600.0))
+            .build_ui_state(
+                |ui, p: &mut Probe| {
+                    if crate::theme::install_fonts(ui.ctx()) {
+                        return;
+                    }
+                    p.pr.show_inline(ui, &mut p.state);
+                },
+                probe,
+            );
+        (tmp, h)
+    }
+
+    #[test]
+    fn toolbar_has_tools_and_no_instruction_line() {
+        let (_tmp, mut h) = harness(false);
+        h.run_steps(2);
+        for name in [
+            "Zeichnen (D)",
+            "Auswählen (V)",
+            "Löschen (E)",
+            "Triolen",
+            "Alle quantisieren (Q)",
+            "Auf Tonart einrasten",
+            "Nur benutzte Töne",
+            "Probeton beim Zeichnen",
+            "Vergrößern",
+            "Verkleinern",
+        ] {
+            let _ = h.get_by_label(name);
+        }
+        assert!(h.query_by_label_contains("Klick: zeichnen").is_none());
+        assert!(h.query_by_label("Drum-Raster").is_none());
+        assert!(
+            h.query_by_label("Raster").is_none(),
+            "Noten | Raster nur auf Kits"
+        );
+        h.get_by_label("Löschen (E)").click();
+        h.run_steps(2);
+        assert_eq!(h.state().pr.tool, Tool::Erase);
+        h.get_by_label("Probeton beim Zeichnen").click();
+        h.run_steps(2);
+        assert!(!h.state().pr.probe);
+    }
+
+    #[test]
+    fn kit_tracks_open_the_drum_grid_and_preview_a_row() {
+        let (_tmp, mut h) = harness(true);
+        h.run_steps(2);
+        let _ = h.get_by_label("Raster");
+        let _ = h.get_by_label("Noten");
+        h.get_by_label("Kick vorhören").click();
+        h.run_steps(1);
+        let p = h.state_mut();
+        let got = p.state.probeton.take(std::time::Instant::now());
+        assert!(
+            matches!(
+                got.first(),
+                Some(crate::probeton::Probe::NoteOn { pitch: 36, .. })
+            ),
+            "Probeton Kick als Note-an-Command: {got:?}"
+        );
+        assert!(
+            !p.state.probeton.is_idle(),
+            "Note aus ist geplant, nichts bleibt hängen"
+        );
     }
 }

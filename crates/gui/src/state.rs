@@ -55,6 +55,8 @@ pub struct AppState {
     last_autosave: Instant,
     /// Status bar text.
     pub status: Status,
+    /// Probetöne (Note an/aus je Spur), die App reicht sie an die Live-Spur weiter.
+    pub probeton: crate::probeton::Probeton,
 }
 
 /// Undo depth of the GUI session; every undo/redo replays a copy of the project,
@@ -74,6 +76,7 @@ impl AppState {
             recovery_dir,
             last_autosave: now,
             status: Status::Idle,
+            probeton: crate::probeton::Probeton::default(),
         }
     }
 
