@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.39.0 — 2026-11-02
+
+- (in Arbeit)
+
 ## 0.37.1 — 2026-11-02
 
 - **Fixes aus Andrés Feedback am Windows-Gerät (0.36.2, Vollbild 1920 × 1080):**

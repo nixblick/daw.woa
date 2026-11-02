@@ -197,6 +197,15 @@ struct Eingabe {
     text: String,
 }
 
+impl Eingabe {
+    /// #338 (André 02.11.2026): Ein Kommentar heißt „anders“; Tippen wählt es automatisch.
+    fn text_changed(&mut self) {
+        if !self.text.trim().is_empty() {
+            self.wahl = Some(Wahl::Anders);
+        }
+    }
+}
+
 /// Fenster „Fragen und To-dos“.
 #[derive(Default)]
 pub struct FragenWindow {
@@ -207,6 +216,8 @@ pub struct FragenWindow {
     sent: HashSet<Key>,
     pending: HashMap<Key, Receiver<Result<Option<u64>, FeedbackError>>>,
     notes: HashMap<Key, String>,
+    /// Fenster füllt die App (Knopf neben Schließen, #337).
+    pub maximized: bool,
 }
 
 impl FragenWindow {
@@ -333,7 +344,7 @@ impl FragenWindow {
         }
     }
 
-    /// Zeichnet das Fenster.
+    /// Zeichnet das Fenster: eigene Kopfzeile mit Maximieren und Schließen, Blöcke als Karten.
     pub fn show(&mut self, ctx: &egui::Context, config: &GuiConfig, data_dir: &Path) {
         if !self.open {
             return;
@@ -343,15 +354,77 @@ impl FragenWindow {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
         let (fragen, herkunft) = self.current();
-        let mut open = self.open;
-        egui::Window::new(format!("{} Fragen und To-dos", theme::ic::CHAT_CIRCLE_TEXT))
-            .open(&mut open)
-            .default_size([720.0, 640.0])
-            .show(ctx, |ui| {
+        // Eigene ID je Zustand: das normale Fenster behält Lage und Größe beim Zurückschalten.
+        let mut win = egui::Window::new("Fragen und To-dos")
+            .id(egui::Id::new(("woa-fragen", self.maximized)))
+            .title_bar(false)
+            .collapsible(false)
+            .frame(
+                egui::Frame::window(&ctx.global_style())
+                    .fill(theme::bg())
+                    .stroke(egui::Stroke::new(1.0, theme::border_strong()))
+                    .corner_radius(egui::CornerRadius::same(theme::RADIUS_XL))
+                    .inner_margin(egui::Margin::same(theme::SPACE_5 as i8)),
+            );
+        win = if self.maximized {
+            let r = ctx.content_rect().shrink(4.0);
+            win.fixed_rect(r).resizable(false)
+        } else {
+            win.default_size([760.0, 680.0])
+                .min_width(520.0)
+                .min_height(320.0)
+                .resizable(true)
+        };
+        win.show(ctx, |ui| {
+            self.kopf(ui, &fragen, herkunft);
+            ui.add_space(theme::SPACE_3);
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for block in BLOCKS {
+                        let qs: Vec<&Frage> =
+                            fragen.fragen.iter().filter(|q| q.block == block).collect();
+                        if qs.is_empty() {
+                            continue;
+                        }
+                        ui.add_space(theme::SPACE_3);
+                        ui.horizontal(|ui| {
+                            ui.label(theme::panel_label(block.to_uppercase()));
+                            ui.label(
+                                egui::RichText::new(format!("{}", qs.len()))
+                                    .font(theme::label_font(12.0))
+                                    .color(theme::text_dim()),
+                            );
+                        });
+                        ui.add_space(theme::SPACE_2);
+                        for q in qs {
+                            self.frage_ui(ui, q, config, data_dir);
+                            ui.add_space(theme::SPACE_3);
+                        }
+                    }
+                });
+        });
+    }
+
+    /// Kopfzeile: Symbol, Titel, Stand; rechts Maximieren und Schließen.
+    fn kopf(&mut self, ui: &mut egui::Ui, fragen: &Fragen, herkunft: Herkunft) {
+        use crate::widgets::icon_button::{IconButton, IconSize};
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(theme::ic::CHAT_CIRCLE_TEXT)
+                    .size(26.0)
+                    .color(theme::accent()),
+            );
+            ui.vertical(|ui| {
+                ui.label(
+                    egui::RichText::new("Fragen und To-dos")
+                        .size(theme::TYPE_TITLE * 0.85)
+                        .strong()
+                        .color(theme::text()),
+                );
                 ui.label(
                     egui::RichText::new(format!(
-                        "Inhaltliche Entscheidungen mit Vorschlägen. Stand {}{}. \
-                         Deine Wahl geht als Rückmeldung aus dem Entwickler-Modus an das Projekt.",
+                        "Stand {}{} · Deine Wahl geht als Rückmeldung aus dem Entwickler-Modus an das Projekt.",
                         fragen.stand,
                         match herkunft {
                             Herkunft::Netz => "",
@@ -361,88 +434,168 @@ impl FragenWindow {
                     .small()
                     .color(theme::text_dim()),
                 );
-                ui.separator();
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    for block in BLOCKS {
-                        let qs: Vec<&Frage> =
-                            fragen.fragen.iter().filter(|q| q.block == block).collect();
-                        if qs.is_empty() {
-                            continue;
-                        }
-                        ui.add_space(6.0);
-                        ui.heading(block);
-                        for q in qs {
-                            self.frage_ui(ui, q, config, data_dir);
-                        }
-                    }
-                });
             });
-        self.open = open;
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                if IconButton::new(theme::ic::X, "Schließen")
+                    .size(IconSize::Md)
+                    .ui(ui)
+                    .clicked()
+                {
+                    self.open = false;
+                }
+                let (icon, tip) = if self.maximized {
+                    (theme::ic::CORNERS_IN, "Wiederherstellen")
+                } else {
+                    (theme::ic::CORNERS_OUT, "Maximieren")
+                };
+                if IconButton::new(icon, tip).size(IconSize::Md).ui(ui).clicked() {
+                    self.maximized = !self.maximized;
+                }
+            });
+        });
+        ui.add_space(theme::SPACE_2);
+        ui.separator();
     }
 
     fn frage_ui(&mut self, ui: &mut egui::Ui, q: &Frage, config: &GuiConfig, data_dir: &Path) {
-        egui::Frame::group(ui.style()).show(ui, |ui| {
+        use crate::widgets::segment::Segment;
+        theme::card_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
+            // Kartenkopf: Titel, Ticket als Pille, Status als Badge.
             ui.horizontal_wrapped(|ui| {
-                ui.strong(&q.titel);
+                ui.label(
+                    egui::RichText::new(&q.titel)
+                        .size(15.0)
+                        .strong()
+                        .color(theme::text()),
+                );
                 if let Some(n) = q.ticket {
-                    ui.hyperlink_to(format!("#{n}"), issue_url(n));
+                    ticket_pill(ui, n);
                 }
                 if !q.status.is_empty() {
-                    ui.label(
-                        egui::RichText::new(&q.status)
-                            .small()
-                            .color(theme::text_dim()),
-                    );
+                    theme::badge_pill(ui, &q.status, theme::Badge::Neutral);
                 }
             });
             if !q.erklaerung.is_empty() {
-                ui.label(&q.erklaerung);
+                ui.add_space(theme::SPACE_2);
+                ui.label(egui::RichText::new(&q.erklaerung).color(theme::text_dim()));
             }
             for (i, v) in q.vorschlaege.iter().enumerate() {
                 let key = (q.id.clone(), i);
                 let done = self.sent.contains(&key);
                 let busy = self.pending.contains_key(&key);
-                ui.add_space(4.0);
-                ui.label(format!("{}. {v}", i + 1));
+                ui.add_space(theme::SPACE_3);
                 let mut go = false;
-                ui.add_enabled_ui(!done && !busy, |ui| {
-                    ui.horizontal(|ui| {
-                        let e = self.eingaben.entry(key.clone()).or_default();
-                        for (w, label, tip) in [
-                            (Wahl::Dafuer, theme::ic::THUMBS_UP, "Dafür"),
-                            (Wahl::Dagegen, theme::ic::THUMBS_DOWN, "Dagegen"),
-                            (
-                                Wahl::Anders,
-                                "anders",
-                                "Anders, bitte im Textfeld beschreiben",
-                            ),
-                        ] {
-                            if ui
-                                .selectable_label(e.wahl == Some(w), label)
-                                .on_hover_text(tip)
-                                .clicked()
-                            {
-                                e.wahl = Some(w);
-                            }
+                let fill = if done {
+                    theme::mix(theme::ok(), theme::well(), 0.85)
+                } else {
+                    theme::well()
+                };
+                let edge = if done { theme::ok() } else { theme::border() };
+                egui::Frame::new()
+                    .fill(fill)
+                    .stroke(egui::Stroke::new(1.0, edge))
+                    .corner_radius(egui::CornerRadius::same(theme::RADIUS_MD))
+                    .inner_margin(egui::Margin::symmetric(10, 8))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(
+                                egui::RichText::new(format!("{}", i + 1))
+                                    .font(theme::label_font(14.0))
+                                    .color(theme::accent()),
+                            );
+                            ui.label(egui::RichText::new(v).color(theme::text()));
+                        });
+                        ui.add_space(theme::SPACE_2);
+                        ui.add_enabled_ui(!done && !busy, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 4.0;
+                                let e = self.eingaben.entry(key.clone()).or_default();
+                                for (w, icon, label) in [
+                                    (Wahl::Dafuer, theme::ic::THUMBS_UP, "Dafür"),
+                                    (Wahl::Dagegen, theme::ic::THUMBS_DOWN, "Dagegen"),
+                                    (Wahl::Anders, theme::ic::PENCIL_SIMPLE, "anders"),
+                                ] {
+                                    if Segment::new(icon, label)
+                                        .on(e.wahl == Some(w))
+                                        .height(28.0)
+                                        .ui(ui)
+                                        .clicked()
+                                    {
+                                        e.wahl = Some(w);
+                                    }
+                                }
+                                ui.add_space(theme::SPACE_3);
+                                let r = ui.add(
+                                    egui::TextEdit::singleline(&mut e.text)
+                                        .hint_text("Anmerkung (wählt „anders“)")
+                                        .desired_width((ui.available_width() - 110.0).max(160.0)),
+                                );
+                                r.widget_info(|| {
+                                    egui::WidgetInfo::labeled(
+                                        egui::WidgetType::TextEdit,
+                                        true,
+                                        "Anmerkung",
+                                    )
+                                });
+                                if r.changed() {
+                                    e.text_changed();
+                                }
+                                let can = e.wahl.is_some();
+                                let label = format!("{} Senden", theme::ic::PAPER_PLANE_RIGHT);
+                                let btn = egui::Button::new(
+                                    egui::RichText::new(label).color(if can {
+                                        theme::on_accent()
+                                    } else {
+                                        theme::text_dim()
+                                    }),
+                                )
+                                .fill(if can { theme::accent() } else { theme::surface() })
+                                .corner_radius(egui::CornerRadius::same(theme::RADIUS_SM))
+                                .min_size(egui::vec2(96.0, 28.0));
+                                go = ui.add_enabled(can, btn).clicked();
+                            });
+                        });
+                        if let Some(n) = self.notes.get(&key) {
+                            ui.add_space(theme::SPACE_2);
+                            let (icon, color) = if done {
+                                (theme::ic::CHECK_CIRCLE, theme::ok())
+                            } else if busy {
+                                (theme::ic::PAPER_PLANE_RIGHT, theme::text_dim())
+                            } else if n.starts_with("Senden fehlgeschlagen") {
+                                (theme::ic::WARNING, theme::danger_text())
+                            } else {
+                                (theme::ic::INFO, theme::text_dim())
+                            };
+                            ui.label(egui::RichText::new(format!("{icon} {n}")).color(color));
                         }
-                        ui.add(
-                            egui::TextEdit::singleline(&mut e.text)
-                                .hint_text("Anmerkung (optional)")
-                                .desired_width(260.0),
-                        );
-                        let can = e.wahl.is_some();
-                        go = ui.add_enabled(can, egui::Button::new("Senden")).clicked();
                     });
-                });
                 if go {
                     self.send(q, i, config, data_dir);
                 }
-                if let Some(n) = self.notes.get(&key) {
-                    ui.label(egui::RichText::new(n).small().color(theme::text_dim()));
-                }
             }
         });
+    }
+}
+
+/// Ticket als Pille (`#337 ↗`), Klick öffnet es im Browser.
+fn ticket_pill(ui: &mut egui::Ui, n: u32) {
+    let text = format!("#{n} {}", theme::ic::ARROW_SQUARE_OUT);
+    let r = ui
+        .add(
+            egui::Button::new(
+                egui::RichText::new(text)
+                    .font(theme::label_font(13.0))
+                    .color(theme::accent()),
+            )
+            .fill(theme::well())
+            .stroke(egui::Stroke::new(1.0, theme::accent()))
+            .corner_radius(egui::CornerRadius::same(theme::RADIUS_MD)),
+        )
+        .on_hover_text(format!("Ticket #{n} öffnen"));
+    if r.clicked() {
+        ui.ctx().open_url(egui::OpenUrl::new_tab(issue_url(n)));
     }
 }
 
@@ -654,5 +807,77 @@ mod tests {
         tx.send(Err(FeedbackError::Status(500))).unwrap();
         w.poll();
         assert!(!w.sent.contains(&other), "Fehler: nochmal senden erlaubt");
+    }
+
+    /// #338: Wer etwas ins Kommentarfeld schreibt, meint „anders“.
+    #[test]
+    fn typing_a_comment_selects_anders() {
+        let mut e = Eingabe {
+            wahl: Some(Wahl::Dafuer),
+            text: String::new(),
+        };
+        e.text = "lieber blau".into();
+        e.text_changed();
+        assert_eq!(e.wahl, Some(Wahl::Anders));
+        let mut leer = Eingabe::default();
+        leer.text = "   ".into();
+        leer.text_changed();
+        assert_eq!(leer.wahl, None, "nur Leerzeichen wählen nichts");
+    }
+
+    use egui_kittest::kittest::Queryable;
+
+    fn harness(w: FragenWindow) -> egui_kittest::Harness<'static, FragenWindow> {
+        let cfg = GuiConfig::default();
+        let dir = std::env::temp_dir();
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(1400.0, 900.0))
+            .build_ui_state(
+                move |ui, w: &mut FragenWindow| {
+                    if !theme::install_fonts(ui.ctx()) {
+                        w.show(ui.ctx(), &cfg, &dir);
+                    }
+                },
+                w,
+            );
+        h.run_steps(3);
+        h
+    }
+
+    /// #338 im Fenster: Tippen ins Kommentarfeld schaltet das Segment „anders“ ein.
+    #[test]
+    fn typing_in_the_window_turns_anders_on() {
+        let mut w = FragenWindow::default();
+        w.open = true;
+        w.fragen = Some((embedded(), Herkunft::Eingebettet));
+        let mut h = harness(w);
+        let q = embedded().fragen[0].id.clone();
+        h.get_all_by_label("Anmerkung").next().expect("Kommentarfeld").click();
+        h.run_steps(1);
+        h.get_all_by_label("Anmerkung").next().expect("Kommentarfeld").type_text("x");
+        h.run_steps(2);
+        let key = (q, 0);
+        assert_eq!(h.state().eingaben[&key].wahl, Some(Wahl::Anders));
+    }
+
+    /// #337: Neben Schließen ein Maximieren-Knopf; er füllt den Bildschirm und schaltet zurück.
+    #[test]
+    fn window_has_maximize_next_to_close() {
+        let mut w = FragenWindow::default();
+        w.open = true;
+        w.fragen = Some((embedded(), Herkunft::Eingebettet));
+        let mut h = harness(w);
+        let close = h.get_by_label(theme::ic::X).rect();
+        let max = h.get_by_label(theme::ic::CORNERS_OUT).rect();
+        assert!(max.right() <= close.left() && (max.center().y - close.center().y).abs() < 2.0);
+        h.get_by_label(theme::ic::CORNERS_OUT).click();
+        h.run_steps(3);
+        assert!(h.state().maximized);
+        h.get_by_label(theme::ic::CORNERS_IN).click();
+        h.run_steps(2);
+        assert!(!h.state().maximized);
+        h.get_by_label(theme::ic::X).click();
+        h.run_steps(2);
+        assert!(!h.state().open);
     }
 }
