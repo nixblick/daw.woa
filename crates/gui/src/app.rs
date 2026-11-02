@@ -2740,13 +2740,15 @@ impl WoaApp {
         let photo_live = self.photo.is_some() && std::env::var_os("WOA_ONAIR").is_some();
         let live = photo_live || self.radio.as_ref().is_some_and(RadioDesk::is_live);
         // #353: Auf Sendung leuchtet ON AIR wie die Lampe im Sendepult (rot, weiß, Glow).
-        let look = if live {
-            ChipLook::Live
-        } else {
-            ChipLook::Off(theme::on_air())
+        // Fassung 7: Lampe `woa-onair--bar` statt Pille; gedimmt im Pult-Modus (#301).
+        let _ = compact;
+        let state = crate::widgets::lamp::onair_state(live, self.config.pult.on);
+        let word = match state {
+            crate::widgets::lamp::LampState::Off => "ON AIR aus",
+            crate::widgets::lamp::LampState::On => "ON AIR an",
+            crate::widgets::lamp::LampState::Dim => "ON AIR an (Pult)",
         };
-        let word = if live { "ON AIR an" } else { "ON AIR aus" };
-        let resp = topbar_chip(ui, theme::ic::BROADCAST, "ON AIR", look, compact, true);
+        let resp = crate::widgets::lamp::onair_bar(ui, state);
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, word));
         // Klick öffnet die Stream-Verbindung (wie Einstellungen → Sendung).
         if resp
