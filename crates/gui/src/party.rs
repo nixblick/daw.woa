@@ -486,10 +486,10 @@ impl PartyView {
                         }
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 14.0;
-                            seg_lcd(ui, &seg_clock(&time), 34.0, urgent, None)
+                            seg_lcd(ui, &seg_clock(&time), SIMPLE_LCD_DIGITS, urgent, None)
                                 .on_hover_text("Restzeit des Titels");
                             if let Some(bpm) = info.as_ref().and_then(|i| i.bpm) {
-                                seg_lcd(ui, &format!("{bpm:.1}"), 30.0, false, Some("BPM"))
+                                seg_lcd(ui, &format!("{bpm:.1}"), SIMPLE_LCD_DIGITS, false, Some("BPM"))
                                     .on_hover_text("Tempo aus der Bibliotheksanalyse");
                             }
                             let (icon, word) = if s.playing {
@@ -1526,6 +1526,12 @@ fn ghost_of(text: &str) -> String {
 
 /// 7-Segment-LCD mit Geister-Segmenten (`led-off`) hinter den Ziffern, wahlweise mit
 /// Beschriftung rechts (etwa „BPM“). `alert` färbt die Ziffern in `on-air` (Restzeit knapp).
+/// Ziffernhöhe der LCDs im Kopf der einfachen Party (Restzeit und BPM gleich groß, #347).
+pub(crate) const SIMPLE_LCD_DIGITS: f32 = 32.0;
+/// Ziffernhöhe der LCDs im Kopf eines DJ-Decks (Restzeit und BPM gleich groß, #347).
+pub(crate) const DECK_LCD_DIGITS: f32 = 22.0;
+
+/// Segment-LCD; die Antwort ist der ganze Rahmen (für gleiche Höhen in einer Reihe).
 fn seg_lcd(
     ui: &mut egui::Ui,
     text: &str,
@@ -1533,7 +1539,7 @@ fn seg_lcd(
     alert: bool,
     caption: Option<&str>,
 ) -> egui::Response {
-    theme::lcd_show(ui, |ui| {
+    let r = theme::lcd_show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             let font = theme::seg_font(size);
@@ -1563,8 +1569,31 @@ fn seg_lcd(
             resp
         })
         .inner
-    })
-    .inner
+    });
+    r.response.union(r.inner)
+}
+
+/// Camelot-Chip (Tonart) in der Höhe `h` der LCDs daneben, Farben wie [`theme::status_pill`]:
+/// grün, wenn die Tonart zum anderen Deck passt (#347: Chip und LCDs aus einem Guss).
+fn camelot_chip(ui: &mut egui::Ui, text: &str, ok: bool, h: f32) -> egui::Response {
+    let color = if ok { theme::ok() } else { theme::text_dim() };
+    let (fill, stroke, ink) = theme::pill_colors(color, ok);
+    let font = theme::label_font(15.0);
+    let g = ui.painter().layout_no_wrap(text.to_string(), font, ink);
+    let w = g.size().x + 2.0 * 12.0;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let p = ui.painter();
+    p.rect(
+        rect,
+        5,
+        fill,
+        egui::Stroke::new(1.0, stroke),
+        egui::StrokeKind::Inside,
+    );
+    p.galley(rect.center() - g.size() / 2.0, g, ink);
+    let label = format!("Tonart {text}");
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, label.clone()));
+    resp
 }
 
 /// Größter Spitzenwert je Bildpunktspalte, 0..1.

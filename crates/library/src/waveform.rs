@@ -44,7 +44,7 @@ pub fn compute(path: &Path) -> std::result::Result<Vec<u8>, String> {
 pub struct DeckInfo {
     /// Spitzenwerte (leer, wenn die Datei nicht lesbar ist).
     pub peaks: Vec<u8>,
-    /// Tempo aus der Bibliotheksanalyse; `None` ohne (aktuelle) Analyse.
+    /// Tempo aus der Analyse (Bibliothek oder beim Laden gemessen); `None`, wenn nicht bestimmbar.
     pub bpm: Option<f64>,
     /// DJ-Paket: Beatgrid-Lage (Sekunde des ersten Schlags) und Tonart aus der Analyse.
     pub beat_offset: Option<f64>,
@@ -61,7 +61,26 @@ pub struct DeckInfo {
 pub fn deck_info(lib: &Library, path: &Path) -> std::result::Result<DeckInfo, String> {
     let key = path.to_string_lossy();
     let track = lib.by_path(&key).map_err(|e| e.to_string())?;
-    let analysis = track.as_ref().and_then(|t| t.analysis.clone());
+    // #347: Ohne Analyse (Titel nicht in der Bibliothek, z. B. per „Ordner laden“, oder noch
+    // nicht an der Reihe) misst das Deck selbst; kennt die Bibliothek den Titel, legt es das
+    // Ergebnis dort ab, damit Playlist und nächster Start es auch haben.
+    let analysis = match track.as_ref().and_then(|t| t.analysis.clone()) {
+        Some(a) => Some(a),
+        None => match crate::analysis::analyze_file(path) {
+            Ok((a, _secs)) => {
+                if let Some(t) = &track
+                    && let Err(e) = lib.set_analysis(t.id, &t.hash, &a)
+                {
+                    tracing::warn!(error = %e, "deck analysis not stored");
+                }
+                Some(a)
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "deck analysis failed");
+                None
+            }
+        },
+    };
     let hash = match &track {
         Some(t) => t.hash.clone(),
         None => crate::file_hash(path).map_err(|e| e.to_string())?,
@@ -142,7 +161,7 @@ mod tests {
         }
         w.finalize().unwrap();
         let lib = Library::open(&dir.path().join(crate::DB_FILE)).unwrap();
-        // Nicht in der Bibliothek: Wellenform ja, Tempo nein.
+        // Nicht in der Bibliothek: Wellenform ja, Tempo nicht bestimmbar (kein Takt im Signal).
         let a = deck_info(&lib, &f).unwrap();
         assert_eq!(a.peaks.len(), PEAKS);
         assert!(a.peaks[0] > 100 && a.peaks[PEAKS - 1] == 0);
@@ -201,5 +220,62 @@ mod tests {
         assert_eq!(lib.schema_version().unwrap(), crate::SCHEMA_VERSION);
         lib.set_waveform("h", &[1, 2, 3]).unwrap();
         assert_eq!(lib.waveform("h").unwrap(), Some(vec![1, 2, 3]));
+    }
+
+    /// #347: Ein Titel, den die Bibliothek nicht kennt (Party „Ordner laden“) oder noch nicht
+    /// analysiert hat, bekommt beim Laden ins Deck trotzdem Tempo und Tonart: das Deck misst selbst
+    /// und legt das Ergebnis in der Bibliothek ab, wenn sie den Titel kennt.
+    #[test]
+    fn deck_info_measures_unanalysed_titles() {
+        const RATE: u32 = 22050;
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("klick.wav");
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: RATE,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(&f, spec).unwrap();
+        let n = 20 * RATE as usize;
+        let period = (60.0 / 120.0 * f64::from(RATE)) as usize;
+        for i in 0..n {
+            let k = i % period;
+            let env = (-(k as f32) / 30.0).exp();
+            let s = if k < 160 {
+                0.8 * env * (k as f32 * 1500.0 * std::f32::consts::TAU / RATE as f32).sin()
+            } else {
+                0.0
+            };
+            w.write_sample((s * 32767.0) as i16).unwrap();
+        }
+        w.finalize().unwrap();
+        let lib = Library::open(&dir.path().join(crate::DB_FILE)).unwrap();
+        // Nicht in der Bibliothek: gemessen.
+        let a = deck_info(&lib, &f).unwrap();
+        let bpm = a
+            .bpm
+            .expect("tempo measured for a title outside the library");
+        assert!((bpm - 120.0).abs() <= 1.0, "{bpm}");
+        // In der Bibliothek, aber noch nicht analysiert: gemessen und abgelegt.
+        let hash = crate::file_hash(&f).unwrap();
+        let id = match lib
+            .add_track(&crate::NewTrack {
+                path: f.to_string_lossy().into_owned(),
+                hash: hash.clone(),
+                title: "Klick".into(),
+                duration: 20.0,
+                kind: crate::Kind::Music,
+            })
+            .unwrap()
+        {
+            crate::AddOutcome::Added(id) => id,
+            o => panic!("{o:?}"),
+        };
+        assert!(lib.get(id).unwrap().unwrap().analysis.is_none());
+        let b = deck_info(&lib, &f).unwrap();
+        assert!((b.bpm.unwrap() - 120.0).abs() <= 1.0);
+        let stored = lib.get(id).unwrap().unwrap().analysis.unwrap();
+        assert_eq!(stored.bpm, b.bpm);
     }
 }
