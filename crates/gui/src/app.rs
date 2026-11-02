@@ -1679,52 +1679,28 @@ impl WoaApp {
                 .inner_margin(egui::Margin::symmetric(4, 3))
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    if ui
-                        .add(
-                            egui::Button::new(theme::fill_label(
-                                theme::icf::SKIP_BACK,
-                                "",
-                                16.0,
-                                theme::text(),
-                            ))
-                                .fill(theme::surface())
-                                .min_size(egui::vec2(38.0, 32.0)),
-                        )
+                    if crate::widgets::Key::new("", egui::vec2(38.0, 32.0))
+                        .icon(theme::icf::SKIP_BACK)
+                        .font(theme::label_font(16.0))
+                        .ui(ui)
                         .on_hover_text("Zum Anfang (Pos1)")
                         .clicked()
                     {
                         self.rewind();
                     }
-                    let play = egui::Button::new(theme::fill_label(
-                        if playing {
+                    // Play: grün eingerastet, solange es läuft.
+                    let play = crate::widgets::Key::new("", egui::vec2(48.0, 32.0))
+                        .icon(if playing {
                             theme::icf::PAUSE
                         } else {
                             theme::icf::PLAY
-                        },
-                        "",
-                        16.0,
-                        if playing {
-                            theme::well()
-                        } else {
-                            theme::text()
-                        },
-                    ))
-                    .min_size(egui::vec2(48.0, 32.0))
-                    .fill(if playing {
-                        theme::ok()
-                    } else {
-                        theme::surface()
-                    })
-                    .stroke(egui::Stroke::new(
-                        1.0,
-                        if playing {
-                            theme::ok()
-                        } else {
-                            theme::border()
-                        },
-                    ));
-                    if ui
-                        .add_enabled(self.player.is_some(), play)
+                        })
+                        .font(theme::label_font(16.0))
+                        .color(theme::ok())
+                        .on(playing)
+                        .enabled(self.player.is_some())
+                        .ui(ui);
+                    if play
                         .on_hover_text("Abspielen / Pause (Leertaste)")
                         .on_disabled_hover_text(
                             "Keine Audioausgabe geöffnet. Den Grund nennt die Statuszeile beim Start.",
@@ -1743,31 +1719,14 @@ impl WoaApp {
                         None if recording => (theme::icf::STOP, "MIDI".to_string()),
                         None => (theme::icf::RECORD, "Aufnahme".to_string()),
                     };
-                    let rec_btn = egui::Button::new(theme::fill_label(
-                        rec_icon,
-                        &label,
-                        14.0,
-                        if recording {
-                            egui::Color32::WHITE
-                        } else {
-                            theme::text()
-                        },
-                    ))
-                    .min_size(egui::vec2(114.0, 32.0))
-                    .fill(if recording {
-                        theme::on_air()
-                    } else {
-                        theme::surface()
-                    })
-                    .stroke(egui::Stroke::new(
-                        1.0,
-                        if recording {
-                            theme::on_air()
-                        } else {
-                            theme::border()
-                        },
-                    ));
-                    let rec_resp = ui.add(rec_btn).on_hover_text(
+                    // Aufnahme: rot (live) eingerastet, solange aufgenommen wird.
+                    let rec_resp = crate::widgets::Key::new(&label, egui::vec2(114.0, 32.0))
+                        .icon(rec_icon)
+                        .color(theme::on_air())
+                        .ink(egui::Color32::WHITE)
+                        .on(recording)
+                        .ui(ui)
+                        .on_hover_text(
                         "Nimmt auf jeder scharfen Spur (roter Punkt) ihre Quelle auf, \
                              sonst auf der ausgewählten Spur (Strg+R)",
                     );
@@ -1786,32 +1745,13 @@ impl WoaApp {
                 .inner_margin(egui::Margin::symmetric(4, 3))
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    let loop_btn = egui::Button::new(
-                        egui::RichText::new(format!("{} Loop", theme::ic::REPEAT))
-                            .small()
-                            .strong()
-                            .color(if self.loop_enabled {
-                                theme::text()
-                            } else {
-                                theme::text_dim()
-                            }),
-                    )
-                    .min_size(egui::vec2(0.0, 32.0))
-                    .fill(if self.loop_enabled {
-                        theme::accent_soft()
-                    } else {
-                        theme::surface()
-                    })
-                    .stroke(egui::Stroke::new(
-                        1.0,
-                        if self.loop_enabled {
-                            theme::accent()
-                        } else {
-                            theme::border()
-                        },
-                    ));
-                    if ui
-                        .add(loop_btn)
+                    let font = theme::label_font(12.0);
+                    let w = |ui: &egui::Ui, t: &str| crate::widgets::key_width(ui, t, &font, 0.0) + 10.0;
+                    if crate::widgets::Key::new("Loop", egui::vec2(w(ui, "Loop"), 32.0))
+                        .icon(theme::icf::REPEAT)
+                        .font(font.clone())
+                        .soft(self.loop_enabled)
+                        .ui(ui)
                         .on_hover_text("Wiedergabe im gewählten Taktbereich im Kreis abspielen")
                         .clicked()
                     {
@@ -1835,32 +1775,11 @@ impl WoaApp {
                     }
 
                     // Paket 22: Punch-Bereich. Von der Aufnahme bleibt nur dieser Teil.
-                    let punch_btn = egui::Button::new(
-                        egui::RichText::new(format!("{} Punch", theme::ic::RECORD))
-                            .small()
-                            .strong()
-                            .color(if self.punch_enabled {
-                                theme::text()
-                            } else {
-                                theme::text_dim()
-                            }),
-                    )
-                    .min_size(egui::vec2(0.0, 32.0))
-                    .fill(if self.punch_enabled {
-                        theme::accent_soft()
-                    } else {
-                        theme::surface()
-                    })
-                    .stroke(egui::Stroke::new(
-                        1.0,
-                        if self.punch_enabled {
-                            theme::accent()
-                        } else {
-                            theme::border()
-                        },
-                    ));
-                    if ui
-                        .add(punch_btn)
+                    if crate::widgets::Key::new("Punch", egui::vec2(w(ui, "Punch"), 32.0))
+                        .icon(theme::icf::RECORD)
+                        .font(font.clone())
+                        .soft(self.punch_enabled)
+                        .ui(ui)
                         .on_hover_text(
                             "Punch-Bereich: von der Aufnahme bleibt nur der Teil zwischen \
                              Punch-In und Punch-Out. Mit Loop landet nur dieser Teil im Take-Ordner.",
@@ -1886,32 +1805,11 @@ impl WoaApp {
                         .on_hover_text("Punch-Out (Takt)");
                     }
 
-                    let end = egui::Button::new(
-                        egui::RichText::new(format!("{} Stopp am Ende", theme::ic::ARROW_LINE_RIGHT))
-                            .small()
-                            .strong()
-                            .color(if self.stop_at_end {
-                                theme::text()
-                            } else {
-                                theme::text_dim()
-                            }),
-                    )
-                    .min_size(egui::vec2(0.0, 32.0))
-                    .fill(if self.stop_at_end {
-                        theme::accent_soft()
-                    } else {
-                        theme::surface()
-                    })
-                    .stroke(egui::Stroke::new(
-                        1.0,
-                        if self.stop_at_end {
-                            theme::accent()
-                        } else {
-                            theme::border()
-                        },
-                    ));
-                    if ui
-                        .add(end)
+                    if crate::widgets::Key::new("Stopp am Ende", egui::vec2(w(ui, "Stopp am Ende"), 32.0))
+                        .icon(theme::icf::ARROW_LINE_RIGHT)
+                        .font(font.clone())
+                        .soft(self.stop_at_end)
+                        .ui(ui)
                         .on_hover_text(
                             "An: die Wiedergabe hält am Ende des letzten Clips an. \
                              Aus: sie läuft weiter, z. B. zum Aufnehmen über das Ende hinaus.",
@@ -7015,7 +6913,9 @@ impl WoaApp {
                         ),
                     ] {
                         let active = self.studio_dock == tab;
-                        if segment(ui, &format!("{icon} {label}"), active)
+                        if crate::widgets::Segment::new(icon, label)
+                            .on(active)
+                            .ui(ui)
                             .on_hover_text(tip)
                             .clicked()
                         {
@@ -7025,12 +6925,10 @@ impl WoaApp {
                 });
 
                 // Analyse als fünftes Segment; sie öffnet weiter ein eigenes Fenster.
-                if segment(
-                    ui,
-                    &format!("{} Analyse", theme::ic::CHART_BAR),
-                    self.analysis_open,
-                )
-                .on_hover_text("Lautheit, True Peak, Spektrum, Spektrogramm und Stereo-Scope")
+                if crate::widgets::Segment::new(theme::ic::CHART_BAR, "Analyse")
+                    .on(self.analysis_open)
+                    .ui(ui)
+                    .on_hover_text("Lautheit, True Peak, Spektrum, Spektrogramm und Stereo-Scope")
                 .clicked()
                 {
                     self.analysis_open = !self.analysis_open;
@@ -8855,27 +8753,6 @@ fn rack_title(s: &str) -> egui::RichText {
     theme::panel_label(s)
 }
 
-/// Segment eines Umschalters (Design-Runde 3, `Segmented`): gewählt = accent-soft mit Akzent-Rand.
-fn segment(ui: &mut egui::Ui, label: &str, on: bool) -> egui::Response {
-    ui.add(
-        egui::Button::new(egui::RichText::new(label).size(13.0).color(if on {
-            theme::text()
-        } else {
-            theme::text_dim()
-        }))
-        .fill(if on {
-            theme::accent_soft()
-        } else {
-            theme::well()
-        })
-        .stroke(egui::Stroke::new(
-            1.0,
-            if on { theme::accent() } else { theme::border() },
-        ))
-        .min_size(egui::vec2(0.0, 32.0)),
-    )
-}
-
 /// Gefahr-Symbolknopf (Design `IconButton --danger`): ohne Fläche, Symbol gedimmt, erst bei Hover
 /// rot. Das Symbol ist die Beschriftung, damit Tests und Bildschirmleser es finden.
 fn danger_icon_button(ui: &mut egui::Ui, icon: &str, size: f32, tip: &str) -> egui::Response {
@@ -9374,6 +9251,27 @@ mod nacharbeit_tests {
         assert!(
             !body[from..].contains("egui::Button") && !body[from..].contains("segment("),
             "Latenz, Export oder Takte/Zeit noch als egui-Knopf"
+        );
+    }
+
+    #[test]
+    fn whole_transport_has_no_egui_button() {
+        let body = body_of(SRC, "fn transport_bar(");
+        assert!(
+            !body.contains("egui::Button"),
+            "Transport noch mit egui::Button (Zurück, Play, Aufnahme, Loop, Punch, Stopp am Ende)"
+        );
+    }
+
+    #[test]
+    fn producer_segments_use_the_widget() {
+        assert!(
+            !SRC.contains("\nfn segment("),
+            "Dock-Reiter noch über die alte segment()-Hilfe"
+        );
+        assert!(
+            SRC.contains("widgets::Segment::new("),
+            "Segment-Baustein fehlt"
         );
     }
 

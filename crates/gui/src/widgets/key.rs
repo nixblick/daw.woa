@@ -55,6 +55,8 @@ pub struct Key<'a> {
     font: Option<FontId>,
     radius: u8,
     enabled: bool,
+    icon: Option<&'a str>,
+    soft: bool,
 }
 
 impl<'a> Key<'a> {
@@ -69,6 +71,8 @@ impl<'a> Key<'a> {
             font: None,
             radius: theme::RADIUS_SM,
             enabled: true,
+            icon: None,
+            soft: false,
         }
     }
 
@@ -107,6 +111,20 @@ impl<'a> Key<'a> {
         self
     }
 
+    /// Gefülltes Symbol vor der Beschriftung (Transport: Play, Aufnahme, Loop …). Mit leerer
+    /// Beschriftung ist das Symbol allein die Kappe; für Bildschirmleser zählt dann das Symbol.
+    pub fn icon(mut self, glyph: &'a str) -> Self {
+        self.icon = Some(glyph);
+        self
+    }
+
+    /// Schalter im Design `Segmented`/Toggle: an = `accent-soft` mit Rand `accent`, ohne
+    /// Lichtschein; aus = normale Kappe mit gedimmter Schrift.
+    pub fn soft(mut self, on: bool) -> Self {
+        self.soft = on;
+        self
+    }
+
     pub fn enabled(mut self, e: bool) -> Self {
         self.enabled = e;
         self
@@ -127,7 +145,11 @@ impl<'a> Key<'a> {
         } else {
             theme::surface()
         };
-        let fill = theme::mix(base, lit_col, look.fill);
+        let fill = if self.soft {
+            theme::accent_soft()
+        } else {
+            theme::mix(base, lit_col, look.fill)
+        };
         let r = CornerRadius::same(self.radius);
         let p = ui.painter();
         if look.glow && ui.is_rect_visible(rect) {
@@ -159,7 +181,9 @@ impl<'a> Key<'a> {
             inner.bottom(),
             Stroke::new(if look.raised { 2.0 } else { 1.0 }, bottom),
         );
-        let edge = if look.glow {
+        let edge = if self.soft {
+            theme::accent()
+        } else if look.glow {
             lit_col
         } else {
             theme::border_strong()
@@ -174,19 +198,31 @@ impl<'a> Key<'a> {
             theme::text()
         };
         let font = self.font.clone().unwrap_or_else(|| theme::label_font(14.0));
-        p.text(
-            rect.center() + egui::vec2(0.0, nudge),
-            egui::Align2::CENTER_CENTER,
-            self.label,
-            font,
-            ink,
-        );
+        if let Some(glyph) = self.icon {
+            let job = theme::fill_label(glyph, self.label, font.size, ink);
+            let galley = ui.painter().layout_job(job);
+            let at = rect.center() - galley.size() / 2.0 + egui::vec2(0.0, nudge);
+            ui.painter().galley(at, galley, ink);
+        } else {
+            p.text(
+                rect.center() + egui::vec2(0.0, nudge),
+                egui::Align2::CENTER_CENTER,
+                self.label,
+                font,
+                ink,
+            );
+        }
+        let name = if self.label.is_empty() {
+            self.icon.unwrap_or_default()
+        } else {
+            self.label
+        };
         resp.widget_info(|| {
             egui::WidgetInfo::selected(
                 egui::WidgetType::Button,
                 self.enabled,
-                self.on || self.lit,
-                self.label,
+                self.on || self.lit || self.soft,
+                name,
             )
         });
         resp

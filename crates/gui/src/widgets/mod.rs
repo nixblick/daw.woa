@@ -15,6 +15,7 @@ pub mod key;
 pub mod lamp;
 pub mod pad;
 pub mod piano_roll;
+pub mod segment;
 pub mod topbar;
 pub mod vu;
 pub mod wizard;
@@ -28,6 +29,7 @@ pub use jog::jog;
 pub use key::{Key, key_width};
 pub use lamp::onair_lamp;
 pub use pad::CartPad;
+pub use segment::Segment;
 pub use topbar::{Chip, ChipLook, status_bar, status_sep, topbar_chip};
 pub use vu::{VuView, vu_meter};
 
