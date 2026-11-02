@@ -34,6 +34,16 @@ pub fn key_look(lit: bool, on: bool, pressed: bool) -> KeyLook {
     }
 }
 
+/// Breite einer Text-Taste: Beschriftung plus 12 px Rand je Seite, nie unter `min`.
+pub fn key_width(ui: &egui::Ui, label: &str, font: &FontId, min: f32) -> f32 {
+    let w = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), font.clone(), Color32::WHITE)
+        .size()
+        .x;
+    (w + 24.0).max(min)
+}
+
 /// Taste mit Beschriftung. `Key::new("Start", vec2(80.0, 32.0)).lit(true).ui(ui)`.
 pub struct Key<'a> {
     label: &'a str,

@@ -446,10 +446,11 @@ pub(crate) fn deck_take_menu(ui: &mut egui::Ui, deck: usize, crossfade: f64) -> 
     hit
 }
 
-/// Tasten, die das Pult selbst belegt: M Mikro, Leertaste Start/Weiter, A–C die Decks.
-const RESERVED_KEYS: [egui::Key; 5] = [
+/// Tasten, die das Pult selbst belegt: M Mikro, Leertaste Start/Weiter, F11 Vollbild, A–C die Decks.
+pub(crate) const RESERVED_KEYS: [egui::Key; 6] = [
     egui::Key::M,
     egui::Key::Space,
+    egui::Key::F11,
     egui::Key::A,
     egui::Key::B,
     egui::Key::C,
@@ -2064,7 +2065,7 @@ impl RadioDesk {
                     }
                     k if RESERVED_KEYS.contains(&k) => {
                         self.error = Some(format!(
-                            "Die Taste {} ist belegt (M: Mikro, Leertaste: Start/Weiter, A–C: Decks)",
+                            "Die Taste {} ist belegt (M: Mikro, Leertaste: Start/Weiter, F11: Vollbild, A–C: Decks)",
                             k.name()
                         ));
                     }
