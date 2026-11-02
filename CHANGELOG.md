@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.36.0 — 2026-11-02
+
+- **DJ-Paket (Design-System Fassung 5):** Neue Bausteine DjWaves, DjDeck, DjMixer, RemoteCard und der Entwurf ScreenPartyDJ samt Soll-Bildern `docs/design/soll/party-dj*.png`.
+
 ## 0.35.23 — 2026-11-02
 
 - **Design-Runde 3, Transport und Dock-Reiter:** Der ganze Transport des Produzenten kommt ohne `egui::Button` aus. Zurückspulen und Play sind Hardware-Tasten (`Key`) mit gefülltem Symbol, Play rastet beim Abspielen grün ein. Aufnahme ist eine `Key` mit Symbol und Text, die beim Aufnehmen rot (`on-air`) einrastet. Loop, Punch und „Stopp am Ende“ sind `Key` mit Symbol und Text, eingeschaltet in `accent-soft` mit Rand `accent` wie bisher. `Key` hat dafür zwei neue Varianten: `.icon(glyph)` für Symbol plus Text (oder Symbol allein) und `.soft(an)` für Schalter. Neuer Baustein `widgets::Segment` (Symbol plus Text, gewählt `accent-soft` mit Rand `accent`, sonst `well`) ersetzt die Hilfe `segment()` für die Dock-Reiter Studio-Mixer, Piano-Roll, Automation, KI-Chat und Analyse. Radio behält seine Segmente nach Design (`segments`, Mulde mit erhabenem gewähltem Knopf); die Party hat keine solchen Reiter. Tests: `app::nacharbeit_tests::whole_transport_has_no_egui_button`, `app::nacharbeit_tests::producer_segments_use_the_widget` (beide vorher rot), `widgets::segment::tests` (zwei).
