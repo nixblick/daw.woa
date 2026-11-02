@@ -192,6 +192,16 @@ pub enum Cmd {
     DeckFadeOut(usize, usize),
     /// Deck kurz ausblenden und anhalten; die Stelle bleibt.
     DeckStop(usize),
+    /// Fade-Taste am Deck: über so viele Frames ausblenden und anhalten; blendet es schon
+    /// aus, sofort anhalten.
+    DeckFade(usize, usize),
+    /// Fade-Taste an der Sende-Playlist: wie [`Cmd::Stop`], aber über so viele Frames;
+    /// blendet sie schon aus, sofort Stille.
+    FadeMusic(usize),
+    /// Fade-Taste an einem Cart: über so viele Frames ausblenden; zweiter Druck sofort aus.
+    CartFade(usize, usize),
+    /// Fade-Taste im Sende-Deck: Playlist, Decks und Carts gemeinsam ausblenden.
+    FadeAll(usize),
     /// Deck anhalten und an den Anfang (Cue-In) stellen.
     DeckCue(usize),
     /// Deck leeren.
@@ -529,6 +539,16 @@ impl DeckPlay {
         }
     }
 
+    /// Fade-Taste: über `frames` ausblenden; blendet es schon aus, sofort anhalten.
+    fn fade_button(&mut self, frames: usize) {
+        if self.stopping.is_some() {
+            self.playing = false;
+            self.stopping = None;
+        } else {
+            self.fade_out(frames);
+        }
+    }
+
     /// Anhalten und an den Anfang.
     fn cue(&mut self) {
         self.playing = false;
@@ -630,6 +650,20 @@ struct Voice {
     /// Ende (Frames, Cue-Out).
     end: usize,
     gain: f32,
+    /// Fade-Taste: verbleibende und gesamte Frames der Ausblendung.
+    fading: Option<(usize, usize)>,
+}
+
+impl Voice {
+    /// Fade-Taste: ausblenden; blendet der Cart schon aus, `true` = sofort weg.
+    fn fade(&mut self, frames: usize) -> bool {
+        if self.fading.is_some() {
+            return true;
+        }
+        let f = frames.max(1);
+        self.fading = Some((f, f));
+        false
+    }
 }
 
 /// Ein Voice-Track, der auf seinen Titel wartet.
@@ -734,6 +768,24 @@ impl Mixer {
         } else {
             self.stop_len
         }
+    }
+
+    /// Fade-Taste an der Musik: über `frames` ausblenden und anhalten (nie Pause); blendet sie
+    /// schon aus, sofort Stille. Ein gehaltener (pausierter) Titel wird verworfen.
+    fn fade_music(&mut self, frames: usize) {
+        if self.held {
+            self.clear_music();
+        } else if self.playing {
+            if self.stopping.is_some() && !self.pausing {
+                self.stopping = Some(1);
+                self.stop_total = usize::MAX;
+            } else {
+                let f = frames.max(1);
+                self.stopping = Some(f);
+                self.stop_total = f;
+            }
+        }
+        self.pausing = false;
     }
 
     /// Legt den Mixer an (im Control-Thread, danach in den Audio-Thread verschieben).
@@ -924,6 +976,7 @@ impl Mixer {
                             pos: start.min(end),
                             end,
                             gain,
+                            fading: None,
                         });
                     }
                 }
@@ -961,6 +1014,30 @@ impl Mixer {
                     let len = self.stop_frames();
                     if let Some(Some(d)) = self.decks.get_mut(deck) {
                         d.fade_out(len);
+                    }
+                }
+                Cmd::DeckFade(deck, frames) => {
+                    if let Some(Some(d)) = self.decks.get_mut(deck) {
+                        d.fade_button(frames);
+                    }
+                }
+                Cmd::FadeMusic(frames) => self.fade_music(frames),
+                Cmd::CartFade(slot, frames) => {
+                    if let Some(v) = self.carts.get_mut(slot)
+                        && v.as_mut().is_some_and(|c| c.fade(frames))
+                    {
+                        *v = None;
+                    }
+                }
+                Cmd::FadeAll(frames) => {
+                    self.fade_music(frames);
+                    for d in self.decks.iter_mut().flatten() {
+                        d.fade_out(frames);
+                    }
+                    for v in &mut self.carts {
+                        if v.as_mut().is_some_and(|c| c.fade(frames)) {
+                            *v = None;
+                        }
                     }
                 }
                 Cmd::DeckPlayFade(deck, frames) => {
@@ -1385,11 +1462,22 @@ impl Mixer {
             let (mut cl, mut cr) = (0.0f32, 0.0f32);
             for slot in self.carts.iter_mut() {
                 if let Some(v) = slot {
+                    let mut g = v.gain;
+                    let mut gone = v.pos >= v.end;
+                    if let Some((n, total)) = v.fading {
+                        g *= n as f32 / total.max(1) as f32;
+                        if n <= 1 {
+                            gone = true;
+                        } else {
+                            v.fading = Some((n - 1, total));
+                        }
+                    }
                     if v.pos < v.end {
-                        cl += v.buf.left[v.pos] * v.gain;
-                        cr += v.buf.right[v.pos] * v.gain;
+                        cl += v.buf.left[v.pos] * g;
+                        cr += v.buf.right[v.pos] * g;
                         v.pos += 1;
-                    } else {
+                    }
+                    if gone {
                         *slot = None;
                     }
                 }

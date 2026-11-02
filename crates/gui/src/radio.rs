@@ -13,6 +13,8 @@ use woa_radio::control::PflSource;
 use woa_radio::mixer::LevelBus;
 use woa_radio::station::{Station, View, ViewEntry};
 use woa_radio::{CARTS, Controller, RadioShow};
+
+use crate::widgets::fade::{FadeKey, FadeShape, fade_button};
 use woa_stream::StreamStatus;
 use woa_stream::link::{Feeder, is_alive, link_path};
 
@@ -477,6 +479,8 @@ struct Parts {
 
 /// Die laufende Sendung samt Gerät.
 pub struct RadioDesk {
+    /// Laufende Fade-Blenden (FadeButton, fest 3 s) für die Anzeige.
+    fades: crate::widgets::fade::Fades,
     /// Beginn des laufenden Mitschnitts (Dauer im REC-Tooltip).
     rec_since: Option<std::time::Instant>,
     radio_path: PathBuf,
@@ -1288,6 +1292,7 @@ impl RadioDesk {
             device,
             levels_db: [0.0; 4],
             learn: None,
+            fades: Default::default(),
             playlist_rect: egui::Rect::NOTHING,
             cart_rects: Vec::new(),
             deck_rects: [egui::Rect::NOTHING; woa_radio::DECKS],
@@ -1649,6 +1654,9 @@ impl RadioDesk {
             }
             Target::Deck(k, DeckAction::Cue) if k < self.view.decks.len() => {
                 self.with(move |c| c.deck_cue(k))
+            }
+            Target::Deck(k, DeckAction::Fade) if k < self.view.decks.len() => {
+                self.with(move |c| c.fade_deck(k))
             }
             Target::Deck(k, DeckAction::Pfl) if k < self.view.decks.len() => self.with(move |c| {
                 if let Err(e) = c.pfl_toggle(PflSource::Deck(k)) {
@@ -2230,6 +2238,24 @@ impl RadioDesk {
     /// Zeichnet das ganze Layout in `ui`.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let v = self.view.clone();
+        // Fade-Anzeige: abgelaufene Blenden abräumen, laufende neu zeichnen; steht ein Deck
+        // schon (von Hand gestoppt), endet seine Anzeige.
+        if std::env::var_os("WOA_FADE").is_some() {
+            // Fotomodus „blendet aus“: nur Anzeige, kein Befehl an den Mixer, kein Ton.
+            let now = ui.input(|i| i.time);
+            if self.fades.progress(FadeKey::All, now).is_none() {
+                self.fades.press(FadeKey::All, now - 1.9);
+            }
+        }
+        if self.fades.tick(ui.input(|i| i.time)) {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(50));
+        }
+        for (k, d) in v.decks.iter().enumerate() {
+            if !d.playing {
+                self.fades.clear(FadeKey::Deck(k));
+            }
+        }
         if let Some(e) = self.error.clone() {
             // Eine Zeile mit Symbol (Design-Runde 3); der ganze Text im Tooltip und hinter
             // „Details“.
@@ -2601,6 +2627,16 @@ impl RadioDesk {
                 self.with(|c| c.stop_or_pause());
             }
             self.learn_menu(&r, Target::Stop);
+
+            // Fade (Design Fassung 7, #320): blendet alles Laufende fest in 3 s aus.
+            let now = ui.input(|i| i.time);
+            let any = v.running || v.carts_playing != 0 || v.decks.iter().any(|d| d.playing);
+            let pr = self.fades.progress(FadeKey::All, now);
+            let r = fade_button(ui, FadeShape::Big(KEY_H), "Fade alles", any, pr);
+            if r.clicked() {
+                self.fades.press(FadeKey::All, now);
+                self.with(|c| c.fade_all());
+            }
 
             let r = console_key(
                 ui,
@@ -3763,6 +3799,21 @@ impl RadioDesk {
                                     }
                                     if on_air {
                                         theme::status_pill(ui, "ON AIR", theme::on_air(), true);
+                                        // Fade in der laufenden Zeile (FadeButton, #274).
+                                        let now = ui.input(|i| i.time);
+                                        let pr = self.fades.progress(FadeKey::Playlist, now);
+                                        if fade_button(
+                                            ui,
+                                            FadeShape::Icon(22.0),
+                                            "Fade Playlist",
+                                            v.running,
+                                            pr,
+                                        )
+                                        .clicked()
+                                        {
+                                            self.fades.press(FadeKey::Playlist, now);
+                                            self.with(|c| c.fade_music());
+                                        }
                                     } else if is_cue {
                                         theme::status_pill(ui, "CUE", theme::cue(), true);
                                     }
@@ -3960,6 +4011,30 @@ impl RadioDesk {
                         self.cart_rects.resize(slot + 1, egui::Rect::NOTHING);
                     }
                     self.cart_rects[slot] = r.rect;
+                    // Fade-Symbol oben rechts (FadeButton, #274): beim Hover oder laufend.
+                    let now = ui.input(|i| i.time);
+                    let pr = self.fades.progress(FadeKey::Cart(slot), now).filter(|_| playing);
+                    if playing {
+                        let at = egui::Rect::from_min_size(
+                            r.rect.right_top() + egui::vec2(-28.0, 4.0),
+                            egui::vec2(24.0, 24.0),
+                        );
+                        let fr = ui
+                            .scope_builder(egui::UiBuilder::new().max_rect(at), |ui| {
+                                fade_button(
+                                    ui,
+                                    FadeShape::Icon(24.0),
+                                    &format!("Fade Cart {}", slot + 1),
+                                    true,
+                                    pr,
+                                )
+                            })
+                            .inner;
+                        if fr.clicked() {
+                            self.fades.press(FadeKey::Cart(slot), now);
+                            self.with(move |c| c.fade_cart(slot));
+                        }
+                    }
 
                     if r.clicked() {
                         if label.is_some() {
@@ -3981,6 +4056,12 @@ impl RadioDesk {
                         }
                         if let Some(t) = crate::controls::learn_menu(ui, Target::Cart(slot), None) {
                             self.learn = Some(t);
+                        }
+                        if playing && ui.button("Ausblenden (3 s)").clicked() {
+                            let now = ui.input(|i| i.time);
+                            self.fades.press(FadeKey::Cart(slot), now);
+                            self.with(move |c| c.fade_cart(slot));
+                            ui.close();
                         }
                         if label.is_some()
                             && ui
@@ -4798,6 +4879,24 @@ impl RadioDesk {
                         self.learn_menu(&r, Target::Deck(k, DeckAction::Cue));
                         if r.clicked() {
                             self.with(move |c| c.deck_cue(k));
+                        }
+                        // Fade (FadeButton, #321): quadratisch neben Start/Stopp, fest 3 s.
+                        let now = ui.input(|i| i.time);
+                        let pr = self
+                            .fades
+                            .progress(FadeKey::Deck(k), now)
+                            .filter(|_| d.playing);
+                        let r = fade_button(
+                            ui,
+                            FadeShape::Square(SYMBOL_KEY),
+                            &format!("Fade Deck {name}"),
+                            d.playing,
+                            pr,
+                        );
+                        self.learn_menu(&r, Target::Deck(k, DeckAction::Fade));
+                        if r.clicked() {
+                            self.fades.press(FadeKey::Deck(k), now);
+                            self.with(move |c| c.fade_deck(k));
                         }
                         let (icon, word) = if d.playing {
                             (theme::icf::STOP, "Stopp")
@@ -5714,6 +5813,7 @@ mod deck_drop_tests {
             "Target::Deck(k, DeckAction::Start)",
             "Target::Deck(k, DeckAction::Cue)",
             "Target::Deck(k, DeckAction::Pfl)",
+            "Target::Deck(k, DeckAction::Fade)",
         ] {
             assert!(
                 src.contains(&format!("learn_menu(&r, {t})")),

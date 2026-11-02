@@ -3,6 +3,7 @@
 ## 0.41.0 — 2026-11-02
 
 - **Design System Fassung 7 (Nachtrag 0.40):** `docs/design/woa-design-system/` ersetzt Fassung 6 (neue Bausteine Window, QuestionsWindow, QuestionStates, AcceptanceWindow, DjHead, FadeButton, ScreenSettings, SettingsFilter, AiSettings, JingleVoice, GuestCard), Zielbilder unter `docs/design/soll/fassung-7/`.
+- **Fade-Taste fest 3 s (FadeButton, #320, #321, #274):** Sende-Deck „Fade“ nach „Stopp“ blendet alles Laufende aus (Playlist, Decks, Carts) und stoppt; je Deck A–C eine quadratische Fade-Taste neben Start/Stopp (MIDI-lernbar als „Deck X Fade“); Cart-Wall mit Fade-Symbol oben rechts am laufenden Cart und „Ausblenden (3 s)“ im Rechtsklick; in der laufenden Playlist-Zeile ein Fade-Symbol. „Blendet aus“ zeigt Rahmen und wachsende Füllung in `cue` plus Restzeit („1,1 s“); ein zweiter Druck stoppt sofort; läuft nichts, ist die Taste gesperrt. Die Einstellung „Stopp blendet aus“ (#227) bleibt unverändert. Neue Mixer-Befehle `FadeMusic`, `DeckFade`, `CartFade`, `FadeAll`, Controller `fade_music`, `fade_deck`, `fade_cart`, `fade_all`, `anything_running`, Konstante `woa_radio::FADE_SECONDS`. Fotomodus `WOA_FADE=1` (nur Anzeige, kein Befehl). Tests: `crates/radio/tests/fade.rs` (sechs, unter `assert_no_alloc`), `widgets::fade::tests` (drei), `controls::tests::decks_a_to_c_are_in_the_learn_list`.
 
 ## 0.40.0 — 2026-11-02
 

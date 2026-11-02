@@ -45,6 +45,8 @@ pub use woa_engine::pairs::PairBuf;
 
 /// Felder der Cart-Wall (4×4).
 pub const CARTS: usize = 16;
+/// Fade-Taste (Design Fassung 7): blendet überall fest in so vielen Sekunden aus.
+pub const FADE_SECONDS: f64 = 3.0;
 /// Zahl der Decks (A, B, C).
 pub const DECKS: usize = 3;
 /// Seiten der Party (links, rechts): eigene Abspieler neben den Radio-Decks.

@@ -8,6 +8,7 @@
 pub mod clock;
 pub mod ctl;
 pub mod drum_grid;
+pub mod fade;
 pub mod fader;
 pub mod icon_button;
 pub mod jog;
