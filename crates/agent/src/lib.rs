@@ -1229,6 +1229,7 @@ fn sound_catalog_json() -> serde_json::Value {
         .map(|x| {
             serde_json::json!({
                 "role": x.role.name(),
+                "category": x.category.name(),
                 "name": x.name,
                 "program": x.sound.program,
                 "drums": x.sound.drums,
@@ -1912,7 +1913,13 @@ impl WoaAgent {
     ) -> Result<CallToolResult, McpError> {
         self.agent_step(|s| {
             let id = s.new_track_id();
-            s.apply(Command::add_track(id, p.name, p.kind.into()))?;
+            // Neue MIDI-Spuren spielen den Flügel, wie in der Oberfläche (02.11.2026).
+            let kind: TrackKind = p.kind.into();
+            s.apply(if kind == TrackKind::Midi {
+                Command::add_midi_track(id, p.name)
+            } else {
+                Command::add_track(id, p.name, kind)
+            })?;
             Ok(serde_json::json!({ "track": id.0 }))
         })
     }
@@ -2300,10 +2307,7 @@ impl WoaAgent {
         let mut wanted = if p.synth {
             Some(None)
         } else if let Some(name) = &p.preset {
-            match woa_model::SOUND_PRESETS
-                .iter()
-                .find(|x| x.name.eq_ignore_ascii_case(name))
-            {
+            match woa_model::preset_by_name(name) {
                 Some(x) => Some(Some(x.sound)),
                 None => return Ok(fail(format!("Preset {name:?} gibt es nicht"))),
             }

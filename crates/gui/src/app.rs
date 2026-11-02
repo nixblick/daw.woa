@@ -132,7 +132,7 @@ pub struct WoaApp {
     /// Suchtext in der Liste „+ Effekt“.
     fx_search: String,
     /// Aufgeklappte Klangwahl (Design `SoundPicker`): Spur und gezeigte Rolle.
-    sound_pick: Option<(TrackId, woa_model::SoundRole)>,
+    sound_pick: Option<(TrackId, woa_model::SoundCategory)>,
     /// Raster für „Quantisieren“ im Clip-Inspektor (Teiler: 4 = 1/4 … 32 = 1/32).
     quantize_div: u32,
     /// Stereo-Panorama beim Ziehen (wird beim Loslassen als ein Undo-Schritt übernommen).
@@ -3663,7 +3663,11 @@ impl WoaApp {
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             ui.set_max_width(w);
-                            self.source_combo(ui, id, is_midi, w);
+                            if is_midi {
+                                self.midi_head_source(ui, id, w);
+                            } else {
+                                self.source_combo(ui, id, is_midi, w);
+                            }
                         },
                     );
                     let r = self.gain_field(ui, id, gain, "");
@@ -3897,6 +3901,43 @@ impl WoaApp {
 
     /// Eingang einer MIDI-Spur: das MIDI-Gerät (Klaviatur-Symbol), Auswahl wie im Menü
     /// Einstellungen › MIDI-Eingang.
+    /// Spurkopf einer MIDI-Spur: links das Instrument (Klick öffnet die Klangauswahl im Rack),
+    /// rechts der MIDI-Eingang (André 02.11.2026: Klangwahl sichtbar).
+    fn midi_head_source(&mut self, ui: &mut egui::Ui, id: TrackId, width: f32) {
+        let gap = ui.spacing().item_spacing.x;
+        let chip_w = ((width - gap) * 0.55).floor().max(24.0);
+        let sound = self.state.project().track(id).and_then(|t| t.sound);
+        let name = woa_model::sound_name(sound);
+        let r = ui
+            .add_sized(
+                [chip_w, 21.0],
+                egui::Button::new(
+                    egui::RichText::new(format!("{} {name}", theme::ic::MUSIC_NOTE))
+                        .small()
+                        .color(theme::text()),
+                )
+                .truncate(),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text(format!("Instrument: {name} · Klick: Klang wählen"));
+        if r.clicked() {
+            self.open_sound_picker(id);
+        }
+        self.midi_input_combo(ui, id, (width - chip_w - gap).max(24.0));
+    }
+
+    /// Wählt die Spur und klappt im Rack die Klangauswahl in der Kategorie ihres Klangs auf.
+    fn open_sound_picker(&mut self, id: TrackId) {
+        let sound = self.state.project().track(id).and_then(|t| t.sound);
+        self.select_track(id);
+        self.sound_pick = Some((
+            id,
+            sound
+                .and_then(woa_model::sound_category)
+                .unwrap_or(woa_model::SoundCategory::Klavier),
+        ));
+    }
+
     fn midi_input_combo(&mut self, ui: &mut egui::Ui, id: TrackId, width: f32) {
         let text = midi_input_label(&self.midi.status());
         egui::ComboBox::from_id_salt(("midi_source", id))
@@ -4671,16 +4712,24 @@ impl WoaApp {
                 theme::well(),
             );
             // Klang rechts im Clip-Kopf, in Versalien (Design `ChordTrack`).
+            let mut cap_rect = None;
             if let Some(cap) = &caption
                 && head.width() > 120.0
             {
-                painter.with_clip_rect(head.intersect(rect)).text(
+                cap_rect = Some(painter.with_clip_rect(head.intersect(rect)).text(
                     head.right_center() - egui::vec2(6.0, 0.0),
                     egui::Align2::RIGHT_CENTER,
                     cap,
                     theme::label_font(10.5),
                     theme::well(),
-                );
+                ));
+            }
+            // Klick auf den Klangnamen im Clip-Kopf öffnet die Klangauswahl (02.11.2026).
+            if cresp.clicked()
+                && let (Some(r), Some(p)) = (cap_rect, cresp.interact_pointer_pos())
+                && r.expand(3.0).contains(p)
+            {
+                self.open_sound_picker(track);
             }
             if cresp.clicked() || cresp.drag_started() {
                 let m = ui.input(|i| i.modifiers);
@@ -7897,7 +7946,7 @@ impl WoaApp {
     /// aufgeklappt Rollen Lead · Bass · Pad · Kit, je Rolle vier Klänge, darunter Klangbank und
     /// eingebauter Synth. Ein CLAP-Instrument ersetzt den Klang; dann steht hier nur sein Name.
     fn instrument_section(&mut self, ui: &mut egui::Ui, id: TrackId, color: egui::Color32) {
-        use woa_model::{PluginRole, SOUND_PRESETS, SoundRole, TrackSound};
+        use woa_model::{PluginRole, SOUND_PRESETS, SoundCategory, TrackSound};
         let Some(track) = self.state.project().track(id) else {
             return;
         };
@@ -7916,18 +7965,17 @@ impl WoaApp {
             return;
         }
         let bank = current.and_then(|s| s.bank);
-        let role = current.and_then(sound_role);
+        let role = current.and_then(woa_model::sound_category);
         let open = self.sound_pick.filter(|(t, _)| *t == id).map(|(_, r)| r);
         let (name, sub, icon) = match current {
             None => (
-                "Eingebauter Synth".to_owned(),
-                "Synth · ohne Klangbank".to_owned(),
+                woa_model::SYNTH_NAME.to_owned(),
+                "Eingebaut · ohne Klangbank".to_owned(),
                 theme::ic::WAVE_SINE,
             ),
             Some(s) => {
-                let name = woa_model::preset_name(s)
-                    .map_or_else(|| format!("GM {}", s.program), str::to_owned);
-                let (r, ic) = role.map_or(("GM", theme::ic::MUSIC_NOTE), role_label);
+                let name = woa_model::sound_name(Some(s));
+                let (r, ic) = role.map_or(("GM", theme::ic::MUSIC_NOTE), category_label);
                 let b = bank.map_or("GeneralUser GS", |b| b.name());
                 (name, format!("{r} · {b}"), ic)
             }
@@ -7986,37 +8034,39 @@ impl WoaApp {
         if click.clicked() {
             self.sound_pick = match open {
                 Some(_) => None,
-                None => Some((id, role.unwrap_or(SoundRole::Lead))),
+                None => Some((id, role.unwrap_or(SoundCategory::Klavier))),
             };
         }
         let Some(shown) = open else {
             return;
         };
         let mut chosen: Option<Option<TrackSound>> = None;
-        // Rollen als Segmentschalter.
+        // Kategorien als Segmentschalter, vier je Zeile (02.11.2026: statt Lead · Bass · Pad · Kit).
         let gap = ui.spacing().item_spacing.x;
-        ui.horizontal(|ui| {
-            let w = ((ui.available_width() - 3.0 * gap) / 4.0).floor();
-            for r in [
-                SoundRole::Lead,
-                SoundRole::Bass,
-                SoundRole::Pad,
-                SoundRole::Kit,
-            ] {
-                let (label, ic) = role_label(r);
-                if ui
-                    .add_sized(
-                        [w, 26.0],
-                        egui::Button::selectable(r == shown, format!("{ic} {label}")),
-                    )
-                    .clicked()
-                {
-                    self.sound_pick = Some((id, r));
+        for row in SoundCategory::ALL.chunks(4) {
+            ui.horizontal(|ui| {
+                let w = ((ui.available_width() - 3.0 * gap) / 4.0).floor();
+                for &r in row {
+                    let (label, ic) = category_label(r);
+                    if ui
+                        .add_sized(
+                            [w, 26.0],
+                            egui::Button::selectable(r == shown, format!("{ic} {label}"))
+                                .truncate(),
+                        )
+                        .on_hover_text(label)
+                        .clicked()
+                    {
+                        self.sound_pick = Some((id, r));
+                    }
                 }
-            }
-        });
-        // Vier Klänge der Rolle als Kacheln, zwei je Zeile.
-        let presets: Vec<_> = SOUND_PRESETS.iter().filter(|p| p.role == shown).collect();
+            });
+        }
+        // Die Klänge der Kategorie als Kacheln, zwei je Zeile.
+        let presets: Vec<_> = SOUND_PRESETS
+            .iter()
+            .filter(|p| p.category == shown)
+            .collect();
         for pair in presets.chunks(2) {
             ui.horizontal(|ui| {
                 let w = ((ui.available_width() - gap) / 2.0).floor();
@@ -8089,10 +8139,10 @@ impl WoaApp {
                 [ui.available_width(), 26.0],
                 egui::Button::selectable(
                     current.is_none(),
-                    format!("{} Eingebauter Synth", theme::ic::WAVE_SINE),
+                    format!("{} {}", theme::ic::WAVE_SINE, woa_model::SYNTH_NAME),
                 ),
             )
-            .on_hover_text("Ohne Klangbank: eingebauter Synth, lädt nichts")
+            .on_hover_text("Eingebauter einfacher Synth ohne Klangbank, lädt nichts")
             .clicked()
         {
             chosen = Some(None);
@@ -9315,23 +9365,17 @@ fn midi_input_label(status: &woa_io::midi::MidiStatus) -> String {
     }
 }
 
-/// Rollenname und Symbol im `SoundPicker`.
-fn role_label(role: woa_model::SoundRole) -> (&'static str, &'static str) {
-    use woa_model::SoundRole;
-    match role {
-        SoundRole::Lead => ("Lead", theme::ic::PIANO_KEYS),
-        SoundRole::Bass => ("Bass", theme::ic::WAVE_SINE),
-        SoundRole::Pad => ("Pad", theme::ic::CLOUD),
-        SoundRole::Kit => ("Kit", theme::ic::GRID_FOUR),
-    }
-}
-
-/// Rolle eines Klangs aus der Auswahl (`None` für GM-Klänge außerhalb der Auswahl).
-fn sound_role(sound: woa_model::TrackSound) -> Option<woa_model::SoundRole> {
-    woa_model::SOUND_PRESETS
-        .iter()
-        .find(|p| p.sound.program == sound.program && p.sound.drums == sound.drums)
-        .map(|p| p.role)
+/// Kategoriename und Symbol im `SoundPicker`.
+fn category_label(c: woa_model::SoundCategory) -> (&'static str, &'static str) {
+    use woa_model::SoundCategory as C;
+    let ic = match c {
+        C::Klavier => theme::ic::PIANO_KEYS,
+        C::Bass => theme::ic::WAVE_SINE,
+        C::Gitarre | C::Streicher | C::Blaeser => theme::ic::MUSIC_NOTE,
+        C::Synth => theme::ic::CLOUD,
+        C::Drums => theme::ic::GRID_FOUR,
+    };
+    (c.name(), ic)
 }
 
 fn bank_hint(state: &woa_engine::banks::BankState) -> String {

@@ -171,3 +171,5 @@ Abweichungen:
 - **Bibliothek Schema 5** (Tabelle `waveforms`): Headless und GUI gemeinsam ausliefern.
 - **Deck-Übernahme im Radio** (Blende/hart) liegt im Deck-Menü statt in der Sendereihe.
 - **Radio bei 1366 × 768:** Pegel, Processing und Wunschtitel liegen unter dem Bildrand (rechte Spalte scrollt); verlangt ist „ohne Scrollen“ nur für 1920 × 1030. Bild `ist-radio-*-1366x768-0.35.23.png`.
+- **SoundPicker nach Kategorien statt Rollen** (0.38.0, André 02.11.2026): Klavier · Bass · Gitarre · Streicher · Bläser · Synth · Drums als Segmentschalter in zwei Zeilen, je Kategorie zwei bis fünf Klänge; der Entwurf nennt Lead · Bass · Pad · Kit mit je vier Klängen. Die Rollen bleiben im Modell für Akkord- und Jingle-Bau. „Eingebauter Synth“ heißt „Synth (einfach)“.
+- **Instrument im Spurkopf** (0.38.0): MIDI-Spuren zeigen statt nur des MIDI-Eingangs links den Klangnamen als Knopf (öffnet den SoundPicker im Rack), rechts den Eingang. Der Klangname im Clip-Kopf ist ebenfalls anklickbar.

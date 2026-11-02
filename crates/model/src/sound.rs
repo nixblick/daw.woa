@@ -96,18 +96,64 @@ impl SoundRole {
     }
 }
 
+/// Kategorie in der Klangauswahl (André 02.11.2026: „Ich will die qualitativ guten Sachen“).
+/// Die Rolle ([`SoundRole`]) steuert Akkord- und Jingle-Bau, die Kategorie nur die Anzeige.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SoundCategory {
+    Klavier,
+    Bass,
+    Gitarre,
+    Streicher,
+    Blaeser,
+    Synth,
+    Drums,
+}
+
+impl SoundCategory {
+    /// Alle Kategorien in Anzeigereihenfolge.
+    pub const ALL: [SoundCategory; 7] = [
+        Self::Klavier,
+        Self::Bass,
+        Self::Gitarre,
+        Self::Streicher,
+        Self::Blaeser,
+        Self::Synth,
+        Self::Drums,
+    ];
+
+    /// Anzeigename.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Klavier => "Klavier",
+            Self::Bass => "Bass",
+            Self::Gitarre => "Gitarre",
+            Self::Streicher => "Streicher",
+            Self::Blaeser => "Bläser",
+            Self::Synth => "Synth",
+            Self::Drums => "Drums",
+        }
+    }
+}
+
 /// Ein Eintrag der Klangauswahl.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SoundPreset {
     pub role: SoundRole,
+    pub category: SoundCategory,
     /// Anzeigename.
     pub name: &'static str,
     pub sound: TrackSound,
 }
 
-const fn gm(role: SoundRole, name: &'static str, program: u8) -> SoundPreset {
+const fn gm(
+    role: SoundRole,
+    category: SoundCategory,
+    name: &'static str,
+    program: u8,
+) -> SoundPreset {
     SoundPreset {
         role,
+        category,
         name,
         sound: TrackSound {
             program,
@@ -120,6 +166,7 @@ const fn gm(role: SoundRole, name: &'static str, program: u8) -> SoundPreset {
 const fn kit(name: &'static str, program: u8) -> SoundPreset {
     SoundPreset {
         role: SoundRole::Kit,
+        category: SoundCategory::Drums,
         name,
         sound: TrackSound {
             program,
@@ -129,25 +176,86 @@ const fn kit(name: &'static str, program: u8) -> SoundPreset {
     }
 }
 
-/// Die Klangauswahl: je Rolle vier GM-Klänge (GeneralUser GS kennt alle).
+use SoundCategory as C;
+use SoundRole as R;
+
+/// Die Klangauswahl (GeneralUser GS kennt alle). Der erste Eintrag je Rolle ist der Klang,
+/// den Akkord- und Jingle-Bau nehmen; neue Einträge kommen deshalb ans Ende.
 pub const SOUND_PRESETS: &[SoundPreset] = &[
-    gm(SoundRole::Lead, "Klavier", 0),
-    gm(SoundRole::Lead, "E-Piano", 4),
-    gm(SoundRole::Lead, "Glockenspiel", 9),
-    gm(SoundRole::Lead, "Synth-Lead", 80),
-    gm(SoundRole::Bass, "E-Bass", 33),
-    gm(SoundRole::Bass, "Kontrabass", 32),
-    gm(SoundRole::Bass, "Synth-Bass", 38),
-    gm(SoundRole::Bass, "Fretless", 35),
-    gm(SoundRole::Pad, "Streicher", 48),
-    gm(SoundRole::Pad, "Warm Pad", 89),
-    gm(SoundRole::Pad, "Orgel", 16),
-    gm(SoundRole::Pad, "Chor", 52),
+    gm(R::Lead, C::Klavier, "Flügel", 0),
+    gm(R::Lead, C::Klavier, "E-Piano", 4),
+    gm(R::Lead, C::Klavier, "Glockenspiel", 9),
+    gm(R::Lead, C::Synth, "Synth-Lead", 80),
+    gm(R::Bass, C::Bass, "E-Bass", 33),
+    gm(R::Bass, C::Bass, "Kontrabass", 32),
+    gm(R::Bass, C::Synth, "Synth-Bass", 38),
+    gm(R::Bass, C::Bass, "Fretless", 35),
+    gm(R::Pad, C::Streicher, "Streicher", 48),
+    gm(R::Pad, C::Synth, "Warm Pad", 89),
+    gm(R::Pad, C::Klavier, "Orgel", 16),
+    gm(R::Pad, C::Streicher, "Chor", 52),
     kit("Standard-Kit", 0),
     kit("Room-Kit", 8),
     kit("Power-Kit", 16),
     kit("Elektro-Kit", 24),
+    gm(R::Lead, C::Klavier, "Honky-Tonk", 3),
+    gm(R::Bass, C::Bass, "Slap-Bass", 36),
+    gm(R::Lead, C::Gitarre, "Konzertgitarre", 24),
+    gm(R::Lead, C::Gitarre, "Westerngitarre", 25),
+    gm(R::Lead, C::Gitarre, "E-Gitarre clean", 27),
+    gm(R::Lead, C::Gitarre, "Verzerrte Gitarre", 30),
+    gm(R::Pad, C::Streicher, "Langsame Streicher", 49),
+    gm(R::Lead, C::Streicher, "Pizzicato", 45),
+    gm(R::Lead, C::Blaeser, "Trompete", 56),
+    gm(R::Lead, C::Blaeser, "Posaune", 57),
+    gm(R::Lead, C::Blaeser, "Saxophon", 65),
+    gm(R::Pad, C::Blaeser, "Blechbläser", 61),
+    gm(R::Lead, C::Blaeser, "Flöte", 73),
+    gm(R::Lead, C::Synth, "Sägezahn-Lead", 81),
+    gm(R::Pad, C::Synth, "Poly-Synth", 90),
 ];
+
+/// Name des eingebauten Synths in der Oberfläche.
+pub const SYNTH_NAME: &str = "Synth (einfach)";
+
+impl TrackSound {
+    /// Klang neuer MIDI-Spuren: Flügel aus GeneralUser GS (eingebaut, lädt nichts nach).
+    /// Alte Spuren ohne Klang behalten den eingebauten Synth.
+    pub const GRAND: TrackSound = TrackSound {
+        program: 0,
+        drums: false,
+        bank: None,
+    };
+}
+
+/// Anzeigename eines Spurklangs: Preset-Name, „GM n“ oder [`SYNTH_NAME`].
+pub fn sound_name(sound: Option<TrackSound>) -> String {
+    match sound {
+        None => SYNTH_NAME.to_owned(),
+        Some(s) => preset_name(s).map_or_else(|| format!("GM {}", s.program), str::to_owned),
+    }
+}
+
+/// Kategorie eines Klangs aus der Auswahl (`None` für GM-Klänge außerhalb der Auswahl).
+pub fn sound_category(sound: TrackSound) -> Option<SoundCategory> {
+    SOUND_PRESETS
+        .iter()
+        .find(|p| p.sound.program == sound.program && p.sound.drums == sound.drums)
+        .map(|p| p.category)
+}
+
+/// Preset zum Namen (Groß-/Kleinschreibung egal). „Klavier“ heißt seit 0.38.0 „Flügel“
+/// und wird weiter verstanden.
+pub fn preset_by_name(name: &str) -> Option<&'static SoundPreset> {
+    let name = if name.eq_ignore_ascii_case("klavier") {
+        "Flügel"
+    } else {
+        name
+    };
+    SOUND_PRESETS
+        .iter()
+        .find(|p| p.name.to_lowercase() == name.to_lowercase())
+}
 
 /// Der Preset-Name zu einem Klang, falls er in der Auswahl steht (die Bank zählt nicht).
 pub fn preset_name(sound: TrackSound) -> Option<&'static str> {

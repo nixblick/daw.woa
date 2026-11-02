@@ -157,8 +157,7 @@ impl AppState {
             .filter(|t| t.kind == TrackKind::Midi)
             .count();
         let name = format!("MIDI {}", n + 1);
-        self.apply(Command::add_track(id, name, TrackKind::Midi))
-            .then_some(id)
+        self.apply(Command::add_midi_track(id, name)).then_some(id)
     }
 
     /// Renames a track; empty or unchanged names are ignored.
@@ -565,9 +564,15 @@ impl AppState {
         start_beats: f64,
         length_beats: f64,
     ) -> Option<ClipId> {
+        // Der Clip heißt nach dem Instrument der Spur, nicht „MIDI-Clip“ (02.11.2026).
+        let sound = track
+            .and_then(|t| self.project().track(t))
+            .filter(|t| t.kind == TrackKind::Midi)
+            .map_or(Some(woa_model::TrackSound::GRAND), |t| t.sound);
+        let name = woa_model::sound_name(sound);
         self.add_midi_clip(
             track,
-            "MIDI-Clip",
+            &name,
             start_beats,
             length_beats.max(1.0),
             woa_model::MidiData::default(),
@@ -853,8 +858,7 @@ impl AppState {
             None => {
                 let id = self.session.new_track_id();
                 let name = format!("MIDI {}", self.project().tracks.len() + 1);
-                self.apply(Command::add_track(id, name, TrackKind::Midi))
-                    .then_some(id)
+                self.apply(Command::add_midi_track(id, name)).then_some(id)
             }
         };
         let id = self.session.new_clip_id();
@@ -1928,6 +1932,27 @@ mod tests {
         assert_eq!(s.project().tracks.len(), 1);
         s.undo();
         assert_eq!(s.project().tracks.len(), 2);
+    }
+
+    /// André 02.11.2026: Piano-Roll und Keyboard klingen nach Flügel, nicht nach Synth;
+    /// der Clip heißt nach dem Instrument.
+    #[test]
+    fn new_midi_tracks_and_clips_play_the_grand_piano() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut s, _) = state(tmp.path());
+        let midi = s.add_midi_track().unwrap();
+        assert_eq!(
+            s.project().track(midi).unwrap().sound,
+            Some(woa_model::TrackSound::GRAND)
+        );
+        let clip = s.create_empty_midi_clip(None, 0.0, 16.0).unwrap();
+        let (track, c) = s.project().clip(clip).unwrap();
+        assert_eq!(c.name, "Flügel");
+        assert_eq!(track.sound, Some(woa_model::TrackSound::GRAND));
+        // Auf einer Spur mit eigenem Klang heißt der Clip nach diesem Klang.
+        assert!(s.set_track_sound(midi, None));
+        let synth = s.create_empty_midi_clip(Some(midi), 16.0, 16.0).unwrap();
+        assert_eq!(s.project().clip(synth).unwrap().1.name, "Synth (einfach)");
     }
 
     #[test]

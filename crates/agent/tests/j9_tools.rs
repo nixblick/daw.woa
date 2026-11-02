@@ -59,7 +59,10 @@ async fn list_instruments_shows_banks_presets_and_no_scan_by_default() {
         assert!(b["state"].is_string(), "bank without state: {b}");
         assert!(b["license"].is_string());
     }
-    assert_eq!(r["presets"].as_array().unwrap().len(), 16);
+    assert_eq!(
+        r["presets"].as_array().unwrap().len(),
+        woa_model::SOUND_PRESETS.len()
+    );
     assert!(r["soundfont_available"].is_boolean());
     assert!(r["clap"].is_null(), "no plugin scan unless asked: {r}");
 }
