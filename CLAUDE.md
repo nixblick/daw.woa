@@ -44,6 +44,11 @@ Notfall-Playlist laufen als eigener Prozess (`apps/woa-streamd`).
    Claude baut ein ganzes Nutzer-Paket (z. B. Aufnehmen + Abspielen + Speichern) am Stück, prüft selbst
    (Tests, Probelauf am Gerät) und merged grüne PRs ohne Rückfrage. André nimmt nur das fertige Paket ab,
    mit einer kurzen Klickliste in `docs/abnahme.md`. Keine Einzel-Rückfragen je Funktion.
+   **Prüfpunkte (André 02.11.2026):** Jeder PR mit für Nutzer sichtbarer Änderung trägt seine Prüfpunkte in
+   `docs/abnahme.json` ein (Fenster Entwickler › Abnahme). Bei der Auswertung der Rückmeldungen werden
+   Punkte mit „ok“ dort entfernt; ein geänderter Punkt bekommt eine neue `version`. WOA blendet auf dem
+   Gerät mit „Geht“ abgenommene Punkte je id+version aus (`abnahme-erledigt.json` im Datenordner).
+   Tests senden nie an den echten Feedback-Server (`feedback::may_send`).
 8. Nach jeder Änderung: `CHANGELOG.md` und Workspace-Version nachziehen, commit, push.
 9. Crate-Versionen und Pflegestand vor dem Einbinden prüfen; die Liste im Konzept ist nicht frisch recherchiert.
 

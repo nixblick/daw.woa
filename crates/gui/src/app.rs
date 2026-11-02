@@ -6390,6 +6390,22 @@ impl WoaApp {
                             .color(theme::text_dim()),
                         );
                     });
+                    // Schließen-X oben rechts (André 02.11.2026).
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        let r = ui
+                            .add(egui::Button::new(theme::ic::X).frame(false))
+                            .on_hover_text("Schließen");
+                        r.widget_info(|| {
+                            egui::WidgetInfo::labeled(
+                                egui::WidgetType::Button,
+                                true,
+                                "Feedback schließen",
+                            )
+                        });
+                        if r.clicked() {
+                            close = true;
+                        }
+                    });
                 });
                 ui.add_space(14.0);
                 match self.feedback.phase.clone() {
@@ -9560,6 +9576,16 @@ mod party_feedback_tests {
     #[test]
     fn feedback_window_opens_in_radio_view() {
         assert!(feedback_opens(Mode::Radio));
+    }
+
+    /// André 02.11.2026: Schließen-X im Feedback-Fenster.
+    #[test]
+    fn feedback_window_has_close_x() {
+        let (mut rig, _tmp) = rig(Mode::Radio);
+        rig.app.feedback.open();
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        assert!(rig.has("Feedback schließen"), "Schließen-X fehlt");
     }
 }
 

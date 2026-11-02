@@ -128,6 +128,8 @@ fn fetch_remote() -> Result<String, String> {
 pub enum Urteil {
     Ok,
     Fehler,
+    /// Nur eine Anmerkung, jederzeit, auch nach „Geht“ (André 02.11.2026).
+    Anmerkung,
 }
 
 impl Urteil {
@@ -135,6 +137,7 @@ impl Urteil {
         match self {
             Urteil::Ok => "ok",
             Urteil::Fehler => "fehler",
+            Urteil::Anmerkung => "anmerkung",
         }
     }
 }
@@ -171,6 +174,7 @@ pub fn meta(config: &GuiConfig, urteil: Urteil, dev_key: Option<String>) -> Feed
         kind: match urteil {
             Urteil::Ok => FeedbackType::Lob,
             Urteil::Fehler => FeedbackType::Bug,
+            Urteil::Anmerkung => FeedbackType::Allgemein,
         },
         install_id: config.install_id.clone(),
         source: Some(SOURCE.into()),
@@ -211,6 +215,36 @@ pub fn daumen(urteil: Urteil, text: &str, schon_gefragt: bool) -> Daumen {
     }
 }
 
+/// Merkt „Geht“ je Prüfpunkt und Fassung: neue Version = neuer Schlüssel, Punkt erscheint wieder.
+pub fn erledigt_key(p: &Punkt) -> String {
+    format!("{}@{}", p.id, p.version)
+}
+
+/// Datei im Datenordner mit den auf diesem Gerät abgenommenen Punkten.
+pub const ERLEDIGT_DATEI: &str = "abnahme-erledigt.json";
+
+pub fn erledigt_laden(data_dir: &Path) -> HashSet<String> {
+    std::fs::read_to_string(data_dir.join(ERLEDIGT_DATEI))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok())
+        .map(|v| v.into_iter().collect())
+        .unwrap_or_default()
+}
+
+fn erledigt_speichern(data_dir: &Path, e: &HashSet<String>) {
+    let mut v: Vec<&String> = e.iter().collect();
+    v.sort();
+    let r = serde_json::to_string_pretty(&v)
+        .map_err(|e| e.to_string())
+        .and_then(|t| {
+            std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
+            std::fs::write(data_dir.join(ERLEDIGT_DATEI), t).map_err(|e| e.to_string())
+        });
+    if let Err(e) = r {
+        tracing::warn!(error = %e, "checklist: done list not saved");
+    }
+}
+
 /// Antwort des Sende-Threads.
 type Antwort = Receiver<Result<Option<u64>, FeedbackError>>;
 
@@ -232,6 +266,10 @@ pub struct AbnahmeWindow {
     sent: HashMap<String, Urteil>,
     pending: HashMap<String, (Urteil, Antwort)>,
     notes: HashMap<String, String>,
+    /// Auf diesem Gerät mit „Geht“ abgenommen (id@version), beim ersten Zeichnen geladen.
+    erledigt: Option<HashSet<String>>,
+    /// Schalter „Erledigte zeigen“.
+    pub zeige_erledigte: bool,
 }
 
 impl AbnahmeWindow {
@@ -261,7 +299,7 @@ impl AbnahmeWindow {
         self.liste.clone().unwrap_or_else(|| (embedded(), false))
     }
 
-    fn poll(&mut self) {
+    fn poll(&mut self, data_dir: &Path) {
         if let Some(rx) = &self.loader {
             match rx.try_recv() {
                 Ok(r) => {
@@ -291,10 +329,23 @@ impl AbnahmeWindow {
             self.pending.remove(&k);
             let note = match r {
                 Ok(n) => {
-                    self.sent.insert(k.clone(), u);
+                    if u != Urteil::Anmerkung {
+                        self.sent.insert(k.clone(), u);
+                    }
+                    if u == Urteil::Ok {
+                        let (liste, _) = self.current();
+                        if let Some(p) = liste.punkte.iter().find(|p| p.id == k) {
+                            let e = self
+                                .erledigt
+                                .get_or_insert_with(|| erledigt_laden(data_dir));
+                            e.insert(erledigt_key(p));
+                            erledigt_speichern(data_dir, e);
+                        }
+                    }
                     let was = match u {
                         Urteil::Ok => "Abgenommen",
                         Urteil::Fehler => "Fehler gemeldet",
+                        Urteil::Anmerkung => "Anmerkung gesendet",
                     };
                     match n {
                         Some(n) => format!("{was}, danke (#{n})"),
@@ -313,10 +364,15 @@ impl AbnahmeWindow {
 
     /// Ein Klick auf 👍 oder 👎.
     fn klick(&mut self, p: &Punkt, urteil: Urteil, config: &GuiConfig, data_dir: &Path) {
-        if self.sent.contains_key(&p.id) || self.pending.contains_key(&p.id) {
+        if self.pending.contains_key(&p.id)
+            || (urteil != Urteil::Anmerkung && self.sent.contains_key(&p.id))
+        {
             return;
         }
         let e = self.eingaben.entry(p.id.clone()).or_default();
+        if urteil == Urteil::Anmerkung && e.text.trim().is_empty() {
+            return;
+        }
         match daumen(urteil, &e.text, e.gefragt) {
             Daumen::NachTextFragen => {
                 e.gefragt = true;
@@ -328,6 +384,10 @@ impl AbnahmeWindow {
             }
             Daumen::Senden(u) => {
                 let text = feedback_text(p, u, &e.text);
+                if u == Urteil::Anmerkung {
+                    e.text.clear();
+                }
+                e.gefragt = false;
                 let config = config.clone();
                 let data_dir: PathBuf = data_dir.to_path_buf();
                 let (tx, rx) = channel();
@@ -335,7 +395,11 @@ impl AbnahmeWindow {
                     .name("woa-abnahme-senden".into())
                     .spawn(move || {
                         let key = woa_secrets::reveal(&data_dir, fragen::SECRET_ACCOUNT);
-                        let _ = tx.send(submit_feedback(&text, Vec::new(), &meta(&config, u, key)));
+                        let _ = tx.send(if !crate::feedback::may_send(&config.feedback_url) {
+                            Err(FeedbackError::NoEndpoint)
+                        } else {
+                            submit_feedback(&text, Vec::new(), &meta(&config, u, key))
+                        });
                     });
                 match spawned {
                     Ok(_) => {
@@ -357,7 +421,10 @@ impl AbnahmeWindow {
         if !self.open {
             return;
         }
-        self.poll();
+        if self.erledigt.is_none() {
+            self.erledigt = Some(erledigt_laden(data_dir));
+        }
+        self.poll(data_dir);
         if !self.pending.is_empty() || self.loader.is_some() {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
@@ -365,7 +432,7 @@ impl AbnahmeWindow {
         let fertig = liste
             .punkte
             .iter()
-            .filter(|p| self.sent.contains_key(&p.id))
+            .filter(|p| self.sent.contains_key(&p.id) || self.ist_erledigt(p))
             .count();
         let sub = format!(
             "Stand {}{} · {fertig} von {} geprüft · „Geht“ und „Geht nicht“ gehen sofort an das Projekt.",
@@ -387,6 +454,7 @@ impl AbnahmeWindow {
                 &mut self.maximized,
             );
             suchfeld(ui, &mut self.suche);
+            ui.checkbox(&mut self.zeige_erledigte, "Erledigte zeigen");
             let suche = self.suche.clone();
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
@@ -396,7 +464,13 @@ impl AbnahmeWindow {
                         let ps: Vec<&Punkt> = liste
                             .punkte
                             .iter()
-                            .filter(|p| p.ansicht == ansicht && punkt_passt(p, &suche))
+                            .filter(|p| {
+                                p.ansicht == ansicht
+                                    && punkt_passt(p, &suche)
+                                    && (self.zeige_erledigte
+                                        || !self.ist_erledigt(p)
+                                        || self.sent.contains_key(&p.id))
+                            })
                             .collect();
                         if ps.is_empty() {
                             continue;
@@ -415,6 +489,13 @@ impl AbnahmeWindow {
         });
     }
 
+    /// Auf diesem Gerät in dieser Fassung schon abgenommen?
+    fn ist_erledigt(&self, p: &Punkt) -> bool {
+        self.erledigt
+            .as_ref()
+            .is_some_and(|e| e.contains(&erledigt_key(p)))
+    }
+
     fn punkt_ui(&mut self, ui: &mut egui::Ui, p: &Punkt, config: &GuiConfig, data_dir: &Path) {
         use crate::widgets::segment::Segment;
         let sent = self.sent.get(&p.id).copied();
@@ -423,7 +504,7 @@ impl AbnahmeWindow {
         if let Some(u) = sent {
             let c = match u {
                 Urteil::Ok => theme::ok(),
-                Urteil::Fehler => theme::danger_text(),
+                Urteil::Fehler | Urteil::Anmerkung => theme::danger_text(),
             };
             frame = frame.stroke(egui::Stroke::new(1.0, c));
         }
@@ -452,16 +533,18 @@ impl AbnahmeWindow {
             }
             ui.add_space(theme::SPACE_3);
             let mut klick = None;
-            ui.add_enabled_ui(sent.is_none() && !busy, |ui| {
+            ui.add_enabled_ui(!busy, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     let e = self.eingaben.entry(p.id.clone()).or_default();
+                    let offen = sent.is_none();
                     if Segment::new(theme::ic::THUMBS_UP, "Geht")
                         .on(sent == Some(Urteil::Ok))
                         .height(28.0)
                         .ui(ui)
                         .on_hover_text("Abgenommen, sofort senden")
                         .clicked()
+                        && offen
                     {
                         klick = Some(Urteil::Ok);
                     }
@@ -476,19 +559,22 @@ impl AbnahmeWindow {
                         .ui(ui)
                         .on_hover_text("Fehler melden, sofort senden")
                         .clicked()
+                        && offen
                     {
                         klick = Some(Urteil::Fehler);
                     }
                     ui.add_space(theme::SPACE_3);
                     let hint = if e.gefragt {
                         "Was ist passiert?"
-                    } else {
+                    } else if offen {
                         "Anmerkung (optional)"
+                    } else {
+                        "Anmerkung nachschicken"
                     };
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut e.text)
                             .hint_text(hint)
-                            .desired_width(ui.available_width().max(160.0)),
+                            .desired_width((ui.available_width() - 170.0).max(160.0)),
                     );
                     r.widget_info(|| {
                         egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Anmerkung")
@@ -500,6 +586,21 @@ impl AbnahmeWindow {
                     {
                         klick = Some(Urteil::Fehler);
                     }
+                    let can = !e.text.trim().is_empty() && !e.gefragt;
+                    if ui
+                        .add_enabled(
+                            can,
+                            egui::Button::new(format!(
+                                "{} Anmerkung senden",
+                                theme::ic::PAPER_PLANE_RIGHT
+                            ))
+                            .min_size(egui::vec2(150.0, 28.0)),
+                        )
+                        .on_hover_text("Nur die Anmerkung senden, ohne Urteil")
+                        .clicked()
+                    {
+                        klick = Some(Urteil::Anmerkung);
+                    }
                 });
             });
             if let Some(u) = klick {
@@ -508,7 +609,11 @@ impl AbnahmeWindow {
             if let Some(n) = self.notes.get(&p.id) {
                 ui.add_space(theme::SPACE_2);
                 let (icon, color) = match sent {
+                    _ if n.starts_with("Anmerkung gesendet") => {
+                        (theme::ic::CHECK_CIRCLE, theme::ok())
+                    }
                     Some(Urteil::Ok) => (theme::ic::CHECK_CIRCLE, theme::ok()),
+                    Some(Urteil::Anmerkung) => (theme::ic::INFO, theme::text_dim()),
                     Some(Urteil::Fehler) => (theme::ic::BUG, theme::danger_text()),
                     None if n.starts_with("Senden fehlgeschlagen") => {
                         (theme::ic::WARNING, theme::danger_text())
@@ -663,5 +768,81 @@ mod tests {
         h.run_steps(2);
         assert_eq!(h.query_all_by_label("Anmerkung").count(), 0);
         assert!(h.query_by_label("Nichts gefunden").is_some());
+    }
+
+    /// André 02.11.2026: Nach „Geht“ muss eine Anmerkung zum Punkt noch rausgehen.
+    #[test]
+    fn note_payload_is_marked_anmerkung() {
+        let a = embedded();
+        let p = &a.punkte[0];
+        let t = feedback_text(p, Urteil::Anmerkung, "lieber maximiert");
+        assert!(t.starts_with(&format!("[entwickler-abnahme] {}: anmerkung", p.id)));
+        assert!(t.contains("Text: lieber maximiert"));
+        let pl = woa_telemetry::build_payload(
+            &t,
+            &[],
+            &meta(&GuiConfig::default(), Urteil::Anmerkung, None),
+        )
+        .unwrap();
+        assert_eq!(pl["source"], SOURCE);
+    }
+
+    #[test]
+    fn note_can_be_sent_after_thumbs_up() {
+        let mut w = AbnahmeWindow::default();
+        w.open = true;
+        let a = embedded();
+        // Der oberste Punkt im Fenster: erste Ansicht mit Punkten.
+        let id = ANSICHTEN
+            .iter()
+            .find_map(|v| a.punkte.iter().find(|p| p.ansicht == *v))
+            .unwrap()
+            .id
+            .clone();
+        w.liste = Some((a, false));
+        w.sent.insert(id.clone(), Urteil::Ok);
+        let mut h = harness(w);
+        h.get_all_by_label("Anmerkung").next().unwrap().click();
+        h.run_steps(1);
+        h.get_all_by_label("Anmerkung")
+            .next()
+            .unwrap()
+            .type_text("maximiert");
+        h.run_steps(2);
+        assert_eq!(
+            h.state().eingaben[&id].text,
+            "maximiert",
+            "Feld bleibt offen"
+        );
+        h.get_all_by_label_contains("Anmerkung senden")
+            .next()
+            .unwrap()
+            .click();
+        h.run_steps(2);
+        assert!(h.state().eingaben[&id].text.is_empty(), "Text ging raus");
+        assert!(h.state().notes.contains_key(&id));
+        assert_eq!(h.state().sent.get(&id), Some(&Urteil::Ok), "Urteil bleibt");
+    }
+
+    /// André 02.11.2026: mit „Geht“ abgenommene Punkte verschwinden, neue Fassung kommt wieder.
+    #[test]
+    fn approved_points_hide_until_a_new_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = embedded();
+        let mut p = a.punkte[0].clone();
+        let (tx, rx) = channel();
+        let mut w = AbnahmeWindow::default();
+        w.liste = Some((a.clone(), false));
+        w.pending.insert(p.id.clone(), (Urteil::Ok, rx));
+        tx.send(Ok(None)).unwrap();
+        w.poll(dir.path());
+        assert!(erledigt_laden(dir.path()).contains(&erledigt_key(&p)));
+        let w2 = AbnahmeWindow {
+            erledigt: Some(erledigt_laden(dir.path())),
+            ..Default::default()
+        };
+        assert!(w2.ist_erledigt(&p));
+        p.version = "9.9.9".into();
+        assert!(!w2.ist_erledigt(&p), "neue Fassung erscheint wieder");
     }
 }
