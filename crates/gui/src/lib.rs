@@ -32,6 +32,7 @@ pub mod party;
 mod phone;
 pub mod pianoroll;
 pub mod player;
+pub mod probeton;
 pub mod produktionen;
 pub mod protokoll;
 pub mod radio;

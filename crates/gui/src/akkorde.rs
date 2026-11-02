@@ -110,7 +110,14 @@ impl AkkordFenster {
                             .response
                             .interact(egui::Sense::click())
                             .on_hover_text(q.name);
-                        if resp.clicked() {
+                        // Vorhören über der Zeile (später gezeichnet, bekommt den Klick).
+                        let sp = egui::Rect::from_center_size(
+                            resp.rect.right_top() + egui::vec2(-16.0, 13.0),
+                            egui::vec2(22.0, 20.0),
+                        );
+                        if vorhoeren(ui, sp, q.hint).clicked() {
+                            preview(state, q, self.key);
+                        } else if resp.clicked() {
                             self.folge = i;
                         }
                     }
@@ -186,6 +193,48 @@ impl AkkordFenster {
     }
 }
 
+/// Lautsprecher-Knopf „Vorhören“ einer Zeile.
+fn vorhoeren(ui: &mut egui::Ui, rect: egui::Rect, what: &str) -> egui::Response {
+    let label = format!("{what} vorhören");
+    let r = ui
+        .put(
+            rect,
+            egui::Button::new(egui::RichText::new(egui_phosphor::regular::SPEAKER_HIGH).size(12.0))
+                .frame(false),
+        )
+        .on_hover_text("Vorhören: erster Akkord auf der ersten MIDI-Spur (ohne Kit)");
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+    r
+}
+
+/// Spielt den ersten Akkord der Folge kurz als Probeton (Note an/aus auf die erste MIDI-Spur
+/// ohne Kit). Ohne solche Spur bleibt es still.
+fn preview(state: &mut AppState, q: &woa_model::chords::ChordProgression, key: u8) {
+    let Some(track) = state
+        .project()
+        .tracks
+        .iter()
+        .find(|t| t.kind == woa_model::TrackKind::Midi && !t.sound.is_some_and(|s| s.drums))
+        .map(|t| t.id)
+    else {
+        return;
+    };
+    let notes = woa_model::chords::generate(q, key, 1).chords.notes;
+    let mut pitches: Vec<u8> = notes
+        .iter()
+        .filter(|n| n.beat < 1e-6)
+        .map(|n| n.pitch)
+        .collect();
+    pitches.dedup();
+    state.probeton.tap(
+        track,
+        &pitches,
+        96,
+        std::time::Instant::now(),
+        std::time::Duration::ZERO,
+    );
+}
+
 /// Eine Ausgabe-Zeile mit Spurfarbe.
 fn note_row(ui: &mut egui::Ui, color: egui::Color32, name: &str) {
     egui::Frame::new()
@@ -201,4 +250,38 @@ fn note_row(ui: &mut egui::Ui, color: egui::Color32, name: &str) {
                 ui.label(egui::RichText::new(name).small().color(theme::text()));
             });
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui_kittest::kittest::Queryable;
+
+    #[test]
+    fn chord_row_preview_sends_note_on_to_a_midi_track() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let mut state = AppState::new(tmp.path().join("rec"), std::time::Instant::now());
+        let track = state.add_midi_track().expect("track");
+        let hint = CHORD_PROGRESSIONS[0].hint;
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(400.0, 900.0))
+            .build_ui_state(
+                |ui, s: &mut (AppState, AkkordFenster)| {
+                    if !crate::theme::install_fonts(ui.ctx()) {
+                        s.1.body(ui, &mut s.0, 0.0);
+                    }
+                },
+                (state, AkkordFenster::default()),
+            );
+        h.run_steps(2);
+        h.get_by_label(&format!("{hint} vorhören")).click();
+        h.run_steps(1);
+        let got = h.state_mut().0.probeton.take(std::time::Instant::now());
+        let on: Vec<_> = got
+            .iter()
+            .filter(|p| matches!(p, crate::probeton::Probe::NoteOn { .. }))
+            .collect();
+        assert_eq!(on.len(), 3, "Dreiklang: {got:?}");
+        assert!(on.iter().all(|p| p.track() == track));
+    }
 }

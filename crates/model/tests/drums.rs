@@ -1,6 +1,8 @@
 //! Paket J2: Drum-Raster als Sicht auf normale MIDI-Noten.
 
-use woa_model::drums::{LOUD, SOFT, apply_preset, dice, step_velocity, steps, toggle_step};
+use woa_model::drums::{
+    LOUD, SOFT, apply_preset, dice, set_step, step_velocity, steps, toggle_step,
+};
 use woa_model::{DRUM_PRESETS, DRUM_ROWS, MidiData, MidiNote, drum_preset};
 
 fn empty() -> MidiData {
@@ -98,4 +100,20 @@ fn dice_is_repeatable_and_valid() {
     assert!(a.notes.iter().all(|n| n.beat < 4.0 && n.velocity > 0));
     let differ = (0..20).any(|s| dice(&empty(), 4.0, s) != a);
     assert!(differ);
+}
+
+#[test]
+fn set_step_sets_loud_soft_and_clears() {
+    let a = set_step(&empty(), 36, 2, Some(LOUD));
+    assert_eq!(step_velocity(&a, 36, 2), Some(LOUD));
+    let b = set_step(&a, 36, 2, Some(SOFT));
+    assert_eq!(step_velocity(&b, 36, 2), Some(SOFT));
+    assert_eq!(
+        b.notes.len(),
+        1,
+        "kein zweiter Schlag auf demselben Schritt"
+    );
+    let c = set_step(&b, 36, 2, None);
+    assert_eq!(step_velocity(&c, 36, 2), None);
+    assert_eq!(set_step(&c, 36, 2, None), c);
 }

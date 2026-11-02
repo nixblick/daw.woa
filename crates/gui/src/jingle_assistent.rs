@@ -9,6 +9,7 @@ use woa_model::jingle::{LENGTHS, MOODS, seconds};
 use woa_model::{ClipId, DRUM_PRESETS, MidiData, drums};
 
 use crate::state::{AppState, JingleParts};
+use crate::theme;
 
 /// Was das App-Fenster nach einem Klick tun soll (braucht App-Zustand außerhalb von `AppState`).
 #[derive(Debug, Clone, PartialEq)]
@@ -19,6 +20,60 @@ pub enum Wunsch {
     Raster(ClipId),
     /// Export-Fenster mit „Als Jingle“ öffnen.
     Export(String),
+}
+
+/// Stimmungs-Karte (Design `JingleWizard`): Symbol, Titel, Hinweis. `true` bei Klick.
+fn mood_card(ui: &mut egui::Ui, w: f32, i: usize, name: &str, hint: &str, on: bool) -> bool {
+    use egui_phosphor::regular as ic;
+    let icon = [
+        ic::CONFETTI,
+        ic::SUN,
+        ic::COFFEE,
+        ic::LIGHTNING,
+        ic::MOON,
+        ic::HEART,
+    ][i % 6];
+    let frame = egui::Frame::new()
+        .fill(if on {
+            theme::accent_soft()
+        } else {
+            theme::surface()
+        })
+        .stroke(egui::Stroke::new(
+            1.0,
+            if on { theme::accent() } else { theme::border() },
+        ))
+        .corner_radius(theme::RADIUS_MD)
+        .inner_margin(egui::Margin::symmetric(8, 6))
+        .show(ui, |ui| {
+            ui.set_width(w - 16.0);
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(icon).size(18.0).color(if on {
+                    theme::accent()
+                } else {
+                    theme::text_dim()
+                }));
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    ui.label(egui::RichText::new(name).strong().color(theme::text()));
+                    ui.label(
+                        egui::RichText::new(hint)
+                            .size(theme::TYPE_SMALL)
+                            .color(theme::text_dim()),
+                    );
+                });
+            });
+        });
+    let label = format!("{name} · {hint}");
+    let r = ui
+        .interact(
+            frame.response.rect,
+            ui.id().with(("mood", i)),
+            egui::Sense::click(),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, &label));
+    r.clicked()
 }
 
 const SCHRITTE: [&str; 6] = ["Vorlage", "Beat", "Akkorde", "Stimme", "Schluss", "Fertig"];
@@ -86,20 +141,7 @@ impl JingleAssistent {
     }
 
     fn body(&mut self, ui: &mut egui::Ui, state: &mut AppState) -> Option<Wunsch> {
-        ui.horizontal_wrapped(|ui| {
-            for (i, s) in SCHRITTE.iter().enumerate() {
-                let enabled = i == 0 || self.parts.is_some();
-                if ui
-                    .add_enabled(
-                        enabled,
-                        egui::Button::selectable(self.schritt == i, format!("{} {s}", i + 1)),
-                    )
-                    .clicked()
-                {
-                    self.schritt = i;
-                }
-            }
-        });
+        self.schritte(ui);
         ui.separator();
         let out = match (self.schritt, self.parts) {
             (0, _) | (_, None) => self.vorlage(ui),
@@ -126,50 +168,159 @@ impl JingleAssistent {
             {
                 self.schritt -= 1;
             }
-            if ui
-                .add_enabled(
-                    self.parts.is_some() && self.schritt + 1 < SCHRITTE.len(),
-                    egui::Button::new("Weiter"),
-                )
-                .clicked()
-            {
-                self.schritt += 1;
-            }
             ui.label(
-                egui::RichText::new("Leertaste: anhören (Loop) · Strg+Z: zurück")
-                    .small()
-                    .weak(),
+                egui::RichText::new("Leertaste: anhören · Strg+Z: zurück")
+                    .size(theme::TYPE_SMALL)
+                    .color(theme::text_dim()),
             );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let on = self.parts.is_some() && self.schritt + 1 < SCHRITTE.len();
+                let b = egui::Button::new(
+                    egui::RichText::new("Weiter")
+                        .strong()
+                        .color(theme::on_accent()),
+                )
+                .fill(theme::accent());
+                if ui.add_enabled(on, b).clicked() {
+                    self.schritt += 1;
+                }
+            });
         });
         out
     }
 
+    /// Schrittleiste: Kreise mit Nummer oder Haken, der aktuelle in Akzent, Linien dazwischen.
+    fn schritte(&mut self, ui: &mut egui::Ui) {
+        let n = SCHRITTE.len();
+        let w = ui.available_width().max(300.0);
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 40.0), egui::Sense::hover());
+        let step_w = w / n as f32;
+        for (i, s) in SCHRITTE.iter().enumerate() {
+            let c = egui::pos2(rect.left() + step_w * (i as f32 + 0.5), rect.top() + 11.0);
+            let enabled = i == 0 || self.parts.is_some();
+            let done = i < self.schritt && self.parts.is_some();
+            let cur = i == self.schritt;
+            if i + 1 < n {
+                ui.painter().line_segment(
+                    [
+                        c + egui::vec2(12.0, 0.0),
+                        c + egui::vec2(step_w - 12.0, 0.0),
+                    ],
+                    egui::Stroke::new(
+                        1.5,
+                        if done {
+                            theme::accent()
+                        } else {
+                            theme::border_strong()
+                        },
+                    ),
+                );
+            }
+            let (fill, fg) = if cur {
+                (theme::accent(), theme::on_accent())
+            } else if done {
+                (theme::accent_soft(), theme::accent())
+            } else {
+                (theme::surface(), theme::text_dim())
+            };
+            ui.painter().circle(
+                c,
+                10.0,
+                fill,
+                egui::Stroke::new(
+                    1.0,
+                    if cur || done {
+                        theme::accent()
+                    } else {
+                        theme::border_strong()
+                    },
+                ),
+            );
+            ui.painter().text(
+                c,
+                egui::Align2::CENTER_CENTER,
+                if done {
+                    egui_phosphor::regular::CHECK.to_owned()
+                } else {
+                    format!("{}", i + 1)
+                },
+                egui::FontId::proportional(11.0),
+                fg,
+            );
+            ui.painter().text(
+                egui::pos2(c.x, rect.bottom() - 6.0),
+                egui::Align2::CENTER_CENTER,
+                *s,
+                egui::FontId::proportional(10.5),
+                if cur {
+                    theme::text()
+                } else {
+                    theme::text_dim()
+                },
+            );
+            let hit = egui::Rect::from_center_size(
+                egui::pos2(c.x, rect.center().y),
+                egui::vec2(step_w, rect.height()),
+            );
+            let label = format!("{} {s}", i + 1);
+            let sense = if enabled {
+                egui::Sense::click()
+            } else {
+                egui::Sense::hover()
+            };
+            let r = ui.interact(hit, ui.id().with(("schritt", i)), sense);
+            r.widget_info(|| {
+                egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, cur, &label)
+            });
+            if enabled && r.clicked() {
+                self.schritt = i;
+            }
+        }
+    }
+
     fn vorlage(&mut self, ui: &mut egui::Ui) -> Option<Wunsch> {
-        ui.label("Wie lang?");
+        ui.label(theme::panel_label("LÄNGE"));
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
             for (i, s) in LENGTHS.iter().enumerate() {
                 ui.selectable_value(&mut self.laenge, i, format!("{s} s"));
             }
         });
-        ui.label("Welche Stimmung?");
-        for (i, m) in MOODS.iter().enumerate() {
-            ui.selectable_value(&mut self.mood, i, format!("{} · {}", m.name, m.hint));
+        ui.add_space(4.0);
+        ui.label(theme::panel_label("STIMMUNG"));
+        let w = ((ui.available_width() - ui.spacing().item_spacing.x) / 2.0).floor();
+        for row in MOODS.iter().enumerate().collect::<Vec<_>>().chunks(2) {
+            ui.horizontal(|ui| {
+                for (i, m) in row {
+                    if mood_card(ui, w, *i, m.name, m.hint, self.mood == *i) {
+                        self.mood = *i;
+                    }
+                }
+            });
         }
         let m = &MOODS[self.mood.min(MOODS.len() - 1)];
         let secs = LENGTHS[self.laenge.min(LENGTHS.len() - 1)];
         let (bars, bpm) = woa_model::jingle::fit(f64::from(secs), f64::from(m.bpm));
         let minor = woa_model::chords::progression(m.progression).is_some_and(|p| p.minor);
-        ui.label(
-            egui::RichText::new(format!(
-                "{bars} Takte bei {bpm:.1} BPM = {:.1} s · {} {} · Beat „{}“",
-                seconds(bars, bpm),
-                KEYS[usize::from(m.key % 12)],
-                if minor { "Moll" } else { "Dur" },
-                m.drums
-            ))
-            .small()
-            .weak(),
-        );
+        egui::Frame::new()
+            .fill(theme::well())
+            .corner_radius(theme::RADIUS_MD)
+            .inner_margin(egui::Margin::symmetric(8, 5))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{bars} Takte · {bpm:.1} BPM · {:.1} s · {} {} · Beat {}",
+                        seconds(bars, bpm),
+                        KEYS[usize::from(m.key % 12)],
+                        if minor { "Moll" } else { "Dur" },
+                        m.drums
+                    ))
+                    .monospace()
+                    .size(11.0)
+                    .color(theme::text_dim()),
+                );
+            });
         ui.button("Jingle anlegen")
             .on_hover_text("Neues Projekt mit Drums, Akkorden, Bass, Arpeggio und Stimm-Spur")
             .clicked()
@@ -335,6 +486,10 @@ mod tests {
             .with_size(egui::vec2(800.0, 700.0))
             .build_ui_state(
                 |ui, p: &mut Probe| {
+                    // Schriften des Designs (fette Abschnittsnamen), ab dem zweiten Bild.
+                    if crate::theme::install_fonts(ui.ctx()) {
+                        return;
+                    }
                     if let Some(x) = p.w.show(ui.ctx(), &mut p.state) {
                         p.out.push(x);
                     }

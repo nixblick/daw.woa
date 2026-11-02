@@ -47,6 +47,8 @@ pub fn donate_qr() -> Option<&'static woa_remote::qr::QrMatrix> {
 pub const DONATE_KOFI: &str = "https://ko-fi.com/nixblick";
 /// Höhe einer Spur (Design `TrackHeader`: 64 px, zwei Zeilen).
 const ROW_H: f32 = 64.0;
+/// Spurhöhe, solange die Piano-Roll offen ist (Design `ScreenPianoRoll`).
+const ROW_H_PR: f32 = 36.0;
 /// Höhe der Akkordspur unter dem Lineal (Design `ChordTrack`: 26 px).
 const CHORD_LANE_H: f32 = 26.0;
 /// Pan auch im Spurkopf (zusätzlich zum Rack-Ausgang). Offene Entscheidung von André
@@ -1239,6 +1241,76 @@ impl WoaApp {
             })
     }
 
+    /// Probetöne (Design-Runde 3) an die Note-Queue der Live-Spur. Ein Ton für eine andere
+    /// MIDI-Spur wählt diese Spur (sie wird damit live) und kommt kurz danach noch einmal;
+    /// Abspielkopf in Beats, nur während der Wiedergabe (Lauflicht im Drum-Raster).
+    /// Spurhöhe: 36 px, solange die Piano-Roll offen ist, sonst 64 px.
+    fn row_h(&self) -> f32 {
+        let open = self.piano_roll.is_some()
+            && (self.piano_roll_floating || self.studio_dock == StudioDockTab::PianoRoll);
+        if open { ROW_H_PR } else { ROW_H }
+    }
+
+    fn playhead_beats(&self) -> Option<f64> {
+        let tempo = self.state.project().tempo_bpm;
+        self.player
+            .as_ref()
+            .filter(|p| p.is_playing())
+            .map(|p| p.position_beats(tempo))
+    }
+
+    /// ist eine Spur scharf, bleibt es bei ihr. Ohne Ausgang bleibt es still.
+    fn drain_probes(&mut self, ctx: &egui::Context) {
+        use crate::probeton::Probe;
+        let now = Instant::now();
+        let probes = self.state.probeton.take(now);
+        if let Some(wait) = self.state.probeton.next_due(now) {
+            ctx.request_repaint_after(wait);
+        }
+        if probes.is_empty() {
+            return;
+        }
+        let live = self.live_midi_track();
+        let sink = self.player.as_ref().map(Player::midi_sink);
+        for probe in probes {
+            let track = probe.track();
+            if Some(track) == live {
+                let ev = match probe {
+                    Probe::NoteOn {
+                        pitch, velocity, ..
+                    } => woa_dsp::instrument::NoteEvent::note_on(pitch, velocity),
+                    Probe::NoteOff { pitch, .. } => woa_dsp::instrument::NoteEvent::note_off(pitch),
+                };
+                if let Some(sink) = sink.as_ref()
+                    && let Ok(mut g) = sink.lock()
+                    && let Some(q) = g.as_mut()
+                {
+                    // Volle Queue: der Probeton fällt aus, nichts blockiert.
+                    let _ = q.push(ev);
+                }
+            } else if self.armed.is_empty()
+                && let Probe::NoteOn {
+                    pitch, velocity, ..
+                } = probe
+                && self
+                    .state
+                    .project()
+                    .track(track)
+                    .is_some_and(|t| t.kind == woa_model::TrackKind::Midi)
+            {
+                self.selected_track = Some(track);
+                self.state.probeton.tap(
+                    track,
+                    &[pitch],
+                    velocity,
+                    now,
+                    std::time::Duration::from_millis(150),
+                );
+                ctx.request_repaint_after(std::time::Duration::from_millis(150));
+            }
+        }
+    }
+
     /// MIDI-Lampe: leuchtet kurz bei jedem Event, Tooltip nennt Gerät und Zustand.
     fn midi_lamp(&mut self, ui: &mut egui::Ui, compact: bool) {
         use woa_io::midi::MidiStatus;
@@ -2279,31 +2351,12 @@ impl WoaApp {
         if !self.piano_roll_floating {
             return;
         }
+        let playhead = self.playhead_beats();
         let Some(pr) = self.piano_roll.as_mut() else {
             return;
         };
-        let track = self.state.project().clip(pr.clip).map(|(t, _)| t.id);
-        let live = self
-            .state
-            .project()
-            .tracks
-            .iter()
-            .filter(|t| t.kind == woa_model::TrackKind::Midi)
-            .map(|t| t.id)
-            .find(|id| {
-                if self.armed.is_empty() {
-                    self.selected_track == Some(*id)
-                } else {
-                    self.armed.contains(id)
-                }
-            });
-        // Vorhören nur, wenn ein Ausgang läuft und die Spur des Clips das Live-Instrument hat.
-        let sink = self
-            .player
-            .as_ref()
-            .filter(|_| track.is_some() && track == live)
-            .map(Player::midi_sink);
-        if !pr.show(ctx, &mut self.state, sink.as_ref()) {
+        pr.playhead = playhead;
+        if !pr.show(ctx, &mut self.state) {
             self.piano_roll = None;
         }
     }
@@ -2531,12 +2584,15 @@ impl WoaApp {
             }
         }
         if first && std::env::var_os("WOA_PIANOROLL").is_some() {
-            // Fotomodus der Piano-Roll: ersten MIDI-Clip öffnen, zwei Noten wählen.
+            // Fotomodus der Piano-Roll: ersten MIDI-Clip öffnen, zwei Noten wählen;
+            // `WOA_PIANOROLL=kit` nimmt eine Kit-Spur (Drum-Raster), sonst keine.
+            let kit = std::env::var("WOA_PIANOROLL").is_ok_and(|v| v == "kit");
             let clip = self
                 .state
                 .project()
                 .tracks
                 .iter()
+                .filter(|t| t.sound.is_some_and(|s| s.drums) == kit)
                 .flat_map(|t| &t.clips)
                 .find(|c| c.midi.is_some())
                 .map(|c| c.id);
@@ -3473,7 +3529,7 @@ impl WoaApp {
             });
         // Fest reserviertes Rechteck, damit Lineal und Zeitleisten bündig bleiben.
         let (slot, slot_resp) =
-            ui.allocate_exact_size(egui::vec2(HEADER_W, ROW_H), egui::Sense::click());
+            ui.allocate_exact_size(egui::vec2(HEADER_W, self.row_h()), egui::Sense::click());
         let mut name_resp = None;
         let mut child = ui.new_child(
             egui::UiBuilder::new()
@@ -3487,7 +3543,7 @@ impl WoaApp {
             frame.show(ui, |ui| {
                 ui.set_width(HEADER_W - 34.0);
                 ui.set_max_width(HEADER_W - 34.0);
-                ui.set_height(ROW_H - 10.0);
+                ui.set_height(self.row_h() - 10.0);
                 ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
                 ui.spacing_mut().interact_size.y = 22.0;
                 ui.horizontal(|ui| {
@@ -4256,7 +4312,8 @@ impl WoaApp {
         let color = theme::track_color(index);
         let end = self.timeline_end();
         let width = (end as f32 + 16.0) * px;
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, ROW_H), egui::Sense::click());
+        let (rect, resp) =
+            ui.allocate_exact_size(egui::vec2(width, self.row_h()), egui::Sense::click());
         self.track_rects.push((track, rect));
         let painter = ui.painter_at(rect);
         // Gewählte Spur: 6 % Spurfarbe auf `well` (Design `SelectionSync`).
@@ -6620,6 +6677,7 @@ impl eframe::App for WoaApp {
             p.sync(&project, &|rel| state.resolve_audio(rel), live);
             p.set_loop_beats(loop_beats, project.tempo_bpm);
         }
+        self.drain_probes(ctx);
         self.stop_at_audio_end();
         self.drain_live_peaks();
         // Schreibfehler (z. B. Platte voll) sofort melden, nicht erst beim Stopp.
@@ -7982,6 +8040,14 @@ impl WoaApp {
                 woa_engine::banks::ensure(b);
             }
             self.state.set_track_sound(id, sound);
+            // Probeton nach kurzer Pause, damit der neue Klang schon geladen ist.
+            self.state.probeton.tap(
+                id,
+                &[crate::probeton::pitch_for(sound)],
+                100,
+                std::time::Instant::now(),
+                std::time::Duration::from_millis(150),
+            );
         }
     }
 
@@ -8402,15 +8468,9 @@ impl WoaApp {
             self.piano_roll = Some(crate::pianoroll::PianoRoll::new(sel));
         }
 
-        let live = self.live_midi_track();
         if let Some(mut pr) = self.piano_roll.take() {
-            let track = self.state.project().clip(pr.clip).map(|(t, _)| t.id);
-            let sink = self
-                .player
-                .as_ref()
-                .filter(|_| track.is_some() && track == live)
-                .map(Player::midi_sink);
-            if pr.show_inline(ui, &mut self.state, sink.as_ref()) {
+            pr.playhead = self.playhead_beats();
+            if pr.show_inline(ui, &mut self.state) {
                 self.piano_roll = Some(pr);
                 return;
             }

@@ -230,6 +230,25 @@ pub fn toggle_step(midi: &MidiData, pitch: u8, step: usize, soft: bool) -> MidiD
     sorted(out)
 }
 
+/// Setzt einen Schritt auf eine Velocity oder leert ihn (`None`), Drum-Raster nach Design
+/// `DrumGrid`: Klick laut, Umschalt+Klick leise, Rechtsklick löschen.
+pub fn set_step(midi: &MidiData, pitch: u8, step: usize, velocity: Option<u8>) -> MidiData {
+    let mut out = midi.clone();
+    match (find(midi, pitch, step), velocity) {
+        (Some(i), Some(v)) => {
+            if let Some(n) = out.notes.get_mut(i) {
+                n.velocity = v.clamp(1, 127);
+            }
+        }
+        (Some(i), None) => {
+            out.notes.remove(i);
+        }
+        (None, Some(v)) => out.notes.push(note(pitch, step, v.clamp(1, 127))),
+        (None, None) => {}
+    }
+    sorted(out)
+}
+
 /// Muster eines Presets mit Dichte: `-1` weniger (nur laute Schläge, Hi-Hat nur auf
 /// Achteln), `0` wie das Preset, `+1` mehr (Hi-Hat zu auf jeder 16tel, leise ergänzt).
 pub fn preset_rows(preset: &DrumPreset, density: i8) -> [Vec<Option<u8>>; 6] {

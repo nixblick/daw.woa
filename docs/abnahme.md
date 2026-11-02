@@ -1355,6 +1355,17 @@ Selbst geprüft von Claude: Tests ohne Ton für Constant Power, die Glättung de
 
 Selbst geprüft von Claude: Test im egui-Harness (Klick auf den rechten Rand wählt aus, Rechtsklick in der Mitte öffnet das Menü, die Nummer behält ihren Klick) und Messung mit 300 Zeilen (etwa 15 ms je Bild mit Klickfläche, 13 ms ohne, Debug-Bau). Clippy und Tests von `woa-gui` grün. Nicht am Gerät geklickt.
 
+## Piano-Roll, Drum-Raster, Jingle-Assistent, Probeton (0.35.20, offen)
+
+1. Produzent, Akkordfolge einfügen, einen Akkord-Clip doppelklicken: Die Piano-Roll zeigt oben eine Zeile mit Clip-Kennung, Werkzeugen, Raster, „3“, Länge, Quantisieren, Velocity, Tonart, Magnet, „Nur benutzte Töne“, Lautsprecher und Zoom. Keine Anleitungszeile, keine Überschrift „Drum-Raster“. Die Spuren oben sind niedriger (36 px).
+2. Noten sind in der Spurfarbe, laute heller. Tonart-Zeilen leicht getönt, rechts vom Clip schraffiert. E drücken und eine Note anklicken: weg. D drücken und ins Leere klicken: neue Note, kurzer Probeton.
+3. Magnet an, eine Note auf einen Ton außerhalb der Tonart ziehen: Sie rastet auf den nächsten Ton der Tonart. „Nur benutzte Töne“: leere Zeilen verschwinden.
+4. Eine Beats-Spur mit Kit öffnen: Drum-Raster, Kick oben. Klick: laut, nochmal: aus; Umschalt+Klick: leise; Rechtsklick: weg. Abspielen: Ein Rahmen läuft mit. Lautsprecher bei „Kick“: Kick erklingt.
+5. Browser → Akkorde, Lautsprecher an einer Folge: Der erste Akkord erklingt auf der ersten MIDI-Spur. Instrument-Kachel im Rack, anderen Klang wählen: kurzer Probeton.
+6. Jingles → Jingle bauen: Schrittleiste mit Kreisen, Stimmungskarten mit Symbol, Länge als Segmente, unten Zusammenfassung und „Weiter“ in Akzent; durchklicken bis zum Export.
+
+Selbst geprüft von Claude: Tests im egui-Harness (Leiste, Werkzeug-Klick, Drum-Vorhören als Note-an, Akkord-Vorhören als Dreiklang, Jingle-Durchlauf), Clippy und Tests von `woa-gui` und `woa-model` grün, Screenshots hell und dunkel. Kein Ton abgespielt, nicht am Gerät geklickt.
+
 ## Design-Runde 3: Radio (0.35.18, offen)
 
 1. Radio-Modus bei 1920×1030: Alles bis zur Wunschtitel-Zeile ist ohne Scrollen zu sehen.
