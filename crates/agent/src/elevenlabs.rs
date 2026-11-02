@@ -190,6 +190,8 @@ pub struct SprachAuftrag {
     pub stability: f64,
     /// 0..1, Vorgabe 0.
     pub style: f64,
+    /// Ähnlichkeit zur Originalstimme, 0..1, Vorgabe 0,75 (JingleVoice Fassung 7).
+    pub similarity: f64,
     /// Sprache (ISO 639-1), nur für Modelle mit [`TtsModell::takes_language`].
     pub language: String,
 }
@@ -202,6 +204,7 @@ impl SprachAuftrag {
             model: TtsModell::default(),
             stability: 0.5,
             style: 0.0,
+            similarity: 0.75,
             language: "de".into(),
         }
     }
@@ -411,7 +414,7 @@ pub fn tts_body(a: &SprachAuftrag) -> serde_json::Value {
         "model_id": a.model.id(),
         "voice_settings": {
             "stability": a.stability.clamp(0.0, 1.0),
-            "similarity_boost": 0.75,
+            "similarity_boost": a.similarity.clamp(0.0, 1.0),
             "style": a.style.clamp(0.0, 1.0),
         },
     });
@@ -827,6 +830,9 @@ mod tests {
         a.model = TtsModell::V3;
         assert_eq!(tts_body(&a)["language_code"], "de");
         assert_eq!(tts_body(&a)["model_id"], "eleven_v3");
+        assert_eq!(tts_body(&a)["voice_settings"]["similarity_boost"], 0.75);
+        a.similarity = 2.0;
+        assert_eq!(tts_body(&a)["voice_settings"]["similarity_boost"], 1.0, "auf 0..1 begrenzt");
     }
 
     #[test]

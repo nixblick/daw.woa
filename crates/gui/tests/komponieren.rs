@@ -227,7 +227,12 @@ fn instrument_is_its_own_rack_section_before_the_inserts() {
     let bass = rig.find(&format!("{} Bass", woa_gui::theme::ic::WAVE_SINE))[0];
     assert!(bass.top() > instrument, "Rollen im Abschnitt Instrument");
     rig.click(bass.center());
-    let tile = rig.find("E-Bass")[0];
+    // Die Kachel im Rack, nicht der Instrument-Knopf einer Bass-Spur im Spurkopf.
+    let tile = *rig
+        .find("E-Bass")
+        .iter()
+        .find(|r| r.top() > instrument)
+        .expect("Kachel E-Bass im Rack");
     rig.click(tile.center());
     let sound = |rig: &Rig| {
         rig.app

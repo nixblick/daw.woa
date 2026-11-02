@@ -42,6 +42,7 @@ pub mod produktionen;
 pub mod protokoll;
 pub mod radio;
 pub mod remote;
+pub mod settings;
 mod sources;
 pub mod state;
 mod stream_ui;

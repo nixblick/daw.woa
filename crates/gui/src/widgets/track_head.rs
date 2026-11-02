@@ -1,14 +1,14 @@
 //! Spurkopf einer MIDI-Spur, Zeile 2 (TrackHeader Fassung 7): links der Instrument-Knopf
 //! (`woa-inst`: Symbol der Kategorie in Spurfarbe, Name, Pfeil; öffnet die Klangauswahl im Rack),
 //! rechts der MIDI-Eingang (`woa-midiin`, 104 px; Symbol leuchtet `cue` bei Noten, Rahmen
-//! gestrichelt ohne Gerät). Beide 24 px hoch.
+//! gestrichelt ohne Gerät). Beide 22 px hoch (Design 24).
 
 use eframe::egui::{self, Color32, CornerRadius, Sense, Stroke, StrokeKind};
 
 use crate::theme;
 
-/// Höhe beider Knöpfe.
-pub const HEAD_CTL_H: f32 = 24.0;
+/// Höhe beider Knöpfe (Design 24 px; 22 px, damit der 64-px-Kopf unten eine freie Klickkante behält).
+pub const HEAD_CTL_H: f32 = 22.0;
 /// Breite des MIDI-Eingangs.
 pub const MIDI_IN_W: f32 = 104.0;
 
@@ -84,9 +84,20 @@ pub enum MidiInLook {
     Notes,
 }
 
-/// MIDI-Eingang (104 × 24). Der Klick öffnet die Gerätewahl (Aufrufer).
-pub fn midi_in_button(ui: &mut egui::Ui, text: &str, look: MidiInLook) -> egui::Response {
-    let (rect, r) = ui.allocate_exact_size(egui::vec2(MIDI_IN_W, HEAD_CTL_H), Sense::click());
+/// Breite des MIDI-Eingangs bei `width` für beide Knöpfe: 104 px, wenn Platz ist, sonst die
+/// Hälfte, damit nichts in die Gain-/Pan-Felder ragt.
+pub fn midi_in_width(width: f32, gap: f32) -> f32 {
+    MIDI_IN_W.min(((width - gap) * 0.5).floor()).max(24.0)
+}
+
+/// MIDI-Eingang (`width` × 22). Der Klick öffnet die Gerätewahl (Aufrufer).
+pub fn midi_in_button(
+    ui: &mut egui::Ui,
+    width: f32,
+    text: &str,
+    look: MidiInLook,
+) -> egui::Response {
+    let (rect, r) = ui.allocate_exact_size(egui::vec2(width, HEAD_CTL_H), Sense::click());
     let label = format!("MIDI-Eingang {text}");
     r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
     if ui.is_rect_visible(rect) {
@@ -157,14 +168,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn midi_input_is_104_by_24_and_instrument_24_high() {
+    fn midi_input_is_104_wide_and_both_fit_the_row() {
         let ctx = theme::test_context();
         let (mut a, mut b) = (egui::Rect::NOTHING, egui::Rect::NOTHING);
         let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
-            a = midi_in_button(ui, "Kein MIDI-Gerät", MidiInLook::NoDevice).rect;
+            a = midi_in_button(ui, MIDI_IN_W, "Kein MIDI-Gerät", MidiInLook::NoDevice).rect;
             b = instrument_button(ui, "x", "Flügel", Color32::RED, 120.0).rect;
         });
-        assert_eq!(a.size(), egui::vec2(104.0, 24.0));
-        assert_eq!(b.height(), 24.0);
+        assert_eq!(a.size(), egui::vec2(104.0, HEAD_CTL_H));
+        assert_eq!(b.height(), HEAD_CTL_H);
+        assert_eq!(midi_in_width(400.0, 4.0), 104.0);
+        assert_eq!(midi_in_width(110.0, 4.0), 53.0, "schmal: halbe Breite");
     }
 }
