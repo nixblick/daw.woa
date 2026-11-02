@@ -14,3 +14,8 @@ DJ-Mixer zwischen den Decks: je Deck ein Kanal, in der Mitte Master und Kopfhör
 - **Crossfader** mit A/B in Deckfarben, Kurve „weich | hart“ als Segmente.
 - **Drehregler sind hier richtig:** Ein DJ-Mixer ist so gebaut. Im Produzenten-Kanalzug bleibt es ohne Regler.
 - **Kopfhörer** hören auf dem Vorhör-Ausgang (Kanal 3/4, wie PFL im Radio). Ist keiner eingerichtet, sind die Cue-Tasten gesperrt; der Tooltip sagt, wo man ihn einrichtet.
+
+
+## Fassung 7
+
+Unter dem Crossfader eine Zeile: `weich | hart` und **Weiter · Übergang** (36 px, Enter). Läuft: Balken unten in `accent`, Restzeit im Tooltip.

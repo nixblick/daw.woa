@@ -1,0 +1,18 @@
+<!-- @dsCard group="Grundlagen" height=560 width=1240 subtitle="Lösbares Fenster: eigene Kopfzeile mit Symbol, Titel, Stand, Maximieren/Wiederherstellen, Schließen" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}.cap{font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0 0 6px}</style></head>
+<body>
+
+<div class="woa-col" style="gap:16px;max-width:1180px">
+ <div><p class="cap">Normal (frei, verschiebbar)</p><div class="woa-win" style="height:120px"><div class="woa-win__head" data-tip="Ziehen verschiebt" data-hint="Doppelklick: maximieren / wiederherstellen"><span data-woa-icon="piano" style="display:contents"></span><span class="woa-win__t">Piano-Roll</span><span class="woa-win__s">Gitarre · Takt 5–8 · Raster 1/16</span><div class="woa-win__btns"><button class="woa-ib " data-woa-icon="max" data-tip="Maximieren" data-kbd="Doppelklick Kopf"></button><button class="woa-ib woa-ib--close" data-woa-icon="x" data-tip="Schließen" data-kbd="Esc"></button></div></div><div class="woa-win__body"><span class="woa-dim">Inhalt</span></div></div></div>
+ <div><p class="cap">Maximiert (füllt das Hauptfenster unter der Kopfleiste)</p><div class="woa-win is-max" style="height:110px"><div class="woa-win__head" data-tip="Ziehen verschiebt" data-hint="Doppelklick: maximieren / wiederherstellen"><span data-woa-icon="question" style="display:contents"></span><span class="woa-win__t">Fragen und To-dos</span><span class="woa-win__s">Stand 02.11.2026 · 16 offen · aus dem Netz</span><div class="woa-win__btns"><button class="woa-ib " data-woa-icon="restore" data-tip="Wiederherstellen" data-kbd="Doppelklick Kopf"></button><button class="woa-ib woa-ib--close" data-woa-icon="x" data-tip="Schließen" data-kbd="Esc"></button></div></div><div class="woa-win__body"><span class="woa-dim">Inhalt</span></div></div></div>
+ <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+  <div><p class="cap">Abnahme</p><div class="woa-win" style="height:110px"><div class="woa-win__head" data-tip="Ziehen verschiebt" data-hint="Doppelklick: maximieren / wiederherstellen"><span data-woa-icon="checklist" style="display:contents"></span><span class="woa-win__t">Abnahme</span><span class="woa-win__s">0.40.0 · 7 von 40 geprüft</span><div class="woa-win__btns"><button class="woa-ib " data-woa-icon="max" data-tip="Maximieren" data-kbd="Doppelklick Kopf"></button><button class="woa-ib woa-ib--close" data-woa-icon="x" data-tip="Schließen" data-kbd="Esc"></button></div></div><div class="woa-win__body"><span class="woa-dim">Inhalt</span></div></div></div>
+  <div><p class="cap">Feedback, Fehler beim Laden</p><div class="woa-win" style="height:110px"><div class="woa-win__head" data-tip="Ziehen verschiebt" data-hint="Doppelklick: maximieren / wiederherstellen"><span data-woa-icon="feedback" style="display:contents"></span><span class="woa-win__t">Feedback</span><span class="woa-win__s"><span style="color:var(--warn)">Screenshot fehlt</span></span><div class="woa-win__btns"><button class="woa-ib " data-woa-icon="max" data-tip="Maximieren" data-kbd="Doppelklick Kopf"></button><button class="woa-ib woa-ib--close" data-woa-icon="x" data-tip="Schließen" data-kbd="Esc"></button></div></div><div class="woa-win__body"><span class="woa-dim">Inhalt</span></div></div></div>
+ </div>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!-- @dsCard group="Einstellungen" height=760 width=1100 subtitle="Einstellungen → KI: Schlüssel eintragen, prüfen, entfernen, Credits; Zustände leer, prüft, verbunden, ungültig" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}.cap{font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0 0 6px}</style></head>
+<body>
+
+<div style="display:grid;grid-template-columns:500px 500px;gap:24px;align-items:start">
+ <div class="woa-col" style="gap:16px"><div><p class="cap">Leer</p><div class="woa-sg"><div class="woa-sg__h"><span data-woa-icon="user-voice" style="display:contents"></span><span class="woa-label">ElevenLabs · Stimmen und Klänge</span><span class="woa-chip">nicht eingerichtet</span></div>
+ <div style="display:flex;flex-direction:column;gap:12px;padding:14px 16px">
+  <div class="woa-keyf"><div class="woa-memo" style="height:36px"><span data-woa-icon="key" style="display:contents"></span><span class="woa-dim">Schlüssel einfügen (sk_…)</span></div><button class="woa-key woa-key--ok is-on" data-woa-icon="key">Eintragen</button></div>
+  <div class="woa-privacy"><span data-woa-icon="shield" style="display:contents"></span><span>Der Schlüssel liegt verschlüsselt im Schlüsselbund des Systems, nicht im Projekt. Texte für Sprache und Klänge gehen an ElevenLabs.</span></div>
+ </div></div></div><div><p class="cap">Prüft</p><div class="woa-sg"><div class="woa-sg__h"><span data-woa-icon="user-voice" style="display:contents"></span><span class="woa-label">ElevenLabs · Stimmen und Klänge</span><span class="woa-chip is-cue is-busy"><span data-woa-icon="spinner" style="display:contents"></span>prüfe</span></div>
+ <div style="display:flex;flex-direction:column;gap:12px;padding:14px 16px">
+  <div class="woa-keyf"><div class="woa-memo" style="height:36px"><span data-woa-icon="key" style="display:contents"></span><span>sk_••••••••••••••••3f2a</span></div><button class="woa-key" disabled data-woa-icon="spinner">Prüfe …</button></div>
+  <div class="woa-privacy"><span data-woa-icon="shield" style="display:contents"></span><span>Der Schlüssel liegt verschlüsselt im Schlüsselbund des Systems, nicht im Projekt. Texte für Sprache und Klänge gehen an ElevenLabs.</span></div>
+ </div></div></div></div>
+ <div class="woa-col" style="gap:16px"><div><p class="cap">Verbunden</p><div class="woa-sg"><div class="woa-sg__h"><span data-woa-icon="user-voice" style="display:contents"></span><span class="woa-label">ElevenLabs · Stimmen und Klänge</span><span class="woa-chip is-ok"><span data-woa-icon="check" style="display:contents"></span>verbunden</span></div>
+ <div style="display:flex;flex-direction:column;gap:12px;padding:14px 16px">
+  <div class="woa-keyf"><div class="woa-memo" style="height:36px"><span data-woa-icon="key" style="display:contents"></span><span>sk_••••••••••••••••3f2a</span></div><button class="woa-key" data-woa-icon="check">Prüfen</button><button class="woa-ib woa-ib--danger" data-woa-icon="trash" data-tip="Schlüssel entfernen"></button></div><div class="woa-credit"><div class="woa-credit__v"><span>CREDITS ÜBRIG</span><b>18.240</b></div><div class="woa-progress" style="--p:61%"><i></i></div><div class="woa-credit__v"><span>von 30.000 · Abo Starter</span><span>neu am 01.12.</span></div></div>
+  <div class="woa-privacy"><span data-woa-icon="shield" style="display:contents"></span><span>Der Schlüssel liegt verschlüsselt im Schlüsselbund des Systems, nicht im Projekt. Texte für Sprache und Klänge gehen an ElevenLabs.</span></div>
+ </div></div></div><div><p class="cap">Fehler</p><div class="woa-sg"><div class="woa-sg__h"><span data-woa-icon="user-voice" style="display:contents"></span><span class="woa-label">ElevenLabs · Stimmen und Klänge</span><span class="woa-chip is-warn"><span data-woa-icon="warning" style="display:contents"></span>Schlüssel ungültig</span></div>
+ <div style="display:flex;flex-direction:column;gap:12px;padding:14px 16px">
+  <div class="woa-keyf"><div class="woa-memo" style="height:36px"><span data-woa-icon="key" style="display:contents"></span><span>sk_••••••••••••••••0000</span></div><button class="woa-key" data-woa-icon="reload">Erneut prüfen</button><button class="woa-ib woa-ib--danger" data-woa-icon="trash" data-tip="Schlüssel entfernen"></button></div><span style="font-size:12px;color:var(--warn)">ElevenLabs meldet 401: Schlüssel unbekannt oder widerrufen.</span>
+  <div class="woa-privacy"><span data-woa-icon="shield" style="display:contents"></span><span>Der Schlüssel liegt verschlüsselt im Schlüsselbund des Systems, nicht im Projekt. Texte für Sprache und Klänge gehen an ElevenLabs.</span></div>
+ </div></div></div></div>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>
