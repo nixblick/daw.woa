@@ -4,6 +4,17 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design-Runde 3: Radio (0.35.19, offen)
+
+1. Radio bei 1920×1030: alles samt Wunschtitel ohne Scrollen sichtbar.
+2. Fehler auslösen (Stream ohne Server): Banner einzeilig mit Symbol, „Details“ zeigt den vollen Text.
+3. Sendereihe: keine Tasten „Deck A/B/C“, −10/+10 als Symbole; Rechtsklick auf ein geladenes Deck bietet „mit Blende“, „hart“ und rot „Leeren“.
+4. Rot nur live: „Auf Sendung“ in Ruhe neutral, auf Sendung rot; ON-AIR-Lampe links in der Stream-Zeile; Auto-Weiter als LED-Taste; Sätze 1–5 als Segmente.
+5. Deck: Restzeit-LCD mit „88:88“-Geistern und Balken, Start/Stopp mit Text, Cue/Vorhören/Zurück als Symbole mit Tooltip.
+6. Pegel: LED-Ketten sichtbar, Namensschild unten, dB nur im Tooltip; Processing als Zeilen mit Feld oder Schalter, Messzeile als LCD.
+
+Selbst geprüft von Claude: 233 Tests in `woa-gui`, clippy `-D warnings`, Screenshots dunkel/hell bei 1920×1030 und 1366×768.
+
 ## Design-Runde 3: Studio (0.35.18, offen)
 
 1. Audio-Spur wählen, im Rack „Trim“ auf +6 dB ziehen: Fader bleibt, Pegel steigt; Strg+Z nimmt es zurück, Doppelklick = 0 dB.
@@ -1343,6 +1354,19 @@ Selbst geprüft von Claude: Tests ohne Ton für Constant Power, die Glättung de
 6. Rechtsklick irgendwo auf eine Deck-Zeile (neben der Uhr): Das Deck-Menü geht auf. „Start“, „Cue“ und PFL klicken wie bisher.
 
 Selbst geprüft von Claude: Test im egui-Harness (Klick auf den rechten Rand wählt aus, Rechtsklick in der Mitte öffnet das Menü, die Nummer behält ihren Klick) und Messung mit 300 Zeilen (etwa 15 ms je Bild mit Klickfläche, 13 ms ohne, Debug-Bau). Clippy und Tests von `woa-gui` grün. Nicht am Gerät geklickt.
+
+## Design-Runde 3: Radio (0.35.18, offen)
+
+1. Radio-Modus bei 1920×1030: Alles bis zur Wunschtitel-Zeile ist ohne Scrollen zu sehen.
+2. Einen Fehler auslösen (etwa Ausgabe nicht verfügbar): Das Banner ist eine Zeile mit Symbol, „Details“ klappt den vollen Text auf, der Tooltip zeigt ihn auch.
+3. Sendereihe: keine Tasten „Deck A/B/C“ mehr; −10/+10 sind Symbole (Tooltip „10 s zurück/vor“).
+4. Rechtsklick auf ein geladenes Deck: „Mit Blende“ und „Hart“ lösen die Playlist ab wie früher die Deck-Tasten. „Leeren“ steht rot.
+5. Deck-Zeile: Restzeit-LCD mit grauen „88:88“-Geistern und Fortschrittsbalken; Start/Stopp mit Text, Cue, Vorhören und „Zurück zur Playlist“ als Symbole mit Tooltip.
+6. Stream-Zeile: ON-AIR-Lampe links leuchtet nur auf Sendung; „Auf Sendung“ ist in Ruhe neutral, auf Sendung rot. Auto-Weiter, „+ Titel“ und die Sätze 1–5 (jetzt Segmentschalter, Rechtsklick benennt um) sind nicht rot.
+7. Pegel: LED-Kette neben jedem Fader, Namensschild unten, dB-Wert im Tooltip; Notebook/Stream mit M-Taste.
+8. Processing: Zeilen „Bezeichnung · Zahlenfeld/Schalter“ (Ziehen, Doppelklick = Standard, Klick = eintippen), Messzeile als LCD.
+
+Selbst geprüft von Claude: Tests im egui-Harness (sieben neue, vorher rot), Screenshots dunkel und hell bei 1920×1030 und 1366×768. Clippy und Tests von `woa-gui` grün. Nicht am Gerät geklickt.
 
 ## Abgenommen
 
