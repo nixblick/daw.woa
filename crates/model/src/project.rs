@@ -19,6 +19,8 @@ pub const MAX_TEMPO_BPM: f64 = 400.0;
 pub const MIN_GAIN_DB: f64 = -96.0;
 /// Highest accepted track gain (dB).
 pub const MAX_GAIN_DB: f64 = 24.0;
+/// Range of the input trim of a track in dB.
+pub const TRIM_RANGE: (f64, f64) = (-24.0, 24.0);
 /// Highest accepted send level (dB). The lowest is [`MIN_GAIN_DB`] (= off).
 pub const MAX_SEND_DB: f64 = 12.0;
 
@@ -284,6 +286,10 @@ pub struct Track {
     pub kind: TrackKind,
     /// Gain in dB, within [`MIN_GAIN_DB`]..=[`MAX_GAIN_DB`].
     pub gain_db: f64,
+    /// Input trim in dB, within [`TRIM_RANGE`]: applied to the track signal before the
+    /// inserts, separate from the fader (`gain_db`). 0 = unchanged (not written to the file).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub trim_db: f64,
     /// Pan from -1.0 (left) to 1.0 (right).
     pub pan: f64,
     /// Muted.
@@ -351,6 +357,7 @@ impl Track {
             name: name.into(),
             kind,
             gain_db: 0.0,
+            trim_db: 0.0,
             pan: 0.0,
             mute: false,
             solo: false,

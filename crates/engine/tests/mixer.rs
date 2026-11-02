@@ -360,3 +360,93 @@ fn live_updates_of_inserts_and_sends_stay_continuous() {
     assert!(worst < 0.12, "jump {worst}");
     assert!(peak(&after[2400..]) > 0.5, "send level did not arrive");
 }
+
+/// Design-Runde 3, Abschnitt 6: Eingangs-Trim. −6 dB Trim halbiert den Pegel, der Fader bleibt.
+#[test]
+fn trim_minus_6_db_halves_the_level_and_leaves_the_fader() {
+    let mut s = Session::new("trim");
+    let t = add_track(&mut s, "1000", TrackKind::Audio);
+    let (plain, _) = render_project(s.project(), 9600);
+    s.apply(Command::SetTrim {
+        track: t,
+        trim_db: -6.0,
+    })
+    .expect("trim");
+    assert_eq!(s.project().track(t).expect("track").gain_db, 0.0);
+    let (trimmed, _) = render_project(s.project(), 9600);
+    let ratio = peak(&trimmed[4800..]) / peak(&plain[4800..]);
+    assert!((ratio - 0.501).abs() < 0.01, "ratio {ratio}");
+}
+
+/// Der Trim sitzt vor den Inserts: +12 dB in einen Limiter (−1 dB) bleibt begrenzt (Mitte −3 dB);
+/// derselbe Wert am Fader (nach den Inserts) geht darüber.
+#[test]
+fn trim_sits_before_the_inserts() {
+    let build = |trim: bool| {
+        let mut s = Session::new("trim");
+        let t = add_track(&mut s, "1000", TrackKind::Audio);
+        let id = s.new_insert_id();
+        s.apply(Command::AddInsert {
+            track: t,
+            insert: Insert::new(id, EffectKind::Limiter),
+            index: None,
+        })
+        .expect("insert");
+        let cmd = if trim {
+            Command::SetTrim {
+                track: t,
+                trim_db: 12.0,
+            }
+        } else {
+            Command::SetGain {
+                track: t,
+                gain_db: 12.0,
+            }
+        };
+        s.apply(cmd).expect("level");
+        s
+    };
+    let (pre, _) = render_project(build(true).project(), 9600);
+    let (post, _) = render_project(build(false).project(), 9600);
+    assert!(peak(&pre[4800..]) < 0.7, "trim peak {}", peak(&pre[4800..]));
+    assert!(
+        peak(&post[4800..]) > 1.2,
+        "fader peak {}",
+        peak(&post[4800..])
+    );
+}
+
+/// Trim ändern braucht keinen neuen Graphen: Update unter `assert_no_alloc`, auch mit
+/// abgespielter Gain-Kurve (die den Fader-Faktor auf 1 setzt).
+#[test]
+fn trim_update_reaches_the_running_graph_even_with_a_gain_lane() {
+    let mut s = Session::new("trim");
+    let t = add_track(&mut s, "1000", TrackKind::Audio);
+    s.apply(Command::SetAutomation {
+        track: t,
+        target: woa_model::AutoTarget::Gain,
+        points: vec![
+            woa_model::AutoPoint {
+                beat: 0.0,
+                value: 0.0,
+            },
+            woa_model::AutoPoint {
+                beat: 64.0,
+                value: 0.0,
+            },
+        ],
+        mode: woa_model::AutoMode::Read,
+    })
+    .expect("lane");
+    let mut r = rig(s.project());
+    let (before, _) = render(&mut r, 9600);
+    s.apply(Command::SetTrim {
+        track: t,
+        trim_db: -12.0,
+    })
+    .expect("trim");
+    ProjectGraph::update(&r.graph.tracks, &mut r.engine, s.project()).expect("update");
+    let (after, _) = render(&mut r, 19200);
+    let ratio = peak(&after[9600..]) / peak(&before[4800..]);
+    assert!((ratio - 0.251).abs() < 0.01, "ratio {ratio}");
+}

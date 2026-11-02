@@ -4,7 +4,18 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Design-Runde 3: Party mit Lime, Wellenform, BPM (0.35.18, offen)
+## Design-Runde 3: Studio (0.35.18, offen)
+
+1. Audio-Spur wählen, im Rack „Trim“ auf +6 dB ziehen: Fader bleibt, Pegel steigt; Strg+Z nimmt es zurück, Doppelklick = 0 dB.
+2. MIDI-Spur: kein „MIDI“-Schild im Spurkopf, Eingang zeigt das Gerät.
+3. Transport: Uhr-Symbol schaltet den Latenzausgleich, daneben ms; Takte/Zeit umschalten; „EXPORT“ öffnet den Export.
+4. Clip wählen: Fades in ms, Löschen mit Abstand rechts.
+5. Dock: Studio-Mixer · Piano-Roll · Automation · KI-Chat als Segmente; Klick auf den offenen Reiter klappt zu.
+6. Browser › Beats: Kit wählen, Preset klicken, neue Drum-Spur mit Beat am Abspielkopf; ein Strg+Z entfernt alles.
+
+Selbst geprüft von Claude: Tests von `woa-model`, `woa-engine`, `woa-agent`, `woa-gui` und Clippy grün, Screenshots vorher und nachher bei 1920×1030 und 1366×768 hell und dunkel unter Linux. Nicht unter Windows gesehen, kein Ton abgespielt.
+
+## Design-Runde 3: Party mit Lime, Wellenform, BPM (0.35.17, offen)
 
 1. Party öffnen, Titel mit Analyse laden: Restzeit als MM:SS mit Geistersegmenten, daneben BPM-LCD; Titel ohne Analyse zeigt kein BPM.
 2. Nach kurzer Zeit erscheint unter dem Deck die Wellenform mit Beatgrid; beim zweiten Laden sofort (Cache).
@@ -1333,7 +1344,7 @@ Selbst geprüft von Claude: Tests ohne Ton für Constant Power, die Glättung de
 
 Selbst geprüft von Claude: Test im egui-Harness (Klick auf den rechten Rand wählt aus, Rechtsklick in der Mitte öffnet das Menü, die Nummer behält ihren Klick) und Messung mit 300 Zeilen (etwa 15 ms je Bild mit Klickfläche, 13 ms ohne, Debug-Bau). Clippy und Tests von `woa-gui` grün. Nicht am Gerät geklickt.
 
-## Piano-Roll, Drum-Raster, Jingle-Assistent, Probeton (0.35.18, offen)
+## Piano-Roll, Drum-Raster, Jingle-Assistent, Probeton (0.35.20, offen)
 
 1. Produzent, Akkordfolge einfügen, einen Akkord-Clip doppelklicken: Die Piano-Roll zeigt oben eine Zeile mit Clip-Kennung, Werkzeugen, Raster, „3“, Länge, Quantisieren, Velocity, Tonart, Magnet, „Nur benutzte Töne“, Lautsprecher und Zoom. Keine Anleitungszeile, keine Überschrift „Drum-Raster“. Die Spuren oben sind niedriger (36 px).
 2. Noten sind in der Spurfarbe, laute heller. Tonart-Zeilen leicht getönt, rechts vom Clip schraffiert. E drücken und eine Note anklicken: weg. D drücken und ins Leere klicken: neue Note, kurzer Probeton.
