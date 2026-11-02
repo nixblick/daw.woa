@@ -74,24 +74,6 @@
       "ticket": 332
     },
     {
-      "id": "fix-hot-cue-loeschen",
-      "ansicht": "Party DJ",
-      "titel": "Hot Cue per Rechtsklick löschen",
-      "tun": "Titel auf Deck A, Hot Cue 1 setzen (Klick), dann Rechtsklick auf 1.",
-      "erwartet": "Die Taste 1 ist wieder leer.",
-      "version": "0.37.1",
-      "ticket": 331
-    },
-    {
-      "id": "fix-weiter-uebergang",
-      "ansicht": "Party DJ",
-      "titel": "„Weiter · Übergang“",
-      "tun": "Deck A spielt, Deck B hat einen Titel. „Weiter · Übergang“ unter dem Crossfader drücken (oder N). Noch einmal drücken. Während einer Fahrt den Crossfader anfassen.",
-      "erwartet": "B startet, der Crossfader fährt hinüber, danach steht A und zeigt den nächsten Titel; nochmal geht es zurück auf A. Anfassen bricht die Fahrt ab, beide Decks laufen weiter.",
-      "version": "0.37.1",
-      "ticket": 331
-    },
-    {
       "id": "fix-log-warnung",
       "ansicht": "Allgemein",
       "titel": "Keine Schrift-Warnung im Protokoll",
@@ -273,10 +255,10 @@
     {
       "id": "vollbild-start",
       "ansicht": "Allgemein",
-      "titel": "Start im Vollbild, F11",
+      "titel": "Start maximiert, F11 Vollbild",
       "tun": "WOA starten, F11 drücken, nochmal F11.",
-      "erwartet": "WOA startet im Vollbild; F11 wechselt in das maximierte Fenster mit Knöpfen und zurück.",
-      "version": "0.36.2"
+      "erwartet": "WOA startet maximiert im Fenster mit Rahmen und Knöpfen; F11 schaltet Vollbild an und wieder aus.",
+      "version": "0.40.1"
     },
     {
       "id": "fades-in-ms",
@@ -292,14 +274,6 @@
       "titel": "Radio passt auf den Bildschirm",
       "tun": "Radio bei 1920 × 1030 öffnen.",
       "erwartet": "Alles bis zu den Wunschtiteln ist ohne Scrollen zu sehen.",
-      "version": "0.35.19"
-    },
-    {
-      "id": "radio-rot-nur-live",
-      "ansicht": "Radio",
-      "titel": "Rot nur auf Sendung",
-      "tun": "„Auf Sendung“ in Ruhe ansehen, dann auf Sendung gehen.",
-      "erwartet": "In Ruhe neutral, auf Sendung rot; die ON-AIR-Lampe in der Stream-Zeile leuchtet nur auf Sendung.",
       "version": "0.35.19"
     },
     {

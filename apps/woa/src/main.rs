@@ -25,15 +25,16 @@ const WINDOWED_SIZE: [f32; 2] = [1280.0, 800.0];
 /// Wie das Fenster startet.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum StartWindow {
-    /// Grundsätzlich (André, 02.11.2026: „bitte den start der app immer im vollbildmodus“).
-    Fullscreen,
+    /// Grundsätzlich maximiert im Fenster mit Rahmen und Knöpfen; F11 schaltet Vollbild an/aus.
+    /// André 02.11.2026 (Abnahme 0.39.0): „die app soll maximiert starten. nicht f11 vollbild.“
+    Maximized,
     /// Nur mit `WOA_WINDOW`: feste Größe für Screenshots; ein unlesbarer Wert gibt 900×600.
     Fixed([f32; 2]),
 }
 
 fn start_window(spec: Option<&str>) -> StartWindow {
     match spec {
-        None => StartWindow::Fullscreen,
+        None => StartWindow::Maximized,
         Some(s) => StartWindow::Fixed(window_size(Some(s))),
     }
 }
@@ -81,10 +82,9 @@ fn main() -> ExitCode {
     let mut viewport = eframe::egui::ViewportBuilder::default().with_title("WOA");
     let start = start_window(std::env::var("WOA_WINDOW").ok().as_deref());
     viewport = match start {
-        // Nicht `with_fullscreen` beim Anlegen: unter Windows entstand so ein Fenster ohne
-        // Rahmen, Knöpfe und Doppelklick in 2/3 Größe (André, 0.36.1). Erst maximiert mit Rahmen
-        // anlegen, dann Vollbild per Befehl; F11 führt zurück ins maximierte Fenster.
-        StartWindow::Fullscreen => viewport
+        // Maximiert mit Rahmen anlegen (nie `with_fullscreen`: unter Windows entstand so ein
+        // Fenster ohne Rahmen in 2/3 Größe, 0.36.1). F11 schaltet Vollbild an und zurück.
+        StartWindow::Maximized => viewport
             .with_inner_size(WINDOWED_SIZE)
             .with_decorations(true)
             .with_resizable(true)
@@ -106,10 +106,6 @@ fn main() -> ExitCode {
         Box::new(move |cc| {
             // Schriften vor dem ersten Bild setzen (kein leeres erstes Bild).
             let _ = woa_gui::theme::install_fonts(&cc.egui_ctx);
-            if start == StartWindow::Fullscreen {
-                cc.egui_ctx
-                    .send_viewport_cmd(eframe::egui::ViewportCommand::Fullscreen(true));
-            }
             // Eine kurze Startzeile; die lange wgpu-Adapterliste steht nur auf DEBUG.
             let gpu = cc.wgpu_render_state.as_ref().map(|r| r.adapter.get_info());
             let line = start_line(
@@ -212,8 +208,9 @@ mod tests {
     }
 
     #[test]
-    fn app_starts_fullscreen_unless_woa_window_is_set() {
-        assert_eq!(start_window(None), StartWindow::Fullscreen);
+    fn app_starts_maximized_unless_woa_window_is_set() {
+        // André 02.11.2026 (Abnahme 0.39.0): maximiert mit Rahmen, nicht F11-Vollbild.
+        assert_eq!(start_window(None), StartWindow::Maximized);
         assert_eq!(
             start_window(Some("1920x1030")),
             StartWindow::Fixed([1920.0, 1030.0])
