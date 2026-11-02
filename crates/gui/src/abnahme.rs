@@ -215,6 +215,36 @@ pub fn daumen(urteil: Urteil, text: &str, schon_gefragt: bool) -> Daumen {
     }
 }
 
+/// Merkt „Geht“ je Prüfpunkt und Fassung: neue Version = neuer Schlüssel, Punkt erscheint wieder.
+pub fn erledigt_key(p: &Punkt) -> String {
+    format!("{}@{}", p.id, p.version)
+}
+
+/// Datei im Datenordner mit den auf diesem Gerät abgenommenen Punkten.
+pub const ERLEDIGT_DATEI: &str = "abnahme-erledigt.json";
+
+pub fn erledigt_laden(data_dir: &Path) -> HashSet<String> {
+    std::fs::read_to_string(data_dir.join(ERLEDIGT_DATEI))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok())
+        .map(|v| v.into_iter().collect())
+        .unwrap_or_default()
+}
+
+fn erledigt_speichern(data_dir: &Path, e: &HashSet<String>) {
+    let mut v: Vec<&String> = e.iter().collect();
+    v.sort();
+    let r = serde_json::to_string_pretty(&v)
+        .map_err(|e| e.to_string())
+        .and_then(|t| {
+            std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
+            std::fs::write(data_dir.join(ERLEDIGT_DATEI), t).map_err(|e| e.to_string())
+        });
+    if let Err(e) = r {
+        tracing::warn!(error = %e, "checklist: done list not saved");
+    }
+}
+
 /// Antwort des Sende-Threads.
 type Antwort = Receiver<Result<Option<u64>, FeedbackError>>;
 
@@ -236,6 +266,10 @@ pub struct AbnahmeWindow {
     sent: HashMap<String, Urteil>,
     pending: HashMap<String, (Urteil, Antwort)>,
     notes: HashMap<String, String>,
+    /// Auf diesem Gerät mit „Geht“ abgenommen (id@version), beim ersten Zeichnen geladen.
+    erledigt: Option<HashSet<String>>,
+    /// Schalter „Erledigte zeigen“.
+    pub zeige_erledigte: bool,
 }
 
 impl AbnahmeWindow {
@@ -265,7 +299,7 @@ impl AbnahmeWindow {
         self.liste.clone().unwrap_or_else(|| (embedded(), false))
     }
 
-    fn poll(&mut self) {
+    fn poll(&mut self, data_dir: &Path) {
         if let Some(rx) = &self.loader {
             match rx.try_recv() {
                 Ok(r) => {
@@ -297,6 +331,16 @@ impl AbnahmeWindow {
                 Ok(n) => {
                     if u != Urteil::Anmerkung {
                         self.sent.insert(k.clone(), u);
+                    }
+                    if u == Urteil::Ok {
+                        let (liste, _) = self.current();
+                        if let Some(p) = liste.punkte.iter().find(|p| p.id == k) {
+                            let e = self
+                                .erledigt
+                                .get_or_insert_with(|| erledigt_laden(data_dir));
+                            e.insert(erledigt_key(p));
+                            erledigt_speichern(data_dir, e);
+                        }
                     }
                     let was = match u {
                         Urteil::Ok => "Abgenommen",
@@ -351,7 +395,11 @@ impl AbnahmeWindow {
                     .name("woa-abnahme-senden".into())
                     .spawn(move || {
                         let key = woa_secrets::reveal(&data_dir, fragen::SECRET_ACCOUNT);
-                        let _ = tx.send(submit_feedback(&text, Vec::new(), &meta(&config, u, key)));
+                        let _ = tx.send(if !crate::feedback::may_send(&config.feedback_url) {
+                            Err(FeedbackError::NoEndpoint)
+                        } else {
+                            submit_feedback(&text, Vec::new(), &meta(&config, u, key))
+                        });
                     });
                 match spawned {
                     Ok(_) => {
@@ -373,7 +421,10 @@ impl AbnahmeWindow {
         if !self.open {
             return;
         }
-        self.poll();
+        if self.erledigt.is_none() {
+            self.erledigt = Some(erledigt_laden(data_dir));
+        }
+        self.poll(data_dir);
         if !self.pending.is_empty() || self.loader.is_some() {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
@@ -381,7 +432,7 @@ impl AbnahmeWindow {
         let fertig = liste
             .punkte
             .iter()
-            .filter(|p| self.sent.contains_key(&p.id))
+            .filter(|p| self.sent.contains_key(&p.id) || self.ist_erledigt(p))
             .count();
         let sub = format!(
             "Stand {}{} · {fertig} von {} geprüft · „Geht“ und „Geht nicht“ gehen sofort an das Projekt.",
@@ -403,6 +454,7 @@ impl AbnahmeWindow {
                 &mut self.maximized,
             );
             suchfeld(ui, &mut self.suche);
+            ui.checkbox(&mut self.zeige_erledigte, "Erledigte zeigen");
             let suche = self.suche.clone();
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
@@ -412,7 +464,13 @@ impl AbnahmeWindow {
                         let ps: Vec<&Punkt> = liste
                             .punkte
                             .iter()
-                            .filter(|p| p.ansicht == ansicht && punkt_passt(p, &suche))
+                            .filter(|p| {
+                                p.ansicht == ansicht
+                                    && punkt_passt(p, &suche)
+                                    && (self.zeige_erledigte
+                                        || !self.ist_erledigt(p)
+                                        || self.sent.contains_key(&p.id))
+                            })
                             .collect();
                         if ps.is_empty() {
                             continue;
@@ -429,6 +487,13 @@ impl AbnahmeWindow {
                     }
                 });
         });
+    }
+
+    /// Auf diesem Gerät in dieser Fassung schon abgenommen?
+    fn ist_erledigt(&self, p: &Punkt) -> bool {
+        self.erledigt
+            .as_ref()
+            .is_some_and(|e| e.contains(&erledigt_key(p)))
     }
 
     fn punkt_ui(&mut self, ui: &mut egui::Ui, p: &Punkt, config: &GuiConfig, data_dir: &Path) {
@@ -757,5 +822,27 @@ mod tests {
         assert!(h.state().eingaben[&id].text.is_empty(), "Text ging raus");
         assert!(h.state().notes.contains_key(&id));
         assert_eq!(h.state().sent.get(&id), Some(&Urteil::Ok), "Urteil bleibt");
+    }
+
+    /// André 02.11.2026: mit „Geht“ abgenommene Punkte verschwinden, neue Fassung kommt wieder.
+    #[test]
+    fn approved_points_hide_until_a_new_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = embedded();
+        let mut p = a.punkte[0].clone();
+        let (tx, rx) = channel();
+        let mut w = AbnahmeWindow::default();
+        w.liste = Some((a.clone(), false));
+        w.pending.insert(p.id.clone(), (Urteil::Ok, rx));
+        tx.send(Ok(None)).unwrap();
+        w.poll(dir.path());
+        assert!(erledigt_laden(dir.path()).contains(&erledigt_key(&p)));
+        let w2 = AbnahmeWindow {
+            erledigt: Some(erledigt_laden(dir.path())),
+            ..Default::default()
+        };
+        assert!(w2.ist_erledigt(&p));
+        p.version = "9.9.9".into();
+        assert!(!w2.ist_erledigt(&p), "neue Fassung erscheint wieder");
     }
 }

@@ -352,7 +352,11 @@ impl FragenWindow {
             .name("woa-fragen-nachtrag".into())
             .spawn(move || {
                 let key = woa_secrets::reveal(&data_dir, SECRET_ACCOUNT);
-                let _ = tx.send(submit_feedback(&text, Vec::new(), &meta(&config, key)));
+                let _ = tx.send(if !crate::feedback::may_send(&config.feedback_url) {
+                    Err(FeedbackError::NoEndpoint)
+                } else {
+                    submit_feedback(&text, Vec::new(), &meta(&config, key))
+                });
             });
         match spawned {
             Ok(_) => {
@@ -393,7 +397,11 @@ impl FragenWindow {
             .name("woa-fragen-senden".into())
             .spawn(move || {
                 let key = woa_secrets::reveal(&data_dir, SECRET_ACCOUNT);
-                let _ = tx.send(submit_feedback(&text, Vec::new(), &meta(&config, key)));
+                let _ = tx.send(if !crate::feedback::may_send(&config.feedback_url) {
+                    Err(FeedbackError::NoEndpoint)
+                } else {
+                    submit_feedback(&text, Vec::new(), &meta(&config, key))
+                });
             });
         match spawned {
             Ok(_) => {

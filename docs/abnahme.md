@@ -137,6 +137,8 @@ Selbst geprüft von Claude: Tests in `woa-radio`, `woa-engine`, `woa-gui` (Radio
 1. WOA starten: das Fenster öffnet maximiert mit Rahmen und Knöpfen (kein Vollbild). F11 schaltet Vollbild an, nochmal F11 zurück ins maximierte Fenster.
 2. Entwickler › Abnahme: einen Punkt mit „Geht“ abnehmen, danach ins Feld eine Anmerkung schreiben und „Anmerkung senden“: kommt als `[entwickler-abnahme] <id>: anmerkung` an, das „Geht“ bleibt stehen. Geht auch ohne vorheriges Urteil.
 3. Entwickler › Fragen und To-dos: nach „Senden“ erscheint unter dem Vorschlag „Anmerkung nachtragen“ mit „Anmerkung senden“.
+4. Abnahme: ein mit „Geht“ abgenommener Punkt ist nach Schließen und Wiederöffnen (auch nach Neustart) weg; „Erledigte zeigen“ holt ihn zurück.
+5. Feedback (oben): oben rechts ein X schließt das Fenster; nach dem Senden steht der Dank nur noch 1,5 s.
 
 Selbst geprüft von Claude: `cargo test -p woa-gui --lib -p woa`, Clippy. Nicht unter Windows gesehen, kein Ton; der maximierte Start nur über den Test der Startentscheidung.
 

@@ -223,7 +223,13 @@ impl GuiConfig {
 }
 
 /// How long the thank-you after a successful send stays before the dialog closes itself.
-pub const THANKS_VISIBLE: Duration = Duration::from_secs(3);
+pub const THANKS_VISIBLE: Duration = Duration::from_millis(1500);
+
+/// Darf an diese Adresse gesendet werden? In Testläufen nur an einen lokalen Mock
+/// (127.0.0.1/localhost), nie an den echten Server (#348–#352 kamen aus Tests, 02.11.2026).
+pub fn may_send(url: &str) -> bool {
+    !cfg!(test) || url.starts_with("http://127.0.0.1") || url.starts_with("http://localhost")
+}
 
 /// Where the dialog is.
 #[derive(Debug, Clone, PartialEq)]
@@ -540,7 +546,7 @@ impl FeedbackDialog {
 
     /// Sends in a background thread. Empty URL: no request, message [`NOT_CONFIGURED`].
     pub fn send(&mut self, config: &GuiConfig, log_lines: &[String]) {
-        if config.feedback_url.trim().is_empty() {
+        if config.feedback_url.trim().is_empty() || !may_send(&config.feedback_url) {
             self.phase = Phase::Done(NOT_CONFIGURED.into());
             return;
         }
@@ -656,6 +662,18 @@ mod tests {
         assert_eq!(back.outputs.get(Source::Playlist), Route::default());
     }
 
+    /// Tests senden nie an den echten Server (#348–#352 kamen aus Tests, 02.11.2026).
+    #[test]
+    fn test_builds_never_reach_the_real_server() {
+        assert!(!may_send(DEFAULT_FEEDBACK_URL));
+        assert!(may_send("http://127.0.0.1:9/api/feedback"));
+    }
+
+    #[test]
+    fn thanks_visible_one_and_a_half_seconds() {
+        assert_eq!(THANKS_VISIBLE, Duration::from_millis(1500));
+    }
+
     #[test]
     fn thanks_close_after_three_seconds_errors_stay() {
         let t0 = Instant::now();
@@ -664,7 +682,7 @@ mod tests {
             thanks_since: Some(t0),
             ..Default::default()
         };
-        d.tick(t0 + Duration::from_millis(2900));
+        d.tick(t0 + Duration::from_millis(1400));
         assert!(matches!(d.phase, Phase::Done(_)));
         d.tick(t0 + THANKS_VISIBLE);
         assert_eq!(d.phase, Phase::Closed);
