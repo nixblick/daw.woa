@@ -183,6 +183,19 @@ impl AppState {
         self.apply(Command::SetGain { track, gain_db })
     }
 
+    /// Sets the input trim in dB (Design-Runde 3): before the inserts, separate from the
+    /// fader; one undo step.
+    pub fn set_trim(&mut self, track: TrackId, trim_db: f64) -> bool {
+        let unchanged = self
+            .project()
+            .track(track)
+            .is_some_and(|t| t.trim_db == trim_db);
+        if unchanged {
+            return false;
+        }
+        self.apply(Command::SetTrim { track, trim_db })
+    }
+
     /// Sets the GM sound of a MIDI track (`None`: built-in synth); one undo step.
     pub fn set_track_sound(
         &mut self,
@@ -925,6 +938,37 @@ impl AppState {
     /// Paket J4: legt das Gerüst eines Jingles an (Assistent „Jingle bauen“, Schritt 1):
     /// Tempo aus der Längen-Rechnung, Drum-Spur mit Kit und Beat der Stimmung, Akkorde,
     /// Bass und Arpeggio (J3) und eine leere Audio-Spur „Stimme“. Alles ab Beat 0, ein
+    /// Beats-Reiter (Design-Runde 3): neue Drum-Spur mit Kit und einem Clip aus dem Preset
+    /// (`bars` Takte) ab `at_beats`. Ein Undo-Schritt; gibt den neuen Clip zurück.
+    pub fn insert_beat(
+        &mut self,
+        preset: &woa_model::DrumPreset,
+        kit: woa_model::sound::TrackSound,
+        at_beats: f64,
+        bars: u32,
+    ) -> Option<ClipId> {
+        let label = "Beat einfügen";
+        let length = f64::from(bars.max(1)) * 4.0;
+        self.session.begin_group(label);
+        let track = self.session.new_track_id();
+        let clip = self.session.new_clip_id();
+        let midi =
+            woa_model::drums::apply_preset(&woa_model::MidiData::default(), length, preset, 0);
+        let ok = self.apply(Command::add_track(track, preset.name, TrackKind::Midi))
+            && self.apply(Command::SetTrackSound {
+                track,
+                sound: Some(kit),
+            })
+            && self.apply(Command::AddClip {
+                track,
+                clip: Clip::new_midi(clip, preset.name, at_beats.max(0.0), length, midi),
+                index: None,
+            });
+        let closed = self.session.end_group();
+        self.report(label, closed);
+        ok.then_some(clip)
+    }
+
     /// Undo-Schritt, nur normale Spuren und Clips.
     pub fn build_jingle(
         &mut self,

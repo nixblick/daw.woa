@@ -197,3 +197,59 @@ async fn bom_before_initialize_is_ignored() {
         "{line}"
     );
 }
+
+/// Design-Runde 3, Abschnitt 6: `set_trim` setzt den Eingangs-Trim, getrennt vom Gain, als ein
+/// Undo-Schritt; ein Wert außerhalb ±24 dB ist ein Werkzeugfehler und ändert nichts.
+#[tokio::test(flavor = "current_thread")]
+async fn set_trim_is_separate_from_gain_and_undoable() {
+    let tmp = tempfile::tempdir().unwrap();
+    let agent = WoaAgent::open_or_create(tmp.path().join("trim.woa")).unwrap();
+    let session = agent.session();
+    let (c_write, s_read) = tokio::io::duplex(1 << 16);
+    let (s_write, c_read) = tokio::io::duplex(1 << 16);
+    let server = tokio::spawn(woa_agent::serve(agent, (s_read, s_write)));
+    let client = TestClient.serve((c_read, c_write)).await.unwrap();
+
+    let tools = client.list_all_tools().await.unwrap();
+    let trim = tools
+        .iter()
+        .find(|t| t.name == "set_trim")
+        .expect("set_trim");
+    let props = trim.input_schema.get("properties").unwrap();
+    assert!(props.get("trim_db").is_some() && props.get("track").is_some());
+
+    let t = json(&call(&client, "add_track", serde_json::json!({"name": "Stimme"})).await)["track"]
+        .as_u64()
+        .unwrap();
+    json(
+        &call(
+            &client,
+            "set_trim",
+            serde_json::json!({"track": t, "trim_db": 4.5}),
+        )
+        .await,
+    );
+    {
+        let s = session.lock().unwrap();
+        let tr = s.project().track(woa_model::TrackId(t)).unwrap();
+        assert_eq!((tr.trim_db, tr.gain_db), (4.5, 0.0));
+        assert_eq!(s.history().undo_entries().len(), 2);
+    }
+    let bad = call(
+        &client,
+        "set_trim",
+        serde_json::json!({"track": t, "trim_db": 30.0}),
+    )
+    .await;
+    assert_eq!(bad.is_error, Some(true));
+    json(&call(&client, "undo", serde_json::json!({})).await);
+    {
+        let s = session.lock().unwrap();
+        assert_eq!(
+            s.project().track(woa_model::TrackId(t)).unwrap().trim_db,
+            0.0
+        );
+    }
+    client.cancel().await.unwrap();
+    let _ = server.await;
+}
