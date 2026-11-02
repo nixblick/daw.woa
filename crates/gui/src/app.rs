@@ -268,7 +268,7 @@ pub struct WoaApp {
     /// Browser links im Produzenten-Modus (Design System 2).
     browser: crate::browser::Browser,
     jingle_fx: crate::jingle_fx::FxFenster,
-    jingle_assistent: crate::jingle_assistent::JingleAssistent,
+    jingle_assistent: crate::widgets::wizard::JingleAssistent,
     /// Export-Fenster (Paket 26).
     export_dialog: crate::export_dialog::ExportDialog,
     /// „Spur exportieren“ (Ticket 229): offenes Fenster und laufender Export.
@@ -285,7 +285,7 @@ pub struct WoaApp {
     /// Letzter gesehener Event-Zähler und wann er sich zuletzt geändert hat (Lampe).
     midi_seen: (u64, Option<Instant>),
     /// Offene Piano-Roll (Paket 13), Doppelklick auf einen MIDI-Clip.
-    piano_roll: Option<crate::pianoroll::PianoRoll>,
+    piano_roll: Option<crate::widgets::piano_roll::PianoRoll>,
     /// Controller und MIDI-Learn (Paket 14).
     controls: ControlDesk,
     /// Waker für den Controller gesetzt.
@@ -629,7 +629,7 @@ impl WoaApp {
             akkorde: crate::akkorde::AkkordFenster::default(),
             browser: crate::browser::Browser::default(),
             jingle_fx: crate::jingle_fx::FxFenster::default(),
-            jingle_assistent: crate::jingle_assistent::JingleAssistent::default(),
+            jingle_assistent: crate::widgets::wizard::JingleAssistent::default(),
             export_dialog: crate::export_dialog::ExportDialog::new(),
             track_export: None,
             track_export_job: None,
@@ -2052,25 +2052,11 @@ impl WoaApp {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     let out_ms = woa_engine::device::output_latency().as_secs_f64() * 1000.0;
                     let on = self.latency_auto;
-                    let b = egui::Button::new(
-                        egui::RichText::new(theme::ic::TIMER).size(16.0).color(if on {
-                            theme::text()
-                        } else {
-                            theme::text_dim()
-                        }),
-                    )
-                    .fill(if on {
-                        theme::accent_soft()
-                    } else {
-                        theme::surface()
-                    })
-                    .stroke(egui::Stroke::new(
-                        1.0,
-                        if on { theme::accent() } else { theme::border() },
-                    ))
-                    .min_size(egui::vec2(32.0, 32.0));
-                    if ui
-                        .add(b)
+                    // Hardware-Schalter (`Key`, leuchtet bei an), kein egui-Knopf.
+                    if crate::widgets::Key::new(theme::ic::TIMER, egui::vec2(32.0, 32.0))
+                        .font(egui::FontId::proportional(16.0))
+                        .lit(on)
+                        .ui(ui)
                         .on_hover_text(format!(
                             "Latenz ausgleichen: {}. Verschiebt jede Aufnahme um die vom Treiber \
                              gemeldete Latenz nach vorn (Ausgang zuletzt {out_ms:.1} ms, Eingang \
@@ -2097,17 +2083,11 @@ impl WoaApp {
 
             // 5. Rechtsbündig: Export · Zoom · Raster · Takte/Zeit (Reihenfolge von rechts).
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("EXPORT")
-                                .font(theme::panel_label_font())
-                                .size(13.0)
-                                .color(theme::text()),
-                        )
-                        .fill(theme::surface())
-                        .min_size(egui::vec2(0.0, 32.0)),
-                    )
+                let font = theme::panel_label_font();
+                let w = crate::widgets::key_width(ui, "EXPORT", &font, 72.0);
+                if crate::widgets::Key::new("EXPORT", egui::vec2(w, 32.0))
+                    .font(font)
+                    .ui(ui)
                     .on_hover_text("Projekt exportieren (WAV, FLAC, MP3, Stems …)")
                     .clicked()
                 {
@@ -2136,21 +2116,13 @@ impl WoaApp {
                     .response
                     .on_hover_text("Lautheit beim Export");
                 ui.separator();
-                if icon_button(
-                    ui,
-                    theme::ic::MAGNIFYING_GLASS_PLUS,
-                    theme::text(),
-                    "Hineinzoomen (Strg+Mausrad)",
+                if icon_button(ui, theme::ic::MAGNIFYING_GLASS_PLUS, "Hineinzoomen (Strg+Mausrad)",
                 )
                 .clicked()
                 {
                     self.zoom = (self.zoom * 1.5).clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end());
                 }
-                if icon_button(
-                    ui,
-                    theme::ic::MAGNIFYING_GLASS_MINUS,
-                    theme::text(),
-                    "Herauszoomen (Strg+Mausrad)",
+                if icon_button(ui, theme::ic::MAGNIFYING_GLASS_MINUS, "Herauszoomen (Strg+Mausrad)",
                 )
                 .clicked()
                 {
@@ -2169,12 +2141,21 @@ impl WoaApp {
                 // Lineal: Takte oder Zeit als Segmentschalter (rechts nach links gebaut).
                 let mut unit = self.time_unit;
                 ui.scope(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
+                    // Segmentschalter aus zwei Hardware-Tasten: die gewählte rastet ein.
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    let font = theme::label_font(13.0);
                     for (u, label, tip) in [
                         (TimeUnit::Seconds, "Zeit", "Lineal in Minuten und Sekunden"),
                         (TimeUnit::Bars, "Takte", "Lineal in Takten"),
                     ] {
-                        if segment(ui, label, unit == u).on_hover_text(tip).clicked() {
+                        let w = crate::widgets::key_width(ui, label, &font, 52.0);
+                        if crate::widgets::Key::new(label, egui::vec2(w, 32.0))
+                            .font(font.clone())
+                            .lit(unit == u)
+                            .ui(ui)
+                            .on_hover_text(tip)
+                            .clicked()
+                        {
                             unit = u;
                         }
                     }
@@ -2340,7 +2321,7 @@ impl WoaApp {
         self.selected_clip = Some(clip);
         self.track_focus = false;
         tracing::info!(clip = clip.0, "piano roll opened");
-        self.piano_roll = Some(crate::pianoroll::PianoRoll::new(clip));
+        self.piano_roll = Some(crate::widgets::piano_roll::PianoRoll::new(clip));
         if !self.piano_roll_floating {
             self.studio_dock = StudioDockTab::PianoRoll;
         }
@@ -2358,6 +2339,18 @@ impl WoaApp {
         pr.playhead = playhead;
         if !pr.show(ctx, &mut self.state) {
             self.piano_roll = None;
+        }
+    }
+
+    /// F11 schaltet in Produzent und Radio das Vollbild um (Party fängt F und F11 selbst).
+    /// Kein Fenster meldet seinen Zustand (Tests): gilt als nicht Vollbild.
+    fn fullscreen_key(&mut self, ctx: &egui::Context) {
+        if self.config.mode == Mode::Party {
+            return;
+        }
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F11)) {
+            let on = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!on));
         }
     }
 
@@ -2582,6 +2575,24 @@ impl WoaApp {
             if let Some(p) = woa_model::chords::CHORD_PROGRESSIONS.first() {
                 let _ = self.state.add_chord_tracks(p, 0, 4, 0.0);
             }
+        }
+        if first
+            && let Some(n) = std::env::var("WOA_SELECT")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+        {
+            // Fotomodus des Clip-Inspektors: die ersten `n` Clips wählen (1 = ein Clip).
+            let ids: Vec<ClipId> = self
+                .state
+                .project()
+                .tracks
+                .iter()
+                .flat_map(|t| &t.clips)
+                .map(|c| c.id)
+                .take(n)
+                .collect();
+            self.selected_clip = ids.first().copied();
+            self.selected_clips = ids;
         }
         if first && std::env::var_os("WOA_PIANOROLL").is_some() {
             // Fotomodus der Piano-Roll: ersten MIDI-Clip öffnen, zwei Noten wählen;
@@ -4913,40 +4924,17 @@ impl WoaApp {
                     self.delete_selected();
                 }
                 ui.add_space(24.0);
-                if is_midi
-                    && icon_button(
-                        ui,
-                        theme::ic::PIANO_KEYS,
-                        theme::text_dim(),
-                        "Piano-Roll öffnen",
-                    )
-                    .clicked()
+                if is_midi && icon_button(ui, theme::ic::PIANO_KEYS, "Piano-Roll öffnen").clicked()
                 {
                     self.open_piano_roll(c.id);
                 }
-                if icon_button(ui, theme::ic::COPY, theme::text_dim(), "Kopieren (Strg+C)")
-                    .clicked()
-                {
+                if icon_button(ui, theme::ic::COPY, "Kopieren (Strg+C)").clicked() {
                     self.copy_selected();
                 }
-                if icon_button(
-                    ui,
-                    theme::ic::STACK_PLUS,
-                    theme::text_dim(),
-                    "Duplizieren (Strg+D)",
-                )
-                .clicked()
-                {
+                if icon_button(ui, theme::ic::STACK_PLUS, "Duplizieren (Strg+D)").clicked() {
                     self.duplicate_selected();
                 }
-                if icon_button(
-                    ui,
-                    theme::ic::SCISSORS,
-                    theme::text_dim(),
-                    "Teilen am Kopf (S)",
-                )
-                .clicked()
-                {
+                if icon_button(ui, theme::ic::SCISSORS, "Teilen am Kopf (S)").clicked() {
                     self.split_at_playhead();
                 }
                 ui.separator();
@@ -5064,12 +5052,10 @@ impl WoaApp {
             })
             .response
             .on_hover_text("Raster für Quantisieren");
-        if ui
-            .add(
-                egui::Button::new(egui::RichText::new("Q").strong())
-                    .min_size(egui::vec2(24.0, 22.0)),
-            )
-            .on_hover_text("Quantisieren: alle Noten auf das Raster")
+        // „Q“ ist kein eindeutiges Symbol, also Text-Taste (`Key`) statt `IconButton`.
+        if crate::widgets::Key::new("Q", egui::vec2(24.0, 24.0))
+            .ui(ui)
+            .on_hover_text("Quantisieren: alle Noten auf das Raster (Q)")
             .clicked()
         {
             let grid = woa_model::grid_beats(self.quantize_div, false);
@@ -5094,9 +5080,11 @@ impl WoaApp {
         }
     }
 
-    /// Fades mehrerer Clips: gleiche Werte stehen da, unterschiedliche als „—“; Eintippen
-    /// oder Ziehen setzt alle auf den Wert (ein Undo-Schritt).
+    /// Fades mehrerer Clips in ms (wie beim einzelnen Clip; gespeichert bleiben Schläge): gleiche
+    /// Werte stehen da, unterschiedliche als „—“; Eintippen oder Ziehen setzt alle auf den Wert
+    /// (ein Undo-Schritt).
     fn multi_fades(&mut self, ui: &mut egui::Ui, clips: &[woa_model::Clip]) {
+        let ms_per_beat = 60_000.0 / self.state.project().tempo_bpm.max(1.0);
         let max = clips
             .iter()
             .map(|c| c.length_beats)
@@ -5105,13 +5093,13 @@ impl WoaApp {
             (
                 theme::ic::TREND_UP,
                 "multi_fi",
-                "Fade-in aller Clips in Beats",
+                "Fade-in aller Clips in Millisekunden",
                 0u8,
             ),
             (
                 theme::ic::TREND_DOWN,
                 "multi_fo",
-                "Fade-out aller Clips in Beats",
+                "Fade-out aller Clips in Millisekunden",
                 1u8,
             ),
         ] {
@@ -5120,23 +5108,24 @@ impl WoaApp {
             let vals: Vec<f64> = clips
                 .iter()
                 .map(|c| {
-                    if which == 0 {
-                        c.fade_in_beats
-                    } else {
-                        c.fade_out_beats
-                    }
+                    ms_per_beat
+                        * if which == 0 {
+                            c.fade_in_beats
+                        } else {
+                            c.fade_out_beats
+                        }
                 })
                 .collect();
             if let Some(v) = mixed_field(
                 ui,
                 (key, 0),
                 &vals,
-                0.0..=max,
-                0.05,
-                |v| format!("{v:.2}"),
+                0.0..=max * ms_per_beat,
+                5.0,
+                |v| format!("{v:.0} ms"),
                 tip,
             ) {
-                let v = v.value();
+                let v = v.value() / ms_per_beat;
                 self.state.grouped("Fades", |st| {
                     for c in clips {
                         let (fi, fo) = if which == 0 {
@@ -5272,7 +5261,6 @@ impl WoaApp {
         if icon_button(
             ui,
             theme::ic::ARROW_LINE_UP,
-            theme::text(),
             "Normalisieren: lauteste Stelle auf -1 dBFS",
         )
         .clicked()
@@ -5359,12 +5347,10 @@ impl WoaApp {
                      statt verschoben: er bleibt auf dem Raster, die Tonhöhe bleibt."
                 .to_string(),
         };
-        if ui
-            .add(egui::Button::selectable(
-                follow.is_some(),
-                egui::RichText::new(theme::ic::METRONOME),
-            ))
-            .on_hover_text(tip)
+        if crate::widgets::IconButton::new(theme::ic::METRONOME, &tip)
+            .size(crate::widgets::IconSize::Sm)
+            .on(follow.is_some())
+            .ui(ui)
             .clicked()
         {
             self.state.set_clip_follow_tempo(id, follow.is_none());
@@ -5506,7 +5492,7 @@ impl WoaApp {
     /// Assistent „Jingle bauen“ (Paket J4): führt seine Wünsche mit App-Zustand aus
     /// (neues Projekt mit Speicher-Frage, Loop über das Jingle, Drum-Raster, Export).
     fn jingle_assistent_window(&mut self, ctx: &egui::Context) {
-        use crate::jingle_assistent::Wunsch;
+        use crate::widgets::wizard::Wunsch;
         if !self.jingle_assistent.open {
             return;
         }
@@ -6616,6 +6602,10 @@ impl eframe::App for WoaApp {
             r.set_party_mode(self.config.mode == Mode::Party);
             self.party.pump_remote(r, ctx);
         }
+        // Die App startet im Vollbild (main.rs); die Party-Taste zeigt den Zustand des Fensters.
+        if let Some(on) = ctx.input(|i| i.viewport().fullscreen) {
+            self.party.state.fullscreen = on;
+        }
         if self.config.mode == Mode::Party {
             let cmds = crate::party::PartyView::shortcuts(ctx);
             if let Some(r) = self.radio.as_mut() {
@@ -6628,6 +6618,7 @@ impl eframe::App for WoaApp {
         } else {
             self.shortcuts(ctx);
         }
+        self.fullscreen_key(ctx);
         self.take_screenshot(ctx);
         if self.config.mode == Mode::Produzent {
             self.drop_files(ctx);
@@ -7046,20 +7037,15 @@ impl WoaApp {
                 }
 
                 if self.studio_dock == StudioDockTab::PianoRoll {
-                    let float_label = if self.piano_roll_floating {
-                        format!("{} Im Dock einbetten", theme::ic::ARROWS_IN)
+                    // Nur Symbol mit Tooltip (Design `IconButton`); „an“ = schwebt als Fenster.
+                    let (icon, tip) = if self.piano_roll_floating {
+                        (theme::ic::ARROWS_IN, "Piano-Roll wieder im Dock einbetten")
                     } else {
-                        format!("{} Als Fenster lösen", theme::ic::ARROWS_OUT)
+                        (theme::ic::ARROWS_OUT, "Piano-Roll als eigenes Fenster lösen")
                     };
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                egui::RichText::new(float_label)
-                                    .small()
-                                    .color(theme::text_dim()),
-                            )
-                            .fill(theme::surface()),
-                        )
+                    if crate::widgets::IconButton::new(icon, tip)
+                        .on(self.piano_roll_floating)
+                        .ui(ui)
                         .clicked()
                     {
                         self.piano_roll_floating = !self.piano_roll_floating;
@@ -7067,22 +7053,12 @@ impl WoaApp {
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let toggle_lbl = if is_open {
-                        format!("{} Dock einklappen", theme::ic::CARET_DOWN)
+                    let (icon, tip) = if is_open {
+                        (theme::ic::CARET_DOWN, "Dock einklappen")
                     } else {
-                        format!("{} Dock ausklappen", theme::ic::CARET_UP)
+                        (theme::ic::CARET_UP, "Dock ausklappen (Studio-Mixer)")
                     };
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                egui::RichText::new(toggle_lbl)
-                                    .small()
-                                    .color(theme::text_dim()),
-                            )
-                            .fill(theme::well()),
-                        )
-                        .clicked()
-                    {
+                    if crate::widgets::IconButton::new(icon, tip).ui(ui).clicked() {
                         self.studio_dock = if is_open {
                             StudioDockTab::Closed
                         } else {
@@ -8450,7 +8426,7 @@ impl WoaApp {
         if self.piano_roll_floating {
             ui.label(
                 egui::RichText::new(
-                    "Die Piano-Roll ist aktuell als schwebendes Fenster geöffnet. Klicke oben auf „Im Dock einbetten“, um sie hier unten anzudocken.",
+                    "Die Piano-Roll ist aktuell als schwebendes Fenster geöffnet. Das Symbol oben in der Dock-Leiste (Tooltip „wieder im Dock einbetten“) holt sie hier unten zurück.",
                 )
                 .color(theme::text_dim()),
             );
@@ -8465,7 +8441,7 @@ impl WoaApp {
                 .is_some_and(|(_, c)| c.midi.is_some())
             && self.piano_roll.as_ref().is_none_or(|pr| pr.clip != sel)
         {
-            self.piano_roll = Some(crate::pianoroll::PianoRoll::new(sel));
+            self.piano_roll = Some(crate::widgets::piano_roll::PianoRoll::new(sel));
         }
 
         if let Some(mut pr) = self.piano_roll.take() {
@@ -8903,27 +8879,22 @@ fn segment(ui: &mut egui::Ui, label: &str, on: bool) -> egui::Response {
 /// Gefahr-Symbolknopf (Design `IconButton --danger`): ohne Fläche, Symbol gedimmt, erst bei Hover
 /// rot. Das Symbol ist die Beschriftung, damit Tests und Bildschirmleser es finden.
 fn danger_icon_button(ui: &mut egui::Ui, icon: &str, size: f32, tip: &str) -> egui::Response {
-    let id = ui.next_auto_id();
-    let hot = ui.ctx().read_response(id).is_some_and(|r| r.hovered());
-    ui.add(
-        egui::Button::new(egui::RichText::new(icon).size(size).color(if hot {
-            theme::on_air()
-        } else {
-            theme::text_dim()
-        }))
-        .frame_when_inactive(false)
-        .min_size(egui::vec2(size + 8.0, size + 8.0)),
-    )
-    .on_hover_text(tip)
+    let s = if size <= 14.0 {
+        crate::widgets::IconSize::Sm
+    } else {
+        crate::widgets::IconSize::Md
+    };
+    crate::widgets::IconButton::new(icon, tip)
+        .size(s)
+        .danger()
+        .ui(ui)
 }
 
-fn icon_button(ui: &mut egui::Ui, icon: &str, color: egui::Color32, tip: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(egui::RichText::new(icon).size(14.0).color(color))
-            .fill(theme::well())
-            .min_size(egui::vec2(24.0, 22.0)),
-    )
-    .on_hover_text(tip)
+/// Werkzeug-Symbolknopf (Design `IconButton`, 24 px): Ruhe ohne Fläche, Hover mit Fläche.
+fn icon_button(ui: &mut egui::Ui, icon: &str, tip: &str) -> egui::Response {
+    crate::widgets::IconButton::new(icon, tip)
+        .size(crate::widgets::IconSize::Sm)
+        .ui(ui)
 }
 
 #[cfg(test)]
@@ -9234,5 +9205,244 @@ mod party_feedback_tests {
     #[test]
     fn feedback_window_opens_in_radio_view() {
         assert!(feedback_opens(Mode::Radio));
+    }
+}
+
+#[cfg(test)]
+mod nacharbeit_tests {
+    //! Design-Runde 3, Nacharbeit: Fades in ms auch bei Mehrfachauswahl, Werkzeuge und Dock nur
+    //! als Symbol, Transport ohne `egui::Button`, F11 schaltet Vollbild.
+    use super::*;
+
+    struct Rig {
+        ctx: egui::Context,
+        app: WoaApp,
+        frame: eframe::Frame,
+        n: u32,
+        /// Beschriftung, Wert und Fläche jedes Knotens.
+        nodes: Vec<(String, String, egui::Rect)>,
+        commands: Vec<egui::ViewportCommand>,
+        _tmp: tempfile::TempDir,
+    }
+
+    impl Rig {
+        fn new(mode: Mode) -> Self {
+            let tmp = tempfile::tempdir().unwrap();
+            let config = GuiConfig {
+                telemetry_enabled: Some(false),
+                ..GuiConfig::default()
+            };
+            let mut app = WoaApp::without_audio(config, tmp.path().join("rec"));
+            if mode != Mode::Produzent {
+                app.radio = Some(RadioDesk::headless(tmp.path()));
+            }
+            app.config.mode = mode;
+            let ctx = egui::Context::default();
+            ctx.enable_accesskit();
+            let mut rig = Self {
+                ctx,
+                app,
+                frame: eframe::Frame::_new_kittest(),
+                n: 0,
+                nodes: Vec::new(),
+                commands: Vec::new(),
+                _tmp: tmp,
+            };
+            rig.step(Vec::new());
+            rig.step(Vec::new());
+            rig
+        }
+
+        fn step(&mut self, events: Vec<egui::Event>) {
+            self.n += 1;
+            let mut input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1920.0, 1030.0),
+                )),
+                time: Some(f64::from(self.n) * 0.05),
+                events,
+                ..Default::default()
+            };
+            input.viewports.entry(egui::ViewportId::ROOT).or_default();
+            let (app, frame) = (&mut self.app, &mut self.frame);
+            let out = self.ctx.run_ui(input, |ui| {
+                eframe::App::logic(app, ui.ctx(), frame);
+                eframe::App::ui(app, ui, frame);
+            });
+            if let Some(v) = out.viewport_output.get(&egui::ViewportId::ROOT) {
+                self.commands.extend(v.commands.iter().cloned());
+            }
+            self.nodes.clear();
+            if let Some(u) = out.platform_output.accesskit_update {
+                for (_, node) in u.nodes {
+                    let label = node.label().map(str::to_string).unwrap_or_default();
+                    let value = node.value().map(str::to_string).unwrap_or_default();
+                    if let Some(b) = node.bounds() {
+                        let r = egui::Rect::from_min_max(
+                            egui::pos2(b.x0 as f32, b.y0 as f32),
+                            egui::pos2(b.x1 as f32, b.y1 as f32),
+                        );
+                        self.nodes.push((label, value, r));
+                    }
+                }
+            }
+        }
+
+        fn any(&self, f: impl Fn(&str) -> bool) -> bool {
+            self.nodes
+                .iter()
+                .any(|(l, v, r)| r.width() > 0.0 && (f(l) || f(v)))
+        }
+    }
+
+    /// Rumpf einer Funktion in `app.rs`, für Bauregeln (kein `egui::Button` in Hardware).
+    fn body_of<'a>(src: &'a str, head: &str) -> &'a str {
+        let a = src.find(head).unwrap_or_else(|| panic!("{head} fehlt"));
+        let rest = &src[a + head.len()..];
+        let b = rest
+            .find("\n    fn ")
+            .or_else(|| rest.find("\nfn "))
+            .unwrap_or(rest.len());
+        &rest[..b]
+    }
+
+    const SRC: &str = include_str!("app.rs");
+
+    #[test]
+    fn multi_selection_shows_fades_in_ms() {
+        let mut rig = Rig::new(Mode::Produzent);
+        let st = rig.app.state_mut();
+        let t = st.add_midi_track().unwrap();
+        let a = st
+            .add_midi_clip(Some(t), "a", 0.0, 4.0, woa_model::MidiData::default())
+            .unwrap();
+        let b = st
+            .add_midi_clip(Some(t), "b", 8.0, 4.0, woa_model::MidiData::default())
+            .unwrap();
+        st.set_fades(a, 1.0, 0.5);
+        st.set_fades(b, 1.0, 0.25);
+        rig.app.selected_clip = Some(a);
+        rig.app.selected_clips = vec![a, b];
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        // 120 BPM: ein Schlag sind 500 ms; Fade-out ist verschieden und steht als „—“.
+        assert!(rig.any(|s| s == "500 ms"), "Fade-in aller Clips in ms");
+        assert!(!rig.any(|s| s == "1.00"), "keine Schläge mehr im Feld");
+    }
+
+    #[test]
+    fn inspector_tools_are_icon_buttons() {
+        for head in [
+            "fn icon_button(",
+            "fn danger_icon_button(",
+            "fn clip_notes(",
+            "fn clip_time(",
+        ] {
+            let body = body_of(SRC, head);
+            assert!(
+                !body.contains("egui::Button"),
+                "{head} zeichnet noch einen egui-Knopf"
+            );
+        }
+        assert!(body_of(SRC, "fn icon_button(").contains("IconButton::new"));
+    }
+
+    #[test]
+    fn dock_detach_and_collapse_are_symbols_only() {
+        let mut rig = Rig::new(Mode::Produzent);
+        rig.app.studio_dock = StudioDockTab::PianoRoll;
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        for word in ["Dock einklappen", "Als Fenster lösen", "Im Dock einbetten"] {
+            assert!(
+                !rig.any(|s| s.contains(word)),
+                "„{word}“ steht noch als Text"
+            );
+        }
+        assert!(
+            rig.any(|s| s == theme::ic::CARET_DOWN),
+            "Einklappen als Symbol"
+        );
+        assert!(rig.any(|s| s == theme::ic::ARROWS_OUT), "Lösen als Symbol");
+    }
+
+    #[test]
+    fn transport_export_latency_and_ruler_are_hardware_keys() {
+        let body = body_of(SRC, "fn transport_bar(");
+        let from = body.find("// 4. Latenz").expect("Latenz-Gruppe");
+        assert!(
+            !body[from..].contains("egui::Button") && !body[from..].contains("segment("),
+            "Latenz, Export oder Takte/Zeit noch als egui-Knopf"
+        );
+    }
+
+    fn f11() -> Vec<egui::Event> {
+        vec![egui::Event::Key {
+            key: egui::Key::F11,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]
+    }
+
+    fn fullscreen_cmds(rig: &Rig) -> Vec<bool> {
+        rig.commands
+            .iter()
+            .filter_map(|c| match c {
+                egui::ViewportCommand::Fullscreen(on) => Some(*on),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn f11_toggles_fullscreen_in_producer_and_radio() {
+        for mode in [Mode::Produzent, Mode::Radio] {
+            let mut rig = Rig::new(mode);
+            rig.step(f11());
+            assert_eq!(fullscreen_cmds(&rig), vec![true], "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn party_fullscreen_follows_the_window() {
+        let mut rig = Rig::new(Mode::Party);
+        // Das Fenster startet im Vollbild (main.rs): die Party-Taste zeigt das und F11 schaltet aus.
+        let input_fs = |rig: &mut Rig, ev: Vec<egui::Event>| {
+            rig.n += 1;
+            let mut input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1920.0, 1030.0),
+                )),
+                time: Some(f64::from(rig.n) * 0.05),
+                events: ev,
+                ..Default::default()
+            };
+            input
+                .viewports
+                .entry(egui::ViewportId::ROOT)
+                .or_default()
+                .fullscreen = Some(true);
+            let (app, frame) = (&mut rig.app, &mut rig.frame);
+            let out = rig.ctx.run_ui(input, |ui| {
+                eframe::App::logic(app, ui.ctx(), frame);
+                eframe::App::ui(app, ui, frame);
+            });
+            if let Some(v) = out.viewport_output.get(&egui::ViewportId::ROOT) {
+                rig.commands.extend(v.commands.iter().cloned());
+            }
+        };
+        input_fs(&mut rig, Vec::new());
+        assert!(rig.app.party.state.fullscreen, "Party kennt das Vollbild");
+        input_fs(&mut rig, f11());
+        assert_eq!(fullscreen_cmds(&rig), vec![false]);
+    }
+
+    #[test]
+    fn f11_cannot_become_a_cart_key() {
+        assert!(crate::radio::RESERVED_KEYS.contains(&egui::Key::F11));
     }
 }

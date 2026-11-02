@@ -19,6 +19,25 @@ fn window_size(spec: Option<&str>) -> [f32; 2] {
         .unwrap_or([900.0, 600.0])
 }
 
+/// Größe nach dem Verlassen des Vollbilds (F11), damit kein winziges Fenster bleibt.
+const WINDOWED_SIZE: [f32; 2] = [1280.0, 800.0];
+
+/// Wie das Fenster startet.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum StartWindow {
+    /// Grundsätzlich (André, 02.11.2026: „bitte den start der app immer im vollbildmodus“).
+    Fullscreen,
+    /// Nur mit `WOA_WINDOW`: feste Größe für Screenshots; ein unlesbarer Wert gibt 900×600.
+    Fixed([f32; 2]),
+}
+
+fn start_window(spec: Option<&str>) -> StartWindow {
+    match spec {
+        None => StartWindow::Fullscreen,
+        Some(s) => StartWindow::Fixed(window_size(Some(s))),
+    }
+}
+
 fn main() -> ExitCode {
     // Als Plugin-Prozess gerufen (Absturzschutz, Paket 33): nur das Plugin bedienen, keine Oberfläche.
     if let Some(code) = woa_plugins::child::dispatch() {
@@ -59,9 +78,13 @@ fn main() -> ExitCode {
         config.telemetry_enabled == Some(true),
     );
 
-    let mut viewport = eframe::egui::ViewportBuilder::default()
-        .with_title("WOA")
-        .with_inner_size(window_size(std::env::var("WOA_WINDOW").ok().as_deref()));
+    let mut viewport = eframe::egui::ViewportBuilder::default().with_title("WOA");
+    viewport = match start_window(std::env::var("WOA_WINDOW").ok().as_deref()) {
+        StartWindow::Fullscreen => viewport
+            .with_inner_size(WINDOWED_SIZE)
+            .with_fullscreen(true),
+        StartWindow::Fixed(size) => viewport.with_inner_size(size),
+    };
     if let Some(icon) = woa_gui::theme::app_icon() {
         viewport = viewport.with_icon(icon);
     }
@@ -167,7 +190,7 @@ fn info_text(arg: Option<&std::ffi::OsStr>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{info_text, window_size};
+    use super::{StartWindow, info_text, start_window, window_size};
     use std::ffi::OsStr;
 
     #[test]
@@ -176,6 +199,19 @@ mod tests {
         assert_eq!(window_size(Some("1920X1080")), [1920.0, 1080.0]);
         assert_eq!(window_size(Some("kaputt")), [900.0, 600.0]);
         assert_eq!(window_size(None), [900.0, 600.0]);
+    }
+
+    #[test]
+    fn app_starts_fullscreen_unless_woa_window_is_set() {
+        assert_eq!(start_window(None), StartWindow::Fullscreen);
+        assert_eq!(
+            start_window(Some("1920x1030")),
+            StartWindow::Fixed([1920.0, 1030.0])
+        );
+        assert_eq!(
+            start_window(Some("kaputt")),
+            StartWindow::Fixed([900.0, 600.0])
+        );
     }
 
     #[test]

@@ -4,6 +4,18 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design-Runde 3: Nacharbeit Produzent (0.35.21, offen)
+
+1. WOA starten: das Fenster öffnet im Vollbild. F11 schaltet es aus und wieder ein (Produzent und Radio); in der Party zeigt die Vollbild-Taste den echten Zustand.
+2. Zwei Clips wählen: Fade-in und Fade-out stehen in ms („—“, wenn verschieden), Eintippen von „250“ setzt beide.
+3. Clip-Inspektor: Teilen, Duplizieren, Kopieren, Piano-Roll, Normalisieren und „Tempo folgen“ als Symbole ohne Fläche, Fläche erst unter der Maus, Tooltip mit Kürzel; Papierkorb wird erst unter der Maus rot.
+4. Studio-Dock, Reiter Piano-Roll: „Lösen“ und „Einklappen“ nur als Symbol, Tooltip nennt die Funktion.
+5. Transport: EXPORT, Uhr (Latenz) und Takte/Zeit als Hardware-Tasten; die gewählte Einheit leuchtet.
+6. Browser › Akkorde im hellen Thema: Chips hell beschriftet auf dunklem Grund, kein Chip liegt über dem Text der nächsten Folge.
+7. Piano-Roll, Drum-Raster und Jingle-Assistent verhalten sich wie vorher (nur in `widgets/` umgezogen).
+
+Selbst geprüft von Claude: `cargo test -p woa-gui -p woa`, Clippy `-D warnings`, Screenshots vorher und nachher dunkel und hell bei 1920×1030 und 1366×768 unter Linux. Nicht unter Windows gesehen, kein Ton abgespielt; das Vollbild beim Start nur über den Test der Startentscheidung, nicht am Gerät.
+
 ## Design-Runde 3: Radio (0.35.19, offen)
 
 1. Radio bei 1920×1030: alles samt Wunschtitel ohne Scrollen sichtbar.

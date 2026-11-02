@@ -446,7 +446,7 @@ pub(crate) fn deck_take_menu(ui: &mut egui::Ui, deck: usize, crossfade: f64) -> 
     hit
 }
 
-const RESERVED_KEYS: [egui::Key; 2] = [egui::Key::M, egui::Key::Space];
+pub(crate) const RESERVED_KEYS: [egui::Key; 3] = [egui::Key::M, egui::Key::Space, egui::Key::F11];
 
 /// Was `RadioDesk::open` geöffnet hat, bevor das Pult zusammengesetzt wird.
 struct Parts {
@@ -1994,7 +1994,7 @@ impl RadioDesk {
                     }
                     k if RESERVED_KEYS.contains(&k) => {
                         self.error = Some(format!(
-                            "Die Taste {} ist belegt (M: Mikro, Leertaste: Start/Weiter)",
+                            "Die Taste {} ist belegt (M: Mikro, Leertaste: Start/Weiter, F11: Vollbild)",
                             k.name()
                         ));
                     }

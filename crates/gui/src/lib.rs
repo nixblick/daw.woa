@@ -18,7 +18,8 @@ pub mod cue_editor;
 pub mod event_editor;
 pub mod export_dialog;
 pub mod feedback;
-pub mod jingle_assistent;
+/// Alter Pfad des Jingle-Assistenten, jetzt [`widgets::wizard`].
+pub use widgets::wizard as jingle_assistent;
 pub mod jingle_fx;
 mod ki_setup;
 mod ki_ui;
@@ -30,7 +31,8 @@ mod outputs;
 mod outputs_ui;
 pub mod party;
 mod phone;
-pub mod pianoroll;
+/// Alter Pfad der Piano-Roll, jetzt [`widgets::piano_roll`].
+pub use widgets::piano_roll as pianoroll;
 pub mod player;
 pub mod probeton;
 pub mod produktionen;
