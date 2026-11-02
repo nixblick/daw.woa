@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.35.24 — 2026-11-02
+
+- **Design-Runde 3, Abnahme:** Prüfliste `docs/design/umsetzung.md` (Baustein · Zustand · Ort · Stand) für alle Punkte aus `auftrag-runde-3.md` und `auftrag-nachbesserung.md`, mit Andrés Entscheidungen vom 02.11., vier offenen Fragen und den Abweichungen vom Entwurf. Neue Screenshots aller Modi dunkel und hell bei 1920 × 1030 (Radio und Produzent auch 1366 × 768) unter `docs/design/ist/`. Neuer Fotomodus `WOA_JINGLE=1` öffnet den Jingle-Assistenten. Klickliste „Design-Runde 3 gesamt“ in `docs/abnahme.md`.
+
 ## 0.35.23 — 2026-11-02
 
 - **Design-Runde 3, Transport und Dock-Reiter:** Der ganze Transport des Produzenten kommt ohne `egui::Button` aus. Zurückspulen und Play sind Hardware-Tasten (`Key`) mit gefülltem Symbol, Play rastet beim Abspielen grün ein. Aufnahme ist eine `Key` mit Symbol und Text, die beim Aufnehmen rot (`on-air`) einrastet. Loop, Punch und „Stopp am Ende“ sind `Key` mit Symbol und Text, eingeschaltet in `accent-soft` mit Rand `accent` wie bisher. `Key` hat dafür zwei neue Varianten: `.icon(glyph)` für Symbol plus Text (oder Symbol allein) und `.soft(an)` für Schalter. Neuer Baustein `widgets::Segment` (Symbol plus Text, gewählt `accent-soft` mit Rand `accent`, sonst `well`) ersetzt die Hilfe `segment()` für die Dock-Reiter Studio-Mixer, Piano-Roll, Automation, KI-Chat und Analyse. Radio behält seine Segmente nach Design (`segments`, Mulde mit erhabenem gewähltem Knopf); die Party hat keine solchen Reiter. Tests: `app::nacharbeit_tests::whole_transport_has_no_egui_button`, `app::nacharbeit_tests::producer_segments_use_the_widget` (beide vorher rot), `widgets::segment::tests` (zwei).

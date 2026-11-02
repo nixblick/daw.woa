@@ -4,6 +4,24 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design-Runde 3 gesamt (0.35.24, offen)
+
+Prüfliste aller Bausteine mit Stand: [`docs/design/umsetzung.md`](design/umsetzung.md). Die Teil-Klicklisten
+stehen darunter: Transport und Dock-Reiter (0.35.23), Zusatz (0.35.22), Nacharbeit Produzent (0.35.21),
+Radio (0.35.19), Studio (0.35.18), Party (0.35.17); Piano-Roll, Drum-Raster und Jingle-Assistent (0.35.20)
+in der Nacharbeit.
+
+1. `docs/design/ist/ist-*-0.35.23.png` neben `docs/design/soll/` legen: Radio, Party, Produzent, Piano-Roll,
+   Drum-Raster, Jingle-Assistent, je dunkel und hell bei 1920 × 1030; Radio und Produzent auch 1366 × 768.
+2. In `umsetzung.md` die vier Fragen unter „offen: Frage an André“ beantworten (Akkord-Vorhören, Lautsprecher-Knopf,
+   Ausgangspegel per MCP, Decks per MIDI).
+3. Die Teil-Klicklisten unten durchgehen; „passt“ schließt die ganze Runde.
+
+Selbst geprüft von Claude: jeden ✓ in `umsetzung.md` im Code nachgesehen (Datei in der Spalte Ort), Screenshots
+per `WOA_SCREENSHOT` und `WOA_WINDOW` mit leerem Daten- und Konfigurationsordner und Demo-Inhalt
+(`WOA_DEMO_SONG`, neu `WOA_JINGLE` für den Jingle-Assistenten), jedes Bild angesehen. Nicht geprüft: Windows,
+Ton, echte Maus-Bedienung (der Fotomodus klickt nicht), Party mit laufender Fernbedienung (zeigt Adresse und PIN).
+
 ## Design-Runde 3: Transport und Dock-Reiter (0.35.23, offen)
 
 1. Transport: Zurück, Play und Aufnahme als Hardware-Tasten; Play leuchtet beim Abspielen grün, Aufnahme beim Aufnehmen rot.
