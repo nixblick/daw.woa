@@ -55,6 +55,52 @@ impl Key {
             format!("{n}-Dur")
         }
     }
+
+    /// Schlüssel im Camelot-Rad: „8B“ für C-Dur, „8A“ für a-Moll.
+    pub fn camelot(&self) -> String {
+        camelot_of(self.tonic, self.minor)
+    }
+}
+
+fn camelot_of(tonic: u8, minor: bool) -> String {
+    let fifths = (7 * usize::from(tonic % 12)) % 12;
+    if minor {
+        format!("{}A", (fifths + 4) % 12 + 1)
+    } else {
+        format!("{}B", (fifths + 7) % 12 + 1)
+    }
+}
+
+/// Camelot-Schlüssel aus dem gespeicherten Namen der Bibliothek („C-Dur“, „f#-Moll“).
+pub fn camelot_of_name(name: &str) -> Option<String> {
+    let (note, mode) = name.trim().split_once('-')?;
+    let minor = match mode {
+        "Dur" => false,
+        "Moll" => true,
+        _ => return None,
+    };
+    let up = note.to_uppercase();
+    let tonic = NOTE_NAMES.iter().position(|n| *n == up)?;
+    Some(camelot_of(tonic as u8, minor))
+}
+
+/// Passen zwei Camelot-Schlüssel zum Mixen? Gleiche Zahl (Dur/Moll-Paar) oder Nachbar
+/// auf dem Rad mit gleichem Buchstaben.
+pub fn camelot_compatible(a: &str, b: &str) -> bool {
+    let parse = |s: &str| -> Option<(u8, char)> {
+        let s = s.trim();
+        let letter = s.chars().last()?;
+        let n: u8 = s[..s.len() - letter.len_utf8()].parse().ok()?;
+        ((1..=12).contains(&n) && matches!(letter, 'A' | 'B')).then_some((n, letter))
+    };
+    let (Some((na, la)), Some((nb, lb))) = (parse(a), parse(b)) else {
+        return false;
+    };
+    if na == nb {
+        return true;
+    }
+    let d = (i16::from(na) - i16::from(nb)).rem_euclid(12);
+    la == lb && (d == 1 || d == 11)
 }
 
 /// Stille vorn und hinten.
@@ -92,6 +138,8 @@ pub struct TrackAnalysis {
     pub true_peak_db: Option<f64>,
     pub peak_db: Option<f64>,
     pub tempo: Option<Tempo>,
+    /// Sekunde des ersten Schlags (Beatgrid), nur mit Tempo.
+    pub beat_offset: Option<f64>,
     pub key: Option<Key>,
     pub silence: Silence,
     pub cues: AutoCues,
@@ -299,6 +347,51 @@ pub fn detect_bpm(mono: &[f32], rate: u32) -> Option<Tempo> {
     Some(Tempo { bpm, confidence })
 }
 
+/// Lage des Beatgrids: Sekunde des ersten Schlags (0 bis eine Schlaglänge), aus der
+/// Einsatzkurve bei bekanntem Tempo. `None` bei Stille oder ohne deutliche Einsätze.
+pub fn detect_beat_offset(mono: &[f32], rate: u32, bpm: f64) -> Option<f64> {
+    let rate_f = f64::from(rate.max(1));
+    if !(bpm.is_finite() && bpm > 20.0) || rate < 4000 {
+        return None;
+    }
+    let hop = ((rate_f / 400.0).round() as usize).max(1);
+    let frames = mono.len() / hop;
+    if frames < 8 {
+        return None;
+    }
+    let mut prev = 0.0f64;
+    let mut onset = Vec::with_capacity(frames);
+    for f in 0..frames {
+        let s = &mono[f * hop..(f + 1) * hop];
+        let rms = (s.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>() / s.len() as f64).sqrt();
+        let level = (1.0 + 1000.0 * rms).ln();
+        onset.push((level - prev).max(0.0));
+        prev = level;
+    }
+    if onset.iter().filter(|o| **o > 0.7).count() < 4 {
+        return None;
+    }
+    let period = 60.0 * rate_f / bpm / hop as f64;
+    let steps = period.ceil() as usize;
+    let mut best = (0usize, f64::MIN);
+    for phase in 0..steps {
+        let mut sum = 0.0;
+        let mut t = phase as f64;
+        while (t as usize) < onset.len() {
+            sum += onset[t.round() as usize % onset.len()];
+            t += period;
+        }
+        if sum > best.1 {
+            best = (phase, sum);
+        }
+    }
+    Some(round2_ms(best.0 as f64 * hop as f64 / rate_f))
+}
+
+fn round2_ms(s: f64) -> f64 {
+    (s * 1000.0).round() / 1000.0
+}
+
 /// Krumhansl-Kessler-Profile (Dur, Moll) für C bzw. a.
 const MAJOR: [f64; 12] = [
     6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
@@ -406,12 +499,14 @@ pub fn analyze(left: &[f32], right: &[f32], rate: u32) -> TrackAnalysis {
     let n = left.len().min(right.len());
     let (left, right) = (&left[..n], &right[..n]);
     let mono = mono_of(left, right);
+    let tempo = detect_bpm(&mono, rate);
     TrackAnalysis {
         seconds: n as f64 / f64::from(rate.max(1)),
         lufs: integrated_lufs(left, right, rate),
         true_peak_db: true_peak_dbtp(left, right),
         peak_db: peak_db_of(left, right),
-        tempo: detect_bpm(&mono, rate),
+        tempo,
+        beat_offset: tempo.and_then(|t| detect_beat_offset(&mono, rate, t.bpm)),
         key: detect_key(&mono, rate),
         silence: detect_silence(left, right, rate, SILENCE_DB),
         cues: suggest_cues(left, right, rate),
@@ -453,6 +548,41 @@ mod tests {
                     * 0.2
             })
             .collect()
+    }
+
+    #[test]
+    fn beat_offset_finds_the_first_click() {
+        // 125 BPM (0,48 s), erster Schlag nach 0,2 s Stille.
+        let mut x = vec![0.0f32; (0.2 * f64::from(RATE)) as usize];
+        x.extend(click_track(125.0, 20.0, RATE));
+        let t = detect_bpm(&x, RATE).expect("tempo");
+        let off = detect_beat_offset(&x, RATE, t.bpm).expect("offset");
+        assert!((off - 0.2).abs() < 0.015, "{off}");
+        assert!(detect_beat_offset(&vec![0.0; 44_100 * 10], RATE, 120.0).is_none());
+    }
+
+    #[test]
+    fn camelot_wheel() {
+        let k = |tonic, minor| Key {
+            tonic,
+            minor,
+            confidence: 1.0,
+        };
+        assert_eq!(k(0, false).camelot(), "8B");
+        assert_eq!(k(9, true).camelot(), "8A");
+        assert_eq!(k(7, false).camelot(), "9B");
+        assert_eq!(k(5, false).camelot(), "7B");
+        assert_eq!(k(0, true).camelot(), "5A");
+        assert_eq!(k(8, true).camelot(), "1A");
+        assert_eq!(camelot_of_name("C-Dur").as_deref(), Some("8B"));
+        assert_eq!(camelot_of_name("a-Moll").as_deref(), Some("8A"));
+        assert_eq!(camelot_of_name("f#-Moll").as_deref(), Some("11A"));
+        assert_eq!(camelot_of_name("Quatsch"), None);
+        assert!(camelot_compatible("8A", "8B"));
+        assert!(camelot_compatible("8A", "9A"));
+        assert!(camelot_compatible("12A", "1A"));
+        assert!(!camelot_compatible("8A", "9B"));
+        assert!(!camelot_compatible("8A", "3A"));
     }
 
     #[test]

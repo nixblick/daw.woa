@@ -2,7 +2,7 @@
 
 ## 0.36.0 — 2026-11-02
 
-- **DJ-Paket (Design-System Fassung 5):** Neue Bausteine DjWaves, DjDeck, DjMixer, RemoteCard und der Entwurf ScreenPartyDJ samt Soll-Bildern `docs/design/soll/party-dj*.png`.
+- **DJ-Paket (Design-System Fassung 5):** Neue Bausteine DjWaves, DjDeck, DjMixer, RemoteCard und der Entwurf ScreenPartyDJ samt Soll-Bildern `docs/design/soll/party-dj*.png`. Engine-Bausteine in `woa_dsp::dj`: Deck-Leser mit Tempo (Varispeed, auch rückwärts zum Scratchen) und Keylock (laufendes WSOLA im Audio-Thread, feste Puffer), Schleife; Dreiband-EQ als Linkwitz-Riley-Teilung mit echtem Kill, in Mittelstellung bitgenau umgangen; DJ-Filter (Tiefpass/Hochpass an einem Regler); Crossfader-Kurve weich/hart; Kopfhörer-Mix. Analyse: Beatgrid-Lage (`detect_beat_offset`) und Camelot-Schlüssel (`Key::camelot`, `camelot_of_name`, `camelot_compatible`). Golden Files `tests/golden/dj_*.wav`.
 
 ## 0.35.23 — 2026-11-02
 
