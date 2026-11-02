@@ -241,6 +241,13 @@ impl Controller {
         if self.duo.is_none() {
             return;
         }
+        if self.dj.view {
+            // DJ-Ansicht: dasselbe wie die Taste „Weiter · Übergang“ (#331).
+            if let Err(e) = self.dj(super::dj::DjCommand::Transition) {
+                self.message = Some(e);
+            }
+            return;
+        }
         if !self.party_playing() {
             self.party_toggle();
             return;
@@ -339,6 +346,21 @@ impl Controller {
         self.party_load(side, index, None)
     }
 
+    /// Der nächste Musiktitel nach dem auf Seite `side` (ohne die, die nicht laden ließen).
+    pub(super) fn party_next_after(&mut self, side: usize) -> Option<usize> {
+        let cur = self.party_view_index(side);
+        let after = cur.map_or_else(|| self.cue_index(), |i| i + 1);
+        let failed = self.failed.clone();
+        self.candidates(cur, after, true)
+            .into_iter()
+            .find(|&i| !failed.contains(&self.show.playlist[i].uid))
+    }
+
+    /// Hörbare Seite (0 links, 1 rechts).
+    pub(super) fn party_live_side(&self) -> usize {
+        self.party_live()
+    }
+
     // ---- intern ------------------------------------------------------------------------
 
     fn party_live(&self) -> usize {
@@ -354,7 +376,7 @@ impl Controller {
     }
 
     /// Übergang von Seite `from` auf `to`: `to` startet, der Fader fährt in `frames` hin.
-    fn party_transition(&mut self, from: usize, to: usize, frames: usize) {
+    pub(super) fn party_transition(&mut self, from: usize, to: usize, frames: usize) {
         self.send(Cmd::PartyPlay(to));
         self.send(Cmd::PartyFader {
             to: to as f32,
@@ -431,12 +453,7 @@ impl Controller {
         if self.shuffle && keep.is_some() && keep != cur {
             return;
         }
-        let after = cur.map_or_else(|| self.cue_index(), |i| i + 1);
-        let failed = self.failed.clone();
-        let want = self
-            .candidates(cur, after, true)
-            .into_iter()
-            .find(|&i| !failed.contains(&self.show.playlist[i].uid));
+        let want = self.party_next_after(l);
         if want == keep && keep.is_some() {
             return;
         }

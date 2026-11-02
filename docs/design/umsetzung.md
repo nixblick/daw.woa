@@ -89,7 +89,7 @@ PRs der Runde: #314 Party (0.35.17) · #317 Studio (0.35.18) · #313 Radio (0.35
 | Klaviatur, Tonart-Zeilen 8 %, Clip-Bereich im Lineal, außen schraffiert | | `widgets/piano_roll.rs` (`hatch`) | ✓ 0.35.20 #316 |
 | Noten | Spurfarbe, Velocity-Helligkeit, Notennamen; Velocity-Spur mit Stiel und Kopf | `widgets/piano_roll.rs` | ✓ 0.35.20 #316 |
 | Anleitungszeile, Überschrift „Drum-Raster“ | raus (Test prüft das Fehlen) | `widgets/piano_roll.rs` | ✓ 0.35.20 #316 |
-| Spuren 36 px bei offener Piano-Roll | | `gui/src/app.rs` (`row_h`) | ✓ 0.35.20 #316 |
+| Spuren 36 px bei offener Piano-Roll | | `gui/src/app.rs` (`row_h`) | ✗ zurückgenommen 0.37.1 #334: schnitt den Spurkopf ab, Spuren bleiben 64 px |
 | Drum-Raster | nur Kit-Spuren, 16 Schritte, Viertelgruppen, laut/leise, Lauflicht, Muster aus `DRUM_PRESETS` | `widgets/drum_grid.rs` | ✓ 0.35.20 #316 |
 | Drum-Klangbänke nachladen | – | – | entschieden von André: ja, eigenes Paket (geplant) |
 | Jingle-Assistent | Schrittleiste (6 Schritte), Wahlkarten mit Symbol, Zusammenfassung unten | `widgets/wizard.rs` | ✓ 0.35.20 #316, Fotomodus `WOA_JINGLE` 0.35.24 |

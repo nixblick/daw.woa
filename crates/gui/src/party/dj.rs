@@ -56,6 +56,43 @@ pub(super) fn deck_color(side: usize) -> Color32 {
 }
 
 /// Farbe eines Hot Cues (1–4).
+/// Deck A · Mixer · Deck B über die ganze Breite (#332): die Decks teilen sich, was neben dem
+/// Mixer bleibt, der Mixer steht genau in der Mitte. Jeder Teil bekommt seine äußere Größe;
+/// sein Rahmen liegt innerhalb (früher wurde der Rahmen doppelt abgezogen, rechts blieb ein
+/// Rand und der Mixer stand links der Mitte). Liefert die belegten Flächen.
+fn three_columns(
+    ui: &mut egui::Ui,
+    h: f32,
+    mut part: impl FnMut(&mut egui::Ui, usize),
+) -> [Rect; 3] {
+    let w = ((ui.available_width() - MIXER_W - 2.0 * GAP) / 2.0).max(300.0);
+    let mut rects = [Rect::NOTHING; 3];
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = GAP;
+        for (k, r) in rects.iter_mut().enumerate() {
+            let size = egui::vec2(if k == 1 { MIXER_W } else { w }, h);
+            *r = ui
+                .allocate_ui_with_layout(size, egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.set_min_size(size);
+                    ui.set_max_size(size);
+                    part(ui, k);
+                })
+                .response
+                .rect;
+        }
+    });
+    rects
+}
+
+/// Was ein Klick auf eine Hot-Cue-Taste tut (#331): `Some(clear)` schickt das Kommando.
+/// Links setzt bzw. springt an (mit Umschalt: löschen), rechts löscht eine belegte Taste.
+fn hot_cue_click(primary: bool, secondary: bool, shift: bool, set: bool) -> Option<bool> {
+    if secondary {
+        return set.then_some(true);
+    }
+    primary.then_some(shift)
+}
+
 fn hot_color(slot: usize) -> Color32 {
     match slot {
         0 => theme::ok(),
@@ -223,27 +260,10 @@ impl PartyView {
         let rest = ui.available_height();
         let bottom_min = if win_h < COMPACT_BELOW { 175.0 } else { 220.0 };
         let deck_h = (rest - bottom_min - GAP).clamp(300.0, 560.0);
-        ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing.x = GAP;
-            // Rahmen zeichnen Rand und Innenabstand außerhalb der Größe: abziehen
-            // (Deck 2 × 12 + 2, Mixer 2 × 10 + 2), sonst ragt Deck B aus dem Fenster.
-            let w = ((ui.available_width() - MIXER_W - 2.0 * GAP) / 2.0).max(300.0);
-            for part in 0..3 {
-                let (outer, frame) = if part == 1 {
-                    (MIXER_W, 22.0)
-                } else {
-                    (w, 26.0)
-                };
-                let size = egui::vec2(outer - frame, deck_h - frame);
-                ui.allocate_ui_with_layout(size, egui::Layout::top_down(egui::Align::Min), |ui| {
-                    ui.set_min_size(size);
-                    match part {
-                        0 => self.dj_deck(ui, desk, dj, &v, 0),
-                        1 => dj_mixer(ui, desk, dj),
-                        _ => self.dj_deck(ui, desk, dj, &v, 1),
-                    }
-                });
-            }
+        three_columns(ui, deck_h, |ui, part| match part {
+            0 => self.dj_deck(ui, desk, dj, &v, 0),
+            1 => dj_mixer(ui, desk, dj),
+            _ => self.dj_deck(ui, desk, dj, &v, 1),
         });
         let _ = full_h;
         let h = ui.available_height();
@@ -651,7 +671,7 @@ impl PartyView {
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.set_min_height(h);
+                ui.set_min_height(h - 26.0);
                 // Kante oben in Deckfarbe.
                 let top = ui.max_rect().expand(12.0);
                 ui.painter().hline(
@@ -911,17 +931,14 @@ impl PartyView {
                     );
                 }
                 let r = r.on_hover_text(format!(
-                    "Hot Cue {}: leer = hier setzen, belegt = anspringen, Umschalt+Klick löscht{}",
+                    "Hot Cue {}: leer = hier setzen, belegt = anspringen, Rechtsklick oder \
+                     Umschalt+Klick löscht{}",
                     slot + 1,
                     key_hint(side, KeyAction::HotCue(slot))
                 ));
-                if r.clicked() {
-                    let shift = ui.input(|i| i.modifiers.shift);
-                    desk.dj(DjCommand::HotCue {
-                        side,
-                        slot,
-                        clear: shift,
-                    });
+                let shift = ui.input(|i| i.modifiers.shift);
+                if let Some(clear) = hot_cue_click(r.clicked(), r.secondary_clicked(), shift, set) {
+                    desk.dj(DjCommand::HotCue { side, slot, clear });
                 }
             }
         });
@@ -1296,8 +1313,9 @@ fn dj_mixer(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView) {
         .inner_margin(egui::Margin::same(10))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.set_min_height(h);
-            let strip_h = (h - 20.0 - 50.0).max(200.0);
+            ui.set_min_height(h - 22.0);
+            // Unten: Crossfader-Zeile und darunter „Weiter“ (#331).
+            let strip_h = (h - 22.0 - 20.0 - 50.0 - 44.0).max(200.0);
             let w = ui.available_width();
             let cw = (w - 2.0 * 8.0) / 3.0;
             ui.horizontal_top(|ui| {
@@ -1341,6 +1359,24 @@ fn dj_mixer(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView) {
                     }
                 }
             });
+            ui.add_space(6.0);
+            let any = dj.decks.iter().any(|d| d.index.is_some());
+            let r = crate::widgets::Key::new(
+                &format!("{}  WEITER · ÜBERGANG", super::AUTO_ICON),
+                egui::vec2(w, 34.0),
+            )
+            .font(theme::label_font(14.0))
+            .radius(theme::RADIUS_MD)
+            .color(theme::accent())
+            .enabled(any)
+            .ui(ui)
+            .on_hover_text(
+                "Zum anderen Deck blenden (Crossfade-Länge der Sendung); danach hält das alte \
+                 Deck an und lädt den nächsten Titel (Taste N oder →)",
+            );
+            if r.clicked() {
+                desk.dj(DjCommand::Transition);
+            }
         });
 }
 
@@ -1552,6 +1588,71 @@ mod tests {
         assert!((phase_ms(&d(0.1), &d(0.0)).unwrap() - 50.0).abs() < 1e-6);
         assert!((phase_ms(&d(0.95), &d(0.05)).unwrap() + 50.0).abs() < 1e-6);
         assert!(phase_ms(&d(0.1), &DjDeckView::default()).is_none());
+    }
+
+    /// #332: Die drei Teile füllen die Breite genau, der Mixer steht mittig, auch im Vollbild.
+    #[test]
+    fn decks_and_mixer_fill_the_width_with_the_mixer_centered() {
+        for width in [1280.0_f32, 1366.0, 1600.0, 1920.0, 2560.0] {
+            let ctx = egui::Context::default();
+            let mut got = [Rect::NOTHING; 3];
+            let mut avail = Rect::NOTHING;
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(width, 1000.0))),
+                ..Default::default()
+            };
+            let _ = ctx.run_ui(input, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    avail = ui.available_rect_before_wrap();
+                    got = three_columns(ui, 500.0, |ui, k| {
+                        // Wie Deck und Mixer: Rahmen mit Rand und Innenabstand, füllt den Platz.
+                        let (m, frame) = if k == 1 { (10, 22.0) } else { (12, 26.0) };
+                        let h = ui.available_height();
+                        egui::Frame::new()
+                            .stroke(Stroke::new(1.0, Color32::WHITE))
+                            .inner_margin(egui::Margin::same(m))
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.set_min_height(h - frame);
+                            });
+                    });
+                });
+            });
+            let [a, mix, b] = got;
+            assert!(
+                (a.left() - avail.left()).abs() < 1.0,
+                "{width}: links {a:?}"
+            );
+            assert!(
+                (b.right() - avail.right()).abs() < 1.0,
+                "{width}: rechts Rand {} px",
+                avail.right() - b.right()
+            );
+            assert!(
+                (mix.center().x - avail.center().x).abs() < 1.0,
+                "{width}: Mixer {} px neben der Mitte",
+                mix.center().x - avail.center().x
+            );
+            assert!(
+                (a.width() - b.width()).abs() < 1.0,
+                "{width}: Decks gleich breit"
+            );
+            assert!(
+                a.height() <= 500.5 && mix.height() <= 500.5,
+                "{width}: nicht höher"
+            );
+        }
+    }
+
+    #[test]
+    fn right_click_clears_a_set_hot_cue() {
+        // Rechtsklick löscht eine belegte Taste, eine leere bleibt leer (kein Setzen).
+        assert_eq!(hot_cue_click(false, true, false, true), Some(true));
+        assert_eq!(hot_cue_click(false, true, false, false), None);
+        // Links: setzen/anspringen, mit Umschalt löschen.
+        assert_eq!(hot_cue_click(true, false, false, true), Some(false));
+        assert_eq!(hot_cue_click(true, false, true, true), Some(true));
+        assert_eq!(hot_cue_click(false, false, false, true), None);
     }
 
     #[test]

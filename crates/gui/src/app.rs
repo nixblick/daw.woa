@@ -47,8 +47,6 @@ pub fn donate_qr() -> Option<&'static woa_remote::qr::QrMatrix> {
 pub const DONATE_KOFI: &str = "https://ko-fi.com/nixblick";
 /// Höhe einer Spur (Design `TrackHeader`: 64 px, zwei Zeilen).
 const ROW_H: f32 = 64.0;
-/// Spurhöhe, solange die Piano-Roll offen ist (Design `ScreenPianoRoll`).
-const ROW_H_PR: f32 = 36.0;
 /// Höhe der Akkordspur unter dem Lineal (Design `ChordTrack`: 26 px).
 const CHORD_LANE_H: f32 = 26.0;
 /// Pan auch im Spurkopf (zusätzlich zum Rack-Ausgang). Offene Entscheidung von André
@@ -673,6 +671,18 @@ impl WoaApp {
         &self.header_rects
     }
 
+    /// Öffnet die Piano-Roll eines MIDI-Clips im Studio-Dock (für Oberflächentests).
+    #[doc(hidden)]
+    pub fn open_piano_roll_docked(&mut self, clip: ClipId) {
+        self.piano_roll_floating = false;
+        self.open_piano_roll(clip);
+    }
+
+    /// Ist eine Piano-Roll offen? (Oberflächentests)
+    pub fn piano_roll_open(&self) -> bool {
+        self.piano_roll.is_some()
+    }
+
     /// Setzt die Eingangsquelle einer Spur ohne Auswahlmenü (für Oberflächentests).
     #[doc(hidden)]
     pub fn set_track_source(&mut self, id: TrackId, key: &str) {
@@ -1251,11 +1261,10 @@ impl WoaApp {
     /// Probetöne (Design-Runde 3) an die Note-Queue der Live-Spur. Ein Ton für eine andere
     /// MIDI-Spur wählt diese Spur (sie wird damit live) und kommt kurz danach noch einmal;
     /// Abspielkopf in Beats, nur während der Wiedergabe (Lauflicht im Drum-Raster).
-    /// Spurhöhe: 36 px, solange die Piano-Roll offen ist, sonst 64 px.
+    /// Spurhöhe: immer 64 px. Die 36 px bei offener Piano-Roll (Design `ScreenPianoRoll`)
+    /// schnitten die zweite Zeile des Spurkopfs ab (#334, „nur halb so groß“).
     fn row_h(&self) -> f32 {
-        let open = self.piano_roll.is_some()
-            && (self.piano_roll_floating || self.studio_dock == StudioDockTab::PianoRoll);
-        if open { ROW_H_PR } else { ROW_H }
+        ROW_H
     }
 
     fn playhead_beats(&self) -> Option<f64> {

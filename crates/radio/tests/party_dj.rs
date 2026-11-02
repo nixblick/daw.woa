@@ -425,3 +425,46 @@ fn commands_need_the_party() {
     assert!(c.dj(DjCommand::View { dj: true }).is_err());
     assert!(c.dj_view().is_none());
 }
+
+/// #331: „Weiter“ fehlte in der DJ-Ansicht. `Transition` blendet in der Crossfade-Länge zum
+/// anderen Deck, startet es, hält danach das alte an und legt dort den nächsten Titel bereit.
+#[test]
+fn transition_fades_to_the_other_deck_and_reloads_the_old_one() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = dj_party(tmp.path());
+    let v = c.dj_view().unwrap();
+    assert_eq!((v.decks[0].index, v.decks[1].index), (Some(0), Some(1)));
+    // Steht alles: Weiter startet das hörbare Deck.
+    c.dj(DjCommand::Transition).unwrap();
+    run(&mut c, &mut m, 1.0);
+    assert!(playing(&c, 0) && !playing(&c, 1));
+    // Läuft A: B startet sofort, der Fader fährt in 1 s (Crossfade) hinüber.
+    c.dj(DjCommand::Transition).unwrap();
+    run(&mut c, &mut m, 0.3);
+    assert!(playing(&c, 0) && playing(&c, 1), "beide während der Blende");
+    let x = c.dj_view().unwrap().crossfader;
+    assert!(x > 0.05 && x < 0.95, "Fader unterwegs: {x}");
+    run(&mut c, &mut m, 1.2);
+    let v = c.dj_view().unwrap();
+    assert!(
+        (v.crossfader - 1.0).abs() < 1e-3,
+        "Fader bei B: {}",
+        v.crossfader
+    );
+    assert!(playing(&c, 1), "B spielt weiter");
+    assert!(!playing(&c, 0), "A hält nach der Blende an");
+    assert_eq!(v.decks[0].index, Some(2), "A hat den nächsten Titel");
+    // Und zurück: A startet mit Titel 2.
+    c.dj(DjCommand::Transition).unwrap();
+    run(&mut c, &mut m, 1.5);
+    let v = c.dj_view().unwrap();
+    assert!(playing(&c, 0) && !playing(&c, 1));
+    assert!(v.crossfader.abs() < 1e-3);
+    // Ein Griff an den Crossfader bricht die Automatik ab: nichts wird angehalten.
+    c.dj(DjCommand::Load { side: 1, index: 0 }).unwrap();
+    c.dj(DjCommand::Transition).unwrap();
+    run(&mut c, &mut m, 0.2);
+    c.dj(DjCommand::Crossfader { value: 0.5 }).unwrap();
+    run(&mut c, &mut m, 1.5);
+    assert!(playing(&c, 0) && playing(&c, 1), "Hand schlägt Automatik");
+}
