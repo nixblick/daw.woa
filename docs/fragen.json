@@ -1,0 +1,203 @@
+{
+  "stand": "2026-11-02",
+  "fragen": [
+    {
+      "id": "radio-fade-knopf",
+      "block": "Radio",
+      "titel": "Fade-Knopf: wo und wie lang?",
+      "erklaerung": "Wer moderiert, soll einen laufenden Titel selbst sanft herunterregeln können: im Sendedeck, in den Decks A–C, in Playlist und Cartwall. Offen ist, wo der Knopf sitzt und wie lange das Ausblenden dauert.",
+      "vorschlaege": [
+        "Ein Fade-Knopf je Deck und einer oben im Sendedeck für das, was gerade läuft; Dauer fest 3 Sekunden",
+        "Wie oben, aber die Dauer ist in den Einstellungen wählbar (1 bis 10 Sekunden)",
+        "Fade nur im Sendedeck, Decks und Cartwall bekommen nur Stopp"
+      ],
+      "ticket": 320,
+      "status": "offen"
+    },
+    {
+      "id": "radio-deck-titel-im-sendedeck",
+      "block": "Radio",
+      "titel": "Titel aus den Decks im Sendedeck stoppen",
+      "erklaerung": "Startet man einen Titel aus Deck A, B oder C über das Sendedeck, lässt er sich dort bisher weder stoppen noch ausblenden.",
+      "vorschlaege": [
+        "Das Sendedeck zeigt jeden laufenden Deck-Titel mit Stopp und Fade",
+        "Stopp und Fade bleiben nur am Deck selbst, das Sendedeck zeigt den Titel nur an"
+      ],
+      "ticket": 325,
+      "status": "offen"
+    },
+    {
+      "id": "radio-ducking-rueckkehr",
+      "block": "Radio",
+      "titel": "Ducking: wie schnell kommt die Musik zurück?",
+      "erklaerung": "Beim Sprechen wird die Musik leiser (Ducking). Bisher dauert es zu lange, bis sie nach dem Sprechen wieder hochkommt.",
+      "vorschlaege": [
+        "Musik kommt nach 0,5 Sekunden Stille wieder hoch, Einblenden in 1 Sekunde",
+        "Wartezeit und Einblenddauer als zwei Regler in den Einstellungen",
+        "Ducking nur, solange der Mikrofon-Kanal offen ist, unabhängig von der Lautstärke"
+      ],
+      "ticket": 324,
+      "status": "offen"
+    },
+    {
+      "id": "radio-gesangsbeginn",
+      "block": "Radio",
+      "titel": "Rampzeit und Gesangsbeginn anzeigen",
+      "erklaerung": "Zu jedem Titel in Playlist und Decks soll sichtbar sein, wie lange das Intro bis zum ersten Gesang dauert, damit man passend darüber sprechen kann.",
+      "vorschlaege": [
+        "WOA erkennt den Gesangsbeginn beim Einlesen selbst; man kann den Punkt im Cue-Editor korrigieren",
+        "Die Rampzeit wird nur von Hand im Cue-Editor gesetzt und dann angezeigt",
+        "Nur eine kleine Restzeit-Anzeige bis zum Gesangsbeginn im laufenden Deck"
+      ],
+      "ticket": 299,
+      "status": "offen"
+    },
+    {
+      "id": "radio-vorhoeren-knopf",
+      "block": "Radio",
+      "titel": "Vorhören per Knopf in Playlist und Cartwall",
+      "erklaerung": "In den Decks gibt es einen Vorhören-Knopf. In Playlist und Cartwall fehlt er bisher.",
+      "vorschlaege": [
+        "Kleiner Kopfhörer-Knopf an jeder Zeile der Playlist und jeder Cart",
+        "Vorhören nur über Rechtsklick-Menü, damit die Oberfläche ruhig bleibt"
+      ],
+      "ticket": 273,
+      "status": "offen"
+    },
+    {
+      "id": "gaeste-telefon-taste",
+      "block": "Gäste/Telefon",
+      "titel": "Gäste-Karte: Telefon-Taste behalten?",
+      "erklaerung": "Das Telefon ist ein eigener Anrufer-Eingang über die Soundkarte und nicht dasselbe wie ein Gast, der über den Link zugeschaltet ist. Der neue Entwurf der Gäste-Karte lässt die Taste offen.",
+      "vorschlaege": [
+        "Die Telefon-Taste bleibt auf der Gäste-Karte, getrennt von den Gästen",
+        "Das Telefon wandert als eigener Kanal ins Pult, die Gäste-Karte zeigt nur Gäste"
+      ],
+      "ticket": null,
+      "status": "offen"
+    },
+    {
+      "id": "gaeste-einladung",
+      "block": "Gäste/Telefon",
+      "titel": "Einladung je Gast oder ein gemeinsamer Link?",
+      "erklaerung": "Bisher bekommt jeder Gast eine eigene Einladung, die einmal gilt.",
+      "vorschlaege": [
+        "Einladung bleibt einmalig je Gast",
+        "Ein gemeinsamer Link mit PIN für alle Gäste einer Sendung"
+      ],
+      "ticket": null,
+      "status": "offen"
+    },
+    {
+      "id": "gaeste-anzahl",
+      "block": "Gäste/Telefon",
+      "titel": "Wie viele Gäste gleichzeitig?",
+      "erklaerung": "Mehr Gäste brauchen mehr Platz auf der Karte und mehr Leitung.",
+      "vorschlaege": [
+        "Höchstens 4 Gäste",
+        "Höchstens 8 Gäste"
+      ],
+      "ticket": null,
+      "status": "offen"
+    },
+    {
+      "id": "gaeste-vorgespraech",
+      "block": "Gäste/Telefon",
+      "titel": "Annehmen, Vorgespräch und Ducking",
+      "erklaerung": "Wenn ein Gast oder Anrufer angenommen wird: Soll er zuerst im Vorgespräch landen (nicht auf Sendung), und soll die Musik automatisch leiser werden, sobald er auf Sendung ist?",
+      "vorschlaege": [
+        "Annehmen führt immer ins Vorgespräch; Ducking, sobald ein Gast auf Sendung ist",
+        "Annehmen schaltet direkt auf Sendung; Ducking von Hand"
+      ],
+      "ticket": null,
+      "status": "offen"
+    },
+    {
+      "id": "gaeste-undo",
+      "block": "Gäste/Telefon",
+      "titel": "Live-Steuerung der Gäste ohne Rückgängig?",
+      "erklaerung": "Stummschalten, Lautstärke und Auflegen bei Gästen passieren live. Ein Rückgängig wäre dort eher verwirrend.",
+      "vorschlaege": [
+        "Gäste-Steuerung ohne Rückgängig, wie an einem echten Pult",
+        "Rückgängig auch für Gäste-Aktionen"
+      ],
+      "ticket": null,
+      "status": "offen"
+    },
+    {
+      "id": "dj-midi-lernen",
+      "block": "Party/DJ",
+      "titel": "MIDI-Lernen auch für den DJ-Modus?",
+      "erklaerung": "Bisher lernt WOA Controller-Tasten nur für Spuren, Pegel und Carts. Für den DJ-Modus kämen Cue, Play, Sync, Hot Cues, Tempo, EQ und Crossfader dazu. Das ist ein größeres Paket.",
+      "vorschlaege": [
+        "Ja, alle DJ-Ziele lernbar machen",
+        "Erst nur Play, Cue und Crossfader, der Rest später",
+        "Nein, DJ nur mit Maus und Tastatur"
+      ],
+      "ticket": null,
+      "status": "offen"
+    },
+    {
+      "id": "dj-deck-badges",
+      "block": "Party/DJ",
+      "titel": "DJ-Deck-Badges ohne Füllung?",
+      "erklaerung": "In Radio und Studio sind die kleinen Kennzeichen (Badges) inzwischen nur umrandet. Offen ist, ob die DJ-Decks das genauso bekommen.",
+      "vorschlaege": [
+        "Ja, auch im DJ-Modus nur umrandet",
+        "Im DJ-Modus gefüllt lassen, damit man sie im dunklen Club besser sieht"
+      ],
+      "ticket": null,
+      "status": "offen"
+    },
+    {
+      "id": "dj-kopfhoerer-cue",
+      "block": "Party/DJ",
+      "titel": "Kopfhörer-Cue am echten Interface",
+      "erklaerung": "Das Vorhören (Cue) im DJ-Modus ist bisher nur ohne echtes Audio-Interface geprüft. Wer hat ein Gerät mit getrenntem Kopfhörer-Ausgang und testet das?",
+      "vorschlaege": [
+        "Robert testet am eigenen Interface und meldet über den Feedback-Knopf",
+        "André testet am Pult im Büro"
+      ],
+      "ticket": null,
+      "status": "offen"
+    },
+    {
+      "id": "produzent-clip-optionen",
+      "block": "Produzent",
+      "titel": "Clip-Optionen und Drum-Klangbänke: was zuerst?",
+      "erklaerung": "Geplant sind Clip-Optionen (rückwärts abspielen, Schleife, stumm) und nachladbare Drum-Klangbänke. Offen ist die Reihenfolge.",
+      "vorschlaege": [
+        "Erst Clip-Optionen, dann Drum-Klangbänke",
+        "Erst Drum-Klangbänke, dann Clip-Optionen",
+        "Beides zurückstellen, Radio geht vor"
+      ],
+      "ticket": null,
+      "status": "geplant"
+    },
+    {
+      "id": "jingles-stimme",
+      "block": "Jingles",
+      "titel": "Bessere Sprachstimme für Jingles?",
+      "erklaerung": "Der Jingle-Assistent spricht Texte mit einer einfachen Computerstimme. Eine freie, natürlichere Stimme (zum Beispiel Piper) wäre möglich, macht den Download aber größer.",
+      "vorschlaege": [
+        "Ja, eine natürlichere freie Stimme einbauen",
+        "Die Stimme als optionalen Download anbieten",
+        "Die jetzige Stimme reicht, Sprecher nehmen ihre Jingles selbst auf"
+      ],
+      "ticket": null,
+      "status": "offen"
+    },
+    {
+      "id": "allgemein-fragen-fenster",
+      "block": "Allgemein",
+      "titel": "Was gehört in dieses Fenster?",
+      "erklaerung": "Hier stehen die inhaltlichen Entscheidungen, die André und Robert treffen. Technische Aufgaben stehen nicht hier.",
+      "vorschlaege": [
+        "Nur Entscheidungsfragen mit Vorschlägen, wie jetzt",
+        "Zusätzlich die gesammelten Wünsche aus dem Feedback-Knopf zum Abstimmen"
+      ],
+      "ticket": null,
+      "status": "offen"
+    }
+  ]
+}

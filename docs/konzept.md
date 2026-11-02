@@ -90,7 +90,7 @@ WOA legt seine Dateien systematisch in `<Musik>/WOA/` ab (Linux: XDG-Musikordner
 | `MIDI` | MIDI-Dateien | MIDI importieren und exportieren |
 | `Sendungen` | Playlists als M3U | M3U importieren und exportieren |
 
-Titel, Musikordner und Audio-Import starten im Musikordner selbst. Takes einer Aufnahme bleiben im Projekt (`<Projekt>.woa/aufnahmen/`). Unter „Einstellungen → Speicherorte …“ lassen sich Basisordner und ein eigener Ordner je Art festlegen; in `config.json` steht nur, was abweicht (`ordner`).
+Titel, Musikordner und Audio-Import starten im Musikordner selbst. Takes einer Aufnahme bleiben im Projekt (`<Projekt>.woa/aufnahmen/`). Unter „Einstellungen → Speicherorte“ lassen sich Basisordner und ein eigener Ordner je Art festlegen; in `config.json` steht nur, was abweicht (`ordner`).
 
 ### Gemeinsam
 

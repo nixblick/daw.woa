@@ -70,7 +70,7 @@ pub fn dialog_musik() -> rfd::FileDialog {
     dialog_in(&musik())
 }
 
-/// Fenster „Speicherorte …“ in den Einstellungen: eine Zeile je Art mit „Ändern …“.
+/// Fenster „Speicherorte“ in den Einstellungen: eine Zeile je Art mit „Ändern …“.
 /// Jede Änderung gilt sofort; „Vorgabe“ erscheint nur bei einem eigenen Ordner.
 #[derive(Default)]
 pub struct OrdnerUi {

@@ -241,7 +241,7 @@ impl ChatUi {
         settings
     }
 
-    /// Schwebendes Fenster (Menü „Assistent (Chat) …“ außerhalb des Produzenten).
+    /// Schwebendes Fenster (Menü „Assistent (Chat)“ außerhalb des Produzenten).
     /// `true`: „Einstellungen → KI“ wurde angeklickt.
     pub fn show(
         &mut self,

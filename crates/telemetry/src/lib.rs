@@ -24,7 +24,10 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-pub use feedback::{FeedbackError, FeedbackMeta, FeedbackType, submit_feedback};
+pub use feedback::{
+    DEV_KEY_HEADER, DevKey, FeedbackError, FeedbackMeta, FeedbackType, build_payload,
+    submit_feedback,
+};
 pub use journal::{
     Entry, FaultCounter, Journal, JournalLayer, LOCAL_TARGET, Stufe, journal, take_decoder_faults,
 };

@@ -362,7 +362,7 @@ impl ServerHandler for LiveAgent {
                 None => text_result(
                     false,
                     "Das Projekt ist in der App noch nicht gespeichert: dort einmal \
-                     „Speichern unter …“ wählen"
+                     „Speichern unter“ wählen"
                         .into(),
                 ),
                 Some(p) => match s.save() {
