@@ -4,6 +4,7 @@
 
 - **ON AIR oben rechts leuchtet (#353):** Auf Sendung zeigt die Kopfleiste ON AIR jetzt wie die Lampe im Sendepult: Fläche `on-air-fill`, weiße Schrift und LED, Schein `glow-on-air` außen (neuer `ChipLook::Live`, Farben aus `lamp_colors`, kein Hartcode). Nicht auf Sendung bleibt der ruhige Eintrag. Design-System: Ausnahme „ON AIR an“ von „In der Kopfleiste kein Glow“ in README und TopBar-README eingetragen. Fotomodus `WOA_ONAIR=1`. Test (vorher rot): `widgets::topbar::tests::live_on_air_chip_glows_like_the_lamp`.
 - **Party DJ, keine BPM/Tonart nach dem Laden (#347):** Ursache: Das Deck las Tempo und Tonart nur aus der Bibliotheksanalyse. Titel, die per „Ordner laden“ in die Playlist kamen (nicht in der Bibliothek), oder noch nicht analysierte Titel bekamen nie Werte. Jetzt misst das Deck beim Laden selbst im Hintergrund (`waveform::deck_info` ruft `analysis::analyze_file`), legt das Ergebnis in der Bibliothek ab, wenn sie den Titel kennt, und gibt es an Deck und Playlist. Deck-Kopf: Restzeit- und BPM-LCD mit gleicher Ziffernhöhe, Camelot-Chip in derselben Höhe (Farben aus `theme::pill_colors`); in der einfachen Party Restzeit und BPM ebenso gleich groß. Fotomodus `WOA_DJ_LOAD=1` (Titel 1 und 2 auf Deck A und B). Tests (vorher rot): `waveform::tests::deck_info_measures_unanalysed_titles`; neu `party::dj::tests::deck_head_readouts_share_one_height`.
+- **CI:** `async-executor` 1.14.0 war zurückgezogen (`cargo deny` rot), jetzt 1.14.1 (nur `Cargo.lock`).
 
 ## 0.40.0 — 2026-11-02
 
