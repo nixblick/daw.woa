@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Design-Runde 3: Party mit Lime, Wellenform, BPM (0.35.16, offen)
+## Design-Runde 3: Party mit Lime, Wellenform, BPM (0.35.17, offen)
 
 1. Party öffnen, Titel mit Analyse laden: Restzeit als MM:SS mit Geistersegmenten, daneben BPM-LCD; Titel ohne Analyse zeigt kein BPM.
 2. Nach kurzer Zeit erscheint unter dem Deck die Wellenform mit Beatgrid; beim zweiten Laden sofort (Cache).
