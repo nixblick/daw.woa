@@ -74,7 +74,7 @@ async fn agent_picks_a_bank_that_is_installed_and_it_stays_after_save() {
     )
     .await);
     assert_eq!(r["sound"]["bank"], "musescore-general");
-    assert_eq!(r["sound"]["preset"], "Klavier");
+    assert_eq!(r["sound"]["preset"], "Flügel");
     assert_eq!(r["bank_state"], "ready");
     // Nur die Bank wechseln: der Klang bleibt.
     let r = ok(&call(

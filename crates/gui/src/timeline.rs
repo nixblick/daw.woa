@@ -262,14 +262,10 @@ pub fn harmony(project: &woa_model::Project, origin: f64, bars: usize) -> Harmon
     }
 }
 
-/// Klang im Clip-Kopf (Design `ChordTrack`): Preset-Name in Versalien, „SYNTH“ ohne Klang.
+/// Klang im Clip-Kopf (Design `ChordTrack`): Instrumentname in Versalien,
+/// „SYNTH (EINFACH)“ ohne Klang.
 pub fn sound_caption(sound: Option<woa_model::TrackSound>) -> String {
-    match sound {
-        None => "SYNTH".to_owned(),
-        Some(s) => {
-            woa_model::preset_name(s).map_or_else(|| format!("GM {}", s.program), str::to_uppercase)
-        }
-    }
+    woa_model::sound_name(sound).to_uppercase()
 }
 
 #[cfg(test)]
@@ -337,7 +333,7 @@ mod tests {
         assert_eq!(sound_caption(s(33, false)), "E-BASS");
         assert_eq!(sound_caption(s(0, true)), "STANDARD-KIT");
         assert_eq!(sound_caption(s(100, false)), "GM 100");
-        assert_eq!(sound_caption(None), "SYNTH");
+        assert_eq!(sound_caption(None), "SYNTH (EINFACH)");
     }
 
     #[test]

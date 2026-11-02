@@ -3,6 +3,9 @@
 ## 0.39.0 — 2026-11-02
 
 - (in Arbeit)
+## 0.38.0 — 2026-11-02
+
+- **Klangqualität: neue MIDI-Spuren spielen den Flügel, die Klangwahl ist sichtbar.** Eine neue MIDI-Spur (Menü, Keyboard-Aufnahme, leerer Clip für die Piano-Roll, `.mid`-Import auf neue Spur, MCP `add_track` mit `midi`) spielt jetzt den Flügel aus GeneralUser GS statt des eingebauten Synths; Piano-Roll-Vorhören und Keyboard spielen den Klang der Spur und klingen damit ebenso. Der eingebaute Synth heißt „Synth (einfach)“ und bleibt wählbar. Bestehende Projekte ändern ihren Klang nicht: Spuren ohne gespeicherten Klang behalten den Synth (neuer Command-Helfer `Command::add_midi_track`, nichts in `Track::new` oder der Projektdatei geändert). Der Spurkopf einer MIDI-Spur zeigt links das Instrument (z. B. „Flügel“), rechts den MIDI-Eingang; ein Klick auf das Instrument oder auf den Klangnamen im Clip-Kopf wählt die Spur und klappt im Rack die Klangauswahl auf. Neue leere Clips heißen nach dem Instrument statt „MIDI-Clip“. Die Klangauswahl ordnet nach Kategorien Klavier, Bass, Gitarre, Streicher, Bläser, Synth, Drums (31 Klänge, neu u. a. Gitarren, Trompete, Posaune, Saxophon, Flöte); die Rollen Lead/Bass/Pad/Kit steuern weiter Akkord- und Jingle-Bau. Das Preset „Klavier“ heißt „Flügel“, der alte Name wird im MCP weiter verstanden. Plan für SFZ, freie CLAP-Instrumente, Effektpaket und Sprachausgabe: `docs/klang-plan.md`. Tests (vorher rot): `crates/model/tests/default_sound.rs` (neue Spur = Flügel in einem Undo-Schritt, altes Projekt behält Synth, jede Kategorie belegt, „Klavier“ als Alias), `state::tests::new_midi_tracks_and_clips_play_the_grand_piano`; angepasst `timeline::tests::sound_caption_is_upper_case`, `crates/model/tests/sound.rs`, `crates/agent/tests/{track_bank,track_sound,j9_tools}.rs`, `crates/gui/tests/komponieren.rs`. MCP `list_instruments`/`track_sound` nennen je Preset jetzt auch `category`.
 
 ## 0.37.1 — 2026-11-02
 
