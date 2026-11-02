@@ -192,9 +192,10 @@
       "id": "dj-laden-tonart",
       "ansicht": "Party DJ",
       "titel": "Laden, BPM und Tonart",
-      "tun": "In der Playlist „A“ und „B“ an zwei Titeln drücken.",
-      "erwartet": "Die Titel sind in den Decks, BPM und Tonart erscheinen nach der Analyse; der Camelot-Chip wird grün, wenn die Tonarten passen.",
-      "version": "0.36.0"
+      "tun": "In der Playlist „A“ und „B“ an zwei Titeln drücken, auch an Titeln, die nicht in der Bibliothek sind (per „Ordner laden“).",
+      "erwartet": "Die Titel sind in den Decks; nach wenigen Sekunden erscheinen BPM und Tonart, auch ohne Bibliotheksanalyse. Restzeit, BPM und Camelot-Chip sind gleich hoch; der Chip wird grün, wenn die Tonarten passen.",
+      "version": "0.40.2",
+      "ticket": 347
     },
     {
       "id": "dj-cue-hotcue-loop",
@@ -307,6 +308,15 @@
       "tun": "Magnet an, eine Note auf einen Ton außerhalb der Tonart ziehen; dann „Nur benutzte Töne“.",
       "erwartet": "Die Note rastet auf den nächsten Ton der Tonart; leere Zeilen verschwinden.",
       "version": "0.35.20"
+    },
+    {
+      "id": "kopfleiste-onair-leuchtet",
+      "ansicht": "Allgemein",
+      "titel": "ON AIR oben rechts leuchtet",
+      "tun": "Auf Sendung gehen (Stream verbinden oder im Radio das Mikro öffnen) und oben rechts auf ON AIR schauen.",
+      "erwartet": "ON AIR leuchtet rot mit weißer Schrift und Schein wie die Lampe im Sendepult; aus Sendung wieder ein ruhiger Eintrag wie MIDI und REC.",
+      "version": "0.40.2",
+      "ticket": 353
     }
   ]
 }

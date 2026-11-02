@@ -336,6 +336,14 @@ impl PartyView {
                 continue;
             }
             self.dj.sent[k] = Some(key);
+            // Das Deck misst Titel ohne Bibliotheksanalyse selbst (#347); die Playlist zeigt das mit.
+            if let (Some(path), Ok(mut g)) = (self.waves[k].path.clone(), self.dj.meta.lock()) {
+                let camelot = info
+                    .key
+                    .as_deref()
+                    .and_then(woa_dsp::analysis::track::camelot_of_name);
+                g.insert(path, (info.bpm, camelot));
+            }
             let t = woa_radio::control::DjTrackInfo {
                 index: idx,
                 bpm: info.bpm,
@@ -700,22 +708,14 @@ impl PartyView {
                             entry.and_then(|e| e.seconds).unwrap_or(0.0)
                         };
                         let urgent = d.playing && rest < 30.0;
-                        seg_lcd(ui, &mmss(rest), 26.0, urgent, None).on_hover_text("Restzeit");
-                        let bpm = d
-                            .bpm_now
-                            .map_or_else(|| "---.-".to_string(), |b| format!("{b:5.1}"));
-                        seg_lcd(ui, &bpm, 22.0, false, Some("BPM")).on_hover_text(
-                            "Tempo jetzt (aus der Bibliotheksanalyse mal Tempo-Fader)",
+                        deck_readouts(
+                            ui,
+                            rest,
+                            urgent,
+                            d.bpm_now,
+                            d.camelot.as_deref(),
+                            d.key_match,
                         );
-                        if let Some(c) = &d.camelot {
-                            let ok = d.key_match;
-                            theme::status_pill(
-                                ui,
-                                c,
-                                if ok { theme::ok() } else { theme::text_dim() },
-                                ok,
-                            );
-                        }
                     });
                 });
                 {
@@ -1543,9 +1543,55 @@ fn master(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView, size: egui::Vec2) {
     r.on_hover_text("Kopfhörer-Pegel");
 }
 
+/// Restzeit, BPM und Camelot-Chip im Deck-Kopf (von rechts nach links), alle gleich hoch
+/// (#347). Gibt die Rahmen in dieser Reihenfolge zurück (Chip nur mit Tonart).
+fn deck_readouts(
+    ui: &mut egui::Ui,
+    rest: f64,
+    urgent: bool,
+    bpm_now: Option<f64>,
+    camelot: Option<&str>,
+    key_match: bool,
+) -> Vec<egui::Rect> {
+    let mut out = Vec::with_capacity(3);
+    let r =
+        seg_lcd(ui, &mmss(rest), super::DECK_LCD_DIGITS, urgent, None).on_hover_text("Restzeit");
+    out.push(r.rect);
+    let bpm = bpm_now.map_or_else(|| "---.-".to_string(), |b| format!("{b:5.1}"));
+    let b = seg_lcd(ui, &bpm, super::DECK_LCD_DIGITS, false, Some("BPM")).on_hover_text(
+        "Tempo jetzt (gemessen beim Laden oder aus der Bibliothek, mal Tempo-Fader)",
+    );
+    out.push(b.rect);
+    if let Some(c) = camelot {
+        let h = r.rect.height().max(b.rect.height());
+        out.push(super::camelot_chip(ui, c, key_match, h).rect);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #347: Restzeit-LCD, BPM-LCD und Camelot-Chip im Deck-Kopf sind gleich hoch.
+    #[test]
+    fn deck_head_readouts_share_one_height() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx);
+        let mut rects = Vec::new();
+        for _ in 0..2 {
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.horizontal(|ui| {
+                    rects = deck_readouts(ui, 125.0, false, Some(124.0), Some("8A"), true);
+                });
+            });
+        }
+        assert_eq!(rects.len(), 3);
+        let h = rects[0].height();
+        for r in &rects {
+            assert!((r.height() - h).abs() < 0.5, "{rects:?}");
+        }
+    }
 
     #[test]
     fn dj_keys_avoid_reserved_and_party_keys() {

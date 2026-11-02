@@ -2466,12 +2466,22 @@ impl WoaApp {
         };
         *frames += 1;
         let first = *frames == 2;
+        let n = *frames;
         if first
             && std::env::var_os("WOA_CUE_EDITOR").is_some()
             && let Some(r) = self.radio.as_mut()
         {
             // Fotomodus des Cue-Editors: erster Titel der Playlist.
             r.open_cue_editor(0);
+        }
+        if n == 4 && std::env::var_os("WOA_DJ_LOAD").is_some() {
+            // Fotomodus DJ (#347): Playlist-Titel 1 und 2 auf Deck A und B legen (nicht abspielen).
+            self.ensure_radio();
+            if let Some(r) = self.radio.as_ref() {
+                use woa_radio::control::DjCommand;
+                r.dj(DjCommand::Load { side: 0, index: 0 });
+                r.dj(DjCommand::Load { side: 1, index: 1 });
+            }
         }
         if first && std::env::var_os("WOA_CONTROLLER").is_some() {
             // Fotomodus der Zuordnungsliste.
@@ -2720,9 +2730,12 @@ impl WoaApp {
     }
 
     fn onair_lamp(&mut self, ui: &mut egui::Ui, compact: bool) {
-        let live = self.radio.as_ref().is_some_and(RadioDesk::is_live);
+        // Fotomodus `WOA_ONAIR=1` zeigt die leuchtende Lampe ohne echte Sendung (#353).
+        let photo_live = self.photo.is_some() && std::env::var_os("WOA_ONAIR").is_some();
+        let live = photo_live || self.radio.as_ref().is_some_and(RadioDesk::is_live);
+        // #353: Auf Sendung leuchtet ON AIR wie die Lampe im Sendepult (rot, weiß, Glow).
         let look = if live {
-            ChipLook::On(theme::on_air())
+            ChipLook::Live
         } else {
             ChipLook::Off(theme::on_air())
         };

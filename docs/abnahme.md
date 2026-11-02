@@ -4,6 +4,21 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## ON AIR leuchtet, Deck-BPM ohne Bibliothek (0.40.2, offen)
+
+1. **ON AIR oben rechts (#353):** Auf Sendung gehen (Stream verbinden oder im Radio das Mikro öffnen). Oben rechts
+   leuchtet ON AIR rot mit weißer Schrift und Schein, wie die Lampe im Sendepult. Nicht auf Sendung: ruhiger
+   Eintrag wie MIDI und REC.
+2. **Party DJ, BPM und Tonart (#347):** Party → DJ, „Ordner laden“ mit Titeln, die nicht in der Bibliothek sind,
+   dann „A“ und „B“ an zwei Titeln. Nach wenigen Sekunden stehen BPM und Tonart im Deck-Kopf und in der Playlist.
+   Restzeit, BPM und Camelot-Chip sind gleich hoch; der Chip wird grün, wenn die Tonarten passen.
+
+Selbst geprüft von Claude: Tests (zuerst rot) für das Messen beim Laden (Titel außerhalb der Bibliothek und noch
+nicht analysierter Titel, Ergebnis wird in der Bibliothek abgelegt), gleiche Höhe der Deck-Anzeigen und die
+leuchtende ON-AIR-Lampe in der Kopfleiste; Screenshots Party DJ dunkel und hell bei 1920 × 1030 im Fotomodus
+(`WOA_PARTY_VIEW=dj`, `WOA_DJ_LOAD=1`, `WOA_ONAIR=1`) mit erzeugten Klick-Titeln. Kein Ton, nichts gesendet, nicht
+unter Windows gesehen.
+
 ## ElevenLabs-Anbindung (0.40.0, offen)
 
 Vorher einmal: Konto bei elevenlabs.io anlegen (kostenloser Plan reicht zum Ausprobieren), dort Profil → API Keys →

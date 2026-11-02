@@ -655,8 +655,9 @@ pub fn lcd_frame() -> Frame {
         .inner_margin(Margin::symmetric(12, 8))
 }
 
-/// Zeichnet ein kompaktes, beleuchtetes Status-Badge (LED-Pille).
-pub fn status_pill(ui: &mut egui::Ui, label: &str, color: Color32, active: bool) {
+/// Füllung, Rahmen und Schrift einer [`status_pill`] in `color` (auch für Chips, die eine
+/// andere Höhe brauchen, z. B. den Camelot-Chip neben den LCDs im DJ-Deck).
+pub fn pill_colors(color: Color32, active: bool) -> (Color32, Color32, Color32) {
     let dark = is_dark();
     let fill = if active {
         mix(color, well(), if dark { 0.72 } else { 0.80 })
@@ -681,6 +682,12 @@ pub fn status_pill(ui: &mut egui::Ui, label: &str, color: Color32, active: bool)
     } else {
         text_dim()
     };
+    (fill, stroke_col, text_col)
+}
+
+/// Zeichnet ein kompaktes, beleuchtetes Status-Badge (LED-Pille).
+pub fn status_pill(ui: &mut egui::Ui, label: &str, color: Color32, active: bool) {
+    let (fill, stroke_col, text_col) = pill_colors(color, active);
     Frame::new()
         .fill(fill)
         .stroke(Stroke::new(1.0, stroke_col))
