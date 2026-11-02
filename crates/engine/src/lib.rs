@@ -34,6 +34,7 @@ pub mod banks;
 pub mod compensate;
 pub mod export;
 pub mod ffmpeg;
+pub mod input_trim;
 pub mod live_peaks;
 pub mod localtime;
 pub mod loudness;

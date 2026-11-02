@@ -270,6 +270,8 @@ pub struct Status {
     /// Spitzen nach dem Fader je Zweig Playlist, Carts, Decks seit letztem Abholen (f32-Bits,
     /// für die LED-Meter neben den Fadern, #216).
     pub bus_peaks: [AtomicU32; 3],
+    /// Spitze je Ausgang hinter Regler und Stumm: Notebook (Abhören), Stream (linear, f32-Bits).
+    pub output_peaks: [AtomicU32; 2],
     /// Sendebus: Verstärkung der Lautheitsregelung (dB, f32-Bits).
     pub bus_agc_db: AtomicU32,
     /// Sendebus: größte Absenkung Kompressor + Limiter seit letztem Abholen (dB, f32-Bits).
@@ -315,6 +317,7 @@ impl Default for Status {
             peak: AtomicU32::new(0),
             mic_peak: AtomicU32::new(0),
             bus_peaks: std::array::from_fn(|_| AtomicU32::new(0)),
+            output_peaks: std::array::from_fn(|_| AtomicU32::new(0)),
             bus_agc_db: AtomicU32::new(0),
             bus_reduction_db: AtomicU32::new(0),
             bus_lufs: AtomicU32::new((-70.0f32).to_bits()),
@@ -336,6 +339,11 @@ impl Status {
 
     pub fn take_mic_peak(&self) -> f32 {
         f32::from_bits(self.mic_peak.swap(0, Ordering::Relaxed))
+    }
+
+    /// Spitzen je Ausgang seit dem letzten Abholen: `[Notebook, Stream]` (setzt zurück).
+    pub fn take_output_peaks(&self) -> [f32; 2] {
+        std::array::from_fn(|k| f32::from_bits(self.output_peaks[k].swap(0, Ordering::Relaxed)))
     }
 
     /// Spitzen der Zweige Playlist, Carts, Decks seit dem letzten Aufruf.
@@ -1155,6 +1163,7 @@ impl Mixer {
         let mut phone_peak = 0.0f32;
         let mut pult_peak = 0.0f32;
         let mut bus_peaks = [0.0f32; 3];
+        let mut out_peaks = [0.0f32; 2];
         let ret_dest = match self.routes.dest[crate::routing::Source::PhoneReturn.index()] as usize
         {
             d if (1..=extra.len()).contains(&d) => Some(d - 1),
@@ -1400,7 +1409,11 @@ impl Mixer {
                     self.status.record_dropped.fetch_add(2, Ordering::Relaxed);
                 }
             }
+            // Stream-Pegel nur, wenn ein Encoder angeschlossen ist: sonst geht nichts hinaus.
             if let Some(p) = self.stream.as_mut() {
+                out_peaks[1] = out_peaks[1]
+                    .max((sl * out_stream).abs())
+                    .max((sr * out_stream).abs());
                 if p.slots() >= 2 {
                     let _ = p.push(sl * out_stream);
                     let _ = p.push(sr * out_stream);
@@ -1429,6 +1442,7 @@ impl Mixer {
             }
             left[i] *= out_mon;
             right[i] *= out_mon;
+            out_peaks[0] = out_peaks[0].max(left[i].abs()).max(right[i].abs());
             if let Some(d) = ret_dest {
                 extra[d].l[i] += tl;
                 extra[d].r[i] += tr;
@@ -1441,6 +1455,9 @@ impl Mixer {
         store_max(&self.status.phone_peak, phone_peak);
         store_max(&self.status.pult_peak, pult_peak);
         for (cell, v) in self.status.bus_peaks.iter().zip(bus_peaks) {
+            store_max(cell, v);
+        }
+        for (cell, v) in self.status.output_peaks.iter().zip(out_peaks) {
             store_max(cell, v);
         }
     }

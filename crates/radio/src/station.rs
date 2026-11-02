@@ -136,6 +136,9 @@ pub struct View {
     /// Spitzen seit der letzten Ansicht (linear) für die LED-Meter: Playlist, Carts, Decks,
     /// Mikro nach ihrem Fader und der Sendemix (Master), #216.
     pub meters: [f32; 5],
+    /// Spitzen je Ausgang seit der letzten Ansicht (linear): Notebook, Stream; hinter Regler
+    /// und Stumm.
+    pub out_meters: [f32; 2],
     /// Gespielte Titel ausblenden (#215).
     pub hide_played: bool,
     /// Erster offener Titel; die davor sind gespielt.
@@ -483,6 +486,7 @@ fn run(
                 let [m, c, d] = st.take_bus_peaks();
                 [m, c, d, st.take_mic_peak(), st.take_peak()]
             },
+            out_meters: st.take_output_peaks(),
             hide_played: c.show().hide_played,
             first_open: c.first_open_index(),
             recording: c.recording_file().map(|p| p.to_path_buf()),

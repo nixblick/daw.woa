@@ -446,7 +446,17 @@ pub(crate) fn deck_take_menu(ui: &mut egui::Ui, deck: usize, crossfade: f64) -> 
     hit
 }
 
-const RESERVED_KEYS: [egui::Key; 2] = [egui::Key::M, egui::Key::Space];
+/// Tasten, die das Pult selbst belegt: M Mikro, Leertaste Start/Weiter, A–C die Decks.
+const RESERVED_KEYS: [egui::Key; 5] = [
+    egui::Key::M,
+    egui::Key::Space,
+    egui::Key::A,
+    egui::Key::B,
+    egui::Key::C,
+];
+
+/// Taste, die Deck `k` startet und stoppt (A, B, C wie der Deck-Name).
+const DECK_KEYS: [egui::Key; woa_radio::DECKS] = [egui::Key::A, egui::Key::B, egui::Key::C];
 
 /// Was `RadioDesk::open` geöffnet hat, bevor das Pult zusammengesetzt wird.
 struct Parts {
@@ -489,6 +499,10 @@ pub struct RadioDesk {
     pult_level: f32,
     /// LED-Meter neben den Fadern und Master (#216).
     meters: [MeterHold; 5],
+    /// LED-Ketten der Ausgänge Notebook und Stream.
+    out_meters: [MeterHold; 2],
+    /// Alte Cart-Tasten auf A–C schon geprüft (Hinweis nur einmal).
+    deck_keys_checked: bool,
     /// Gespielte ausblenden: lokal sofort, bis der Schnappschuss nachzieht.
     hide_played: Option<bool>,
     /// Wunschordner: Beobachter. Ohne Wahl liegt er im Datenordner der Sendung.
@@ -808,23 +822,38 @@ const OUTPUTS: [(woa_radio::show::Output, &str, &str); 2] = [
 pub(crate) fn output_faders(
     ui: &mut egui::Ui,
     outs: &mut [woa_radio::show::OutLevel; 2],
+    meters: &[MeterHold; 2],
 ) -> [bool; 2] {
     let mut changed = [false; 2];
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
-        for (((_, short, name), o), ch) in OUTPUTS.iter().zip(outs.iter_mut()).zip(&mut changed) {
+        for ((((_, short, name), o), ch), m) in OUTPUTS
+            .iter()
+            .zip(outs.iter_mut())
+            .zip(&mut changed)
+            .zip(meters)
+        {
             ui.vertical(|ui| {
                 ui.set_width(STRIP_W);
                 ui.spacing_mut().item_spacing.y = 4.0;
                 let mut db = o.db as f32;
-                let r = crate::widgets::fader(
-                    ui,
-                    &mut db,
-                    woa_radio::mixer::LEVEL_MIN_DB as f32..=woa_radio::mixer::LEVEL_MAX_DB as f32,
-                    0.0,
-                    egui::vec2(STRIP_W - 4.0, FADER_HEIGHT),
-                    crate::widgets::Orient::Vertical,
-                );
+                // Fader und LED-Kette des Ausgangs nebeneinander, wie bei den Quellen.
+                let r = ui
+                    .horizontal_top(|ui| {
+                        ui.spacing_mut().item_spacing.x = 2.0;
+                        let r = crate::widgets::fader(
+                            ui,
+                            &mut db,
+                            woa_radio::mixer::LEVEL_MIN_DB as f32
+                                ..=woa_radio::mixer::LEVEL_MAX_DB as f32,
+                            0.0,
+                            egui::vec2(36.0, FADER_HEIGHT),
+                            crate::widgets::Orient::Vertical,
+                        );
+                        meter_strip(ui, *m, short, egui::vec2(METER_W, FADER_HEIGHT));
+                        r
+                    })
+                    .inner;
                 let label = format!("Pegel {name}");
                 let value = f64::from(db);
                 r.widget_info(|| egui::WidgetInfo::slider(true, value, &label));
@@ -939,6 +968,34 @@ impl Rename {
 /// Name der Zifferntaste, die zur Nummer von Cart `slot` passt (1–9, 0 für 10).
 fn cart_number_key(slot: usize) -> Option<String> {
     woa_radio::show::default_cart_key(slot).map(str::to_string)
+}
+
+/// Carts, deren gespeicherte Taste jetzt einem Deck gehört (A–C): `(slot, Taste)`.
+fn deck_key_conflicts(keys: &[Option<String>]) -> Vec<(usize, String)> {
+    keys.iter()
+        .enumerate()
+        .filter_map(|(slot, k)| {
+            let k = k.as_deref()?;
+            let key = egui::Key::from_name(k)?;
+            DECK_KEYS.contains(&key).then(|| (slot, k.to_string()))
+        })
+        .collect()
+}
+
+/// Hinweis zu [`deck_key_conflicts`]; die Belegung bleibt in der Datei, bis sie neu gesetzt wird.
+fn deck_key_note(conflicts: &[(usize, String)]) -> Option<String> {
+    if conflicts.is_empty() {
+        return None;
+    }
+    let list: Vec<String> = conflicts
+        .iter()
+        .map(|(slot, k)| format!("Cart {} (Taste {k})", slot + 1))
+        .collect();
+    Some(format!(
+        "Die Tasten A–C starten jetzt die Decks. {} reagiert nicht mehr auf die Taste; \
+         bitte per Rechtsklick eine andere Taste wählen.",
+        list.join(", ")
+    ))
 }
 
 /// Egui-Taste zu einem gespeicherten Namen (`None`, wenn es sie nicht gibt oder sie reserviert ist).
@@ -1200,6 +1257,8 @@ impl RadioDesk {
             pult: None,
             pult_level: 0.0,
             meters: Default::default(),
+            out_meters: Default::default(),
+            deck_keys_checked: false,
             hide_played: None,
             wishes: None,
             party_on: false,
@@ -1372,6 +1431,17 @@ impl RadioDesk {
         self.pult_level = self.view.pult_peak.max(self.pult_level * 0.9);
         for (m, v) in self.meters.iter_mut().zip(self.view.meters) {
             m.step(v, now_s());
+        }
+        for (m, v) in self.out_meters.iter_mut().zip(self.view.out_meters) {
+            m.step(v, now_s());
+        }
+        // Einmal je Sitzung: Carts, deren alte Taste jetzt ein Deck startet.
+        if !self.deck_keys_checked && !self.view.cart_keys.is_empty() {
+            self.deck_keys_checked = true;
+            if let Some(note) = deck_key_note(&deck_key_conflicts(&self.view.cart_keys)) {
+                tracing::warn!("cart keys on deck letters");
+                self.error = Some(note);
+            }
         }
         if self.hide_played == Some(self.view.hide_played) {
             self.hide_played = None;
@@ -1994,7 +2064,7 @@ impl RadioDesk {
                     }
                     k if RESERVED_KEYS.contains(&k) => {
                         self.error = Some(format!(
-                            "Die Taste {} ist belegt (M: Mikro, Leertaste: Start/Weiter)",
+                            "Die Taste {} ist belegt (M: Mikro, Leertaste: Start/Weiter, A–C: Decks)",
                             k.name()
                         ));
                     }
@@ -2015,7 +2085,7 @@ impl RadioDesk {
             return;
         }
         let keys = self.view.cart_keys.clone();
-        let (mic, go, carts) = ctx.input_mut(|i| {
+        let (mic, go, carts, decks) = ctx.input_mut(|i| {
             let carts: Vec<usize> = keys
                 .iter()
                 .enumerate()
@@ -2023,12 +2093,25 @@ impl RadioDesk {
                 .filter(|(_, k)| i.consume_key(n, *k))
                 .map(|(slot, _)| slot)
                 .collect();
+            let decks: Vec<usize> = (0..woa_radio::DECKS)
+                .filter(|&k| i.consume_key(n, DECK_KEYS[k]))
+                .collect();
             (
                 i.consume_key(n, egui::Key::M),
                 i.consume_key(n, egui::Key::Space),
                 carts,
+                decks,
             )
         });
+        // A, B, C: Deck starten, läuft es, stoppen (wie die Start-Taste am Deck).
+        for k in decks {
+            let playing = self.view.decks.get(k).is_some_and(|d| d.playing);
+            if playing {
+                self.with(move |c| c.deck_stop(k));
+            } else {
+                self.with(move |c| c.deck_play(k));
+            }
+        }
         for slot in carts {
             self.with(move |c| c.trigger_cart(slot));
         }
@@ -3781,6 +3864,8 @@ impl RadioDesk {
                     let key = v.cart_keys.get(slot).cloned().flatten();
                     let key_text = match &key {
                         Some(k) if cart_number_key(slot).as_deref() == Some(k.as_str()) => None,
+                        // Alte Belegung auf einem Deck-Buchstaben: wirkt nicht mehr.
+                        Some(k) if cart_key_of(k).is_none() => Some("–".to_string()),
                         Some(k) => Some(k.clone()),
                         None => Some("–".to_string()),
                     };
@@ -4428,7 +4513,7 @@ impl RadioDesk {
             ui.label(theme::panel_label("DECKS A · B · C"));
             ui.label(
                 egui::RichText::new(
-                    "Titel aus der Playlist hierher ziehen · Rechtsklick: Playlist ablösen",
+                    "Tasten A–C starten · Titel aus der Playlist hierher ziehen · Rechtsklick: Playlist ablösen",
                 )
                 .size(12.0)
                 .color(theme::text_dim()),
@@ -4466,7 +4551,7 @@ impl RadioDesk {
         // schob die Karten darunter (Cart-Wall) aus dem Bild (#303).
         group_sep(ui, FADER_HEIGHT + 40.0);
         let mut outs = [self.view.out_monitor, self.view.out_stream];
-        let ch = output_faders(ui, &mut outs);
+        let ch = output_faders(ui, &mut outs, &self.out_meters);
         for ((out, _, _), (o, c)) in OUTPUTS.iter().zip(outs.into_iter().zip(ch)) {
             if c {
                 match out {
@@ -4674,7 +4759,9 @@ impl RadioDesk {
                         r.widget_info(|| {
                             egui::WidgetInfo::labeled(egui::WidgetType::Button, loaded, &label)
                         });
-                        if r.on_hover_text(format!("Deck {name}: {word}")).clicked() {
+                        if r.on_hover_text(format!("Deck {name}: {word} (Taste {name})"))
+                            .clicked()
+                        {
                             if d.playing {
                                 self.with(move |c| c.deck_stop(k));
                             } else {
@@ -5224,7 +5311,7 @@ mod tests {
         let outs = std::cell::RefCell::new([woa_radio::show::OutLevel::default(); 2]);
         let changed = std::cell::RefCell::new(Vec::new());
         let mut ui = |ui: &mut eframe::egui::Ui| {
-            let ch = super::output_faders(ui, &mut outs.borrow_mut());
+            let ch = super::output_faders(ui, &mut outs.borrow_mut(), &Default::default());
             changed.borrow_mut().push(ch);
         };
         frame(&ctx, 0, vec![], &mut ui);
@@ -5232,6 +5319,18 @@ mod tests {
         for name in ["Pegel Wiedergabe Notebook", "Pegel Stream senden"] {
             let r = find(&nodes, name).1;
             assert!(r.height() > 1.5 * r.width(), "{name} senkrecht: {r:?}");
+        }
+        // Je Ausgang eine LED-Kette neben dem Fader, wie bei den Quellen.
+        for (fader, led) in [
+            ("Pegel Wiedergabe Notebook", "Pegelanzeige Notebook"),
+            ("Pegel Stream senden", "Pegelanzeige Stream"),
+        ] {
+            let (f, m) = (find(&nodes, fader).1, find(&nodes, led).1);
+            assert!(
+                m.height() > 5.0 * m.width(),
+                "{led} senkrecht und schmal: {m:?}"
+            );
+            assert!(m.left() >= f.right() - 0.5, "{led} rechts neben dem Fader");
         }
         let p = find(&nodes, "Stumm Stream senden").1.center();
         let _ = frame(&ctx, 2, click_at(p, false), &mut ui);
@@ -5475,6 +5574,115 @@ mod deck_drop_tests {
 
     fn deck_title(v: &View, k: usize) -> Option<String> {
         v.decks.get(k).and_then(|d| d.title.clone())
+    }
+
+    fn key(k: egui::Key) -> egui::RawInput {
+        events(vec![Event::Key {
+            key: k,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }])
+    }
+
+    /// Tasten A, B, C starten und stoppen Deck A, B, C (Soll-Bild Radio).
+    #[test]
+    fn letter_keys_start_and_stop_their_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let song = wav(dir.path(), "deck.wav");
+        let ctx = egui::Context::default();
+        let mut desk = RadioDesk::headless(dir.path());
+        let mut n = 0;
+        run(&ctx, &mut desk, n, egui::RawInput::default());
+        desk.deck_load_file(1, song);
+        assert!(settle(&ctx, &mut desk, &mut n, |v| deck_title(v, 1).is_some()));
+        n += 1;
+        run(&ctx, &mut desk, n, key(egui::Key::B));
+        assert!(
+            settle(&ctx, &mut desk, &mut n, |v| v.decks[1].playing),
+            "Taste B startet Deck B"
+        );
+        assert!(!desk.view().decks[0].playing, "Deck A bleibt still");
+        n += 1;
+        run(&ctx, &mut desk, n, key(egui::Key::B));
+        assert!(
+            settle(&ctx, &mut desk, &mut n, |v| !v.decks[1].playing),
+            "Taste B stoppt Deck B"
+        );
+    }
+
+    /// Alte Belegung eines Carts auf A, B oder C: bleibt in der Datei, wird gemeldet.
+    #[test]
+    fn old_cart_keys_on_deck_letters_are_reported() {
+        let keys = vec![
+            Some("1".to_string()),
+            Some("B".to_string()),
+            None,
+            Some("F5".into()),
+        ];
+        assert_eq!(deck_key_conflicts(&keys), vec![(1, "B".to_string())]);
+        let msg = deck_key_note(&deck_key_conflicts(&keys)).unwrap();
+        assert!(msg.contains("Cart 2") && msg.contains("Taste B"), "{msg}");
+        assert_eq!(deck_key_note(&[]), None);
+    }
+
+    /// Hat ein Textfeld den Fokus, ist B ein Buchstabe und startet kein Deck.
+    #[test]
+    fn letter_key_in_a_text_field_starts_no_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let song = wav(dir.path(), "deck.wav");
+        let ctx = egui::Context::default();
+        let mut desk = RadioDesk::headless(dir.path());
+        let mut n = 0;
+        run(&ctx, &mut desk, n, egui::RawInput::default());
+        desk.deck_load_file(1, song);
+        assert!(settle(&ctx, &mut desk, &mut n, |v| deck_title(v, 1).is_some()));
+        let id = egui::Id::new("probe_text");
+        let mut text = String::new();
+        for (k, input) in [
+            egui::RawInput::default(),
+            egui::RawInput::default(),
+            key(egui::Key::B),
+            egui::RawInput::default(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            n += 1;
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1600.0, 1000.0),
+                )),
+                time: Some(f64::from(n) * 0.05),
+                ..input
+            };
+            desk.tick(false);
+            desk.shortcuts(&ctx);
+            let _ = ctx.run_ui(input, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    let r = ui.add(egui::TextEdit::singleline(&mut text).id(id));
+                    if k == 0 {
+                        r.request_focus();
+                    }
+                    desk.ui(ui);
+                });
+            });
+        }
+        assert!(
+            !settle(&ctx, &mut desk, &mut n, |v| v.decks[1].playing),
+            "Deck B darf nicht starten"
+        );
+    }
+
+    /// A, B, C sind für die Decks reserviert und taugen nicht als Cart-Taste.
+    #[test]
+    fn deck_letters_are_no_cart_keys() {
+        for k in ["A", "B", "C"] {
+            assert_eq!(cart_key_of(k), None, "{k}");
+        }
+        assert_eq!(cart_key_of("D"), Some(egui::Key::D));
     }
 
     #[test]
