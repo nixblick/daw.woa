@@ -28,6 +28,68 @@ pub struct PartyView {
     /// Wunschliste geladen bzw. zuletzt gespeicherter Stand.
     wishes_file: Option<PathBuf>,
     wishes_saved: Option<woa_radio::party::Wishlist>,
+    /// Wellenform und Tempo je Deck, im Hintergrund aus der Bibliothek geholt.
+    waves: [WaveSlot; 2],
+    /// Höhe der Fernbedienungs-Karte im letzten Bild (sie steht unten fest, darüber scrollt es).
+    remote_h: f32,
+    /// Fotomodus `WOA_REMOTE` hat die Fernbedienung schon eingeschaltet.
+    photo_remote: bool,
+}
+
+/// Wellenform und Tempo eines Decks: geladen für `path`, Ergebnis kommt aus einem
+/// Hintergrund-Thread (dekodieren dauert; die Oberfläche wartet nie).
+#[derive(Default)]
+struct WaveSlot {
+    path: Option<PathBuf>,
+    info: std::sync::Arc<std::sync::Mutex<Option<woa_library::waveform::DeckInfo>>>,
+}
+
+impl WaveSlot {
+    /// Startet das Laden, wenn auf dem Deck ein anderer Titel liegt.
+    fn follow(&mut self, path: Option<&Path>, db: &Path, ctx: &egui::Context) {
+        if self.path.as_deref() == path {
+            return;
+        }
+        self.path = path.map(Path::to_path_buf);
+        // Neuer Platz: ein noch laufender Thread schreibt in den alten.
+        self.info = Default::default();
+        let Some(path) = path.map(Path::to_path_buf) else {
+            return;
+        };
+        let slot = self.info.clone();
+        let db = db.to_path_buf();
+        let ctx = ctx.clone();
+        let spawned = std::thread::Builder::new()
+            .name("party-wave".into())
+            .spawn(move || {
+                let r = woa_library::Library::open(&db)
+                    .map_err(|e| e.to_string())
+                    .and_then(|lib| woa_library::waveform::deck_info(&lib, &path));
+                let info = r.unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "party: no waveform");
+                    Default::default()
+                });
+                if let Ok(mut g) = slot.lock() {
+                    *g = Some(info);
+                }
+                ctx.request_repaint();
+            });
+        if let Err(e) = spawned {
+            tracing::warn!(error = %e, "party: waveform thread not started");
+        }
+    }
+
+    /// Spitzenwerte und Tempo, sobald geladen.
+    fn get(&self) -> Option<woa_library::waveform::DeckInfo> {
+        self.info.lock().ok().and_then(|g| g.clone())
+    }
+}
+
+/// Puls der Play-Taste: Stelle im Titel und Tempo (ohne Tempo gleichmäßig).
+#[derive(Debug, Clone, Copy)]
+struct Pulse {
+    pos: f64,
+    bpm: Option<f64>,
 }
 
 /// Was in der Party gezogen wird.
@@ -182,6 +244,32 @@ impl PartyView {
             // Fader und Plattenteller folgen dem Mixer.
             ui.ctx().request_repaint();
         }
+        if !self.photo_remote && std::env::var_os("WOA_REMOTE").is_some() {
+            // Fotomodus: Fernbedienung an, damit QR, Adresse und PIN im Bild sind.
+            self.photo_remote = true;
+            self.remote.start(ui.ctx());
+        }
+        let db = library.db_path().to_path_buf();
+        for k in 0..2 {
+            // Das hörbare Deck ohne eigenen Titel zeigt den Titel, der als Nächstes startet
+            // (wie Titelzeile und Restzeit aus dem Layout).
+            let idx = duo.sides[k].index.or_else(|| {
+                (k == duo.live)
+                    .then(|| view.current.or((!view.running).then_some(view.cue)))
+                    .flatten()
+            });
+            let path = idx
+                .and_then(|i| view.playlist.get(i))
+                .map(|e| e.path.as_path());
+            self.waves[k].follow(path, &db, ui.ctx());
+        }
+        let live_pulse = {
+            let s = &duo.sides[duo.live.min(1)];
+            Pulse {
+                pos: s.position,
+                bpm: self.waves[duo.live.min(1)].get().and_then(|i| i.bpm),
+            }
+        };
         let mut cmds = Vec::new();
         let mut folder = false;
         // Ein Raster (Entwurf ScreenParty): 10 px zwischen Karten.
@@ -205,7 +293,7 @@ impl PartyView {
                 |ui| {
                     ui.set_width(left_w);
                     self.switches(ui, desk, &duo, xf, &layout, &mut cmds);
-                    pult(ui, &layout, view.running, key_h, &mut cmds);
+                    pult(ui, &layout, view.running, key_h, live_pulse, &mut cmds);
                     folder |= playlist_card(ui, desk, &view, &layout, &mut cmds);
                 },
             );
@@ -214,15 +302,20 @@ impl PartyView {
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
                     ui.set_width(right_w);
+                    // Bibliothek und Wunschliste scrollen; die Fernbedienung steht darunter
+                    // fest, damit QR, Adresse, PIN und Handyzahl sichtbar sind, sobald sie an ist.
+                    let side_h = (h - self.remote_h - GAP).max(120.0);
                     egui::ScrollArea::vertical()
                         .id_salt("party-side")
-                        .auto_shrink([false, false])
+                        .max_height(side_h)
+                        .auto_shrink([false, true])
                         .show(ui, |ui| {
                             ui.spacing_mut().item_spacing = egui::vec2(GAP, GAP);
                             self.search_card(ui, desk, library, &mut cmds);
                             self.wish_card(ui, library, &mut cmds);
-                            self.remote.ui(ui);
                         });
+                    let r = ui.scope(|ui| self.remote.ui(ui)).response;
+                    self.remote_h = r.rect.height();
                 },
             );
         });
@@ -276,7 +369,14 @@ impl PartyView {
         let s = &duo.sides[k];
         let live = k == duo.live;
         let spin = s.playing;
-        let entry = s.index.and_then(|i| v.playlist.get(i));
+        let entry = s
+            .index
+            .or_else(|| {
+                live.then(|| v.current.or((!v.running).then_some(v.cue)))
+                    .flatten()
+            })
+            .and_then(|i| v.playlist.get(i));
+        let info = self.waves[k].get();
         // Titel, Interpret, Restzeit und Fortschritt des Decks.
         let (title, artist, time, urgent, progress) = match (live, &l.now) {
             (true, Some(n)) => (
@@ -348,7 +448,7 @@ impl PartyView {
                             } else {
                                 "Rechtes Deck"
                             });
-                            theme::status_pill(ui, badge, col, false);
+                            theme::status_pill(ui, badge, col, true);
                         });
                         ui.add(
                             egui::Label::new(
@@ -371,26 +471,24 @@ impl PartyView {
                         }
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 14.0;
-                            theme::lcd_show(ui, |ui| {
-                                ui.label(
-                                    egui::RichText::new(&time)
-                                        .font(theme::seg_font(34.0))
-                                        .color(if urgent {
-                                            theme::on_air()
-                                        } else {
-                                            theme::lcd_ink()
-                                        }),
-                                )
+                            seg_lcd(ui, &seg_clock(&time), 34.0, urgent, None)
                                 .on_hover_text("Restzeit des Titels");
-                            });
+                            if let Some(bpm) = info.as_ref().and_then(|i| i.bpm) {
+                                seg_lcd(ui, &format!("{bpm:.1}"), 30.0, false, Some("BPM"))
+                                    .on_hover_text("Tempo aus der Bibliotheksanalyse");
+                            }
                             let (icon, word) = if s.playing {
                                 (theme::ic::PAUSE, "Pause")
                             } else {
                                 (theme::ic::PLAY, "Play")
                             };
                             let fill = if s.playing { Fill::Accent } else { Fill::None };
+                            let pulse = s.playing.then_some(Pulse {
+                                pos: s.position,
+                                bpm: info.as_ref().and_then(|i| i.bpm),
+                            });
                             let r = ui.add_enabled_ui(s.index.is_some(), |ui| {
-                                big_key(ui, icon, word, fill, egui::vec2(150.0, 56.0), s.playing)
+                                big_key(ui, icon, word, fill, egui::vec2(150.0, 56.0), pulse)
                             });
                             if r.inner
                                 .on_hover_text(
@@ -403,11 +501,12 @@ impl PartyView {
                         });
                     });
                 });
-                ui.add(
-                    egui::ProgressBar::new(progress)
-                        .desired_height(10.0)
-                        .fill(theme::accent()),
-                );
+                let secs = if s.end > 0.0 {
+                    s.end
+                } else {
+                    entry.and_then(|e| e.seconds).unwrap_or(0.0)
+                };
+                wave(ui, info.as_ref(), progress, secs);
             });
     }
 
@@ -431,7 +530,7 @@ impl PartyView {
                 "Auto-Übergang",
                 switch_fill(duo.auto),
                 size,
-                false,
+                None,
             )
             .on_hover_text(
                 "An: kurz vor dem Titelende startet das andere Deck und der Fader fährt hinüber. \
@@ -447,7 +546,7 @@ impl PartyView {
                 "Zufall",
                 switch_fill(l.shuffle),
                 size,
-                false,
+                None,
             )
             .on_hover_text("Zufällige Reihenfolge (Taste S)")
             .clicked()
@@ -562,11 +661,15 @@ impl PartyView {
                     );
                 }
             });
-            let r = ui.add(
-                egui::TextEdit::singleline(&mut self.search)
-                    .hint_text("Titel oder Interpret suchen …")
-                    .desired_width(f32::INFINITY),
-            );
+            let w = ui.available_width();
+            let r = party_input(
+                ui,
+                &mut self.search,
+                theme::ic::MAGNIFYING_GLASS,
+                "Titel oder Interpret suchen …",
+                w,
+            )
+            .inner;
             if r.changed() {
                 library.set_query(&self.search);
                 library.refresh();
@@ -643,20 +746,26 @@ impl PartyView {
                 });
             });
             ui.horizontal(|ui| {
-                let r = ui.add(
-                    egui::TextEdit::singleline(&mut self.wish_input)
-                        .hint_text("Wer: Titel / Interpret")
-                        .desired_width((ui.available_width() - 150.0).max(80.0)),
-                );
-                let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                let add = big_key(
+                let w = (ui.available_width() - 150.0).max(80.0);
+                let r = party_input(
                     ui,
-                    theme::ic::PLUS,
-                    "Wunsch",
-                    Fill::None,
-                    egui::vec2(0.0, 44.0),
-                    false,
+                    &mut self.wish_input,
+                    theme::ic::HEART,
+                    "Wer: Titel / Interpret",
+                    w,
                 )
+                .inner;
+                let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                // Wunsch-Taste (`woa-bigkey--alt`): Lime-Rand und -Schein, nicht gefüllt.
+                let add = crate::widgets::Key::new(
+                    &format!("{}  WUNSCH", theme::ic::PLUS),
+                    egui::vec2(130.0, INPUT_H),
+                )
+                .font(theme::label_font(15.0))
+                .color(theme::accent_2())
+                .radius(theme::RADIUS_PARTY)
+                .lit(true)
+                .ui(ui)
                 .on_hover_text("Wunsch eintragen (auch Eingabetaste)")
                 .clicked();
                 let text = self.wish_input.trim().to_string();
@@ -670,6 +779,8 @@ impl PartyView {
             });
             ui.add_space(6.0);
             let items: Vec<_> = self.state.wishes.items().to_vec();
+            let votes: Vec<u32> = items.iter().filter(|w| !w.done).map(|w| w.votes).collect();
+            let top = top_votes(&votes);
             if items.is_empty() {
                 ui.vertical_centered(|ui| {
                     ui.add_space(12.0);
@@ -738,7 +849,10 @@ impl PartyView {
                             self.search_for(w, library);
                         }
                         if w.votes > 1 {
-                            theme::status_pill(ui, &format!("×{}", w.votes), theme::accent_2(), false);
+                            // Nur die meistgewählte Pille leuchtet Lime, die anderen neutral.
+                            let on = !w.done && top == Some(w.votes);
+                            let col = if on { theme::accent_2() } else { theme::text_dim() };
+                            theme::status_pill(ui, &format!("×{}", w.votes), col, on);
                         }
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                             let mut t = egui::RichText::new(format!("{}. {}", i + 1, w.title))
@@ -831,7 +945,7 @@ fn playlist_card(
         ui.set_min_height(ui.available_height());
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
-            ui.label(theme::panel_label("PLAYLIST"));
+            ui.label(theme::panel_label("PLAYLIST").color(theme::accent_2()));
             let name = v
                 .playlists
                 .get(v.active_playlist)
@@ -1107,7 +1221,7 @@ fn big_key(
     word: &str,
     fill: Fill,
     size: egui::Vec2,
-    pulse: bool,
+    pulse: Option<Pulse>,
 ) -> egui::Response {
     let label = format!("{icon}  {}", word.to_uppercase());
     let font = theme::label_font((size.y * 0.3).clamp(15.0, 19.0));
@@ -1118,15 +1232,23 @@ fn big_key(
         .x;
     let w = size.x.max(text_w + 32.0);
     let mut col = fill.color().unwrap_or_else(theme::accent);
-    if pulse && fill != Fill::None && crate::widgets::motion(ui.ctx()) {
+    if let Some(p) = pulse
+        && fill != Fill::None
+        && crate::widgets::motion(ui.ctx())
+    {
         let t = ui.input(|i| i.time);
-        let k = (0.5 + 0.5 * (t * std::f64::consts::TAU * 2.0).sin()) as f32;
+        let k = pulse_level(t, p.pos, p.bpm);
         col = theme::mix(col, theme::accent_strong(), 0.4 * k);
         ui.ctx().request_repaint();
     }
+    let ink = match fill {
+        Fill::Alt => theme::on_accent_2(),
+        _ => theme::on_accent(),
+    };
     crate::widgets::Key::new(&label, egui::vec2(w, size.y))
         .font(font)
         .color(col)
+        .ink(ink)
         .radius(theme::RADIUS_PARTY)
         .on(fill != Fill::None)
         .ui(ui)
@@ -1212,6 +1334,7 @@ fn pult(
     l: &PartyLayout,
     running: bool,
     key_h: f32,
+    live: Pulse,
     cmds: &mut Vec<PartyCommand>,
 ) {
     let w = ((ui.available_width() - 3.0 * GAP) / 4.0).max(60.0);
@@ -1231,9 +1354,21 @@ fn pult(
                         };
                         let fill = key_fill(&b.command, b.active, running);
                         let icon = command_icon(&b.command, running, l.repeat);
-                        let pulse = matches!(b.command, PartyCommand::PlayPause) && running;
-                        if big_key(ui, icon, b.label, fill, egui::vec2(w, key_h), pulse)
-                            .on_hover_text(command_tip(&b.command))
+                        let pulse = (matches!(b.command, PartyCommand::PlayPause) && running)
+                            .then_some(live);
+                        // „Wdh.“ ohne Zustand im Wort: der steht in Füllung, Symbol und Tooltip.
+                        let word = if b.command == PartyCommand::CycleRepeat {
+                            "Wdh."
+                        } else {
+                            b.label
+                        };
+                        let tip = if b.command == PartyCommand::CycleRepeat {
+                            repeat_tip(l.repeat)
+                        } else {
+                            command_tip(&b.command)
+                        };
+                        if big_key(ui, icon, word, fill, egui::vec2(w, key_h), pulse)
+                            .on_hover_text(tip)
                             .clicked()
                         {
                             cmds.push(b.command.clone());
@@ -1256,11 +1391,21 @@ fn command_tip(c: &PartyCommand) -> &'static str {
         PartyCommand::Restart => "Titel von vorn",
         PartyCommand::SeekBack => "10 Sekunden zurück",
         PartyCommand::SeekForward => "10 Sekunden vor",
-        PartyCommand::CycleRepeat => "Wiederholen: aus → Playlist → Titel (Taste R)",
+        PartyCommand::CycleRepeat => repeat_tip(woa_radio::control::Repeat::Off),
         PartyCommand::VolumeDown => "Leiser (↓)",
         PartyCommand::VolumeUp => "Lauter (↑)",
         PartyCommand::Mute => "Stumm (Taste M)",
         _ => "",
+    }
+}
+
+/// Tooltip der Taste „Wdh.“ mit dem Zustand.
+fn repeat_tip(r: woa_radio::control::Repeat) -> &'static str {
+    use woa_radio::control::Repeat;
+    match r {
+        Repeat::Off => "Wiederholen ist aus. Klick: Playlist wiederholen (Taste R)",
+        Repeat::All => "Wiederholt die Playlist. Klick: nur den Titel (Taste R)",
+        Repeat::One => "Wiederholt den Titel. Klick: aus (Taste R)",
     }
 }
 
@@ -1337,6 +1482,229 @@ fn deck_badge(live: bool, playing: bool, l: &PartyLayout) -> (&'static str, egui
     }
 }
 
+/// Höhe der Party-Eingaben (`woa-input`).
+const INPUT_H: f32 = 44.0;
+/// Höhe der Wellenform am Deck.
+const WAVE_H: f32 = 52.0;
+/// Schläge, die dichter als so viele Punkte lägen, zeichnet das Beatgrid nicht.
+const BEAT_MIN_PX: f32 = 3.0;
+
+/// Restzeit für das 7-Segment: immer MM:SS (über eine Stunde zählen die Minuten weiter).
+fn seg_clock(clock: &str) -> String {
+    let parts: Option<Vec<u64>> = clock.split(':').map(|p| p.parse().ok()).collect();
+    let secs = match parts.as_deref() {
+        Some([m, s]) => m * 60 + s,
+        Some([h, m, s]) => h * 3600 + m * 60 + s,
+        _ => 0,
+    };
+    format!("{:02}:{:02}", secs / 60, secs % 60)
+}
+
+/// Geister-Segmente zu einer Anzeige: jede Ziffer wird „8“, Trenner bleiben.
+fn ghost_of(text: &str) -> String {
+    text.chars()
+        .map(|c| if c.is_ascii_digit() { '8' } else { c })
+        .collect()
+}
+
+/// 7-Segment-LCD mit Geister-Segmenten (`led-off`) hinter den Ziffern, wahlweise mit
+/// Beschriftung rechts (etwa „BPM“). `alert` färbt die Ziffern in `on-air` (Restzeit knapp).
+fn seg_lcd(
+    ui: &mut egui::Ui,
+    text: &str,
+    size: f32,
+    alert: bool,
+    caption: Option<&str>,
+) -> egui::Response {
+    theme::lcd_show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            let font = theme::seg_font(size);
+            let ink = if alert {
+                theme::on_air()
+            } else {
+                theme::lcd_ink()
+            };
+            let ghost = ui
+                .painter()
+                .layout_no_wrap(ghost_of(text), font.clone(), theme::led_off());
+            let digits = ui.painter().layout_no_wrap(text.to_string(), font, ink);
+            let (rect, resp) = ui.allocate_exact_size(
+                egui::vec2(ghost.size().x.max(digits.size().x), ghost.size().y),
+                egui::Sense::hover(),
+            );
+            let p = ui.painter();
+            p.galley(rect.min, ghost, theme::led_off());
+            p.galley(rect.min, digits, ink);
+            if let Some(c) = caption {
+                ui.label(
+                    egui::RichText::new(c)
+                        .font(theme::panel_label_font())
+                        .color(theme::lcd_text()),
+                );
+            }
+            resp
+        })
+        .inner
+    })
+    .inner
+}
+
+/// Größter Spitzenwert je Bildpunktspalte, 0..1.
+fn wave_columns(peaks: &[u8], cols: usize) -> Vec<f32> {
+    if peaks.is_empty() {
+        return Vec::new();
+    }
+    (0..cols)
+        .map(|x| {
+            let a = x * peaks.len() / cols;
+            let b = ((x + 1) * peaks.len() / cols).max(a + 1).min(peaks.len());
+            f32::from(peaks[a..b].iter().copied().max().unwrap_or(0)) / 255.0
+        })
+        .collect()
+}
+
+/// X-Stellen der Beatgrid-Striche (ab Titelbeginn, ein Strich je Schlag). Ohne Tempo, ohne
+/// Länge oder zu dicht: keine.
+fn beat_xs(bpm: Option<f64>, seconds: f64, width: f32) -> Vec<f32> {
+    let Some(bpm) = bpm.filter(|b| *b > 0.0) else {
+        return Vec::new();
+    };
+    if seconds <= 0.0 || width <= 0.0 {
+        return Vec::new();
+    }
+    let step = (f64::from(width) * 60.0 / bpm / seconds) as f32;
+    if step < BEAT_MIN_PX {
+        return Vec::new();
+    }
+    (0..)
+        .map(|i| i as f32 * step)
+        .take_while(|x| *x < width)
+        .collect()
+}
+
+/// Helligkeit des Play-Pulses 0..1: mit Tempo hell auf jedem Schlag und abklingend (wie
+/// `woa-pulse`, Schläge ab Titelbeginn gezählt), ohne Tempo ein gleichmäßiger Sinus.
+fn pulse_level(time: f64, pos: f64, bpm: Option<f64>) -> f32 {
+    match bpm.filter(|b| *b > 0.0) {
+        Some(b) => {
+            let phase = (pos.max(0.0) * b / 60.0).fract();
+            ((1.0 - phase) * (1.0 - phase)) as f32
+        }
+        None => (0.5 + 0.5 * (time * std::f64::consts::TAU * 2.0).sin()) as f32,
+    }
+}
+
+/// Wellenform am Deck (52 px): gespielter Teil in `accent`, der Rest gedimmt, Abspielstelle
+/// als Strich, oben das Beatgrid in `accent-2`. Solange sie lädt, nur Fläche und Stelle.
+fn wave(
+    ui: &mut egui::Ui,
+    info: Option<&woa_library::waveform::DeckInfo>,
+    played: f32,
+    seconds: f64,
+) {
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), WAVE_H),
+        egui::Sense::hover(),
+    );
+    let p = ui.painter_at(rect);
+    p.rect(
+        rect,
+        theme::RADIUS_MD,
+        theme::lcd_bg(),
+        egui::Stroke::new(1.0, theme::border()),
+        egui::StrokeKind::Inside,
+    );
+    let inner = rect.shrink(2.0);
+    let played = played.clamp(0.0, 1.0);
+    let step = 3.0;
+    let cols = (inner.width() / step).floor().max(0.0) as usize;
+    let peaks = info.map_or(&[][..], |i| i.peaks.as_slice());
+    let mid = inner.center().y;
+    let half = inner.height() / 2.0 - 1.0;
+    let dim = theme::mix(theme::lcd_bg(), theme::lcd_text(), 0.38);
+    for (x, a) in wave_columns(peaks, cols).into_iter().enumerate() {
+        let x0 = inner.left() + x as f32 * step;
+        let col = if (x as f32 + 0.5) / cols as f32 <= played {
+            theme::accent()
+        } else {
+            dim
+        };
+        let h = (a * half).max(0.5);
+        p.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(x0, mid - h),
+                egui::pos2(x0 + step - 1.0, mid + h),
+            ),
+            0,
+            col,
+        );
+    }
+    if played > 0.0 && played < 1.0 {
+        let x = inner.left() + played * inner.width();
+        p.vline(
+            x,
+            inner.y_range(),
+            egui::Stroke::new(2.0, theme::lcd_text()),
+        );
+    }
+    let bpm = info.and_then(|i| i.bpm);
+    let grid = crate::widgets::with_alpha(theme::accent_2(), 128);
+    for x in beat_xs(bpm, seconds, inner.width()) {
+        p.vline(
+            inner.left() + x,
+            inner.top()..=inner.top() + 5.0,
+            egui::Stroke::new(1.0, grid),
+        );
+    }
+    resp.on_hover_text(match (info, bpm) {
+        (None, _) => "Wellenform wird gelesen …",
+        (Some(_), Some(_)) => "Wellenform; oben ein Strich je Schlag",
+        (Some(_), None) => "Wellenform (ohne Analyse kein Beatgrid)",
+    });
+}
+
+/// Stimmen des meistgewählten offenen Wunsches, wenn er mindestens zwei hat.
+fn top_votes(votes: &[u32]) -> Option<u32> {
+    votes.iter().copied().max().filter(|v| *v > 1)
+}
+
+/// Party-Eingabe (`woa-input`): 44 px, `radius-party`, `well`-Fläche, Symbol links.
+fn party_input(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    icon: &str,
+    hint: &str,
+    width: f32,
+) -> egui::InnerResponse<egui::Response> {
+    egui::Frame::new()
+        .fill(theme::well())
+        .stroke(egui::Stroke::new(1.0, theme::border_strong()))
+        .corner_radius(theme::RADIUS_PARTY)
+        .inner_margin(egui::Margin::symmetric(14, 0))
+        .show(ui, |ui| {
+            let w = (width - 30.0).max(40.0);
+            ui.set_width(w);
+            ui.set_height(INPUT_H - 2.0);
+            ui.horizontal_centered(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.label(
+                    egui::RichText::new(icon)
+                        .size(18.0)
+                        .color(theme::text_dim()),
+                );
+                ui.add(
+                    egui::TextEdit::singleline(text)
+                        .hint_text(hint)
+                        .frame(egui::Frame::NONE)
+                        .font(egui::FontId::proportional(15.0))
+                        .desired_width(ui.available_width()),
+                )
+            })
+            .inner
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1363,7 +1731,17 @@ mod tests {
                     level_db: 0.0,
                     fullscreen: false,
                 };
-                pult(ui, &l, true, 64.0, &mut cmds);
+                pult(
+                    ui,
+                    &l,
+                    true,
+                    64.0,
+                    Pulse {
+                        pos: 0.0,
+                        bpm: None,
+                    },
+                    &mut cmds,
+                );
             });
         });
         let update = out.platform_output.accesskit_update.expect("accesskit");
@@ -1388,7 +1766,7 @@ mod tests {
         assert_eq!(
             words,
             [
-                "ZURÜCK", "PAUSE", "STOPP", "WEITER", "VON VORN", "−10 S", "+10 S", "PLAYLIST",
+                "ZURÜCK", "PAUSE", "STOPP", "WEITER", "VON VORN", "−10 S", "+10 S", "WDH.",
                 "LEISER", "LAUTER", "STUMM"
             ],
             "{buttons:?}"
@@ -1568,5 +1946,97 @@ mod tests {
         assert_eq!(fader_pos_at(60.0, 10.0, 100.0), 0.5);
         assert_eq!(fader_pos_at(500.0, 10.0, 100.0), 1.0);
         assert_eq!(fader_pos_at(33.333, 0.0, 100.0), 0.33);
+    }
+
+    /// Restzeit im 7-Segment immer MM:SS mit Geister-Segmenten (Design-Runde 3, Party).
+    #[test]
+    fn seg_clock_is_always_mm_ss_with_ghost() {
+        assert_eq!(seg_clock("0:05"), "00:05");
+        assert_eq!(seg_clock("9:22"), "09:22");
+        assert_eq!(seg_clock("1:02:05"), "62:05");
+        assert_eq!(seg_clock("kaputt"), "00:00");
+        assert_eq!(ghost_of("09:22"), "88:88");
+        assert_eq!(ghost_of("124.0"), "888.8");
+        assert_eq!(ghost_of("100:00"), "888:88");
+    }
+
+    /// Beatgrid: ein Strich je Schlag über die ganze Titellänge; ohne Tempo keiner.
+    #[test]
+    fn beatgrid_follows_bpm_and_length() {
+        let xs = beat_xs(Some(120.0), 10.0, 200.0);
+        assert_eq!(xs.len(), 20);
+        assert!((xs[1] - xs[0] - 10.0).abs() < 1e-3, "{xs:?}");
+        assert!(beat_xs(None, 10.0, 200.0).is_empty());
+        assert!(beat_xs(Some(120.0), 0.0, 200.0).is_empty());
+        // Zu dicht (unter 3 px) wird nicht gezeichnet.
+        assert!(beat_xs(Some(180.0), 3600.0, 300.0).is_empty());
+    }
+
+    /// Wellenform: je Bildpunktspalte der größte Spitzenwert, 0..1.
+    #[test]
+    fn wave_columns_take_peak_per_column() {
+        let peaks: Vec<u8> = (0..1000).map(|i| if i < 500 { 255 } else { 51 }).collect();
+        let c = wave_columns(&peaks, 4);
+        assert_eq!(c.len(), 4);
+        assert!(
+            (c[0] - 1.0).abs() < 1e-3 && (c[3] - 0.2).abs() < 1e-3,
+            "{c:?}"
+        );
+        assert!(wave_columns(&[], 10).is_empty());
+        assert_eq!(wave_columns(&[255, 0], 4).len(), 4);
+    }
+
+    /// Play pulsiert im Takt: hell auf dem Schlag, abklingend bis zum nächsten. Ohne Analyse
+    /// gleichmäßig (Sinus), unabhängig von der Stelle im Titel.
+    #[test]
+    fn pulse_follows_beat_or_is_even() {
+        assert!((pulse_level(0.0, 0.0, Some(120.0)) - 1.0).abs() < 1e-3);
+        assert!(pulse_level(0.0, 0.25, Some(120.0)) < 0.5);
+        assert!((pulse_level(0.0, 0.5, Some(120.0)) - 1.0).abs() < 1e-3);
+        let a = pulse_level(0.0, 0.0, None);
+        let b = pulse_level(0.0, 0.37, None);
+        assert!((a - b).abs() < 1e-6 && (0.0..=1.0).contains(&a));
+    }
+
+    /// Lime (`accent-2`) der Party: dunkel #c6ff3a mit dunkler Schrift, hell #3f6600 mit weißer.
+    /// Nie Weiß auf Lime im dunklen Thema, nie gleich `accent` oder `ok`.
+    #[test]
+    fn party_lime_tokens_dark_and_light() {
+        let d = theme::palette_for(theme::Theme::Dunkel, theme::Mode::Party);
+        let h = theme::palette_for(theme::Theme::Hell, theme::Mode::Party);
+        assert_eq!(d.accent_2, egui::Color32::from_rgb(0xc6, 0xff, 0x3a));
+        assert_eq!(d.on_accent_2, egui::Color32::from_rgb(0x0e, 0x14, 0x00));
+        assert_eq!(h.accent_2, egui::Color32::from_rgb(0x3f, 0x66, 0x00));
+        assert_eq!(h.on_accent_2, egui::Color32::WHITE);
+        for p in [d, h] {
+            assert_ne!(p.accent_2, p.accent);
+            assert_ne!(p.accent_2, p.ok);
+        }
+        assert_ne!(d.on_accent_2, egui::Color32::WHITE);
+    }
+
+    /// Nur die meistgewählte Vote-Pille ist Lime, und nur ab zwei Stimmen.
+    #[test]
+    fn only_the_top_vote_is_lime() {
+        assert_eq!(top_votes(&[1, 3, 2, 3]), Some(3));
+        assert_eq!(top_votes(&[1, 1]), None);
+        assert_eq!(top_votes(&[]), None);
+    }
+
+    /// Suche und Wunsch-Eingabe als `woa-input`: 44 px hoch, über die volle Breite.
+    #[test]
+    fn party_input_is_44_px() {
+        let ctx = theme::test_context();
+        let mut text = String::new();
+        let mut h = 0.0;
+        let _ = ctx.run_ui(Default::default(), |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                h = party_input(ui, &mut text, theme::ic::MAGNIFYING_GLASS, "Suchen", 300.0)
+                    .response
+                    .rect
+                    .height();
+            });
+        });
+        assert!((h - INPUT_H).abs() < 0.5 && INPUT_H == 44.0, "{h}");
     }
 }

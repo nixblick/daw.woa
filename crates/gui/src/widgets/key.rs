@@ -41,6 +41,7 @@ pub struct Key<'a> {
     lit: bool,
     on: bool,
     color: Option<Color32>,
+    ink: Option<Color32>,
     font: Option<FontId>,
     radius: u8,
     enabled: bool,
@@ -54,6 +55,7 @@ impl<'a> Key<'a> {
             lit: false,
             on: false,
             color: None,
+            ink: None,
             font: None,
             radius: theme::RADIUS_SM,
             enabled: true,
@@ -75,6 +77,13 @@ impl<'a> Key<'a> {
     /// Leuchtfarbe (Vorgabe: Modusfarbe).
     pub fn color(mut self, c: Color32) -> Self {
         self.color = Some(c);
+        self
+    }
+
+    /// Schriftfarbe auf der voll leuchtenden Taste (Token `on-accent`/`on-accent-2`);
+    /// ohne Angabe wird sie aus der Helligkeit der Fläche bestimmt.
+    pub fn ink(mut self, c: Color32) -> Self {
+        self.ink = Some(c);
         self
     }
 
@@ -150,7 +159,7 @@ impl<'a> Key<'a> {
         let ink = if !self.enabled {
             theme::text_dim()
         } else if look.fill > 0.9 {
-            contrast_text(fill)
+            self.ink.unwrap_or_else(|| contrast_text(fill))
         } else {
             theme::text()
         };
