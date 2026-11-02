@@ -1238,10 +1238,12 @@ pub fn font_definitions() -> egui::FontDefinitions {
         }
         fd.families.insert(FontFamily::Name(family.into()), v);
     }
-    fd.families.insert(
-        FontFamily::Name(FAMILY_ICON_FILL.into()),
-        vec!["phosphor-fill".to_owned()],
-    );
+    // Rückfall dahinter wie bei den Textfamilien: Phosphor hat weder „◻“ noch „?“, egui warnte
+    // sonst beim ersten Gebrauch der Familie „Failed to find replacement characters“ (Log 0.36.2).
+    let mut icon_fill = vec!["phosphor-fill".to_owned(), "Barlow-Regular".to_owned()];
+    icon_fill.extend(fallback_prop.iter().cloned());
+    fd.families
+        .insert(FontFamily::Name(FAMILY_ICON_FILL.into()), icon_fill);
     fd
 }
 
@@ -1398,8 +1400,8 @@ mod tests {
             assert!(fd.families[&fam].iter().any(|f| f == "phosphor"), "{fam:?}");
         }
         assert_eq!(
-            fd.families[&egui::FontFamily::Name(FAMILY_ICON_FILL.into())],
-            vec!["phosphor-fill".to_owned()]
+            fd.families[&egui::FontFamily::Name(FAMILY_ICON_FILL.into())][0],
+            "phosphor-fill"
         );
         let ctx = egui::Context::default();
         install_fonts(&ctx);
@@ -1414,6 +1416,22 @@ mod tests {
             );
             assert!(icon.size().x > 4.0);
         });
+    }
+
+    /// Log 0.36.2: „Failed to find replacement characters '◻' or '?'“. Jede Familie muss ein
+    /// Ersatzzeichen haben, sonst warnt egui und zeigt fehlende Zeichen gar nicht. `has_glyph`
+    /// meldet das Ersatzzeichen selbst als fehlend; ein echtes „?“ heißt also: „◻“ ist da.
+    #[test]
+    fn every_family_has_a_replacement_glyph() {
+        let fd = font_definitions();
+        let ctx = egui::Context::default();
+        install_fonts(&ctx);
+        let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
+        for fam in fd.families.keys() {
+            let id = FontId::new(14.0, fam.clone());
+            let ok = ctx.fonts_mut(|f| f.has_glyph(&id, '?'));
+            assert!(ok, "Familie {fam:?} hat weder '?' noch '◻'");
+        }
     }
 
     #[test]

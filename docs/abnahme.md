@@ -4,6 +4,23 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Feedback-Fixes 02.11. (0.37.1, offen)
+
+1. **Produzent (#334):** MIDI-Clip doppelklicken, Piano-Roll im Dock → die Spuren oben bleiben gleich hoch, im Spurkopf
+   ist die zweite Zeile (Eingang, Trim) ganz zu sehen.
+2. **Party DJ im Vollbild (#332):** Ansicht „DJ“, F11 → Deck A, Mixer und Deck B reichen von Rand zu Rand, rechts
+   kein Rand mehr, der Mixer steht in der Mitte. Fenster verkleinern → genauso.
+3. **Hot Cues (#331):** Titel auf Deck A, Hot Cue 1 setzen (Klick) → Rechtsklick auf 1 → die Taste ist wieder leer.
+4. **Weiter (#331):** Deck A spielt, Deck B hat einen Titel → „Weiter · Übergang“ unter dem Crossfader (oder N) →
+   B startet, der Crossfader fährt hinüber, danach steht A und zeigt den nächsten Titel. Noch einmal → zurück auf A.
+   Während der Fahrt den Crossfader anfassen → die Fahrt hört auf, beide Decks laufen weiter.
+5. **Log:** Party → Radio wechseln, Feedback-Protokoll ansehen → keine Warnung „Failed to find replacement characters“.
+
+Selbst geprüft von Claude: Tests (siehe CHANGELOG 0.37.1, alle zuerst rot gesehen außer den neuen Kommandos), Fotomodus
+unter Linux bei 1920 × 1080 und 2560 × 1440 (Vollbild-ähnlich) vorher und nachher: DJ-Ansicht und Produzent mit
+Demo-Song und Piano-Roll. Nicht unter Windows gesehen, kein Ton abgespielt, nicht mit der Maus geklickt (der Fotomodus
+klickt nicht); den Übergang hat nur der Test ohne Ton gefahren.
+
 ## Design-Runde 3b: Korrekturen nach Andrés Prüfung (0.36.1, offen)
 
 1. **Party:** Ein Titel auf Deck A, nichts läuft → Badge „BEREIT“ neutral (Mulde, grauer Rahmen), nicht Lime gefüllt.
