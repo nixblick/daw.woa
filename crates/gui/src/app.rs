@@ -2486,6 +2486,17 @@ impl WoaApp {
         if first && std::env::var_os("WOA_JINGLE").is_some() {
             // Fotomodus des Jingle-Assistenten: Fenster beim ersten Bild öffnen.
             self.jingle_assistent.open = true;
+            // `WOA_JINGLE=elevenlabs`: Schritt „Stimme“ mit Sprecher ElevenLabs (Beispieldaten).
+            if std::env::var("WOA_JINGLE").is_ok_and(|v| v == "elevenlabs")
+                && let Some(m) = woa_model::jingle::MOODS.first()
+                && let Some(parts) = self.state.build_jingle(m, 10)
+            {
+                self.jingle_assistent.foto_elevenlabs(parts);
+            }
+        }
+        if first && std::env::var_os("WOA_KI").is_some() {
+            // Fotomodus Einstellungen › KI (u. a. ElevenLabs-Schlüssel).
+            self.ki_ui.open(&self.config.ki, &self.data_dir);
         }
         if first && std::env::var_os("WOA_DEMO_SONG").is_some() {
             // Fotomodus des Produzenten: ein Jingle-Gerüst plus Akkorde und ein FX-Clip,
@@ -5564,6 +5575,7 @@ impl WoaApp {
         if !self.jingle_assistent.open {
             return;
         }
+        self.jingle_assistent.el.data_dir.clone_from(&self.data_dir);
         match self.jingle_assistent.show(ctx, &mut self.state) {
             Some(Wunsch::Anlegen { mood, seconds }) => {
                 let Some(m) = woa_model::jingle::MOODS.get(mood) else {

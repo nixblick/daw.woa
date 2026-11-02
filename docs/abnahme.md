@@ -4,6 +4,26 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## ElevenLabs-Anbindung (0.39.0, offen)
+
+Vorher einmal: Konto bei elevenlabs.io anlegen (kostenloser Plan reicht zum Ausprobieren), dort Profil → API Keys →
+Schlüssel erzeugen.
+
+1. **Einstellungen → KI:** unten „ElevenLabs-Schlüssel“ einfügen, Speichern → darunter steht „… von … Credits übrig
+   (Abo „free“)“. Prüfen → dieselbe Zeile neu. Ein falscher Schlüssel → rote Zeile „lehnt den Schlüssel ab (HTTP 401)“.
+2. **Jingle bauen → Schritt Stimme:** Sprecher „ElevenLabs“ wählen (ohne Schlüssel ausgegraut), Text eintippen, Stimme
+   wählen → „Sprache erzeugen …“ → Kasten mit „≈ n Credits“ und Datenschutz-Hinweis. Abbrechen → nichts passiert.
+   Noch einmal, Erzeugen → nach ein paar Sekunden liegt der Clip auf der Spur „Stimme“.
+3. **Schritt Schluss:** „Effekt erzeugen …“ (Rakete) und „Bett erzeugen …“ → je ein Clip auf einer neuen Spur, das Bett
+   so lang wie der Jingle. Bibliothek: die drei Klänge stehen mit Schlagwort „elevenlabs“ drin, die Dateien liegen im
+   Jingle-Ordner, daneben je eine `.herkunft.json` mit dem Text.
+4. **Claude über MCP:** „Sprich ‚Hallo Welt‘ auf Spur 1“ → `tts_generate` legt den Clip an.
+5. **Entfernen:** Einstellungen → KI → Entfernen → im Jingle-Assistenten ist ElevenLabs wieder ausgegraut.
+
+Selbst geprüft von Claude: Tests gegen einen lokalen Mock-Server (Konto, Stimmen mit Seiten, Sprache, Effekt, Musik,
+401, 402, 429, 422, kein Netz, kein Schlüssel; der Schlüssel steht in keiner Meldung), Fotomodus Einstellungen und
+Jingle-Assistent dunkel und hell bei 1920 × 1030. Kein echter Aufruf an ElevenLabs (kein Konto), kein Ton.
+
 ## Feedback-Fixes 02.11. (0.37.1, offen)
 
 1. **Produzent (#334):** MIDI-Clip doppelklicken, Piano-Roll im Dock → die Spuren oben bleiben gleich hoch, im Spurkopf

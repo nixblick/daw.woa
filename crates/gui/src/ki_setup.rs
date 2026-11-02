@@ -90,6 +90,8 @@ pub struct KiSetup {
     key_input: String,
     /// Neuer Freesound-Schlüssel (J10), maskiert; leer = unverändert.
     fs_input: String,
+    /// ElevenLabs-Zugang (Sprache, Effekte, Musik).
+    elevenlabs: crate::elevenlabs_ui::Zugang,
     keys: KeyStatus,
     models: HashMap<String, Vec<String>>,
     busy: bool,
@@ -199,6 +201,7 @@ impl KiSetup {
         Self {
             key_input: String::new(),
             fs_input: String::new(),
+            elevenlabs: crate::elevenlabs_ui::Zugang::default(),
             keys: KeyStatus::with_lookup(lookup),
             models: HashMap::new(),
             busy: false,
@@ -359,6 +362,8 @@ impl KiSetup {
         }
         ui.add_space(6.0);
         self.freesound_row(ui, data_dir);
+        ui.add_space(4.0);
+        self.elevenlabs.show(ui, data_dir);
         if let Some(n) = &self.note {
             ui.label(egui::RichText::new(n).small().color(theme::text_dim()));
         }
