@@ -253,6 +253,7 @@ pub struct WoaApp {
     /// Entwickler-Modus: Freischalt-Fenster und „Fragen und To-dos“.
     entwickler_tor: crate::fragen::EntwicklerTor,
     fragen: crate::fragen::FragenWindow,
+    abnahme: crate::abnahme::AbnahmeWindow,
     /// Fotomodus (`WOA_SCREENSHOT=datei.png`): Zielpfad und gezählte Bilder.
     photo: Option<(PathBuf, u32)>,
     /// Party-Layout (Paket 35).
@@ -568,6 +569,7 @@ impl WoaApp {
             protokoll: Default::default(),
             entwickler_tor: Default::default(),
             fragen: Default::default(),
+            abnahme: Default::default(),
             party: crate::party::PartyView::default(),
             photo: std::env::var_os("WOA_SCREENSHOT").map(|p| (PathBuf::from(p), 0)),
             selected_clips: Vec::new(),
@@ -2480,6 +2482,11 @@ impl WoaApp {
             self.config.entwickler = true;
             self.fragen.open_window(ctx);
         }
+        if first && std::env::var_os("WOA_ABNAHME").is_some() {
+            // Fotomodus „Abnahme“: Entwickler-Modus nur für dieses Bild, nicht gespeichert.
+            self.config.entwickler = true;
+            self.abnahme.open_window(ctx);
+        }
         if first && std::env::var("WOA_MENU").is_ok_and(|v| v == "Entwickler") {
             self.config.entwickler = true;
         }
@@ -2946,6 +2953,14 @@ impl WoaApp {
     /// Menü „Entwickler“ (nur freigeschaltet), direkt vor „Hilfe“.
     fn entwickler_menu(&mut self, ui: &mut egui::Ui) {
         let r = ui.menu_button("Entwickler", |ui| {
+            if ui
+                .button("Abnahme")
+                .on_hover_text("Was abzunehmen ist, je Ansicht; Daumen hoch oder runter geht sofort ans Projekt")
+                .clicked()
+            {
+                self.abnahme.open_window(ui.ctx());
+                ui.close();
+            }
             if ui.button("Entwickler-Modus beenden").clicked() {
                 self.entwickler_beenden();
                 ui.close();
@@ -2986,6 +3001,7 @@ impl WoaApp {
         crate::fragen::EntwicklerTor::lock(&self.data_dir);
         self.config.entwickler = false;
         self.fragen.open = false;
+        self.abnahme.open = false;
         self.save_config();
         tracing::info!("developer mode off");
     }
@@ -3013,6 +3029,7 @@ impl WoaApp {
         }
         if self.config.entwickler {
             self.fragen.show(ctx, &self.config, &self.data_dir);
+            self.abnahme.show(ctx, &self.config, &self.data_dir);
         }
     }
 
