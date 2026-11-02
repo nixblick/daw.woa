@@ -22,6 +22,7 @@ pub mod audio;
 pub mod cart_sets;
 pub mod control;
 pub mod cues;
+pub mod djmix;
 pub mod dynamics;
 pub mod events;
 pub mod level;

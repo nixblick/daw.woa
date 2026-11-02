@@ -112,6 +112,9 @@ impl Controller {
 
     /// Party-Decks aus: spielt die hörbare Seite, übernimmt die Playlist sie an ihrer Stelle.
     pub fn party_leave(&mut self) {
+        if self.dj.view {
+            let _ = self.dj(super::dj::DjCommand::View { dj: false });
+        }
         let Some(duo) = self.duo.take() else {
             return;
         };
@@ -313,6 +316,29 @@ impl Controller {
         })
     }
 
+    /// Playlist-Index des Titels auf Seite `side`.
+    pub(super) fn party_view_index(&self, side: usize) -> Option<usize> {
+        let d = self.duo.as_ref()?;
+        d.uid
+            .get(side)
+            .copied()
+            .flatten()
+            .and_then(|u| self.index_of(u))
+    }
+
+    pub(super) fn party_side_playing_pub(&self, s: usize) -> bool {
+        self.party_side_playing(s)
+    }
+
+    pub(super) fn party_loaded_pub(&self, s: usize) -> bool {
+        self.party_loaded(s)
+    }
+
+    /// „In A/B laden“ (DJ-Ansicht): Titel `index` auf Seite `side`.
+    pub(super) fn party_load_side(&mut self, side: usize, index: usize) -> bool {
+        self.party_load(side, index, None)
+    }
+
     // ---- intern ------------------------------------------------------------------------
 
     fn party_live(&self) -> usize {
@@ -373,6 +399,7 @@ impl Controller {
                     d.bufs[side] = Some(buf);
                     d.fired[side] = false;
                 }
+                self.dj_on_load(side, start);
                 true
             }
             Err(err) => {
@@ -386,6 +413,10 @@ impl Controller {
 
     /// Die Seite, die nicht hörbar ist und steht, bekommt den nächsten Titel nach der hörbaren.
     fn party_sync_idle(&mut self) {
+        // DJ-Ansicht: der DJ lädt selbst („in A/B laden“).
+        if self.dj.view {
+            return;
+        }
         let Some(d) = self.duo.as_ref() else {
             return;
         };
@@ -449,7 +480,8 @@ impl Controller {
             _ => d.live,
         };
         d.live = live;
-        if self.show.party_auto {
+        // In der DJ-Ansicht ist der Auto-Übergang aus (die Einstellung der Sendung bleibt).
+        if self.show.party_auto && !self.dj.view {
             let o = 1 - live;
             let fired = d.fired[live];
             let has_o = d.uid[o].is_some();

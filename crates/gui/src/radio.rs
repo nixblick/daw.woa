@@ -1064,7 +1064,7 @@ impl RadioDesk {
             }
             PflOutput::Kanal34 => match woa_engine::device::output_channels(&config) {
                 Ok(n) if n >= 4 => {
-                    let (h, mut player) = woa_radio::pfl::channel(rate);
+                    let (h, mut player) = woa_radio::pfl::channel_with_bus(rate, rate);
                     controller.set_pfl(Some(h));
                     tracing::info!(channels = n, "pfl on channels 3/4");
                     let f: woa_engine::device::AuxRender =
@@ -1092,7 +1092,7 @@ impl RadioDesk {
                     buffer_frames: None,
                 };
                 let prate = woa_engine::device::output_sample_rate(&cfg).unwrap_or(48_000);
-                let (h, mut player) = woa_radio::pfl::channel(prate);
+                let (h, mut player) = woa_radio::pfl::channel_with_bus(prate, rate);
                 let render: woa_engine::device::PairsRender = Box::new(move |bufs, frames| {
                     if let Some(b) = bufs.first_mut() {
                         player.process(&mut b.l[..frames], &mut b.r[..frames]);
