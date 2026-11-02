@@ -132,6 +132,14 @@ Selbst geprüft von Claude: `cargo test -p woa-gui`, Clippy `-D warnings`, Scree
 
 Selbst geprüft von Claude: Tests in `woa-radio`, `woa-engine`, `woa-gui` (Radio), Clippy, Screenshots dunkel/hell bei 1920×1030 und 1366×768. Kein Ton abgespielt, nicht unter Windows gesehen.
 
+## Abnahme-Feinschliff (0.40.1, offen)
+
+1. WOA starten: das Fenster öffnet maximiert mit Rahmen und Knöpfen (kein Vollbild). F11 schaltet Vollbild an, nochmal F11 zurück ins maximierte Fenster.
+2. Entwickler › Abnahme: einen Punkt mit „Geht“ abnehmen, danach ins Feld eine Anmerkung schreiben und „Anmerkung senden“: kommt als `[entwickler-abnahme] <id>: anmerkung` an, das „Geht“ bleibt stehen. Geht auch ohne vorheriges Urteil.
+3. Entwickler › Fragen und To-dos: nach „Senden“ erscheint unter dem Vorschlag „Anmerkung nachtragen“ mit „Anmerkung senden“.
+
+Selbst geprüft von Claude: `cargo test -p woa-gui --lib -p woa`, Clippy. Nicht unter Windows gesehen, kein Ton; der maximierte Start nur über den Test der Startentscheidung.
+
 ## Design-Runde 3: Nacharbeit Produzent (0.35.21, offen)
 
 1. WOA starten: das Fenster öffnet im Vollbild. F11 schaltet es aus und wieder ein (Produzent und Radio); in der Party zeigt die Vollbild-Taste den echten Zustand.

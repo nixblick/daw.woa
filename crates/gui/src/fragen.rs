@@ -141,6 +141,8 @@ pub enum Wahl {
     Dafuer,
     Dagegen,
     Anders,
+    /// Nachtrag nach dem Senden (André 02.11.2026).
+    Anmerkung,
 }
 
 impl Wahl {
@@ -149,6 +151,7 @@ impl Wahl {
             Wahl::Dafuer => "dafür",
             Wahl::Dagegen => "dagegen",
             Wahl::Anders => "anders",
+            Wahl::Anmerkung => "anmerkung",
         }
     }
 }
@@ -216,6 +219,9 @@ pub struct FragenWindow {
     sent: HashSet<Key>,
     pending: HashMap<Key, Receiver<Result<Option<u64>, FeedbackError>>>,
     notes: HashMap<Key, String>,
+    /// Nachtrag nach dem Senden, je Vorschlag (André 02.11.2026).
+    nachtrag: HashMap<Key, String>,
+    nachtrag_pending: HashMap<Key, Receiver<Result<Option<u64>, FeedbackError>>>,
     /// Fenster füllt die App (Knopf neben Schließen, #337).
     pub maximized: bool,
     /// Suchtext ganz oben.
@@ -284,6 +290,29 @@ impl FragenWindow {
                 Err(TryRecvError::Empty) => {}
             }
         }
+        let mut nach = Vec::new();
+        for (k, rx) in &self.nachtrag_pending {
+            match rx.try_recv() {
+                Ok(r) => nach.push((k.clone(), r)),
+                Err(TryRecvError::Disconnected) => nach.push((
+                    k.clone(),
+                    Err(FeedbackError::Transport("abgebrochen".into())),
+                )),
+                Err(TryRecvError::Empty) => {}
+            }
+        }
+        for (k, r) in nach {
+            self.nachtrag_pending.remove(&k);
+            let note = match r {
+                Ok(_) => "Anmerkung gesendet, danke".to_string(),
+                Err(FeedbackError::NoEndpoint) => crate::feedback::NOT_CONFIGURED.to_string(),
+                Err(e) => {
+                    tracing::warn!(error = %e, "question note failed");
+                    format!("Anmerkung: Senden fehlgeschlagen: {e}")
+                }
+            };
+            self.notes.insert(k, note);
+        }
         for (k, r) in done {
             self.pending.remove(&k);
             let note = match r {
@@ -302,6 +331,39 @@ impl FragenWindow {
                 }
             };
             self.notes.insert(k, note);
+        }
+    }
+
+    /// Schickt einen Nachtrag zu einem schon gesendeten Vorschlag ab.
+    fn send_nachtrag(&mut self, f: &Frage, i: usize, config: &GuiConfig, data_dir: &Path) {
+        let key = (f.id.clone(), i);
+        if self.nachtrag_pending.contains_key(&key) {
+            return;
+        }
+        let t = self.nachtrag.remove(&key).unwrap_or_default();
+        if t.trim().is_empty() {
+            return;
+        }
+        let text = feedback_text(f, i, Wahl::Anmerkung, &t);
+        let config = config.clone();
+        let data_dir: PathBuf = data_dir.to_path_buf();
+        let (tx, rx) = channel();
+        let spawned = std::thread::Builder::new()
+            .name("woa-fragen-nachtrag".into())
+            .spawn(move || {
+                let key = woa_secrets::reveal(&data_dir, SECRET_ACCOUNT);
+                let _ = tx.send(submit_feedback(&text, Vec::new(), &meta(&config, key)));
+            });
+        match spawned {
+            Ok(_) => {
+                self.nachtrag_pending.insert(key.clone(), rx);
+                self.notes.insert(key, "Anmerkung wird gesendet".into());
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "question note thread failed");
+                self.notes
+                    .insert(key, format!("Anmerkung: Senden fehlgeschlagen: {e}"));
+            }
         }
     }
 
@@ -431,6 +493,7 @@ impl FragenWindow {
                 let busy = self.pending.contains_key(&key);
                 ui.add_space(theme::SPACE_3);
                 let mut go = false;
+                let mut go_nachtrag = false;
                 let fill = if done {
                     theme::mix(theme::ok(), theme::well(), 0.85)
                 } else {
@@ -505,9 +568,48 @@ impl FragenWindow {
                                 go = ui.add_enabled(can, btn).clicked();
                             });
                         });
+                        if done {
+                            ui.add_space(theme::SPACE_2);
+                            let nb = self.nachtrag_pending.contains_key(&key);
+                            ui.add_enabled_ui(!nb, |ui| {
+                                ui.horizontal(|ui| {
+                                    let t = self.nachtrag.entry(key.clone()).or_default();
+                                    let r = ui.add(
+                                        egui::TextEdit::singleline(t)
+                                            .hint_text("Anmerkung nachtragen")
+                                            .desired_width(
+                                                (ui.available_width() - 170.0).max(160.0),
+                                            ),
+                                    );
+                                    r.widget_info(|| {
+                                        egui::WidgetInfo::labeled(
+                                            egui::WidgetType::TextEdit,
+                                            true,
+                                            "Nachtrag",
+                                        )
+                                    });
+                                    let can = !t.trim().is_empty();
+                                    go_nachtrag = ui
+                                        .add_enabled(
+                                            can,
+                                            egui::Button::new(format!(
+                                                "{} Anmerkung senden",
+                                                theme::ic::PAPER_PLANE_RIGHT
+                                            ))
+                                            .min_size(egui::vec2(150.0, 28.0)),
+                                        )
+                                        .clicked()
+                                        || (can
+                                            && r.lost_focus()
+                                            && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+                                });
+                            });
+                        }
                         if let Some(n) = self.notes.get(&key) {
                             ui.add_space(theme::SPACE_2);
-                            let (icon, color) = if done {
+                            let (icon, color) = if n.starts_with("Anmerkung: Senden") {
+                                (theme::ic::WARNING, theme::danger_text())
+                            } else if done {
                                 (theme::ic::CHECK_CIRCLE, theme::ok())
                             } else if busy {
                                 (theme::ic::PAPER_PLANE_RIGHT, theme::text_dim())
@@ -521,6 +623,9 @@ impl FragenWindow {
                     });
                 if go {
                     self.send(q, i, config, data_dir);
+                }
+                if go_nachtrag {
+                    self.send_nachtrag(q, i, config, data_dir);
                 }
             }
         });
@@ -1019,5 +1124,38 @@ mod tests {
         h.get_by_label(theme::ic::X).click();
         h.run_steps(2);
         assert!(!h.state().open);
+    }
+
+    /// André 02.11.2026: Nach dem Senden lässt sich eine Anmerkung nachtragen.
+    #[test]
+    fn note_can_be_added_after_sending() {
+        let f = embedded();
+        let q = &f.fragen[0];
+        let t = feedback_text(q, 0, Wahl::Anmerkung, "noch was");
+        assert!(t.starts_with(&format!("[entwickler-fragen] {}: anmerkung", q.id)));
+        let mut w = FragenWindow::default();
+        w.open = true;
+        w.fragen = Some((embedded(), Herkunft::Eingebettet));
+        let key = (q.id.clone(), 0);
+        w.sent.insert(key.clone());
+        let mut h = harness(w);
+        h.get_all_by_label("Nachtrag")
+            .next()
+            .expect("Nachtragsfeld")
+            .click();
+        h.run_steps(1);
+        h.get_all_by_label("Nachtrag")
+            .next()
+            .unwrap()
+            .type_text("noch was");
+        h.run_steps(2);
+        h.get_all_by_label_contains("Anmerkung senden")
+            .next()
+            .unwrap()
+            .click();
+        h.run_steps(2);
+        assert!(h.state().nachtrag.get(&key).is_none_or(|t| t.is_empty()));
+        assert!(h.state().notes.contains_key(&key));
+        assert!(h.state().sent.contains(&key));
     }
 }

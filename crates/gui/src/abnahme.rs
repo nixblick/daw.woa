@@ -128,6 +128,8 @@ fn fetch_remote() -> Result<String, String> {
 pub enum Urteil {
     Ok,
     Fehler,
+    /// Nur eine Anmerkung, jederzeit, auch nach „Geht“ (André 02.11.2026).
+    Anmerkung,
 }
 
 impl Urteil {
@@ -135,6 +137,7 @@ impl Urteil {
         match self {
             Urteil::Ok => "ok",
             Urteil::Fehler => "fehler",
+            Urteil::Anmerkung => "anmerkung",
         }
     }
 }
@@ -171,6 +174,7 @@ pub fn meta(config: &GuiConfig, urteil: Urteil, dev_key: Option<String>) -> Feed
         kind: match urteil {
             Urteil::Ok => FeedbackType::Lob,
             Urteil::Fehler => FeedbackType::Bug,
+            Urteil::Anmerkung => FeedbackType::Allgemein,
         },
         install_id: config.install_id.clone(),
         source: Some(SOURCE.into()),
@@ -291,10 +295,13 @@ impl AbnahmeWindow {
             self.pending.remove(&k);
             let note = match r {
                 Ok(n) => {
-                    self.sent.insert(k.clone(), u);
+                    if u != Urteil::Anmerkung {
+                        self.sent.insert(k.clone(), u);
+                    }
                     let was = match u {
                         Urteil::Ok => "Abgenommen",
                         Urteil::Fehler => "Fehler gemeldet",
+                        Urteil::Anmerkung => "Anmerkung gesendet",
                     };
                     match n {
                         Some(n) => format!("{was}, danke (#{n})"),
@@ -313,10 +320,15 @@ impl AbnahmeWindow {
 
     /// Ein Klick auf 👍 oder 👎.
     fn klick(&mut self, p: &Punkt, urteil: Urteil, config: &GuiConfig, data_dir: &Path) {
-        if self.sent.contains_key(&p.id) || self.pending.contains_key(&p.id) {
+        if self.pending.contains_key(&p.id)
+            || (urteil != Urteil::Anmerkung && self.sent.contains_key(&p.id))
+        {
             return;
         }
         let e = self.eingaben.entry(p.id.clone()).or_default();
+        if urteil == Urteil::Anmerkung && e.text.trim().is_empty() {
+            return;
+        }
         match daumen(urteil, &e.text, e.gefragt) {
             Daumen::NachTextFragen => {
                 e.gefragt = true;
@@ -328,6 +340,10 @@ impl AbnahmeWindow {
             }
             Daumen::Senden(u) => {
                 let text = feedback_text(p, u, &e.text);
+                if u == Urteil::Anmerkung {
+                    e.text.clear();
+                }
+                e.gefragt = false;
                 let config = config.clone();
                 let data_dir: PathBuf = data_dir.to_path_buf();
                 let (tx, rx) = channel();
@@ -423,7 +439,7 @@ impl AbnahmeWindow {
         if let Some(u) = sent {
             let c = match u {
                 Urteil::Ok => theme::ok(),
-                Urteil::Fehler => theme::danger_text(),
+                Urteil::Fehler | Urteil::Anmerkung => theme::danger_text(),
             };
             frame = frame.stroke(egui::Stroke::new(1.0, c));
         }
@@ -452,16 +468,18 @@ impl AbnahmeWindow {
             }
             ui.add_space(theme::SPACE_3);
             let mut klick = None;
-            ui.add_enabled_ui(sent.is_none() && !busy, |ui| {
+            ui.add_enabled_ui(!busy, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     let e = self.eingaben.entry(p.id.clone()).or_default();
+                    let offen = sent.is_none();
                     if Segment::new(theme::ic::THUMBS_UP, "Geht")
                         .on(sent == Some(Urteil::Ok))
                         .height(28.0)
                         .ui(ui)
                         .on_hover_text("Abgenommen, sofort senden")
                         .clicked()
+                        && offen
                     {
                         klick = Some(Urteil::Ok);
                     }
@@ -476,19 +494,22 @@ impl AbnahmeWindow {
                         .ui(ui)
                         .on_hover_text("Fehler melden, sofort senden")
                         .clicked()
+                        && offen
                     {
                         klick = Some(Urteil::Fehler);
                     }
                     ui.add_space(theme::SPACE_3);
                     let hint = if e.gefragt {
                         "Was ist passiert?"
-                    } else {
+                    } else if offen {
                         "Anmerkung (optional)"
+                    } else {
+                        "Anmerkung nachschicken"
                     };
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut e.text)
                             .hint_text(hint)
-                            .desired_width(ui.available_width().max(160.0)),
+                            .desired_width((ui.available_width() - 170.0).max(160.0)),
                     );
                     r.widget_info(|| {
                         egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Anmerkung")
@@ -500,6 +521,21 @@ impl AbnahmeWindow {
                     {
                         klick = Some(Urteil::Fehler);
                     }
+                    let can = !e.text.trim().is_empty() && !e.gefragt;
+                    if ui
+                        .add_enabled(
+                            can,
+                            egui::Button::new(format!(
+                                "{} Anmerkung senden",
+                                theme::ic::PAPER_PLANE_RIGHT
+                            ))
+                            .min_size(egui::vec2(150.0, 28.0)),
+                        )
+                        .on_hover_text("Nur die Anmerkung senden, ohne Urteil")
+                        .clicked()
+                    {
+                        klick = Some(Urteil::Anmerkung);
+                    }
                 });
             });
             if let Some(u) = klick {
@@ -508,7 +544,11 @@ impl AbnahmeWindow {
             if let Some(n) = self.notes.get(&p.id) {
                 ui.add_space(theme::SPACE_2);
                 let (icon, color) = match sent {
+                    _ if n.starts_with("Anmerkung gesendet") => {
+                        (theme::ic::CHECK_CIRCLE, theme::ok())
+                    }
                     Some(Urteil::Ok) => (theme::ic::CHECK_CIRCLE, theme::ok()),
+                    Some(Urteil::Anmerkung) => (theme::ic::INFO, theme::text_dim()),
                     Some(Urteil::Fehler) => (theme::ic::BUG, theme::danger_text()),
                     None if n.starts_with("Senden fehlgeschlagen") => {
                         (theme::ic::WARNING, theme::danger_text())
@@ -663,5 +703,59 @@ mod tests {
         h.run_steps(2);
         assert_eq!(h.query_all_by_label("Anmerkung").count(), 0);
         assert!(h.query_by_label("Nichts gefunden").is_some());
+    }
+
+    /// André 02.11.2026: Nach „Geht“ muss eine Anmerkung zum Punkt noch rausgehen.
+    #[test]
+    fn note_payload_is_marked_anmerkung() {
+        let a = embedded();
+        let p = &a.punkte[0];
+        let t = feedback_text(p, Urteil::Anmerkung, "lieber maximiert");
+        assert!(t.starts_with(&format!("[entwickler-abnahme] {}: anmerkung", p.id)));
+        assert!(t.contains("Text: lieber maximiert"));
+        let pl = woa_telemetry::build_payload(
+            &t,
+            &[],
+            &meta(&GuiConfig::default(), Urteil::Anmerkung, None),
+        )
+        .unwrap();
+        assert_eq!(pl["source"], SOURCE);
+    }
+
+    #[test]
+    fn note_can_be_sent_after_thumbs_up() {
+        let mut w = AbnahmeWindow::default();
+        w.open = true;
+        let a = embedded();
+        // Der oberste Punkt im Fenster: erste Ansicht mit Punkten.
+        let id = ANSICHTEN
+            .iter()
+            .find_map(|v| a.punkte.iter().find(|p| p.ansicht == *v))
+            .unwrap()
+            .id
+            .clone();
+        w.liste = Some((a, false));
+        w.sent.insert(id.clone(), Urteil::Ok);
+        let mut h = harness(w);
+        h.get_all_by_label("Anmerkung").next().unwrap().click();
+        h.run_steps(1);
+        h.get_all_by_label("Anmerkung")
+            .next()
+            .unwrap()
+            .type_text("maximiert");
+        h.run_steps(2);
+        assert_eq!(
+            h.state().eingaben[&id].text,
+            "maximiert",
+            "Feld bleibt offen"
+        );
+        h.get_all_by_label_contains("Anmerkung senden")
+            .next()
+            .unwrap()
+            .click();
+        h.run_steps(2);
+        assert!(h.state().eingaben[&id].text.is_empty(), "Text ging raus");
+        assert!(h.state().notes.contains_key(&id));
+        assert_eq!(h.state().sent.get(&id), Some(&Urteil::Ok), "Urteil bleibt");
     }
 }

@@ -273,10 +273,10 @@
     {
       "id": "vollbild-start",
       "ansicht": "Allgemein",
-      "titel": "Start im Vollbild, F11",
+      "titel": "Start maximiert, F11 Vollbild",
       "tun": "WOA starten, F11 drücken, nochmal F11.",
-      "erwartet": "WOA startet im Vollbild; F11 wechselt in das maximierte Fenster mit Knöpfen und zurück.",
-      "version": "0.36.2"
+      "erwartet": "WOA startet maximiert im Fenster mit Rahmen und Knöpfen; F11 schaltet Vollbild an und wieder aus.",
+      "version": "0.40.1"
     },
     {
       "id": "fades-in-ms",
