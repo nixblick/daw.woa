@@ -173,3 +173,52 @@ fn rejected_request_is_read_before_the_answer() {
     assert!(head.starts_with("HTTP/1.1 401"), "{head}");
     assert!(head.contains("connection: close"), "{head}");
 }
+
+/// Ausgangspegel per MCP (André 02.11.2026): nur lesend, ohne Leihe der Sitzung und ohne
+/// Rückgängig-Schritt. Die Werte setzt hier der Test, wie sonst die App je Bild. Ohne Ton.
+#[test]
+fn output_levels_are_read_only_and_listed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("daten");
+    let server = LiveServer::start(&data, TOKEN.into(), 0, Arc::new(|| {})).unwrap();
+    server.output_levels().publish(true, [0.5, 0.25, 0.0]);
+    let app = live::running_app(&data).expect("App erkannt");
+    let lines = concat!(
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#,
+        "\n",
+        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+        "\n",
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#,
+        "\n",
+        r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"output_levels","arguments":{}}}"#,
+        "\n",
+    );
+    let mut out = Vec::new();
+    live::forward(app.port, &app.key, lines.as_bytes(), &mut out).unwrap();
+    let out = String::from_utf8(out).unwrap();
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 3, "{out}");
+    assert!(
+        lines[1].contains("\"output_levels\""),
+        "Werkzeug gelistet: {out}"
+    );
+    let reply = lines[2];
+    assert!(reply.contains("\\\"radio\\\":true"), "{reply}");
+    assert!(reply.contains("\\\"output\\\":\\\"notebook\\\""), "{reply}");
+    assert!(
+        reply.contains("\\\"peak_dbfs\\\":-6.0"),
+        "Notebook −6 dBFS: {reply}"
+    );
+    assert!(
+        reply.contains("\\\"peak_dbfs\\\":-12.0"),
+        "Stream −12 dBFS: {reply}"
+    );
+    assert!(
+        reply.contains("\\\"peak_dbfs\\\":null"),
+        "Vorhören still: {reply}"
+    );
+    // Keine Leihe: kein Aufruf wartet auf den GUI-Thread.
+    let mut session = woa_model::Session::new("App");
+    assert_eq!(server.serve_pending(&mut session, tmp.path()), 0);
+    assert!(session.history().undo_label().is_none());
+}

@@ -327,8 +327,24 @@ impl ControlDesk {
                 }
             }
         });
+        // Decks A–C (André 02.11.2026): auch lernbar, wenn ein Deck leer und seine Taste aus ist.
+        ui.horizontal_wrapped(|ui| {
+            ui.label(egui::RichText::new("Decks:").small());
+            for t in deck_targets() {
+                if ui.small_button(t.label()).clicked() {
+                    self.mapper.learn(t);
+                }
+            }
+        });
         changed
     }
+}
+
+/// Lernbare Deck-Ziele: Start/Stopp, Cue und Vorhören je Deck A–C.
+pub fn deck_targets() -> Vec<Target> {
+    (0..woa_io::controller::DECKS)
+        .flat_map(|k| [Target::DeckStart(k), Target::DeckCue(k), Target::DeckPfl(k)])
+        .collect()
 }
 
 /// Zuordnung des Geräts `name` aus der Konfiguration.
@@ -358,6 +374,15 @@ pub fn learn_menu(ui: &mut egui::Ui, target: Target, bound: Option<String>) -> O
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decks_a_to_c_are_in_the_learn_list() {
+        let t = deck_targets();
+        assert_eq!(t.len(), 9);
+        let labels: std::collections::HashSet<_> = t.iter().map(Target::label).collect();
+        assert_eq!(labels.len(), 9);
+        assert!(labels.contains("Deck C Vorhören"));
+    }
 
     #[test]
     fn norm_round_trips() {

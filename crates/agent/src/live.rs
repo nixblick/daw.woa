@@ -19,7 +19,7 @@
 use std::io::{BufRead, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
@@ -112,6 +112,78 @@ fn unix_now() -> u64 {
 
 type Wake = Arc<dyn Fn() + Send + Sync>;
 
+/// Name des lesenden Werkzeugs für die Ausgangspegel des Radios.
+pub const OUTPUT_LEVELS_TOOL: &str = "output_levels";
+
+/// Namen der Ausgänge in [`OutputLevels`], in dieser Reihenfolge.
+pub const OUTPUTS: [&str; 3] = ["notebook", "stream", "pfl"];
+
+/// Pegel je Ausgang des Radios (Notebook, Stream, Vorhören), nur lesend für Agenten.
+///
+/// Der GUI-Thread schreibt je Bild die Spitzen aus der Radio-Ansicht (`View::out_meters`,
+/// `View::pfl_peak`), der MCP-Thread liest sie. Nur Atomics, kein Lock; der Audio-Thread ist
+/// nicht beteiligt (er schreibt seine Spitzen wie bisher in die Status-Atomics des Mixers).
+#[derive(Debug, Default)]
+pub struct OutputLevels {
+    peaks: [AtomicU32; 3],
+    radio: AtomicBool,
+    /// Unix-Millisekunden der letzten Messung, 0 = nie.
+    at_ms: AtomicU64,
+}
+
+fn unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
+
+impl OutputLevels {
+    /// Neue Messung: `radio` = Radio- oder Party-Modus läuft, `peaks` linear (1.0 = 0 dBFS).
+    pub fn publish(&self, radio: bool, peaks: [f32; 3]) {
+        for (c, v) in self.peaks.iter().zip(peaks) {
+            c.store(v.max(0.0).to_bits(), Ordering::Relaxed);
+        }
+        self.radio.store(radio, Ordering::Relaxed);
+        self.at_ms.store(unix_ms(), Ordering::Relaxed);
+    }
+
+    /// Antwort des Werkzeugs als JSON.
+    pub fn snapshot(&self) -> serde_json::Value {
+        let at = self.at_ms.load(Ordering::Relaxed);
+        let outputs: Vec<serde_json::Value> = OUTPUTS
+            .iter()
+            .zip(&self.peaks)
+            .map(|(name, c)| {
+                let peak = f32::from_bits(c.load(Ordering::Relaxed));
+                let db =
+                    (peak > 1e-6).then(|| (20.0 * f64::from(peak).log10() * 10.0).round() / 10.0);
+                serde_json::json!({ "output": name, "peak": peak, "peak_dbfs": db })
+            })
+            .collect();
+        serde_json::json!({
+            "radio": self.radio.load(Ordering::Relaxed),
+            "outputs": outputs,
+            "age_ms": (at > 0).then(|| unix_ms().saturating_sub(at)),
+        })
+    }
+}
+
+/// Beschreibung des lesenden Werkzeugs (nur im Live-Modus, die App muss laufen).
+fn output_levels_tool() -> Tool {
+    let schema = serde_json::json!({ "type": "object", "properties": {} });
+    let schema = match schema {
+        serde_json::Value::Object(m) => m,
+        _ => serde_json::Map::new(),
+    };
+    Tool::new(
+        OUTPUT_LEVELS_TOOL,
+        "Read-only: current peak level per radio output (notebook, stream, pfl = headphone \
+         preview) of the running WOA app, linear and in dBFS (null = silence). `radio` is false \
+         outside radio/party mode. Changes nothing.",
+        schema,
+    )
+}
+
 /// MCP-Server, der für jeden Aufruf die Sitzung der App leiht und dann [`WoaAgent`] fragt.
 #[derive(Clone)]
 pub struct LiveAgent {
@@ -122,6 +194,8 @@ pub struct LiveAgent {
     catalog: WoaAgent,
     /// Ein Agent je Projektordner, bleibt bestehen (seine Aufräumarbeit läuft erst am Ende).
     current: Arc<Mutex<Option<(PathBuf, WoaAgent)>>>,
+    /// Ausgangspegel des Radios, die die App je Bild schreibt.
+    levels: Arc<OutputLevels>,
 }
 
 impl LiveAgent {
@@ -137,6 +211,7 @@ impl LiveAgent {
                 activity: activity.clone(),
                 catalog: WoaAgent::with_session(Session::new(""), PathBuf::new()),
                 current: Arc::new(Mutex::new(None)),
+                levels: Arc::new(OutputLevels::default()),
             },
             LiveDesk { rx, activity },
         )
@@ -226,10 +301,17 @@ impl ServerHandler for LiveAgent {
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
         self.touch();
-        self.catalog.list_tools(request, context).await
+        let mut list = self.catalog.list_tools(request, context).await?;
+        if list.next_cursor.is_none() {
+            list.tools.push(output_levels_tool());
+        }
+        Ok(list)
     }
 
     fn get_tool(&self, name: &str) -> Option<Tool> {
+        if name == OUTPUT_LEVELS_TOOL {
+            return Some(output_levels_tool());
+        }
         self.catalog.get_tool(name)
     }
 
@@ -239,6 +321,10 @@ impl ServerHandler for LiveAgent {
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
         self.touch();
+        if request.name == OUTPUT_LEVELS_TOOL {
+            // Nur lesen: keine Leihe der Sitzung, kein Rückgängig-Schritt.
+            return Ok(text_result(true, self.levels.snapshot().to_string()));
+        }
         let loan = match self.borrow().await {
             Ok(l) => l,
             Err(e) => return Ok(text_result(false, e)),
@@ -281,6 +367,7 @@ impl ServerHandler for LiveAgent {
 /// Der MCP-Server der App. Endet mit `Drop` (Lock-Datei weg).
 pub struct LiveServer {
     desk: LiveDesk,
+    levels: Arc<OutputLevels>,
     port: u16,
     lock: PathBuf,
     cancel: CancellationToken,
@@ -318,6 +405,7 @@ impl LiveServer {
             .map_err(|e| AgentError::Transport(e.to_string()))?
             .port();
         let (agent, desk) = LiveAgent::new(wake);
+        let levels = Arc::clone(&agent.levels);
         let cancel = CancellationToken::new();
         let secret = new_secret()?;
         let opts = HttpOptions {
@@ -365,6 +453,7 @@ impl LiveServer {
         }
         Ok(Self {
             desk,
+            levels,
             port,
             lock,
             cancel,
@@ -373,6 +462,12 @@ impl LiveServer {
 
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Ausgangspegel des Radios für das Werkzeug [`OUTPUT_LEVELS_TOOL`]; die App schreibt je
+    /// Bild hinein ([`OutputLevels::publish`]).
+    pub fn output_levels(&self) -> &OutputLevels {
+        &self.levels
     }
 
     /// Siehe [`LiveDesk::serve_pending`].

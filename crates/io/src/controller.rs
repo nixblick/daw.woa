@@ -160,6 +160,20 @@ pub enum Target {
     Cart(usize),
     /// Layout umschalten.
     Mode(Layout),
+    /// Deck A–C (0..2) im Radio: Start/Stopp.
+    DeckStart(usize),
+    /// Deck A–C: Cue (zurück an den Anfang).
+    DeckCue(usize),
+    /// Deck A–C: Vorhören (PFL) an/aus.
+    DeckPfl(usize),
+}
+
+/// Anzahl der Decks im Radio, die MIDI-Learn kennt (A–C).
+pub const DECKS: usize = 3;
+
+/// Buchstabe eines Decks (0 = A).
+fn deck_letter(k: usize) -> char {
+    char::from(b'A' + (k % 26) as u8)
 }
 
 impl Target {
@@ -186,6 +200,9 @@ impl Target {
             Target::Mode(Layout::Produzent) => "Layout Produzent".into(),
             Target::Mode(Layout::Radio) => "Layout Radio".into(),
             Target::Mode(Layout::Toggle) => "Layout umschalten".into(),
+            Target::DeckStart(k) => format!("Deck {} Start/Stopp", deck_letter(*k)),
+            Target::DeckCue(k) => format!("Deck {} Cue", deck_letter(*k)),
+            Target::DeckPfl(k) => format!("Deck {} Vorhören", deck_letter(*k)),
         }
     }
 }
@@ -677,5 +694,43 @@ mod tests {
         let text = serde_json::to_string(&maps).expect("json");
         let back: Vec<Mapping> = serde_json::from_str(&text).expect("json");
         assert_eq!(back, maps);
+    }
+
+    /// Decks A–C sind lernbar (André 02.11.2026); alte Zuordnungsdateien laden weiter.
+    #[test]
+    fn deck_targets_learn_and_old_maps_still_load() {
+        let mut m = Mapper::default();
+        m.learn(Target::DeckStart(1));
+        assert!(matches!(
+            m.handle(pad(50), |_| None),
+            Some(Action::Learned(_))
+        ));
+        let off = CtrlMsg {
+            channel: 9,
+            kind: CtrlKind::NoteOff { note: 50 },
+        };
+        m.handle(off, |_| None);
+        assert_eq!(
+            m.handle(pad(50), |_| None),
+            Some(Action::Press(Target::DeckStart(1)))
+        );
+        assert_eq!(Target::DeckStart(1).label(), "Deck B Start/Stopp");
+        assert_eq!(Target::DeckCue(0).label(), "Deck A Cue");
+        assert_eq!(Target::DeckPfl(2).label(), "Deck C Vorhören");
+        assert!(!Target::DeckPfl(0).is_continuous());
+        let json = serde_json::to_string(&Target::DeckCue(2)).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Target>(&json).unwrap(),
+            Target::DeckCue(2)
+        );
+        let old: Vec<Mapping> = serde_json::from_str(
+            &serde_json::to_string(&vec![Mapping {
+                source: m.mappings()[0].source,
+                target: Target::Cart(0),
+            }])
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(old[0].target, Target::Cart(0));
     }
 }

@@ -184,9 +184,19 @@ impl AkkordFenster {
             ui.add(egui::DragValue::new(&mut self.bars).range(1..=16))
                 .on_hover_text("Andere Länge, 1 bis 16 Takte");
         });
-        note_row(ui, theme::track_color(0), "Akkorde");
-        note_row(ui, theme::track_color(1), "Bass");
-        note_row(ui, theme::track_color(2), "Arpeggio");
+        // Klick auf eine Ausgabe klingt mit ihrem Klang (Vorhör-Stimme, André 02.11.2026).
+        for (i, (name, role)) in [
+            ("Akkorde", woa_model::sound::SoundRole::Pad),
+            ("Bass", woa_model::sound::SoundRole::Bass),
+            ("Arpeggio", woa_model::sound::SoundRole::Lead),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if note_row(ui, theme::track_color(i), name).clicked() {
+                preview_part(state, p, self.key, role);
+            }
+        }
         if crate::browser::primary(ui, &crate::browser::insert_label(at_beats))
             .on_hover_text("Drei MIDI-Spuren: Akkorde, Bass, Arpeggio, ab dem Takt am Abspielkopf")
             .clicked()
@@ -213,42 +223,57 @@ fn vorhoeren(ui: &mut egui::Ui, rect: egui::Rect, what: &str) -> egui::Response 
             egui::Button::new(egui::RichText::new(egui_phosphor::regular::SPEAKER_HIGH).size(12.0))
                 .frame(false),
         )
-        .on_hover_text("Vorhören: erster Akkord auf der ersten MIDI-Spur (ohne Kit)");
+        .on_hover_text("Vorhören: erster Akkord mit dem Klang der Akkord-Spur (Streicher)");
     r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
     r
 }
 
-/// Spielt den ersten Akkord der Folge kurz als Probeton (Note an/aus auf die erste MIDI-Spur
-/// ohne Kit). Ohne solche Spur bleibt es still.
-fn preview(state: &mut AppState, q: &woa_model::chords::ChordProgression, key: u8) {
-    let Some(track) = state
-        .project()
-        .tracks
+/// Klang einer Ausgabe der Akkordfolge, wie [`AppState::add_chord_tracks`] ihn setzt:
+/// Akkorde = Streicher/Pad, Bass = E-Bass, Arpeggio = Lead.
+pub fn part_sound(role: woa_model::sound::SoundRole) -> Option<woa_model::TrackSound> {
+    woa_model::sound::SOUND_PRESETS
         .iter()
-        .find(|t| t.kind == woa_model::TrackKind::Midi && !t.sound.is_some_and(|s| s.drums))
-        .map(|t| t.id)
-    else {
+        .find(|p| p.role == role)
+        .map(|p| p.sound)
+}
+
+/// Spielt den ersten Akkord der Folge kurz auf der flüchtigen Vorhör-Stimme, mit dem Klang
+/// der Akkord-Spur, unabhängig von der gewählten Spur (André 02.11.2026).
+fn preview(state: &mut AppState, q: &woa_model::chords::ChordProgression, key: u8) {
+    preview_part(state, q, key, woa_model::sound::SoundRole::Pad);
+}
+
+/// Spielt den ersten Schlag einer Ausgabe (Akkorde, Bass, Arpeggio) mit ihrem Klang.
+fn preview_part(
+    state: &mut AppState,
+    q: &woa_model::chords::ChordProgression,
+    key: u8,
+    role: woa_model::sound::SoundRole,
+) {
+    use woa_model::sound::SoundRole;
+    let Some(sound) = part_sound(role) else {
         return;
     };
-    let notes = woa_model::chords::generate(q, key, 1).chords.notes;
+    let made = woa_model::chords::generate(q, key, 1);
+    let notes = match role {
+        SoundRole::Bass => made.bass.notes,
+        SoundRole::Lead => made.arp.notes,
+        _ => made.chords.notes,
+    };
     let mut pitches: Vec<u8> = notes
         .iter()
         .filter(|n| n.beat < 1e-6)
         .map(|n| n.pitch)
         .collect();
     pitches.dedup();
-    state.probeton.tap(
-        track,
-        &pitches,
-        96,
-        std::time::Instant::now(),
-        std::time::Duration::ZERO,
-    );
+    state
+        .probeton
+        .voice_tap(sound, &pitches, 96, std::time::Instant::now());
 }
 
-/// Eine Ausgabe-Zeile mit Spurfarbe.
-fn note_row(ui: &mut egui::Ui, color: egui::Color32, name: &str) {
-    egui::Frame::new()
+/// Eine Ausgabe-Zeile mit Spurfarbe; ein Klick spielt die Ausgabe vor.
+fn note_row(ui: &mut egui::Ui, color: egui::Color32, name: &str) -> egui::Response {
+    let r = egui::Frame::new()
         .fill(theme::well())
         .stroke(egui::Stroke::new(1.0, theme::border()))
         .corner_radius(3)
@@ -260,7 +285,14 @@ fn note_row(ui: &mut egui::Ui, color: egui::Color32, name: &str) {
                 ui.painter().rect_filled(r, 2.0, color);
                 ui.label(egui::RichText::new(name).small().color(theme::text()));
             });
-        });
+        })
+        .response
+        .interact(egui::Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(format!("{name} vorhören (Klang dieser Spur)"));
+    let label = format!("{name} vorhören");
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+    r
 }
 
 #[cfg(test)]
@@ -337,11 +369,14 @@ mod tests {
         );
     }
 
+    /// Akkord-Vorhören klingt mit dem Klang der Ausgabe, unabhängig von der gewählten Spur:
+    /// auch ohne MIDI-Spur, über die flüchtige Vorhör-Stimme (kein Ton im Test).
     #[test]
-    fn chord_row_preview_sends_note_on_to_a_midi_track() {
+    fn chord_preview_uses_the_sound_of_each_output() {
+        use woa_model::sound::SoundRole;
         let tmp = tempfile::tempdir().expect("tmp");
         let mut state = AppState::new(tmp.path().join("rec"), std::time::Instant::now());
-        let track = state.add_midi_track().expect("track");
+        state.add_track().expect("Audio-Spur, keine MIDI-Spur");
         let hint = CHORD_PROGRESSIONS[0].hint;
         let mut h = egui_kittest::Harness::builder()
             .with_size(egui::vec2(400.0, 900.0))
@@ -354,14 +389,27 @@ mod tests {
                 (state, AkkordFenster::default()),
             );
         h.run_steps(2);
-        h.get_by_label(&format!("{hint} vorhören")).click();
-        h.run_steps(1);
-        let got = h.state_mut().0.probeton.take(std::time::Instant::now());
-        let on: Vec<_> = got
-            .iter()
-            .filter(|p| matches!(p, crate::probeton::Probe::NoteOn { .. }))
-            .collect();
-        assert_eq!(on.len(), 3, "Dreiklang: {got:?}");
-        assert!(on.iter().all(|p| p.track() == track));
+        for (label, role, notes) in [
+            (format!("{hint} vorhören"), SoundRole::Pad, 3),
+            ("Akkorde vorhören".to_string(), SoundRole::Pad, 3),
+            ("Bass vorhören".to_string(), SoundRole::Bass, 1),
+            ("Arpeggio vorhören".to_string(), SoundRole::Lead, 1),
+        ] {
+            h.get_by_label(&label).click();
+            h.run_steps(1);
+            let later = std::time::Instant::now() + crate::probeton::VOICE_LEAD;
+            let st = &mut h.state_mut().0;
+            assert_eq!(st.probeton.voice(later), part_sound(role), "{label}");
+            let got = st.probeton.take(later);
+            let on: Vec<_> = got
+                .iter()
+                .filter(|p| matches!(p, crate::probeton::Probe::NoteOn { .. }))
+                .collect();
+            assert_eq!(on.len(), notes, "{label}: {got:?}");
+            assert!(on.iter().all(|p| p.track() == crate::probeton::VOICE_TRACK));
+            st.probeton.release_all();
+            st.probeton.take(later + std::time::Duration::from_secs(5));
+        }
+        assert_ne!(part_sound(SoundRole::Pad), part_sound(SoundRole::Bass));
     }
 }

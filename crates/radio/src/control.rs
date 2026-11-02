@@ -1815,6 +1815,11 @@ impl Controller {
         self.pfl.is_some()
     }
 
+    /// Spitze des Vorhör-Ausgangs seit dem letzten Abholen (linear, 0 ohne PFL).
+    pub fn take_pfl_peak(&self) -> f32 {
+        self.pfl.as_ref().map_or(0.0, PflHandle::take_peak)
+    }
+
     pub fn pfl_playing(&self) -> bool {
         self.pfl.as_ref().is_some_and(PflHandle::is_playing)
     }

@@ -498,6 +498,8 @@ pub struct RadioDesk {
     /// `None`: Die Sendung kommt aus WOAs interner Mischung.
     pult: Option<Stream>,
     pult_level: f32,
+    /// Pegel des Vorhör-Ausgangs (PFL), fällt langsam ab; für das MCP-Werkzeug `output_levels`.
+    pfl_level: f32,
     /// LED-Meter neben den Fadern und Master (#216).
     meters: [MeterHold; 5],
     /// LED-Ketten der Ausgänge Notebook und Stream.
@@ -1257,6 +1259,7 @@ impl RadioDesk {
             phone_level: 0.0,
             pult: None,
             pult_level: 0.0,
+            pfl_level: 0.0,
             meters: Default::default(),
             out_meters: Default::default(),
             deck_keys_checked: false,
@@ -1430,6 +1433,7 @@ impl RadioDesk {
         self.view = st.view();
         self.phone_level = self.view.phone_peak.max(self.phone_level * 0.9);
         self.pult_level = self.view.pult_peak.max(self.pult_level * 0.9);
+        self.pfl_level = self.view.pfl_peak.max(self.pfl_level * 0.85);
         for (m, v) in self.meters.iter_mut().zip(self.view.meters) {
             m.step(v, now_s());
         }
@@ -1615,6 +1619,16 @@ impl RadioDesk {
         self.with(move |c| c.set_level(bus, db));
     }
 
+    /// Pegel je Ausgang für Agenten (MCP `output_levels`): Notebook, Stream, Vorhören;
+    /// linear, wie die LED-Meter (Spitze, fällt langsam ab).
+    pub fn output_levels(&self) -> [f32; 3] {
+        [
+            self.out_meters[0].level,
+            self.out_meters[1].level,
+            self.pfl_level,
+        ]
+    }
+
     /// Taster/Pad vom Controller.
     pub fn press(&mut self, t: Target) {
         match t {
@@ -1622,6 +1636,23 @@ impl RadioDesk {
             Target::StartNext => self.with(|c| c.start_or_next()),
             Target::Stop => self.with(|c| c.stop_or_pause()),
             Target::Cart(slot) if slot < CARTS => self.with(move |c| c.trigger_cart(slot)),
+            // Decks A–C (André 02.11.2026): wie die Tasten am Deck.
+            Target::DeckStart(k) => {
+                let Some(d) = self.view.decks.get(k) else {
+                    return;
+                };
+                if d.playing {
+                    self.with(move |c| c.deck_stop(k));
+                } else {
+                    self.with(move |c| c.deck_play(k));
+                }
+            }
+            Target::DeckCue(k) if k < self.view.decks.len() => self.with(move |c| c.deck_cue(k)),
+            Target::DeckPfl(k) if k < self.view.decks.len() => self.with(move |c| {
+                if let Err(e) = c.pfl_toggle(PflSource::Deck(k)) {
+                    c.report(e);
+                }
+            }),
             _ => {}
         }
     }
@@ -1727,6 +1758,7 @@ impl RadioDesk {
             Target::Mic => self.view.mic_open,
             Target::StartNext => self.view.running,
             Target::Cart(slot) => *slot < 32 && self.view.carts_playing & (1 << slot) != 0,
+            Target::DeckStart(k) => self.view.decks.get(*k).is_some_and(|d| d.playing),
             _ => false,
         }
     }
@@ -4702,6 +4734,7 @@ impl RadioDesk {
                             "Vorhören (PFL) im Kopfhörer"
                         })
                         .on_disabled_hover_text(self.pfl_hint());
+                        self.learn_menu(&r, Target::DeckPfl(k));
                         if r.clicked() {
                             self.with(move |c| {
                                 if let Err(e) = c.pfl_toggle(PflSource::Deck(k)) {
@@ -4709,7 +4742,7 @@ impl RadioDesk {
                                 }
                             });
                         }
-                        if icon_key(
+                        let r = icon_key(
                             ui,
                             theme::icf::SKIP_BACK,
                             &format!("Cue Deck {name}"),
@@ -4718,9 +4751,9 @@ impl RadioDesk {
                             loaded,
                             SYMBOL_KEY,
                         )
-                        .on_hover_text("Cue: zurück an den Anfang")
-                        .clicked()
-                        {
+                        .on_hover_text("Cue: zurück an den Anfang (Rechtsklick: MIDI lernen)");
+                        self.learn_menu(&r, Target::DeckCue(k));
+                        if r.clicked() {
                             self.with(move |c| c.deck_cue(k));
                         }
                         let (icon, word) = if d.playing {
@@ -4760,9 +4793,11 @@ impl RadioDesk {
                         r.widget_info(|| {
                             egui::WidgetInfo::labeled(egui::WidgetType::Button, loaded, &label)
                         });
-                        if r.on_hover_text(format!("Deck {name}: {word} (Taste {name})"))
-                            .clicked()
-                        {
+                        let r = r.on_hover_text(format!(
+                            "Deck {name}: {word} (Taste {name}, Rechtsklick: MIDI lernen)"
+                        ));
+                        self.learn_menu(&r, Target::DeckStart(k));
+                        if r.clicked() {
                             if d.playing {
                                 self.with(move |c| c.deck_stop(k));
                             } else {
@@ -5611,6 +5646,37 @@ mod deck_drop_tests {
             settle(&ctx, &mut desk, &mut n, |v| !v.decks[1].playing),
             "Taste B stoppt Deck B"
         );
+    }
+
+    /// MIDI-Learn an den Decks (André 02.11.2026): Start/Stopp vom Controller wie die Taste,
+    /// die LED folgt dem Deck; der Rechtsklick „MIDI lernen“ steht an allen drei Tasten.
+    #[test]
+    fn controller_starts_and_stops_a_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let song = wav(dir.path(), "deck.wav");
+        let ctx = egui::Context::default();
+        let mut desk = RadioDesk::headless(dir.path());
+        let mut n = 0;
+        run(&ctx, &mut desk, n, egui::RawInput::default());
+        desk.deck_load_file(2, song);
+        assert!(settle(&ctx, &mut desk, &mut n, |v| deck_title(v, 2).is_some()));
+        desk.press(Target::DeckStart(2));
+        assert!(settle(&ctx, &mut desk, &mut n, |v| v.decks[2].playing));
+        assert!(desk.lit(&Target::DeckStart(2)));
+        desk.press(Target::DeckStart(2));
+        assert!(settle(&ctx, &mut desk, &mut n, |v| !v.decks[2].playing));
+        desk.press(Target::DeckStart(9));
+        let src = include_str!("radio.rs");
+        for t in [
+            "Target::DeckStart(k)",
+            "Target::DeckCue(k)",
+            "Target::DeckPfl(k)",
+        ] {
+            assert!(
+                src.contains(&format!("learn_menu(&r, {t})")),
+                "{t} ohne MIDI lernen"
+            );
+        }
     }
 
     /// Alte Belegung eines Carts auf A, B oder C: bleibt in der Datei, wird gemeldet.
