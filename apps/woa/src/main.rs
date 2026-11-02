@@ -79,10 +79,16 @@ fn main() -> ExitCode {
     );
 
     let mut viewport = eframe::egui::ViewportBuilder::default().with_title("WOA");
-    viewport = match start_window(std::env::var("WOA_WINDOW").ok().as_deref()) {
+    let start = start_window(std::env::var("WOA_WINDOW").ok().as_deref());
+    viewport = match start {
+        // Nicht `with_fullscreen` beim Anlegen: unter Windows entstand so ein Fenster ohne
+        // Rahmen, Knöpfe und Doppelklick in 2/3 Größe (André, 0.36.1). Erst maximiert mit Rahmen
+        // anlegen, dann Vollbild per Befehl; F11 führt zurück ins maximierte Fenster.
         StartWindow::Fullscreen => viewport
             .with_inner_size(WINDOWED_SIZE)
-            .with_fullscreen(true),
+            .with_decorations(true)
+            .with_resizable(true)
+            .with_maximized(true),
         StartWindow::Fixed(size) => viewport.with_inner_size(size),
     };
     if let Some(icon) = woa_gui::theme::app_icon() {
@@ -100,6 +106,10 @@ fn main() -> ExitCode {
         Box::new(move |cc| {
             // Schriften vor dem ersten Bild setzen (kein leeres erstes Bild).
             let _ = woa_gui::theme::install_fonts(&cc.egui_ctx);
+            if start == StartWindow::Fullscreen {
+                cc.egui_ctx
+                    .send_viewport_cmd(eframe::egui::ViewportCommand::Fullscreen(true));
+            }
             // Eine kurze Startzeile; die lange wgpu-Adapterliste steht nur auf DEBUG.
             let gpu = cc.wgpu_render_state.as_ref().map(|r| r.adapter.get_info());
             let line = start_line(
