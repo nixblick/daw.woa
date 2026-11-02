@@ -2583,6 +2583,24 @@ impl WoaApp {
                 let _ = self.state.add_chord_tracks(p, 0, 4, 0.0);
             }
         }
+        if first
+            && let Some(n) = std::env::var("WOA_SELECT")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+        {
+            // Fotomodus des Clip-Inspektors: die ersten `n` Clips wählen (1 = ein Clip).
+            let ids: Vec<ClipId> = self
+                .state
+                .project()
+                .tracks
+                .iter()
+                .flat_map(|t| &t.clips)
+                .map(|c| c.id)
+                .take(n)
+                .collect();
+            self.selected_clip = ids.first().copied();
+            self.selected_clips = ids;
+        }
         if first && std::env::var_os("WOA_PIANOROLL").is_some() {
             // Fotomodus der Piano-Roll: ersten MIDI-Clip öffnen, zwei Noten wählen;
             // `WOA_PIANOROLL=kit` nimmt eine Kit-Spur (Drum-Raster), sonst keine.
