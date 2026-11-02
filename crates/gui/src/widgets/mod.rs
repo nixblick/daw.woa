@@ -6,6 +6,7 @@
 pub mod clock;
 pub mod ctl;
 pub mod fader;
+pub mod icon_button;
 pub mod jog;
 pub mod key;
 pub mod lamp;
@@ -16,8 +17,9 @@ pub mod vu;
 pub use clock::studio_clock;
 pub use ctl::{CTL_HEIGHT, CTL_MIN_WIDTH, Tone, ctl_key};
 pub use fader::{Orient, fader};
+pub use icon_button::{IconButton, IconSize};
 pub use jog::jog;
-pub use key::Key;
+pub use key::{Key, key_width};
 pub use lamp::onair_lamp;
 pub use pad::CartPad;
 pub use topbar::{Chip, ChipLook, status_bar, status_sep, topbar_chip};
