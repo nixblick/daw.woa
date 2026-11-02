@@ -71,7 +71,8 @@ impl Fades {
 
     /// Räumt abgelaufene Blenden ab; `true`, solange noch eine läuft (für Neuzeichnen).
     pub fn tick(&mut self, now: f64) -> bool {
-        self.started.retain(|_, t0| fade_progress(*t0, now).is_some());
+        self.started
+            .retain(|_, t0| fade_progress(*t0, now).is_some());
         !self.started.is_empty()
     }
 
@@ -254,10 +255,16 @@ mod tests {
         let mut f = Fades::default();
         assert!(f.press(FadeKey::Deck(1), 0.0));
         assert!(f.progress(FadeKey::Deck(1), 1.0).is_some());
-        assert!(!f.press(FadeKey::Deck(1), 1.0), "zweiter Druck: sofort Stopp");
+        assert!(
+            !f.press(FadeKey::Deck(1), 1.0),
+            "zweiter Druck: sofort Stopp"
+        );
         assert!(f.progress(FadeKey::Deck(1), 1.1).is_none());
         assert!(f.press(FadeKey::All, 5.0));
-        assert!(f.progress(FadeKey::Cart(3), 6.0).is_some(), "Cart blendet mit");
+        assert!(
+            f.progress(FadeKey::Cart(3), 6.0).is_some(),
+            "Cart blendet mit"
+        );
         assert!(f.progress(FadeKey::Playlist, 6.0).is_some());
         assert!(f.tick(7.9));
         assert!(!f.tick(8.0), "nach 3 s nichts mehr");

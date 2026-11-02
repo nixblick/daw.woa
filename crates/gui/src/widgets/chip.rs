@@ -107,9 +107,9 @@ impl<'a> StateChip<'a> {
     pub fn show(self, ui: &mut egui::Ui) -> Response {
         let font = egui::FontId::monospace(CHIP_FONT);
         let small_font = theme::label_font(10.0);
-        let text_g = ui
-            .painter()
-            .layout_no_wrap(self.text.to_string(), font.clone(), theme::text());
+        let text_g =
+            ui.painter()
+                .layout_no_wrap(self.text.to_string(), font.clone(), theme::text());
         let small_g = self.small.map(|s| {
             ui.painter()
                 .layout_no_wrap(s.to_uppercase(), small_font.clone(), theme::text_dim())
@@ -170,9 +170,7 @@ impl<'a> StateChip<'a> {
                     let half = g.size() / 2.0;
                     let rot = egui::emath::Rot2::from_angle(angle);
                     let origin = pos - rot * half;
-                    p.add(
-                        egui::epaint::TextShape::new(origin, g, ink).with_angle(angle),
-                    );
+                    p.add(egui::epaint::TextShape::new(origin, g, ink).with_angle(angle));
                     ui.ctx().request_repaint();
                 } else {
                     p.text(
@@ -227,7 +225,10 @@ mod tests {
     #[test]
     fn chip_is_26_px_and_28_in_the_dj_head() {
         assert_eq!(size_of(StateChip::new("128.0", ChipTone::Ok)).y, CHIP_H);
-        assert_eq!(size_of(StateChip::new("8A", ChipTone::Ok).dj()).y, CHIP_H_DJ);
+        assert_eq!(
+            size_of(StateChip::new("8A", ChipTone::Ok).dj()).y,
+            CHIP_H_DJ
+        );
         assert_eq!(CHIP_H, 26.0);
         assert_eq!(CHIP_H_DJ, 28.0);
     }

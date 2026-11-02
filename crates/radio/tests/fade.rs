@@ -106,7 +106,11 @@ fn deck_fade_takes_three_seconds_and_second_press_stops() {
     c.fade_deck(1);
     level_after(&mut c, &mut m, 0.3);
     c.fade_deck(1);
-    assert_eq!(level_after(&mut c, &mut m, 0.02), 0.0, "zweiter Druck: sofort aus");
+    assert_eq!(
+        level_after(&mut c, &mut m, 0.02),
+        0.0,
+        "zweiter Druck: sofort aus"
+    );
 }
 
 #[test]
@@ -138,7 +142,11 @@ fn fade_all_fades_playlist_decks_and_carts() {
     c.fade_all();
     let a = level_after(&mut c, &mut m, 1.5);
     assert!(a < full && a > 0.2, "alles blendet gemeinsam aus: {a}");
-    assert_eq!(level_after(&mut c, &mut m, 1.7), 0.0, "nach 3 s alles still");
+    assert_eq!(
+        level_after(&mut c, &mut m, 1.7),
+        0.0,
+        "nach 3 s alles still"
+    );
     c.pump();
     assert!(!c.anything_running());
 }

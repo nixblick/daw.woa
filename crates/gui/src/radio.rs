@@ -4013,7 +4013,10 @@ impl RadioDesk {
                     self.cart_rects[slot] = r.rect;
                     // Fade-Symbol oben rechts (FadeButton, #274): beim Hover oder laufend.
                     let now = ui.input(|i| i.time);
-                    let pr = self.fades.progress(FadeKey::Cart(slot), now).filter(|_| playing);
+                    let pr = self
+                        .fades
+                        .progress(FadeKey::Cart(slot), now)
+                        .filter(|_| playing);
                     if playing {
                         let at = egui::Rect::from_min_size(
                             r.rect.right_top() + egui::vec2(-28.0, 4.0),
