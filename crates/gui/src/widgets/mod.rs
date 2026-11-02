@@ -1,21 +1,27 @@
 //! Bausteine des Design Systems (Paket D4): beleuchtete Taste, Fader, VU-Meter, Studio-Uhr,
-//! ON-AIR-Lampe, Cart-Pad und Jogwheel. Jeder Baustein zeichnet mit den Tokens aus
-//! [`crate::theme`] und folgt damit Thema und Modus. Das Rechnen (Winkel, Schwellen, Takt)
+//! ON-AIR-Lampe, Cart-Pad und Jogwheel; dazu Symbolknopf (`IconButton`) und die großen
+//! Editoren Piano-Roll (`piano_roll`), Drum-Raster (`drum_grid`) und Jingle-Assistent
+//! (`wizard`). Jeder Baustein zeichnet mit den Tokens aus [`crate::theme`] und folgt damit Thema
+//! und Modus. Das Rechnen (Winkel, Schwellen, Takt)
 //! steckt in kleinen reinen Funktionen und ist ohne Fenster getestet.
 
 pub mod clock;
 pub mod ctl;
+pub mod drum_grid;
 pub mod fader;
 pub mod icon_button;
 pub mod jog;
 pub mod key;
 pub mod lamp;
 pub mod pad;
+pub mod piano_roll;
 pub mod topbar;
 pub mod vu;
+pub mod wizard;
 
 pub use clock::studio_clock;
 pub use ctl::{CTL_HEIGHT, CTL_MIN_WIDTH, Tone, ctl_key};
+pub use drum_grid::drum_click;
 pub use fader::{Orient, fader};
 pub use icon_button::{IconButton, IconSize};
 pub use jog::jog;

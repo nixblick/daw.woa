@@ -268,7 +268,7 @@ pub struct WoaApp {
     /// Browser links im Produzenten-Modus (Design System 2).
     browser: crate::browser::Browser,
     jingle_fx: crate::jingle_fx::FxFenster,
-    jingle_assistent: crate::jingle_assistent::JingleAssistent,
+    jingle_assistent: crate::widgets::wizard::JingleAssistent,
     /// Export-Fenster (Paket 26).
     export_dialog: crate::export_dialog::ExportDialog,
     /// „Spur exportieren“ (Ticket 229): offenes Fenster und laufender Export.
@@ -285,7 +285,7 @@ pub struct WoaApp {
     /// Letzter gesehener Event-Zähler und wann er sich zuletzt geändert hat (Lampe).
     midi_seen: (u64, Option<Instant>),
     /// Offene Piano-Roll (Paket 13), Doppelklick auf einen MIDI-Clip.
-    piano_roll: Option<crate::pianoroll::PianoRoll>,
+    piano_roll: Option<crate::widgets::piano_roll::PianoRoll>,
     /// Controller und MIDI-Learn (Paket 14).
     controls: ControlDesk,
     /// Waker für den Controller gesetzt.
@@ -629,7 +629,7 @@ impl WoaApp {
             akkorde: crate::akkorde::AkkordFenster::default(),
             browser: crate::browser::Browser::default(),
             jingle_fx: crate::jingle_fx::FxFenster::default(),
-            jingle_assistent: crate::jingle_assistent::JingleAssistent::default(),
+            jingle_assistent: crate::widgets::wizard::JingleAssistent::default(),
             export_dialog: crate::export_dialog::ExportDialog::new(),
             track_export: None,
             track_export_job: None,
@@ -2321,7 +2321,7 @@ impl WoaApp {
         self.selected_clip = Some(clip);
         self.track_focus = false;
         tracing::info!(clip = clip.0, "piano roll opened");
-        self.piano_roll = Some(crate::pianoroll::PianoRoll::new(clip));
+        self.piano_roll = Some(crate::widgets::piano_roll::PianoRoll::new(clip));
         if !self.piano_roll_floating {
             self.studio_dock = StudioDockTab::PianoRoll;
         }
@@ -5492,7 +5492,7 @@ impl WoaApp {
     /// Assistent „Jingle bauen“ (Paket J4): führt seine Wünsche mit App-Zustand aus
     /// (neues Projekt mit Speicher-Frage, Loop über das Jingle, Drum-Raster, Export).
     fn jingle_assistent_window(&mut self, ctx: &egui::Context) {
-        use crate::jingle_assistent::Wunsch;
+        use crate::widgets::wizard::Wunsch;
         if !self.jingle_assistent.open {
             return;
         }
@@ -8441,7 +8441,7 @@ impl WoaApp {
                 .is_some_and(|(_, c)| c.midi.is_some())
             && self.piano_roll.as_ref().is_none_or(|pr| pr.clip != sel)
         {
-            self.piano_roll = Some(crate::pianoroll::PianoRoll::new(sel));
+            self.piano_roll = Some(crate::widgets::piano_roll::PianoRoll::new(sel));
         }
 
         if let Some(mut pr) = self.piano_roll.take() {
@@ -9410,7 +9410,7 @@ mod nacharbeit_tests {
     fn party_fullscreen_follows_the_window() {
         let mut rig = Rig::new(Mode::Party);
         // Das Fenster startet im Vollbild (main.rs): die Party-Taste zeigt das und F11 schaltet aus.
-        let mut input_fs = |rig: &mut Rig, ev: Vec<egui::Event>| {
+        let input_fs = |rig: &mut Rig, ev: Vec<egui::Event>| {
             rig.n += 1;
             let mut input = egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
