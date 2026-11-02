@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## ElevenLabs-Anbindung (0.39.0, offen)
+## ElevenLabs-Anbindung (0.40.0, offen)
 
 Vorher einmal: Konto bei elevenlabs.io anlegen (kostenloser Plan reicht zum Ausprobieren), dort Profil → API Keys →
 Schlüssel erzeugen.
@@ -23,6 +23,16 @@ Schlüssel erzeugen.
 Selbst geprüft von Claude: Tests gegen einen lokalen Mock-Server (Konto, Stimmen mit Seiten, Sprache, Effekt, Musik,
 401, 402, 429, 422, kein Netz, kein Schlüssel; der Schlüssel steht in keiner Meldung), Fotomodus Einstellungen und
 Jingle-Assistent dunkel und hell bei 1920 × 1030. Kein echter Aufruf an ElevenLabs (kein Konto), kein Ton.
+
+## Entwickler-Modus: Fragen schöner, Suche, Abnahme-Fenster (0.39.0, offen)
+
+1. **Maximieren (#337):** Entwickler → „Fragen und To-dos“. Oben rechts neben dem Kreuz das Maximieren-Symbol → das Fenster füllt die App; noch einmal → alte Größe und Lage.
+2. **Optik (#337):** Jede Frage ist eine Karte, Ticketnummer als Pille (Klick öffnet GitHub), Status als Badge; Vorschläge mit Dafür/Dagegen/anders als Segmente.
+3. **Kommentar (#338):** Bei einem Vorschlag etwas ins Anmerkungsfeld tippen → „anders“ ist gewählt, „Senden“ aktiv.
+4. **Suche:** Oben „320“ oder ein Wort tippen → nur passende Karten; Unsinn → „Nichts gefunden“; Kreuz leert.
+5. **Abnahme:** Entwickler → „Abnahme“. Punkte nach Ansicht, je „Tun“/„Soll“. „Geht“ → sofort gesendet, Karte grün. „Geht nicht“ ohne Text → Frage „Was ist passiert?“, schreiben und Enter → gesendet, Karte rot. Auf GitHub entsteht je Klick ein Ticket „[entwickler-abnahme] <id>: ok|fehler“.
+
+Selbst geprüft von Claude: Tests im egui-Harness (zuerst rot), Screenshots „Fragen“ und „Abnahme“ dunkel und hell bei 1920 × 1030 im Fotomodus (`WOA_FRAGEN=1`, `WOA_ABNAHME=1`). Nicht unter Windows gesehen, nichts wirklich gesendet (kein Klick im Fotomodus), ob der Server Quelle `entwickler-abnahme` und Art `lob`/`bug` so übernimmt, nicht geprüft.
 
 ## Feedback-Fixes 02.11. (0.37.1, offen)
 

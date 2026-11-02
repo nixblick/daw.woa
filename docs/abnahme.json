@@ -1,0 +1,338 @@
+{
+  "stand": "2026-11-02",
+  "punkte": [
+    {
+      "id": "klang-neue-midi-spur",
+      "ansicht": "Produzent",
+      "titel": "Neue MIDI-Spur spielt Flügel",
+      "tun": "Neues Projekt, MIDI-Spur anlegen, Keyboard scharf schalten und ein paar Töne spielen.",
+      "erwartet": "Im Spurkopf steht links „Flügel“, es klingt nach Flügel, nicht nach Synth.",
+      "version": "0.38.0",
+      "ticket": 335
+    },
+    {
+      "id": "klang-auswahl",
+      "ansicht": "Produzent",
+      "titel": "Klang wählen",
+      "tun": "Im Spurkopf auf „Flügel“ klicken, dann „Bläser“ → „Trompete“.",
+      "erwartet": "Das Rack zeigt die Klangauswahl (Klavier, Bass, Gitarre, Streicher, Bläser, Synth, Drums), ein kurzer Probeton Trompete, Spurkopf und Clip-Kopf zeigen „Trompete“.",
+      "version": "0.38.0",
+      "ticket": 335
+    },
+    {
+      "id": "klang-synth-bleibt",
+      "ansicht": "Produzent",
+      "titel": "Einfacher Synth bleibt wählbar",
+      "tun": "In der Klangauswahl ganz unten „Synth (einfach)“ wählen.",
+      "erwartet": "Der Spurkopf zeigt „Synth (einfach)“ und es klingt wie der alte Synth.",
+      "version": "0.38.0",
+      "ticket": 335
+    },
+    {
+      "id": "klang-altes-projekt",
+      "ansicht": "Produzent",
+      "titel": "Altes Projekt klingt gleich",
+      "tun": "Ein Projekt von vor 0.38.0 mit MIDI-Spur öffnen und abspielen.",
+      "erwartet": "Es klingt unverändert (Synth), der Spurkopf zeigt „Synth (einfach)“.",
+      "version": "0.38.0",
+      "ticket": 335
+    },
+    {
+      "id": "klang-keyboard-als-audio",
+      "ansicht": "Produzent",
+      "titel": "Keyboard als Audio aufnehmen",
+      "tun": "Audio-Spur anlegen, im Spurkopf das Mikrofon-Feld auf den Eingang des Mischpults stellen, Spur scharf, Aufnahme.",
+      "erwartet": "Das Keyboard landet als Audio-Clip auf der Spur.",
+      "version": "0.38.0",
+      "ticket": 335
+    },
+    {
+      "id": "klang-piano-roll-clip",
+      "ansicht": "Piano-Roll",
+      "titel": "Leerer MIDI-Clip heißt nach dem Klang",
+      "tun": "Leeren MIDI-Clip anlegen und Noten eintippen.",
+      "erwartet": "Der Clip heißt „Flügel“, rechts im Clip-Kopf steht „FLÜGEL“, die Noten klingen nach Flügel. Klick auf den Klangnamen im Clip-Kopf öffnet die Klangauswahl.",
+      "version": "0.38.0",
+      "ticket": 335
+    },
+    {
+      "id": "fix-spuren-hoehe",
+      "ansicht": "Produzent",
+      "titel": "Spuren bleiben gleich hoch",
+      "tun": "MIDI-Clip doppelklicken, die Piano-Roll öffnet im Dock.",
+      "erwartet": "Die Spuren oben bleiben gleich hoch, im Spurkopf ist die zweite Zeile (Eingang, Trim) ganz zu sehen.",
+      "version": "0.37.1",
+      "ticket": 334
+    },
+    {
+      "id": "fix-dj-breite",
+      "ansicht": "Party DJ",
+      "titel": "DJ im Vollbild füllt die Breite",
+      "tun": "Party auf „DJ“, F11 drücken. Danach das Fenster verkleinern.",
+      "erwartet": "Deck A, Mixer und Deck B reichen von Rand zu Rand, rechts kein Rand, der Mixer steht in der Mitte; verkleinert genauso.",
+      "version": "0.37.1",
+      "ticket": 332
+    },
+    {
+      "id": "fix-hot-cue-loeschen",
+      "ansicht": "Party DJ",
+      "titel": "Hot Cue per Rechtsklick löschen",
+      "tun": "Titel auf Deck A, Hot Cue 1 setzen (Klick), dann Rechtsklick auf 1.",
+      "erwartet": "Die Taste 1 ist wieder leer.",
+      "version": "0.37.1",
+      "ticket": 331
+    },
+    {
+      "id": "fix-weiter-uebergang",
+      "ansicht": "Party DJ",
+      "titel": "„Weiter · Übergang“",
+      "tun": "Deck A spielt, Deck B hat einen Titel. „Weiter · Übergang“ unter dem Crossfader drücken (oder N). Noch einmal drücken. Während einer Fahrt den Crossfader anfassen.",
+      "erwartet": "B startet, der Crossfader fährt hinüber, danach steht A und zeigt den nächsten Titel; nochmal geht es zurück auf A. Anfassen bricht die Fahrt ab, beide Decks laufen weiter.",
+      "version": "0.37.1",
+      "ticket": 331
+    },
+    {
+      "id": "fix-log-warnung",
+      "ansicht": "Allgemein",
+      "titel": "Keine Schrift-Warnung im Protokoll",
+      "tun": "Von Party nach Radio wechseln, dann das Protokoll im Feedback ansehen.",
+      "erwartet": "Keine Warnung „Failed to find replacement characters“.",
+      "version": "0.37.1",
+      "ticket": 336
+    },
+    {
+      "id": "menue-ohne-punkte",
+      "ansicht": "Allgemein",
+      "titel": "Menüs ohne Punkte, alphabetisch",
+      "tun": "Datei, Bearbeiten, Ansicht, Einstellungen und Hilfe aufklappen.",
+      "erwartet": "Kein Eintrag endet auf „…“; innerhalb jeder Gruppe stehen die Einträge alphabetisch.",
+      "version": "0.37.0"
+    },
+    {
+      "id": "entwickler-freischalten",
+      "ansicht": "Einstellungen",
+      "titel": "Entwickler-Modus freischalten und beenden",
+      "tun": "Einstellungen → „Entwickler-Modus“, Kennwort eingeben, „Freischalten“. WOA neu starten. Dann Entwickler → „Entwickler-Modus beenden“.",
+      "erwartet": "Das Menü „Entwickler“ steht direkt vor „Hilfe“, auch nach dem Neustart; nach dem Beenden ist es weg.",
+      "version": "0.37.0"
+    },
+    {
+      "id": "fragen-fenster",
+      "ansicht": "Allgemein",
+      "titel": "Fragen und To-dos: Optik und Maximieren",
+      "tun": "Entwickler → „Fragen und To-dos“. Oben rechts das Symbol neben dem Schließen-Kreuz klicken, dann noch einmal.",
+      "erwartet": "Jede Frage ist eine Karte mit Ticket-Pille und Status; das Fenster füllt die App und kommt beim zweiten Klick in alter Größe zurück.",
+      "version": "0.39.0",
+      "ticket": 337
+    },
+    {
+      "id": "fragen-kommentar-anders",
+      "ansicht": "Allgemein",
+      "titel": "Kommentar wählt „anders“",
+      "tun": "Bei einem Vorschlag etwas ins Anmerkungsfeld tippen.",
+      "erwartet": "„anders“ ist sofort gewählt, „Senden“ wird aktiv.",
+      "version": "0.39.0",
+      "ticket": 338
+    },
+    {
+      "id": "fragen-suche",
+      "ansicht": "Allgemein",
+      "titel": "Suchen in Fragen und Abnahme",
+      "tun": "Oben ins Suchfeld ein Wort oder eine Ticketnummer tippen, dann mit dem Kreuz leeren.",
+      "erwartet": "Nur passende Karten bleiben, Blöcke ohne Treffer verschwinden; ohne Treffer steht „Nichts gefunden“. Leeren zeigt wieder alles.",
+      "version": "0.39.0"
+    },
+    {
+      "id": "abnahme-fenster",
+      "ansicht": "Allgemein",
+      "titel": "Dieses Fenster: Abnahme",
+      "tun": "Entwickler → „Abnahme“, bei einem Punkt „Geht“ klicken; bei einem anderen „Geht nicht“ ohne Text, dann etwas schreiben und Enter.",
+      "erwartet": "„Geht“ sendet sofort, die Karte wird grün umrandet. „Geht nicht“ fragt erst „Was ist passiert?“, mit Text wird gesendet und die Karte rot umrandet.",
+      "version": "0.39.0"
+    },
+    {
+      "id": "badges-nie-gefuellt",
+      "ansicht": "Party Einfach",
+      "titel": "Deck-Badges nie gefüllt",
+      "tun": "Titel auf Deck A, nichts läuft. Einen Titel auf dem anderen Deck vorladen, dann abspielen.",
+      "erwartet": "„BEREIT“ neutral grau, „VORGELADEN“ nur mit Lime-Rahmen und -Schrift, „JETZT“ mit Rahmen in der Modusfarbe, nie gefüllt.",
+      "version": "0.36.1"
+    },
+    {
+      "id": "rack-ausgang-pan",
+      "ansicht": "Produzent",
+      "titel": "Rack zeigt Ausgang und Pan ganz",
+      "tun": "Fenster 1920 × 1030, Spur wählen, Dock-Reiter Studio-Mixer. Viele Effekte einfügen.",
+      "erwartet": "„AUSGANG“ und „Pan“ ganz sichtbar; mit vielen Effekten rollt nur das Rack, das Dock bleibt gleich hoch.",
+      "version": "0.36.1"
+    },
+    {
+      "id": "transport-pegel",
+      "ansicht": "Produzent",
+      "titel": "Pegel als LED-Kette, VU in der Analyse",
+      "tun": "Transport ansehen, dann Dock-Reiter „Analyse“, Pegelansicht Analog/Modern/Aus durchschalten, WOA neu starten.",
+      "erwartet": "Im Transport eine waagerechte LED-Kette mit dB-Zahl. Analog zeigt das VU mit Zeiger, Aus blendet es aus; die Wahl bleibt nach dem Neustart.",
+      "version": "0.36.1"
+    },
+    {
+      "id": "piano-roll-dock-fenster",
+      "ansicht": "Piano-Roll",
+      "titel": "Piano-Roll merkt Dock oder Fenster",
+      "tun": "MIDI-Clip doppelklicken, „Als Fenster lösen“, WOA neu starten und den Clip wieder öffnen. Danach zurück ins Dock und neu starten.",
+      "erwartet": "Öffnet zuerst im Dock, nach dem Lösen und Neustart als Fenster, nach dem Zurückholen wieder im Dock.",
+      "version": "0.36.1"
+    },
+    {
+      "id": "akkorde-vorhoeren",
+      "ansicht": "Produzent",
+      "titel": "Akkorde vorhören ohne MIDI-Spur",
+      "tun": "Browser → Akkorde, Lautsprecher an einer Folge. Zeilen „Akkorde“, „Bass“, „Arpeggio“ anklicken.",
+      "erwartet": "Akkord mit Streichern, dann Streicher, E-Bass, Klavier. Es entsteht keine Spur.",
+      "version": "0.36.1"
+    },
+    {
+      "id": "deck-midi-lernen",
+      "ansicht": "Radio",
+      "titel": "Deck-Tasten per MIDI lernen",
+      "tun": "Rechtsklick auf Start, Cue oder Vorhören an Deck A–C → „MIDI lernen“, Taste am Controller drücken.",
+      "erwartet": "Die Controller-Taste startet/stoppt, cued bzw. hört vor. Alte Zuordnungen bleiben.",
+      "version": "0.36.1"
+    },
+    {
+      "id": "dj-umschalter",
+      "ansicht": "Party DJ",
+      "titel": "Umschalter Einfach | DJ",
+      "tun": "Party oben zwischen „Einfach“ und „DJ“ umschalten.",
+      "erwartet": "Einfach wie bisher. DJ zeigt oben Wellen mit Phase, darunter Deck A · Mixer · Deck B (B gespiegelt), unten Playlist, Wünsche und Fernbedienung; Auto-Übergang ist grau.",
+      "version": "0.36.0"
+    },
+    {
+      "id": "dj-laden-tonart",
+      "ansicht": "Party DJ",
+      "titel": "Laden, BPM und Tonart",
+      "tun": "In der Playlist „A“ und „B“ an zwei Titeln drücken.",
+      "erwartet": "Die Titel sind in den Decks, BPM und Tonart erscheinen nach der Analyse; der Camelot-Chip wird grün, wenn die Tonarten passen.",
+      "version": "0.36.0"
+    },
+    {
+      "id": "dj-cue-hotcue-loop",
+      "ansicht": "Party DJ",
+      "titel": "Cue, Hot Cues und Loop",
+      "tun": "Cue im Stand setzen, gedrückt halten und loslassen. Hot Cue 1–4 setzen und anspringen. Auto-Loop 4, dann „Loop“ aus. WOA neu starten.",
+      "erwartet": "Gehalten spielt es ab dem Cue, loslassen springt zurück. Hot Cues springen, Loop läuft und endet. Hot Cues und Schleife sind nach dem Neustart noch am Titel.",
+      "version": "0.36.0"
+    },
+    {
+      "id": "dj-tempo-sync",
+      "ansicht": "Party DJ",
+      "titel": "Tempo, Keylock, Jogwheel, Sync",
+      "tun": "Tempo-Fader bewegen, Keylock an, am Jogwheel-Rand schieben und in der Mitte scratchen, dann Sync drücken.",
+      "erwartet": "Tempo ±8 % mit Anzeige, mit Keylock bleibt die Tonhöhe; Rand schiebt an, Mitte scratcht; nach Sync steht die Phase oben still.",
+      "version": "0.36.0"
+    },
+    {
+      "id": "dj-mixer-kopfhoerer",
+      "ansicht": "Party DJ",
+      "titel": "Mixer und Kopfhörer",
+      "tun": "Vorhör-Ausgang wählen, dann Trim, EQ (ganz links = Kill), Filter, Kanalfader, Crossfader und Kopfhörer-Cue benutzen.",
+      "erwartet": "Alles wirkt hörbar; der Kopfhörer-Cue ist nur im Vorhör-Ausgang zu hören, nie auf Sendung.",
+      "version": "0.36.0"
+    },
+    {
+      "id": "dj-fernbedienung-klein",
+      "ansicht": "Party DJ",
+      "titel": "Fernbedienung bei kleinem Fenster",
+      "tun": "Fenster auf 1366 × 768, dann Q drücken oder auf den QR klicken; Esc.",
+      "erwartet": "Die Fernbedienung ist eine Zeile; der QR erscheint 300 px groß, Klick oder Esc schließt ihn.",
+      "version": "0.36.0"
+    },
+    {
+      "id": "transport-tasten",
+      "ansicht": "Produzent",
+      "titel": "Transport als Hardware-Tasten",
+      "tun": "Abspielen und aufnehmen, Loop, Punch und „Stopp am Ende“ einschalten.",
+      "erwartet": "Play leuchtet grün, Aufnahme rot; Loop, Punch und Stopp sind hell hinterlegt mit Akzent-Rand.",
+      "version": "0.35.23"
+    },
+    {
+      "id": "deck-tasten-abc",
+      "ansicht": "Radio",
+      "titel": "Decks mit Tasten A–C",
+      "tun": "Titel auf Deck B ziehen, Taste B drücken, nochmal B. In der Playlist-Suche B tippen.",
+      "erwartet": "Deck B startet und stoppt; beim Tippen in der Suche startet kein Deck.",
+      "version": "0.35.22"
+    },
+    {
+      "id": "trim-aufnahme",
+      "ansicht": "Produzent",
+      "titel": "Trim vor der Aufnahme",
+      "tun": "Spur scharf, Trim auf −12 dB, aufnehmen und abspielen.",
+      "erwartet": "Pegelanzeige und Mithören sind leiser; die Aufnahme klingt wie beim Mithören.",
+      "version": "0.35.22"
+    },
+    {
+      "id": "vollbild-start",
+      "ansicht": "Allgemein",
+      "titel": "Start im Vollbild, F11",
+      "tun": "WOA starten, F11 drücken, nochmal F11.",
+      "erwartet": "WOA startet im Vollbild; F11 wechselt in das maximierte Fenster mit Knöpfen und zurück.",
+      "version": "0.36.2"
+    },
+    {
+      "id": "fades-in-ms",
+      "ansicht": "Produzent",
+      "titel": "Fades in Millisekunden",
+      "tun": "Zwei Clips wählen und im Clip-Inspektor beim Fade-in „250“ eintippen.",
+      "erwartet": "Beide Clips haben 250 ms Fade-in; bei verschiedenen Werten steht „—“.",
+      "version": "0.35.21"
+    },
+    {
+      "id": "radio-ohne-scrollen",
+      "ansicht": "Radio",
+      "titel": "Radio passt auf den Bildschirm",
+      "tun": "Radio bei 1920 × 1030 öffnen.",
+      "erwartet": "Alles bis zu den Wunschtiteln ist ohne Scrollen zu sehen.",
+      "version": "0.35.19"
+    },
+    {
+      "id": "radio-rot-nur-live",
+      "ansicht": "Radio",
+      "titel": "Rot nur auf Sendung",
+      "tun": "„Auf Sendung“ in Ruhe ansehen, dann auf Sendung gehen.",
+      "erwartet": "In Ruhe neutral, auf Sendung rot; die ON-AIR-Lampe in der Stream-Zeile leuchtet nur auf Sendung.",
+      "version": "0.35.19"
+    },
+    {
+      "id": "radio-deck-menue",
+      "ansicht": "Radio",
+      "titel": "Rechtsklick auf ein Deck",
+      "tun": "Rechtsklick auf ein geladenes Deck.",
+      "erwartet": "„Mit Blende“, „Hart“ und rot „Leeren“ stehen im Menü und tun, was sie sagen.",
+      "version": "0.35.19"
+    },
+    {
+      "id": "jingle-assistent",
+      "ansicht": "Jingle-Assistent",
+      "titel": "Jingle bauen von vorn bis hinten",
+      "tun": "Jingles → „Jingle bauen“, eine Stimmung und eine Länge wählen, mit „Weiter“ bis zum Export klicken.",
+      "erwartet": "Schrittleiste mit Kreisen, Stimmungskarten mit Symbol, Länge als Segmente, unten Zusammenfassung; am Ende liegt ein Jingle vor.",
+      "version": "0.35.20"
+    },
+    {
+      "id": "drum-raster",
+      "ansicht": "Piano-Roll",
+      "titel": "Drum-Raster",
+      "tun": "Eine Beats-Spur mit Kit öffnen. Klick, nochmal Klick, Umschalt+Klick, Rechtsklick in ein Feld; abspielen.",
+      "erwartet": "Kick oben; laut, aus, leise, weg. Beim Abspielen läuft ein Rahmen mit.",
+      "version": "0.35.20"
+    },
+    {
+      "id": "piano-roll-magnet",
+      "ansicht": "Piano-Roll",
+      "titel": "Magnet und „Nur benutzte Töne“",
+      "tun": "Magnet an, eine Note auf einen Ton außerhalb der Tonart ziehen; dann „Nur benutzte Töne“.",
+      "erwartet": "Die Note rastet auf den nächsten Ton der Tonart; leere Zeilen verschwinden.",
+      "version": "0.35.20"
+    }
+  ]
+}
