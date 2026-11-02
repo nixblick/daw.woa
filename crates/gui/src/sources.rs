@@ -163,6 +163,16 @@ impl Take {
         }
     }
 
+    /// Eingangs-Trim der Spur (dB): Aufnahme-Pegel und Mithören laufen hindurch, die Datei
+    /// bleibt roh (der Trim wirkt beim Abspielen, sonst zählte er doppelt).
+    pub fn set_trim_db(&self, db: f64) {
+        match self {
+            Take::Device(r) => r.set_trim_db(db),
+            #[cfg(target_os = "linux")]
+            Take::Pulse(r, _) => r.set_trim_db(db),
+        }
+    }
+
     pub fn take_level(&self) -> f32 {
         match self {
             Take::Device(r) => r.take_level(),

@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use crate::device::{DeviceError, OutputDeviceInfo};
+use crate::input_trim::TrimCell;
 use crate::live_peaks::{LivePeaks, live_peaks};
 
 /// Sekunden Puffer zwischen Audio- und Schreib-Thread.
@@ -124,9 +125,16 @@ pub struct Recorder {
     channels: u16,
     started: Instant,
     peaks: LivePeaks,
+    trim: TrimCell,
 }
 
 impl Recorder {
+    /// Eingangs-Trim der Spur in dB: wirkt auf den Aufnahme-Pegel ([`Recorder::take_level`]),
+    /// nicht auf die Datei (die bleibt roh, der Trim wirkt beim Abspielen).
+    pub fn set_trim_db(&self, db: f64) {
+        self.trim.set_db(db);
+    }
+
     /// Hängt die seit dem letzten Aufruf fertigen Wellenform-Punkte an (je
     /// [`crate::clip::PEAK_BLOCK`] Frames in [`Recorder::sample_rate`]).
     pub fn drain_peaks(&mut self, out: &mut Vec<f32>) {
@@ -138,7 +146,7 @@ impl Recorder {
         self.sample_rate
     }
 
-    /// Spitzenpegel seit dem letzten Aufruf (0..1), setzt ihn zurück. Für Pegelanzeigen.
+    /// Spitzenpegel nach dem Trim seit dem letzten Aufruf, setzt ihn zurück. Für Pegelanzeigen.
     pub fn take_level(&self) -> f32 {
         f32::from_bits(self.meters.level.swap(0, Ordering::Relaxed))
     }
@@ -267,6 +275,8 @@ pub fn start_recording(
         let meters = Arc::new(Meters::default());
 
         let m_audio = Arc::clone(&meters);
+        let trim = TrimCell::default();
+        let trim_audio = trim.clone();
         let stream = device.build_input_stream(
             stream_config,
             move |data: &[f32], info: &cpal::InputCallbackInfo| {
@@ -282,7 +292,8 @@ pub fn start_recording(
                         m_audio.overruns.fetch_add(1, Ordering::Relaxed);
                     }
                 }
-                store_max(&m_audio.level, peak);
+                // Anzeige nach dem Trim (wie die Spur später klingt), Datei und Spitze roh.
+                store_max(&m_audio.level, peak * trim_audio.gain());
                 store_max(&m_audio.peak, peak);
             },
             on_error,
@@ -329,6 +340,7 @@ pub fn start_recording(
             channels,
             started: Instant::now(),
             peaks,
+            trim,
         })
     })
 }
