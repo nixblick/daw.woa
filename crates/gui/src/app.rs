@@ -1931,7 +1931,10 @@ impl WoaApp {
 
             // 3b. Pegel-LCD der Summe: Beschriftung, Anzeige (Modern = LED-Kette, Analog = VU),
             // Spitzenwert in dB. „Aus“ blendet sie aus (Einstellungen › Pegelanzeige).
-            if self.config.vu_view != crate::widgets::VuView::Aus {
+            // Unter ~1000 px Restbreite (1366er Fenster) fehlt der Platz: die Pegel-LCD weicht,
+            // damit Latenz, Raster, Zoom und Export nicht überlappen.
+            let roomy = ui.available_width() > 1000.0;
+            if roomy && self.config.vu_view != crate::widgets::VuView::Aus {
                 let sum = self
                     .track_levels
                     .values()
