@@ -1500,6 +1500,15 @@ Selbst geprüft von Claude: Tests im egui-Harness (sieben neue, vorher rot), Scr
 7. **Ohne Netz:** WLAN aus, WOA neu starten, Fenster öffnen: Die Fragen erscheinen trotzdem (Hinweis „Fassung dieser Version“), nichts hängt.
 8. **Beenden:** Entwickler → „Entwickler-Modus beenden“: Das Menü verschwindet, das Kennwort ist aus dem Schlüsselbund entfernt.
 
+## Klangqualität (0.38.0, offen)
+
+1. **Neue MIDI-Spur:** Neues Projekt, MIDI-Spur anlegen. Im Spurkopf steht links „Flügel“. Keyboard scharf, ein paar Töne: Flügel, kein Synth.
+2. **Piano-Roll:** Leeren MIDI-Clip anlegen. Der Clip heißt „Flügel“, rechts im Clip-Kopf „FLÜGEL“. Noten eintippen: klingt nach Flügel.
+3. **Klang wählen:** Auf „Flügel“ im Spurkopf klicken: Rack zeigt die Klangauswahl mit Klavier, Bass, Gitarre, Streicher, Bläser, Synth, Drums. „Bläser“ → „Trompete“: Probeton Trompete, Spurkopf und Clip-Kopf zeigen „Trompete“. Dasselbe über Klick auf den Klangnamen im Clip-Kopf.
+4. **Synth bleibt wählbar:** Unten „Synth (einfach)“ wählen: Spurkopf zeigt „Synth (einfach)“, der alte Klang ist zurück.
+5. **Altes Projekt:** Ein Projekt von vor 0.38.0 mit MIDI-Spur öffnen: klingt unverändert (Synth, Spurkopf „Synth (einfach)“).
+6. **Keyboard als Audio aufnehmen:** Audio-Spur anlegen, im Spurkopf das Mikrofon-Feld auf den Eingang des Mischpults stellen, Spur scharf (Punkt), Aufnahme: das Keyboard landet als Audio-Clip.
+
 ## Abgenommen
 
 - Paket 10 Dauertest (0.5.0): 30.10.2026, André „2 abgenommen“ (Sammelabnahme Pakete 5, 9, 10 und Nachtrag #43).

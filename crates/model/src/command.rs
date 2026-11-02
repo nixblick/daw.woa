@@ -347,6 +347,14 @@ impl Command {
         }
     }
 
+    /// Neue MIDI-Spur mit dem Flügel ([`TrackSound::GRAND`]) statt des eingebauten Synths
+    /// (André 02.11.2026). Ein Command, also ein Undo-Schritt.
+    pub fn add_midi_track(id: TrackId, name: impl Into<String>) -> Self {
+        let mut track = Track::new(id, name, TrackKind::Midi);
+        track.sound = Some(crate::TrackSound::GRAND);
+        Command::AddTrack { track, index: None }
+    }
+
     /// Short human-readable label, used as default undo label.
     pub fn label(&self) -> &'static str {
         match self {

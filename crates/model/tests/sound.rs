@@ -81,7 +81,7 @@ fn bank_survives_save_and_unknown_banks_still_load() {
         sound: Some(piano),
     })
     .unwrap();
-    assert_eq!(preset_name(piano), Some("Klavier"));
+    assert_eq!(preset_name(piano), Some("Flügel"));
     let dir = tempfile::tempdir().unwrap();
     store::save(s.project(), dir.path()).unwrap();
     let json = store::to_json(s.project()).unwrap();
