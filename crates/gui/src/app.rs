@@ -2472,12 +2472,22 @@ impl WoaApp {
         };
         *frames += 1;
         let first = *frames == 2;
+        let n = *frames;
         if first
             && std::env::var_os("WOA_CUE_EDITOR").is_some()
             && let Some(r) = self.radio.as_mut()
         {
             // Fotomodus des Cue-Editors: erster Titel der Playlist.
             r.open_cue_editor(0);
+        }
+        if n == 4 && std::env::var_os("WOA_DJ_LOAD").is_some() {
+            // Fotomodus DJ (#347): Playlist-Titel 1 und 2 auf Deck A und B legen (nicht abspielen).
+            self.ensure_radio();
+            if let Some(r) = self.radio.as_ref() {
+                use woa_radio::control::DjCommand;
+                r.dj(DjCommand::Load { side: 0, index: 0 });
+                r.dj(DjCommand::Load { side: 1, index: 1 });
+            }
         }
         if first && std::env::var_os("WOA_CONTROLLER").is_some() {
             // Fotomodus der Zuordnungsliste.
@@ -2726,9 +2736,12 @@ impl WoaApp {
     }
 
     fn onair_lamp(&mut self, ui: &mut egui::Ui, compact: bool) {
-        let live = self.radio.as_ref().is_some_and(RadioDesk::is_live);
+        // Fotomodus `WOA_ONAIR=1` zeigt die leuchtende Lampe ohne echte Sendung (#353).
+        let photo_live = self.photo.is_some() && std::env::var_os("WOA_ONAIR").is_some();
+        let live = photo_live || self.radio.as_ref().is_some_and(RadioDesk::is_live);
+        // #353: Auf Sendung leuchtet ON AIR wie die Lampe im Sendepult (rot, weiß, Glow).
         let look = if live {
-            ChipLook::On(theme::on_air())
+            ChipLook::Live
         } else {
             ChipLook::Off(theme::on_air())
         };
@@ -6462,6 +6475,22 @@ impl WoaApp {
                             .color(theme::text_dim()),
                         );
                     });
+                    // Schließen-X oben rechts (André 02.11.2026).
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        let r = ui
+                            .add(egui::Button::new(theme::ic::X).frame(false))
+                            .on_hover_text("Schließen");
+                        r.widget_info(|| {
+                            egui::WidgetInfo::labeled(
+                                egui::WidgetType::Button,
+                                true,
+                                "Feedback schließen",
+                            )
+                        });
+                        if r.clicked() {
+                            close = true;
+                        }
+                    });
                 });
                 ui.add_space(14.0);
                 match self.feedback.phase.clone() {
@@ -9681,6 +9710,16 @@ mod party_feedback_tests {
     #[test]
     fn feedback_window_opens_in_radio_view() {
         assert!(feedback_opens(Mode::Radio));
+    }
+
+    /// André 02.11.2026: Schließen-X im Feedback-Fenster.
+    #[test]
+    fn feedback_window_has_close_x() {
+        let (mut rig, _tmp) = rig(Mode::Radio);
+        rig.app.feedback.open();
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        assert!(rig.has("Feedback schließen"), "Schließen-X fehlt");
     }
 }
 

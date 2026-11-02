@@ -3,7 +3,9 @@
 //! Jeder Eintrag hat denselben Stil: 28 px hoch, Versalien, LED-Punkt links. Nur die Farbe von
 //! Punkt und Rahmen unterscheidet die Funktion. Aus: LED gedimmt, Text `text-dim`, keine Fläche.
 //! An: Fläche `surface`, Rahmen und LED in der eigenen Farbe, Text `text`. Kein Glow, keine
-//! gefüllten Farbflächen. Auf schmalem Fenster zeigt jeder Eintrag statt des Worts sein Symbol;
+//! gefüllten Farbflächen. Einzige Ausnahme ist ON AIR auf Sendung ([`ChipLook::Live`], André
+//! 02.11.2026, #353): leuchtet wie die ON-AIR-Lampe (`on-air-fill`, weiße Schrift, `glow-on-air`
+//! außen), damit „auf Sendung“ auch oben rechts unübersehbar ist. Auf schmalem Fenster zeigt jeder Eintrag statt des Worts sein Symbol;
 //! das Wort steht dann im Tooltip und bleibt für Bildschirmleser die Beschriftung.
 
 use eframe::egui::{self, Color32, CornerRadius, Response, Sense, Stroke, StrokeKind};
@@ -46,6 +48,56 @@ pub enum ChipLook {
     On(Color32),
     /// Neutral mit Symbol statt LED (Feedback).
     Plain,
+    /// Leuchtet wie die ON-AIR-Lampe (nur ON AIR auf Sendung, #353): Fläche `on-air-fill`,
+    /// weiße Schrift und LED, Glow `glow-on-air` außen am Rahmen.
+    Live,
+}
+
+/// Wie ein Eintrag gemalt wird: Fläche (falls eine), Rahmen, Schrift, LED und ob er leuchtet.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ChipPaint {
+    pub fill: Option<Color32>,
+    pub stroke: Option<Color32>,
+    pub ink: Color32,
+    pub led: Color32,
+    pub glow: bool,
+}
+
+/// Farben eines Eintrags aus seinem Aussehen (rein, damit Tests sie prüfen können).
+pub fn chip_paint(look: ChipLook) -> ChipPaint {
+    match look {
+        ChipLook::Off(c) => ChipPaint {
+            fill: None,
+            stroke: None,
+            ink: theme::text_dim(),
+            led: theme::mix(c, theme::led_off(), 0.30),
+            glow: false,
+        },
+        ChipLook::On(c) => ChipPaint {
+            fill: Some(theme::surface()),
+            stroke: Some(c),
+            ink: theme::text(),
+            led: c,
+            glow: false,
+        },
+        ChipLook::Plain => ChipPaint {
+            fill: None,
+            stroke: None,
+            ink: theme::text_dim(),
+            led: theme::text(),
+            glow: false,
+        },
+        ChipLook::Live => {
+            let (fill, ink) = super::lamp::lamp_colors(true);
+            ChipPaint {
+                fill: Some(fill),
+                stroke: Some(theme::on_air()),
+                ink,
+                led: ink,
+                glow: true,
+            }
+        }
+    }
 }
 
 /// Ein Eintrag „LED Wort“ (`.woa-sb`). `icon` steht in der schmalen Ansicht statt des Worts und
@@ -84,12 +136,8 @@ pub struct Chip<'a> {
 
 impl Chip<'_> {
     pub fn show(self, ui: &mut egui::Ui) -> Response {
-        let (on, color) = match self.look {
-            ChipLook::Off(c) => (false, c),
-            ChipLook::On(c) => (true, c),
-            ChipLook::Plain => (false, theme::text()),
-        };
-        let ink = if on { theme::text() } else { theme::text_dim() };
+        let paint = chip_paint(self.look);
+        let ink = paint.ink;
         let plain = self.look == ChipLook::Plain;
         // Vorn: LED oder (neutral bzw. schmal) das Symbol.
         let show_icon = plain || self.compact;
@@ -146,20 +194,32 @@ impl Chip<'_> {
         if ui.is_rect_visible(rect) {
             let p = ui.painter();
             let r = CornerRadius::same(TOPBAR_RADIUS);
-            if on {
-                p.rect_filled(rect, r, theme::surface());
-                p.rect_stroke(rect, r, Stroke::new(1.0, color), StrokeKind::Inside);
+            if paint.glow {
+                // Glow nur außen am Rahmen (`glow-on-air`), wie die ON-AIR-Lampe.
+                for (grow, a) in [(5.0, 22u8), (3.0, 40), (1.5, 70)] {
+                    p.rect_filled(
+                        rect.expand(grow),
+                        CornerRadius::same(TOPBAR_RADIUS + 3),
+                        super::with_alpha(theme::on_air(), a),
+                    );
+                }
+            }
+            if let Some(fill) = paint.fill {
+                p.rect_filled(rect, r, fill);
             } else if self.click && resp.hovered() {
                 p.rect_filled(rect, r, theme::mix(theme::surface(), theme::well(), 0.55));
+            }
+            if let Some(stroke) = paint.stroke {
+                p.rect_stroke(rect, r, Stroke::new(1.0, stroke), StrokeKind::Inside);
             }
             let cy = rect.center().y;
             let mut x = rect.left() + TOPBAR_PAD_X;
             if led {
-                let lit = on && (!self.blink || super::blink_on(ui.input(|i| i.time), 1.0));
+                let lit = !self.blink || super::blink_on(ui.input(|i| i.time), 1.0);
                 let fill = if lit {
-                    color
+                    paint.led
                 } else {
-                    theme::mix(color, theme::led_off(), 0.30)
+                    chip_paint(ChipLook::Off(paint.led)).led
                 };
                 p.circle_filled(egui::pos2(x + TOPBAR_LED / 2.0, cy), TOPBAR_LED / 2.0, fill);
                 x += TOPBAR_LED;
@@ -218,4 +278,30 @@ pub fn status_sep(ui: &mut egui::Ui) {
     );
     let line = egui::Rect::from_center_size(rect.center(), egui::vec2(1.0, 20.0));
     ui.painter().rect_filled(line, 0.0, theme::border());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #353: ON AIR auf Sendung leuchtet oben rechts wie die Lampe links: rote Fläche
+    /// `on-air-fill`, weiße Schrift, Glow. Andere Einträge bleiben ohne Glow und Farbfläche.
+    #[test]
+    fn live_on_air_chip_glows_like_the_lamp() {
+        let (lamp_fill, lamp_ink) = crate::widgets::lamp::lamp_colors(true);
+        let live = chip_paint(ChipLook::Live);
+        assert_eq!(live.fill, Some(lamp_fill));
+        assert_eq!(live.fill, Some(theme::on_air_fill()));
+        assert_eq!(live.ink, lamp_ink);
+        assert!(live.glow);
+        for look in [
+            ChipLook::Off(theme::on_air()),
+            ChipLook::On(theme::cue()),
+            ChipLook::Plain,
+        ] {
+            let p = chip_paint(look);
+            assert!(!p.glow, "{look:?}");
+            assert_ne!(p.fill, Some(theme::on_air_fill()), "{look:?}");
+        }
+    }
 }

@@ -41,7 +41,7 @@ WOA – Wir on Air ist eine DAW mit eingebautem Sendestudio und Party-Player. Ei
 - Kanalzüge haben keine Drehregler: nur Kanaltasten, Fader, LED-Kette und Name. Regler leben im Insert-Rack.
 - Die Pegelansicht im Produzenten-Modus ist umschaltbar: Analog (VU), Modern (Balken) oder Aus.
 - Rote Flächen mit weißer Schrift (ON-AIR-Lampe, gedrückte REC-Taste) nutzen `on-air-fill`; Schrift ohne Schatten, die Lampe sitzt in einem schwarzen Rahmen.
-- Licht: Glows nur für Leuchtendes – `glow-accent` für aktive Tasten und Pads, `glow-on-air` für Lampe und REC. In der Kopfleiste kein Glow. Keine Verläufe als Dekoration.
+- Licht: Glows nur für Leuchtendes – `glow-accent` für aktive Tasten und Pads, `glow-on-air` für Lampe und REC. In der Kopfleiste kein Glow, außer ON AIR auf Sendung: der Eintrag leuchtet dann wie die ON-AIR-Lampe (`on-air-fill`, weiße Schrift, `glow-on-air`; André 02.11.2026, #353). Keine Verläufe als Dekoration.
 - Bewegung hat einen Grund: LED-Ketten folgen dem Pegel, Sekundenkranz der Zeit, Jogwheel dem Abspielen, Party-Play-Taste dem Beat. Blinken nur für Aufnahme, Restzeit < 10 s und ein laufendes Pad. Bei `prefers-reduced-motion` stehen alle Anzeigen still.
 
 ## Inhalt und Sprache

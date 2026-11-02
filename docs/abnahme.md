@@ -4,6 +4,21 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## ON AIR leuchtet, Deck-BPM ohne Bibliothek (0.40.2, offen)
+
+1. **ON AIR oben rechts (#353):** Auf Sendung gehen (Stream verbinden oder im Radio das Mikro öffnen). Oben rechts
+   leuchtet ON AIR rot mit weißer Schrift und Schein, wie die Lampe im Sendepult. Nicht auf Sendung: ruhiger
+   Eintrag wie MIDI und REC.
+2. **Party DJ, BPM und Tonart (#347):** Party → DJ, „Ordner laden“ mit Titeln, die nicht in der Bibliothek sind,
+   dann „A“ und „B“ an zwei Titeln. Nach wenigen Sekunden stehen BPM und Tonart im Deck-Kopf und in der Playlist.
+   Restzeit, BPM und Camelot-Chip sind gleich hoch; der Chip wird grün, wenn die Tonarten passen.
+
+Selbst geprüft von Claude: Tests (zuerst rot) für das Messen beim Laden (Titel außerhalb der Bibliothek und noch
+nicht analysierter Titel, Ergebnis wird in der Bibliothek abgelegt), gleiche Höhe der Deck-Anzeigen und die
+leuchtende ON-AIR-Lampe in der Kopfleiste; Screenshots Party DJ dunkel und hell bei 1920 × 1030 im Fotomodus
+(`WOA_PARTY_VIEW=dj`, `WOA_DJ_LOAD=1`, `WOA_ONAIR=1`) mit erzeugten Klick-Titeln. Kein Ton, nichts gesendet, nicht
+unter Windows gesehen.
+
 ## ElevenLabs-Anbindung (0.40.0, offen)
 
 Vorher einmal: Konto bei elevenlabs.io anlegen (kostenloser Plan reicht zum Ausprobieren), dort Profil → API Keys →
@@ -131,6 +146,16 @@ Selbst geprüft von Claude: `cargo test -p woa-gui`, Clippy `-D warnings`, Scree
 4. Produzent: Spur scharf, Trim −12 dB, aufnehmen: Pegelanzeige und Mithören leiser; abspielen klingt wie beim Mithören.
 
 Selbst geprüft von Claude: Tests in `woa-radio`, `woa-engine`, `woa-gui` (Radio), Clippy, Screenshots dunkel/hell bei 1920×1030 und 1366×768. Kein Ton abgespielt, nicht unter Windows gesehen.
+
+## Abnahme-Feinschliff (0.40.1, offen)
+
+1. WOA starten: das Fenster öffnet maximiert mit Rahmen und Knöpfen (kein Vollbild). F11 schaltet Vollbild an, nochmal F11 zurück ins maximierte Fenster.
+2. Entwickler › Abnahme: einen Punkt mit „Geht“ abnehmen, danach ins Feld eine Anmerkung schreiben und „Anmerkung senden“: kommt als `[entwickler-abnahme] <id>: anmerkung` an, das „Geht“ bleibt stehen. Geht auch ohne vorheriges Urteil.
+3. Entwickler › Fragen und To-dos: nach „Senden“ erscheint unter dem Vorschlag „Anmerkung nachtragen“ mit „Anmerkung senden“.
+4. Abnahme: ein mit „Geht“ abgenommener Punkt ist nach Schließen und Wiederöffnen (auch nach Neustart) weg; „Erledigte zeigen“ holt ihn zurück.
+5. Feedback (oben): oben rechts ein X schließt das Fenster; nach dem Senden steht der Dank nur noch 1,5 s.
+
+Selbst geprüft von Claude: `cargo test -p woa-gui --lib -p woa`, Clippy. Nicht unter Windows gesehen, kein Ton; der maximierte Start nur über den Test der Startentscheidung.
 
 ## Design-Runde 3: Nacharbeit Produzent (0.35.21, offen)
 

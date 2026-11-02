@@ -655,6 +655,36 @@ pub fn lcd_frame() -> Frame {
         .inner_margin(Margin::symmetric(12, 8))
 }
 
+/// Füllung, Rahmen und Schrift einer [`status_pill`] in `color` (auch für Chips, die eine
+/// andere Höhe brauchen, z. B. den Camelot-Chip neben den LCDs im DJ-Deck).
+pub fn pill_colors(color: Color32, active: bool) -> (Color32, Color32, Color32) {
+    let dark = is_dark();
+    let fill = if active {
+        mix(color, well(), if dark { 0.72 } else { 0.80 })
+    } else {
+        well()
+    };
+    let stroke_col = if active {
+        if dark {
+            mix(color, Color32::WHITE, 0.15)
+        } else {
+            color
+        }
+    } else {
+        border()
+    };
+    let text_col = if active {
+        if dark {
+            mix(color, Color32::WHITE, 0.35)
+        } else {
+            mix(color, Color32::BLACK, 0.2)
+        }
+    } else {
+        text_dim()
+    };
+    (fill, stroke_col, text_col)
+}
+
 /// Kleiner Zustand als `woa-chip` (Design Fassung 7, 26 px): an = LED, Rahmen und Fläche in
 /// `color`, aus = neutral. Seit Fassung 7 der einzige kleine Zustandsbaustein; die alte
 /// LED-Pille zeichnet nicht mehr selbst.

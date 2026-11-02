@@ -74,24 +74,6 @@
       "ticket": 332
     },
     {
-      "id": "fix-hot-cue-loeschen",
-      "ansicht": "Party DJ",
-      "titel": "Hot Cue per Rechtsklick löschen",
-      "tun": "Titel auf Deck A, Hot Cue 1 setzen (Klick), dann Rechtsklick auf 1.",
-      "erwartet": "Die Taste 1 ist wieder leer.",
-      "version": "0.37.1",
-      "ticket": 331
-    },
-    {
-      "id": "fix-weiter-uebergang",
-      "ansicht": "Party DJ",
-      "titel": "„Weiter · Übergang“",
-      "tun": "Deck A spielt, Deck B hat einen Titel. „Weiter · Übergang“ unter dem Crossfader drücken (oder N). Noch einmal drücken. Während einer Fahrt den Crossfader anfassen.",
-      "erwartet": "B startet, der Crossfader fährt hinüber, danach steht A und zeigt den nächsten Titel; nochmal geht es zurück auf A. Anfassen bricht die Fahrt ab, beide Decks laufen weiter.",
-      "version": "0.37.1",
-      "ticket": 331
-    },
-    {
       "id": "fix-log-warnung",
       "ansicht": "Allgemein",
       "titel": "Keine Schrift-Warnung im Protokoll",
@@ -210,9 +192,10 @@
       "id": "dj-laden-tonart",
       "ansicht": "Party DJ",
       "titel": "Laden, BPM und Tonart",
-      "tun": "In der Playlist „A“ und „B“ an zwei Titeln drücken.",
-      "erwartet": "Die Titel sind in den Decks, BPM und Tonart erscheinen nach der Analyse; der Camelot-Chip wird grün, wenn die Tonarten passen.",
-      "version": "0.36.0"
+      "tun": "In der Playlist „A“ und „B“ an zwei Titeln drücken, auch an Titeln, die nicht in der Bibliothek sind (per „Ordner laden“).",
+      "erwartet": "Die Titel sind in den Decks; nach wenigen Sekunden erscheinen BPM und Tonart, auch ohne Bibliotheksanalyse. Restzeit, BPM und Camelot-Chip sind gleich hoch; der Chip wird grün, wenn die Tonarten passen.",
+      "version": "0.40.2",
+      "ticket": 347
     },
     {
       "id": "dj-cue-hotcue-loop",
@@ -273,10 +256,10 @@
     {
       "id": "vollbild-start",
       "ansicht": "Allgemein",
-      "titel": "Start im Vollbild, F11",
+      "titel": "Start maximiert, F11 Vollbild",
       "tun": "WOA starten, F11 drücken, nochmal F11.",
-      "erwartet": "WOA startet im Vollbild; F11 wechselt in das maximierte Fenster mit Knöpfen und zurück.",
-      "version": "0.36.2"
+      "erwartet": "WOA startet maximiert im Fenster mit Rahmen und Knöpfen; F11 schaltet Vollbild an und wieder aus.",
+      "version": "0.40.1"
     },
     {
       "id": "fades-in-ms",
@@ -292,14 +275,6 @@
       "titel": "Radio passt auf den Bildschirm",
       "tun": "Radio bei 1920 × 1030 öffnen.",
       "erwartet": "Alles bis zu den Wunschtiteln ist ohne Scrollen zu sehen.",
-      "version": "0.35.19"
-    },
-    {
-      "id": "radio-rot-nur-live",
-      "ansicht": "Radio",
-      "titel": "Rot nur auf Sendung",
-      "tun": "„Auf Sendung“ in Ruhe ansehen, dann auf Sendung gehen.",
-      "erwartet": "In Ruhe neutral, auf Sendung rot; die ON-AIR-Lampe in der Stream-Zeile leuchtet nur auf Sendung.",
       "version": "0.35.19"
     },
     {
@@ -333,6 +308,15 @@
       "tun": "Magnet an, eine Note auf einen Ton außerhalb der Tonart ziehen; dann „Nur benutzte Töne“.",
       "erwartet": "Die Note rastet auf den nächsten Ton der Tonart; leere Zeilen verschwinden.",
       "version": "0.35.20"
+    },
+    {
+      "id": "kopfleiste-onair-leuchtet",
+      "ansicht": "Allgemein",
+      "titel": "ON AIR oben rechts leuchtet",
+      "tun": "Auf Sendung gehen (Stream verbinden oder im Radio das Mikro öffnen) und oben rechts auf ON AIR schauen.",
+      "erwartet": "ON AIR leuchtet rot mit weißer Schrift und Schein wie die Lampe im Sendepult; aus Sendung wieder ein ruhiger Eintrag wie MIDI und REC.",
+      "version": "0.40.2",
+      "ticket": 353
     }
   ]
 }
