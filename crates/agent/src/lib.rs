@@ -28,6 +28,7 @@ use woa_model::{
 
 pub mod audio;
 pub mod dj;
+pub mod elevenlabs;
 pub mod freesound;
 pub mod http;
 pub mod jingle;
@@ -1015,6 +1016,68 @@ pub struct ImportSampleParams {
     pub name: Option<String>,
 }
 
+/// Parameters of `tts_generate`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TtsGenerateParams {
+    /// Text to speak (German works with both models), at most 5000 characters.
+    pub text: String,
+    /// Voice name or voice_id from the user's ElevenLabs account; default the first voice.
+    #[serde(default)]
+    pub voice: Option<String>,
+    /// `eleven_multilingual_v2` (default) or `eleven_v3`.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// 0..1, default 0.5 (lower = livelier).
+    #[serde(default)]
+    pub stability: Option<f64>,
+    /// 0..1, default 0.
+    #[serde(default)]
+    pub style: Option<f64>,
+    /// Audio track that gets the new clip.
+    pub track: u64,
+    /// Clip start in beats.
+    #[serde(default)]
+    pub start_beats: f64,
+    /// Clip name; default from the text.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// Parameters of `sfx_generate`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SfxGenerateParams {
+    /// Description of the sound, e.g. "rocket launch", "firecracker", "whoosh".
+    pub text: String,
+    /// Length 0.5..30 s; default chosen by ElevenLabs.
+    #[serde(default)]
+    pub seconds: Option<f64>,
+    /// Audio track that gets the new clip.
+    pub track: u64,
+    /// Clip start in beats.
+    #[serde(default)]
+    pub start_beats: f64,
+    /// Clip name; default from the text.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// Parameters of `music_generate`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MusicGenerateParams {
+    /// Description of the music bed (always instrumental).
+    pub text: String,
+    /// Length 3..600 s.
+    pub seconds: f64,
+    /// Audio track that gets the new clip.
+    pub track: u64,
+    /// Clip start in beats.
+    #[serde(default)]
+    pub start_beats: f64,
+    /// Clip name; default from the text.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
 /// Parameters of `stream_status`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StreamStatusParams {
@@ -1054,6 +1117,10 @@ pub struct WoaAgent {
     takes: Arc<Takes>,
     /// Freesound access for `search_samples` and `import_sample` (J10).
     samples: freesound::Source,
+    /// ElevenLabs access for `tts_generate`, `sfx_generate`, `music_generate`.
+    voice: elevenlabs::Source,
+    /// Where generated sounds go besides the project (media folder, library); `None` = only the project.
+    voice_store: Option<elevenlabs::Ablage>,
     /// Connection to the running app for the DJ tools (live mode only).
     dj: Option<dj::DjBridge>,
     // Read by the code generated from `#[tool_handler]`.
@@ -1394,6 +1461,8 @@ impl WoaAgent {
             takes,
             dir,
             samples: freesound::Source::default(),
+            voice: elevenlabs::Source::default(),
+            voice_store: Some(elevenlabs::Ablage::standard()),
             dj: None,
             tool_router: Self::tool_router(),
         }
@@ -1439,6 +1508,92 @@ impl WoaAgent {
     pub fn with_sample_source(mut self, source: freesound::Source) -> Self {
         self.samples = source;
         self
+    }
+
+    /// Replaces the ElevenLabs access and the media folder/library, e.g. for tests.
+    pub fn with_voice_source(
+        mut self,
+        source: elevenlabs::Source,
+        store: Option<elevenlabs::Ablage>,
+    ) -> Self {
+        self.voice = source;
+        self.voice_store = store;
+        self
+    }
+
+    /// Writes generated audio into the project folder, puts it as a clip on `track` (one undo
+    /// step), copies it to the media folder and library. Runs on a blocking thread.
+    #[allow(clippy::too_many_arguments)]
+    fn voice_clip(
+        session: Arc<Mutex<Session>>,
+        dir: PathBuf,
+        store: Option<elevenlabs::Ablage>,
+        track: u64,
+        start_beats: f64,
+        name: Option<String>,
+        herkunft: elevenlabs::Herkunft,
+        make: impl FnOnce() -> Result<elevenlabs::Audio, elevenlabs::Fehler>,
+    ) -> Result<CallToolResult, McpError> {
+        let audio = match make() {
+            Ok(a) => a,
+            Err(e) => return Ok(fail(e.to_string())),
+        };
+        let stem = elevenlabs::stem(herkunft.art, &herkunft.text);
+        let (rel, abs) = audio::free_take_path(&dir, &stem, audio.ext);
+        let Some(parent) = abs.parent() else {
+            return Ok(fail("kein Projektordner"));
+        };
+        let file_name = abs
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&stem)
+            .to_string();
+        let abs = match elevenlabs::ablegen(&audio, parent, &file_name, &herkunft) {
+            Ok(p) => p,
+            Err(e) => return Ok(fail(e)),
+        };
+        let rel = match (
+            rel.rsplit_once('/'),
+            abs.file_name().and_then(|n| n.to_str()),
+        ) {
+            (Some((d, _)), Some(n)) => format!("{d}/{n}"),
+            _ => rel,
+        };
+        let mut s = session.lock().map_err(|_| lock_err())?;
+        let length = match Self::check_target(&s, track, start_beats)
+            .and_then(|()| audio::wav_length_beats(&abs, s.project().tempo_bpm))
+        {
+            Ok(l) => l,
+            Err(e) => {
+                let _ = std::fs::remove_file(&abs);
+                let _ = std::fs::remove_file(elevenlabs::herkunft_path(&abs));
+                return Ok(fail(e));
+            }
+        };
+        let id = s.new_clip_id();
+        let name = name.unwrap_or_else(|| stem.clone());
+        let r = Self::add_file_clip(&mut s, id, track, name, start_beats, length, rel);
+        drop(s);
+        if r.is_error == Some(true) {
+            return Ok(r);
+        }
+        let mut out: serde_json::Value = r
+            .content
+            .first()
+            .and_then(|c| c.as_text())
+            .and_then(|t| serde_json::from_str(&t.text).ok())
+            .unwrap_or_default();
+        out["file"] = abs.display().to_string().into();
+        if let Some(store) = store {
+            match elevenlabs::in_bibliothek(&abs, &store.media_dir, &store.db, &herkunft) {
+                Ok((p, lib)) => {
+                    out["media_file"] = p.display().to_string().into();
+                    out["library_id"] = lib.into();
+                }
+                Err(e) => out["warning"] = format!("nicht in der Bibliothek: {e}").into(),
+            }
+        }
+        Ok(ok_json(out))
     }
 
     /// Shared handle to the session, e.g. for a GUI that shows the agent's work live.
@@ -2546,6 +2701,140 @@ impl WoaAgent {
                 )));
             }
             Ok(r)
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Speak text with ElevenLabs (the user's own key, stored in WOA under Settings, KI; fails without it) and put it as a clip on an audio track. Costs the user credits (about one per character): only on request. Returns clip id, length in beats, file path, and media_file/library_id in the WOA media folder. Origin and text are saved next to the file (.herkunft.json)."
+    )]
+    async fn tts_generate(
+        &self,
+        Parameters(p): Parameters<TtsGenerateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Err(e) = Self::check_target(&*self.lock()?, p.track, p.start_beats) {
+            return Ok(fail(e));
+        }
+        let model = match p.model.as_deref() {
+            None | Some("") => elevenlabs::TtsModell::default(),
+            Some(m) => match elevenlabs::TtsModell::from_id(m) {
+                Some(m) => m,
+                None => return Ok(fail(format!("unbekanntes Modell {m}"))),
+            },
+        };
+        let (src, dir, session, store) = (
+            self.voice.clone(),
+            self.dir.clone(),
+            self.session(),
+            self.voice_store.clone(),
+        );
+        off_runtime(move || {
+            use elevenlabs::Sprecher;
+            let voices = match src.stimmen() {
+                Ok(v) => v,
+                Err(e) => return Ok(fail(e.to_string())),
+            };
+            let voice = match p.voice.as_deref() {
+                Some(w) if !w.trim().is_empty() => elevenlabs::find_voice(&voices, w),
+                _ => voices.first(),
+            };
+            let Some(voice) = voice.cloned() else {
+                return Ok(fail("Stimme nicht im ElevenLabs-Konto gefunden"));
+            };
+            let mut a = elevenlabs::SprachAuftrag::new(p.text.clone(), voice.id.clone());
+            a.model = model;
+            a.stability = p.stability.unwrap_or(0.5);
+            a.style = p.style.unwrap_or(0.0);
+            let mut h =
+                elevenlabs::Herkunft::new(src.anbieter(), elevenlabs::Art::Sprache, &p.text);
+            h.stimme = voice.name.clone();
+            h.modell = model.id().to_string();
+            Self::voice_clip(
+                session,
+                dir,
+                store,
+                p.track,
+                p.start_beats,
+                p.name,
+                h,
+                || src.sprechen(&a),
+            )
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Generate a sound effect with ElevenLabs from a description (rocket, firecracker, whoosh ...) and put it as a clip on an audio track. Needs the user's own ElevenLabs key (Settings, KI); costs credits, only on request. Returns clip id, length in beats, file path, media_file and library_id."
+    )]
+    async fn sfx_generate(
+        &self,
+        Parameters(p): Parameters<SfxGenerateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Err(e) = Self::check_target(&*self.lock()?, p.track, p.start_beats) {
+            return Ok(fail(e));
+        }
+        let (src, dir, session, store) = (
+            self.voice.clone(),
+            self.dir.clone(),
+            self.session(),
+            self.voice_store.clone(),
+        );
+        off_runtime(move || {
+            use elevenlabs::Klangerzeuger;
+            let mut h = elevenlabs::Herkunft::new("ElevenLabs", elevenlabs::Art::Effekt, &p.text);
+            h.modell = "eleven_text_to_sound_v2".into();
+            let a = elevenlabs::EffektAuftrag {
+                text: p.text.clone(),
+                seconds: p.seconds,
+            };
+            Self::voice_clip(
+                session,
+                dir,
+                store,
+                p.track,
+                p.start_beats,
+                p.name,
+                h,
+                || src.effekt(&a),
+            )
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Generate an instrumental music bed with ElevenLabs from a description and length (3..600 s) and put it as a clip on an audio track. Needs the user's own ElevenLabs key (Settings, KI); costs credits, only on request. Returns clip id, length in beats, file path, media_file and library_id."
+    )]
+    async fn music_generate(
+        &self,
+        Parameters(p): Parameters<MusicGenerateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Err(e) = Self::check_target(&*self.lock()?, p.track, p.start_beats) {
+            return Ok(fail(e));
+        }
+        let (src, dir, session, store) = (
+            self.voice.clone(),
+            self.dir.clone(),
+            self.session(),
+            self.voice_store.clone(),
+        );
+        off_runtime(move || {
+            use elevenlabs::Klangerzeuger;
+            let mut h = elevenlabs::Herkunft::new("ElevenLabs", elevenlabs::Art::Bett, &p.text);
+            h.modell = "music".into();
+            let a = elevenlabs::BettAuftrag {
+                text: p.text.clone(),
+                seconds: p.seconds,
+            };
+            Self::voice_clip(
+                session,
+                dir,
+                store,
+                p.track,
+                p.start_beats,
+                p.name,
+                h,
+                || src.bett(&a),
+            )
         })
         .await
     }

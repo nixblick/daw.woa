@@ -89,6 +89,10 @@ pub struct JingleAssistent {
     /// Was Schritt 1 angelegt hat; `None` nach Undo bis vor das Anlegen.
     parts: Option<JingleParts>,
     name: String,
+    /// Sprecher in Schritt „Stimme“: `false` selbst einsprechen, `true` ElevenLabs.
+    pub elevenlabs_sprecher: bool,
+    /// ElevenLabs-Erzeuger (Sprache, Effekt, Bett); ohne Schlüssel unsichtbar.
+    pub el: crate::elevenlabs_ui::Erzeuger,
 }
 
 impl Default for JingleAssistent {
@@ -102,6 +106,8 @@ impl Default for JingleAssistent {
             folge: 0,
             parts: None,
             name: "Jingle".into(),
+            elevenlabs_sprecher: false,
+            el: crate::elevenlabs_ui::Erzeuger::default(),
         }
     }
 }
@@ -123,12 +129,21 @@ impl JingleAssistent {
         self.schritt = 1;
     }
 
+    /// Fotomodus: Schritt „Stimme“ mit Sprecher ElevenLabs (Beispielstimmen, kein Netz).
+    pub fn foto_elevenlabs(&mut self, parts: JingleParts) {
+        self.angelegt(parts);
+        self.schritt = 3;
+        self.elevenlabs_sprecher = true;
+        self.el.demo();
+    }
+
     /// Zeigt das Fenster.
     pub fn show(&mut self, ctx: &egui::Context, state: &mut AppState) -> Option<Wunsch> {
         if self.parts.is_some_and(|p| !state.jingle_alive(&p)) {
             self.parts = None;
             self.schritt = 0;
         }
+        self.erzeugtes_einsetzen(ctx, state);
         let mut open = self.open;
         let mut out = None;
         egui::Window::new("Jingle bauen")
@@ -138,6 +153,25 @@ impl JingleAssistent {
             .show(ctx, |ui| out = self.body(ui, state));
         self.open = open;
         out
+    }
+
+    /// Fertige ElevenLabs-Klänge auf die Spuren: Sprache auf „Stimme“, Effekt vor den
+    /// Schluss, Bett ab Anfang, Effekt und Bett je auf eine neue Spur.
+    fn erzeugtes_einsetzen(&mut self, ctx: &egui::Context, state: &mut AppState) {
+        use woa_agent::elevenlabs::Art;
+        for f in self.el.poll(ctx) {
+            let (track, start) = match (f.art, self.parts) {
+                (Art::Sprache, Some(p)) => (Some(p.voice), 0.0),
+                (Art::Effekt, Some(p)) => (None, f64::from(p.bars.saturating_sub(1)) * 4.0),
+                _ => (None, 0.0),
+            };
+            if state
+                .add_take(track, &f.path, start, f.seconds, 0.0)
+                .is_none()
+            {
+                self.el.note = Some("Klang erzeugt, aber nicht auf die Spur gelegt".into());
+            }
+        }
     }
 
     fn body(&mut self, ui: &mut egui::Ui, state: &mut AppState) -> Option<Wunsch> {
@@ -400,9 +434,33 @@ impl JingleAssistent {
     }
 
     fn stimme(&mut self, ui: &mut egui::Ui, state: &mut AppState, p: JingleParts) {
-        ui.label(
-            "Auf der Spur „Stimme“ aufnehmen (R) oder eine Datei aus der Bibliothek daraufziehen.",
-        );
+        let key = self.el.has_key() == Some(true);
+        ui.horizontal(|ui| {
+            ui.label("Sprecher");
+            egui::ComboBox::from_id_salt("jingle_sprecher")
+                .selected_text(if self.elevenlabs_sprecher && key {
+                    "ElevenLabs"
+                } else {
+                    "Selbst einsprechen"
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.elevenlabs_sprecher, false, "Selbst einsprechen");
+                    ui.add_enabled_ui(key, |ui| {
+                        ui.selectable_value(&mut self.elevenlabs_sprecher, true, "ElevenLabs")
+                            .on_disabled_hover_text(
+                                "Eigenen ElevenLabs-Schlüssel unter Einstellungen → KI eintragen",
+                            );
+                    });
+                });
+        });
+        if self.elevenlabs_sprecher && key {
+            let takes = state.takes_dir();
+            self.el.sprache_ui(ui, &takes);
+        } else {
+            ui.label(
+                "Auf der Spur „Stimme“ aufnehmen (R) oder eine Datei aus der Bibliothek daraufziehen.",
+            );
+        }
         if ui
             .button("Stimme über Bett")
             .on_hover_text("Sprachkette auf die Stimme, die Musik wird darunter leiser")
@@ -446,6 +504,12 @@ impl JingleAssistent {
         {
             let start = f64::from(p.bars.saturating_sub(2)) * 4.0;
             state.add_fx(None, woa_agent::audio::AgentFxKind::Riser, 4.0, start);
+        }
+        if self.el.has_key() == Some(true) {
+            ui.add_space(6.0);
+            let secs = f64::from(p.bars) * 4.0 * 60.0 / state.project().tempo_bpm.max(1.0);
+            let takes = state.takes_dir();
+            self.el.klang_ui(ui, &takes, secs);
         }
     }
 
@@ -539,5 +603,42 @@ mod tests {
         h.run_steps(2);
         assert_eq!(h.state().w.schritt, 0);
         assert!(h.state().w.parts.is_none());
+    }
+
+    #[test]
+    fn elevenlabs_speaker_asks_before_spending_and_can_be_cancelled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut h = harness(tmp.path());
+        h.run_steps(2);
+        let p = h.state_mut();
+        let parts = p.state.build_jingle(&MOODS[0], 10).unwrap();
+        p.w.foto_elevenlabs(parts);
+        h.run_steps(3);
+        h.get_by_label("Sprache erzeugen …").click();
+        h.run_steps(2);
+        assert!(
+            h.query_by_label_contains("Credits (Zeichen)").is_some(),
+            "Schätzung steht vor dem Erzeugen"
+        );
+        h.get_by_label("Abbrechen").click();
+        h.run_steps(2);
+        assert!(h.query_by_label_contains("Credits (Zeichen)").is_none());
+        assert!(h.query_by_label("Sprache erzeugen …").is_some());
+        assert!(h.state().w.el.note.is_none(), "nichts gesendet");
+    }
+
+    #[test]
+    fn without_key_the_voice_step_stays_as_before() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut h = harness(tmp.path());
+        h.run_steps(2);
+        let p = h.state_mut();
+        let parts = p.state.build_jingle(&MOODS[0], 10).unwrap();
+        p.w.angelegt(parts);
+        p.w.schritt = 3;
+        p.w.elevenlabs_sprecher = true;
+        h.run_steps(4);
+        assert!(h.query_by_label("Sprache erzeugen …").is_none());
+        assert!(h.query_by_label("Stimme über Bett").is_some());
     }
 }
