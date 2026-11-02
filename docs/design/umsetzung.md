@@ -173,3 +173,47 @@ Abweichungen:
 - **Radio bei 1366 × 768:** Pegel, Processing und Wunschtitel liegen unter dem Bildrand (rechte Spalte scrollt); verlangt ist „ohne Scrollen“ nur für 1920 × 1030. Bild `ist-radio-*-1366x768-0.35.23.png`.
 - **SoundPicker nach Kategorien statt Rollen** (0.38.0, André 02.11.2026): Klavier · Bass · Gitarre · Streicher · Bläser · Synth · Drums als Segmentschalter in zwei Zeilen, je Kategorie zwei bis fünf Klänge; der Entwurf nennt Lead · Bass · Pad · Kit mit je vier Klängen. Die Rollen bleiben im Modell für Akkord- und Jingle-Bau. „Eingebauter Synth“ heißt „Synth (einfach)“.
 - **Instrument im Spurkopf** (0.38.0): MIDI-Spuren zeigen statt nur des MIDI-Eingangs links den Klangnamen als Knopf (öffnet den SoundPicker im Rack), rechts den Eingang. Der Klangname im Clip-Kopf ist ebenfalls anklickbar.
+
+## Design System Fassung 7 (0.41.0)
+
+Maßstab: Brand-README Abschnitt „Fenster, Entwickler, Einstellungen (Fassung 7)“ und die README je Baustein in
+`docs/design/woa-design-system/`, Soll-Bilder in `docs/design/soll/fassung-7/`. Bilder unten in `docs/design/ist/`,
+je 1920 × 1030, dunkel, mit leerem Daten- und Konfigurationsordner (Fotomodus, kein Ton, nichts gesendet).
+
+| # | Baustein | Umsetzung | Ort | Stand |
+|---|---|---|---|---|
+| 1 | Window | Eigener Kopf 44 px (Symbol, Titel, Unterzeile, Maximieren, Schließen) für Fragen, Abnahme, Einstellungen, Piano-Roll; Doppelklick maximiert, Esc schließt (nur wenn kein Feld tippt); Lage und Größe merkt egui je Fenster. Hauptfenster startet maximiert mit Systemleiste, F11 = Vollbild (seit 0.40.1) | `fragen.rs` `fenster`/`kopf`, `widgets/piano_roll.rs`, `apps/woa/src/main.rs` | ✓ 0.41.0, Bild `ist-f7-pianoroll-dunkel-…` |
+| 2 | woa-chip | `widgets::chip` (`StateChip`, 26 px, DJ 28 px); `theme::badge_pill`/`status_pill` zeichnen darüber; Rot nur `Live` (Test) | `widgets/chip.rs` | ✓ 0.41.0, Bild `ist-f7-dj-dunkel-…` |
+| 3 | QuestionsWindow | Suche 48 px, Filter Offen/Gesendet/Alle, Status als Chip, Dafür/Dagegen/anders je Vorschlag, Senden erst nach Wahl, gesendet = 1,5 s Leuchtrahmen, Fehler mit „Erneut senden“ (Tests zuerst rot) | `fragen.rs` | ✓ 0.41.0, Bild `ist-f7-fragen-dunkel-…` |
+| 4 | AcceptanceWindow | Tun/Soll nebeneinander, Geht/Geht nicht senden sofort, G/N für den obersten offenen Punkt, Anmerkung jederzeit, Zähler mit Balken, „Erledigte zeigen“ (Test zuerst rot) | `abnahme.rs` | ✓ 0.41.0, Bild `ist-f7-abnahme-dunkel-…` |
+| 5 | TopBar On Air | Lampe `woa-onair--bar` 28 px, Rahmen 3 px, aus/an/gedimmt (Pult-Modus 72 %), Glut wie Sende-Deck (Test zuerst rot) | `widgets/lamp.rs`, `app.rs` | ✓ 0.41.0, Bild `ist-f7-onair-dunkel-…` |
+| 6 | DjHead + DjMixer | Chips 28 px auf einer Linie; Analyse läuft (Kreisel) / fehlgeschlagen (warn + „Neu analysieren“); Tonart grün bei passend (seit 0.40.2); „Weiter · Übergang“ neben weich|hart unter dem Crossfader, 36 px (Test zuerst rot) | `party/dj.rs` | ✓ 0.41.0, Bild `ist-f7-dj-dunkel-…` |
+| 7 | FadeButton | Fest 3 s: Sende-Deck „Fade“ (alles), Decks A–C quadratisch, Cart und Playlist als Symbol; cue-Füllung mit Fortschritt und Restzeit; zweiter Druck stoppt (#320, #321, #274) | `widgets/fade.rs`, `radio.rs`, `crates/radio` | ✓ 0.41.0, Bild `ist-f7-onair-dunkel-…` (blendet aus) |
+| 8 | TrackHeader | Immer 64 px; MIDI: Instrument-Knopf links → Klangauswahl, MIDI-Eingang rechts (104 px, leuchtet `cue` bei Noten, gestrichelt ohne Gerät) | `widgets/track_head.rs`, `app.rs` | ✓ 0.41.0, Bild `ist-f7-spurkopf-klangauswahl-dunkel-…` |
+| 9 | SoundPicker | Kategorien statt Rollen, Suche über alle Kategorien, Vorhören je Kachel, Bank-Herkunft, „Synth (einfach)“ unten | `app.rs` | ✓ 0.41.0, gleiches Bild |
+| 10 | ScreenSettings + SettingsFilter | Fenster (Strg+,): Bereiche links mit Trefferzahl, Filter oben (Umlaute egal), Enter springt und markiert 2 s; Register prüft, dass jeder Menüeintrag drin ist (Tests zuerst rot) | `settings.rs`, `app.rs` | ✓ 0.41.0, Bild `ist-f7-einstellungen-dunkel-…` |
+| 11 | AiSettings + JingleVoice | Schlüsselzustand als Chip, Prüfen, Entfernen mit Rückfrage, Credits, nur Schlüsselbund, Datenschutz-Hinweis; Stimme frei/ElevenLabs als Segment, Ähnlichkeit-Regler, Fehler mit „Erneut“ (Tests zuerst rot, nie echter Aufruf) | `elevenlabs_ui.rs`, `widgets/wizard.rs`, `crates/agent/src/elevenlabs.rs` | ✓ 0.41.0, Bilder `ist-f7-ki-dunkel-…`, `ist-f7-jingle-stimme-dunkel-…` |
+
+### offen: Frage an André (Fassung 7 entscheidet über bisherige Wünsche hinaus)
+
+- **Schließen-Knopf mit rotem Hover** (Window-README): nicht rot gebaut, weil Rot nur für live gilt. Rot wie verlangt?
+- **Fragen-Filter Vorgabe:** gebaut „Alle“, weil eine Karte bei „Offen“ samt Leuchtrahmen sofort nach dem Senden
+  verschwände; „Gesendet“ zählt nur in dieser Sitzung. Vorgabe „Offen“ gewünscht?
+- **Esc schließt jedes Entwicklerfenster** und die Piano-Roll; im Feedback-Dialog (modal, mittig) bleibt es beim X.
+  Feedback ebenfalls als Fenster mit 44-px-Kopf?
+- **Spurkopf-Knöpfe 22 statt 24 px**, MIDI-Eingang wird bei schmalem Kopf schmaler als 104 px (sonst ragt er in
+  Gain/Pan und der Kopf verliert die freie Klickkante).
+- **Fade überall fest 3 s:** Design lässt keine Einstellung zu; die bisherige Einstellung „Stopp blendet aus“ (Dauer
+  wählbar) bleibt für Stopp bestehen. Soll sie weg?
+- **Fade an Carts und Decks:** Design verlangt das; bisher war nur das Sende-Deck gewünscht (#320).
+- **KI-Schlüssel:** Design zeigt die letzten vier Zeichen; gebaut ohne, der Schlüssel erscheint nie im Fenster.
+- **Stimmen** bleiben eine Auswahlliste statt Kacheln (Kacheln brauchen Vorhören über ElevenLabs = Kosten).
+- **ON AIR gedimmt** im Pult-Modus ist neu aus dem Design (#301 sagte nichts dazu).
+
+### Abweichungen
+
+- Feedback-Dialog bleibt modal mittig (0.40.1), ohne eigenen 44-px-Kopf.
+- DJ: der Chip „Analyse“ erscheint nur, solange die Wellenform/Analyse eines geladenen Titels fehlt; im Bild ist die
+  Playlist leer (keine Nutzerdaten im Fotomodus).
+- Gefunden beim Foto: Einstellungen-Fenster legte Treffer nebeneinander und wuchs über die ganze Breite
+  (ScrollArea erbte die waagerechte Anordnung); behoben, MIDI-Eingang und PFL dort als Aufklapper.

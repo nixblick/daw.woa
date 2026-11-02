@@ -264,7 +264,7 @@ impl SettingsWindow {
                         "{} Einstellung suchen",
                         egui_phosphor::regular::MAGNIFYING_GLASS
                     ))
-                    .desired_width(f32::INFINITY)
+                    .desired_width(ui.available_width())
                     .min_size(egui::vec2(0.0, 32.0)),
             );
             r.widget_info(|| {
@@ -295,61 +295,66 @@ impl SettingsWindow {
                     }
                 });
                 ui.separator();
+                // Eigene senkrechte Spalte: die ScrollArea erbte sonst das `horizontal_top`.
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    let shown: Vec<_> = if filtering {
-                        hits.clone()
-                    } else {
-                        REGISTRY.iter().filter(|e| e.area == self.area).collect()
-                    };
-                    if shown.is_empty() {
-                        ui.weak("Keine Einstellung gefunden");
-                    }
-                    for e in shown {
-                        let marked = self.is_marked(e.id, now);
-                        let fr = egui::Frame::new()
-                            .fill(if marked {
-                                theme::mix(theme::cue(), theme::panel(), 0.82)
-                            } else {
-                                theme::surface()
-                            })
-                            .stroke(egui::Stroke::new(
-                                if marked { 1.5 } else { 1.0 },
-                                if marked {
-                                    theme::cue()
+                    ui.vertical(|ui| {
+                        ui.set_width(ui.available_width());
+                        let shown: Vec<_> = if filtering {
+                            hits.clone()
+                        } else {
+                            REGISTRY.iter().filter(|e| e.area == self.area).collect()
+                        };
+                        if shown.is_empty() {
+                            ui.weak("Keine Einstellung gefunden");
+                        }
+                        for e in shown {
+                            let marked = self.is_marked(e.id, now);
+                            let fr = egui::Frame::new()
+                                .fill(if marked {
+                                    theme::mix(theme::cue(), theme::panel(), 0.82)
                                 } else {
-                                    theme::border()
-                                },
-                            ))
-                            .corner_radius(theme::RADIUS_MD)
-                            .inner_margin(egui::Margin::same(10))
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                ui.horizontal(|ui| {
-                                    ui.vertical(|ui| {
-                                        ui.label(
-                                            egui::RichText::new(e.name)
-                                                .strong()
-                                                .color(theme::text()),
-                                        );
-                                        ui.label(
-                                            egui::RichText::new(e.desc)
-                                                .small()
-                                                .color(theme::text_dim()),
+                                    theme::surface()
+                                })
+                                .stroke(egui::Stroke::new(
+                                    if marked { 1.5 } else { 1.0 },
+                                    if marked {
+                                        theme::cue()
+                                    } else {
+                                        theme::border()
+                                    },
+                                ))
+                                .corner_radius(theme::RADIUS_MD)
+                                .inner_margin(egui::Margin::same(10))
+                                .show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    ui.horizontal(|ui| {
+                                        ui.vertical(|ui| {
+                                            ui.label(
+                                                egui::RichText::new(e.name)
+                                                    .strong()
+                                                    .color(theme::text()),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(e.desc)
+                                                    .small()
+                                                    .color(theme::text_dim()),
+                                            );
+                                        });
+                                        // Bedienelement rechts, so hoch wie die Zeile (sonst wächst sie).
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(ui.available_width(), 36.0),
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| row(ui, e.id),
                                         );
                                     });
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| row(ui, e.id),
-                                    );
                                 });
-                            });
-                        if marked {
-                            fr.response.scroll_to_me(Some(egui::Align::Center));
-                            ctx.request_repaint();
+                            if marked {
+                                fr.response.scroll_to_me(Some(egui::Align::Center));
+                                ctx.request_repaint();
+                            }
+                            ui.add_space(theme::SPACE_1);
                         }
-                        ui.add_space(theme::SPACE_1);
-                    }
+                    })
                 });
             });
         });

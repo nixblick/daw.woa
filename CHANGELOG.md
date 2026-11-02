@@ -2,6 +2,7 @@
 
 ## 0.41.0 — 2026-11-02
 
+- **Fragen und To-dos, Abnahme (QuestionsWindow/AcceptanceWindow Fassung 7):** eigener Fensterkopf 44 px für Fragen, Abnahme, Einstellungen und Piano-Roll (Doppelklick maximiert, Esc schließt); Fragen mit Suchfeld 48 px, Filter Offen/Gesendet/Alle, Leuchtrahmen 1,5 s nach dem Senden und „Erneut senden“ nach Fehlern; Abnahme mit Tun/Soll nebeneinander, Tasten G/N, Zähler mit Balken. Einstellungen-Fenster: Treffer stehen untereinander (lagen nebeneinander), MIDI-Eingang und PFL als Aufklapper. Fotomodus `WOA_SETTINGS=<filter>` und `WOA_SOUNDPICKER`. Abnahmepunkte und Bilder in `docs/design/ist/ist-f7-*`.
 - **ON AIR als Lampe (TopBar Fassung 7):** oben rechts `woa-onair--bar` (28 px, 3-px-Rahmen) mit drei Zuständen: aus, an (gleiche Glut wie im Sende-Deck), gedimmt im Pult-Modus (#301).
 - **DJ-Kopf und -Mischer (DjHead/DjMixer Fassung 7):** Chips 28 px auf einer Mittellinie, Chip „Analyse“ (läuft, Kreisel) bzw. „Analyse fehlgeschlagen“ mit Knopf „Neu analysieren“; „Weiter · Übergang“ unter dem Crossfader neben weich|hart (36 px).
 - **Design System Fassung 7 (Nachtrag 0.40):** `docs/design/woa-design-system/` ersetzt Fassung 6 (neue Bausteine Window, QuestionsWindow, QuestionStates, AcceptanceWindow, DjHead, FadeButton, ScreenSettings, SettingsFilter, AiSettings, JingleVoice, GuestCard), Zielbilder unter `docs/design/soll/fassung-7/`.

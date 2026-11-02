@@ -2480,6 +2480,24 @@ impl WoaApp {
             // Fotomodus des Cue-Editors: erster Titel der Playlist.
             r.open_cue_editor(0);
         }
+        if first && let Ok(q) = std::env::var("WOA_SETTINGS") {
+            // Fotomodus „Einstellungen“ (Fassung 7); der Wert ist der Filtertext.
+            self.settings.open = true;
+            self.settings.query = q;
+        }
+        if n == 4 && std::env::var_os("WOA_SOUNDPICKER").is_some() {
+            // Fotomodus Klangauswahl: erste MIDI-Spur (mit WOA_DEMO_SONG), nur Anzeige.
+            let id = self
+                .state
+                .project()
+                .tracks
+                .iter()
+                .find(|t| t.kind == woa_model::TrackKind::Midi)
+                .map(|t| t.id);
+            if let Some(id) = id {
+                self.open_sound_picker(id);
+            }
+        }
         if n == 4 && std::env::var_os("WOA_DJ_LOAD").is_some() {
             // Fotomodus DJ (#347): Playlist-Titel 1 und 2 auf Deck A und B legen (nicht abspielen).
             self.ensure_radio();
@@ -6179,8 +6197,17 @@ impl WoaApp {
         use crate::settings::SettingId as S;
         let open = |ui: &mut egui::Ui| ui.button("Öffnen").clicked();
         match id {
-            S::Pfl => self.pfl_menu(ui),
-            S::MidiInput => self.midi_menu(ui),
+            // Menülisten als Aufklapper: sonst sprengen sie die Zeile (Foto 0.41.0).
+            S::Pfl => {
+                ui.menu_button(format!("Wählen {}", theme::ic::CARET_DOWN), |ui| {
+                    self.pfl_menu(ui)
+                });
+            }
+            S::MidiInput => {
+                ui.menu_button(format!("Wählen {}", theme::ic::CARET_DOWN), |ui| {
+                    self.midi_menu(ui)
+                });
+            }
             S::Telemetry => {
                 let mut on = self.config.telemetry_enabled == Some(true);
                 if ui

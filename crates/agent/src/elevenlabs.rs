@@ -832,7 +832,11 @@ mod tests {
         assert_eq!(tts_body(&a)["model_id"], "eleven_v3");
         assert_eq!(tts_body(&a)["voice_settings"]["similarity_boost"], 0.75);
         a.similarity = 2.0;
-        assert_eq!(tts_body(&a)["voice_settings"]["similarity_boost"], 1.0, "auf 0..1 begrenzt");
+        assert_eq!(
+            tts_body(&a)["voice_settings"]["similarity_boost"],
+            1.0,
+            "auf 0..1 begrenzt"
+        );
     }
 
     #[test]
