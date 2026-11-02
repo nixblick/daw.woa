@@ -55,6 +55,14 @@ impl McpLive {
         }
     }
 
+    /// Ausgangspegel des Radios für Agenten (nur lesend, MCP `output_levels`). Ohne Server
+    /// geschieht nichts.
+    pub fn publish_levels(&self, radio: bool, peaks: [f32; 3]) {
+        if let Some(server) = &self.server {
+            server.output_levels().publish(radio, peaks);
+        }
+    }
+
     /// Startet den Server (mit Nutzertoken oder dem Schlüssel dieses Starts); bedient dann die wartenden Aufrufe.
     /// Gibt die Zahl der Agent-Schritte dieses Bildes zurück.
     pub fn frame(&mut self, ctx: &egui::Context, state: &mut AppState) -> usize {

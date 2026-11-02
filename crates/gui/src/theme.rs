@@ -708,6 +708,42 @@ pub fn status_pill(ui: &mut egui::Ui, label: &str, color: Color32, active: bool)
         });
 }
 
+/// Aussehen eines Status-Badges ohne Füllfarbe (Design-Runde 3b): `Neutral` = `well` mit
+/// `border`-Rahmen, `Outline` = `well` mit farbigem Rahmen und farbiger Schrift. Eine Füllung in
+/// der Modusfarbe bleibt „eingeschaltet“ vorbehalten.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Badge {
+    Neutral,
+    Outline(Color32),
+}
+
+impl Badge {
+    /// Füllung, Rahmen und Schrift des Badges.
+    pub fn colors(self) -> (Color32, Color32, Color32) {
+        match self {
+            Badge::Neutral => (well(), border(), text_dim()),
+            Badge::Outline(c) => (well(), c, c),
+        }
+    }
+}
+
+/// Status-Badge im Stil von [`status_pill`], aber nie gefüllt (siehe [`Badge`]).
+pub fn badge_pill(ui: &mut egui::Ui, label: &str, badge: Badge) {
+    let (fill, stroke_col, text_col) = badge.colors();
+    Frame::new()
+        .fill(fill)
+        .stroke(Stroke::new(1.0, stroke_col))
+        .corner_radius(CornerRadius::same(RADIUS_MD))
+        .inner_margin(Margin::symmetric(7, 2))
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new(label)
+                    .font(label_font(13.0))
+                    .color(text_col),
+            );
+        });
+}
+
 /// Farbe eines LED-Segments bei `seg_db` (Grün → Gelb → Rot), auf `lcd_bg`.
 fn led_color(seg_db: f32) -> Color32 {
     use crate::widgets::vu::{LedZone, zone_for_db};

@@ -35,6 +35,17 @@ impl Probe {
     }
 }
 
+/// Spur-Kennung der flüchtigen Vorhör-Stimme (Akkord-Vorhören, André 02.11.2026): keine Spur
+/// des Projekts. Solange sie klingt, hängt die App eine unsichtbare MIDI-Spur mit ihrem Klang
+/// in den Graphen des Players (nicht ins Projekt, keine Undo-Kette, keine Datei).
+pub const VOICE_TRACK: TrackId = TrackId(u64::MAX);
+
+/// Vorlauf der Vorhör-Stimme: der Graph mit ihrer Spur wird ein Bild vorher getauscht.
+pub const VOICE_LEAD: Duration = Duration::from_millis(60);
+
+/// Nachklang der Vorhör-Stimme nach dem Loslassen, bevor ihre Spur wieder verschwindet.
+pub const VOICE_TAIL: Duration = Duration::from_millis(900);
+
 /// Dauer eines kurzen Probetons (Kachel, Vorhören).
 pub const TAP: Duration = Duration::from_millis(450);
 
@@ -46,6 +57,8 @@ pub struct Probeton {
     timed: Vec<(Instant, Probe)>,
     /// Gehaltene Töne (an, noch nicht aus), damit beim Schließen nichts hängen bleibt.
     held: Vec<(TrackId, u8)>,
+    /// Flüchtige Vorhör-Stimme: ihr Klang und bis wann sie im Graphen bleibt.
+    voice: Option<(woa_model::TrackSound, Instant)>,
 }
 
 impl Probeton {
@@ -97,6 +110,30 @@ impl Probeton {
         }
     }
 
+    /// Kurzer Akkord auf der flüchtigen Vorhör-Stimme mit dem Klang `sound`, unabhängig von
+    /// der gewählten Spur.
+    pub fn voice_tap(
+        &mut self,
+        sound: woa_model::TrackSound,
+        pitches: &[u8],
+        velocity: u8,
+        now: Instant,
+    ) {
+        self.voice = Some((sound, now + VOICE_LEAD + TAP + VOICE_TAIL));
+        self.tap(VOICE_TRACK, pitches, velocity, now, VOICE_LEAD);
+    }
+
+    /// Klang der Vorhör-Stimme, solange sie im Graphen gebraucht wird.
+    pub fn voice(&mut self, now: Instant) -> Option<woa_model::TrackSound> {
+        match self.voice {
+            Some((s, until)) if now < until => Some(s),
+            _ => {
+                self.voice = None;
+                None
+            }
+        }
+    }
+
     /// Lässt alle gehaltenen und geplanten Töne los (Editor zu, Spur gewechselt).
     pub fn release_all(&mut self) {
         let offs: Vec<Probe> = self
@@ -133,7 +170,9 @@ impl Probeton {
     pub fn next_due(&self, now: Instant) -> Option<Duration> {
         self.timed
             .iter()
-            .map(|e| e.0.saturating_duration_since(now))
+            .map(|e| e.0)
+            .chain(self.voice.map(|v| v.1))
+            .map(|t| t.saturating_duration_since(now))
             .min()
     }
 
@@ -157,6 +196,28 @@ mod tests {
     use super::*;
 
     const T: TrackId = TrackId(7);
+
+    #[test]
+    fn voice_tap_plays_its_sound_then_goes_away() {
+        let mut p = Probeton::default();
+        let now = Instant::now();
+        let strings = woa_model::TrackSound {
+            program: 48,
+            drums: false,
+            bank: None,
+        };
+        p.voice_tap(strings, &[60, 64, 67], 96, now);
+        assert_eq!(p.voice(now), Some(strings));
+        assert!(
+            p.take(now).is_empty(),
+            "Note an erst nach dem Graphentausch"
+        );
+        let on = p.take(now + VOICE_LEAD);
+        assert_eq!(on.len(), 3);
+        assert!(on.iter().all(|c| c.track() == VOICE_TRACK));
+        assert_eq!(p.take(now + VOICE_LEAD + TAP).len(), 3, "Note aus");
+        assert_eq!(p.voice(now + VOICE_LEAD + TAP + VOICE_TAIL), None);
+    }
 
     #[test]
     fn held_note_goes_on_and_off() {

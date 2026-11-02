@@ -522,6 +522,8 @@ impl WoaApp {
             midi.select(config.midi_input.clone());
         }
         let controls = ControlDesk::new(&config);
+        let piano_roll_floating =
+            config.piano_roll_window || std::env::var_os("WOA_PIANOROLL").is_some();
         Self {
             controls,
             controls_woken: false,
@@ -615,7 +617,7 @@ impl WoaApp {
             open_folders: std::collections::HashSet::new(),
             comp_drag: None,
             studio_dock: StudioDockTab::Mixer,
-            piano_roll_floating: std::env::var_os("WOA_PIANOROLL").is_some(),
+            piano_roll_floating,
             analysis_open: false,
             analysis: None,
             analysis_buf: (Vec::new(), Vec::new()),
@@ -1274,7 +1276,7 @@ impl WoaApp {
         let sink = self.player.as_ref().map(Player::midi_sink);
         for probe in probes {
             let track = probe.track();
-            if Some(track) == live {
+            if Some(track) == live || track == crate::probeton::VOICE_TRACK {
                 let ev = match probe {
                     Probe::NoteOn {
                         pitch, velocity, ..
@@ -1908,35 +1910,21 @@ impl WoaApp {
                 }
             }
 
-            // 3b. Pegel-LCD der Summe: Beschriftung, Anzeige (Modern = LED-Kette, Analog = VU),
-            // Spitzenwert in dB. „Aus“ blendet sie aus (Einstellungen › Pegelanzeige).
+            // 3b. Pegel-LCD der Summe (Vorlage ScreenStudio, Gruppe „Pegel“): Beschriftung,
+            // horizontale LED-Kette, Spitzenwert in dB. Das analoge VU steht nur in der
+            // Pegelansicht des Analyse-Fensters (André 02.11.2026).
             // Unter ~1000 px Restbreite (1366er Fenster) fehlt der Platz: die Pegel-LCD weicht,
             // damit Latenz, Raster, Zoom und Export nicht überlappen.
             let roomy = ui.available_width() > 1000.0;
-            if roomy && self.config.vu_view != crate::widgets::VuView::Aus {
-                let sum = self
-                    .track_levels
-                    .values()
-                    .copied()
-                    .fold(self.level, f32::max);
-                let view = self.config.vu_view;
+            if roomy {
+                let sum = self.sum_level();
                 theme::lcd_show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 10.0;
                         ui.label(theme::panel_label("PEGEL").color(theme::lcd_text()));
-                        if view == crate::widgets::VuView::Analog {
-                            crate::widgets::vu_meter(
-                                ui,
-                                egui::Id::new("transport-vu"),
-                                view,
-                                egui::vec2(78.0, 34.0),
-                                sum,
-                            );
-                        } else {
-                            let (rect, _) = ui
-                                .allocate_exact_size(egui::vec2(150.0, 12.0), egui::Sense::hover());
-                            theme::led_meter(ui.painter(), rect, sum);
-                        }
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(150.0, 12.0), egui::Sense::hover());
+                        theme::led_meter(ui.painter(), rect, sum);
                         ui.label(
                             egui::RichText::new(level_db_text(sum))
                                 .monospace()
@@ -1946,7 +1934,7 @@ impl WoaApp {
                     });
                 })
                 .response
-                .on_hover_text("Pegel der Summe (Ansicht unter Einstellungen › Pegelanzeige)");
+                .on_hover_text("Pegel der Summe (analoges VU: Analyse-Fenster › Pegelansicht)");
             }
 
             // 4. Latenz: Symbol-Schalter und Zusatz-Feld in ms.
@@ -6547,6 +6535,15 @@ impl eframe::App for WoaApp {
         if self.mcp_live.frame(ctx, &mut self.state) > 0 {
             self.produktionen.mark_stale();
         }
+        // Ausgangspegel des Radios für Agenten (nur lesend, André 02.11.2026).
+        let radio_on = self.config.mode.uses_desk();
+        let peaks = self
+            .radio
+            .as_ref()
+            .filter(|_| radio_on)
+            .map_or([0.0; 3], RadioDesk::output_levels);
+        self.mcp_live
+            .publish_levels(radio_on && self.radio.is_some(), peaks);
         self.mcp_live.serve_dj(self.radio.as_ref());
         self.update_frame(ctx);
         if self.state.autosave_due(Instant::now()) {
@@ -6564,7 +6561,14 @@ impl eframe::App for WoaApp {
         let project = self.state.project().clone();
         self.midi.poll(Instant::now());
         self.controller_frame(ctx);
-        let live = self.live_midi_track();
+        let mut project = project;
+        let live = match self.state.probeton.voice(Instant::now()) {
+            Some(sound) => {
+                with_voice_track(&mut project, sound);
+                Some(crate::probeton::VOICE_TRACK)
+            }
+            None => self.live_midi_track(),
+        };
         let state = &self.state;
         let loop_beats = self
             .loop_enabled
@@ -6859,6 +6863,14 @@ impl WoaApp {
         }
     }
 
+    /// Pegel der Summe für Transport und Pegelansicht: höchster Spur- oder Aufnahmepegel.
+    fn sum_level(&self) -> f32 {
+        self.track_levels
+            .values()
+            .copied()
+            .fold(self.level, f32::max)
+    }
+
     /// Das schwebende Analyse-Fenster.
     fn analysis_window(&mut self, ctx: &egui::Context) {
         if !self.analysis_open {
@@ -6872,17 +6884,27 @@ impl WoaApp {
             .map(|t| (t.id, t.name.clone()))
             .collect();
         let playing = self.player.as_ref().is_some_and(Player::is_playing);
+        let sum = self.sum_level();
         let mut open = true;
+        let mut vu_view = self.config.vu_view;
         if let Some(view) = self.analysis.as_mut() {
             egui::Window::new("Analyse")
                 .open(&mut open)
-                .default_size([760.0, 520.0])
-                .min_size([420.0, 340.0])
+                .default_size([760.0, 540.0])
+                .min_size([420.0, 360.0])
                 .resizable(true)
                 .frame(theme::card_frame())
-                .show(ctx, |ui| view.ui(ui, &tracks, playing));
+                .show(ctx, |ui| {
+                    level_view(ui, &mut vu_view, sum);
+                    ui.add_space(4.0);
+                    view.ui(ui, &tracks, playing);
+                });
         }
         self.analysis_open = open;
+        if vu_view != self.config.vu_view {
+            self.config.vu_view = vu_view;
+            self.save_config();
+        }
     }
 
     /// Unteres Ableton-Style Studio-Dock: Umschaltbar zwischen Studio-Mixer-Konsole und
@@ -6969,6 +6991,9 @@ impl WoaApp {
                         .clicked()
                     {
                         self.piano_roll_floating = !self.piano_roll_floating;
+                        // Die Wahl wird gemerkt (André 02.11.2026); Vorgabe ist das Dock.
+                        self.config.piano_roll_window = self.piano_roll_floating;
+                        self.save_config();
                     }
                 }
 
@@ -7046,10 +7071,29 @@ impl WoaApp {
             ui.separator();
             ui.vertical(|ui| {
                 ui.set_width(RACK_W);
+                // „Ausgang / Pan“ steht fest unten im Rack und ist immer ganz sichtbar; wird der
+                // Rest zu lang (viele Effekte, kleines Dock), rollt nur er (André 02.11.2026).
+                // Höhe des Fußes aus dem letzten Bild (erstes Bild: Schätzung).
+                let foot_id = egui::Id::new("studio_rack_footer_h");
+                let footer_h = ui
+                    .ctx()
+                    .data(|d| d.get_temp::<f32>(foot_id))
+                    .unwrap_or(120.0);
+                let has_track = self.rack_track().is_some();
+                let body_h = if has_track {
+                    (ui.available_height() - footer_h - 4.0).max(48.0)
+                } else {
+                    ui.available_height()
+                };
                 egui::ScrollArea::vertical()
                     .id_salt("studio_insert_rack_scroll")
+                    .max_height(body_h)
                     .auto_shrink([false, false])
                     .show(ui, |ui| self.insert_rack(ui));
+                let top = ui.cursor().top();
+                self.rack_footer(ui);
+                let h = ui.min_rect().bottom() - top;
+                ui.ctx().data_mut(|d| d.insert_temp(foot_id, h.max(0.0)));
             });
         });
     }
@@ -7262,9 +7306,9 @@ impl WoaApp {
             });
             return;
         };
-        let (id, name, kind, _gain, pan) = {
+        let (id, name, kind) = {
             let t = &self.state.project().tracks[index];
-            (t.id, t.name.clone(), t.kind, t.gain_db, t.pan)
+            (t.id, t.name.clone(), t.kind)
         };
         let color = theme::track_color(index);
         ui.spacing_mut().item_spacing.y = 4.0;
@@ -7331,6 +7375,24 @@ impl WoaApp {
             self.instrument_section(ui, id, color);
         }
         self.strip_effects(ui, id, kind);
+    }
+
+    /// Fuß des Racks: Ausgang und Pan der gewählten Spur, außerhalb der Rollfläche.
+    fn rack_footer(&mut self, ui: &mut egui::Ui) {
+        let Some(id) = self.rack_track() else {
+            return;
+        };
+        let Some(pan) = self
+            .state
+            .project()
+            .tracks
+            .iter()
+            .find(|t| t.id == id)
+            .map(|t| t.pan)
+        else {
+            return;
+        };
+        ui.spacing_mut().item_spacing.y = 4.0;
         self.strip_routing(ui, id);
         self.pan_field(ui, id, pan, "Pan ");
     }
@@ -8617,11 +8679,13 @@ impl WoaApp {
                 }
             }
             ui.separator();
-            ui.label(egui::RichText::new("Pegelansicht (Produzent)").small());
+            ui.label(egui::RichText::new("Pegelansicht (Analyse-Fenster)").small());
             for v in crate::widgets::VuView::ALL {
                 if ui
                     .radio_value(&mut self.config.vu_view, v, v.label())
-                    .on_hover_text("Pegelanzeige in der Transportleiste (höchster Spurpegel)")
+                    .on_hover_text(
+                        "Pegelansicht im Analyse-Fenster; der Transport zeigt immer die LED-Kette",
+                    )
                     .changed()
                 {
                     self.save_config();
@@ -8771,6 +8835,52 @@ fn bar_beat(beats: f64, position: bool) -> String {
 }
 
 /// Gruppentitel im Insert-Rack: Modulkopf wie überall (`panel-label`).
+/// Pegelansicht im Analyse-Fenster: Umschalter Analog/Modern/Aus und die gewählte Anzeige
+/// des Summenpegels (analoges VU nur hier, der Transport zeigt die LED-Kette).
+fn level_view(ui: &mut egui::Ui, view: &mut crate::widgets::VuView, level: f32) {
+    ui.horizontal(|ui| {
+        ui.label(theme::panel_label("PEGELANSICHT"));
+        for v in crate::widgets::VuView::ALL {
+            ui.radio_value(view, v, v.label())
+                .on_hover_text("Anzeige des Summenpegels hier im Analyse-Fenster");
+        }
+    });
+    if *view != crate::widgets::VuView::Aus {
+        theme::lcd_show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                ui.label(theme::panel_label("PEGEL").color(theme::lcd_text()));
+                let size = if *view == crate::widgets::VuView::Analog {
+                    egui::vec2(150.0, 64.0)
+                } else {
+                    egui::vec2(260.0, 14.0)
+                };
+                crate::widgets::vu_meter(ui, egui::Id::new("analysis-vu"), *view, size, level);
+                ui.label(
+                    egui::RichText::new(level_db_text(level))
+                        .monospace()
+                        .size(12.0)
+                        .color(theme::lcd_text()),
+                );
+            });
+        });
+    }
+}
+
+/// Hängt die flüchtige Vorhör-Stimme als unsichtbare MIDI-Spur an die Kopie des Projekts,
+/// die der Player bekommt (nie ans Projekt selbst). Bei Solo anderer Spuren bleibt sie hörbar.
+fn with_voice_track(project: &mut woa_model::Project, sound: woa_model::TrackSound) {
+    let solo = project.tracks.iter().any(|t| t.solo);
+    let mut t = woa_model::Track::new(
+        crate::probeton::VOICE_TRACK,
+        "Vorhören",
+        woa_model::TrackKind::Midi,
+    );
+    t.sound = Some(sound);
+    t.solo = solo;
+    project.tracks.push(t);
+}
+
 fn rack_title(s: &str) -> egui::RichText {
     theme::panel_label(s)
 }
@@ -9264,6 +9374,80 @@ mod nacharbeit_tests {
             "Einklappen als Symbol"
         );
         assert!(rig.any(|s| s == theme::ic::ARROWS_OUT), "Lösen als Symbol");
+    }
+
+    /// Rack-Höhe (André 02.11.2026): „Ausgang / Pan“ liegt bei 1920 × 1030 im sichtbaren Dock.
+    #[test]
+    fn rack_output_and_pan_fit_the_dock() {
+        for (midi, effects) in [(false, 0), (true, 0), (true, 8)] {
+            let mut rig = Rig::new(Mode::Produzent);
+            let st = rig.app.state_mut();
+            let t = if midi {
+                st.add_midi_track().unwrap()
+            } else {
+                st.add_track().unwrap()
+            };
+            for _ in 0..effects {
+                st.add_insert(t, woa_model::EffectKind::Eq).unwrap();
+            }
+            rig.app.select_track(t);
+            rig.app.studio_dock = StudioDockTab::Mixer;
+            for _ in 0..4 {
+                rig.step(Vec::new());
+            }
+            let find = |f: &dyn Fn(&str, &str) -> bool| {
+                rig.nodes
+                    .iter()
+                    .filter(|(l, v, r)| r.width() > 0.0 && f(l, v))
+                    .map(|n| n.2)
+                    .next()
+            };
+            let ausgang = find(&|l, v| l == "AUSGANG" || v == "AUSGANG").expect("AUSGANG");
+            let pan = find(&|_, v| v == "Pan C").expect("Pan im Rack");
+            let dock = find(&|l, v| l == "STUDIO-DOCK" || v == "STUDIO-DOCK").expect("Dock");
+            eprintln!("midi={midi} dock={dock:?} ausgang={ausgang:?} pan={pan:?}");
+            assert!(ausgang.top() > dock.bottom(), "AUSGANG im Dock");
+            // Unter dem Dock liegt die Statuszeile (~24 px): Pan muss darüber enden.
+            assert!(
+                pan.bottom() <= 1030.0 - 24.0,
+                "Pan unten abgeschnitten (midi={midi}, fx={effects}): {pan:?}"
+            );
+        }
+    }
+
+    /// Transport-Pegel (André 02.11.2026): LED-Kette mit dB-Zahl, das analoge VU nur in der
+    /// Pegelansicht des Analyse-Fensters, dort umschaltbar Analog/Modern/Aus.
+    #[test]
+    fn transport_level_is_a_led_chain_and_vu_lives_in_analysis() {
+        let body = body_of(SRC, "fn transport_bar(");
+        assert!(!body.contains("vu_meter("), "Mini-VU noch im Transport");
+        assert!(body.contains("led_meter("), "LED-Kette fehlt im Transport");
+        let lv = body_of(SRC, "fn level_view(");
+        assert!(lv.contains("vu_meter(") && lv.contains("VuView::ALL"));
+        assert!(body_of(SRC, "fn analysis_window(").contains("level_view("));
+    }
+
+    /// Piano-Roll öffnet im Dock; „Als Fenster lösen“ wird gemerkt (André 02.11.2026).
+    #[test]
+    fn piano_roll_opens_docked_and_window_choice_is_remembered() {
+        let mut rig = Rig::new(Mode::Produzent);
+        assert!(!rig.app.piano_roll_floating, "Vorgabe: Dock");
+        let st = rig.app.state_mut();
+        let t = st.add_midi_track().unwrap();
+        let c = st
+            .add_midi_clip(Some(t), "a", 0.0, 4.0, woa_model::MidiData::default())
+            .unwrap();
+        rig.app.open_piano_roll(c);
+        assert_eq!(rig.app.studio_dock, StudioDockTab::PianoRoll);
+        assert!(body_of(SRC, "fn studio_dock_panel(").contains("config.piano_roll_window ="));
+        let config = GuiConfig {
+            telemetry_enabled: Some(false),
+            piano_roll_window: true,
+            ..GuiConfig::default()
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let app = WoaApp::without_audio(config, tmp.path().join("rec"));
+        assert!(app.piano_roll_floating, "gemerkte Wahl: Fenster");
     }
 
     #[test]

@@ -160,6 +160,43 @@ pub enum Target {
     Cart(usize),
     /// Layout umschalten.
     Mode(Layout),
+    /// Taste an Deck 0..N-1 (A, B, C …). Weitere Deck-Ziele (etwa für die DJ-Ansicht)
+    /// kommen als neue [`DeckAction`] dazu, ohne dass sich Dateiformat oder Aufrufer ändern.
+    Deck(usize, DeckAction),
+}
+
+/// Was eine Deck-Taste auslöst. Gespeichert als `{"deck":[0,"start"]}`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeckAction {
+    /// Start/Stopp.
+    Start,
+    /// Cue (zurück an den Anfang).
+    Cue,
+    /// Vorhören (PFL) an/aus.
+    Pfl,
+}
+
+impl DeckAction {
+    /// Alle Aktionen in der Reihenfolge der Lernliste.
+    pub const ALL: [DeckAction; 3] = [DeckAction::Start, DeckAction::Cue, DeckAction::Pfl];
+
+    /// Anzeigename.
+    pub fn label(self) -> &'static str {
+        match self {
+            DeckAction::Start => "Start/Stopp",
+            DeckAction::Cue => "Cue",
+            DeckAction::Pfl => "Vorhören",
+        }
+    }
+}
+
+/// Anzahl der Decks im Radio, die MIDI-Learn kennt (A–C).
+pub const DECKS: usize = 3;
+
+/// Buchstabe eines Decks (0 = A).
+fn deck_letter(k: usize) -> char {
+    char::from(b'A' + (k % 26) as u8)
 }
 
 impl Target {
@@ -186,6 +223,7 @@ impl Target {
             Target::Mode(Layout::Produzent) => "Layout Produzent".into(),
             Target::Mode(Layout::Radio) => "Layout Radio".into(),
             Target::Mode(Layout::Toggle) => "Layout umschalten".into(),
+            Target::Deck(k, a) => format!("Deck {} {}", deck_letter(*k), a.label()),
         }
     }
 }
@@ -677,5 +715,47 @@ mod tests {
         let text = serde_json::to_string(&maps).expect("json");
         let back: Vec<Mapping> = serde_json::from_str(&text).expect("json");
         assert_eq!(back, maps);
+    }
+
+    /// Decks A–C sind lernbar (André 02.11.2026); alte Zuordnungsdateien laden weiter.
+    #[test]
+    fn deck_targets_learn_and_old_maps_still_load() {
+        let mut m = Mapper::default();
+        m.learn(Target::Deck(1, DeckAction::Start));
+        assert!(matches!(
+            m.handle(pad(50), |_| None),
+            Some(Action::Learned(_))
+        ));
+        let off = CtrlMsg {
+            channel: 9,
+            kind: CtrlKind::NoteOff { note: 50 },
+        };
+        m.handle(off, |_| None);
+        assert_eq!(
+            m.handle(pad(50), |_| None),
+            Some(Action::Press(Target::Deck(1, DeckAction::Start)))
+        );
+        assert_eq!(
+            Target::Deck(1, DeckAction::Start).label(),
+            "Deck B Start/Stopp"
+        );
+        assert_eq!(Target::Deck(0, DeckAction::Cue).label(), "Deck A Cue");
+        assert_eq!(Target::Deck(2, DeckAction::Pfl).label(), "Deck C Vorhören");
+        assert!(!Target::Deck(0, DeckAction::Pfl).is_continuous());
+        let json = serde_json::to_string(&Target::Deck(2, DeckAction::Cue)).unwrap();
+        assert_eq!(json, r#"{"deck":[2,"cue"]}"#);
+        assert_eq!(
+            serde_json::from_str::<Target>(&json).unwrap(),
+            Target::Deck(2, DeckAction::Cue)
+        );
+        let old: Vec<Mapping> = serde_json::from_str(
+            &serde_json::to_string(&vec![Mapping {
+                source: m.mappings()[0].source,
+                target: Target::Cart(0),
+            }])
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(old[0].target, Target::Cart(0));
     }
 }

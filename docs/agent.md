@@ -44,6 +44,7 @@ live; gleichzeitiges Speichern in ihm und im Fenster überschreibt sich.
 | `set_gain` | `track`, `gain_db` | Lautstärke in dB |
 | `set_trim` | `track`, `trim_db` | Eingangs-Trim in dB (−24 bis +24), vor den Inserts, getrennt vom Gain; ein Undo-Schritt |
 | `set_pan` | `track`, `pan` (-1..1) | Panorama |
+| `output_levels` | – | **nur lesend, nur Live-Modus** (die App läuft): Spitze je Ausgang des Radios `notebook`, `stream`, `pfl` (Vorhören) linear und in dBFS (`null` = still), `radio` = Radio- oder Party-Modus aktiv, `age_ms` = Alter der Messung. Ändert nichts, kein Undo-Schritt, leiht die Sitzung nicht |
 | `set_mute` | `track`, `mute` | stumm schalten |
 | `set_tempo` | `bpm` | Projekttempo |
 | `set_solo` | `track`, `solo` | Solo; ist eine Spur auf Solo, klingen nur Solo-Spuren |

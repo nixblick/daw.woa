@@ -74,6 +74,10 @@ pub struct GuiConfig {
     pub ordner: crate::ordner::Ordner,
     /// Beim Start höchstens einmal am Tag nach einem neuen Release suchen. Vorgabe: an.
     pub auto_update: bool,
+    /// Piano-Roll als eigenes Fenster statt im Studio-Dock. Vorgabe: Dock; die Wahl am
+    /// Lösen-Symbol wird gemerkt.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub piano_roll_window: bool,
     /// Unix-Sekunden der letzten erfolgreichen Update-Suche.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_update_check: Option<u64>,
@@ -157,6 +161,7 @@ impl Default for GuiConfig {
             ordner: crate::ordner::Ordner::default(),
             auto_update: true,
             last_update_check: None,
+            piano_roll_window: false,
         }
     }
 }
@@ -802,6 +807,18 @@ mod tests {
         assert_eq!(GuiConfig::load(&p).vu_view, VuView::Modern);
         std::fs::write(&p, r#"{"vu_view":"aus"}"#).unwrap();
         assert_eq!(GuiConfig::load(&p).vu_view, VuView::Aus);
+    }
+
+    #[test]
+    fn piano_roll_opens_in_dock_and_remembers_the_window_choice() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("config.json");
+        std::fs::write(&p, r#"{"mode":"produzent"}"#).unwrap();
+        assert!(!GuiConfig::load(&p).piano_roll_window, "Vorgabe: Dock");
+        let mut c = GuiConfig::load(&p);
+        c.piano_roll_window = true;
+        c.save(&p).unwrap();
+        assert!(GuiConfig::load(&p).piano_roll_window);
     }
 
     #[test]

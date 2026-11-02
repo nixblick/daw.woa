@@ -7,7 +7,7 @@
 //! Keine Allokation, kein Lock, kein I/O im [`PflPlayer::process`].
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use basedrop::Shared;
 
@@ -32,6 +32,8 @@ pub struct PflStatus {
     pub playing: AtomicBool,
     /// Position im vorgehörten Puffer (Frames, in der PFL-Rate).
     pub position: AtomicU64,
+    /// Spitze des Kopfhörer-Signals seit dem letzten Abholen (f32-Bits, linear).
+    pub peak: AtomicU32,
 }
 
 /// Steuerseite (Control-Thread): schickt Puffer, die in der PFL-Rate dekodiert sind.
@@ -103,6 +105,11 @@ impl PflHandle {
         self.status.playing.load(Ordering::Acquire)
     }
 
+    /// Spitze des Vorhörens seit dem letzten Abholen (linear, setzt zurück).
+    pub fn take_peak(&self) -> f32 {
+        f32::from_bits(self.status.peak.swap(0, Ordering::Relaxed))
+    }
+
     /// Position in Sekunden.
     pub fn position_seconds(&self) -> f64 {
         self.status.position.load(Ordering::Acquire) as f64 / f64::from(self.rate)
@@ -132,6 +139,7 @@ impl PflPlayer {
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         self.drain();
         let n = left.len().min(right.len());
+        let mut peak = 0.0f32;
         for i in 0..n {
             let (mut l, mut r) = (0.0, 0.0);
             if let Some((buf, pos)) = self.voice.as_mut() {
@@ -161,6 +169,12 @@ impl PflPlayer {
             }
             left[i] = l;
             right[i] = r;
+            peak = peak.max(l.abs()).max(r.abs());
+        }
+        // Ein Schreiber (dieser Thread), lock-frei: Höchstwert seit dem letzten Abholen.
+        let old = f32::from_bits(self.status.peak.load(Ordering::Relaxed));
+        if peak > old {
+            self.status.peak.store(peak.to_bits(), Ordering::Relaxed);
         }
         if let Some(bus) = self.bus.as_mut() {
             let mut off = 0;
@@ -209,6 +223,8 @@ mod tests {
         assert!(h.is_playing());
         assert_eq!(h.status.position.load(Ordering::Acquire), 72);
         assert!((l[31] - 1.0).abs() < 1e-6 && (r[31] + 1.0).abs() < 1e-6);
+        assert!((h.take_peak() - 1.0).abs() < 1e-6, "Spitze des Vorhörens");
+        assert_eq!(h.take_peak(), 0.0, "Abholen setzt zurück");
         assert!(l[0].abs() < 1e-6, "fade in");
         assert!(h.cmds.push(PflCmd::Stop).is_ok());
         assert_no_alloc::assert_no_alloc(|| p.process(&mut l, &mut r));

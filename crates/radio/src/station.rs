@@ -141,6 +141,8 @@ pub struct View {
     /// Spitzen je Ausgang seit der letzten Ansicht (linear): Notebook, Stream; hinter Regler
     /// und Stumm.
     pub out_meters: [f32; 2],
+    /// Spitze des Vorhör-Ausgangs (PFL) seit der letzten Ansicht (linear).
+    pub pfl_peak: f32,
     /// Gespielte Titel ausblenden (#215).
     pub hide_played: bool,
     /// Erster offener Titel; die davor sind gespielt.
@@ -491,6 +493,7 @@ fn run(
                 [m, c, d, st.take_mic_peak(), st.take_peak()]
             },
             out_meters: st.take_output_peaks(),
+            pfl_peak: c.take_pfl_peak(),
             hide_played: c.show().hide_played,
             first_open: c.first_open_index(),
             recording: c.recording_file().map(|p| p.to_path_buf()),

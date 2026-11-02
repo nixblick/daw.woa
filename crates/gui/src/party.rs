@@ -463,7 +463,7 @@ impl PartyView {
                             } else {
                                 "Rechtes Deck"
                             });
-                            theme::status_pill(ui, badge, col, true);
+                            theme::badge_pill(ui, badge, col);
                         });
                         ui.add(
                             egui::Label::new(
@@ -1482,18 +1482,20 @@ fn level_display(ui: &mut egui::Ui, db: f64, size: egui::Vec2) {
 }
 
 /// Anzeige oben am Deck: hörbar (JETZT, PAUSE, BEREIT) oder nicht (LÄUFT MIT, VORGELADEN).
-/// Farben ohne Grün: läuft = `accent`, wartet = `accent-2`, Pause und Mitlaufen = `warn`.
-fn deck_badge(live: bool, playing: bool, l: &PartyLayout) -> (&'static str, egui::Color32) {
+/// Nie gefüllt (Lime heißt nur „eingeschaltet“, André 02.11.2026): BEREIT neutral, VORGELADEN
+/// mit `accent-2`-Rahmen und -Schrift, Laufen mit `accent`-Rahmen, Pause mit `warn`-Rahmen.
+fn deck_badge(live: bool, playing: bool, l: &PartyLayout) -> (&'static str, theme::Badge) {
+    use theme::Badge;
     if live {
         match &l.now {
-            Some(n) if n.playing => ("JETZT", theme::accent()),
-            Some(n) if n.paused => ("PAUSE", theme::warn()),
-            _ => ("BEREIT", theme::accent_2()),
+            Some(n) if n.playing => ("JETZT", Badge::Outline(theme::accent())),
+            Some(n) if n.paused => ("PAUSE", Badge::Outline(theme::warn())),
+            _ => ("BEREIT", Badge::Neutral),
         }
     } else if playing {
-        ("LÄUFT MIT", theme::warn())
+        ("LÄUFT MIT", Badge::Outline(theme::accent()))
     } else {
-        ("VORGELADEN", theme::accent_2())
+        ("VORGELADEN", Badge::Outline(theme::accent_2()))
     }
 }
 
@@ -1723,6 +1725,44 @@ fn party_input(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Deck-Badges sind nie gefüllt: BEREIT neutral, VORGELADEN Lime-Rahmen, Laufen
+    /// `accent`-Rahmen (André 02.11.2026: Lime heißt nur „eingeschaltet“).
+    #[test]
+    fn deck_badges_are_never_filled() {
+        let _ctx = theme::test_context();
+        let l = PartyLayout {
+            now: None,
+            next: None,
+            buttons: Vec::new(),
+            repeat: woa_radio::control::Repeat::All,
+            shuffle: false,
+            muted: false,
+            wishes: Vec::new(),
+            level_db: 0.0,
+            fullscreen: false,
+        };
+        assert_eq!(
+            deck_badge(true, false, &l),
+            ("BEREIT", theme::Badge::Neutral)
+        );
+        assert_eq!(
+            deck_badge(false, false, &l),
+            ("VORGELADEN", theme::Badge::Outline(theme::accent_2()))
+        );
+        assert_eq!(
+            deck_badge(false, true, &l),
+            ("LÄUFT MIT", theme::Badge::Outline(theme::accent()))
+        );
+        for b in [
+            theme::Badge::Neutral,
+            theme::Badge::Outline(theme::accent_2()),
+            theme::Badge::Outline(theme::accent()),
+        ] {
+            assert_eq!(b.colors().0, theme::well());
+        }
+        assert_eq!(theme::Badge::Neutral.colors().1, theme::border());
+    }
 
     /// Party-Pult nach Entwurf PartyControls: drei Gruppen (Abspielen, Springen, Lautstärke),
     /// vier Spalten, eine Tastenhöhe, jede Taste mit Symbol und Wort. Zufall steht nicht im

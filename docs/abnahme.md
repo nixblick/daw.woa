@@ -4,6 +4,24 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design-Runde 3b: Korrekturen nach Andrés Prüfung (0.36.1, offen)
+
+1. **Party:** Ein Titel auf Deck A, nichts läuft → Badge „BEREIT“ neutral (Mulde, grauer Rahmen), nicht Lime gefüllt.
+   Titel auf dem anderen Deck vorgeladen → „VORGELADEN“ nur mit Lime-Rahmen und Lime-Schrift. Abspielen → „JETZT“
+   mit Rahmen in der Modusfarbe, nie gefüllt.
+2. **Produzent, Fenster 1920 × 1030:** Spur wählen, Dock-Reiter Studio-Mixer → im Rack rechts stehen „AUSGANG“ und
+   „Pan“ ganz sichtbar. Mit vielen Effekten rollt nur das Rack, das Dock bleibt gleich hoch.
+3. **Transport:** Pegel als waagerechte LED-Kette mit dB-Zahl (kein Zeiger). Dock-Reiter „Analyse“ → oben
+   „PEGELANSICHT“ Analog/Modern/Aus; Analog zeigt das VU mit Zeiger, Aus blendet es aus; die Wahl bleibt nach Neustart.
+4. **Piano-Roll:** Doppelklick auf einen MIDI-Clip → öffnet im Dock. Symbol „Als Fenster lösen“ → Fenster; WOA
+   neu starten, Clip öffnen → wieder als Fenster. Zurück ins Dock → bleibt nach Neustart im Dock.
+5. **Akkorde (Browser › Akkorde), ohne MIDI-Spur:** Lautsprecher an einer Folge → Akkord mit Streichern.
+   Zeilen „Akkorde“, „Bass“, „Arpeggio“ anklicken → Streicher, E-Bass, Klavier (Lead). Keine Spur entsteht.
+6. **Radio, Controller:** Rechtsklick auf Start, Cue oder Vorhören an Deck A–C → „MIDI lernen“, Taste am Gerät
+   drücken → die Taste startet/stoppt, cued bzw. hört vor. Leeres Deck: in Einstellungen › Controller die Zeile
+   „Decks:“ nutzen. Alte Zuordnungen bleiben.
+7. **KI (Live-Modus):** Radio läuft, Claude fragt `output_levels` → Notebook, Stream, Vorhören in dBFS; ändert nichts.
+
 ## DJ-Paket (0.36.0, offen)
 
 Party oben auf „DJ“ stellen. Ohne Vorhör-Ausgang (Einstellungen → Ausgänge, Kanal 3/4) sind die
