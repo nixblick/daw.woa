@@ -131,6 +131,8 @@ pub struct WoaApp {
     fx_search: String,
     /// Aufgeklappte Klangwahl (Design `SoundPicker`): Spur und gezeigte Rolle.
     sound_pick: Option<(TrackId, woa_model::SoundCategory)>,
+    /// Suche in der Klangauswahl (SoundPicker Fassung 7).
+    sound_search: String,
     /// Raster für „Quantisieren“ im Clip-Inspektor (Teiler: 4 = 1/4 … 32 = 1/32).
     quantize_div: u32,
     /// Stereo-Panorama beim Ziehen (wird beim Loslassen als ein Undo-Schritt übernommen).
@@ -608,6 +610,7 @@ impl WoaApp {
             fx_open: std::collections::HashSet::new(),
             fx_search: String::new(),
             sound_pick: None,
+            sound_search: String::new(),
             quantize_div: 16,
             pan_drag: None,
             tempo_drag: None,
@@ -7998,7 +8001,7 @@ impl WoaApp {
     /// aufgeklappt Rollen Lead · Bass · Pad · Kit, je Rolle vier Klänge, darunter Klangbank und
     /// eingebauter Synth. Ein CLAP-Instrument ersetzt den Klang; dann steht hier nur sein Name.
     fn instrument_section(&mut self, ui: &mut egui::Ui, id: TrackId, color: egui::Color32) {
-        use woa_model::{PluginRole, SOUND_PRESETS, SoundCategory, TrackSound};
+        use woa_model::{PluginRole, SoundCategory, TrackSound};
         let Some(track) = self.state.project().track(id) else {
             return;
         };
@@ -8114,21 +8117,32 @@ impl WoaApp {
                 }
             });
         }
-        // Die Klänge der Kategorie als Kacheln, zwei je Zeile.
-        let presets: Vec<_> = SOUND_PRESETS
-            .iter()
-            .filter(|p| p.category == shown)
-            .collect();
+        // Suche (Fassung 7): findet Klänge über alle Kategorien.
+        ui.add(
+            egui::TextEdit::singleline(&mut self.sound_search)
+                .hint_text(format!("{} Klang suchen", theme::ic::MAGNIFYING_GLASS))
+                .desired_width(f32::INFINITY),
+        );
+        let presets = sound_matches(&self.sound_search, shown);
+        let mut preview = None;
         for pair in presets.chunks(2) {
             ui.horizontal(|ui| {
                 let w = ((ui.available_width() - gap) / 2.0).floor();
                 for p in pair {
                     let same = current
                         .is_some_and(|c| c.program == p.sound.program && c.drums == p.sound.drums);
+                    let r = ui.add_sized(
+                        [w - 26.0 - gap, 30.0],
+                        egui::Button::selectable(same, p.name).truncate(),
+                    );
                     if ui
-                        .add_sized([w, 30.0], egui::Button::selectable(same, p.name))
+                        .add_sized([26.0, 30.0], egui::Button::new(theme::ic::PLAY))
+                        .on_hover_text("Vorhören, ohne zu wählen")
                         .clicked()
                     {
+                        preview = Some(p.sound);
+                    }
+                    if r.clicked() {
                         // Die Bank bleibt, solange sie zum Klang passt (Paket J7).
                         let keep = bank.filter(|b| p.sound.drums || !b.drums_only());
                         chosen = Some(Some(TrackSound {
@@ -8198,6 +8212,19 @@ impl WoaApp {
             .clicked()
         {
             chosen = Some(None);
+        }
+        if presets.is_empty() {
+            ui.weak("Kein Klang gefunden");
+        }
+        if let Some(p) = preview {
+            // Vorhören: der Spurklang bleibt, nur ein kurzer Probeton.
+            self.state.probeton.tap(
+                id,
+                &[crate::probeton::pitch_for(Some(p))],
+                100,
+                std::time::Instant::now(),
+                std::time::Duration::ZERO,
+            );
         }
         if let Some(sound) = chosen {
             if let Some(b) = sound.and_then(|s| s.bank) {
@@ -9417,6 +9444,25 @@ fn midi_input_label(status: &woa_io::midi::MidiStatus) -> String {
     }
 }
 
+/// Klänge im `SoundPicker`: leere Suche = die Kategorie, sonst Treffer über alle Kategorien
+/// (Name oder Kategoriename, ohne Groß/Klein).
+fn sound_matches(
+    query: &str,
+    shown: woa_model::SoundCategory,
+) -> Vec<&'static woa_model::SoundPreset> {
+    let q = query.trim().to_lowercase();
+    woa_model::SOUND_PRESETS
+        .iter()
+        .filter(|p| {
+            if q.is_empty() {
+                p.category == shown
+            } else {
+                p.name.to_lowercase().contains(&q) || p.category.name().to_lowercase().contains(&q)
+            }
+        })
+        .collect()
+}
+
 /// Kategoriename und Symbol im `SoundPicker`.
 fn category_label(c: woa_model::SoundCategory) -> (&'static str, &'static str) {
     use woa_model::SoundCategory as C;
@@ -9973,5 +10019,22 @@ mod nacharbeit_tests {
         let dev = x(&rig, "Entwickler").expect("Entwickler fehlt nach Freischaltung");
         let help = x(&rig, "Hilfe").expect("Hilfe");
         assert!(dev < help, "Entwickler steht nicht vor Hilfe");
+    }
+}
+
+#[cfg(test)]
+mod sound_search_tests {
+    use super::sound_matches;
+    use woa_model::SoundCategory;
+
+    #[test]
+    fn empty_search_shows_the_category_and_text_searches_all() {
+        let k = sound_matches("", SoundCategory::Bass);
+        assert!(!k.is_empty());
+        assert!(k.iter().all(|p| p.category == SoundCategory::Bass));
+        let first = woa_model::SOUND_PRESETS[0];
+        let hit = sound_matches(&first.name.to_uppercase(), SoundCategory::Drums);
+        assert!(hit.iter().any(|p| p.name == first.name), "über Kategorien, ohne Groß/Klein");
+        assert!(sound_matches("zzzz-nichts", SoundCategory::Bass).is_empty());
     }
 }
