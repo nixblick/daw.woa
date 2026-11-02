@@ -1674,6 +1674,45 @@ impl RadioDesk {
     }
 
     /// ▶ Play bzw. Pause an einer Party-Seite.
+    /// Ein Kommando der DJ-Ansicht (DJ-Paket); Fehler erscheinen als Meldung.
+    pub fn dj(&self, cmd: woa_radio::control::DjCommand) {
+        self.with(move |c| {
+            if let Err(e) = c.dj(cmd) {
+                c.report(e);
+            }
+        });
+    }
+
+    /// Führt DJ-Kommandos des Agenten aus und liefert den DJ-Zustand (wartet höchstens 2 s
+    /// auf die Sendung).
+    pub fn dj_agent(
+        &self,
+        cmds: Vec<woa_radio::control::DjCommand>,
+    ) -> Result<serde_json::Value, String> {
+        if self.station.is_none() {
+            return Err("Keine Sendung offen: Party einschalten".into());
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.with(move |c| {
+            let mut r = Ok(());
+            for cmd in cmds {
+                if let Err(e) = c.dj(cmd) {
+                    r = Err(e);
+                    break;
+                }
+            }
+            let out = r.and_then(|()| {
+                let v = c
+                    .dj_view()
+                    .ok_or_else(|| "Party ist nicht an".to_string())?;
+                serde_json::to_value(v).map_err(|e| e.to_string())
+            });
+            let _ = tx.send(out);
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap_or_else(|_| Err("Die Sendung antwortet nicht".into()))
+    }
+
     pub fn party_side(&self, side: usize, play: bool) {
         self.with(move |c| {
             if play {

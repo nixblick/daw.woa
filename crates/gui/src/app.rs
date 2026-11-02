@@ -6535,6 +6535,7 @@ impl eframe::App for WoaApp {
         if self.mcp_live.frame(ctx, &mut self.state) > 0 {
             self.produktionen.mark_stale();
         }
+        self.mcp_live.serve_dj(self.radio.as_ref());
         self.update_frame(ctx);
         if self.state.autosave_due(Instant::now()) {
             self.capture_plugins();

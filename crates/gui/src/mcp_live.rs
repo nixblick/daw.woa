@@ -78,6 +78,18 @@ impl McpLive {
         n
     }
 
+    /// Bedient die DJ-Werkzeuge des Agenten (`dj_state`, `dj_deck`, `dj_mixer`) mit den
+    /// Party-Decks; ohne Sendung antworten sie mit einem Hinweis.
+    pub fn serve_dj(&self, desk: Option<&crate::radio::RadioDesk>) -> usize {
+        let Some(server) = &self.server else {
+            return 0;
+        };
+        server.serve_dj(|cmds| match desk {
+            Some(d) => d.dj_agent(cmds.to_vec()),
+            None => Err("Party ist nicht an: oben auf „Party“ schalten".into()),
+        })
+    }
+
     /// Token im Schlüsselbund neu erzeugt (Hook aus dem KI-Fenster): sofort neu prüfen.
     pub fn restart(&mut self) {
         self.tried = None;
