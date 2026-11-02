@@ -1922,7 +1922,7 @@ impl WoaApp {
                     ui.allocate_exact_size(egui::vec2(140.0, 14.0), egui::Sense::hover());
                 level_bar(ui.painter(), rect, self.level);
                 if self.rec_clipped {
-                    theme::status_pill(ui, "ÜBERSTEUERT", theme::on_air(), true);
+                    theme::status_pill(ui, "ÜBERSTEUERT", theme::warn(), true);
                 }
             }
 

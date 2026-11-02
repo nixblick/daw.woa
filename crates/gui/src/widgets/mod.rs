@@ -5,6 +5,7 @@
 //! und Modus. Das Rechnen (Winkel, Schwellen, Takt)
 //! steckt in kleinen reinen Funktionen und ist ohne Fenster getestet.
 
+pub mod chip;
 pub mod clock;
 pub mod ctl;
 pub mod drum_grid;
@@ -21,6 +22,7 @@ pub mod topbar;
 pub mod vu;
 pub mod wizard;
 
+pub use chip::{ChipTone, StateChip};
 pub use clock::studio_clock;
 pub use ctl::{CTL_HEIGHT, CTL_MIN_WIDTH, Tone, ctl_key};
 pub use drum_grid::drum_click;
