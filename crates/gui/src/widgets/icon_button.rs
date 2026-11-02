@@ -39,6 +39,7 @@ pub enum Ink {
     Accent,
     AccentSoft,
     OnAir,
+    Well,
 }
 
 /// Aussehen je Zustand.
@@ -78,7 +79,8 @@ pub fn icon_look(hovered: bool, on: bool, danger: bool, solid: bool) -> IconLook
     }
 }
 
-fn color(i: Ink) -> Color32 {
+/// Farbe einer Rolle aus den Theme-Tokens.
+pub fn ink_color(i: Ink) -> Color32 {
     match i {
         Ink::None => Color32::TRANSPARENT,
         Ink::TextDim => theme::text_dim(),
@@ -88,6 +90,7 @@ fn color(i: Ink) -> Color32 {
         Ink::Accent => theme::accent(),
         Ink::AccentSoft => theme::accent_soft(),
         Ink::OnAir => theme::on_air(),
+        Ink::Well => theme::well(),
     }
 }
 
@@ -164,13 +167,13 @@ impl<'a> IconButton<'a> {
             let r = CornerRadius::same(theme::RADIUS_SM);
             let p = ui.painter();
             if look.fill != Ink::None {
-                p.rect_filled(rect, r, fade(color(look.fill)));
+                p.rect_filled(rect, r, fade(ink_color(look.fill)));
             }
             if look.stroke != Ink::None {
                 p.rect_stroke(
                     rect,
                     r,
-                    Stroke::new(1.0, fade(color(look.stroke))),
+                    Stroke::new(1.0, fade(ink_color(look.stroke))),
                     StrokeKind::Inside,
                 );
             }
@@ -179,7 +182,7 @@ impl<'a> IconButton<'a> {
                 egui::Align2::CENTER_CENTER,
                 self.icon,
                 egui::FontId::proportional(glyph),
-                fade(color(look.icon)),
+                fade(ink_color(look.icon)),
             );
         }
         resp.widget_info(|| {

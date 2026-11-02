@@ -4,6 +4,13 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design-Runde 3: Transport und Dock-Reiter (0.35.23, offen)
+
+1. Transport: Zurück, Play und Aufnahme als Hardware-Tasten; Play leuchtet beim Abspielen grün, Aufnahme beim Aufnehmen rot.
+2. Loop, Punch und „Stopp am Ende“ einschalten: Fläche accent-soft mit Akzent-Rand, Taktfelder erscheinen wie bisher.
+3. Studio-Dock: Studio-Mixer · Piano-Roll · Automation · KI-Chat · Analyse als Segmente mit Symbol; Klick auf den offenen Reiter klappt zu.
+
+Selbst geprüft von Claude: `cargo test -p woa-gui`, Clippy `-D warnings`, Screenshots dunkel und hell bei 1920×1030 und 1366×768 unter Linux. Kein Ton abgespielt, nicht unter Windows gesehen.
 ## Design-Runde 3, Zusatz: Deck-Tasten, Ausgangspegel, Trim (0.35.22, offen)
 
 1. Radio: Titel auf Deck B ziehen, Taste B drücken: Deck B startet; nochmal B: stoppt. In der Playlist-Suche B tippen: kein Deck startet.
