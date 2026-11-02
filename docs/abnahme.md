@@ -1330,7 +1330,7 @@ Selbst geprüft von Claude: Test im egui-Harness (Klick auf den rechten Rand wä
 4. Rechtsklick auf ein geladenes Deck: „Mit Blende“ und „Hart“ lösen die Playlist ab wie früher die Deck-Tasten. „Leeren“ steht rot.
 5. Deck-Zeile: Restzeit-LCD mit grauen „88:88“-Geistern und Fortschrittsbalken; Start/Stopp mit Text, Cue, Vorhören und „Zurück zur Playlist“ als Symbole mit Tooltip.
 6. Stream-Zeile: ON-AIR-Lampe links leuchtet nur auf Sendung; „Auf Sendung“ ist in Ruhe neutral, auf Sendung rot. Auto-Weiter, „+ Titel“ und die Sätze 1–5 (jetzt Segmentschalter, Rechtsklick benennt um) sind nicht rot.
-7. Pegel: LED-Kette neben jedem Fader, dB-Wert und Namensschild unten; Notebook/Stream mit M-Taste.
+7. Pegel: LED-Kette neben jedem Fader, Namensschild unten, dB-Wert im Tooltip; Notebook/Stream mit M-Taste.
 8. Processing: Zeilen „Bezeichnung · Zahlenfeld/Schalter“ (Ziehen, Doppelklick = Standard, Klick = eintippen), Messzeile als LCD.
 
 Selbst geprüft von Claude: Tests im egui-Harness (sieben neue, vorher rot), Screenshots dunkel und hell bei 1920×1030 und 1366×768. Clippy und Tests von `woa-gui` grün. Nicht am Gerät geklickt.

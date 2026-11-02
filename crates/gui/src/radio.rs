@@ -720,20 +720,6 @@ fn scribble(ui: &mut egui::Ui, name: &str, color: egui::Color32, w: f32) {
     );
 }
 
-/// dB-Wert unter einem Kanalzug (`woa-strip__db`): Mono 11 px auf LCD-Fläche.
-fn db_plate(ui: &mut egui::Ui, db: f32, w: f32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 16.0), egui::Sense::hover());
-    ui.painter()
-        .rect_filled(rect, theme::RADIUS_SM, theme::lcd_bg());
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        crate::widgets::vu::fmt_db(db),
-        egui::FontId::monospace(11.0),
-        theme::lcd_text(),
-    );
-}
-
 /// 1-px-Trennlinie zwischen den Gruppen der Pegelkarte.
 fn group_sep(ui: &mut egui::Ui, h: f32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(9.0, h), egui::Sense::hover());
@@ -779,10 +765,10 @@ pub(crate) fn level_faders(
                 let label = format!("Pegel {name}");
                 let value = f64::from(*db);
                 r.widget_info(|| egui::WidgetInfo::slider(true, value, &label));
-                db_plate(ui, *db, STRIP_W);
                 scribble(ui, name, theme::track_color(k), STRIP_W);
                 out.push(r.on_hover_text(format!(
-                    "Pegel {name}. Doppelklick: 0 dB. Rechtsklick: MIDI lernen. Ganz unten = aus."
+                    "Pegel {name}: {}. Doppelklick: 0 dB. Rechtsklick: MIDI lernen. Ganz unten = aus.",
+                    crate::widgets::vu::fmt_db(*db)
                 )));
             });
         }
@@ -843,7 +829,8 @@ pub(crate) fn output_faders(
                 let value = f64::from(db);
                 r.widget_info(|| egui::WidgetInfo::slider(true, value, &label));
                 let r = r.on_hover_text(format!(
-                    "Pegel {name}. Doppelklick: 0 dB. Ganz unten = aus."
+                    "Pegel {name}: {}. Doppelklick: 0 dB. Ganz unten = aus.",
+                    crate::widgets::vu::fmt_db(db)
                 ));
                 if r.changed() {
                     o.db = f64::from(db);
@@ -872,7 +859,6 @@ pub(crate) fn output_faders(
                     o.mute = !o.mute;
                     *ch = true;
                 }
-                db_plate(ui, db, STRIP_W);
                 scribble(ui, short, theme::track_color(4), STRIP_W);
             });
         }
@@ -4454,7 +4440,14 @@ impl RadioDesk {
 
     /// Karte PEGEL (RadioLevels): vier Kanalzüge, Master-Meter, Notebook und Stream.
     fn levels_card(&mut self, ui: &mut egui::Ui) {
-        ui.label(theme::panel_label("PEGEL"));
+        ui.horizontal(|ui| {
+            ui.label(theme::panel_label("PEGEL"));
+            ui.label(
+                egui::RichText::new("Quellen · Master · Ausgänge")
+                    .size(12.0)
+                    .color(theme::text_dim()),
+            );
+        });
         ui.add_space(4.0);
         ui.horizontal_top(|ui| self.level_fader_group(ui));
     }
