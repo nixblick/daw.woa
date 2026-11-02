@@ -415,6 +415,15 @@ pub struct SetGainParams {
     pub gain_db: f64,
 }
 
+/// Parameters of `set_trim`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetTrimParams {
+    /// Track id.
+    pub track: u64,
+    /// Input trim in dB (-24..=24, 0 = unchanged), before the inserts, separate from the gain.
+    pub trim_db: f64,
+}
+
 /// Parameters of `set_pan`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SetPanParams {
@@ -1847,6 +1856,23 @@ impl WoaAgent {
             s.apply(Command::SetGain {
                 track: TrackId(p.track),
                 gain_db: p.gain_db,
+            })?;
+            Ok(serde_json::json!({ "ok": true }))
+        })
+    }
+
+    #[tool(
+        description = "Set the input trim of a track in dB (-24..=24). The trim sits before the \
+                       inserts and is separate from the gain (fader); one undo step."
+    )]
+    async fn set_trim(
+        &self,
+        Parameters(p): Parameters<SetTrimParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.agent_step(|s| {
+            s.apply(Command::SetTrim {
+                track: TrackId(p.track),
+                trim_db: p.trim_db,
             })?;
             Ok(serde_json::json!({ "ok": true }))
         })

@@ -27,5 +27,7 @@ Offene Entscheidungen von André (31.10.2026); bis dahin gilt das Design:
 
 - **Pan doppelt:** Pan steht im Spurkopf und im Rack-Ausgang. Die Spurkopf-Anzeige hängt an der
   Konstante `HEADER_PAN` in `crates/gui/src/app.rs`; `false` nimmt sie heraus.
-- **Gain/Trim:** Das Design nennt das Feld im Rack-Eingang „Trim“. Das Modell kennt keinen eigenen
-  Eingangs-Trim, nur den Spur-Gain (derselbe Wert wie Fader und Spurkopf).
+- **Gain/Trim (gelöst in 0.35.16):** Das Rack-Feld „Trim“ ist ein echter Eingangs-Trim
+  (`Command::SetTrim`, −24 bis +24 dB, mit Undo, MCP `set_trim`), getrennt vom Spur-Gain (Fader,
+  Spurkopf). Er sitzt im Klanggraph vor den Inserts. Busse haben keinen Trim; auf die Aufnahme
+  wirkt er nicht.

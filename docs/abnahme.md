@@ -4,6 +4,17 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design-Runde 3: Studio (0.35.16, offen)
+
+1. Audio-Spur wählen, im Rack „Trim“ auf +6 dB ziehen: Fader bleibt, Pegel steigt; Strg+Z nimmt es zurück, Doppelklick = 0 dB.
+2. MIDI-Spur: kein „MIDI“-Schild im Spurkopf, Eingang zeigt das Gerät.
+3. Transport: Uhr-Symbol schaltet den Latenzausgleich, daneben ms; Takte/Zeit umschalten; „EXPORT“ öffnet den Export.
+4. Clip wählen: Fades in ms, Löschen mit Abstand rechts.
+5. Dock: Studio-Mixer · Piano-Roll · Automation · KI-Chat als Segmente; Klick auf den offenen Reiter klappt zu.
+6. Browser › Beats: Kit wählen, Preset klicken, neue Drum-Spur mit Beat am Abspielkopf; ein Strg+Z entfernt alles.
+
+Selbst geprüft von Claude: Tests von `woa-model`, `woa-engine`, `woa-agent`, `woa-gui` und Clippy grün, Screenshots vorher und nachher bei 1920×1030 und 1366×768 hell und dunkel unter Linux. Nicht unter Windows gesehen, kein Ton abgespielt.
+
 ## Design-Runde 2: Akkordspur, Klangwahl, Spurfarben (0.35.15, offen)
 
 1. Browser › Akkorde › Einfügen: unter dem Lineal „Akkorde · C Dur“ mit C I · G V · Am vi · F IV; andere Tonart tippen, Spur und Clips zeigen die neue Tonart.

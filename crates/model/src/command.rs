@@ -49,6 +49,13 @@ pub enum Command {
         /// Gain in dB, `MIN_GAIN_DB..=MAX_GAIN_DB`.
         gain_db: f64,
     },
+    /// Sets the input trim of a track in dB (before the inserts, separate from the fader).
+    SetTrim {
+        /// Target track.
+        track: TrackId,
+        /// Trim in dB, within `TRIM_RANGE`.
+        trim_db: f64,
+    },
     /// Sets the pan of a track.
     SetPan {
         /// Target track.
@@ -347,6 +354,7 @@ impl Command {
             Command::RemoveTrack { .. } => "Remove track",
             Command::RenameTrack { .. } => "Rename track",
             Command::SetGain { .. } => "Set gain",
+            Command::SetTrim { .. } => "Set trim",
             Command::SetPan { .. } => "Set pan",
             Command::SetMute { .. } => "Mute",
             Command::SetSolo { .. } => "Solo",
@@ -490,6 +498,15 @@ impl Command {
                 Ok(Command::SetGain {
                     track,
                     gain_db: old,
+                })
+            }
+            Command::SetTrim { track, trim_db } => {
+                check_range("trim_db", trim_db, crate::TRIM_RANGE)?;
+                let t = find(project, track)?;
+                let old = std::mem::replace(&mut t.trim_db, trim_db);
+                Ok(Command::SetTrim {
+                    track,
+                    trim_db: old,
                 })
             }
             Command::SetPan { track, pan } => {
@@ -1260,5 +1277,6 @@ fn check_clip(c: &Clip) -> Result<()> {
 
 fn check_track_values(t: &Track) -> Result<()> {
     check_gain(t.gain_db)?;
+    check_range("trim_db", t.trim_db, crate::TRIM_RANGE)?;
     check_pan(t.pan)
 }

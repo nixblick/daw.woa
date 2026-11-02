@@ -206,6 +206,9 @@ impl Browser {
                 ) {
                     wish = Some(Wish::MidiClip);
                 }
+                ui.add_space(8.0);
+                crate::beats::body(ui, state, at_beats);
+                ui.add_space(8.0);
                 note(
                     ui,
                     "Beats baust du im Drum-Raster der Piano-Roll; der Würfel dort setzt einen \
