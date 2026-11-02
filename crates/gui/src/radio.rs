@@ -47,9 +47,9 @@ type Stream = Box<dyn std::any::Any>;
 
 /// Tasten, die schon etwas anderes tun und keinem Cart gehören können.
 /// Breite der Restzeit-Spalte eines Decks (Uhr und Fortschrittsbalken).
-const DECK_CLOCK_WIDTH: f32 = 110.0;
+const DECK_CLOCK_WIDTH: f32 = 132.0;
 /// Gleiche Höhe aller Deck-Zeilen, ob leer oder geladen (RadioDecks).
-const DECK_ROW_H: f32 = 36.0;
+const DECK_ROW_H: f32 = 44.0;
 
 /// Wohin eine gezogene Playlist-Zeile fällt (#166).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,40 +175,275 @@ fn console_key(
 /// Symboltaste 32 × 32 (`woa-key--icon`); `on` hebt sie in `accent` hervor. Text ohne
 /// Symbolzeichen (−10, +10) steht in Mono.
 fn symbol_key(ui: &mut egui::Ui, icon: &str, tip: &str, on: bool) -> egui::Response {
-    let symbol = icon
-        .chars()
-        .next()
-        .is_some_and(|c| ('\u{E000}'..='\u{F8FF}').contains(&c));
-    let color = if on { theme::accent() } else { theme::text() };
-    let text = if symbol {
-        egui::RichText::new(icon)
-            .family(egui::FontFamily::Name(theme::FAMILY_ICON_FILL.into()))
-            .size(15.0)
-    } else {
-        egui::RichText::new(icon).monospace().size(12.0)
-    }
-    .color(color);
-    let b = egui::Button::new(text)
-        .fill(if on {
-            theme::accent_soft()
-        } else {
-            theme::surface()
-        })
-        .stroke(egui::Stroke::new(
-            1.0,
-            if on {
-                theme::accent()
-            } else {
-                theme::border_strong()
-            },
-        ))
-        .corner_radius(theme::RADIUS_MD)
-        .min_size(egui::vec2(SYMBOL_KEY, SYMBOL_KEY));
-    ui.add(b).on_hover_text(tip)
+    icon_key(ui, icon, tip, theme::accent_2(), on, true, SYMBOL_KEY).on_hover_text(tip)
 }
 
 pub(crate) fn played_count(v: &View) -> usize {
     v.first_open.min(v.playlist.len())
+}
+
+/// Geister-Segmente zu `text` (`woa-seg`, `data-ghost`): jede Stelle wird 8, Trenner bleiben.
+fn seg_ghost(text: &str) -> String {
+    text.chars()
+        .map(|c| if matches!(c, ':' | '.') { c } else { '8' })
+        .collect()
+}
+
+/// 7-Segment-Zahl mit Geister-Segmenten dahinter (`woa-seg`): erst „88:88“ in `led_off`,
+/// darüber die Ziffern in `color`.
+fn seg_text(ui: &mut egui::Ui, text: &str, size: f32, color: egui::Color32) -> egui::Response {
+    let font = theme::seg_font(size);
+    let ghost = ui
+        .painter()
+        .layout_no_wrap(seg_ghost(text), font.clone(), theme::led_off());
+    let (rect, r) = ui.allocate_exact_size(ghost.size(), egui::Sense::hover());
+    let p = ui.painter();
+    p.galley(rect.min, ghost, theme::led_off());
+    p.text(rect.min, egui::Align2::LEFT_TOP, text, font, color);
+    let label = text.to_string();
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, label.clone()));
+    r
+}
+
+/// Quadratische Symbol-Taste (`woa-key--sq`) mit Namen für Tooltip und Barrierefreiheit.
+/// `on` tönt sie in `tone` (eingeschaltet), gesperrt bleibt sie gedimmt.
+fn icon_key(
+    ui: &mut egui::Ui,
+    icon: &str,
+    name: &str,
+    tone: egui::Color32,
+    on: bool,
+    enabled: bool,
+    side: f32,
+) -> egui::Response {
+    let color = if !enabled {
+        theme::text_dim()
+    } else if on {
+        tone
+    } else {
+        theme::text()
+    };
+    let b = egui::Button::new(
+        egui::RichText::new(icon)
+            .family(egui::FontFamily::Name(theme::FAMILY_ICON_FILL.into()))
+            .size(15.0)
+            .color(color),
+    )
+    .fill(if on {
+        theme::mix(tone, theme::surface(), 0.80)
+    } else {
+        theme::surface()
+    })
+    .stroke(egui::Stroke::new(
+        1.0,
+        if on { tone } else { theme::border_strong() },
+    ))
+    .corner_radius(theme::RADIUS_MD)
+    .min_size(egui::vec2(side, side));
+    let r = ui.add_enabled(enabled, b);
+    let label = name.to_string();
+    r.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, label.clone())
+    });
+    r
+}
+
+/// Schalter `woa-tog` (36 × 20): an = `accent-2`-Fläche mit Knopf rechts. Ersetzt Häkchen.
+fn toggle(ui: &mut egui::Ui, on: &mut bool, name: &str) -> egui::Response {
+    let (rect, mut r) = ui.allocate_exact_size(egui::vec2(36.0, 20.0), egui::Sense::click());
+    if r.clicked() {
+        *on = !*on;
+        r.mark_changed();
+    }
+    let tone = theme::accent_2();
+    let p = ui.painter();
+    p.rect_filled(
+        rect,
+        10.0,
+        if *on {
+            theme::mix(tone, theme::well(), 0.78)
+        } else {
+            theme::well()
+        },
+    );
+    p.rect_stroke(
+        rect,
+        10.0,
+        egui::Stroke::new(1.0, if *on { tone } else { theme::border_strong() }),
+        egui::StrokeKind::Inside,
+    );
+    let x = if *on {
+        rect.right() - 10.0
+    } else {
+        rect.left() + 10.0
+    };
+    p.circle_filled(
+        egui::pos2(x, rect.center().y),
+        7.0,
+        if *on { tone } else { theme::text_dim() },
+    );
+    let (label, state) = (name.to_string(), *on);
+    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, state, &label));
+    r
+}
+
+/// Zahlenfeld `woa-num` mit Einheit: Ziehen ändert, Doppelklick setzt `default`, Klick tippt ein.
+#[allow(clippy::too_many_arguments)]
+fn number_field(
+    ui: &mut egui::Ui,
+    value: &mut f64,
+    range: std::ops::RangeInclusive<f64>,
+    unit: &str,
+    default: f64,
+    name: &str,
+    enabled: bool,
+) -> egui::Response {
+    let r = ui.add_enabled(
+        enabled,
+        egui::DragValue::new(value)
+            .range(range)
+            .speed(0.1)
+            .fixed_decimals(1)
+            .suffix(format!(" {unit}")),
+    );
+    let mut r = r;
+    if r.double_clicked() {
+        *value = default;
+        r.mark_changed();
+    }
+    let (label, v) = (name.to_string(), *value);
+    r.widget_info(|| {
+        let mut i = egui::WidgetInfo::labeled(egui::WidgetType::DragValue, enabled, &label);
+        i.value = Some(v);
+        i
+    });
+    r
+}
+
+/// Taste mit LED-Punkt (`woa-key--sm` mit `woa-key__led`): neutral, an leuchtet nur der Punkt
+/// und der Rand in `accent-2` (eingeschaltet, nie Rot).
+fn led_key(ui: &mut egui::Ui, word: &str, on: bool) -> egui::Response {
+    let tone = theme::accent_2();
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        "\u{25CF}",
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::proportional(9.0),
+            color: if on { tone } else { theme::led_off() },
+            valign: egui::Align::Center,
+            ..Default::default()
+        },
+    );
+    job.append(
+        &word.to_uppercase(),
+        6.0,
+        egui::TextFormat {
+            font_id: theme::label_font(12.0),
+            color: theme::text(),
+            extra_letter_spacing: 0.5,
+            valign: egui::Align::Center,
+            ..Default::default()
+        },
+    );
+    let r = ui.add(
+        egui::Button::new(job)
+            .fill(if on {
+                theme::mix(tone, theme::surface(), 0.86)
+            } else {
+                theme::surface()
+            })
+            .stroke(egui::Stroke::new(
+                1.0,
+                if on { tone } else { theme::border_strong() },
+            ))
+            .corner_radius(theme::RADIUS_MD)
+            .min_size(egui::vec2(0.0, 24.0)),
+    );
+    let label = word.to_string();
+    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, &label));
+    r
+}
+
+/// Neutrale kleine Taste mit Symbol und Wort (`woa-key--sm`), etwa „+ Titel“.
+fn small_key(ui: &mut egui::Ui, icon: &str, word: &str) -> egui::Response {
+    let r = ui.add(
+        egui::Button::new(theme::fill_label(
+            icon,
+            &word.to_uppercase(),
+            12.0,
+            theme::text(),
+        ))
+        .fill(theme::surface())
+        .stroke(egui::Stroke::new(1.0, theme::border_strong()))
+        .corner_radius(theme::RADIUS_MD)
+        .min_size(egui::vec2(0.0, 24.0)),
+    );
+    let label = word.to_string();
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+    r
+}
+
+/// Segmentschalter `woa-segs`: Mulde mit Knöpfen, gewählt = erhabene `surface`-Fläche.
+/// Liefert je Knopf die Antwort.
+fn segments(ui: &mut egui::Ui, items: &[String], sel: usize) -> Vec<egui::Response> {
+    let mut out = Vec::with_capacity(items.len());
+    egui::Frame::new()
+        .fill(theme::well())
+        .stroke(egui::Stroke::new(1.0, theme::border()))
+        .corner_radius(theme::RADIUS_MD)
+        .inner_margin(egui::Margin::same(2))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                for (i, t) in items.iter().enumerate() {
+                    let on = i == sel;
+                    let r = ui.add(
+                        egui::Button::new(
+                            egui::RichText::new(t)
+                                .monospace()
+                                .size(12.0)
+                                .strong()
+                                .color(if on { theme::text() } else { theme::text_dim() }),
+                        )
+                        .fill(if on {
+                            theme::surface()
+                        } else {
+                            egui::Color32::TRANSPARENT
+                        })
+                        .stroke(egui::Stroke::NONE)
+                        .corner_radius(theme::RADIUS_SM)
+                        .min_size(egui::vec2(30.0, 22.0)),
+                    );
+                    out.push(r);
+                }
+            });
+        });
+    out
+}
+
+/// Menüpunkte „Playlist ablösen“ eines Decks: Das Deck startet, die Playlist blendet aus und
+/// pausiert. Liefert `Some(true)` mit Blende, `Some(false)` sofort (harter Schnitt).
+pub(crate) fn deck_take_menu(ui: &mut egui::Ui, deck: usize, crossfade: f64) -> Option<bool> {
+    let name = woa_radio::show::deck_name(deck);
+    let mut hit = None;
+    if ui
+        .button(format!("Playlist ablösen, mit Blende ({crossfade:.1} s)"))
+        .on_hover_text(format!(
+            "Deck {name} starten: Die Playlist blendet aus und pausiert, das Deck blendet ein."
+        ))
+        .clicked()
+    {
+        hit = Some(true);
+    }
+    if ui
+        .button("Playlist ablösen, sofort")
+        .on_hover_text("Harter Schnitt ohne Blende")
+        .clicked()
+    {
+        hit = Some(false);
+    }
+    hit
 }
 
 const RESERVED_KEYS: [egui::Key; 2] = [egui::Key::M, egui::Key::Space];
@@ -293,6 +528,11 @@ pub struct RadioDesk {
     cart_rects: Vec<egui::Rect>,
     /// Flächen der Decks A bis C (Ziel für gezogene Dateien).
     deck_rects: [egui::Rect; woa_radio::DECKS],
+    /// Fehlerbanner und Wunschtitel-Zeile im letzten Bild (Tests: eine Zeile, im Fenster).
+    error_rect: egui::Rect,
+    wish_rect: egui::Rect,
+    /// Fehlerbanner aufgeklappt („Details“).
+    error_details: bool,
     /// Zeilen der Playlist im letzten Bild (Ziel beim Umsortieren per Ziehen, #166).
     row_rects: Vec<egui::Rect>,
     /// Gezogene Playlist-Zeile (Index), solange die Maus gedrückt ist (#166).
@@ -449,29 +689,48 @@ fn meter_strip(ui: &mut egui::Ui, m: MeterHold, name: &str, size: egui::Vec2) {
 /// Fader-Weg der Kanalzüge (RadioLevels: 130 px). Die Pegel stehen seit Design-Runde 2 in einer
 /// eigenen Karte unter der Cart-Wall, die Cart-Wall bleibt dadurch ganz im Fenster (#303).
 const FADER_HEIGHT: f32 = 130.0;
+/// Breite eines Kanalzugs und seiner LED-Kette (RadioLevels: 56 px, LED-Kette sichtbar).
+const STRIP_W: f32 = 56.0;
+const METER_W: f32 = 10.0;
 /// Breite, ab der Pegel und Processing nebeneinander stehen statt untereinander.
 const LEVELS_SIDE_BY_SIDE: f32 = 720.0;
 
 /// Farbiges Namensschild über einem Kanalzug (Scribble-Strip, RadioLevels).
 fn scribble(ui: &mut egui::Ui, name: &str, color: egui::Color32, w: f32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 16.0), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 18.0), egui::Sense::hover());
     let p = ui.painter();
-    p.rect_filled(
+    p.rect_filled(rect, theme::RADIUS_SM, theme::lcd_bg());
+    p.rect_stroke(
         rect,
-        theme::RADIUS_XS,
-        theme::mix(color, theme::surface(), 0.78),
+        theme::RADIUS_SM,
+        egui::Stroke::new(1.0, theme::border()),
+        egui::StrokeKind::Inside,
     );
     p.rect_filled(
-        egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 2.0)),
+        egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 3.0)),
         theme::RADIUS_XS,
         color,
     );
     p.text(
-        rect.center() + egui::vec2(0.0, 1.0),
+        rect.center() + egui::vec2(0.0, 1.5),
         egui::Align2::CENTER_CENTER,
         name.to_uppercase(),
-        theme::label_font(10.0),
-        theme::text(),
+        theme::label_font(11.0),
+        theme::lcd_text(),
+    );
+}
+
+/// dB-Wert unter einem Kanalzug (`woa-strip__db`): Mono 11 px auf LCD-Fläche.
+fn db_plate(ui: &mut egui::Ui, db: f32, w: f32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 16.0), egui::Sense::hover());
+    ui.painter()
+        .rect_filled(rect, theme::RADIUS_SM, theme::lcd_bg());
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        crate::widgets::vu::fmt_db(db),
+        egui::FontId::monospace(11.0),
+        theme::lcd_text(),
     );
 }
 
@@ -490,13 +749,6 @@ pub(crate) fn level_faders(
     meters: &[MeterHold; 5],
 ) -> Vec<egui::Response> {
     let mut out = Vec::with_capacity(4);
-    let caption = |ui: &mut egui::Ui, t: &str| {
-        ui.label(
-            egui::RichText::new(t)
-                .font(theme::label_font(11.0))
-                .color(theme::text_dim()),
-        );
-    };
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         for (k, (((_, name), db), m)) in FADER_BUSES
@@ -506,8 +758,8 @@ pub(crate) fn level_faders(
             .enumerate()
         {
             ui.vertical(|ui| {
-                ui.set_width(52.0);
-                scribble(ui, name, theme::track_color(k), 52.0);
+                ui.set_width(STRIP_W);
+                ui.spacing_mut().item_spacing.y = 4.0;
                 let r = ui
                     .horizontal_top(|ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
@@ -517,31 +769,38 @@ pub(crate) fn level_faders(
                             woa_radio::mixer::LEVEL_MIN_DB as f32
                                 ..=woa_radio::mixer::LEVEL_MAX_DB as f32,
                             0.0,
-                            egui::vec2(40.0, FADER_HEIGHT),
+                            egui::vec2(36.0, FADER_HEIGHT),
                             crate::widgets::Orient::Vertical,
                         );
-                        meter_strip(ui, *m, name, egui::vec2(6.0, FADER_HEIGHT));
+                        meter_strip(ui, *m, name, egui::vec2(METER_W, FADER_HEIGHT));
                         r
                     })
                     .inner;
                 let label = format!("Pegel {name}");
                 let value = f64::from(*db);
                 r.widget_info(|| egui::WidgetInfo::slider(true, value, &label));
-                ui.label(
-                    egui::RichText::new(crate::widgets::vu::fmt_db(*db))
-                        .font(theme::label_font(11.0))
-                        .monospace()
-                        .color(theme::text()),
-                );
+                db_plate(ui, *db, STRIP_W);
+                scribble(ui, name, theme::track_color(k), STRIP_W);
                 out.push(r.on_hover_text(format!(
                     "Pegel {name}. Doppelklick: 0 dB. Rechtsklick: MIDI lernen. Ganz unten = aus."
                 )));
             });
         }
-        group_sep(ui, FADER_HEIGHT + 40.0);
+        group_sep(ui, FADER_HEIGHT + 44.0);
         ui.vertical(|ui| {
-            caption(ui, "Master");
-            meter_strip(ui, meters[4], "Master", egui::vec2(12.0, FADER_HEIGHT));
+            ui.set_width(STRIP_W);
+            ui.spacing_mut().item_spacing.y = 4.0;
+            ui.horizontal(|ui| {
+                ui.add_space((STRIP_W - 2.0 * METER_W) / 2.0);
+                meter_strip(
+                    ui,
+                    meters[4],
+                    "Master",
+                    egui::vec2(2.0 * METER_W, FADER_HEIGHT),
+                );
+            });
+            ui.add_space(20.0);
+            scribble(ui, "Master", theme::track_color(5), STRIP_W);
         });
     });
     out
@@ -569,19 +828,15 @@ pub(crate) fn output_faders(
         ui.spacing_mut().item_spacing.x = 4.0;
         for (((_, short, name), o), ch) in OUTPUTS.iter().zip(outs.iter_mut()).zip(&mut changed) {
             ui.vertical(|ui| {
-                ui.set_width(52.0);
-                ui.label(
-                    egui::RichText::new(*short)
-                        .font(theme::label_font(11.0))
-                        .color(theme::text_dim()),
-                );
+                ui.set_width(STRIP_W);
+                ui.spacing_mut().item_spacing.y = 4.0;
                 let mut db = o.db as f32;
                 let r = crate::widgets::fader(
                     ui,
                     &mut db,
                     woa_radio::mixer::LEVEL_MIN_DB as f32..=woa_radio::mixer::LEVEL_MAX_DB as f32,
                     0.0,
-                    egui::vec2(40.0, FADER_HEIGHT),
+                    egui::vec2(STRIP_W - 4.0, FADER_HEIGHT),
                     crate::widgets::Orient::Vertical,
                 );
                 let label = format!("Pegel {name}");
@@ -600,12 +855,13 @@ pub(crate) fn output_faders(
                 } else {
                     theme::text_dim()
                 }))
-                .fill(if o.mute { red } else { theme::well() })
+                .fill(if o.mute { red } else { theme::surface() })
                 .stroke(egui::Stroke::new(
                     1.0,
-                    if o.mute { red } else { theme::border() },
+                    if o.mute { red } else { theme::border_strong() },
                 ))
-                .min_size(egui::vec2(40.0, 21.0));
+                .corner_radius(theme::RADIUS_MD)
+                .min_size(egui::vec2(STRIP_W, 24.0));
                 let label = format!("Stumm {name}");
                 let mute = o.mute;
                 let b = ui.add(m);
@@ -616,86 +872,35 @@ pub(crate) fn output_faders(
                     o.mute = !o.mute;
                     *ch = true;
                 }
-                ui.label(
-                    egui::RichText::new(crate::widgets::vu::fmt_db(db))
-                        .font(theme::label_font(11.0))
-                        .monospace()
-                        .color(theme::text()),
-                );
+                db_plate(ui, db, STRIP_W);
+                scribble(ui, short, theme::track_color(4), STRIP_W);
             });
         }
     });
     changed
 }
 
-/// Knöpfe „Deck A/B/C starten“ im Playlist-Player: das Deck löst die Playlist ab.
-/// Klick: mit Blende (eingestellter Crossfade), Umschalt+Klick oder Kontextmenü „Sofort“:
-/// harter Schnitt. Leere Decks sind aus und sagen, warum. Liefert (Deck, mit Blende).
-pub(crate) fn deck_take_buttons(
-    ui: &mut egui::Ui,
-    decks: &[woa_radio::station::DeckView],
-    crossfade: f64,
-) -> Option<(usize, bool)> {
-    let mut hit = None;
-    for (k, d) in decks.iter().enumerate().take(woa_radio::DECKS) {
-        let name = woa_radio::show::deck_name(k);
-        let loaded = d.title.is_some();
-        let r = ui
-            .add_enabled(
-                loaded,
-                egui::Button::new(
-                    egui::RichText::new(format!("{} Deck {name}", theme::icf::PLAY))
-                        .size(14.0)
-                        .strong(),
-                )
-                .min_size(egui::vec2(70.0, 38.0)),
-            )
-            .on_hover_text(format!(
-                "Deck {name} starten und die Playlist ablösen: Die Playlist blendet aus und \
-                 pausiert, das Deck blendet ein ({crossfade:.1} s Crossfade).\n\
-                 Umschalt+Klick oder Rechtsklick „Sofort“: harter Schnitt ohne Blende."
-            ))
-            .on_disabled_hover_text(format!(
-                "Deck {name} ist leer: erst einen Titel aufs Deck laden (Rechtsklick auf \
-                 einen Titel, „Auf Deck laden“)"
-            ));
-        if r.clicked() {
-            let shift = ui.input(|i| i.modifiers.shift);
-            hit = Some((k, !shift));
-        }
-        r.context_menu(|ui| {
-            if ui
-                .button(format!("Mit Blende ({crossfade:.1} s)"))
-                .clicked()
-            {
-                hit = Some((k, true));
-                ui.close();
-            }
-            if ui.button("Sofort (ohne Blende)").clicked() {
-                hit = Some((k, false));
-                ui.close();
-            }
-        });
-    }
-    hit
-}
-
-/// Umschalter „Zurück zur Playlist“ an einem Deck. Liefert die Antwort (`clicked()`).
+/// Umschalter „Zurück zur Playlist“ an einem Deck (Symbol-Taste, RadioDecks). Liefert die
+/// Antwort (`clicked()`).
 pub(crate) fn deck_return_toggle(ui: &mut egui::Ui, deck: usize, on: bool) -> egui::Response {
     let name = woa_radio::show::deck_name(deck);
-    ui.add(
-        egui::Button::selectable(on, egui::RichText::new("↩ Playlist").strong())
-            .min_size(egui::vec2(84.0, 30.0)),
+    icon_key(
+        ui,
+        theme::icf::QUEUE,
+        &format!("Zurück zur Playlist Deck {name}"),
+        theme::accent_2(),
+        on,
+        true,
+        SYMBOL_KEY,
     )
     .on_hover_text(format!(
-        "Zurück zur Playlist ({}): Ist das an, läuft nach Deck {name} die Playlist mit dem \
+        "Danach zurück zur Playlist ({}): Ist das an, läuft nach Deck {name} die Playlist mit dem \
          eingestellten Crossfade weiter (pausiert: ab der Pausenstelle). Aus: Nach dem Deck \
          bleibt es still, etwa zum Reden oder Telefonieren.",
         if on { "an" } else { "aus" }
     ))
 }
 
-/// `mm:ss`, ab einer Stunde `h:mm:ss`.
 pub fn clock(seconds: f64) -> String {
     let s = seconds.max(0.0).round() as u64;
     if s >= 3600 {
@@ -1037,6 +1242,9 @@ impl RadioDesk {
             playlist_rect: egui::Rect::NOTHING,
             cart_rects: Vec::new(),
             deck_rects: [egui::Rect::NOTHING; woa_radio::DECKS],
+            error_rect: egui::Rect::NOTHING,
+            wish_rect: egui::Rect::NOTHING,
+            error_details: false,
             row_rects: Vec::new(),
             row_drag: None,
             row_hover: None,
@@ -1651,9 +1859,11 @@ impl RadioDesk {
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .small_button("Ordner wählen …")
-                    .on_hover_text("Alles, was hier hineinkommt, erscheint sofort in der Liste")
+                if small_key(ui, theme::icf::FOLDER, "Ordner")
+                    .on_hover_text(
+                        "Wunschordner wählen: Alles, was hier hineinkommt, erscheint sofort in \
+                         der Liste",
+                    )
                     .clicked()
                     && let Some(dir) = crate::ordner::dialog_musik().pick_folder()
                 {
@@ -1876,27 +2086,73 @@ impl RadioDesk {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let v = self.view.clone();
         if let Some(e) = self.error.clone() {
-            egui::Frame::new()
-                .fill(theme::mix(theme::on_air(), theme::well(), 0.78))
+            // Eine Zeile mit Symbol (Design-Runde 3); der ganze Text im Tooltip und hinter
+            // „Details“.
+            let first = e.lines().next().unwrap_or_default().to_string();
+            let more = e.lines().count() > 1 || first.chars().count() > 120;
+            let r = egui::Frame::new()
+                .fill(theme::mix(theme::on_air(), theme::well(), 0.82))
                 .stroke(egui::Stroke::new(1.0, theme::on_air()))
-                .corner_radius(5)
-                .inner_margin(egui::Margin::symmetric(10, 6))
+                .corner_radius(theme::RADIUS_MD)
+                .inner_margin(egui::Margin::symmetric(10, 4))
                 .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new(theme::ic::WARNING)
-                                .strong()
+                            egui::RichText::new(theme::icf::WARNING)
+                                .family(egui::FontFamily::Name(theme::FAMILY_ICON_FILL.into()))
+                                .size(15.0)
                                 .color(theme::on_air()),
                         );
-                        ui.colored_label(theme::text(), e);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button(theme::ic::X).clicked() {
+                            if ui
+                                .small_button(theme::ic::X)
+                                .on_hover_text("Meldung schließen")
+                                .clicked()
+                            {
                                 self.error = None;
+                                self.error_details = false;
                             }
+                            if more {
+                                let d = ui.selectable_label(self.error_details, "Details");
+                                d.widget_info(|| {
+                                    egui::WidgetInfo::labeled(
+                                        egui::WidgetType::Button,
+                                        true,
+                                        "Details",
+                                    )
+                                });
+                                if d.clicked() {
+                                    self.error_details = !self.error_details;
+                                }
+                            }
+                            ui.with_layout(
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(&first).color(theme::text()),
+                                        )
+                                        .truncate(),
+                                    )
+                                    .on_hover_text(&e);
+                                },
+                            );
                         });
                     });
+                    if self.error_details {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(&e).small().color(theme::text_dim()),
+                            )
+                            .wrap(),
+                        );
+                    }
                 });
+            self.error_rect = r.response.rect;
             ui.add_space(6.0);
+        } else {
+            self.error_rect = egui::Rect::NOTHING;
         }
         for m in &v.messages {
             ui.label(egui::RichText::new(m).small().color(theme::text_dim()));
@@ -1952,9 +2208,12 @@ impl RadioDesk {
                         theme::card_frame().show(ui, |ui| self.levels_card(ui));
                         theme::card_frame().show(ui, |ui| self.processing_rack(ui));
                     }
-                    theme::card_frame().show(ui, |ui| {
-                        self.wish_card(ui);
-                    });
+                    self.wish_rect = theme::card_frame()
+                        .show(ui, |ui| {
+                            self.wish_card(ui);
+                        })
+                        .response
+                        .rect;
                     theme::card_frame().show(ui, |ui| {
                         self.guests_card(ui);
                     });
@@ -2081,12 +2340,8 @@ impl RadioDesk {
                         theme::accent()
                     };
                     ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(clock(v.remaining_title))
-                                .font(theme::seg_font(54.0))
-                                .color(clock_col),
-                        )
-                        .on_hover_text("Restzeit des laufenden Titels (bis Cue-Out)");
+                        seg_text(ui, &clock(v.remaining_title), 54.0, clock_col)
+                            .on_hover_text("Restzeit des laufenden Titels (bis Cue-Out)");
                         if let Some(r) = v.ramp_remaining {
                             ui.add_space(8.0);
                             ui.label(
@@ -2287,12 +2542,12 @@ impl RadioDesk {
                     "Titel von vorn",
                 ),
                 (
-                    "−10",
+                    theme::icf::REWIND,
                     woa_radio::party::PartyCommand::SeekBack,
                     "10 s zurück",
                 ),
                 (
-                    "+10",
+                    theme::icf::FAST_FORWARD,
                     woa_radio::party::PartyCommand::SeekForward,
                     "10 s vor",
                 ),
@@ -2324,15 +2579,8 @@ impl RadioDesk {
             if symbol_key(ui, theme::icf::SHUFFLE, tip, v.shuffle).clicked() {
                 self.party_effect(woa_radio::party::Effect::ToggleShuffle);
             }
-            ui.add_space(8.0);
-            // Deck startet und löst die Playlist ab (mit Blende, Umschalt: sofort).
-            if let Some((k, fade)) = deck_take_buttons(ui, &v.decks, v.crossfade_seconds) {
-                self.with(move |c| {
-                    if let Err(e) = c.deck_take_over(k, fade) {
-                        c.report(e);
-                    }
-                });
-            }
+            // Die Deck-Tasten „Deck A/B/C“ stehen seit Design-Runde 3 nicht mehr hier: Ablösen
+            // der Playlist liegt im Rechtsklick-Menü jedes Decks.
         });
 
         ui.add_space(4.0);
@@ -2343,145 +2591,231 @@ impl RadioDesk {
     fn processing_rack(&mut self, ui: &mut egui::Ui) {
         let v = self.view.clone();
         ui.horizontal(|ui| {
-            ui.label(theme::panel_label("BROADCAST-PROCESSING & ÜBERGÄNGE"));
+            ui.label(theme::panel_label("PROCESSING & ÜBERGÄNGE"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 theme::status_pill(
                     ui,
                     &format!("ZIEL {:.0} LUFS", v.target_lufs),
-                    theme::accent(),
+                    theme::ok(),
                     v.bus_processing,
                 );
             });
         });
         ui.add_space(4.0);
 
-        // Regler für Crossfade und Ducking in einem eingefassten Panel
-        theme::lcd_show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            let mut xf = v.crossfade_seconds;
-            if ui
-                .add(
-                    egui::Slider::new(&mut xf, 0.0..=10.0)
-                        .suffix(" s")
-                        .text("Crossfade-Blende"),
-                )
-                .changed()
-            {
-                self.view.crossfade_seconds = xf;
-                self.with(move |c| c.set_crossfade(xf));
-            }
-            let mut duck = v.duck_db;
-            if ui
-                .add(
-                    egui::Slider::new(&mut duck, -30.0..=0.0)
-                        .suffix(" dB")
-                        .text("Musik-Ducking (bei Mikro)"),
-                )
-                .changed()
-            {
-                self.view.duck_db = duck;
-                self.with(move |c| c.set_duck(duck));
-            }
-            let mut cart_duck = v.cart_duck;
-            if ui
-                .checkbox(&mut cart_duck, "auch bei Carts")
-                .on_hover_text("Musik leiser, solange ein Cart spielt")
-                .changed()
-            {
-                self.view.cart_duck = cart_duck;
-                self.with(move |c| c.set_cart_duck(cart_duck));
-            }
-            // Stopp mit Ausblenden (#227): kein eigener Knopf, die Stopp-Knöpfe bleiben.
-            let (mut on, mut secs) = (v.stop_fade, v.stop_fade_seconds);
-            let mut changed = false;
-            ui.horizontal(|ui| {
-                changed |= ui
-                    .checkbox(&mut on, "Stopp blendet aus")
-                    .on_hover_text(
-                        "An: Stopp am Sende-Player und an den Decks A/B/C blendet über die \
-                         eingestellte Dauer aus (etwa um mitten im Titel auszusteigen). \
-                         Aus: Stopp bricht sofort ab.",
-                    )
-                    .changed();
-                changed |= ui
-                    .add_enabled(
-                        on,
-                        egui::Slider::new(&mut secs, 0.5..=10.0)
-                            .suffix(" s")
-                            .text("Ausblenddauer"),
-                    )
-                    .changed();
-            });
-            if changed {
-                self.view.stop_fade = on;
-                self.view.stop_fade_seconds = secs;
-                self.with(move |c| c.set_stop_fade(on, secs));
-            }
-        });
-        // Die Pegelregler stehen senkrecht neben den Decks (`level_faders`).
-        ui.add_space(4.0);
-        self.processing_row(ui);
-    }
-
-    /// Sendebus- und Mikro-Processing: Schalter und digitale Messanzeige.
-    fn processing_row(&mut self, ui: &mut egui::Ui) {
-        let v = &self.view;
+        // Zeilen nach ScreenRadio (`woa-set`): links die Bezeichnung, rechts Zahlenfeld oder
+        // Schalter. Die Werte und Befehle sind dieselben wie vorher.
+        let mut xf = v.crossfade_seconds;
+        let mut duck = v.duck_db;
+        let mut cart_duck = v.cart_duck;
+        let (mut stop_on, mut stop_secs) = (v.stop_fade, v.stop_fade_seconds);
         let (mut bus, mut mic) = (v.bus_processing, v.mic_processing);
-        let mut changed = false;
-        theme::lcd_show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal_wrapped(|ui| {
-                changed |= ui
-                    .checkbox(&mut bus, egui::RichText::new("Sendebus").strong())
-                    .on_hover_text(format!(
-                        "Lautheitsregelung auf {:.0} LUFS (±12 dB, langsam), Kompressor und \
-                         Limiter bei −1 dBFS. Wirkt auf Sendung, Mitschnitt und Abhören.",
-                        v.target_lufs
-                    ))
-                    .changed();
-                changed |= ui
-                    .checkbox(&mut mic, egui::RichText::new("Mikro-Kette").strong())
-                    .on_hover_text(
-                        "Hochpass 80 Hz, Präsenz +3 dB bei 3 kHz, Gate ab −50 dBFS, \
-                         Kompressor 4:1 ab −24 dBFS mit +6 dB.",
-                    )
-                    .changed();
-                if v.mic_processing && v.mic_open {
-                    let (t, c, active) = if v.mic_gate_open {
-                        ("Gate offen", theme::ok(), true)
-                    } else {
-                        ("Gate zu", theme::text_dim(), false)
-                    };
-                    theme::status_pill(ui, t, c, active);
+        let (mut xf_ch, mut duck_ch, mut cart_ch, mut stop_ch, mut proc_ch) =
+            (false, false, false, false, false);
+        let label_w = (ui.available_width() - 170.0).max(100.0);
+        let row = |ui: &mut egui::Ui, name: &str, sub: Option<&str>| {
+            ui.vertical(|ui| {
+                ui.set_min_width(label_w);
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.label(egui::RichText::new(name).size(13.0).color(theme::text()));
+                if let Some(sub) = sub {
+                    ui.label(egui::RichText::new(sub).size(11.0).color(theme::text_dim()));
                 }
             });
-
-            if v.bus_processing {
-                ui.add_space(4.0);
-                let lufs = if v.bus_lufs > -60.0 {
-                    format!("{:.1} LUFS", v.bus_lufs)
-                } else {
-                    "– LUFS".into()
-                };
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{lufs}  ·  Begrenzer −{:.1} dB",
-                            v.bus_reduction_db.max(0.0)
-                        ))
-                        .small()
-                        .monospace()
-                        .color(theme::accent()),
+        };
+        egui::Grid::new("processing_rows")
+            .num_columns(2)
+            .spacing(egui::vec2(12.0, 3.0))
+            .min_col_width(0.0)
+            .show(ui, |ui| {
+                let right = egui::Layout::right_to_left(egui::Align::Center);
+                row(ui, "Crossfade-Blende", None);
+                ui.with_layout(right, |ui| {
+                    xf_ch = number_field(
+                        ui,
+                        &mut xf,
+                        0.0..=10.0,
+                        "s",
+                        1.5,
+                        "Crossfade-Blende",
+                        true,
                     )
-                    .on_hover_text("Kurzzeit-Lautheit am Sendeausgang, Verstärkung der Regelung, Absenkung durch Kompressor und Limiter");
+                    .on_hover_text(
+                        "Länge der Überblendung · Ziehen · Doppelklick: 1,5 s · Klick: eintippen",
+                    )
+                    .changed();
                 });
-            }
-        });
-        if changed {
+                ui.end_row();
+                row(ui, "Musik-Ducking", Some("wenn das Mikro offen ist"));
+                ui.with_layout(right, |ui| {
+                    duck_ch = number_field(
+                        ui,
+                        &mut duck,
+                        -30.0..=0.0,
+                        "dB",
+                        -12.0,
+                        "Musik-Ducking",
+                        true,
+                    )
+                    .on_hover_text("Absenkung der Musik bei offenem Mikro · Doppelklick: −12 dB")
+                    .changed();
+                });
+                ui.end_row();
+                row(ui, "Ducking auch bei Carts", None);
+                ui.with_layout(right, |ui| {
+                    cart_ch = toggle(ui, &mut cart_duck, "Ducking auch bei Carts")
+                        .on_hover_text("Musik leiser, solange ein Cart spielt")
+                        .changed();
+                });
+                ui.end_row();
+                // Stopp mit Ausblenden (#227): kein eigener Knopf, die Stopp-Knöpfe bleiben.
+                row(ui, "Stopp blendet aus", None);
+                ui.with_layout(right, |ui| {
+                    stop_ch |= toggle(ui, &mut stop_on, "Stopp blendet aus")
+                        .on_hover_text(
+                            "An: Stopp am Sende-Player und an den Decks A/B/C blendet über die \
+                             eingestellte Dauer aus (etwa um mitten im Titel auszusteigen). \
+                             Aus: Stopp bricht sofort ab.",
+                        )
+                        .changed();
+                    let mut secs = stop_secs;
+                    if number_field(
+                        ui,
+                        &mut secs,
+                        0.5..=10.0,
+                        "s",
+                        3.0,
+                        "Ausblenddauer",
+                        stop_on,
+                    )
+                    .on_hover_text("Ausblenddauer beim Stopp")
+                    .changed()
+                    {
+                        stop_secs = secs;
+                        stop_ch = true;
+                    }
+                });
+                ui.end_row();
+                row(ui, "Sendebus-Processing", None);
+                ui.with_layout(right, |ui| {
+                    proc_ch |= toggle(ui, &mut bus, "Sendebus-Processing")
+                        .on_hover_text(format!(
+                            "Lautheitsregelung auf {:.0} LUFS (±12 dB, langsam), Kompressor und \
+                             Limiter bei −1 dBFS. Wirkt auf Sendung, Mitschnitt und Abhören.",
+                            v.target_lufs
+                        ))
+                        .changed();
+                });
+                ui.end_row();
+                row(ui, "Mikro-Kette", None);
+                ui.with_layout(right, |ui| {
+                    proc_ch |= toggle(ui, &mut mic, "Mikro-Kette")
+                        .on_hover_text(
+                            "Hochpass 80 Hz, Präsenz +3 dB bei 3 kHz, Gate ab −50 dBFS, \
+                             Kompressor 4:1 ab −24 dBFS mit +6 dB.",
+                        )
+                        .changed();
+                    if v.mic_processing && v.mic_open {
+                        let (t, c, active) = if v.mic_gate_open {
+                            ("Gate offen", theme::ok(), true)
+                        } else {
+                            ("Gate zu", theme::text_dim(), false)
+                        };
+                        theme::status_pill(ui, t, c, active);
+                    }
+                });
+                ui.end_row();
+            });
+        if xf_ch {
+            self.view.crossfade_seconds = xf;
+            self.with(move |c| c.set_crossfade(xf));
+        }
+        if duck_ch {
+            self.view.duck_db = duck;
+            self.with(move |c| c.set_duck(duck));
+        }
+        if cart_ch {
+            self.view.cart_duck = cart_duck;
+            self.with(move |c| c.set_cart_duck(cart_duck));
+        }
+        if stop_ch {
+            self.view.stop_fade = stop_on;
+            self.view.stop_fade_seconds = stop_secs;
+            self.with(move |c| c.set_stop_fade(stop_on, stop_secs));
+        }
+        if proc_ch {
             self.view.bus_processing = bus;
             self.view.mic_processing = mic;
             self.with(move |c| c.set_processing(bus, mic));
         }
+        ui.add_space(6.0);
+        // Messzeile als LCD in lcd-ink: Lautheit · Regelung · Begrenzer am Sendeausgang.
+        let on = self.view.bus_processing;
+        let (lufs, agc, red) = (
+            self.view.bus_lufs,
+            self.view.bus_agc_db,
+            self.view.bus_reduction_db,
+        );
+        theme::lcd_show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                let cell = |ui: &mut egui::Ui, cap: &str, val: String| {
+                    ui.label(
+                        egui::RichText::new(cap.to_uppercase())
+                            .font(theme::label_font(11.0))
+                            .color(theme::lcd_text()),
+                    );
+                    ui.label(
+                        egui::RichText::new(val)
+                            .monospace()
+                            .size(13.0)
+                            .color(if on {
+                                theme::lcd_ink()
+                            } else {
+                                theme::led_off()
+                            }),
+                    );
+                };
+                let w = ui.available_width() / 3.0;
+                for (cap, val) in [
+                    (
+                        "Lautheit",
+                        if on && lufs > -60.0 {
+                            format!("{lufs:.1}")
+                        } else {
+                            "–".into()
+                        },
+                    ),
+                    (
+                        "Regelung",
+                        if on {
+                            format!("{agc:+.1} dB")
+                        } else {
+                            "–".into()
+                        },
+                    ),
+                    (
+                        "Begrenzer",
+                        if on {
+                            format!("−{:.1} dB", red.max(0.0))
+                        } else {
+                            "–".into()
+                        },
+                    ),
+                ] {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(w - 6.0, 18.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| cell(ui, cap, val),
+                    );
+                }
+            })
+            .response
+            .on_hover_text(
+                "Kurzzeit-Lautheit am Sendeausgang (LUFS), Verstärkung der Regelung, Absenkung \
+                 durch Kompressor und Limiter",
+            );
+        });
     }
 
     /// Gast-Kanäle (Paket 37): Testgäste, Fader, Pegel, Rückweg (Mix-Minus) im Kopfhörer.
@@ -2871,37 +3205,44 @@ impl RadioDesk {
         theme::lcd_show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_wrapped(|ui| {
+                // Kleine ON-AIR-Lampe vorn (OnAirLamp `--sm`): leuchtet nur, wenn die Sendung
+                // läuft (wie die Lampe der Kopfleiste).
+                crate::widgets::onair_lamp(
+                    ui,
+                    egui::vec2(64.0, 24.0),
+                    onair_lamp_lit(running && on, false),
+                );
+                // Rot nur für live: in Ruhe ist die Taste neutral, auf Sendung rot gefüllt.
                 let (label, fill, border) = if on {
                     (
-                        format!("{} Sendung beenden", theme::ic::BROADCAST),
-                        theme::on_air(),
-                        theme::emphasize(theme::on_air(), 0.35),
+                        "Sendung beenden",
+                        theme::on_air_fill(),
+                        theme::on_air_fill(),
                     )
                 } else {
-                    (
-                        format!("{} Auf Sendung", theme::ic::BROADCAST),
-                        theme::mix(theme::accent(), theme::surface(), 0.72),
-                        theme::accent(),
-                    )
+                    ("Auf Sendung", theme::surface(), theme::border_strong())
                 };
-                let text = egui::RichText::new(&label)
-                    .size(14.5)
-                    .strong()
-                    .color(if on {
+                let text = theme::fill_label(
+                    theme::icf::BROADCAST,
+                    &label.to_uppercase(),
+                    13.0,
+                    if on {
                         egui::Color32::WHITE
                     } else {
                         theme::text()
-                    });
-                if ui
+                    },
+                );
+                let b = ui
                     .add(
                         egui::Button::new(text)
                             .fill(fill)
                             .stroke(egui::Stroke::new(1.0, border))
-                            .min_size(egui::vec2(148.0, 34.0)),
+                            .corner_radius(theme::RADIUS_MD)
+                            .min_size(egui::vec2(148.0, 32.0)),
                     )
-                    .on_hover_text("Sendung an den eigenen Shoutcast (woa-streamd)")
-                    .clicked()
-                {
+                    .on_hover_text("Sendung an den eigenen Shoutcast (woa-streamd)");
+                b.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+                if b.clicked() {
                     if on {
                         self.go_off_air();
                     } else {
@@ -2986,12 +3327,10 @@ impl RadioDesk {
                 self.with(move |c| c.set_hide_played(on));
             }
             // Auto-Weiter (#148): aus, dann hält die Playlist nach jedem Titel an.
-            let r = ui
-                .selectable_label(v.auto_next, egui::RichText::new("Auto-Weiter").small())
-                .on_hover_text(
-                    "An: Die Titel laufen nacheinander. Aus: Nach jedem Titel hält die \
+            let r = led_key(ui, "Auto-Weiter", v.auto_next).on_hover_text(
+                "An: Die Titel laufen nacheinander. Aus: Nach jedem Titel hält die \
                      Playlist an, der nächste steht bereit und startet mit „Play“.",
-                );
+            );
             if r.clicked() {
                 let on = !v.auto_next;
                 self.view.auto_next = on;
@@ -3006,16 +3345,8 @@ impl RadioDesk {
                 );
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("+ Titel …")
-                                .strong()
-                                .color(theme::text()),
-                        )
-                        .fill(theme::mix(theme::accent(), theme::surface(), 0.72))
-                        .stroke(egui::Stroke::new(1.0, theme::accent())),
-                    )
+                if small_key(ui, theme::icf::PLUS, "Titel")
+                    .on_hover_text("Titel hinzufügen …")
                     .clicked()
                 {
                     self.add_dialog();
@@ -3403,14 +3734,19 @@ impl RadioDesk {
             ui.label(theme::panel_label("CART-WALL")).on_hover_text(
                 "Taste startet und stoppt · Rechtsklick: Umbenennen, Belegen, Taste, Schnitt",
             );
-            // Sätze 1–5 als kleine Reiter (#292): Klick wechselt, Rechtsklick benennt um.
-            for (i, name) in v.cart_sets.iter().enumerate() {
-                let r = ui
-                    .selectable_label(
-                        i == v.cart_set,
-                        egui::RichText::new(format!("{} {name}", i + 1)).small(),
-                    )
-                    .on_hover_text("Cart-Wall-Satz wechseln · Rechtsklick: Umbenennen");
+            // Sätze 1–5 als Segmentschalter (Design-Runde 3, #292): Klick wechselt, Rechtsklick
+            // benennt um; der Name des gewählten Satzes steht daneben.
+            let nums: Vec<String> = (1..=v.cart_sets.len()).map(|i| i.to_string()).collect();
+            let rs = segments(ui, &nums, v.cart_set);
+            for (i, (r, name)) in rs.into_iter().zip(v.cart_sets.iter()).enumerate() {
+                let label = format!("{} {name}", i + 1);
+                let sel = i == v.cart_set;
+                r.widget_info(|| {
+                    egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, sel, &label)
+                });
+                let r = r.on_hover_text(format!(
+                    "{name}: Cart-Wall-Satz wechseln · Rechtsklick: Umbenennen"
+                ));
                 if r.clicked() && i != v.cart_set {
                     self.with(move |c| {
                         if let Err(e) = c.select_cart_set(i) {
@@ -3424,6 +3760,13 @@ impl RadioDesk {
                         ui.close();
                     }
                 });
+            }
+            if let Some(name) = v.cart_sets.get(v.cart_set) {
+                ui.label(
+                    egui::RichText::new(name)
+                        .size(12.0)
+                        .color(theme::text_dim()),
+                );
             }
             // Bedienhinweis am Titel; nur die laufende Tastenwahl steht sichtbar daneben.
             if let Some(n) = self.key_capture {
@@ -4095,7 +4438,16 @@ impl RadioDesk {
 
     /// Die drei Decks: große Restzeit, Start und Stopp, Laden per Ziehen oder Menü.
     fn deck_card(&mut self, ui: &mut egui::Ui, v: &View) {
-        ui.label(theme::panel_label("DECKS A · B · C"));
+        ui.horizontal(|ui| {
+            ui.label(theme::panel_label("DECKS A · B · C"));
+            ui.label(
+                egui::RichText::new(
+                    "Titel aus der Playlist hierher ziehen · Rechtsklick: Playlist ablösen",
+                )
+                .size(12.0)
+                .color(theme::text_dim()),
+            );
+        });
         ui.add_space(4.0);
         self.deck_rows(ui, v);
     }
@@ -4180,116 +4532,213 @@ impl RadioDesk {
                 ui.set_width(ui.available_width());
                 ui.set_min_height(DECK_ROW_H);
                 ui.horizontal(|ui| {
-                    // Buchstabe im LCD-Kästchen.
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    // Buchstabe im LCD-Feld, leuchtet in lcd-ink, solange das Deck spielt.
                     let (lr, _) =
-                        ui.allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::hover());
+                        ui.allocate_exact_size(egui::vec2(44.0, DECK_ROW_H), egui::Sense::hover());
                     ui.painter()
-                        .rect_filled(lr, theme::RADIUS_SM, theme::lcd_bg());
+                        .rect_filled(lr, theme::RADIUS_MD, theme::lcd_bg());
                     ui.painter().text(
                         lr.center(),
                         egui::Align2::CENTER_CENTER,
                         name.to_string(),
-                        theme::label_font(17.0),
+                        theme::label_font(30.0),
                         if d.playing {
-                            theme::accent()
+                            theme::lcd_ink()
                         } else {
-                            theme::lcd_text()
+                            theme::mix(theme::lcd_text(), theme::lcd_bg(), 0.55)
                         },
                     );
-                    ui.vertical(|ui| {
-                        ui.set_min_width(DECK_CLOCK_WIDTH);
-                        ui.label(
-                            egui::RichText::new(if loaded {
-                                clock(d.remaining)
+                    // Restzeit-LCD 132 px: 7-Segment mit Geistern, Fortschritt darunter.
+                    let (cr, _) = ui.allocate_exact_size(
+                        egui::vec2(DECK_CLOCK_WIDTH, DECK_ROW_H),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter()
+                        .rect_filled(cr, theme::RADIUS_MD, theme::lcd_bg());
+                    let ink = if urgent_on {
+                        theme::on_air()
+                    } else if urgent {
+                        theme::mix(theme::on_air(), theme::lcd_bg(), 0.5)
+                    } else if loaded {
+                        theme::lcd_ink()
+                    } else {
+                        theme::led_off()
+                    };
+                    let text = if loaded {
+                        clock(d.remaining)
+                    } else {
+                        "--:--".to_string()
+                    };
+                    let inner = cr.shrink2(egui::vec2(10.0, 6.0));
+                    ui.scope_builder(
+                        egui::UiBuilder::new()
+                            .max_rect(inner)
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.y = 4.0;
+                            let r = seg_text(ui, &text, 22.0, ink);
+                            let rest = format!("Restzeit Deck {name}");
+                            r.widget_info(|| {
+                                egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &rest)
+                            });
+                            let frac = if d.length > 0.0 {
+                                (1.0 - d.remaining / d.length).clamp(0.0, 1.0) as f32
                             } else {
-                                "--:--".into()
-                            })
-                            .font(theme::seg_font(22.0))
-                            .color(if urgent_on {
-                                theme::on_air()
-                            } else if urgent {
-                                theme::mix(theme::on_air(), theme::surface(), 0.5)
-                            } else if loaded {
-                                theme::text()
-                            } else {
-                                theme::text_dim()
-                            }),
-                        );
-                        let frac = if d.length > 0.0 {
-                            (1.0 - d.remaining / d.length).clamp(0.0, 1.0) as f32
+                                0.0
+                            };
+                            let (bar, _) = ui.allocate_exact_size(
+                                egui::vec2(inner.width(), 4.0),
+                                egui::Sense::hover(),
+                            );
+                            ui.painter().rect_filled(bar, 2.0, theme::led_off());
+                            if frac > 0.0 {
+                                let mut f = bar;
+                                f.set_width(bar.width() * frac);
+                                ui.painter().rect_filled(f, 2.0, ink);
+                            }
+                        },
+                    );
+                    // Tasten rechts: Start/Stopp mit Text, Cue, Vorhören und Rückweg als Symbole;
+                    // der Titel füllt den Rest.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        if deck_return_toggle(ui, k, d.back_to_playlist).clicked() {
+                            let on = !d.back_to_playlist;
+                            self.with(move |c| c.set_deck_return(k, on));
+                        }
+                        let pfl_on = v.pfl_source == Some(PflSource::Deck(k));
+                        let r = icon_key(
+                            ui,
+                            theme::icf::HEADPHONES,
+                            &format!("Vorhören Deck {name}"),
+                            theme::cue(),
+                            pfl_on,
+                            loaded && v.pfl_available,
+                            SYMBOL_KEY,
+                        )
+                        .on_hover_text(if pfl_on {
+                            "Vorhören stoppen"
                         } else {
-                            0.0
+                            "Vorhören (PFL) im Kopfhörer"
+                        })
+                        .on_disabled_hover_text(self.pfl_hint());
+                        if r.clicked() {
+                            self.with(move |c| {
+                                if let Err(e) = c.pfl_toggle(PflSource::Deck(k)) {
+                                    c.report(e);
+                                }
+                            });
+                        }
+                        if icon_key(
+                            ui,
+                            theme::icf::SKIP_BACK,
+                            &format!("Cue Deck {name}"),
+                            theme::accent_2(),
+                            false,
+                            loaded,
+                            SYMBOL_KEY,
+                        )
+                        .on_hover_text("Cue: zurück an den Anfang")
+                        .clicked()
+                        {
+                            self.with(move |c| c.deck_cue(k));
+                        }
+                        let (icon, word) = if d.playing {
+                            (theme::icf::STOP, "Stopp")
+                        } else {
+                            (theme::icf::PLAY, "Start")
                         };
-                        // Feste Breite: sonst nimmt der Balken die ganze Zeile und der Titel
-                        // daneben bricht Zeichen für Zeichen um (#168).
-                        ui.add(
-                            egui::ProgressBar::new(frac)
-                                .desired_width(DECK_CLOCK_WIDTH)
-                                .desired_height(4.0),
+                        let r = ui.add_enabled(
+                            loaded,
+                            egui::Button::new(theme::fill_label(
+                                icon,
+                                &word.to_uppercase(),
+                                13.0,
+                                if d.playing {
+                                    theme::lcd_bg()
+                                } else {
+                                    theme::text()
+                                },
+                            ))
+                            .fill(if d.playing {
+                                theme::ok()
+                            } else {
+                                theme::surface()
+                            })
+                            .stroke(egui::Stroke::new(
+                                1.0,
+                                if loaded {
+                                    theme::ok()
+                                } else {
+                                    theme::border_strong()
+                                },
+                            ))
+                            .corner_radius(theme::RADIUS_MD)
+                            .min_size(egui::vec2(86.0, SYMBOL_KEY)),
+                        );
+                        let label = format!("{word} Deck {name}");
+                        r.widget_info(|| {
+                            egui::WidgetInfo::labeled(egui::WidgetType::Button, loaded, &label)
+                        });
+                        if r.on_hover_text(format!("Deck {name}: {word}")).clicked() {
+                            if d.playing {
+                                self.with(move |c| c.deck_stop(k));
+                            } else {
+                                self.with(move |c| c.deck_play(k));
+                            }
+                        }
+                        ui.add_space(4.0);
+                        ui.allocate_ui_with_layout(
+                            ui.available_size() - egui::vec2(10.0, 0.0),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                ui.spacing_mut().item_spacing.y = 2.0;
+                                let (t, sub) = if drop_here {
+                                    ("Hier ablegen".to_string(), String::new())
+                                } else if let Some(t) = d.title.clone() {
+                                    (
+                                        t,
+                                        if d.playing {
+                                            "läuft".to_string()
+                                        } else {
+                                            "Deck geladen".to_string()
+                                        },
+                                    )
+                                } else {
+                                    (
+                                        "Leer".to_string(),
+                                        "Titel hierher ziehen · Rechtsklick: Datei laden"
+                                            .to_string(),
+                                    )
+                                };
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(t).size(14.0).strong().color(
+                                            if drop_here {
+                                                theme::accent_2()
+                                            } else if loaded {
+                                                theme::text()
+                                            } else {
+                                                theme::text_dim()
+                                            },
+                                        ),
+                                    )
+                                    .truncate(),
+                                );
+                                if !sub.is_empty() {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(sub)
+                                                .size(12.0)
+                                                .color(theme::text_dim()),
+                                        )
+                                        .truncate(),
+                                    );
+                                }
+                            },
                         );
                     });
-                    // Eine Zeile je Deck: Knöpfe neben der Uhr, Titel im Rest (#303).
-                    let go = if d.playing { "Stopp" } else { "Start" };
-                    if ui
-                        .add_enabled(
-                            loaded,
-                            egui::Button::new(egui::RichText::new(go).strong())
-                                .min_size(egui::vec2(64.0, 24.0)),
-                        )
-                        .clicked()
-                    {
-                        if d.playing {
-                            self.with(move |c| c.deck_stop(k));
-                        } else {
-                            self.with(move |c| c.deck_play(k));
-                        }
-                    }
-                    if ui
-                        .add_enabled(
-                            loaded,
-                            egui::Button::new("Cue").min_size(egui::vec2(42.0, 24.0)),
-                        )
-                        .on_hover_text("Zurück an den Anfang")
-                        .clicked()
-                    {
-                        self.with(move |c| c.deck_cue(k));
-                    }
-                    if ui
-                        .add_enabled(
-                            loaded && v.pfl_available,
-                            pfl_button(v.pfl_source == Some(PflSource::Deck(k)))
-                                .min_size(egui::vec2(64.0, 24.0)),
-                        )
-                        .on_disabled_hover_text(self.pfl_hint())
-                        .clicked()
-                    {
-                        self.with(move |c| {
-                            if let Err(e) = c.pfl_toggle(PflSource::Deck(k)) {
-                                c.report(e);
-                            }
-                        });
-                    }
-                    if deck_return_toggle(ui, k, d.back_to_playlist).clicked() {
-                        let on = !d.back_to_playlist;
-                        self.with(move |c| c.set_deck_return(k, on));
-                    }
-                    let text = if drop_here {
-                        "Hier ablegen".to_string()
-                    } else {
-                        d.title.clone().unwrap_or_else(|| {
-                            "Titel hierher ziehen · Rechtsklick: Datei laden".into()
-                        })
-                    };
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(text).color(if drop_here {
-                            theme::accent_2()
-                        } else if loaded {
-                            theme::text()
-                        } else {
-                            theme::text_dim()
-                        }))
-                        .truncate(),
-                    );
                 });
             });
             self.deck_rects[k] = out.response.rect;
@@ -4311,6 +4760,17 @@ impl RadioDesk {
                 ));
             }
             out.response.context_menu(|ui| {
+                if loaded {
+                    if let Some(fade) = deck_take_menu(ui, k, v.crossfade_seconds) {
+                        self.with(move |c| {
+                            if let Err(e) = c.deck_take_over(k, fade) {
+                                c.report(e);
+                            }
+                        });
+                        ui.close();
+                    }
+                    ui.separator();
+                }
                 if ui.button("Datei laden …").clicked() {
                     self.pick_deck_file(k);
                     ui.close();
@@ -4319,7 +4779,11 @@ impl RadioDesk {
                     self.open_deck_cue_editor(k);
                     ui.close();
                 }
-                if loaded && ui.button("Leeren").clicked() {
+                if loaded
+                    && ui
+                        .button(egui::RichText::new("Leeren").color(theme::danger_text()))
+                        .clicked()
+                {
                     self.with(move |c| c.deck_eject(k));
                     ui.close();
                 }
@@ -4489,7 +4953,7 @@ mod tests {
     }
 
     /// Ein Bild mit `f`, Rückgabe: (Beschriftung, Rechteck, deaktiviert) je Bedienelement.
-    fn frame(
+    pub(super) fn frame(
         ctx: &eframe::egui::Context,
         n: u32,
         events: Vec<eframe::egui::Event>,
@@ -4531,7 +4995,7 @@ mod tests {
         nodes
     }
 
-    fn click_at(p: eframe::egui::Pos2, shift: bool) -> Vec<eframe::egui::Event> {
+    pub(super) fn click_at(p: eframe::egui::Pos2, shift: bool) -> Vec<eframe::egui::Event> {
         use eframe::egui::{Event, Modifiers, PointerButton};
         let modifiers = if shift {
             Modifiers::SHIFT
@@ -4701,47 +5165,6 @@ mod tests {
     }
 
     #[test]
-    fn deck_buttons_take_over_with_fade_or_hard_and_empty_is_off() {
-        use woa_radio::station::DeckView;
-        let ctx = eframe::egui::Context::default();
-        ctx.enable_accesskit();
-        let decks = vec![
-            DeckView {
-                title: Some("Jingle".into()),
-                ..DeckView::default()
-            },
-            DeckView::default(),
-            DeckView {
-                title: Some("Bett".into()),
-                ..DeckView::default()
-            },
-        ];
-        let hit = std::cell::Cell::new(None);
-        let mut ui = |ui: &mut eframe::egui::Ui| {
-            ui.horizontal(|ui| {
-                if let Some(h) = super::deck_take_buttons(ui, &decks, 3.0) {
-                    hit.set(Some(h));
-                }
-            });
-        };
-        frame(&ctx, 0, vec![], &mut ui);
-        let nodes = frame(&ctx, 1, vec![], &mut ui);
-        assert!(!find(&nodes, "Deck A").2, "A geladen: an");
-        assert!(find(&nodes, "Deck B").2, "B leer: aus");
-        let a = find(&nodes, "Deck A").1.center();
-        let c = find(&nodes, "Deck C").1.center();
-        let b = find(&nodes, "Deck B").1.center();
-        let _ = frame(&ctx, 2, click_at(a, false), &mut ui);
-        assert_eq!(hit.take(), Some((0, true)), "Klick: mit Blende");
-        let _ = frame(&ctx, 3, vec![], &mut ui);
-        let _ = frame(&ctx, 4, click_at(c, true), &mut ui);
-        assert_eq!(hit.take(), Some((2, false)), "Umschalt+Klick: sofort");
-        let _ = frame(&ctx, 5, vec![], &mut ui);
-        let _ = frame(&ctx, 6, click_at(b, false), &mut ui);
-        assert_eq!(hit.take(), None, "leeres Deck startet nichts");
-    }
-
-    #[test]
     fn back_to_playlist_toggle_is_there_and_clicks() {
         let ctx = eframe::egui::Context::default();
         ctx.enable_accesskit();
@@ -4751,7 +5174,7 @@ mod tests {
         };
         frame(&ctx, 0, vec![], &mut ui);
         let nodes = frame(&ctx, 1, vec![], &mut ui);
-        let p = find(&nodes, "↩ Playlist").1.center();
+        let p = find(&nodes, "Zurück zur Playlist Deck A").1.center();
         let _ = frame(&ctx, 2, click_at(p, false), &mut ui);
         assert!(clicked);
     }
@@ -5183,6 +5606,198 @@ mod deck_drop_tests {
         assert!(
             settle(&ctx, &mut desk, &mut n, |v| deck_title(v, 2).is_some()),
             "Titel liegt auf Deck C"
+        );
+    }
+}
+
+#[cfg(test)]
+mod design3_tests {
+    //! Design-Runde 3, Radio: Fehlerbanner, Tastenreihe, Decks, Pegel, Processing, Höhe.
+    use super::*;
+    use eframe::egui;
+    use egui_kittest::kittest::NodeT as _;
+
+    fn harness(size: egui::Vec2, desk: RadioDesk) -> egui_kittest::Harness<'static, RadioDesk> {
+        egui_kittest::Harness::builder()
+            .with_size(size)
+            .build_ui_state(
+                |ui, d: &mut RadioDesk| {
+                    let ctx = ui.ctx().clone();
+                    let fresh = ctx.data_mut(|m| {
+                        let id = egui::Id::new("test_fonts");
+                        let fresh = m.get_temp::<bool>(id).is_none();
+                        m.insert_temp(id, true);
+                        fresh
+                    });
+                    if fresh {
+                        crate::theme::install_fonts(&ctx);
+                        crate::theme::apply(
+                            &ctx,
+                            crate::theme::Theme::Dunkel,
+                            crate::theme::Mode::Radio,
+                        );
+                        return;
+                    }
+                    egui::CentralPanel::default()
+                        .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(14, 12)))
+                        .show(ui, |ui| d.ui(ui));
+                },
+                desk,
+            )
+    }
+
+    fn labels(h: &egui_kittest::Harness<'_, RadioDesk>) -> Vec<String> {
+        use egui_kittest::kittest::Queryable;
+        h.query_all(egui_kittest::kittest::by())
+            .filter_map(|n| n.accesskit_node().label())
+            .collect()
+    }
+
+    #[test]
+    fn seg_ghost_has_an_eight_per_digit() {
+        assert_eq!(seg_ghost("03:42"), "88:88");
+        assert_eq!(seg_ghost("123:05"), "888:88");
+        assert_eq!(seg_ghost("--:--"), "88:88");
+    }
+
+    /// Ein langer, mehrzeiliger Fehler bleibt eine Zeile; der Rest steht hinter „Details“.
+    #[test]
+    fn error_banner_is_one_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut d = RadioDesk::headless(dir.path());
+        d.error = Some(format!(
+            "Ausgabe nicht offen.\n{}",
+            "sehr langer Grund ".repeat(40)
+        ));
+        let mut h = harness(egui::vec2(1366.0, 728.0), d);
+        h.run_steps(3);
+        let r = h.state().error_rect;
+        assert!(r.height() <= 36.0, "Banner {r:?} ist mehr als eine Zeile");
+        assert!(labels(&h).iter().any(|l| l == "Details"), "Details fehlt");
+    }
+
+    /// Die Sende-Tastenreihe hat keine Deck-Tasten mehr; −10/+10 sind Symbole mit Tooltip.
+    #[test]
+    fn send_row_without_deck_keys_and_seek_symbols() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = harness(egui::vec2(1920.0, 990.0), RadioDesk::headless(dir.path()));
+        h.run_steps(3);
+        let l = labels(&h);
+        assert!(
+            !l.iter()
+                .any(|l| *l == format!("{} Deck A", theme::icf::PLAY) || l == "Deck A"),
+            "Deck-Taste noch da: {l:?}"
+        );
+        assert!(
+            !l.iter().any(|l| l == "−10" || l == "+10"),
+            "−10/+10 als Text: {l:?}"
+        );
+        for want in ["10 s zurück", "10 s vor"] {
+            assert!(l.iter().any(|x| x == want), "{want} fehlt: {l:?}");
+        }
+    }
+
+    /// Ablösen der Playlist durch ein Deck bleibt erreichbar: im Deck-Menü, mit und ohne Blende.
+    #[test]
+    fn deck_take_over_menu_offers_fade_and_hard() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let hit = std::cell::Cell::new(None);
+        let mut ui = |ui: &mut egui::Ui| {
+            if let Some(f) = deck_take_menu(ui, 0, 3.0) {
+                hit.set(Some(f));
+            }
+        };
+        let _ = super::tests::frame(&ctx, 0, vec![], &mut ui);
+        let nodes = super::tests::frame(&ctx, 1, vec![], &mut ui);
+        let p = |t: &str| {
+            nodes
+                .iter()
+                .find(|(l, _, _)| l.contains(t))
+                .unwrap_or_else(|| panic!("{t} fehlt: {nodes:?}"))
+                .1
+                .center()
+        };
+        let (a, b) = (p("mit Blende"), p("sofort"));
+        let _ = super::tests::frame(&ctx, 2, super::tests::click_at(a, false), &mut ui);
+        assert_eq!(hit.take(), Some(true));
+        let _ = super::tests::frame(&ctx, 3, vec![], &mut ui);
+        let _ = super::tests::frame(&ctx, 4, super::tests::click_at(b, false), &mut ui);
+        assert_eq!(hit.take(), Some(false));
+    }
+
+    /// Deck-Tasten: Start mit Text, Cue, Vorhören und Zurück zur Playlist als Symbol-Tasten.
+    #[test]
+    fn deck_keys_are_start_text_and_symbols() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = harness(egui::vec2(1920.0, 990.0), RadioDesk::headless(dir.path()));
+        h.run_steps(3);
+        let l = labels(&h);
+        for k in ["A", "B", "C"] {
+            for want in [
+                format!("Start Deck {k}"),
+                format!("Cue Deck {k}"),
+                format!("Vorhören Deck {k}"),
+                format!("Zurück zur Playlist Deck {k}"),
+            ] {
+                assert!(l.contains(&want), "{want} fehlt: {l:?}");
+            }
+        }
+        assert!(
+            !l.iter().any(|x| x == "↩ Playlist"),
+            "Text-Schalter noch da"
+        );
+    }
+
+    /// Processing als Zeilen mit Zahlenfeld oder Schalter, keine Slider und Häkchen.
+    #[test]
+    fn processing_rows_use_fields_and_toggles() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = harness(egui::vec2(1920.0, 990.0), RadioDesk::headless(dir.path()));
+        h.run_steps(3);
+        use egui_kittest::kittest::Queryable;
+        let kinds: Vec<(String, egui::accesskit::Role)> = h
+            .query_all(egui_kittest::kittest::by())
+            .filter_map(|n| Some((n.accesskit_node().label()?, n.accesskit_node().role())))
+            .collect();
+        for name in [
+            "Crossfade-Blende",
+            "Musik-Ducking",
+            "Ducking auch bei Carts",
+            "Stopp blendet aus",
+            "Ausblenddauer",
+            "Sendebus-Processing",
+            "Mikro-Kette",
+        ] {
+            let roles: Vec<_> = kinds
+                .iter()
+                .filter(|(l, _)| l == name)
+                .map(|k| k.1)
+                .collect();
+            assert!(!roles.is_empty(), "{name} fehlt: {kinds:?}");
+            assert!(
+                !roles.iter().any(|r| matches!(
+                    r,
+                    egui::accesskit::Role::Slider | egui::accesskit::Role::CheckBox
+                )),
+                "{name} ist noch {roles:?}"
+            );
+        }
+    }
+
+    /// Bei 1920 × 1030 liegt alles im Fenster, auch die Wunschtitel-Zeile, ohne Rollen.
+    #[test]
+    fn everything_fits_1920x1030() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut d = RadioDesk::headless(dir.path());
+        d.view.cart_sets = (1..=5).map(|i| format!("Satz {i}")).collect();
+        let mut h = harness(egui::vec2(1920.0, 1030.0 - 40.0), d);
+        h.run_steps(3);
+        let w = h.state().wish_rect;
+        assert!(w.is_positive(), "Wunschtitel nicht gezeichnet");
+        assert!(
+            w.bottom() <= 990.0,
+            "Wunschtitel bei {w:?} unter dem Fensterrand"
         );
     }
 }
