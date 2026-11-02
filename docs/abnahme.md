@@ -383,7 +383,7 @@ Selbst geprüft von Claude: Tests und Clippy von woa-radio, woa-io und woa-gui g
 2. Für den eigenen Server: „Eigener Server“, Format „OpenAI-kompatibel“, Adresse eintragen (mit oder ohne `/v1`), Schlüssel leer lassen, wenn er keinen braucht. „Modelle holen“ füllt die Liste „Liste“; ein Modell wählen oder von Hand eintippen. „Verbindung testen“ meldet „Verbunden, Modell … ist da“. Mit falschem Modellnamen: „steht nicht in der Liste“. Mit falscher Adresse: „Keine Verbindung … Firewall“.
 3. Für Anthropic oder einen Dienst mit Schlüssel: Schlüssel ins Feld (Punkte), „Speichern“; das Feld zeigt danach „gespeichert (im Schlüsselbund)“. Testen: grün. Mit falschem Schlüssel: „lehnt den Schlüssel ab“. `grep -ri <schluessel> ~/.config/woa/` findet nichts.
 4. Mit „MCP-Server hinzufügen …“ einen Server eintragen (z. B. lokal: Befehl `npx`, Argumente `-y @modelcontextprotocol/server-everything`; oder HTTP mit Adresse). „Verbindung testen“ nennt die Zahl der Werkzeuge. Mit falschem Befehl: „Start von … fehlgeschlagen“.
-5. „Speichern“, dann Einstellungen → „Assistent (Chat) …“. Das Fenster sagt „Bereit, n Werkzeuge verfügbar“. „Lege eine Spur namens Moderation an“ eingeben: „→ Werkzeug …“ erscheint, danach die Antwort; das Projekt (nach erneutem Öffnen) hat die Spur.
+5. „Speichern“, dann Einstellungen → „Assistent (Chat)“. Das Fenster sagt „Bereit, n Werkzeuge verfügbar“. „Lege eine Spur namens Moderation an“ eingeben: „→ Werkzeug …“ erscheint, danach die Antwort; das Projekt (nach erneutem Öffnen) hat die Spur.
 6. Einen Server ausschalten (Haken weg), „Speichern“, im Chat „Neues Gespräch“: seine Werkzeuge fehlen. Ohne Anbieter sagt der Chat, was fehlt.
 7. Alte Konfiguration ohne `ki`-Abschnitt starten: alles wie vorher, `config.json` bekommt den Abschnitt erst, wenn etwas eingetragen ist.
 8. Kopierbefehl: Projektordner mit `$(echo HALLO)` oder einem `'` im Namen wählen, im Fenster „KI & MCP …“ den Claude-Code-Befehl kopieren und in bash einfügen (ohne Enter): der Pfad steht in einfachen Anführungszeichen, `'` als `'\''`. Unter Windows (PowerShell) ebenso, `'` verdoppelt. Ein Pfad mit Zeilenumbruch bekommt keinen Terminal-Befehl, nur die JSON-Einträge.
@@ -417,7 +417,7 @@ Selbst geprüft von Claude: Tests und Clippy von woa-secrets, woa-assistant, woa
 Selbst geprüft von Claude: neue Tests in `crates/dsp/src/analysis/loudness.rs`, `crates/library/src/lib.rs` und `crates/gui/src/library.rs`; Tests und Clippy von dsp, library, radio und gui grün.
 ## Einstellungen: Stream-Server (0.34.29, offen)
 
-1. Einstellungen → „Sendung: Stream-Server und Kennwort …“. Das Fenster zeigt Servertyp, Server, Port, Kennwort, Sendername und Format.
+1. Einstellungen → „Sendung: Stream-Server und Kennwort“. Das Fenster zeigt Servertyp, Server, Port, Kennwort, Sendername und Format.
 2. Servertyp „Icecast 2“ wählen: Mountpoint und Benutzer erscheinen. Auf „Shoutcast v2“: Stream-ID. Auf „Shoutcast v1“: keins von beiden.
 3. Ins Feld „Server“ `http://127.0.0.1:8000/live` einfügen und in ein anderes Feld klicken: Server `127.0.0.1`, Port 8000 (bei Icecast auch Mountpoint `/live`).
 4. Kennwort eintippen: Punkte, „Anzeigen“ zeigt es, „Verbergen“ maskiert wieder. „Speichern“, Fenster wieder öffnen: Feld leer mit dem Hinweis „gespeichert“; „Anzeigen“ holt es zurück. `grep -ri <kennwort> ~/.config/woa/` findet nichts.
@@ -448,7 +448,7 @@ Selbst geprüft von Claude: fünf neue Tests in `crates/gui/tests/design_regress
 
 ## Protokoll-Fenster und beschädigte Dateien (0.34.25, offen)
 
-1. Hilfe → „Protokoll …“ öffnen: Fenster mit Zeilen der Sitzung (Zeit, Symbol, Text). Die Knöpfe Info/Warnungen/Fehler blenden Stufen aus und ein.
+1. Hilfe → „Protokoll“ öffnen: Fenster mit Zeilen der Sitzung (Zeit, Symbol, Text). Die Knöpfe Info/Warnungen/Fehler blenden Stufen aus und ein.
 2. Eine beschädigte MP3 (z. B. die vom Windows-Notebook) in die Playlist legen: im Protokoll steht eine Zeile „Datei „….mp3“ ist beschädigt (n fehlerhafte Stellen), spielt aber. Tipp: neu exportieren.“, keine tausend Einzelwarnungen. Der Titel spielt.
 3. In Playlist und Bibliothek hat der Titel ein gelbes Warnsymbol; Maus darüber zeigt denselben Text. Es geht kein Fenster auf.
 4. „Kopieren“ legt die sichtbaren Zeilen in die Zwischenablage, „Logordner öffnen“ öffnet den Ordner `logs` im Dateimanager.
@@ -469,11 +469,11 @@ Selbst geprüft von Claude: Tests und Clippy des Crates grün.
 André 31.10.2026: „header menü leiste struktur und optik verbessern … feedback in grün … über WOA netter, persönlicher, schicker“.
 
 1. Kopfleiste links: Marke, dann Datei, Bearbeiten, Ansicht, Einstellungen, Hilfe. Datei hat die Untermenüs „Importieren“ (Audio, MIDI, DAWproject öffnen) und „Exportieren“ (Mixdown, DAWproject, MIDI-Clip). Bibliothek, Stundenuhr und Zeit-Events schalten sich unter „Ansicht“ an und aus, dort steht auch „Erscheinungsbild“.
-2. Einstellungen: oben Audio (Ausgänge, Vorhören, Ausgabe neu verbinden, Telefon), dann MIDI (MIDI-Eingang, Controller und MIDI-Learn), dann Fehlercodes. Hilfe: Update-Suche und „Über WOA …“.
+2. Einstellungen: oben Audio (Ausgänge, Vorhören, Ausgabe neu verbinden, Telefon), dann MIDI (MIDI-Eingang, Controller und MIDI-Learn), dann Fehlercodes. Hilfe: Update-Suche und „Über WOA“.
 3. Rechts mit mehr Abstand: MIDI, gleich daneben die ON-AIR-Lampe, dann der Modus-Umschalter, ganz rechts die grüne Taste „Feedback“ (ohne „…“). Radio starten oder das Mikro öffnen: die Lampe oben leuchtet. Im Radio-Deck steht sie nicht mehr.
 4. Liegt ein Update bereit, steht die Info mittig in der Kopfleiste (Neuerungen, Installieren bzw. Release-Seite, Später). Ohne Update ist die Mitte leer.
 5. „Feedback“ klicken: großes Fenster mittig, „Schön, dass du dich meldest!“, Textfeld, „Bildschirmfoto mitsenden“, „Abschicken“ und „Lieber später“. Senden wie bisher: „Danke! Gemeldet als #n“.
-6. Hilfe → „Über WOA …“: Logo, „WOA – built with love, coffee and AI“, Version und Lizenz, PayPal- und Ko-fi-Knopf (öffnen den Browser), „Danke an alle Lizenzgeber“ mit rotem Herz und die Schriften- und Symbolliste wie bisher.
+6. Hilfe → „Über WOA“: Logo, „WOA – built with love, coffee and AI“, Version und Lizenz, PayPal- und Ko-fi-Knopf (öffnen den Browser), „Danke an alle Lizenzgeber“ mit rotem Herz und die Schriften- und Symbolliste wie bisher.
 
 Selbst geprüft von Claude: `crates/gui/tests/kopfleiste.rs` (vier Tests, grün: ON AIR neben MIDI und Feedback ganz rechts, Feedback-Fenster groß und mittig, Spendenlinks öffnen sich, alle alten Menüeinträge erreichbar), Tests und Clippy von `woa-gui` grün.
 
@@ -514,7 +514,7 @@ Start wie immer. Die sechs Design-Pakete (0.34.7, 0.34.10–0.34.14) werden hier
 7. **Bausteine Radio und Party:** Die Studio-Uhr läuft mit Sekunden-Kette, ON AIR leuchtet bei Sendung oder offenem Mikro. Ein Cart-Pad leuchtet in der Modusfarbe und blinkt. Pegel-Fader ziehen, Doppelklick 0 dB, Rechtsklick öffnet weiter das MIDI-Lernen. In Party dreht sich das Jogwheel beim Spielen und steht bei Pause; die Großtasten leuchten bei aktiven Funktionen.
 8. **Mixer:** Dock „Mixer“: jeder Kanalzug zeigt nur Namensstreifen, M/S/Aufnahme, LED-Kette und Fader. Klick auf den Namensstreifen färbt den Rand und öffnet rechts das Insert-Rack (Pegel, Pan, Ausgang, Sends, Effektkette, Plugins, „Spur löschen“). Rack und Fader folgen einander; Doppelklick auf Pan setzt Mitte. Effekt schalten und Send ändern verhalten sich wie vorher. Viele Spuren scrollen waagerecht, das Rack bleibt stehen.
 9. **Logo:** Links oben in der Kopfleiste steht die Bildmarke (Säulen als W, rote Lampe). Die Säulen wechseln mit dem Modus, im hellen Thema sind sie dunkler. Fensterleiste, Alt-Tab und die AppImage im Dateimanager zeigen die neue Kachel. Unter Windows nach dem MSI-Installieren: Startmenü „WOA - Wir on Air“ und „Apps“ zeigen das Icon.
-10. **Über WOA:** Hilfe, „Über WOA …“ zeigt die Version, GPL-3.0-only, die OFL-Nennung der vier Schriften und Phosphor Icons (MIT).
+10. **Über WOA:** Hilfe, „Über WOA“ zeigt die Version, GPL-3.0-only, die OFL-Nennung der vier Schriften und Phosphor Icons (MIT).
 
 Selbst geprüft von Claude (Code und Tests, ohne Fenster): Zuordnung der drei Modi zu den sechs Paletten; alte Einstellungen ohne Thema starten dunkel; alle zwölf Schriftschnitte aus `tokens.json` eingebunden, Absturz bei fehlenden Schriften im ersten Bild abgefangen; keine verlorenen Funktionen in Kanalzug, Rack, Cart-Menü und MIDI-Lernen; Logo-Koordinaten im Feld, `app_icon()` ohne Absturzpfad; Herkunft und Lizenzen in `docs/herkunft.md`; clippy und Tests von `woa-gui` grün, CI je Paket grün.
 
@@ -531,7 +531,7 @@ Start wie immer, Modus „Radio“. Die Decks A, B, C stehen rechts über der Ca
 3. **Gleichzeitig:** Alle drei Decks starten, dazu Playlist und ein Cart: Alles ist zu hören.
 4. **Schnitt:** Rechtsklick auf den Decktitel, „Start und Ende schneiden …“, Cue-In und Cue-Out setzen, „Übernehmen“. Das Deck springt an den neuen Anfang und spielt nur bis zum neuen Ende.
 5. **Vorhören:** „Vorhören“ am Deck: nur im Kopfhörer, der Sendepegel bewegt sich nicht.
-6. **Ausgänge:** Unter Einstellungen, „Ausgänge (Soundkarten) …“ Deck A auf Karte 2 Kanal 1/2 legen, Deck B auf „Wie Playlist“. Deck A kommt nur am Pult-Kanal von Karte 2, Deck B im normalen Programm.
+6. **Ausgänge:** Unter Einstellungen, „Ausgänge (Soundkarten)“ Deck A auf Karte 2 Kanal 1/2 legen, Deck B auf „Wie Playlist“. Deck A kommt nur am Pult-Kanal von Karte 2, Deck B im normalen Programm.
 7. **Neu starten:** Programm schließen und öffnen: Die Titel liegen noch auf den Decks, die Zuordnung ist noch da.
 
 Die Decks laufen ohne Software-Pegel (der Pegel kommt vom Pult) und werden vom Mikro nicht abgesenkt. Sie laufen im Sendeweg mit, also in Aufnahme und Stream und im Rückkanal der Gäste.
@@ -560,8 +560,8 @@ Nicht selbst geprüft: Aussehen der Karte, Klicks, Ordnerwahl-Dialog, Netzfreiga
 
 Start wie immer, Modus „Radio“. Das Handy hängt über den Adapter am Pult; sein Signal kommt in einen Eingang einer Soundkarte, der Rückweg zum Handy geht aus Karte 1 zurück ins Pult.
 
-1. **Eingang wählen:** Einstellungen, „Telefon (Eingang für den Anrufer) …“: Soundkarte und Kanalpaar des Handys wählen, „Übernehmen“. Fehlt die Karte, steht das in Klartext im Fenster, die Sendung läuft weiter.
-2. **Rückweg wählen:** Einstellungen, „Ausgänge (Soundkarten) …“, Zeile „Telefon-Rückweg“: Karte 1 und ein Kanalpaar, das sonst nichts trägt (Pult-Kanal, der zum Handy zurückführt). „Übernehmen“. Auf dem Paar der Playlist oder einer anderen Quelle lehnt WOA ab und sagt es.
+1. **Eingang wählen:** Einstellungen, „Telefon (Eingang für den Anrufer)“: Soundkarte und Kanalpaar des Handys wählen, „Übernehmen“. Fehlt die Karte, steht das in Klartext im Fenster, die Sendung läuft weiter.
+2. **Rückweg wählen:** Einstellungen, „Ausgänge (Soundkarten)“, Zeile „Telefon-Rückweg“: Karte 1 und ein Kanalpaar, das sonst nichts trägt (Pult-Kanal, der zum Handy zurückführt). „Übernehmen“. Auf dem Paar der Playlist oder einer anderen Quelle lehnt WOA ab und sagt es.
 3. **Pegel:** Anrufen und sprechen. Der Pegelbalken neben dem Knopf „Telefon“ bewegt sich, auch wenn das Telefon nicht auf Sendung ist. Auf Sendung ist der Anrufer dann noch nicht zu hören.
 4. **Auf Sendung:** „Telefon“ drücken: Der Knopf wird rot und heißt „Telefon auf Sendung“. Der Anrufer ist im Programm zu hören, die Musik geht runter wie beim Mikro. Nochmal drücken: Anrufer weg, Musik wieder oben.
 5. **Rückweg:** Der Anrufer hört die Sendung (Musik, Moderator), aber nicht sich selbst und kein Echo. Das gilt mit und ohne „Telefon auf Sendung“.
@@ -656,7 +656,7 @@ Nicht selbst geprüft: das Verhalten mit echten Kopfhörern unter Windows (kein 
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`, Modus „Radio“. Möglichst beide Soundkarten und das Pult angeschlossen.
 
-1. **Zuordnen:** Einstellungen, „Ausgänge (Soundkarten) …“. Playlist auf Karte 1 Kanal 1/2, Cart-Wall auf Karte 2 Kanal 1/2 (oder auf Karte 1 Kanal 3/4), „Übernehmen“. Programm neu starten, falls die Sendung lief.
+1. **Zuordnen:** Einstellungen, „Ausgänge (Soundkarten)“. Playlist auf Karte 1 Kanal 1/2, Cart-Wall auf Karte 2 Kanal 1/2 (oder auf Karte 1 Kanal 3/4), „Übernehmen“. Programm neu starten, falls die Sendung lief.
 2. **Hören am Pult:** Titel starten, Cart drücken. Die Musik kommt nur am Pult-Kanal der Playlist, das Cart nur am Pult-Kanal der Cart-Wall. Den Pegel am Pult einstellen.
 3. **Neu starten:** Programm schließen und öffnen: Die Zuordnung ist noch da.
 4. **Gerät fehlt:** Karte 2 abziehen, Programm starten. Es erscheint eine Meldung, das Cart läuft über die Playlist weiter (nie Stille ohne Hinweis). Karte 2 im Betrieb abziehen: Meldung „Ausgang … ist ausgefallen“, Playlist läuft weiter.
@@ -959,7 +959,7 @@ Aus M7. Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run 
 
 1. **Als DAWproject exportieren:** Ein Projekt mit mehreren Spuren (Audio, MIDI, ein Bus mit Effekt, ein Send) öffnen, Datei, „Als DAWproject exportieren …“, Ziel wählen. Die Statuszeile nennt Spuren, Clips, Audiodateien und eventuell Hinweise zu nicht Übertragenem.
 2. **In Bitwig oder Studio One öffnen:** Die Datei dort öffnen (über den Öffnen- oder Import-Eintrag des Programms). Es sollten Spuren, Clips an ihrer Stelle, Lautstärke, Pan, Mute, Sends und die Lautstärke-Automation da sein. Unsere Effekte erscheinen dort nicht (sie sind WOA-eigen), das ist so gewollt. Cubase kann DAWproject laut Hersteller ebenfalls, die Version bitte selbst prüfen.
-3. **Fremde Datei in WOA öffnen:** In Bitwig oder Studio One ein kleines Projekt als `.dawproject` speichern, in WOA Datei, „DAWproject öffnen …“. Es entsteht ein Ordner `<Name>.woa` neben der Datei und wird geöffnet. Fremde Plugins fehlen (siehe Log), alles andere sollte stimmen.
+3. **Fremde Datei in WOA öffnen:** In Bitwig oder Studio One ein kleines Projekt als `.dawproject` speichern, in WOA Datei, „DAWproject öffnen“. Es entsteht ein Ordner `<Name>.woa` neben der Datei und wird geöffnet. Fremde Plugins fehlen (siehe Log), alles andere sollte stimmen.
 4. **Zurück nach WOA:** Die eigene Exportdatei aus Schritt 1 wieder öffnen: Tonhöhe, Clip-Verstärkung, Blendenform und „Tempo folgen“ der Clips sind wieder da.
 
 Selbst geprüft von Claude (ohne Ton): Rundreise WOA nach DAWproject nach WOA mit Audio-, MIDI- und Bus-Spuren, Pegel, Pan, Mute, Ausgang, Send, Effekten mit allen Reglern, Clip-Werten (Position, Länge, Versatz, Blenden, Dehnung, Gain, Tonhöhe, Tempo folgen), MIDI-Noten und Lautstärke-Automation, jeweils mit Werten verglichen; `project.xml` besteht die Prüfung gegen das DAWproject-Schema 1.0 (`xmllint`); eine handgebaute Datei nach den Konventionen der Referenztests von Bitwig (Lautstärke linear, Pan normalisiert, Master als Track, Audio über Warps) wird richtig gelesen, das fremde Plugin steht im Bericht; kaputte oder feindliche Dateien (kein ZIP, ohne `project.xml`, zu tief verschachtelt, falsche Wurzel, `../` im Audiopfad) enden mit klarer Meldung und schreiben nichts außerhalb des Zielordners.
@@ -1181,7 +1181,7 @@ Noch nicht drin: Cue-Punkte automatisch aus der Analyse (kommt mit der Bibliothe
 
 Start: `cd ~/GitHub/nixblick/daw.woa && git pull --ff-only && cargo run -q --release -p woa`
 
-1. **Controller einstecken:** Einstellungen → „Controller und MIDI-Learn …“ → Gerät wählen. Die Zeile darunter sagt „Verbunden“ (mit LEDs, wenn das Gerät sie kann).
+1. **Controller einstecken:** Einstellungen → „Controller und MIDI-Learn“ → Gerät wählen. Die Zeile darunter sagt „Verbunden“ (mit LEDs, wenn das Gerät sie kann).
 2. **Fader und zwei Pads lernen:** Radio-Layout. Rechtsklick auf „Pegel Musik“ → „MIDI lernen“, einen Fader bewegen. Rechtsklick auf eine belegte Cart-Taste (Jingle) → „MIDI lernen“, Pad drücken; dasselbe mit „▶ Play“ und einem zweiten Pad. Im Controller-Fenster stehen die drei Zeilen.
 3. **Musik-Fader fahren:** Sendung mit dem Start-Pad starten, Fader fahren. Der Regler springt nicht, er greift, sobald er die Stellung auf dem Bildschirm erreicht; danach folgt die Musik weich.
 4. **Jingle per Pad:** Pad drücken, der Jingle läuft über der Musik, die Pad-LED leuchtet (falls das Gerät LEDs hat). Nochmal drücken hält ihn an.
@@ -1403,7 +1403,7 @@ Kein Ton nötig. Voraussetzung: unter Einstellungen → KI & MCP ist ein Zugriff
 2. In Claude Desktop (unverändert eingerichtet, `woa-headless mcp …`) sagen: „Leg eine Audiospur ‚Test‘ an.“ Die Spur erscheint sofort in WOA, in der Kopfleiste (Status-Gruppe) steht „KI verbunden“.
 3. Bearbeiten → „Rückgängig Agent: add_track“: die Spur ist wieder weg. „Wiederholen“: sie ist zurück.
 4. Claude einen Drum-Loop erzeugen lassen (`generate_drums`): Spur und Clip erscheinen, die Wiedergabe läuft dabei ohne Aussetzer weiter.
-5. Claude „speichern“ lassen, solange das Projekt noch nie gespeichert war: Claude meldet „in der App Speichern unter …“; es entsteht kein fremder Ordner.
+5. Claude „speichern“ lassen, solange das Projekt noch nie gespeichert war: Claude meldet „in der App Speichern unter“; es entsteht kein fremder Ordner.
 6. WOA schließen, Claude erneut fragen: `woa-headless mcp` arbeitet wieder headless auf dem eigenen Projekt.
 7. Knopf „Produktionen“: das Fenster listet die Dateien aus `aufnahmen/` und Exporte, die neueste ganz oben. Eine Datei auf eine Spur ziehen: sie liegt dort, wo du losgelassen hast.
 8. Im Fenster auf den Kopfhörer klicken (Vorhören eingerichtet): die Datei läuft im Kopfhörer, nie auf Sendung.
@@ -1471,6 +1471,17 @@ Selbst geprüft von Claude: Tests im egui-Harness (Leiste, Werkzeug-Klick, Drum-
 8. Processing: Zeilen „Bezeichnung · Zahlenfeld/Schalter“ (Ziehen, Doppelklick = Standard, Klick = eintippen), Messzeile als LCD.
 
 Selbst geprüft von Claude: Tests im egui-Harness (sieben neue, vorher rot), Screenshots dunkel und hell bei 1920×1030 und 1366×768. Clippy und Tests von `woa-gui` grün. Nicht am Gerät geklickt.
+
+## Menü und Entwickler-Modus (0.37.0, offen)
+
+1. **Menüs ohne Punkte:** Datei, Bearbeiten, Ansicht, Einstellungen, Hilfe öffnen. Kein Eintrag endet auf „…“. Innerhalb jeder Gruppe alphabetisch, z. B. Einstellungen oben: Assistent (Chat), Ausgabe neu verbinden, Ausgänge (Soundkarten), KI, Sendung, Speicherorte, Telefon, Vorhören (PFL); Datei: Exportieren vor Importieren; Ansicht: Bibliothek vor Browser.
+2. **Ohne Freischaltung:** Zwischen Einstellungen und Hilfe steht kein Menü „Entwickler“.
+3. **Freischalten:** Einstellungen → „Entwickler-Modus“, Kennwort eingeben, „Freischalten“. Das Menü „Entwickler“ steht jetzt direkt vor „Hilfe“, auch nach einem Neustart.
+4. **Update-Suche:** Entwickler → „Nach Updates suchen“: Statuszeile „Suche nach Updates“, danach wie unter Hilfe.
+5. **Fragen und To-dos:** Entwickler → „Fragen und To-dos“. Blöcke Radio, Gäste/Telefon, Party/DJ, Produzent, Jingles, Allgemein; Ticketnummern sind Links und öffnen GitHub im Browser.
+6. **Abstimmen:** Bei einem Vorschlag Daumen hoch, „Senden“: „Gesendet, danke“, die Zeile ist danach gesperrt. Auf GitHub entsteht ein Ticket „[feedback] [entwickler-fragen] <Fragen-ID>: dafür …“ mit „Quelle: entwickler-fragen“ im Text. „anders“ ohne Text wird nicht gesendet, mit Text schon.
+7. **Ohne Netz:** WLAN aus, WOA neu starten, Fenster öffnen: Die Fragen erscheinen trotzdem (Hinweis „Fassung dieser Version“), nichts hängt.
+8. **Beenden:** Entwickler → „Entwickler-Modus beenden“: Das Menü verschwindet, das Kennwort ist aus dem Schlüsselbund entfernt.
 
 ## Abgenommen
 

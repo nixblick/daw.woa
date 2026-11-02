@@ -81,6 +81,10 @@ pub struct GuiConfig {
     /// Unix-Sekunden der letzten erfolgreichen Update-Suche.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_update_check: Option<u64>,
+    /// Entwickler-Modus freigeschaltet (Menü „Entwickler“). Das Kennwort liegt im
+    /// Schlüsselbund, nie hier.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub entwickler: bool,
 }
 
 /// Wohin das Vorhören (PFL) geht. Nie auf Kanal 1/2 der Sendung.
@@ -162,6 +166,7 @@ impl Default for GuiConfig {
             auto_update: true,
             last_update_check: None,
             piano_roll_window: false,
+            entwickler: false,
         }
     }
 }

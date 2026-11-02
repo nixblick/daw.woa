@@ -18,6 +18,7 @@ pub mod cue_editor;
 pub mod event_editor;
 pub mod export_dialog;
 pub mod feedback;
+pub mod fragen;
 /// Alter Pfad des Jingle-Assistenten, jetzt [`widgets::wizard`].
 pub use widgets::wizard as jingle_assistent;
 pub mod jingle_fx;

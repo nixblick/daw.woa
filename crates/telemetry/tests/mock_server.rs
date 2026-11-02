@@ -15,6 +15,8 @@ use woa_telemetry::{
 struct Mock {
     url: String,
     bodies: Arc<Mutex<Vec<(String, Value)>>>,
+    /// Wert der Kopfzeile `X-WOA-Entwickler` je Anfrage (leer = keine).
+    dev_keys: Arc<Mutex<Vec<String>>>,
 }
 
 /// Startet einen Server, der der Reihe nach mit `answers` (Status, Body) antwortet;
@@ -24,6 +26,8 @@ fn mock(answers: Vec<(u16, &'static str)>) -> Mock {
     let addr = listener.local_addr().unwrap();
     let bodies = Arc::new(Mutex::new(Vec::new()));
     let seen = bodies.clone();
+    let dev_keys = Arc::new(Mutex::new(Vec::new()));
+    let seen_keys = dev_keys.clone();
     std::thread::spawn(move || {
         for (i, stream) in listener.incoming().enumerate() {
             let Ok(mut stream) = stream else { continue };
@@ -36,6 +40,7 @@ fn mock(answers: Vec<(u16, &'static str)>) -> Mock {
                 .unwrap_or("")
                 .to_string();
             let mut len = 0usize;
+            let mut dev = String::new();
             loop {
                 let mut line = String::new();
                 reader.read_line(&mut line).unwrap();
@@ -46,7 +51,11 @@ fn mock(answers: Vec<(u16, &'static str)>) -> Mock {
                 if let Some(v) = lower.strip_prefix("content-length:") {
                     len = v.trim().parse().unwrap();
                 }
+                if lower.starts_with("x-woa-entwickler:") {
+                    dev = line["x-woa-entwickler:".len()..].trim().to_string();
+                }
             }
+            seen_keys.lock().unwrap().push(dev);
             let mut body = vec![0u8; len];
             reader.read_exact(&mut body).unwrap();
             let json: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
@@ -62,6 +71,7 @@ fn mock(answers: Vec<(u16, &'static str)>) -> Mock {
     Mock {
         url: format!("http://{addr}"),
         bodies,
+        dev_keys,
     }
 }
 
@@ -295,4 +305,20 @@ fn drop_returns_while_a_layer_still_holds_a_sender() {
     drop(up);
     assert!(t.elapsed() < std::time::Duration::from_secs(5));
     drop(layer);
+}
+
+#[test]
+fn developer_feedback_carries_source_and_key_header() {
+    let m = mock(vec![(202, r#"{"ok":true}"#)]);
+    let meta = FeedbackMeta {
+        url: format!("{}/api/feedback", m.url),
+        source: Some("entwickler-fragen".into()),
+        dev_key: Some(woa_telemetry::DevKey("probe-wort".into())),
+        ..FeedbackMeta::default()
+    };
+    submit_feedback("[entwickler-fragen] x", vec![], &meta).unwrap();
+    let bodies = m.bodies.lock().unwrap();
+    assert_eq!(bodies[0].1["source"], "entwickler-fragen");
+    assert!(!bodies[0].1.to_string().contains("probe-wort"));
+    assert_eq!(m.dev_keys.lock().unwrap()[0], "probe-wort");
 }

@@ -57,6 +57,24 @@ pub struct FeedbackMeta {
     pub app_version: String,
     pub os: String,
     pub timeout: Duration,
+    /// Herkunft innerhalb der App, z. B. `entwickler-fragen`. Geht als Feld `source` mit.
+    pub source: Option<String>,
+    /// Kennwort des Entwickler-Modus; geht nur als Kopfzeile [`DEV_KEY_HEADER`] mit,
+    /// der Server prüft es. Nie im JSON, nie im Log.
+    pub dev_key: Option<DevKey>,
+}
+
+/// Kopfzeile, in der das Entwickler-Kennwort an den eigenen Server geht.
+pub const DEV_KEY_HEADER: &str = "X-WOA-Entwickler";
+
+/// Entwickler-Kennwort; `Debug` zeigt den Wert nicht.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DevKey(pub String);
+
+impl std::fmt::Debug for DevKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DevKey(***)")
+    }
 }
 
 impl Default for FeedbackMeta {
@@ -68,6 +86,8 @@ impl Default for FeedbackMeta {
             app_version: env!("CARGO_PKG_VERSION").to_string(),
             os: std::env::consts::OS.to_string(),
             timeout: Duration::from_secs(30),
+            source: None,
+            dev_key: None,
         }
     }
 }
@@ -129,6 +149,9 @@ pub fn build_payload(
         "installId": meta.install_id,
         "sentAt": sent_at,
     });
+    if let Some(src) = &meta.source {
+        req["source"] = Value::String(src.clone());
+    }
     if images.len() > MAX_IMAGES {
         return Err(FeedbackError::TooManyImages(images.len()));
     }
@@ -165,9 +188,13 @@ pub fn submit_feedback(
         .build()
         .into();
     let body = payload.to_string();
-    let mut resp = agent
+    let mut req = agent
         .post(&meta.url)
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/json");
+    if let Some(k) = &meta.dev_key {
+        req = req.header(DEV_KEY_HEADER, k.0.as_str());
+    }
+    let mut resp = req
         .send(body)
         .map_err(|e| FeedbackError::Transport(e.to_string()))?;
     let status = resp.status().as_u16();
@@ -227,6 +254,19 @@ mod tests {
         assert_eq!(p["title"], "Knackser");
         assert_eq!(p["type"], "bug");
         assert_eq!(p["body"], "Knackser\nim Kanal 2\n\nInstall: abc");
+    }
+
+    #[test]
+    fn source_goes_as_field_and_dev_key_never_in_json_or_debug() {
+        let m = FeedbackMeta {
+            source: Some("entwickler-fragen".into()),
+            dev_key: Some(DevKey("geheim-wort".into())),
+            ..meta()
+        };
+        let p = build_payload("x", &[], &m).unwrap();
+        assert_eq!(p["source"], "entwickler-fragen");
+        assert!(!p.to_string().contains("geheim-wort"));
+        assert!(!format!("{m:?}").contains("geheim-wort"));
     }
 
     #[test]

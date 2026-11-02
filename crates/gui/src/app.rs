@@ -252,6 +252,9 @@ pub struct WoaApp {
     /// Misst langsame Frames und Hänger für die Telemetrie (nur Dauer).
     frame_watch: woa_telemetry::FrameWatch,
     protokoll: crate::protokoll::ProtokollWindow,
+    /// Entwickler-Modus: Freischalt-Fenster und „Fragen und To-dos“.
+    entwickler_tor: crate::fragen::EntwicklerTor,
+    fragen: crate::fragen::FragenWindow,
     /// Fotomodus (`WOA_SCREENSHOT=datei.png`): Zielpfad und gezählte Bilder.
     photo: Option<(PathBuf, u32)>,
     /// Party-Layout (Paket 35).
@@ -565,6 +568,8 @@ impl WoaApp {
             about_open: false,
             frame_watch: woa_telemetry::FrameWatch::new(),
             protokoll: Default::default(),
+            entwickler_tor: Default::default(),
+            fragen: Default::default(),
             party: crate::party::PartyView::default(),
             photo: std::env::var_os("WOA_SCREENSHOT").map(|p| (PathBuf::from(p), 0)),
             selected_clips: Vec::new(),
@@ -2461,6 +2466,14 @@ impl WoaApp {
             // Fotomodus der Zuordnungsliste.
             self.controls.window = true;
         }
+        if first && std::env::var_os("WOA_FRAGEN").is_some() {
+            // Fotomodus „Fragen und To-dos“: Entwickler-Modus nur für dieses Bild, nicht gespeichert.
+            self.config.entwickler = true;
+            self.fragen.open_window(ctx);
+        }
+        if first && std::env::var("WOA_MENU").is_ok_and(|v| v == "Entwickler") {
+            self.config.entwickler = true;
+        }
         if first && std::env::var_os("WOA_JINGLE").is_some() {
             // Fotomodus des Jingle-Assistenten: Fenster beim ersten Bild öffnen.
             self.jingle_assistent.open = true;
@@ -2703,46 +2716,48 @@ impl WoaApp {
     }
 
     fn menu_items(&mut self, ui: &mut egui::Ui) {
+        // Reihenfolge je Gruppe: `MENU_GROUPS` (alphabetisch, ohne „…“).
         theme::logo_mark(ui, 20.0).on_hover_text("WOA - Wir on Air");
         ui.add_space(4.0);
-        ui.menu_button("Datei", |ui| {
+        let r = ui.menu_button("Datei", |ui| {
             if ui.button("Neu (Strg+N)").clicked() {
                 self.new_project();
             }
-            if ui.button("Öffnen … (Strg+O)").clicked() {
+            if ui.button("Öffnen (Strg+O)").clicked() {
                 self.open();
             }
             if ui.button("Speichern (Strg+S)").clicked() {
                 self.save();
             }
-            if ui.button("Speichern unter …").clicked() {
+            if ui.button("Speichern unter").clicked() {
                 self.save_as();
             }
             ui.separator();
-            ui.menu_button("Importieren", |ui| {
-                if ui.button("Audio-Datei (WAV, FLAC, MP3, OGG) …").clicked() {
-                    self.import_audio();
-                }
-                if ui.button("MIDI-Datei (.mid) …").clicked() {
-                    self.import_midi();
-                }
-                if ui.button("DAWproject öffnen …").clicked() {
-                    self.open_dawproject();
-                }
-            });
             ui.menu_button("Exportieren", |ui| {
-                if ui.button("Mixdown exportieren … (Strg+E)").clicked() {
-                    self.export();
-                }
-                if ui.button("Als DAWproject …").clicked() {
+                if ui.button("Als DAWproject").clicked() {
                     self.export_dawproject();
                 }
-                if ui.button("MIDI-Clip (.mid) …").clicked() {
+                if ui.button("MIDI-Clip (.mid)").clicked() {
                     self.export_midi();
+                }
+                if ui.button("Mixdown exportieren (Strg+E)").clicked() {
+                    self.export();
+                }
+            });
+            ui.menu_button("Importieren", |ui| {
+                if ui.button("Audio-Datei (WAV, FLAC, MP3, OGG)").clicked() {
+                    self.import_audio();
+                }
+                if ui.button("DAWproject öffnen").clicked() {
+                    self.open_dawproject();
+                }
+                if ui.button("MIDI-Datei (.mid)").clicked() {
+                    self.import_midi();
                 }
             });
         });
-        ui.menu_button("Bearbeiten", |ui| {
+        self.photo_menu(ui, "Datei", &r.response);
+        let r = ui.menu_button("Bearbeiten", |ui| {
             let h = self.state.session().history();
             let undo = format!("Rückgängig {}", h.undo_label().unwrap_or(""));
             let redo = format!("Wiederholen {}", h.redo_label().unwrap_or(""));
@@ -2757,21 +2772,22 @@ impl WoaApp {
                 self.create_midi_clip_at_playhead(self.selected_track);
             }
         });
-        ui.menu_button("Ansicht", |ui| {
-            if self.config.mode == Mode::Produzent
-                && ui
-                    .checkbox(&mut self.browser.open, "Browser")
-                    .on_hover_text("Browser links: Klänge, Beats, Akkorde, FX, Samples, Jingles")
-                    .clicked()
-            {
-                ui.close();
-            }
+        self.photo_menu(ui, "Bearbeiten", &r.response);
+        let r = ui.menu_button("Ansicht", |ui| {
             if ui
                 .checkbox(&mut self.library.open, "Bibliothek")
                 .on_hover_text(
                     "Musik, Samples und Jingles suchen, taggen, vorhören und hineinziehen",
                 )
                 .clicked()
+            {
+                ui.close();
+            }
+            if self.config.mode == Mode::Produzent
+                && ui
+                    .checkbox(&mut self.browser.open, "Browser")
+                    .on_hover_text("Browser links: Klänge, Beats, Akkorde, FX, Samples, Jingles")
+                    .clicked()
             {
                 ui.close();
             }
@@ -2796,54 +2812,15 @@ impl WoaApp {
             ui.separator();
             self.theme_menu(ui);
         });
-        ui.menu_button("Einstellungen", |ui| {
+        self.photo_menu(ui, "Ansicht", &r.response);
+        let r = ui.menu_button("Einstellungen", |ui| {
             ui.label(
                 egui::RichText::new("Audio")
                     .small()
                     .color(theme::text_dim()),
             );
-            if ui.button("Ausgänge (Soundkarten) …").clicked() {
-                self.outputs_ui.open(&self.config.outputs, &self.config.pult);
-                ui.close();
-            }
-            self.pfl_menu(ui);
             if ui
-                .button("Ausgabe neu verbinden")
-                .on_hover_text(
-                    "Öffnet Player, Sendeausgänge und Vorhören neu auf dem aktuellen \
-                     Standardgerät, z. B. nach dem Einstecken der Kopfhörer",
-                )
-                .clicked()
-            {
-                if let Some(p) = self.player.as_mut() {
-                    p.reconnect_output();
-                }
-                if let Some(r) = self.radio.as_mut() {
-                    r.reconnect_outputs();
-                }
-                tracing::info!("output reconnect by button");
-                ui.close();
-            }
-            if ui
-                .button("Sendung: Stream-Server und Kennwort …")
-                .on_hover_text("Shoutcast oder Icecast: Adresse, Port, Kennwort, Verbindung testen")
-                .clicked()
-            {
-                self.stream_ui.open(&self.config.stream, &self.data_dir);
-                ui.close();
-            }
-            if ui
-                .button("KI …")
-                .on_hover_text(
-                    "Anbieter wählen: Claude Desktop/Code über MCP oder ein Sprachmodell für den KI-Chat",
-                )
-                .clicked()
-            {
-                self.ki_ui.open(&self.config.ki, &self.data_dir);
-                ui.close();
-            }
-            if ui
-                .button("Assistent (Chat) …")
+                .button("Assistent (Chat)")
                 .on_hover_text("Chat mit einem Sprachmodell deiner Wahl, das WOA bedienen kann")
                 .clicked()
             {
@@ -2862,25 +2839,73 @@ impl WoaApp {
                 ui.close();
             }
             if ui
-                .button("Speicherorte …")
-                .on_hover_text("Wo WOA Projekte, Mitschnitte, Exporte … ablegt (WOA-Ordner)")
+                .button("Ausgabe neu verbinden")
+                .on_hover_text(
+                    "Öffnet Player, Sendeausgänge und Vorhören neu auf dem aktuellen \
+                     Standardgerät, z. B. nach dem Einstecken der Kopfhörer",
+                )
+                .clicked()
+            {
+                if let Some(p) = self.player.as_mut() {
+                    p.reconnect_output();
+                }
+                if let Some(r) = self.radio.as_mut() {
+                    r.reconnect_outputs();
+                }
+                tracing::info!("output reconnect by button");
+                ui.close();
+            }
+            if ui.button("Ausgänge (Soundkarten)").clicked() {
+                self.outputs_ui.open(&self.config.outputs, &self.config.pult);
+                ui.close();
+            }
+            if ui
+                .button("KI")
+                .on_hover_text(
+                    "Anbieter wählen: Claude Desktop/Code über MCP oder ein Sprachmodell für den KI-Chat",
+                )
+                .clicked()
+            {
+                self.ki_ui.open(&self.config.ki, &self.data_dir);
+                ui.close();
+            }
+            if ui
+                .button("Sendung: Stream-Server und Kennwort")
+                .on_hover_text("Shoutcast oder Icecast: Adresse, Port, Kennwort, Verbindung testen")
+                .clicked()
+            {
+                self.stream_ui.open(&self.config.stream, &self.data_dir);
+                ui.close();
+            }
+            if ui
+                .button("Speicherorte")
+                .on_hover_text("Wo WOA Projekte, Mitschnitte und Exporte ablegt (WOA-Ordner)")
                 .clicked()
             {
                 self.ordner_ui.open = true;
                 ui.close();
             }
-            if ui.button("Telefon (Eingang für den Anrufer) …").clicked() {
+            if ui.button("Telefon (Eingang für den Anrufer)").clicked() {
                 self.phone_ui.open(&self.config.phone);
                 ui.close();
             }
+            self.pfl_menu(ui);
             ui.separator();
             ui.label(egui::RichText::new("MIDI").small().color(theme::text_dim()));
-            self.midi_menu(ui);
-            if ui.button("Controller und MIDI-Learn …").clicked() {
+            if ui.button("Controller und MIDI-Learn").clicked() {
                 self.controls.window = true;
                 ui.close();
             }
+            self.midi_menu(ui);
             ui.separator();
+            if ui
+                .button("Entwickler-Modus")
+                .on_hover_text("Für alle, die mitentwickeln: per Kennwort freischalten")
+                .clicked()
+            {
+                self.entwickler_tor.open = true;
+                ui.close();
+            }
             let mut on = self.config.telemetry_enabled == Some(true);
             if ui
                 .checkbox(&mut on, "Fehlercodes anonym senden (ab nächstem Start)")
@@ -2890,18 +2915,96 @@ impl WoaApp {
                 self.set_telemetry(on);
             }
         });
-        ui.menu_button("Hilfe", |ui| {
+        self.photo_menu(ui, "Einstellungen", &r.response);
+        if self.config.entwickler {
+            self.entwickler_menu(ui);
+        }
+        let r = ui.menu_button("Hilfe", |ui| {
             self.update_menu(ui);
-            if ui.button("Protokoll …").clicked() {
+            if ui.button("Protokoll").clicked() {
                 self.protokoll.open = true;
                 ui.close();
             }
             ui.separator();
-            if ui.button("Über WOA …").clicked() {
+            if ui.button("Über WOA").clicked() {
                 self.about_open = true;
                 ui.close();
             }
         });
+        self.photo_menu(ui, "Hilfe", &r.response);
+    }
+
+    /// Menü „Entwickler“ (nur freigeschaltet), direkt vor „Hilfe“.
+    fn entwickler_menu(&mut self, ui: &mut egui::Ui) {
+        let r = ui.menu_button("Entwickler", |ui| {
+            if ui.button("Entwickler-Modus beenden").clicked() {
+                self.entwickler_beenden();
+                ui.close();
+            }
+            if ui
+                .button("Fragen und To-dos")
+                .on_hover_text("Inhaltliche Entscheidungen mit Vorschlägen, je Oberfläche")
+                .clicked()
+            {
+                self.fragen.open_window(ui.ctx());
+                ui.close();
+            }
+            if ui
+                .add_enabled(
+                    !self.update.busy(),
+                    egui::Button::new("Nach Updates suchen"),
+                )
+                .clicked()
+            {
+                self.check_updates_now(ui.ctx());
+                ui.close();
+            }
+        });
+        self.photo_menu(ui, "Entwickler", &r.response);
+    }
+
+    /// Fotomodus `WOA_MENU=<Name>`: öffnet dieses Menü der Menüleiste für ein Bildschirmfoto.
+    fn photo_menu(&self, ui: &egui::Ui, name: &str, button: &egui::Response) {
+        if self.photo.as_ref().is_some_and(|(_, n)| *n == 3)
+            && std::env::var("WOA_MENU").is_ok_and(|v| v == name)
+        {
+            egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(button));
+        }
+    }
+
+    /// Schaltet den Entwickler-Modus aus: Kennwort aus dem Schlüsselbund, Menü weg.
+    fn entwickler_beenden(&mut self) {
+        crate::fragen::EntwicklerTor::lock(&self.data_dir);
+        self.config.entwickler = false;
+        self.fragen.open = false;
+        self.save_config();
+        tracing::info!("developer mode off");
+    }
+
+    /// Fenster „Entwickler-Modus“ (Einstellungen) und „Fragen und To-dos“.
+    fn entwickler_windows(&mut self, ctx: &egui::Context) {
+        match self.entwickler_tor.show(ctx, self.config.entwickler) {
+            crate::fragen::TorAktion::Keine => {}
+            crate::fragen::TorAktion::Freischalten(k) => {
+                match crate::fragen::EntwicklerTor::unlock(&self.data_dir, &k) {
+                    Ok(()) => {
+                        self.config.entwickler = true;
+                        self.save_config();
+                        self.entwickler_tor
+                            .set_note("Freigeschaltet: Menü „Entwickler“ steht vor „Hilfe“.");
+                        tracing::info!("developer mode on");
+                    }
+                    Err(e) => self.entwickler_tor.set_note(e),
+                }
+            }
+            crate::fragen::TorAktion::Beenden => {
+                self.entwickler_beenden();
+                self.entwickler_tor.set_note("Entwickler-Modus ist aus.");
+            }
+        }
+        if self.config.entwickler {
+            self.fragen.show(ctx, &self.config, &self.data_dir);
+        }
     }
 
     fn tracks(&mut self, ui: &mut egui::Ui) {
@@ -6778,6 +6881,7 @@ impl WoaApp {
         self.ki_window(ctx);
         self.telemetry_window(ctx);
         self.about_window(ctx);
+        self.entwickler_windows(ctx);
     }
 }
 
@@ -8711,12 +8815,159 @@ impl WoaApp {
             )
             .clicked()
         {
-            self.update.dismissed = false;
-            self.update.start_check(true, Self::update_wake(ui.ctx()));
-            self.state.status = Status::Info("Suche nach Updates …".into());
+            self.check_updates_now(ui.ctx());
             ui.close();
         }
     }
+
+    /// Sucht sofort nach einem neuen Release (Hilfe und Entwickler).
+    fn check_updates_now(&mut self, ctx: &egui::Context) {
+        self.update.dismissed = false;
+        self.update.start_check(true, Self::update_wake(ctx));
+        self.state.status = Status::Info("Suche nach Updates …".into());
+    }
+}
+
+/// Menüleiste (André, 02.11.2026): je Gruppe zwischen zwei Trennern die Einträge in der
+/// Reihenfolge der Anzeige, als (Beschriftung, Stelle im Code von `menu_items`). Innerhalb einer
+/// Gruppe alphabetisch nach [`de_sort_key`]; ohne „…“. Die Tests prüfen beides und dass der Code
+/// dieser Reihenfolge folgt.
+#[cfg(test)]
+pub(crate) const MENU_GROUPS: &[(&str, &[(&str, &str)])] = &[
+    (
+        "Datei",
+        &[
+            ("Neu (Strg+N)", "\"Neu (Strg+N)\""),
+            ("Öffnen (Strg+O)", "\"Öffnen (Strg+O)\""),
+            ("Speichern (Strg+S)", "\"Speichern (Strg+S)\""),
+            ("Speichern unter", "\"Speichern unter\""),
+        ],
+    ),
+    (
+        "Datei",
+        &[
+            ("Exportieren", "\"Exportieren\""),
+            ("Importieren", "\"Importieren\""),
+        ],
+    ),
+    (
+        "Datei › Exportieren",
+        &[
+            ("Als DAWproject", "\"Als DAWproject\""),
+            ("MIDI-Clip (.mid)", "\"MIDI-Clip (.mid)\""),
+            (
+                "Mixdown exportieren (Strg+E)",
+                "\"Mixdown exportieren (Strg+E)\"",
+            ),
+        ],
+    ),
+    (
+        "Datei › Importieren",
+        &[
+            (
+                "Audio-Datei (WAV, FLAC, MP3, OGG)",
+                "\"Audio-Datei (WAV, FLAC, MP3, OGG)\"",
+            ),
+            ("DAWproject öffnen", "\"DAWproject öffnen\""),
+            ("MIDI-Datei (.mid)", "\"MIDI-Datei (.mid)\""),
+        ],
+    ),
+    (
+        "Bearbeiten",
+        &[
+            ("Rückgängig", "\"Rückgängig {}\""),
+            ("Wiederholen", "\"Wiederholen {}\""),
+        ],
+    ),
+    (
+        "Bearbeiten",
+        &[(
+            "Leeren MIDI-Clip anlegen (4 Takte)",
+            "\"Leeren MIDI-Clip anlegen (4 Takte)\"",
+        )],
+    ),
+    (
+        "Ansicht",
+        &[
+            ("Bibliothek", "\"Bibliothek\""),
+            ("Browser", "\"Browser\""),
+            ("Stundenuhr", "\"Stundenuhr\""),
+            ("Zeit-Events", "\"Zeit-Events\""),
+        ],
+    ),
+    ("Ansicht", &[("Erscheinungsbild", "self.theme_menu(ui)")]),
+    (
+        "Einstellungen › Audio",
+        &[
+            ("Assistent (Chat)", "\"Assistent (Chat)\""),
+            ("Ausgabe neu verbinden", "\"Ausgabe neu verbinden\""),
+            ("Ausgänge (Soundkarten)", "\"Ausgänge (Soundkarten)\""),
+            ("KI", "\"KI\""),
+            (
+                "Sendung: Stream-Server und Kennwort",
+                "\"Sendung: Stream-Server und Kennwort\"",
+            ),
+            ("Speicherorte", "\"Speicherorte\""),
+            (
+                "Telefon (Eingang für den Anrufer)",
+                "\"Telefon (Eingang für den Anrufer)\"",
+            ),
+            ("Vorhören (PFL)", "self.pfl_menu(ui)"),
+        ],
+    ),
+    (
+        "Einstellungen › MIDI",
+        &[
+            ("Controller und MIDI-Learn", "\"Controller und MIDI-Learn\""),
+            ("MIDI-Eingang", "self.midi_menu(ui)"),
+        ],
+    ),
+    (
+        "Einstellungen",
+        &[
+            ("Entwickler-Modus", "\"Entwickler-Modus\""),
+            (
+                "Fehlercodes anonym senden (ab nächstem Start)",
+                "\"Fehlercodes anonym senden (ab nächstem Start)\"",
+            ),
+        ],
+    ),
+    (
+        "Entwickler",
+        &[
+            ("Entwickler-Modus beenden", "\"Entwickler-Modus beenden\""),
+            ("Fragen und To-dos", "\"Fragen und To-dos\""),
+            ("Nach Updates suchen", "\"Nach Updates suchen\""),
+        ],
+    ),
+    (
+        "Hilfe",
+        &[
+            (
+                "Beim Start nach Updates suchen (einmal am Tag)",
+                "self.update_menu(ui)",
+            ),
+            ("Jetzt nach Updates suchen", "self.update_menu(ui)"),
+            ("Protokoll", "\"Protokoll\""),
+        ],
+    ),
+    ("Hilfe", &[("Über WOA", "\"Über WOA\"")]),
+];
+
+/// Sortierschlüssel nach DIN 5007-1: Groß/klein egal, Umlaute wie Grundbuchstabe, ß wie ss.
+#[cfg(test)]
+pub(crate) fn de_sort_key(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars().flat_map(char::to_lowercase) {
+        match c {
+            'ä' => out.push('a'),
+            'ö' => out.push('o'),
+            'ü' => out.push('u'),
+            'ß' => out.push_str("ss"),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// Symbol-Knopf ohne Text; was er tut, steht im Tooltip.
@@ -9548,5 +9799,83 @@ mod nacharbeit_tests {
     #[test]
     fn f11_cannot_become_a_cart_key() {
         assert!(crate::radio::RESERVED_KEYS.contains(&egui::Key::F11));
+    }
+
+    #[test]
+    fn menu_groups_are_sorted_and_without_dots() {
+        for (menu, group) in MENU_GROUPS {
+            for (label, _) in *group {
+                assert!(
+                    !label.contains('…') && !label.contains("..."),
+                    "{menu}: „{label}“ mit Punkten"
+                );
+            }
+            let keys: Vec<String> = group.iter().map(|(l, _)| de_sort_key(l)).collect();
+            let mut sorted = keys.clone();
+            sorted.sort();
+            assert_eq!(keys, sorted, "{menu} nicht alphabetisch");
+        }
+        assert!(de_sort_key("Öffnen") < de_sort_key("Speichern"));
+        assert!(de_sort_key("Ausgabe") < de_sort_key("Ausgänge"));
+    }
+
+    #[test]
+    fn menu_code_follows_the_sorted_groups() {
+        let body = format!(
+            "{}{}",
+            body_of(SRC, "fn menu_items("),
+            body_of(SRC, "fn entwickler_menu(")
+        );
+        for (menu, group) in MENU_GROUPS {
+            let mut last = 0;
+            for (label, needle) in *group {
+                let at = body
+                    .find(needle)
+                    .unwrap_or_else(|| panic!("{menu}: „{label}“ fehlt im Menü ({needle})"));
+                assert!(
+                    at >= last,
+                    "{menu}: „{label}“ steht nicht in der Reihenfolge"
+                );
+                last = at;
+            }
+        }
+        for head in [
+            "fn menu_items(",
+            "fn entwickler_menu(",
+            "fn update_menu(",
+            "fn pfl_menu(",
+            "fn midi_menu(",
+            "fn theme_menu(",
+        ] {
+            for line in body_of(SRC, head).lines() {
+                let item = line.contains("button(") || line.contains("checkbox(");
+                assert!(
+                    !(item && (line.contains('…') || line.contains("..."))),
+                    "Menüeintrag mit Punkten: {line}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn developer_menu_only_when_unlocked_and_before_help() {
+        let mut rig = Rig::new(Mode::Radio);
+        assert!(rig.any(|l| l == "Hilfe"), "Menüleiste fehlt");
+        assert!(
+            !rig.any(|l| l == "Entwickler"),
+            "Entwickler ohne Freischaltung sichtbar"
+        );
+        rig.app.config.entwickler = true;
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        let x = |rig: &Rig, name: &str| {
+            rig.nodes
+                .iter()
+                .find(|(l, _, r)| l == name && r.width() > 0.0)
+                .map(|(_, _, r)| r.min.x)
+        };
+        let dev = x(&rig, "Entwickler").expect("Entwickler fehlt nach Freischaltung");
+        let help = x(&rig, "Hilfe").expect("Hilfe");
+        assert!(dev < help, "Entwickler steht nicht vor Hilfe");
     }
 }

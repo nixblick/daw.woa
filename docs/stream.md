@@ -68,7 +68,7 @@ Notfall-Playlist. Zähler und Bericht: siehe CHANGELOG 0.5.0. `streamd-status.js
 
 ## Einrichten
 
-Am einfachsten im Programm: **Einstellungen → „Sendung: Stream-Server und Kennwort …“**.
+Am einfachsten im Programm: **Einstellungen → „Sendung: Stream-Server und Kennwort“**.
 
 - **Servertyp:** Shoutcast v1, Shoutcast v2 (DNAS, mit Stream-ID) oder Icecast 2. Es geht jeder Server dieser Art, nicht nur der eigene.
 - **Server und Port:** Name oder IP und der Port, wie ihn der Server hat (Shoutcast `portbase`, Icecast `port`). Shoutcast nimmt die Quelle auf `port + 1` an, das zeigt das Fenster an. In das Feld „Server“ darf man eine ganze Adresse einfügen (`http://1.2.3.4:8000/live`).
