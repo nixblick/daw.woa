@@ -4,6 +4,17 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design-Runde 3: Party mit Lime, Wellenform, BPM (0.35.16, offen)
+
+1. Party öffnen, Titel mit Analyse laden: Restzeit als MM:SS mit Geistersegmenten, daneben BPM-LCD; Titel ohne Analyse zeigt kein BPM.
+2. Nach kurzer Zeit erscheint unter dem Deck die Wellenform mit Beatgrid; beim zweiten Laden sofort (Cache).
+3. Play: gespielter Teil in Pink, Play-Taste pulsiert im Takt.
+4. Auto-Übergang, Zufall, Wdh., Stumm einschalten: Lime gefüllt; „Wdh.“ ohne „aus“.
+5. Fernbedienung „An“: Lime, QR, Adresse, PIN und Handyzahl sofort sichtbar, auch bei 1366×768.
+6. Theme Hell: Lime dunkelgrün mit weißer Schrift.
+
+Selbst geprüft von Claude: `cargo test -p woa-library`, `-p woa-gui` und Clippy grün, Screenshots dunkel und hell bei 1920×1030 und 1366×768 unter Linux (ohne Abspielen). Nicht unter Windows gesehen, kein Ton abgespielt.
+
 ## Design-Runde 2: Akkordspur, Klangwahl, Spurfarben (0.35.15, offen)
 
 1. Browser › Akkorde › Einfügen: unter dem Lineal „Akkorde · C Dur“ mit C I · G V · Am vi · F IV; andere Tonart tippen, Spur und Clips zeigen die neue Tonart.
