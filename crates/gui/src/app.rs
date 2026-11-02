@@ -2473,6 +2473,10 @@ impl WoaApp {
             // Fotomodus der Zuordnungsliste.
             self.controls.window = true;
         }
+        if first && std::env::var_os("WOA_JINGLE").is_some() {
+            // Fotomodus des Jingle-Assistenten: Fenster beim ersten Bild öffnen.
+            self.jingle_assistent.open = true;
+        }
         if first && std::env::var_os("WOA_DEMO_SONG").is_some() {
             // Fotomodus des Produzenten: ein Jingle-Gerüst plus Akkorde und ein FX-Clip,
             // damit Arrangement, Browser und Dock echte Inhalte zeigen (keine Nutzerdaten).
