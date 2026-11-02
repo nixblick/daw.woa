@@ -226,6 +226,10 @@ pub struct FragenWindow {
     pub maximized: bool,
     /// Suchtext ganz oben.
     pub suche: String,
+    /// Filter Offen/Gesendet/Alle.
+    pub ansicht: Ansicht,
+    /// Zeitpunkt der Ankunft je Vorschlag (Leuchtrahmen 1,5 s).
+    sent_at: HashMap<Key, f64>,
 }
 
 impl FragenWindow {
@@ -263,7 +267,7 @@ impl FragenWindow {
         !self.sent.contains(key) && !self.pending.contains_key(key)
     }
 
-    fn poll(&mut self) {
+    fn poll(&mut self, now: f64) {
         if let Some(rx) = &self.loader {
             match rx.try_recv() {
                 Ok(r) => {
@@ -318,10 +322,12 @@ impl FragenWindow {
             let note = match r {
                 Ok(Some(n)) => {
                     self.sent.insert(k.clone());
+                    self.sent_at.insert(k.clone(), now);
                     format!("Gesendet, danke (#{n})")
                 }
                 Ok(None) => {
                     self.sent.insert(k.clone());
+                    self.sent_at.insert(k.clone(), now);
                     "Gesendet, danke".to_string()
                 }
                 Err(FeedbackError::NoEndpoint) => crate::feedback::NOT_CONFIGURED.to_string(),
@@ -421,7 +427,11 @@ impl FragenWindow {
         if !self.open {
             return;
         }
-        self.poll();
+        let now = ctx.input(|i| i.time);
+        self.poll(now);
+        if self.sent_at.values().any(|t| leuchtet(*t, now)) {
+            ctx.request_repaint();
+        }
         if !self.pending.is_empty() || self.loader.is_some() {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
@@ -444,7 +454,10 @@ impl FragenWindow {
                 &mut self.maximized,
             );
             suchfeld(ui, &mut self.suche);
+            filter_leiste(ui, &mut self.ansicht);
             let suche = self.suche.clone();
+            let ansicht = self.ansicht;
+            let sent = self.sent.clone();
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
@@ -453,7 +466,13 @@ impl FragenWindow {
                         let qs: Vec<&Frage> = fragen
                             .fragen
                             .iter()
-                            .filter(|q| q.block == block && frage_passt(q, &suche))
+                            .filter(|q| {
+                                let gesendet = (0..q.vorschlaege.len())
+                                    .any(|i| sent.contains(&(q.id.clone(), i)));
+                                q.block == block
+                                    && frage_passt(q, &suche)
+                                    && ansicht.zeigt(gesendet)
+                            })
                             .collect();
                         if qs.is_empty() {
                             continue;
@@ -461,7 +480,7 @@ impl FragenWindow {
                         any = true;
                         block_kopf(ui, block, qs.len());
                         for q in qs {
-                            self.frage_ui(ui, q, config, data_dir);
+                            self.frage_ui(ui, q, config, data_dir, now);
                             ui.add_space(theme::SPACE_3);
                         }
                     }
@@ -472,7 +491,14 @@ impl FragenWindow {
         });
     }
 
-    fn frage_ui(&mut self, ui: &mut egui::Ui, q: &Frage, config: &GuiConfig, data_dir: &Path) {
+    fn frage_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        q: &Frage,
+        config: &GuiConfig,
+        data_dir: &Path,
+        now: f64,
+    ) {
         use crate::widgets::segment::Segment;
         theme::card_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -488,7 +514,8 @@ impl FragenWindow {
                     ticket_pill(ui, n);
                 }
                 if !q.status.is_empty() {
-                    theme::badge_pill(ui, &q.status, theme::Badge::Neutral);
+                    crate::widgets::StateChip::new(&q.status, crate::widgets::ChipTone::Neutral)
+                        .show(ui);
                 }
             });
             if !q.erklaerung.is_empty() {
@@ -507,10 +534,22 @@ impl FragenWindow {
                 } else {
                     theme::well()
                 };
+                let glow = self.sent_at.get(&key).is_some_and(|t| leuchtet(*t, now));
                 let edge = if done { theme::ok() } else { theme::border() };
+                let width = if glow { 2.5 } else { 1.0 };
                 egui::Frame::new()
                     .fill(fill)
-                    .stroke(egui::Stroke::new(1.0, edge))
+                    .stroke(egui::Stroke::new(width, edge))
+                    .shadow(if glow {
+                        egui::epaint::Shadow {
+                            spread: 2,
+                            blur: 10,
+                            offset: [0, 0],
+                            color: crate::widgets::with_alpha(theme::ok(), 120),
+                        }
+                    } else {
+                        egui::epaint::Shadow::NONE
+                    })
                     .corner_radius(egui::CornerRadius::same(theme::RADIUS_MD))
                     .inner_margin(egui::Margin::symmetric(10, 8))
                     .show(ui, |ui| {
@@ -626,7 +665,20 @@ impl FragenWindow {
                             } else {
                                 (theme::ic::INFO, theme::text_dim())
                             };
-                            ui.label(egui::RichText::new(format!("{icon} {n}")).color(color));
+                            let retry = erneut_moeglich(Some(n.as_str()), busy);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new(format!("{icon} {n}")).color(color));
+                                if retry
+                                    && ui
+                                        .button(format!(
+                                            "{} Erneut senden",
+                                            theme::ic::ARROW_CLOCKWISE
+                                        ))
+                                        .clicked()
+                                {
+                                    go = true;
+                                }
+                            });
                         }
                     });
                 if go {
@@ -638,6 +690,52 @@ impl FragenWindow {
             }
         });
     }
+}
+
+/// Filter über der Liste (QuestionStates Fassung 7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Ansicht {
+    /// Noch ohne gesendete Wahl.
+    Offen,
+    /// Mindestens ein Vorschlag gesendet.
+    Gesendet,
+    /// Vorgabe: sonst verschwände eine Karte samt Leuchtrahmen sofort nach dem Senden.
+    #[default]
+    Alle,
+}
+
+impl Ansicht {
+    pub const ALLE: [Ansicht; 3] = [Ansicht::Offen, Ansicht::Gesendet, Ansicht::Alle];
+
+    pub fn wort(self) -> &'static str {
+        match self {
+            Ansicht::Offen => "Offen",
+            Ansicht::Gesendet => "Gesendet",
+            Ansicht::Alle => "Alle",
+        }
+    }
+
+    /// Zeigt der Filter eine Frage, von der schon etwas gesendet ist (`gesendet`)?
+    pub fn zeigt(self, gesendet: bool) -> bool {
+        match self {
+            Ansicht::Offen => !gesendet,
+            Ansicht::Gesendet => gesendet,
+            Ansicht::Alle => true,
+        }
+    }
+}
+
+/// Leuchtrahmen nach dem Senden: 1,5 s ab `t0`.
+pub const LEUCHT_SEKUNDEN: f64 = 1.5;
+
+/// Leuchtet der Rahmen noch?
+pub fn leuchtet(t0: f64, now: f64) -> bool {
+    (0.0..LEUCHT_SEKUNDEN).contains(&(now - t0))
+}
+
+/// Darf „Erneut senden“ erscheinen? Nur nach einem Fehlschlag, nicht während des Sendens.
+pub fn erneut_moeglich(note: Option<&str>, busy: bool) -> bool {
+    !busy && note.is_some_and(|n| n.starts_with("Senden fehlgeschlagen"))
 }
 
 /// Passt eine Frage zur Suche? Titel, Erklärung, Vorschläge, Block, Status und Ticketnummer,
@@ -701,9 +799,39 @@ pub(crate) fn kopf(
     open: &mut bool,
     maximized: &mut bool,
 ) {
+    // Fassung 7: eigener Kopf 44 px; Doppelklick maximiert, Esc schließt.
+    // Erst die Kopffläche anmelden, dann die Knöpfe darüber: so gewinnen die Knöpfe den Klick.
+    let rect = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), KOPF_H));
+    let r = ui.interact(rect, ui.id().with("kopf"), egui::Sense::click());
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), KOPF_H),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.set_min_height(KOPF_H);
+            kopf_inhalt(ui, icon, titel, sub, open, maximized)
+        },
+    );
+    if r.double_clicked() {
+        *maximized = !*maximized;
+    }
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) && ui.ctx().memory(|m| m.focused().is_none())
+    {
+        *open = false;
+    }
+    ui.add_space(theme::SPACE_2);
+}
+
+fn kopf_inhalt(
+    ui: &mut egui::Ui,
+    icon: &str,
+    titel: &str,
+    sub: &str,
+    open: &mut bool,
+    maximized: &mut bool,
+) {
     use crate::widgets::icon_button::{IconButton, IconSize};
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(icon).size(26.0).color(theme::accent()));
+    {
+        ui.label(egui::RichText::new(icon).size(22.0).color(theme::accent()));
         ui.vertical(|ui| {
             ui.label(
                 egui::RichText::new(titel)
@@ -734,9 +862,13 @@ pub(crate) fn kopf(
                 *maximized = !*maximized;
             }
         });
-    });
-    ui.add_space(theme::SPACE_2);
+    }
 }
+
+/// Höhe des Suchfelds (QuestionsWindow Fassung 7).
+pub const SUCH_H: f32 = 48.0;
+/// Höhe des Fensterkopfs (Window Fassung 7).
+pub const KOPF_H: f32 = 44.0;
 
 /// Suchfeld ganz oben, volle Breite, mit Lupe und Leeren-Knopf.
 pub(crate) fn suchfeld(ui: &mut egui::Ui, suche: &mut String) {
@@ -745,34 +877,64 @@ pub(crate) fn suchfeld(ui: &mut egui::Ui, suche: &mut String) {
         .fill(theme::well())
         .stroke(egui::Stroke::new(1.0, theme::border()))
         .corner_radius(egui::CornerRadius::same(theme::RADIUS_MD))
-        .inner_margin(egui::Margin::symmetric(10, 4))
+        .inner_margin(egui::Margin::symmetric(12, 0))
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(theme::ic::MAGNIFYING_GLASS)
-                        .size(16.0)
-                        .color(theme::text_dim()),
-                );
-                let w = ui.available_width() - if suche.is_empty() { 0.0 } else { 32.0 };
-                let r = ui.add(
-                    egui::TextEdit::singleline(suche)
-                        .frame(egui::Frame::NONE)
-                        .hint_text("Suchen: Titel, Text, Ticketnummer")
-                        .desired_width(w),
-                );
-                r.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Suchen")
-                });
-                if !suche.is_empty()
-                    && IconButton::new(theme::ic::X, "Suche leeren")
-                        .size(IconSize::Sm)
-                        .ui(ui)
-                        .clicked()
-                {
-                    suche.clear();
-                }
-            });
+            // Fassung 7: Suchfeld 48 px hoch.
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), SUCH_H - 2.0),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.set_min_height(SUCH_H - 2.0);
+                    ui.label(
+                        egui::RichText::new(theme::ic::MAGNIFYING_GLASS)
+                            .size(16.0)
+                            .color(theme::text_dim()),
+                    );
+                    let w = ui.available_width() - if suche.is_empty() { 0.0 } else { 32.0 };
+                    let r = ui.add(
+                        egui::TextEdit::singleline(suche)
+                            .frame(egui::Frame::NONE)
+                            .hint_text("Suchen: Titel, Text, Ticketnummer")
+                            .desired_width(w),
+                    );
+                    r.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Suchen")
+                    });
+                    if !suche.is_empty()
+                        && IconButton::new(theme::ic::X, "Suche leeren")
+                            .size(IconSize::Sm)
+                            .ui(ui)
+                            .clicked()
+                    {
+                        suche.clear();
+                    }
+                },
+            );
         });
+    ui.add_space(theme::SPACE_2);
+}
+
+/// Filterleiste Offen | Gesendet | Alle.
+pub(crate) fn filter_leiste(ui: &mut egui::Ui, ansicht: &mut Ansicht) {
+    use crate::widgets::segment::Segment;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        for a in Ansicht::ALLE {
+            let icon = match a {
+                Ansicht::Offen => theme::ic::CIRCLE_DASHED,
+                Ansicht::Gesendet => theme::ic::CHECK_CIRCLE,
+                Ansicht::Alle => theme::ic::LIST,
+            };
+            if Segment::new(icon, a.wort())
+                .on(*ansicht == a)
+                .height(28.0)
+                .ui(ui)
+                .clicked()
+            {
+                *ansicht = a;
+            }
+        }
+    });
     ui.add_space(theme::SPACE_2);
 }
 
@@ -905,6 +1067,35 @@ impl EntwicklerTor {
 #[cfg(test)]
 #[allow(clippy::field_reassign_with_default)]
 mod tests {
+    #[test]
+    fn filter_open_sent_all() {
+        use super::Ansicht;
+        assert!(Ansicht::Offen.zeigt(false));
+        assert!(!Ansicht::Offen.zeigt(true));
+        assert!(Ansicht::Gesendet.zeigt(true));
+        assert!(!Ansicht::Gesendet.zeigt(false));
+        assert!(Ansicht::Alle.zeigt(true) && Ansicht::Alle.zeigt(false));
+        assert_eq!(Ansicht::default(), Ansicht::Alle);
+    }
+
+    #[test]
+    fn sent_glows_for_one_and_a_half_seconds() {
+        assert!(super::leuchtet(10.0, 10.0));
+        assert!(super::leuchtet(10.0, 11.49));
+        assert!(!super::leuchtet(10.0, 11.5));
+        assert!(!super::leuchtet(10.0, 9.0));
+    }
+
+    #[test]
+    fn retry_only_after_failure() {
+        use super::erneut_moeglich;
+        assert!(erneut_moeglich(Some("Senden fehlgeschlagen: 500"), false));
+        assert!(!erneut_moeglich(Some("Senden fehlgeschlagen: 500"), true));
+        assert!(!erneut_moeglich(Some("Gesendet, danke"), false));
+        assert!(!erneut_moeglich(Some("Bitte zuerst wählen"), false));
+        assert!(!erneut_moeglich(None, false));
+    }
+
     use super::*;
 
     #[test]
@@ -1018,14 +1209,14 @@ mod tests {
         let (tx, rx) = channel();
         w.pending.insert(key.clone(), rx);
         tx.send(Ok(Some(7))).unwrap();
-        w.poll();
+        w.poll(0.0);
         assert!(w.sent.contains(&key));
         assert_eq!(w.notes[&key], "Gesendet, danke (#7)");
         let (tx, rx) = channel();
         let other = ("b".to_string(), 0);
         w.pending.insert(other.clone(), rx);
         tx.send(Err(FeedbackError::Status(500))).unwrap();
-        w.poll();
+        w.poll(0.0);
         assert!(!w.sent.contains(&other), "Fehler: nochmal senden erlaubt");
     }
 

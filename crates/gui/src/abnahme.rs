@@ -454,8 +454,35 @@ impl AbnahmeWindow {
                 &mut self.maximized,
             );
             suchfeld(ui, &mut self.suche);
-            ui.checkbox(&mut self.zeige_erledigte, "Erledigte zeigen");
+            // Zähler mit Balken (Fassung 7) und „Erledigte zeigen“.
+            let gesamt = liste.punkte.len();
+            let fertig = liste
+                .punkte
+                .iter()
+                .filter(|p| self.ist_erledigt(p) || self.sent.contains_key(&p.id))
+                .count();
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!("{fertig} von {gesamt} geprüft"))
+                        .font(egui::FontId::monospace(12.0))
+                        .color(theme::text()),
+                );
+                let (r, _) = ui.allocate_exact_size(egui::vec2(220.0, 6.0), egui::Sense::hover());
+                let p = ui.painter();
+                p.rect_filled(r, egui::CornerRadius::same(3), theme::well());
+                let mut f = r;
+                f.set_width(r.width() * anteil(fertig, gesamt));
+                p.rect_filled(f, egui::CornerRadius::same(3), theme::ok());
+                ui.add_space(theme::SPACE_3);
+                ui.checkbox(&mut self.zeige_erledigte, "Erledigte zeigen");
+                ui.label(
+                    egui::RichText::new("G = Geht · N = Geht nicht")
+                        .small()
+                        .color(theme::text_dim()),
+                );
+            });
             let suche = self.suche.clone();
+            let mut erster_offen: Option<Punkt> = None;
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
@@ -478,6 +505,12 @@ impl AbnahmeWindow {
                         any = true;
                         block_kopf(ui, ansicht, ps.len());
                         for p in ps {
+                            if erster_offen.is_none()
+                                && !self.sent.contains_key(&p.id)
+                                && !self.pending.contains_key(&p.id)
+                            {
+                                erster_offen = Some(p.clone());
+                            }
                             self.punkt_ui(ui, p, config, data_dir);
                             ui.add_space(theme::SPACE_3);
                         }
@@ -486,6 +519,20 @@ impl AbnahmeWindow {
                         keine_treffer(ui);
                     }
                 });
+            // G / N urteilen über den obersten offenen Punkt, solange kein Feld tippt.
+            if let Some(p) = erster_offen
+                && ui.ctx().memory(|m| m.focused().is_none())
+            {
+                let u = ui.input(|i| {
+                    [egui::Key::G, egui::Key::N]
+                        .into_iter()
+                        .find(|k| i.key_pressed(*k) && i.modifiers.is_none())
+                        .and_then(taste_urteil)
+                });
+                if let Some(u) = u {
+                    self.klick(&p, u, config, data_dir);
+                }
+            }
         });
     }
 
@@ -525,12 +572,23 @@ impl AbnahmeWindow {
                 }
             });
             ui.add_space(theme::SPACE_2);
-            for (marke, text) in [("TUN", &p.tun), ("SOLL", &p.erwartet)] {
-                ui.horizontal_wrapped(|ui| {
-                    ui.add_sized([44.0, 16.0], egui::Label::new(theme::panel_label(marke)));
-                    ui.label(egui::RichText::new(text).color(theme::text()));
-                });
-            }
+            // Fassung 7: Tun und Soll nebeneinander.
+            ui.columns(2, |cols| {
+                for (ui, (marke, text)) in cols
+                    .iter_mut()
+                    .zip([("TUN", &p.tun), ("SOLL", &p.erwartet)])
+                {
+                    egui::Frame::new()
+                        .fill(theme::well())
+                        .corner_radius(egui::CornerRadius::same(theme::RADIUS_SM))
+                        .inner_margin(egui::Margin::symmetric(10, 8))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.label(theme::panel_label(marke));
+                            ui.label(egui::RichText::new(text.as_str()).color(theme::text()));
+                        });
+                }
+            });
             ui.add_space(theme::SPACE_3);
             let mut klick = None;
             ui.add_enabled_ui(!busy, |ui| {
@@ -626,9 +684,38 @@ impl AbnahmeWindow {
     }
 }
 
+/// Taste im Fenster: G = Geht, N = Geht nicht (AcceptanceWindow Fassung 7).
+pub fn taste_urteil(key: egui::Key) -> Option<Urteil> {
+    match key {
+        egui::Key::G => Some(Urteil::Ok),
+        egui::Key::N => Some(Urteil::Fehler),
+        _ => None,
+    }
+}
+
+/// Anteil für den Zählerbalken: erledigt von gesamt, 0..1.
+pub fn anteil(erledigt: usize, gesamt: usize) -> f32 {
+    if gesamt == 0 {
+        0.0
+    } else {
+        (erledigt as f32 / gesamt as f32).min(1.0)
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::field_reassign_with_default)]
 mod tests {
+    #[test]
+    fn keys_g_and_n_judge_and_bar_counts() {
+        use super::{Urteil, anteil, taste_urteil};
+        assert_eq!(taste_urteil(egui::Key::G), Some(Urteil::Ok));
+        assert_eq!(taste_urteil(egui::Key::N), Some(Urteil::Fehler));
+        assert_eq!(taste_urteil(egui::Key::A), None);
+        assert_eq!(anteil(0, 0), 0.0);
+        assert_eq!(anteil(3, 12), 0.25);
+        assert_eq!(anteil(20, 12), 1.0);
+    }
+
     use super::*;
     use egui_kittest::kittest::Queryable;
 

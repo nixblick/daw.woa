@@ -685,34 +685,11 @@ pub fn pill_colors(color: Color32, active: bool) -> (Color32, Color32, Color32) 
     (fill, stroke_col, text_col)
 }
 
-/// Zeichnet ein kompaktes, beleuchtetes Status-Badge (LED-Pille).
+/// Kleiner Zustand als `woa-chip` (Design Fassung 7, 26 px): an = LED, Rahmen und Fläche in
+/// `color`, aus = neutral. Seit Fassung 7 der einzige kleine Zustandsbaustein; die alte
+/// LED-Pille zeichnet nicht mehr selbst.
 pub fn status_pill(ui: &mut egui::Ui, label: &str, color: Color32, active: bool) {
-    let (fill, stroke_col, text_col) = pill_colors(color, active);
-    Frame::new()
-        .fill(fill)
-        .stroke(Stroke::new(1.0, stroke_col))
-        .corner_radius(CornerRadius::same(RADIUS_MD))
-        .inner_margin(Margin::symmetric(7, 2))
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.x = 5.0;
-            ui.horizontal(|ui| {
-                let (dot, _) = ui.allocate_exact_size(vec2(7.0, 7.0), egui::Sense::hover());
-                ui.painter().circle_filled(
-                    dot.center(),
-                    3.2,
-                    if active {
-                        color
-                    } else {
-                        mix(text_dim(), well(), 0.5)
-                    },
-                );
-                ui.label(
-                    egui::RichText::new(label)
-                        .font(label_font(13.0))
-                        .color(text_col),
-                );
-            });
-        });
+    crate::widgets::chip::chip(ui, label, color, active);
 }
 
 /// Aussehen eines Status-Badges ohne Füllfarbe (Design-Runde 3b): `Neutral` = `well` mit
@@ -734,21 +711,14 @@ impl Badge {
     }
 }
 
-/// Status-Badge im Stil von [`status_pill`], aber nie gefüllt (siehe [`Badge`]).
+/// Status-Badge als `woa-chip` (Design Fassung 7): `Neutral` neutral, `Outline` in der Farbe.
 pub fn badge_pill(ui: &mut egui::Ui, label: &str, badge: Badge) {
-    let (fill, stroke_col, text_col) = badge.colors();
-    Frame::new()
-        .fill(fill)
-        .stroke(Stroke::new(1.0, stroke_col))
-        .corner_radius(CornerRadius::same(RADIUS_MD))
-        .inner_margin(Margin::symmetric(7, 2))
-        .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(label)
-                    .font(label_font(13.0))
-                    .color(text_col),
-            );
-        });
+    use crate::widgets::chip::{ChipTone, StateChip};
+    let tone = match badge {
+        Badge::Neutral => ChipTone::Neutral,
+        Badge::Outline(c) => ChipTone::Color(c),
+    };
+    StateChip::new(label, tone).show(ui);
 }
 
 /// Farbe eines LED-Segments bei `seg_db` (Grün → Gelb → Rot), auf `lcd_bg`.

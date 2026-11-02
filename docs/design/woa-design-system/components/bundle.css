@@ -847,3 +847,250 @@ svg.woa-i{width:16px;height:16px;fill:currentColor;flex:none}
 .woa-pw canvas{height:100%;min-height:0}
 .woa-djd__body{flex:1;align-items:center}
 .woa-djd .woa-jog::before{background:var(--dc);box-shadow:0 0 14px color-mix(in srgb,var(--dc) 55%,transparent)}
+
+/* =====================================================================
+   Fassung 6: Gäste-Karte (Radio, WebRTC-Schalte)
+   ===================================================================== */
+.woa-gst{display:flex;flex-direction:column}
+.woa-gst__link{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--panel-header) 50%,var(--panel))}
+.woa-gst__url{flex:1;min-width:0;height:28px;display:flex;align-items:center;gap:6px;padding:0 8px;border-radius:var(--radius-md);background:var(--well);border:1px solid var(--border-strong);font-family:var(--font-mono);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.woa-gst__url svg.woa-i{width:14px;height:14px;color:var(--text-dim)}
+.woa-gst__r{--t:var(--track-2);display:grid;grid-template-columns:4px 30px minmax(0,1fr) 92px auto;align-items:center;gap:10px;height:48px;padding:0 10px 0 0;border-bottom:1px solid var(--border)}
+.woa-gst__r::before{content:"";align-self:stretch;background:var(--t)}
+.woa-gst__av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--t) 25%,var(--well));color:var(--text);font-family:var(--font-label);font-size:14px;font-weight:800}
+.woa-gst__n{min-width:0}
+.woa-gst__n b{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.woa-gst__n span{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);font-family:var(--font-mono)}
+.woa-gst__n span svg.woa-i{width:12px;height:12px}
+.woa-gst__q{color:var(--ok)}.woa-gst__q.is-bad{color:var(--warn)}.woa-gst__q.is-off{color:var(--on-air)}
+.woa-gst__r .woa-meter--h .woa-meter__ch{height:5px}
+.woa-gst__r .woa-keys{justify-content:flex-end}
+.woa-gst__r.is-air{background:color-mix(in srgb,var(--on-air) 8%,var(--panel))}
+.woa-gst__r.is-wait{background:color-mix(in srgb,var(--accent-2) 8%,var(--panel))}
+.woa-gst__r.is-wait .woa-gst__av{animation:woa-blink 1.2s steps(1) infinite}
+.woa-gst__r.is-lost{opacity:.7}
+.woa-gst__r.is-lost .woa-gst__av{background:var(--well);color:var(--text-dim)}
+.woa-gst__empty{display:flex;align-items:center;gap:14px;padding:12px}
+.woa-gst__empty .woa-qr{width:72px;height:72px;background-size:18px 18px}
+.woa-gst__foot{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:11px;color:var(--text-dim)}
+.woa-gst__foot svg.woa-i{width:12px;height:12px}
+.woa-pill--alt{--c:var(--accent-2)}
+.woa-gst__pfl[aria-pressed=true]{color:var(--cue);border-color:var(--cue);background:color-mix(in srgb,var(--cue) 18%,var(--panel))}
+.woa-gst__mute[aria-pressed=true]{color:var(--warn);border-color:var(--warn);background:color-mix(in srgb,var(--warn) 18%,var(--panel))}
+
+/* =====================================================================
+   Fassung 7: Fenster, Fragen, Abnahme, ON AIR oben, DJ-Kopf, Fade,
+   Spurkopf MIDI, Klangkategorien, KI, Einstellungen
+   ===================================================================== */
+/* --- Chip: eine Größe für alle Zustandsanzeigen (26 px, Grundlinie Mitte) --- */
+.woa-chip{--c:var(--text-dim);display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);background:var(--well);color:var(--text);font-family:var(--font-mono);font-size:12px;font-weight:700;line-height:1;white-space:nowrap;flex:none}
+.woa-chip svg.woa-i{width:14px;height:14px;color:var(--c);flex:none}
+.woa-chip small{font-size:10px;font-weight:700;color:var(--text-dim);font-family:var(--font-label);letter-spacing:.08em;text-transform:uppercase}
+.woa-chip.is-ok{--c:var(--ok);border-color:var(--ok);background:color-mix(in srgb,var(--ok) 16%,var(--panel))}
+.woa-chip.is-warn{--c:var(--warn);border-color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,var(--panel))}
+.woa-chip.is-cue{--c:var(--cue);border-color:var(--cue);background:color-mix(in srgb,var(--cue) 14%,var(--panel))}
+.woa-chip.is-alt{--c:var(--accent-2);border-color:var(--accent-2);background:color-mix(in srgb,var(--accent-2) 14%,var(--panel))}
+.woa-chip.is-busy svg.woa-i{animation:woa-spin 1s linear infinite}
+.woa-chip--link{cursor:pointer}.woa-chip--link:hover{border-color:var(--text-dim)}
+@keyframes woa-spin{to{transform:rotate(360deg)}}
+
+/* --- 1. Lösbares Fenster mit eigener Kopfzeile --- */
+.woa-win{display:flex;flex-direction:column;min-height:0;background:var(--bg);border:1px solid var(--border-strong);border-radius:var(--radius-lg);box-shadow:0 24px 64px -12px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.2);overflow:hidden}
+.woa-win.is-max{border-radius:0;box-shadow:none;border-width:1px 0 0}
+.woa-win.is-dragging{opacity:.92}
+.woa-win__head{display:flex;align-items:center;gap:10px;height:44px;padding:0 6px 0 14px;background:var(--panel-header);border-bottom:1px solid var(--border);cursor:grab;flex:none;user-select:none}
+.woa-win__head>svg.woa-i{width:20px;height:20px;color:var(--accent);flex:none}
+.woa-win__t{font-family:var(--font-label);font-size:16px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.woa-win__s{flex:1;min-width:0;text-align:right;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:6px}
+.woa-win__btns{display:flex;gap:2px;padding-left:6px;border-left:1px solid var(--border)}
+.woa-win__btns .woa-ib{width:32px;height:32px}
+.woa-win__btns .woa-ib--close:hover{background:var(--on-air-fill);border-color:var(--on-air-fill);color:#fff}
+.woa-win__tool{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--panel);flex:none}
+.woa-win__body{flex:1;min-height:0;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:18px}
+.woa-win__foot{display:flex;align-items:center;gap:10px;height:36px;padding:0 16px;border-top:1px solid var(--border);background:var(--panel-header);font-size:12px;color:var(--text-dim);flex:none}
+
+/* großes Suchfeld (Fenster, Einstellungen) */
+.woa-search{flex:1;display:flex;align-items:center;gap:10px;height:40px;padding:0 6px 0 12px;border-radius:var(--radius-md);background:var(--well);border:1px solid var(--border-strong);font-size:14px;color:var(--text)}
+.woa-search>svg.woa-i{width:18px;height:18px;color:var(--text-dim)}
+.woa-search.is-focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.woa-search .woa-dim{flex:1}
+.woa-search kbd{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);border:1px solid var(--border);border-radius:var(--radius-xs);padding:2px 6px}
+.woa-search--xl{height:48px;font-size:16px}
+.woa-search--xl>svg.woa-i{width:20px;height:20px}
+mark{background:color-mix(in srgb,var(--accent-2) 35%,transparent);color:inherit;border-radius:2px;padding:0 1px}
+
+/* Blockkopf */
+.woa-blk{display:flex;align-items:center;gap:10px;margin:0 0 -6px}
+.woa-blk .woa-label{font-size:12px;color:var(--text)}
+.woa-blk::after{content:"";flex:1;height:1px;background:var(--border)}
+.woa-blk span{font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
+
+/* --- 2. Fragen und To-dos --- */
+.woa-q{--s:var(--border);display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--s);border-radius:var(--radius-lg);box-shadow:var(--shadow-card)}
+.woa-q__hd{display:flex;align-items:flex-start;gap:10px;padding:14px 16px 0}
+.woa-q__t{flex:1;min-width:0;font-size:16px;font-weight:700;line-height:22px}
+.woa-q__x{padding:6px 16px 12px;font-size:13px;line-height:20px;color:var(--text-dim);max-width:86ch}
+.woa-q__opts{display:flex;flex-direction:column;gap:6px;padding:0 16px}
+.woa-opt{display:grid;grid-template-columns:26px minmax(0,1fr) auto;align-items:center;gap:10px;min-height:44px;padding:6px 6px 6px 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--well)}
+.woa-opt:hover{border-color:var(--text-dim)}
+.woa-opt__n{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--border-strong);font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--text-dim)}
+.woa-opt__v{font-size:13px;line-height:19px}
+.woa-opt__k{display:flex;gap:4px}
+.woa-vote{appearance:none;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border-strong);background:var(--surface);color:var(--text-dim);font:inherit;font-size:12px;font-weight:600;cursor:pointer;box-shadow:var(--shadow-key)}
+.woa-vote svg.woa-i{width:16px;height:16px}
+.woa-vote:hover{color:var(--text)}
+.woa-vote.is-yes[aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:var(--lcd-bg)}
+.woa-vote.is-no[aria-pressed=true]{background:var(--warn);border-color:var(--warn);color:var(--lcd-bg)}
+.woa-opt.is-yes{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 10%,var(--well))}
+.woa-opt.is-yes .woa-opt__n{background:var(--ok);border-color:var(--ok);color:var(--lcd-bg)}
+.woa-opt.is-no{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 8%,var(--well))}
+.woa-opt.is-no .woa-opt__n{background:var(--warn);border-color:var(--warn);color:var(--lcd-bg)}
+.woa-q__send{display:flex;align-items:center;gap:8px;padding:12px 16px 14px}
+.woa-memo{flex:1;display:flex;align-items:center;gap:8px;height:36px;padding:0 10px;border-radius:var(--radius-md);background:var(--well);border:1px solid var(--border-strong);font-size:13px}
+.woa-memo svg.woa-i{width:16px;height:16px;color:var(--text-dim)}
+.woa-memo.is-filled{border-color:var(--accent-2)}
+.woa-q__msg{display:flex;align-items:center;gap:8px;margin:0 16px 14px;padding:8px 10px;border-radius:var(--radius-md);font-size:12px;font-weight:600}
+.woa-q__msg svg.woa-i{width:16px;height:16px}
+.woa-q__msg.is-ok{background:color-mix(in srgb,var(--ok) 16%,var(--panel));color:var(--text)}
+.woa-q__msg.is-ok svg.woa-i{color:var(--ok)}
+.woa-q__msg.is-err{background:color-mix(in srgb,var(--warn) 16%,var(--panel));color:var(--text)}
+.woa-q__msg.is-err svg.woa-i{color:var(--warn)}
+.woa-q__msg .woa-spacer{flex:1}
+.woa-q.is-sent{--s:var(--ok)}
+.woa-q.is-err{--s:var(--warn)}
+.woa-q.is-flash{box-shadow:0 0 0 2px var(--ok),0 0 24px -4px var(--ok)}
+.woa-q.is-done{opacity:.75}
+.woa-q.is-done .woa-q__x,.woa-q.is-done .woa-q__opts,.woa-q.is-done .woa-q__send{display:none}
+.woa-q.is-done .woa-q__hd{padding-bottom:12px}
+
+/* --- 3. Abnahme --- */
+.woa-prog{display:flex;align-items:center;gap:10px;min-width:260px}
+.woa-prog b{font-family:var(--font-mono);font-size:13px;white-space:nowrap}
+.woa-prog .woa-bar{flex:1;height:8px;border-radius:4px;background:var(--well);border:1px solid var(--border);overflow:hidden;display:flex}
+.woa-prog .woa-bar i{display:block;height:100%}
+.woa-prog .woa-bar i.ok{background:var(--ok)}.woa-prog .woa-bar i.no{background:var(--warn)}
+.woa-tn{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 16px 0}
+.woa-tn>div{padding:10px 12px;border-radius:var(--radius-md);background:var(--well);border:1px solid var(--border);font-size:13px;line-height:20px}
+.woa-tn .woa-label{display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:10px}
+.woa-tn .woa-label svg.woa-i{width:14px;height:14px}
+.woa-judge{appearance:none;display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font-family:var(--font-label);font-size:14px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;box-shadow:var(--shadow-key);cursor:pointer}
+.woa-judge svg.woa-i{width:20px;height:20px}
+.woa-judge.is-yes svg.woa-i{color:var(--ok)}.woa-judge.is-no svg.woa-i{color:var(--warn)}
+.woa-judge.is-yes[aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:var(--lcd-bg)}
+.woa-judge.is-yes[aria-pressed=true] svg.woa-i{color:var(--lcd-bg)}
+.woa-judge.is-no[aria-pressed=true]{background:var(--warn);border-color:var(--warn);color:var(--lcd-bg)}
+.woa-judge.is-no[aria-pressed=true] svg.woa-i{color:var(--lcd-bg)}
+.woa-q.is-pass{--s:var(--ok)}.woa-q.is-fail{--s:var(--warn)}
+
+/* --- 4. ON AIR in der Kopfleiste (Lampe statt Pille) --- */
+.woa-onair--bar{min-width:0;height:28px;padding:0 10px;font-size:14px;line-height:14px;border-width:3px;letter-spacing:.12em;cursor:pointer}
+.woa-onair.is-on.is-blink{animation:woa-onair-pulse 1.6s ease-in-out infinite}
+.woa-onair.is-dim.is-on{background:color-mix(in srgb,var(--on-air-fill) 72%,var(--lcd-bg));color:color-mix(in srgb,#fff 85%,var(--on-air));box-shadow:0 0 0 1px var(--border-strong),0 0 10px -2px var(--on-air)}
+@keyframes woa-onair-pulse{50%{box-shadow:0 0 0 1px var(--border-strong),0 0 6px 0 var(--on-air)}}
+
+/* --- 5. DJ-Deck-Kopf, Taste Weiter · Übergang --- */
+.woa-djd__meta{display:flex;align-items:center;gap:6px;min-width:0}
+.woa-djd__meta .woa-chip{height:28px}
+.woa-djd__meta .woa-lcd{display:flex;align-items:center;gap:10px;height:28px;padding:0 10px;border-radius:var(--radius-sm)}
+.woa-djd__meta .woa-seg{font-size:20px;line-height:20px}
+.woa-djd__meta .woa-lcd small{font-family:var(--font-label);font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--lcd-text)}
+.woa-djd__meta .woa-sep{width:1px;height:18px;background:var(--border)}
+.woa-next{display:flex;flex-direction:column;gap:4px;grid-column:1/-1}
+.woa-next .woa-key{height:44px;font-size:15px;width:100%;justify-content:center}
+.woa-next .woa-key.is-run{position:relative;overflow:hidden}
+.woa-next .woa-key.is-run::after{content:"";position:absolute;left:0;bottom:0;height:3px;width:var(--p,40%);background:var(--accent)}
+.woa-next small{font-size:11px;color:var(--text-dim);text-align:center}
+
+/* --- 6. Fade-Taste (fest 3 s) --- */
+.woa-fadek{position:relative;overflow:hidden}
+.woa-fadek.is-fading{border-color:var(--cue);color:var(--text)}
+.woa-fadek.is-fading::before{content:"";position:absolute;inset:0;width:var(--p,50%);background:color-mix(in srgb,var(--cue) 28%,transparent);pointer-events:none}
+.woa-fadek.is-fading svg.woa-i{color:var(--cue)}
+.woa-fadek>*{position:relative}
+.woa-fadek .woa-fadek__t{font-family:var(--font-mono);font-size:11px;color:var(--cue)}
+.woa-ib.woa-fadek.is-fading{background:var(--well)}
+
+/* --- 7. Spurkopf MIDI: Instrument links, Eingang rechts --- */
+.woa-inst{appearance:none;flex:1;min-width:0;display:flex;align-items:center;gap:6px;height:24px;padding:0 6px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font:inherit;font-size:12px;font-weight:600;cursor:pointer;box-shadow:var(--shadow-key)}
+.woa-inst svg.woa-i{width:14px;height:14px;color:var(--t);flex:none}
+.woa-inst span{flex:1;min-width:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.woa-inst:hover{border-color:var(--t)}
+.woa-inst[aria-expanded=true]{border-color:var(--t);background:color-mix(in srgb,var(--t) 16%,var(--surface))}
+.woa-midiin{display:flex;align-items:center;gap:4px;width:104px;flex:none;height:24px;padding:0 6px;border-radius:var(--radius-sm);background:var(--well);border:1px solid var(--border);font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden}
+.woa-midiin svg.woa-i{width:13px;height:13px;flex:none}
+.woa-midiin.is-hit svg.woa-i{color:var(--cue)}
+.woa-midiin.is-none{border-style:dashed}
+
+/* --- 8. Klangkategorien --- */
+.woa-cats{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:2px;background:var(--well);border:1px solid var(--border);border-radius:var(--radius-md)}
+.woa-cats button{appearance:none;display:flex;align-items:center;justify-content:center;gap:5px;height:28px;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--text-dim);font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
+.woa-cats button svg.woa-i{width:14px;height:14px}
+.woa-cats button[aria-pressed=true]{background:var(--surface);color:var(--text);box-shadow:var(--shadow-key)}
+.woa-cats button small{font-family:var(--font-mono);font-size:10px;color:var(--text-dim)}
+.woa-tile small{font-size:10px;color:var(--text-dim);font-weight:500}
+.woa-tile.is-play .woa-ib{color:var(--cue);border-color:var(--cue)}
+.woa-bank{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--radius-md);background:var(--well);border:1px solid var(--border);font-size:11px;color:var(--text-dim)}
+.woa-bank b{color:var(--text);font-size:12px}
+.woa-bank svg.woa-i{width:16px;height:16px}
+
+/* --- 9. KI (ElevenLabs) --- */
+.woa-keyf{display:flex;align-items:center;gap:8px}
+.woa-keyf .woa-memo{font-family:var(--font-mono);letter-spacing:.04em}
+.woa-credit{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:var(--radius-md);background:var(--lcd-bg);border:1px solid var(--border)}
+.woa-credit__v{display:flex;align-items:baseline;justify-content:space-between;font-family:var(--font-mono);color:var(--lcd-text);font-size:12px}
+.woa-credit__v b{font-size:22px;color:var(--lcd-ink)}
+.woa-privacy{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--cue);background:color-mix(in srgb,var(--cue) 10%,var(--panel));font-size:12px;line-height:18px}
+.woa-privacy svg.woa-i{width:18px;height:18px;color:var(--cue);flex:none;margin-top:1px}
+.woa-cost{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:var(--radius-md);background:var(--well);border:1px solid var(--border-strong)}
+.woa-cost>svg.woa-i{width:20px;height:20px;color:var(--accent-2)}
+.woa-cost__t{flex:1;font-size:13px}
+.woa-cost__t b{font-family:var(--font-mono)}
+.woa-cost__t small{display:block;font-size:11px;color:var(--text-dim)}
+.woa-cost.is-busy>svg.woa-i{animation:woa-spin 1s linear infinite;color:var(--cue)}
+.woa-text{min-height:64px;padding:10px 12px;border-radius:var(--radius-md);background:var(--well);border:1px solid var(--border-strong);font-size:14px;line-height:20px}
+.woa-range{display:grid;grid-template-columns:110px minmax(0,1fr) 44px;align-items:center;gap:10px;font-size:12px}
+.woa-range__t{height:6px;border-radius:3px;background:var(--well);border:1px solid var(--border);position:relative}
+.woa-range__t i{position:absolute;left:0;top:0;bottom:0;width:calc(var(--v)*100%);background:var(--accent);border-radius:3px}
+.woa-range__t b{position:absolute;top:50%;left:calc(var(--v)*100%);width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:var(--shadow-key)}
+.woa-range>span:last-child{font-family:var(--font-mono);text-align:right;color:var(--text-dim)}
+.woa-voices{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+
+/* --- 10. Einstellungen --- */
+.woa-set2{display:grid;grid-template-columns:248px minmax(0,1fr);flex:1;min-height:0}
+.woa-set2__nav{display:flex;flex-direction:column;gap:2px;padding:12px 10px;background:var(--panel);border-right:1px solid var(--border);overflow:auto}
+.woa-set2__nav button{appearance:none;display:flex;align-items:center;gap:10px;height:38px;padding:0 10px;border:0;border-radius:var(--radius-md);background:transparent;color:var(--text-dim);font:inherit;font-size:14px;font-weight:600;cursor:pointer;text-align:left}
+.woa-set2__nav button svg.woa-i{width:18px;height:18px}
+.woa-set2__nav button:hover{background:var(--surface-hover);color:var(--text)}
+.woa-set2__nav button[aria-current=true]{background:var(--accent-soft);color:var(--text);box-shadow:inset 3px 0 0 var(--accent)}
+.woa-set2__nav button[aria-current=true] svg.woa-i{color:var(--accent)}
+.woa-set2__nav button .woa-chip{margin-left:auto;height:20px;padding:0 6px;font-size:10px}
+.woa-set2__nav hr{border:0;border-top:1px solid var(--border);margin:8px 4px}
+.woa-set2__main{overflow:auto;padding:20px 28px;display:flex;flex-direction:column;gap:20px}
+.woa-set2__h{display:flex;align-items:baseline;gap:12px}
+.woa-set2__h h2{margin:0;font-family:var(--font-label);font-size:24px;font-weight:800;letter-spacing:.02em;text-transform:uppercase}
+.woa-set2__h span{font-size:13px;color:var(--text-dim)}
+.woa-sg{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg)}
+.woa-sg__h{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--panel-header);border-radius:var(--radius-lg) var(--radius-lg) 0 0}
+.woa-sg__h .woa-label{flex:1}
+.woa-sr{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,auto);align-items:center;gap:16px;min-height:56px;padding:10px 16px;border-bottom:1px solid var(--border)}
+.woa-sr:last-child{border-bottom:0}
+.woa-sr__l b{display:block;font-size:14px;font-weight:600}
+.woa-sr__l span{display:block;font-size:12px;color:var(--text-dim);line-height:17px;margin-top:2px}
+.woa-sr__c{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.woa-sr.is-hit{background:color-mix(in srgb,var(--accent-2) 10%,var(--panel));box-shadow:inset 3px 0 0 var(--accent-2)}
+.woa-sr.is-err .woa-sr__l span{color:var(--warn)}
+.woa-hits{display:flex;flex-direction:column;gap:4px}
+.woa-hit{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:10px;min-height:48px;padding:6px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--panel);cursor:pointer}
+.woa-hit:hover,.woa-hit.is-sel{border-color:var(--accent);background:var(--accent-soft)}
+.woa-hit>svg.woa-i{width:18px;height:18px;color:var(--text-dim)}
+.woa-hit b{display:block;font-size:14px;font-weight:600}
+.woa-hit span{display:block;font-size:11px;color:var(--text-dim)}
+.woa-hit .woa-crumb{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px}
+.woa-hit .woa-crumb svg.woa-i{width:12px;height:12px}
+.woa-set2__nav button.is-dimmed{opacity:.4}
+
+/* --- 11. Vollbild --- */
+.woa-topbar .woa-fsx{margin-left:6px}
+[data-woa-mode=radio] .woa-tog[aria-pressed=true]{background:color-mix(in srgb,var(--accent-2) 22%,var(--well));border-color:var(--accent-2)}[data-woa-mode=radio] .woa-tog[aria-pressed=true]::after{background:var(--accent-2)}
+.woa-sr{grid-template-columns:minmax(200px,1fr) auto}
+.woa-set2__h h2{white-space:nowrap}

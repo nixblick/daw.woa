@@ -175,11 +175,18 @@ pub enum DeckAction {
     Cue,
     /// Vorhören (PFL) an/aus.
     Pfl,
+    /// Fade-Taste: in 3 s ausblenden und anhalten (Design Fassung 7).
+    Fade,
 }
 
 impl DeckAction {
     /// Alle Aktionen in der Reihenfolge der Lernliste.
-    pub const ALL: [DeckAction; 3] = [DeckAction::Start, DeckAction::Cue, DeckAction::Pfl];
+    pub const ALL: [DeckAction; 4] = [
+        DeckAction::Start,
+        DeckAction::Cue,
+        DeckAction::Pfl,
+        DeckAction::Fade,
+    ];
 
     /// Anzeigename.
     pub fn label(self) -> &'static str {
@@ -187,6 +194,7 @@ impl DeckAction {
             DeckAction::Start => "Start/Stopp",
             DeckAction::Cue => "Cue",
             DeckAction::Pfl => "Vorhören",
+            DeckAction::Fade => "Fade",
         }
     }
 }

@@ -265,6 +265,8 @@ pub struct PianoRoll {
     chords: Vec<Option<woa_model::harmony::Chord>>,
     /// Zeilen der Notenfläche (Tonhöhen von oben nach unten).
     rows: Vec<u8>,
+    /// Fenster füllt die App (Fensterkopf Fassung 7).
+    pub maximized: bool,
 }
 
 impl PianoRoll {
@@ -298,6 +300,7 @@ impl PianoRoll {
             detected: None,
             origin: 0.0,
             chords: Vec::new(),
+            maximized: false,
             rows: rows(&[], false),
         }
     }
@@ -405,17 +408,33 @@ impl PianoRoll {
             (screen.width() - 40.0).clamp(480.0, 1200.0),
             (screen.height() - 90.0).clamp(320.0, 700.0),
         );
-        egui::Window::new(format!("Piano-Roll – {name}"))
-            .id(egui::Id::new(("pianoroll", self.clip.0)))
-            .open(&mut open)
-            .default_size(size)
-            .default_pos(pos2(screen.left() + 20.0, screen.top() + 40.0))
-            .constrain(true)
-            .min_size([480.0, 320.0])
-            .resizable(true)
-            .show(ctx, |ui| {
-                self.body(ui, state, &midi, length);
-            });
+        // Fassung 7: eigener Fensterkopf 44 px (Doppelklick maximiert, Esc schließt).
+        let mut win = egui::Window::new(format!("Piano-Roll – {name}"))
+            .id(egui::Id::new(("pianoroll", self.clip.0, self.maximized)))
+            .title_bar(false)
+            .collapsible(false)
+            .constrain(true);
+        win = if self.maximized {
+            win.fixed_rect(screen.shrink(4.0)).resizable(false)
+        } else {
+            win.default_size(size)
+                .default_pos(pos2(screen.left() + 20.0, screen.top() + 40.0))
+                .min_size([480.0, 320.0])
+                .resizable(true)
+        };
+        let mut max = self.maximized;
+        win.show(ctx, |ui| {
+            crate::fragen::kopf(
+                ui,
+                theme::ic::PIANO_KEYS,
+                &format!("Piano-Roll – {name}"),
+                "Noten zeichnen, verschieben, Tonart und Raster",
+                &mut open,
+                &mut max,
+            );
+            self.body(ui, state, &midi, length);
+        });
+        self.maximized = max;
         if !open {
             self.release(state);
         }

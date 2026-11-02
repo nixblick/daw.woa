@@ -690,17 +690,52 @@ impl PartyView {
                 // Kopf.
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
-                    ui.label(
-                        theme::panel_label(if side == 0 { "DECK A" } else { "DECK B" }).color(col),
-                    );
-                    let (badge, bc) = if d.playing {
-                        ("LÄUFT", theme::accent())
+                    use crate::widgets::{ChipTone, StateChip};
+                    // Fassung 7: alle Chips 28 px auf einer Mittellinie.
+                    StateChip::new(
+                        if side == 0 { "DECK A" } else { "DECK B" },
+                        ChipTone::Color(col),
+                    )
+                    .dj()
+                    .show(ui);
+                    let badge = if d.playing {
+                        StateChip::new("LÄUFT", ChipTone::Color(theme::accent()))
+                            .icon(theme::ic::PLAY)
                     } else if d.index.is_some() {
-                        ("BEREIT · CUE", theme::cue())
+                        StateChip::new("BEREIT · CUE", ChipTone::Neutral)
                     } else {
-                        ("LEER", theme::text_dim())
+                        StateChip::new("LEER", ChipTone::Neutral)
                     };
-                    theme::status_pill(ui, badge, bc, d.index.is_some());
+                    badge.dj().show(ui);
+                    let result = self.waves[side].get().map(|i| i.bpm);
+                    match analysis_state(d.index.is_some(), result) {
+                        Analysis::Running => {
+                            StateChip::new("Analyse", ChipTone::Busy)
+                                .icon(theme::ic::CIRCLE_NOTCH)
+                                .dj()
+                                .show(ui)
+                                .on_hover_text("Tempo und Tonart werden gemessen");
+                        }
+                        Analysis::Failed => {
+                            StateChip::new("Analyse fehlgeschlagen", ChipTone::Warn)
+                                .icon(theme::ic::WARNING)
+                                .dj()
+                                .show(ui)
+                                .on_hover_text("Kein Tempo gefunden");
+                            if crate::widgets::icon_button::IconButton::new(
+                                theme::ic::ARROW_CLOCKWISE,
+                                "Neu analysieren",
+                            )
+                            .ui(ui)
+                            .clicked()
+                            {
+                                // Nächstes Bild lädt neu (WaveSlot folgt dem Pfad).
+                                self.waves[side] = Default::default();
+                                self.dj.sent[side] = None;
+                            }
+                        }
+                        Analysis::Empty | Analysis::Done => {}
+                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let rest = if d.end > 0.0 {
                             d.end - d.position
@@ -1333,7 +1368,7 @@ fn dj_mixer(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView) {
                     &mut x,
                     0.0..=1.0,
                     0.5,
-                    egui::vec2(w - 150.0, 26.0),
+                    egui::vec2(w - 40.0, 26.0),
                     crate::widgets::Orient::Horizontal,
                 )
                 .on_hover_text("Crossfader: links Deck A, rechts Deck B");
@@ -1341,9 +1376,14 @@ fn dj_mixer(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView) {
                     desk.dj(DjCommand::Crossfader { value: x });
                 }
                 ui.label(theme::panel_label("B").color(deck_color(1)));
+            });
+            ui.add_space(6.0);
+            // Fassung 7: unter dem Crossfader eine Zeile `weich | hart` und „Weiter · Übergang“.
+            let mut r = None;
+            ui.horizontal(|ui| {
                 for (word, hard) in [("weich", false), ("hart", true)] {
                     let on = dj.curve_hard == hard;
-                    let r = crate::widgets::Key::new(word, egui::vec2(52.0, 24.0))
+                    let k = crate::widgets::Key::new(word, egui::vec2(52.0, 36.0))
                         .font(theme::label_font(12.0))
                         .radius(theme::RADIUS_SM)
                         .color(theme::accent())
@@ -1354,26 +1394,28 @@ fn dj_mixer(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView) {
                         } else {
                             "Kurve weich: gleichmäßige Blende mit gleicher Lautheit in der Mitte"
                         });
-                    if r.clicked() && !on {
+                    if k.clicked() && !on {
                         desk.dj(DjCommand::Curve { hard });
                     }
                 }
+                let any = dj.decks.iter().any(|d| d.index.is_some());
+                r = Some(
+                    crate::widgets::Key::new(
+                        &format!("{}  WEITER · ÜBERGANG", super::AUTO_ICON),
+                        egui::vec2(ui.available_width(), 36.0),
+                    )
+                    .font(theme::label_font(14.0))
+                    .radius(theme::RADIUS_MD)
+                    .color(theme::accent())
+                    .enabled(any)
+                    .ui(ui)
+                    .on_hover_text(
+                        "Zum anderen Deck blenden (Crossfade-Länge der Sendung); danach hält das \
+                         alte Deck an und lädt den nächsten Titel (Taste N oder →)",
+                    ),
+                );
             });
-            ui.add_space(6.0);
-            let any = dj.decks.iter().any(|d| d.index.is_some());
-            let r = crate::widgets::Key::new(
-                &format!("{}  WEITER · ÜBERGANG", super::AUTO_ICON),
-                egui::vec2(w, 34.0),
-            )
-            .font(theme::label_font(14.0))
-            .radius(theme::RADIUS_MD)
-            .color(theme::accent())
-            .enabled(any)
-            .ui(ui)
-            .on_hover_text(
-                "Zum anderen Deck blenden (Crossfade-Länge der Sendung); danach hält das alte \
-                 Deck an und lädt den nächsten Titel (Taste N oder →)",
-            );
+            let r = r.expect("Zeile gezeichnet");
             if r.clicked() {
                 desk.dj(DjCommand::Transition);
             }
@@ -1543,6 +1585,29 @@ fn master(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView, size: egui::Vec2) {
     r.on_hover_text("Kopfhörer-Pegel");
 }
 
+/// Stand der Tempo-/Tonart-Analyse eines Decks (DjHead Fassung 7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Analysis {
+    /// Kein Titel.
+    Empty,
+    /// Läuft noch (Chip `cue` mit Kreisel, BPM „---.-“, kein Tonart-Chip).
+    Running,
+    /// Fertig, aber ohne Tempo: fehlgeschlagen (Chip `warn` + „Neu analysieren“).
+    Failed,
+    /// Fertig.
+    Done,
+}
+
+/// Stand aus „Titel liegt“, „Ergebnis da“ und dessen Tempo.
+pub(crate) fn analysis_state(loaded: bool, result: Option<Option<f64>>) -> Analysis {
+    match (loaded, result) {
+        (false, _) => Analysis::Empty,
+        (true, None) => Analysis::Running,
+        (true, Some(b)) if b.is_some_and(|b| b > 0.0) => Analysis::Done,
+        (true, Some(_)) => Analysis::Failed,
+    }
+}
+
 /// Restzeit, BPM und Camelot-Chip im Deck-Kopf (von rechts nach links), alle gleich hoch
 /// (#347). Gibt die Rahmen in dieser Reihenfolge zurück (Chip nur mit Tonart).
 fn deck_readouts(
@@ -1591,6 +1656,15 @@ mod tests {
         for r in &rects {
             assert!((r.height() - h).abs() < 0.5, "{rects:?}");
         }
+    }
+
+    #[test]
+    fn analysis_runs_fails_without_tempo_and_is_done_with_one() {
+        assert_eq!(analysis_state(false, None), Analysis::Empty);
+        assert_eq!(analysis_state(true, None), Analysis::Running);
+        assert_eq!(analysis_state(true, Some(None)), Analysis::Failed);
+        assert_eq!(analysis_state(true, Some(Some(0.0))), Analysis::Failed);
+        assert_eq!(analysis_state(true, Some(Some(124.0))), Analysis::Done);
     }
 
     #[test]

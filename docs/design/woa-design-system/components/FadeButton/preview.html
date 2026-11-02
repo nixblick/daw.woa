@@ -1,0 +1,29 @@
+<!-- @dsCard group="Radio" height=620 width=1100 subtitle="Fade fest 3 s: bereit, blendet aus (Fortschritt + Restzeit), nichts läuft – Sendedeck, Decks A–C, Cart-Wall, Playlist" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}.cap{font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0 0 6px}</style></head>
+<body>
+
+<div class="woa-col" style="gap:16px;max-width:1040px" data-woa-mode="radio">
+ <div><p class="cap">Taste: bereit · blendet aus · nichts läuft</p><div class="woa-row" style="gap:10px"><button class="woa-key woa-fadek woa-key--lg" style="--p:0%" data-woa-icon="fadeout" data-tip="Alles ausblenden (3 s)" data-hint="Blendet in 3 Sekunden aus und stoppt">Alles ausblenden</button><button class="woa-key woa-fadek woa-key--lg is-fading" style="--p:62%" data-woa-icon="fadeout" data-tip="Alles ausblenden (3 s)" data-hint="Blendet in 3 Sekunden aus und stoppt">Alles ausblenden <span class="woa-fadek__t">1,1 s</span></button><button class="woa-key woa-fadek woa-key--lg" style="--p:0%" data-woa-icon="fadeout" data-tip="Alles ausblenden (3 s)" data-hint="Blendet in 3 Sekunden aus und stoppt" disabled>Alles ausblenden</button></div></div>
+ <div><p class="cap">Sende-Deck: eine Taste für alles Laufende (Playlist, Decks, Carts), nach „Stopp“</p><div class="woa-row" style="gap:8px"><button class="woa-key woa-key--lg woa-key--ok" data-woa-icon="play">Start</button><button class="woa-key woa-key--lg" data-woa-icon="stop">Stopp</button><button class="woa-key woa-fadek woa-key--lg" style="--p:0%" data-woa-icon="fadeout" data-tip="Fade (3 s)" data-hint="Blendet in 3 Sekunden aus und stoppt">Fade</button><button class="woa-key woa-key--lg" data-woa-icon="fade">Blende</button><button class="woa-key woa-key--lg woa-key--rec" data-woa-icon="mic">Mikro</button></div></div>
+ <div><p class="cap">Decks A–C: quadratische Fade-Taste neben Start/Stopp</p><div class="woa-card"><div class="woa-card__body" style="gap:0"><div class="woa-rdeck is-play">
+ <div class="woa-rdeck__k">A</div>
+ <div class="woa-rdeck__lcd"><span class="woa-seg" data-ghost="88:88"><span>00:18</span></span><div class="woa-progress" style="--p:57%"><i></i></div></div>
+ <div class="woa-rdeck__t"><b>Silvester Countdown</b><span>Jingle · 0:42</span></div>
+ <div class="woa-keys"><button class="woa-key woa-key--ok is-on" style="min-width:86px" data-woa-icon="stop" data-tip="Stopp" data-kbd="A">Stopp</button><button class="woa-key woa-fadek woa-key--sq is-fading" style="--p:40%" data-woa-icon="fadeout" data-tip="Fade (3 s)" data-hint="Blendet in 3 Sekunden aus und stoppt"></button><button class="woa-key woa-key--sq" data-woa-icon="prev" data-tip="Zurück an den Anfang (Cue)"></button><button class="woa-key woa-key--cue woa-key--sq" data-woa-icon="phones" data-tip="Vorhören (PFL)"></button><button class="woa-ib woa-ib--lg" data-woa-icon="queue" data-tip="Danach zurück zur Playlist" aria-pressed="true"></button></div>
+</div><div class="woa-rdeck">
+ <div class="woa-rdeck__k">B</div>
+ <div class="woa-rdeck__lcd"><span class="woa-seg" data-ghost="88:88"><span>03:42</span></span><div class="woa-progress" style="--p:0%"><i></i></div></div>
+ <div class="woa-rdeck__t"><b>Midnight Drive</b><span>The Neon Coast · 3:42</span></div>
+ <div class="woa-keys"><button class="woa-key woa-key--ok" style="min-width:86px" data-woa-icon="play" data-tip="Start" data-kbd="B">Start</button><button class="woa-key woa-fadek woa-key--sq" style="--p:0%" data-woa-icon="fadeout" data-tip="Fade (3 s)" data-hint="Blendet in 3 Sekunden aus und stoppt" disabled></button><button class="woa-key woa-key--sq" data-woa-icon="prev" data-tip="Zurück an den Anfang (Cue)"></button><button class="woa-key woa-key--cue woa-key--sq is-lit" data-woa-icon="phones" data-tip="Vorhören (PFL)"></button><button class="woa-ib woa-ib--lg" data-woa-icon="queue" data-tip="Danach zurück zur Playlist" aria-pressed="false"></button></div>
+</div></div></div></div>
+ <div style="display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:start">
+  <div><p class="cap">Cart-Wall: Rechtsklick oder Fade-Symbol beim Hover</p><div style="position:relative;display:inline-block"><button class="woa-cart is-play" style="--t:var(--track-2);width:220px"><span class="woa-cart__no">2</span><i class="woa-cart__led"></i><span class="woa-cart__title">woa jingle 2.1</span><span class="woa-cart__len">0:46</span><span class="woa-cart__bar"><i></i></span></button><span style="position:absolute;right:6px;top:6px"><button class="woa-ib woa-ib--sm woa-fadek is-fading" style="--p:50%" data-woa-icon="fadeout" data-tip="Ausblenden (3 s)"></button></span></div></div>
+  <div><p class="cap">Playlist: in der laufenden Zeile</p><div class="woa-pl"><div class="woa-pl__r is-air"><span class="woa-slot__grip" data-woa-icon="grip"></span><span class="woa-pl__no">1</span><span class="woa-pl__cv"><span data-woa-icon="note" style="display:contents"></span></span><span class="woa-pl__t">Du bist nicht da, wo du denkst!</span><span class="woa-pl__l">−17.2 LUFS</span><span class="woa-pl__d">06:41</span><div class="woa-pl__a" style="visibility:visible"><button class="woa-ib woa-ib--sm woa-fadek" style="--p:0%" data-woa-icon="fadeout" data-tip="Ausblenden (3 s)"></button></div></div></div></div>
+ </div>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>

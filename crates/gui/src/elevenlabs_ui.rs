@@ -63,6 +63,132 @@ enum ZMsg {
     Konto(Result<Konto, String>),
 }
 
+/// Zustand im Kopf von AiSettings (Fassung 7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyState {
+    /// Wird nachgesehen oder geprüft.
+    Busy,
+    /// Kein Schlüssel.
+    Missing,
+    /// Gespeichert, noch nicht geprüft.
+    Stored,
+    /// Prüfung ergab ein Konto.
+    Connected,
+    /// Prüfung schlug fehl.
+    Invalid,
+}
+
+impl KeyState {
+    pub fn label(self) -> &'static str {
+        match self {
+            KeyState::Busy => "prüfe",
+            KeyState::Missing => "nicht eingerichtet",
+            KeyState::Stored => "gespeichert",
+            KeyState::Connected => "verbunden",
+            KeyState::Invalid => "Schlüssel ungültig",
+        }
+    }
+
+    pub fn tone(self) -> crate::widgets::ChipTone {
+        use crate::widgets::ChipTone;
+        match self {
+            KeyState::Busy => ChipTone::Busy,
+            KeyState::Missing | KeyState::Stored => ChipTone::Neutral,
+            KeyState::Connected => ChipTone::Ok,
+            KeyState::Invalid => ChipTone::Warn,
+        }
+    }
+}
+
+/// Zustand aus dem, was [`Zugang`] weiß.
+pub fn key_state(
+    stored: Option<Option<Ort>>,
+    konto: Option<&Result<Konto, String>>,
+    busy: bool,
+) -> KeyState {
+    if busy || stored.is_none() {
+        return KeyState::Busy;
+    }
+    match (stored, konto) {
+        (Some(None), _) => KeyState::Missing,
+        (_, Some(Ok(_))) => KeyState::Connected,
+        (_, Some(Err(_))) => KeyState::Invalid,
+        _ => KeyState::Stored,
+    }
+}
+
+/// Anteil der übrigen Credits (0..1) für den Balken.
+pub fn credit_share(k: &Konto) -> f32 {
+    if k.character_limit <= 0 {
+        return 0.0;
+    }
+    (k.remaining() as f64 / k.character_limit as f64).clamp(0.0, 1.0) as f32
+}
+
+/// Hinweis `woa-privacy` (Rahmen `cue`): fest sichtbar, wo etwas an ElevenLabs geht.
+fn privacy_note(ui: &mut egui::Ui) {
+    egui::Frame::new()
+        .stroke(egui::Stroke::new(1.0, theme::cue()))
+        .corner_radius(theme::RADIUS_MD)
+        .inner_margin(egui::Margin::symmetric(8, 6))
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(egui::RichText::new(theme::ic::SHIELD_CHECK).color(theme::cue()));
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Schlüssel nur im System-Schlüsselbund. {}",
+                        elevenlabs::DATENSCHUTZ
+                    ))
+                    .small()
+                    .color(theme::text_dim()),
+                );
+            });
+        });
+}
+
+/// Credits als LCD: übrig groß, Balken, „von N · Abo“, Erneuerung.
+fn credits_lcd(ui: &mut egui::Ui, k: &Konto) {
+    egui::Frame::new()
+        .fill(theme::well())
+        .corner_radius(theme::RADIUS_MD)
+        .inner_margin(egui::Margin::symmetric(10, 6))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(k.remaining().to_string())
+                        .monospace()
+                        .size(22.0)
+                        .color(theme::text()),
+                );
+                ui.label(
+                    egui::RichText::new(format!("von {} · {}", k.character_limit, k.tier))
+                        .small()
+                        .color(theme::text_dim()),
+                );
+            });
+            let (r, _) =
+                ui.allocate_exact_size(egui::vec2(ui.available_width(), 6.0), egui::Sense::hover());
+            ui.painter().rect_filled(r, 3.0, theme::surface());
+            let mut f = r;
+            f.set_width(r.width() * credit_share(k));
+            ui.painter().rect_filled(f, 3.0, theme::ok());
+            if let Some(t) = k.reset_unix {
+                let days = ((t - unix_now()) / 86_400).max(0);
+                ui.label(
+                    egui::RichText::new(format!("Erneuerung in {days} Tagen"))
+                        .small()
+                        .color(theme::text_dim()),
+                );
+            }
+        });
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
+}
+
 /// Zeile „ElevenLabs-Schlüssel“ unter Einstellungen → KI.
 pub struct Zugang {
     input: String,
@@ -70,6 +196,8 @@ pub struct Zugang {
     asked: bool,
     konto: Option<Result<Konto, String>>,
     busy: bool,
+    /// „Entfernen“ fragt nach.
+    ask_remove: bool,
     ops: Ops,
     tx: Sender<ZMsg>,
     rx: Receiver<ZMsg>,
@@ -90,6 +218,7 @@ impl Zugang {
             asked: false,
             konto: None,
             busy: false,
+            ask_remove: false,
             ops,
             tx,
             rx,
@@ -180,8 +309,22 @@ impl Zugang {
                 .request_repaint_after(std::time::Duration::from_millis(150));
         }
         let has = matches!(self.stored, Some(Some(_)));
+        let state = key_state(self.stored, self.konto.as_ref(), self.busy);
         ui.horizontal(|ui| {
-            ui.label("ElevenLabs-Schlüssel");
+            ui.label(
+                egui::RichText::new(theme::ic::USER_SOUND)
+                    .size(18.0)
+                    .color(theme::accent()),
+            );
+            ui.label(egui::RichText::new("ElevenLabs").strong());
+            let mut chip = crate::widgets::StateChip::new(state.label(), state.tone());
+            if state == KeyState::Busy {
+                chip = chip.icon(theme::ic::CIRCLE_NOTCH);
+            }
+            chip.show(ui);
+        });
+        ui.horizontal(|ui| {
+            ui.label("Schlüssel");
             let hint = match self.stored {
                 None => "wird nachgesehen …".to_string(),
                 Some(Some(o)) => format!("gespeichert {}", o.label()),
@@ -213,28 +356,37 @@ impl Zugang {
             {
                 self.check(data_dir);
             }
-            if ui
-                .add_enabled(has && !self.busy, egui::Button::new("Entfernen"))
-                .on_hover_text("Löscht den Schlüssel aus dem Schlüsselbund")
+            if self.ask_remove {
+                ui.label(egui::RichText::new("Wirklich entfernen?").small());
+                if ui.button("Ja, entfernen").clicked() {
+                    self.ask_remove = false;
+                    self.remove(data_dir);
+                }
+                if ui.button("Nein").clicked() {
+                    self.ask_remove = false;
+                }
+            } else if ui
+                .add_enabled(
+                    has && !self.busy,
+                    egui::Button::new(
+                        egui::RichText::new(theme::ic::TRASH).color(theme::danger_text()),
+                    ),
+                )
+                .on_hover_text("Entfernen: löscht den Schlüssel aus dem Schlüsselbund (fragt nach)")
                 .clicked()
             {
-                self.remove(data_dir);
+                self.ask_remove = true;
             }
         });
         match &self.konto {
-            Some(Ok(k)) => {
-                ui.label(egui::RichText::new(k.label()).small().color(theme::text()));
-            }
+            Some(Ok(k)) => credits_lcd(ui, k),
             Some(Err(e)) => {
-                ui.label(egui::RichText::new(e).small().color(theme::danger_text()));
+                // Meldung von ElevenLabs in `warn` direkt unter dem Feld (Rot nur für live).
+                ui.label(egui::RichText::new(e).small().color(theme::warn()));
             }
             None => {}
         }
-        ui.label(
-            egui::RichText::new(elevenlabs::DATENSCHUTZ)
-                .small()
-                .color(theme::text_dim()),
-        );
+        privacy_note(ui);
     }
 }
 
@@ -297,6 +449,11 @@ pub struct Erzeuger {
     pub fx_seconds: f64,
     pub bett_text: String,
     confirm: Option<Auftrag>,
+    /// Zuletzt fehlgeschlagener Auftrag, für „Erneut“.
+    failed: Option<Auftrag>,
+    /// Laufender Auftrag (für die Fehlermeldung mit „Erneut“).
+    current: Option<Auftrag>,
+    pub similarity: f64,
     running: Option<Art>,
     pub note: Option<String>,
     tx: Sender<EMsg>,
@@ -330,6 +487,9 @@ impl Default for Erzeuger {
             fx_seconds: 3.0,
             bett_text: "fröhliches, sommerliches Radio-Bett, Gitarre und Schlagzeug".into(),
             confirm: None,
+            failed: None,
+            current: None,
+            similarity: 0.75,
             running: None,
             note: None,
             tx,
@@ -401,7 +561,10 @@ impl Erzeuger {
                         }
                         Err(e) => {
                             tracing::warn!(art = art.as_str(), error = %e, "elevenlabs failed");
-                            self.note = Some(e);
+                            match self.current.take() {
+                                Some(a) => self.fail(a, e),
+                                None => self.note = Some(e),
+                            }
                         }
                     }
                 }
@@ -424,11 +587,32 @@ impl Erzeuger {
         });
     }
 
+    /// Merkt einen fehlgeschlagenen Auftrag für „Erneut“.
+    fn fail(&mut self, a: Auftrag, e: String) {
+        self.running = None;
+        self.note = Some(e);
+        self.failed = Some(a);
+    }
+
+    /// „Erneut“: zeigt den Kostenkasten des fehlgeschlagenen Auftrags wieder.
+    fn retry(&mut self) -> bool {
+        match self.failed.take() {
+            Some(a) => {
+                self.note = None;
+                self.confirm = Some(a);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Startet den bestätigten Auftrag; die Datei landet in `takes_dir`.
     fn start(&mut self, a: Auftrag, takes_dir: PathBuf) {
         let art = a.art();
         self.running = Some(art);
         self.note = None;
+        self.failed = None;
+        self.current = Some(a.clone());
         let (tx, src, ablage) = (self.tx.clone(), self.source(), self.ablage.clone());
         std::thread::spawn(move || {
             let r = run(&src, &a, &takes_dir, ablage.as_ref());
@@ -447,13 +631,17 @@ impl Erzeuger {
             .inner_margin(egui::Margin::symmetric(8, 6))
             .show(ui, |ui| {
                 ui.label(egui::RichText::new(a.schaetzung().label()).strong());
-                ui.label(
-                    egui::RichText::new(elevenlabs::DATENSCHUTZ)
-                        .small()
-                        .color(theme::text_dim()),
-                );
                 ui.horizontal(|ui| {
-                    if ui.button("Erzeugen").clicked() {
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new(format!("{} Erzeugen", theme::ic::CHECK))
+                                    .color(theme::ok()),
+                            )
+                            .stroke(egui::Stroke::new(1.0, theme::ok())),
+                        )
+                        .clicked()
+                    {
                         self.confirm = None;
                         self.start(a.clone(), takes_dir.to_path_buf());
                     }
@@ -464,7 +652,7 @@ impl Erzeuger {
             });
     }
 
-    fn busy_ui(&self, ui: &mut egui::Ui) -> bool {
+    fn busy_ui(&mut self, ui: &mut egui::Ui) -> bool {
         if let Some(art) = self.running {
             ui.horizontal(|ui| {
                 ui.spinner();
@@ -479,8 +667,25 @@ impl Erzeuger {
             });
             return true;
         }
-        if let Some(n) = &self.note {
-            ui.label(egui::RichText::new(n).small().color(theme::text_dim()));
+        if let Some(n) = self.note.clone() {
+            if self.failed.is_some() {
+                // Fehler: Grund in `warn` (Rot nur für live) und ein Ausweg.
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{} {n}", theme::ic::WARNING))
+                            .small()
+                            .color(theme::warn()),
+                    );
+                    if ui
+                        .button(format!("{} Erneut", theme::ic::ARROW_CLOCKWISE))
+                        .clicked()
+                    {
+                        self.retry();
+                    }
+                });
+            } else {
+                ui.label(egui::RichText::new(n).small().color(theme::text_dim()));
+            }
         }
         false
     }
@@ -536,11 +741,16 @@ impl Erzeuger {
             ui.add(egui::Slider::new(&mut self.stability, 0.0..=1.0))
                 .on_hover_text("Weniger: lebendiger, mehr: gleichmäßiger");
             ui.end_row();
+            ui.label("Ähnlichkeit");
+            ui.add(egui::Slider::new(&mut self.similarity, 0.0..=1.0))
+                .on_hover_text("Mehr: näher an der Originalstimme");
+            ui.end_row();
             ui.label("Stil");
             ui.add(egui::Slider::new(&mut self.style, 0.0..=1.0))
                 .on_hover_text("Mehr: übertriebener Vortrag");
             ui.end_row();
         });
+        privacy_note(ui);
         if self.busy_ui(ui) {
             return;
         }
@@ -559,6 +769,7 @@ impl Erzeuger {
             a.model = self.model;
             a.stability = self.stability;
             a.style = self.style;
+            a.similarity = self.similarity;
             self.confirm = Some(Auftrag::Sprache(a, v.name.clone()));
         }
     }
@@ -719,5 +930,51 @@ mod tests {
             seconds: 60.0,
         });
         assert!(b.schaetzung().label().contains("0.150 $"));
+    }
+
+    #[test]
+    fn key_state_follows_store_check_and_errors() {
+        let ok = Ok(Konto {
+            tier: "creator".into(),
+            character_count: 7_500,
+            character_limit: 30_000,
+            reset_unix: None,
+        });
+        let bad: Result<Konto, String> = Err("401".into());
+        assert_eq!(key_state(None, None, false), KeyState::Busy);
+        assert_eq!(key_state(Some(None), None, true), KeyState::Busy);
+        assert_eq!(key_state(Some(None), None, false), KeyState::Missing);
+        assert_eq!(
+            key_state(Some(Some(Ort::Datei)), None, false),
+            KeyState::Stored
+        );
+        assert_eq!(
+            key_state(Some(Some(Ort::Datei)), Some(&ok), false),
+            KeyState::Connected
+        );
+        assert_eq!(
+            key_state(Some(Some(Ort::Datei)), Some(&bad), false),
+            KeyState::Invalid
+        );
+        assert_eq!(
+            KeyState::Invalid.tone(),
+            crate::widgets::ChipTone::Warn,
+            "nie rot"
+        );
+        assert_eq!(credit_share(ok.as_ref().unwrap()), 0.75);
+    }
+
+    #[test]
+    fn failed_job_can_be_retried_without_sending_again_by_itself() {
+        let mut e = Erzeuger::default();
+        let a = Auftrag::Effekt(EffektAuftrag {
+            text: "Whoosh".into(),
+            seconds: Some(2.0),
+        });
+        e.fail(a, "Netz weg".into());
+        assert!(e.running.is_none(), "nichts läuft von selbst");
+        assert!(e.retry(), "Erneut: zeigt wieder den Kostenkasten");
+        assert!(e.confirm.is_some());
+        assert!(!e.retry(), "nur einmal");
     }
 }

@@ -435,23 +435,28 @@ impl JingleAssistent {
 
     fn stimme(&mut self, ui: &mut egui::Ui, state: &mut AppState, p: JingleParts) {
         let key = self.el.has_key() == Some(true);
+        // Fassung 7: „Wer spricht?“ als Segmentschalter Frei (lokal) | ElevenLabs.
         ui.horizontal(|ui| {
-            ui.label("Sprecher");
-            egui::ComboBox::from_id_salt("jingle_sprecher")
-                .selected_text(if self.elevenlabs_sprecher && key {
-                    "ElevenLabs"
-                } else {
-                    "Selbst einsprechen"
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.elevenlabs_sprecher, false, "Selbst einsprechen");
-                    ui.add_enabled_ui(key, |ui| {
-                        ui.selectable_value(&mut self.elevenlabs_sprecher, true, "ElevenLabs")
-                            .on_disabled_hover_text(
-                                "Eigenen ElevenLabs-Schlüssel unter Einstellungen → KI eintragen",
-                            );
-                    });
-                });
+            ui.label("Wer spricht?");
+            if ui
+                .selectable_label(!self.elevenlabs_sprecher || !key, "Frei (lokal)")
+                .on_hover_text("Selbst einsprechen oder Datei; kostet nichts, nichts geht ins Netz")
+                .clicked()
+            {
+                self.elevenlabs_sprecher = false;
+            }
+            if ui
+                .add_enabled(
+                    key,
+                    egui::Button::selectable(self.elevenlabs_sprecher && key, "ElevenLabs"),
+                )
+                .on_disabled_hover_text(
+                    "Eigenen ElevenLabs-Schlüssel unter Einstellungen → KI eintragen",
+                )
+                .clicked()
+            {
+                self.elevenlabs_sprecher = true;
+            }
         });
         if self.elevenlabs_sprecher && key {
             let takes = state.takes_dir();

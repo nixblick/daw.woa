@@ -15,3 +15,8 @@ Zustände:
 - **Hover:** Der Papierkorb erscheint, sein Platz ist immer reserviert.
 
 Spur-Klick wählt die Spur in allen Ansichten.
+
+## Fassung 7
+
+- Spuren immer 64 px, auch bei offener Piano-Roll (die Zeitleiste scrollt, das Dock ist in der Höhe ziehbar).
+- MIDI-Spur Zeile 2: links **Instrument** (`woa-inst`, Symbol der Kategorie in Spurfarbe, Name, Pfeil) → öffnet die Klangauswahl im Rack; rechts **MIDI-Eingang** (`woa-midiin`, 104 px, Symbol leuchtet `cue` bei Noten, gestrichelt ohne Gerät).

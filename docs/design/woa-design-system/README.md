@@ -121,6 +121,42 @@ WOA – Wir on Air ist eine DAW mit eingebautem Sendestudio und Party-Player. Ei
 - **Kopfhörer-Cue** läuft über den Vorhör-Ausgang (Kanal 3/4). Ohne Ausgang sind Cue-Tasten gesperrt, mit Hinweis.
 - **Auto-Übergang** ist in der DJ-Ansicht aus; man blendet selbst. Beim Wechsel zurück nach „Einfach“ gilt wieder die eigene Einstellung.
 
+## Gäste (Radio)
+
+- **Gäste-Karte** (`GuestCard`) in der linken Radio-Spalte zwischen Sende-Deck und Playlist; ersetzt die Taste „Telefon“.
+- Gast kommt per Link + PIN im Browser (WebRTC). Ablauf immer: **wartet → Annehmen → Vorgespräch → On Air**. Nie direkt auf Sendung.
+- Rot nur für „On Air“; Vorgespräch = `cue`, Stumm = `warn`, wartet = `accent-2`.
+- Mix-Minus für jeden Gast; in der Pegelgruppe ein Summenkanal „Gäste“ nach „Mikro“.
+
+## Fenster, Entwickler, Einstellungen (Fassung 7)
+
+- **Lösbare Fenster** haben eine eigene Kopfzeile (`Window`): 44 px, Symbol 20 px `accent`, Titel 16/800 Versalien, Stand-Zeile Mono 11 rechts, Maximieren/Wiederherstellen + Schließen 32 px. Gilt für Piano-Roll, Fragen und To-dos, Abnahme, Feedback, Einstellungen. Das Hauptfenster behält die Systemleiste.
+- **Hauptfenster** startet maximiert (nicht Vollbild). F11 = Vollbild: Kopfleiste und Menü bleiben, rechts kommt „Vollbild verlassen“ dazu, Hinweis 2 s. Esc verlässt Vollbild nur, wenn kein Fenster offen ist.
+- **Chips** (`woa-chip`) sind die einzige Größe für kleine Zustände: 26 px (im DJ-Kopf 28 px), Mono 12/700, Symbol 14 px, Varianten `is-ok`, `is-warn`, `is-cue`, `is-alt`, `is-busy`.
+- **Daumen** aus Phosphor (`thumbs-up`, `thumbs-down`), keine Emojis. Dafür/Geht = `ok`, Dagegen/Geht nicht = `warn` (Rot bleibt live).
+- **Fade** fest 3 s an allen Stellen; „blendet aus“ = `cue` mit Fortschritt.
+- **Einstellungen:** Bereiche links, großer Filter oben, Zeilen „Name + Erklärung | Bedienelement“. Der Filter findet jede Einstellung und springt hin.
+- **KI (ElevenLabs):** Schlüssel nur im Schlüsselbund; vor jedem Erzeugen Kostenkasten; Datenschutz-Hinweis ist immer sichtbar, sobald ElevenLabs gewählt ist.
+
+### Maße für egui
+
+| Baustein | Maß |
+|---|---|
+| Fensterkopf | 44 px, Innenabstand 0 6 0 14, Tasten 32 × 32 |
+| Suchfeld | 40 px, groß 48 px, Radius `radius-md` |
+| Frage/Prüfpunkt-Karte | Kante 4 px, Innenabstand 14 16, Vorschlag min. 44 px, Abstand 6 |
+| Geht / Geht nicht | 40 px, Symbol 20 px |
+| Einstellungszeile | min. 56 px, Spalten 1fr · auto, Navigation 248 px, Eintrag 38 px |
+| Spurkopf | 64 px fest, Instrument 24 px, MIDI-Eingang 104 × 24 |
+| ON AIR oben | 28 px, Rahmen 3 px, Schrift 14 |
+
+### Bewusste Abweichungen (übernommen)
+
+- **Klangkategorien statt Rollen:** übernommen. Die Rolle (Lead/Bass/Pad/Kit) bleibt intern für Akkord- und Jingle-Bau, sichtbar ist nur die Kategorie.
+- **Spuren immer 64 px:** übernommen. Mit offener Piano-Roll scrollt die Zeitleiste; das Dock ist in der Höhe ziehbar.
+- **Phosphor-Daumen statt Emoji:** übernommen.
+- **Eigene Fenster-Kopfzeile statt Systemleiste:** übernommen für lösbare Fenster. Das Hauptfenster behält die Systemleiste (Andocken, Fensterwechsel, Wayland).
+
 ## Logo
 
 - Fünf LED-Säulen, deren Oberkanten ein W zeichnen, darüber die rote ON-AIR-Lampe; in der Wortmarke ist das O selbst die Lampe. „WIR ON AIR“ steht darunter und läuft exakt von der linken Kante des W bis zur rechten Kante des A.

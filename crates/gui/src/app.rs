@@ -131,6 +131,8 @@ pub struct WoaApp {
     fx_search: String,
     /// Aufgeklappte Klangwahl (Design `SoundPicker`): Spur und gezeigte Rolle.
     sound_pick: Option<(TrackId, woa_model::SoundCategory)>,
+    /// Suche in der Klangauswahl (SoundPicker Fassung 7).
+    sound_search: String,
     /// Raster für „Quantisieren“ im Clip-Inspektor (Teiler: 4 = 1/4 … 32 = 1/32).
     quantize_div: u32,
     /// Stereo-Panorama beim Ziehen (wird beim Loslassen als ein Undo-Schritt übernommen).
@@ -250,6 +252,8 @@ pub struct WoaApp {
     /// Misst langsame Frames und Hänger für die Telemetrie (nur Dauer).
     frame_watch: woa_telemetry::FrameWatch,
     protokoll: crate::protokoll::ProtokollWindow,
+    /// Fenster Einstellungen (Fassung 7: Bereiche, Filter).
+    settings: crate::settings::SettingsWindow,
     /// Entwickler-Modus: Freischalt-Fenster und „Fragen und To-dos“.
     entwickler_tor: crate::fragen::EntwicklerTor,
     fragen: crate::fragen::FragenWindow,
@@ -567,6 +571,7 @@ impl WoaApp {
             about_open: false,
             frame_watch: woa_telemetry::FrameWatch::new(),
             protokoll: Default::default(),
+            settings: Default::default(),
             entwickler_tor: Default::default(),
             fragen: Default::default(),
             abnahme: Default::default(),
@@ -608,6 +613,7 @@ impl WoaApp {
             fx_open: std::collections::HashSet::new(),
             fx_search: String::new(),
             sound_pick: None,
+            sound_search: String::new(),
             quantize_div: 16,
             pan_drag: None,
             tempo_drag: None,
@@ -1922,7 +1928,7 @@ impl WoaApp {
                     ui.allocate_exact_size(egui::vec2(140.0, 14.0), egui::Sense::hover());
                 level_bar(ui.painter(), rect, self.level);
                 if self.rec_clipped {
-                    theme::status_pill(ui, "ÜBERSTEUERT", theme::on_air(), true);
+                    theme::status_pill(ui, "ÜBERSTEUERT", theme::warn(), true);
                 }
             }
 
@@ -2474,6 +2480,24 @@ impl WoaApp {
             // Fotomodus des Cue-Editors: erster Titel der Playlist.
             r.open_cue_editor(0);
         }
+        if first && let Ok(q) = std::env::var("WOA_SETTINGS") {
+            // Fotomodus „Einstellungen“ (Fassung 7); der Wert ist der Filtertext.
+            self.settings.open = true;
+            self.settings.query = q;
+        }
+        if n == 4 && std::env::var_os("WOA_SOUNDPICKER").is_some() {
+            // Fotomodus Klangauswahl: erste MIDI-Spur (mit WOA_DEMO_SONG), nur Anzeige.
+            let id = self
+                .state
+                .project()
+                .tracks
+                .iter()
+                .find(|t| t.kind == woa_model::TrackKind::Midi)
+                .map(|t| t.id);
+            if let Some(id) = id {
+                self.open_sound_picker(id);
+            }
+        }
         if n == 4 && std::env::var_os("WOA_DJ_LOAD").is_some() {
             // Fotomodus DJ (#347): Playlist-Titel 1 und 2 auf Deck A und B legen (nicht abspielen).
             self.ensure_radio();
@@ -2734,13 +2758,15 @@ impl WoaApp {
         let photo_live = self.photo.is_some() && std::env::var_os("WOA_ONAIR").is_some();
         let live = photo_live || self.radio.as_ref().is_some_and(RadioDesk::is_live);
         // #353: Auf Sendung leuchtet ON AIR wie die Lampe im Sendepult (rot, weiß, Glow).
-        let look = if live {
-            ChipLook::Live
-        } else {
-            ChipLook::Off(theme::on_air())
+        // Fassung 7: Lampe `woa-onair--bar` statt Pille; gedimmt im Pult-Modus (#301).
+        let _ = compact;
+        let state = crate::widgets::lamp::onair_state(live, self.config.pult.on);
+        let word = match state {
+            crate::widgets::lamp::LampState::Off => "ON AIR aus",
+            crate::widgets::lamp::LampState::On => "ON AIR an",
+            crate::widgets::lamp::LampState::Dim => "ON AIR an (Pult)",
         };
-        let word = if live { "ON AIR an" } else { "ON AIR aus" };
-        let resp = topbar_chip(ui, theme::ic::BROADCAST, "ON AIR", look, compact, true);
+        let resp = crate::widgets::lamp::onair_bar(ui, state);
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, word));
         // Klick öffnet die Stream-Verbindung (wie Einstellungen → Sendung).
         if resp
@@ -2854,6 +2880,15 @@ impl WoaApp {
         });
         self.photo_menu(ui, "Ansicht", &r.response);
         let r = ui.menu_button("Einstellungen", |ui| {
+            if ui
+                .button(format!("{} Alle Einstellungen (Strg+,)", theme::ic::GEAR_SIX))
+                .on_hover_text("Fenster mit Bereichen und Filter, der jede Einstellung findet")
+                .clicked()
+            {
+                self.settings.open = true;
+                ui.close();
+            }
+            ui.separator();
             ui.label(
                 egui::RichText::new("Audio")
                     .small()
@@ -3949,31 +3984,48 @@ impl WoaApp {
         }
     }
 
-    /// Eingang einer MIDI-Spur: das MIDI-Gerät (Klaviatur-Symbol), Auswahl wie im Menü
-    /// Einstellungen › MIDI-Eingang.
     /// Spurkopf einer MIDI-Spur: links das Instrument (Klick öffnet die Klangauswahl im Rack),
     /// rechts der MIDI-Eingang (André 02.11.2026: Klangwahl sichtbar).
     fn midi_head_source(&mut self, ui: &mut egui::Ui, id: TrackId, width: f32) {
+        use crate::widgets::track_head::{
+            MidiInLook, instrument_button, midi_in_button, midi_in_width,
+        };
+        use woa_io::midi::MidiStatus;
         let gap = ui.spacing().item_spacing.x;
-        let chip_w = ((width - gap) * 0.55).floor().max(24.0);
+        let midi_w = midi_in_width(width, gap);
+        let inst_w = (width - gap - midi_w).max(24.0);
         let sound = self.state.project().track(id).and_then(|t| t.sound);
         let name = woa_model::sound_name(sound);
-        let r = ui
-            .add_sized(
-                [chip_w, 21.0],
-                egui::Button::new(
-                    egui::RichText::new(format!("{} {name}", theme::ic::MUSIC_NOTE))
-                        .small()
-                        .color(theme::text()),
-                )
-                .truncate(),
-            )
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_hover_text(format!("Instrument: {name} · Klick: Klang wählen"));
-        if r.clicked() {
+        let index = self
+            .state
+            .project()
+            .tracks
+            .iter()
+            .position(|t| t.id == id)
+            .unwrap_or(0);
+        let icon = sound
+            .and_then(woa_model::sound_category)
+            .map_or(theme::ic::MUSIC_NOTE, |c| category_label(c).1);
+        // Fassung 7: Instrument-Knopf links (Symbol der Kategorie in Spurfarbe, Name, Pfeil).
+        if instrument_button(ui, icon, &name, theme::track_color(index), inst_w).clicked() {
             self.open_sound_picker(id);
         }
-        self.midi_input_combo(ui, id, (width - chip_w - gap).max(24.0));
+        // MIDI-Eingang rechts, 104 px: leuchtet bei Noten auf der spielenden Spur,
+        // gestrichelt ohne Gerät.
+        let status = self.midi.status();
+        let lit = self
+            .midi_seen
+            .1
+            .is_some_and(|t| t.elapsed().as_millis() < 150)
+            && self.live_midi_track() == Some(id);
+        let look = match &status {
+            MidiStatus::Connected(_) if lit => MidiInLook::Notes,
+            MidiStatus::Connected(_) => MidiInLook::Connected,
+            _ => MidiInLook::NoDevice,
+        };
+        let r = midi_in_button(ui, midi_w, &midi_input_label(&status), look)
+            .on_hover_text("MIDI-Eingang: spielt die scharf geschaltete MIDI-Spur");
+        egui::Popup::menu(&r).show(|ui| self.midi_choices(ui));
     }
 
     /// Wählt die Spur und klappt im Rack die Klangauswahl in der Kategorie ihres Klangs auf.
@@ -6140,6 +6192,68 @@ impl WoaApp {
         self.config_path = Some(path);
     }
 
+    /// Bedienelement einer Zeile im Fenster Einstellungen: dieselbe Wirkung wie im Menü.
+    fn setting_row(&mut self, ui: &mut egui::Ui, id: crate::settings::SettingId) {
+        use crate::settings::SettingId as S;
+        let open = |ui: &mut egui::Ui| ui.button("Öffnen").clicked();
+        match id {
+            // Menülisten als Aufklapper: sonst sprengen sie die Zeile (Foto 0.41.0).
+            S::Pfl => {
+                ui.menu_button(format!("Wählen {}", theme::ic::CARET_DOWN), |ui| {
+                    self.pfl_menu(ui)
+                });
+            }
+            S::MidiInput => {
+                ui.menu_button(format!("Wählen {}", theme::ic::CARET_DOWN), |ui| {
+                    self.midi_menu(ui)
+                });
+            }
+            S::Telemetry => {
+                let mut on = self.config.telemetry_enabled == Some(true);
+                if ui
+                    .checkbox(&mut on, "")
+                    .on_hover_text(TELEMETRY_HINT)
+                    .changed()
+                {
+                    self.set_telemetry(on);
+                }
+            }
+            S::ReconnectOutput => {
+                if ui.button("Neu verbinden").clicked() {
+                    if let Some(p) = self.player.as_mut() {
+                        p.reconnect_output();
+                    }
+                    if let Some(r) = self.radio.as_mut() {
+                        r.reconnect_outputs();
+                    }
+                }
+            }
+            S::Outputs if open(ui) => self
+                .outputs_ui
+                .open(&self.config.outputs, &self.config.pult),
+            S::Ki if open(ui) => self.ki_ui.open(&self.config.ki, &self.data_dir),
+            S::Stream if open(ui) => self.stream_ui.open(&self.config.stream, &self.data_dir),
+            S::Folders if open(ui) => self.ordner_ui.open = true,
+            S::Phone if open(ui) => self.phone_ui.open(&self.config.phone),
+            S::Controls if open(ui) => self.controls.window = true,
+            S::Developer if open(ui) => self.entwickler_tor.open = true,
+            S::Assistant if open(ui) => {
+                let project = self
+                    .state
+                    .session()
+                    .path()
+                    .map(std::path::Path::to_path_buf);
+                if self.config.mode == Mode::Produzent {
+                    self.studio_dock = StudioDockTab::Chat;
+                } else {
+                    self.chat_ui
+                        .open(&self.config.ki, &self.data_dir, project.as_deref());
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn set_telemetry(&mut self, on: bool) {
         self.config.telemetry_enabled = Some(on);
         if let Some(p) = &self.config_path
@@ -6850,6 +6964,12 @@ impl eframe::App for WoaApp {
         self.now = ctx.input(|i| i.time);
         self.protokoll
             .show(&ctx, &crate::protokoll::log_dir(&self.data_dir));
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Comma)) {
+            self.settings.open = !self.settings.open;
+        }
+        let mut settings = std::mem::take(&mut self.settings);
+        settings.show(&ctx, |ui, id| self.setting_row(ui, id));
+        self.settings = settings;
         // Die Schriften gelten erst ab dem nächsten Durchlauf (sonst fehlen die Familien
         // `label` und `seg`): beim allerersten Bild nur setzen und neu zeichnen lassen.
         if theme::install_fonts(&ctx) {
@@ -8013,7 +8133,7 @@ impl WoaApp {
     /// aufgeklappt Rollen Lead · Bass · Pad · Kit, je Rolle vier Klänge, darunter Klangbank und
     /// eingebauter Synth. Ein CLAP-Instrument ersetzt den Klang; dann steht hier nur sein Name.
     fn instrument_section(&mut self, ui: &mut egui::Ui, id: TrackId, color: egui::Color32) {
-        use woa_model::{PluginRole, SOUND_PRESETS, SoundCategory, TrackSound};
+        use woa_model::{PluginRole, SoundCategory, TrackSound};
         let Some(track) = self.state.project().track(id) else {
             return;
         };
@@ -8129,21 +8249,32 @@ impl WoaApp {
                 }
             });
         }
-        // Die Klänge der Kategorie als Kacheln, zwei je Zeile.
-        let presets: Vec<_> = SOUND_PRESETS
-            .iter()
-            .filter(|p| p.category == shown)
-            .collect();
+        // Suche (Fassung 7): findet Klänge über alle Kategorien.
+        ui.add(
+            egui::TextEdit::singleline(&mut self.sound_search)
+                .hint_text(format!("{} Klang suchen", theme::ic::MAGNIFYING_GLASS))
+                .desired_width(f32::INFINITY),
+        );
+        let presets = sound_matches(&self.sound_search, shown);
+        let mut preview = None;
         for pair in presets.chunks(2) {
             ui.horizontal(|ui| {
                 let w = ((ui.available_width() - gap) / 2.0).floor();
                 for p in pair {
                     let same = current
                         .is_some_and(|c| c.program == p.sound.program && c.drums == p.sound.drums);
+                    let r = ui.add_sized(
+                        [w - 26.0 - gap, 30.0],
+                        egui::Button::selectable(same, p.name).truncate(),
+                    );
                     if ui
-                        .add_sized([w, 30.0], egui::Button::selectable(same, p.name))
+                        .add_sized([26.0, 30.0], egui::Button::new(theme::ic::PLAY))
+                        .on_hover_text("Vorhören, ohne zu wählen")
                         .clicked()
                     {
+                        preview = Some(p.sound);
+                    }
+                    if r.clicked() {
                         // Die Bank bleibt, solange sie zum Klang passt (Paket J7).
                         let keep = bank.filter(|b| p.sound.drums || !b.drums_only());
                         chosen = Some(Some(TrackSound {
@@ -8213,6 +8344,19 @@ impl WoaApp {
             .clicked()
         {
             chosen = Some(None);
+        }
+        if presets.is_empty() {
+            ui.weak("Kein Klang gefunden");
+        }
+        if let Some(p) = preview {
+            // Vorhören: der Spurklang bleibt, nur ein kurzer Probeton.
+            self.state.probeton.tap(
+                id,
+                &[crate::probeton::pitch_for(Some(p))],
+                100,
+                std::time::Instant::now(),
+                std::time::Duration::ZERO,
+            );
         }
         if let Some(sound) = chosen {
             if let Some(b) = sound.and_then(|s| s.bank) {
@@ -9432,6 +9576,25 @@ fn midi_input_label(status: &woa_io::midi::MidiStatus) -> String {
     }
 }
 
+/// Klänge im `SoundPicker`: leere Suche = die Kategorie, sonst Treffer über alle Kategorien
+/// (Name oder Kategoriename, ohne Groß/Klein).
+fn sound_matches(
+    query: &str,
+    shown: woa_model::SoundCategory,
+) -> Vec<&'static woa_model::SoundPreset> {
+    let q = query.trim().to_lowercase();
+    woa_model::SOUND_PRESETS
+        .iter()
+        .filter(|p| {
+            if q.is_empty() {
+                p.category == shown
+            } else {
+                p.name.to_lowercase().contains(&q) || p.category.name().to_lowercase().contains(&q)
+            }
+        })
+        .collect()
+}
+
 /// Kategoriename und Symbol im `SoundPicker`.
 fn category_label(c: woa_model::SoundCategory) -> (&'static str, &'static str) {
     use woa_model::SoundCategory as C;
@@ -9998,5 +10161,25 @@ mod nacharbeit_tests {
         let dev = x(&rig, "Entwickler").expect("Entwickler fehlt nach Freischaltung");
         let help = x(&rig, "Hilfe").expect("Hilfe");
         assert!(dev < help, "Entwickler steht nicht vor Hilfe");
+    }
+}
+
+#[cfg(test)]
+mod sound_search_tests {
+    use super::sound_matches;
+    use woa_model::SoundCategory;
+
+    #[test]
+    fn empty_search_shows_the_category_and_text_searches_all() {
+        let k = sound_matches("", SoundCategory::Bass);
+        assert!(!k.is_empty());
+        assert!(k.iter().all(|p| p.category == SoundCategory::Bass));
+        let first = woa_model::SOUND_PRESETS[0];
+        let hit = sound_matches(&first.name.to_uppercase(), SoundCategory::Drums);
+        assert!(
+            hit.iter().any(|p| p.name == first.name),
+            "über Kategorien, ohne Groß/Klein"
+        );
+        assert!(sound_matches("zzzz-nichts", SoundCategory::Bass).is_empty());
     }
 }

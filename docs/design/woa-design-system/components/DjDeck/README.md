@@ -25,3 +25,8 @@ DJ-Deck in der Party-Ansicht „DJ“: alles, was zum Mixen von Hand nötig ist,
 **Spiegelung:** Deck A hat den Plattenteller links und das Tempo rechts, Deck B gespiegelt – wie an einem DJ-Controller.
 
 **Deckfarben:** A = `accent` (Magenta), B = `track-1` (Blau). Gleiche Farbe in Wellen, Mixer-Kanal und Kartenkante.
+
+
+## Fassung 7
+
+Kopf nach `DjHead`: Chips einheitlich 28 px, BPM und Restzeit als LCD in derselben Höhe.

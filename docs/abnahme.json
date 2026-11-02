@@ -317,6 +317,94 @@
       "erwartet": "ON AIR leuchtet rot mit weißer Schrift und Schein wie die Lampe im Sendepult; aus Sendung wieder ein ruhiger Eintrag wie MIDI und REC.",
       "version": "0.40.2",
       "ticket": 353
+    },
+    {
+      "id": "f7-fensterkopf",
+      "ansicht": "Allgemein",
+      "titel": "Fensterkopf 44 px",
+      "tun": "Fragen und To-dos, Abnahme, Einstellungen oder Piano-Roll öffnen; auf den Kopf doppelklicken, dann Esc drücken.",
+      "erwartet": "Doppelklick maximiert bzw. stellt wieder her, Esc schließt das Fenster. Lage und Größe bleiben beim nächsten Öffnen.",
+      "version": "0.41.0"
+    },
+    {
+      "id": "f7-chip",
+      "ansicht": "Allgemein",
+      "titel": "Zustands-Chips einheitlich",
+      "tun": "Party DJ, Radio und Produzent ansehen.",
+      "erwartet": "Alle kleinen Zustände sind gleiche Chips (26 px, im DJ-Kopf 28 px); rot sind nur ON AIR, Mikro und REC.",
+      "version": "0.41.0"
+    },
+    {
+      "id": "f7-fragen-filter",
+      "ansicht": "Einstellungen",
+      "titel": "Fragen: Filter und Senden",
+      "tun": "Entwickler-Modus, Fragen und To-dos öffnen, Filter Offen/Gesendet/Alle umschalten, bei einem Vorschlag „Dafür“ und Senden.",
+      "erwartet": "Senden ist erst nach einer Wahl aktiv; nach dem Senden leuchtet der Rahmen 1,5 s grün; bei einem Fehler steht „Erneut senden“ da.",
+      "version": "0.41.0"
+    },
+    {
+      "id": "f7-abnahme-tasten",
+      "ansicht": "Einstellungen",
+      "titel": "Abnahme: G und N",
+      "tun": "Abnahme öffnen, ohne in ein Feld zu klicken G drücken.",
+      "erwartet": "Der oberste offene Punkt geht sofort als „Geht“ hinaus, der Zähler oben zählt hoch, der Balken wächst; Tun und Soll stehen nebeneinander.",
+      "version": "0.41.0"
+    },
+    {
+      "id": "f7-onair-lampe",
+      "ansicht": "Radio",
+      "titel": "ON AIR als Lampe",
+      "tun": "Radio, auf Sendung gehen; dann Pult-Modus einschalten.",
+      "erwartet": "Oben rechts leuchtet die Lampe ON AIR wie im Sende-Deck; im Pult-Modus gedimmt; aus: dunkles Rotglas.",
+      "version": "0.41.0"
+    },
+    {
+      "id": "f7-dj-kopf",
+      "ansicht": "Party DJ",
+      "titel": "DJ-Kopf und Übergang",
+      "tun": "Party DJ, einen neuen Titel auf Deck A laden.",
+      "erwartet": "Chips 28 px auf einer Linie; während der Messung „Analyse“ mit Kreisel; „Weiter · Übergang“ steht unter dem Crossfader neben weich|hart.",
+      "version": "0.41.0"
+    },
+    {
+      "id": "f7-fade",
+      "ansicht": "Radio",
+      "titel": "Fade 3 s",
+      "tun": "Einen Titel spielen und im Sende-Deck „Fade“ drücken; dann je Deck A–C und an einem Cart.",
+      "erwartet": "Blendet in 3 s aus und stoppt; die Taste füllt sich und zeigt die Restzeit; zweiter Druck stoppt sofort.",
+      "version": "0.41.0"
+    },
+    {
+      "id": "f7-spurkopf",
+      "ansicht": "Produzent",
+      "titel": "Spurkopf MIDI",
+      "tun": "MIDI-Spur ansehen, Keyboard spielen.",
+      "erwartet": "Links Instrument-Knopf (öffnet die Klangauswahl), rechts MIDI-Eingang, der bei Noten aufleuchtet; die Spur bleibt 64 px hoch.",
+      "version": "0.41.0"
+    },
+    {
+      "id": "f7-klangsuche",
+      "ansicht": "Produzent",
+      "titel": "Klang suchen und vorhören",
+      "tun": "Im Rack „Klang suchen“ „trom“ tippen, bei Trompete auf Vorhören.",
+      "erwartet": "Trompete erscheint über alle Kategorien; Vorhören spielt einen kurzen Ton, ohne den Klang zu wechseln.",
+      "version": "0.41.0"
+    },
+    {
+      "id": "f7-einstellungen",
+      "ansicht": "Einstellungen",
+      "titel": "Einstellungen mit Filter",
+      "tun": "Strg+, drücken, „midi“ tippen, Enter.",
+      "erwartet": "Links Bereiche mit Trefferzahl, rechts die Treffer; Enter springt zum ersten und markiert ihn 2 s.",
+      "version": "0.41.0"
+    },
+    {
+      "id": "f7-ki",
+      "ansicht": "Einstellungen",
+      "titel": "KI-Schlüssel und Stimme",
+      "tun": "Einstellungen › KI ansehen; Jingle-Assistent, Schritt Stimme mit ElevenLabs.",
+      "erwartet": "Zustandschip des Schlüssels, Entfernen fragt nach, Datenschutz-Hinweis immer sichtbar; Stimme: Ähnlichkeit-Regler, Fehler mit „Erneut“.",
+      "version": "0.41.0"
     }
   ]
 }

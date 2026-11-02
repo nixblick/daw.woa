@@ -378,10 +378,11 @@ mod tests {
     #[test]
     fn decks_a_to_c_are_in_the_learn_list() {
         let t = deck_targets();
-        assert_eq!(t.len(), 9);
+        assert_eq!(t.len(), 12);
         let labels: std::collections::HashSet<_> = t.iter().map(Target::label).collect();
-        assert_eq!(labels.len(), 9);
+        assert_eq!(labels.len(), 12);
         assert!(labels.contains("Deck C Vorhören"));
+        assert!(labels.contains("Deck B Fade"), "Fade je Deck lernbar");
     }
 
     #[test]
