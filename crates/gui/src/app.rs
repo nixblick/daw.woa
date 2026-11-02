@@ -6362,6 +6362,21 @@ impl WoaApp {
                             .size(34.0)
                             .color(theme::ok()),
                     );
+                    ui.add_space(6.0);
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new("Schön, dass du dich meldest!")
+                                .size(22.0)
+                                .strong()
+                                .color(theme::text()),
+                        );
+                        ui.label(
+                            egui::RichText::new(
+                                "Jede Rückmeldung landet direkt bei uns und macht WOA besser.",
+                            )
+                            .color(theme::text_dim()),
+                        );
+                    });
                     // Schließen-X oben rechts (André 02.11.2026).
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                         let r = ui
@@ -6377,21 +6392,6 @@ impl WoaApp {
                         if r.clicked() {
                             close = true;
                         }
-                    });
-                    ui.add_space(6.0);
-                    ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new("Schön, dass du dich meldest!")
-                                .size(22.0)
-                                .strong()
-                                .color(theme::text()),
-                        );
-                        ui.label(
-                            egui::RichText::new(
-                                "Jede Rückmeldung landet direkt bei uns und macht WOA besser.",
-                            )
-                            .color(theme::text_dim()),
-                        );
                     });
                 });
                 ui.add_space(14.0);
