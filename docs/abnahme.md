@@ -1322,7 +1322,7 @@ Selbst geprüft von Claude: Tests ohne Ton für Constant Power, die Glättung de
 
 Selbst geprüft von Claude: Test im egui-Harness (Klick auf den rechten Rand wählt aus, Rechtsklick in der Mitte öffnet das Menü, die Nummer behält ihren Klick) und Messung mit 300 Zeilen (etwa 15 ms je Bild mit Klickfläche, 13 ms ohne, Debug-Bau). Clippy und Tests von `woa-gui` grün. Nicht am Gerät geklickt.
 
-## Design-Runde 3: Radio (0.35.16, offen)
+## Design-Runde 3: Radio (0.35.17, offen)
 
 1. Radio-Modus bei 1920×1030: Alles bis zur Wunschtitel-Zeile ist ohne Scrollen zu sehen.
 2. Einen Fehler auslösen (etwa Ausgabe nicht verfügbar): Das Banner ist eine Zeile mit Symbol, „Details“ klappt den vollen Text auf, der Tooltip zeigt ihn auch.

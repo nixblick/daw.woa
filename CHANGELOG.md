@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.35.16 — 2026-11-02
+## 0.35.17 — 2026-11-02
 
 - **Design-Runde 3: Radio (ScreenRadio, RadioDecks, RadioLevels):** Fehlerbanner als eine Zeile mit Symbol, voller Text im Tooltip und hinter „Details“. Die Tasten „Deck A/B/C“ in der Sendereihe entfallen; Ablösen der Playlist mit Blende oder hart steht jetzt im Rechtsklick-Menü des Decks. −10/+10 als Symboltasten. Rot nur noch für live: „Auf Sendung“ in Ruhe neutral, Auto-Weiter als LED-Taste, „+ Titel“ neutral, Cart-Sätze 1–5 als Segmentschalter. ON-AIR-Lampe links in der Stream-Zeile. Decks: Restzeit-LCD 132 px in 7-Segment mit Geistern „88:88“ und Fortschrittsbalken, Start/Stopp mit Text, Cue, Vorhören und „Zurück zur Playlist“ als Symboltasten mit Tooltip, „Leeren“ rot. Pegel wie der Kanalzug im Produzenten: LED-Kette sichtbar, Namensschild unten, dB-Wert nur im Tooltip (Soll-Bild), Kopf „Quellen · Master · Ausgänge“, breiteres Master-Meter. Processing als Zeilen „Bezeichnung · Zahlenfeld/Schalter“ statt Slider und Häkchen, Messzeile als LCD in `lcd-ink`. Bei 1920×1030 passt alles samt Wunschtitel ohne Scrollen. Tests: `design3_tests` in `crates/gui/src/radio.rs` (sieben, vorher rot); angepasst: `back_to_playlist_toggle_is_there_and_clicks` sucht „Zurück zur Playlist Deck A“, `deck_buttons_take_over_with_fade_or_hard_and_empty_is_off` entfällt (ersetzt durch `deck_take_over_menu_offers_fade_and_hard`).
+
+## 0.35.16 — 2026-11-02
+
+- **Design-Runde 3: Auftrag und Ist/Soll abgelegt:** `docs/auftrag-design.md`, `docs/auftrag-nachbesserung.md` (Prüfung vom 01.11.) und `docs/auftrag-runde-3.md` sind der Maßstab für Runde 3, zusammen mit dem Designsystem Fassung 4 (inhaltlich gleich mit `docs/design/woa-design-system/`, geprüft). `docs/design/soll/` enthält die Zielbilder Produzent, Piano-Roll, Radio und Party, `docs/design/ist/` die Ist-Bilder von 0.35.12/0.35.13. Bildschirmfotos mit privaten Inhalten (Benutzerpfad, Titelliste) liegen nur lokal unter `docs/intern/`.
 
 ## 0.35.15 — 2026-11-02
 
