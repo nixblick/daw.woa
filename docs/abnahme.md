@@ -4,6 +4,15 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design-Runde 3, Zusatz: Deck-Tasten, Ausgangspegel, Trim (0.35.22, offen)
+
+1. Radio: Titel auf Deck B ziehen, Taste B drücken: Deck B startet; nochmal B: stoppt. In der Playlist-Suche B tippen: kein Deck startet.
+2. Kopf der Decks zeigt „Tasten A–C starten“, Tooltip der Start-Taste nennt die Taste.
+3. Pegelkarte: neben Notebook und Stream je eine LED-Kette; Notebook-Fader runter, die Kette sinkt mit; Stream leuchtet nur mit laufendem Encoder.
+4. Produzent: Spur scharf, Trim −12 dB, aufnehmen: Pegelanzeige und Mithören leiser; abspielen klingt wie beim Mithören.
+
+Selbst geprüft von Claude: Tests in `woa-radio`, `woa-engine`, `woa-gui` (Radio), Clippy, Screenshots dunkel/hell bei 1920×1030 und 1366×768. Kein Ton abgespielt, nicht unter Windows gesehen.
+
 ## Design-Runde 3: Nacharbeit Produzent (0.35.21, offen)
 
 1. WOA starten: das Fenster öffnet im Vollbild. F11 schaltet es aus und wieder ein (Produzent und Radio); in der Party zeigt die Vollbild-Taste den echten Zustand.

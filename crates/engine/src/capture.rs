@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 use pulseaudio::protocol::{self, Command, Prop};
 
+use crate::input_trim::{TrimCell, scale_f32le};
 use crate::live_peaks::{LivePeaks, live_peaks};
 use crate::record::RecordStats;
 
@@ -340,9 +341,16 @@ pub struct CaptureRecorder {
     path: PathBuf,
     started: Instant,
     peaks: LivePeaks,
+    trim: TrimCell,
 }
 
 impl CaptureRecorder {
+    /// Eingangs-Trim der Spur in dB: wirkt auf Aufnahme-Pegel und Mithören, nicht auf die
+    /// Datei (die bleibt roh, der Trim wirkt beim Abspielen).
+    pub fn set_trim_db(&self, db: f64) {
+        self.trim.set_db(db);
+    }
+
     /// Hängt die seit dem letzten Aufruf fertigen Wellenform-Punkte an (je
     /// [`crate::clip::PEAK_BLOCK`] Frames bei [`RATE`]).
     pub fn drain_peaks(&mut self, out: &mut Vec<f32>) {
@@ -445,10 +453,13 @@ pub fn start_capture(
     let (mut sock, version) = conn;
     let channel = reply.channel;
     let (mut collector, peaks) = live_peaks(CHANNELS);
+    let trim = TrimCell::default();
+    let trim_reader = trim.clone();
     let reader = std::thread::Builder::new()
         .name("woa-capture".into())
         .spawn(move || -> Result<(), String> {
             let mut buf = Vec::new();
+            let mut scaled = Vec::new();
             let mut last_flush = Instant::now();
             // Endet, wenn stop() den Socket schließt.
             while let Ok(desc) = protocol::read_descriptor(&mut sock) {
@@ -475,12 +486,19 @@ pub fn start_capture(
                     wav.write_sample(s).map_err(|e| e.to_string())?;
                     n += 1;
                 }
-                store_max(&m.level, peak);
+                // Anzeige und Mithören nach dem Trim, Datei und Spitze roh.
+                let gain = trim_reader.gain();
+                store_max(&m.level, peak * gain);
                 store_max(&m.peak, peak);
                 m.frames
                     .fetch_add(n / u64::from(CHANNELS), Ordering::Release);
                 if let Some(mon) = monitor.as_mut() {
-                    mon.send(&buf);
+                    if gain == 1.0 {
+                        mon.send(&buf);
+                    } else {
+                        scale_f32le(&buf, gain, &mut scaled);
+                        mon.send(&scaled);
+                    }
                 }
                 if last_flush.elapsed() >= FLUSH_EVERY {
                     wav.flush().map_err(|e| e.to_string())?;
@@ -498,6 +516,7 @@ pub fn start_capture(
         path: path.to_path_buf(),
         started: Instant::now(),
         peaks,
+        trim,
     })
 }
 

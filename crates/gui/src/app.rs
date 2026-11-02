@@ -1457,6 +1457,10 @@ impl WoaApp {
                 .and_then(|path| Take::start(&key, &path, monitor));
             match started {
                 Ok(take) => {
+                    let trim = track
+                        .and_then(|t| self.state.project().track(t))
+                        .map_or(0.0, |t| t.trim_db);
+                    take.set_trim_db(trim);
                     tracing::info!(path = %take.path().display(), source = %key, "take started");
                     self.takes.push((track, take));
                 }
@@ -1985,6 +1989,11 @@ impl WoaApp {
             if self.recording() {
                 let mut fresh = 0.0f32;
                 for (track, take) in &self.takes {
+                    // Trim der Spur, auch wenn er sich während der Aufnahme ändert.
+                    let trim = track
+                        .and_then(|t| self.state.project().track(t))
+                        .map_or(0.0, |t| t.trim_db);
+                    take.set_trim_db(trim);
                     let l = take.take_level();
                     fresh = fresh.max(l);
                     if let Some(t) = track {
