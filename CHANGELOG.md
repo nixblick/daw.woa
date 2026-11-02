@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.35.16 — 2026-11-02
+## 0.35.17 — 2026-11-02
 
 - **Design-Runde 3: Piano-Roll, Drum-Raster, Jingle-Assistent und Probeton (PianoRoll, ScreenPianoRoll, DrumGrid, JingleWizard, SoundPicker; Refs #246, #261):** Piano-Roll neu: Leiste in einer Zeile mit Clip-Kennung (Spurfarbe, Name, Spur, Takte, Notenzahl, Auswahl), Werkzeugen Zeichnen · Auswählen · Löschen (D/V/E), Raster mit Triolen „3“, Länge neuer Noten, Quantisieren (Q), Velocity-Feld, Tonart mit Magnet (rastet auf Töne der Tonart ein), „Nur benutzte Töne“, Probeton beim Zeichnen und Zoom −/+. Die Anleitungszeile und die Überschrift „Drum-Raster“ entfallen, die Hilfe steht in den Tooltips. Echte Klaviatur (schwarze Tasten kurz, C je Oktave beschriftet, gespielte und gewählte Töne in Spurfarbe), Tonart-Zeilen 8 % Spurfarbe, Clip-Bereich als Balken im Lineal, außerhalb schraffiert, Abspielkopf in `accent`, Velocity-Spur mit Stiel, Kopf und gestrichelter Mitte. Zeilenhöhe jetzt per Alt+Mausrad statt Schieber. Solange die Piano-Roll offen ist, sind die Spuren 36 px hoch. Drum-Raster nur auf Kit-Spuren (Umschalter Noten | Raster): Kick oben, 16tel in Vierergruppen mit Zählzeiten, Zeilen mit Farbkante, Name und Vorhören, Muster aus dem Beat-Katalog, Länge in Takten, Dichte, Würfel, Lauflicht beim Abspielen; Klick laut (nochmal aus), Umschalt+Klick leise, Rechtsklick löschen. Jingle-Assistent mit Schrittleiste (Haken, aktueller Schritt in Akzent), Stimmungskarten mit Symbol, Länge als Segmentschalter, Zusammenfassung in Mono und Weiter in Akzent. Probeton: Note an/aus als Kommando auf eine Spur (`probeton.rs`), ohne Ton testbar; erklingt beim Wählen eines Klangs in der Instrument-Kachel, über „Vorhören“ je Akkordfolge im Browser, je Drum-Zeile, auf der Klaviatur und beim Zeichnen. Tests: `probeton::tests` (fünf), `pianoroll::tests` (fünf neue), `akkorde::tests::chord_row_preview_sends_note_on_to_a_midi_track`, `drums::set_step_sets_loud_soft_and_clears`; die Jingle-Tests laden jetzt die Schriften.
+
+## 0.35.16 — 2026-11-02
+
+- **Design-Runde 3: Auftrag und Ist/Soll abgelegt:** `docs/auftrag-design.md`, `docs/auftrag-nachbesserung.md` (Prüfung vom 01.11.) und `docs/auftrag-runde-3.md` sind der Maßstab für Runde 3, zusammen mit dem Designsystem Fassung 4 (inhaltlich gleich mit `docs/design/woa-design-system/`, geprüft). `docs/design/soll/` enthält die Zielbilder Produzent, Piano-Roll, Radio und Party, `docs/design/ist/` die Ist-Bilder von 0.35.12/0.35.13. Bildschirmfotos mit privaten Inhalten (Benutzerpfad, Titelliste) liegen nur lokal unter `docs/intern/`.
 
 ## 0.35.15 — 2026-11-02
 

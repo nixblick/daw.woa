@@ -1322,7 +1322,7 @@ Selbst geprüft von Claude: Tests ohne Ton für Constant Power, die Glättung de
 
 Selbst geprüft von Claude: Test im egui-Harness (Klick auf den rechten Rand wählt aus, Rechtsklick in der Mitte öffnet das Menü, die Nummer behält ihren Klick) und Messung mit 300 Zeilen (etwa 15 ms je Bild mit Klickfläche, 13 ms ohne, Debug-Bau). Clippy und Tests von `woa-gui` grün. Nicht am Gerät geklickt.
 
-## Piano-Roll, Drum-Raster, Jingle-Assistent, Probeton (0.35.16, offen)
+## Piano-Roll, Drum-Raster, Jingle-Assistent, Probeton (0.35.17, offen)
 
 1. Produzent, Akkordfolge einfügen, einen Akkord-Clip doppelklicken: Die Piano-Roll zeigt oben eine Zeile mit Clip-Kennung, Werkzeugen, Raster, „3“, Länge, Quantisieren, Velocity, Tonart, Magnet, „Nur benutzte Töne“, Lautsprecher und Zoom. Keine Anleitungszeile, keine Überschrift „Drum-Raster“. Die Spuren oben sind niedriger (36 px).
 2. Noten sind in der Spurfarbe, laute heller. Tonart-Zeilen leicht getönt, rechts vom Clip schraffiert. E drücken und eine Note anklicken: weg. D drücken und ins Leere klicken: neue Note, kurzer Probeton.
