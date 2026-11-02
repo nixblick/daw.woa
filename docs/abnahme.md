@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Design-Runde 3: Studio (0.35.17, offen)
+## Design-Runde 3: Studio (0.35.18, offen)
 
 1. Audio-Spur wählen, im Rack „Trim“ auf +6 dB ziehen: Fader bleibt, Pegel steigt; Strg+Z nimmt es zurück, Doppelklick = 0 dB.
 2. MIDI-Spur: kein „MIDI“-Schild im Spurkopf, Eingang zeigt das Gerät.
@@ -14,6 +14,17 @@ eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt,
 6. Browser › Beats: Kit wählen, Preset klicken, neue Drum-Spur mit Beat am Abspielkopf; ein Strg+Z entfernt alles.
 
 Selbst geprüft von Claude: Tests von `woa-model`, `woa-engine`, `woa-agent`, `woa-gui` und Clippy grün, Screenshots vorher und nachher bei 1920×1030 und 1366×768 hell und dunkel unter Linux. Nicht unter Windows gesehen, kein Ton abgespielt.
+
+## Design-Runde 3: Party mit Lime, Wellenform, BPM (0.35.17, offen)
+
+1. Party öffnen, Titel mit Analyse laden: Restzeit als MM:SS mit Geistersegmenten, daneben BPM-LCD; Titel ohne Analyse zeigt kein BPM.
+2. Nach kurzer Zeit erscheint unter dem Deck die Wellenform mit Beatgrid; beim zweiten Laden sofort (Cache).
+3. Play: gespielter Teil in Pink, Play-Taste pulsiert im Takt.
+4. Auto-Übergang, Zufall, Wdh., Stumm einschalten: Lime gefüllt; „Wdh.“ ohne „aus“.
+5. Fernbedienung „An“: Lime, QR, Adresse, PIN und Handyzahl sofort sichtbar, auch bei 1366×768.
+6. Theme Hell: Lime dunkelgrün mit weißer Schrift.
+
+Selbst geprüft von Claude: `cargo test -p woa-library`, `-p woa-gui` und Clippy grün, Screenshots dunkel und hell bei 1920×1030 und 1366×768 unter Linux (ohne Abspielen). Nicht unter Windows gesehen, kein Ton abgespielt.
 
 ## Design-Runde 2: Akkordspur, Klangwahl, Spurfarben (0.35.15, offen)
 
