@@ -12,6 +12,7 @@ pub mod import;
 pub mod plays;
 pub mod rotation;
 pub mod tags;
+pub mod waveform;
 
 use std::fmt;
 use std::path::Path;
@@ -24,7 +25,7 @@ pub use hash::file_hash;
 pub const DB_FILE: &str = "bibliothek.sqlite3";
 
 /// Aktuelle Schemaversion.
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 /// Längste Tag-Bezeichnung (Zeichen).
 pub const MAX_TAG_CHARS: usize = 40;
 /// Mehr Tags je Titel nimmt die Bibliothek nicht an.
@@ -89,7 +90,15 @@ CREATE INDEX plays_by_time ON plays(played);
 CREATE INDEX plays_by_track ON plays(track_id, played);
 ";
 
-const MIGRATIONS: [&str; 4] = [V1, V2, V3, V4];
+/// Design-Runde 3: Wellenform je Inhalt (Party-Decks), Schlüssel ist der Inhalts-Hash.
+const V5: &str = "
+CREATE TABLE waveforms (
+    hash  TEXT PRIMARY KEY,
+    peaks BLOB NOT NULL
+) WITHOUT ROWID;
+";
+
+const MIGRATIONS: [&str; 5] = [V1, V2, V3, V4, V5];
 
 /// Fehler der Bibliothek, Text ohne Pfade.
 #[derive(Debug)]

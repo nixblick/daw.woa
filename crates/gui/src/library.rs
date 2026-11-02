@@ -107,6 +107,11 @@ impl LibraryWindow {
         }
     }
 
+    /// Datei der Bibliothek.
+    pub fn db_path(&self) -> &Path {
+        &self.db_path
+    }
+
     /// Anderer Datenordner: Datenbank neu öffnen.
     pub fn set_db_path(&mut self, db_path: PathBuf) {
         if db_path != self.db_path {
