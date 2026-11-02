@@ -46,6 +46,14 @@ pub struct DeckInfo {
     pub peaks: Vec<u8>,
     /// Tempo aus der Bibliotheksanalyse; `None` ohne (aktuelle) Analyse.
     pub bpm: Option<f64>,
+    /// DJ-Paket: Beatgrid-Lage (Sekunde des ersten Schlags) und Tonart aus der Analyse.
+    pub beat_offset: Option<f64>,
+    /// Tonart als Anzeigename („a-Moll“).
+    pub key: Option<String>,
+    /// Inhalts-Hash (Schlüssel der DJ-Marken).
+    pub hash: String,
+    /// Hot Cues und Schleife.
+    pub marks: crate::dj::DjMarks,
 }
 
 /// Wellenform und Tempo zu `path`: Tempo aus der Analyse, Wellenform aus dem Cache oder einmal
@@ -53,22 +61,33 @@ pub struct DeckInfo {
 pub fn deck_info(lib: &Library, path: &Path) -> std::result::Result<DeckInfo, String> {
     let key = path.to_string_lossy();
     let track = lib.by_path(&key).map_err(|e| e.to_string())?;
-    let bpm = track
-        .as_ref()
-        .and_then(|t| t.analysis.as_ref())
-        .and_then(|a| a.bpm);
+    let analysis = track.as_ref().and_then(|t| t.analysis.clone());
     let hash = match &track {
         Some(t) => t.hash.clone(),
         None => crate::file_hash(path).map_err(|e| e.to_string())?,
     };
-    if let Ok(Some(peaks)) = lib.waveform(&hash) {
-        return Ok(DeckInfo { peaks, bpm });
-    }
-    let peaks = compute(path)?;
-    if let Err(e) = lib.set_waveform(&hash, &peaks) {
-        tracing::warn!(error = %e, "waveform not cached");
-    }
-    Ok(DeckInfo { peaks, bpm })
+    let marks = lib.dj_marks(&hash).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "dj marks not readable");
+        Default::default()
+    });
+    let peaks = match lib.waveform(&hash) {
+        Ok(Some(p)) => p,
+        _ => {
+            let p = compute(path)?;
+            if let Err(e) = lib.set_waveform(&hash, &p) {
+                tracing::warn!(error = %e, "waveform not cached");
+            }
+            p
+        }
+    };
+    Ok(DeckInfo {
+        peaks,
+        bpm: analysis.as_ref().and_then(|a| a.bpm),
+        beat_offset: analysis.as_ref().and_then(|a| a.beat_offset),
+        key: analysis.and_then(|a| a.key),
+        hash,
+        marks,
+    })
 }
 
 impl Library {
@@ -149,10 +168,22 @@ mod tests {
         };
         let an = crate::Analysis {
             bpm: Some(124.0),
+            beat_offset: Some(0.25),
+            key: Some("a-Moll".into()),
             ..Default::default()
         };
         assert!(lib.set_analysis(id, &hash, &an).unwrap());
-        assert_eq!(deck_info(&lib, &f).unwrap().bpm, Some(124.0));
+        let marks = crate::dj::DjMarks {
+            hot: [Some(0.5), None, None, None],
+            looped: None,
+        };
+        lib.set_dj_marks(&hash, &marks).unwrap();
+        let info = deck_info(&lib, &f).unwrap();
+        assert_eq!(info.bpm, Some(124.0));
+        assert_eq!(info.beat_offset, Some(0.25));
+        assert_eq!(info.key.as_deref(), Some("a-Moll"));
+        assert_eq!(info.hash, hash);
+        assert_eq!(info.marks, marks);
     }
 
     #[test]
@@ -167,7 +198,7 @@ mod tests {
             c.pragma_update(None, "user_version", 4).unwrap();
         }
         let lib = Library::open(&p).unwrap();
-        assert_eq!(lib.schema_version().unwrap(), 5);
+        assert_eq!(lib.schema_version().unwrap(), crate::SCHEMA_VERSION);
         lib.set_waveform("h", &[1, 2, 3]).unwrap();
         assert_eq!(lib.waveform("h").unwrap(), Some(vec![1, 2, 3]));
     }

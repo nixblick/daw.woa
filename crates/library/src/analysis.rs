@@ -61,6 +61,7 @@ pub fn to_analysis(a: &TrackAnalysis) -> Analysis {
     let silent = a.silence.all_silent;
     Analysis {
         bpm: a.tempo.map(|t| (t.bpm * 10.0).round() / 10.0),
+        beat_offset: a.beat_offset,
         key: a.key.map(|k| k.name()),
         lufs: a.lufs,
         true_peak_db: a.true_peak_db,
