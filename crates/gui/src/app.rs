@@ -3936,31 +3936,45 @@ impl WoaApp {
         }
     }
 
-    /// Eingang einer MIDI-Spur: das MIDI-Gerät (Klaviatur-Symbol), Auswahl wie im Menü
-    /// Einstellungen › MIDI-Eingang.
     /// Spurkopf einer MIDI-Spur: links das Instrument (Klick öffnet die Klangauswahl im Rack),
     /// rechts der MIDI-Eingang (André 02.11.2026: Klangwahl sichtbar).
     fn midi_head_source(&mut self, ui: &mut egui::Ui, id: TrackId, width: f32) {
+        use crate::widgets::track_head::{MIDI_IN_W, MidiInLook, instrument_button, midi_in_button};
+        use woa_io::midi::MidiStatus;
         let gap = ui.spacing().item_spacing.x;
-        let chip_w = ((width - gap) * 0.55).floor().max(24.0);
+        let inst_w = (width - gap - MIDI_IN_W).max(24.0);
         let sound = self.state.project().track(id).and_then(|t| t.sound);
         let name = woa_model::sound_name(sound);
-        let r = ui
-            .add_sized(
-                [chip_w, 21.0],
-                egui::Button::new(
-                    egui::RichText::new(format!("{} {name}", theme::ic::MUSIC_NOTE))
-                        .small()
-                        .color(theme::text()),
-                )
-                .truncate(),
-            )
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_hover_text(format!("Instrument: {name} · Klick: Klang wählen"));
-        if r.clicked() {
+        let index = self
+            .state
+            .project()
+            .tracks
+            .iter()
+            .position(|t| t.id == id)
+            .unwrap_or(0);
+        let icon = sound
+            .and_then(woa_model::sound_category)
+            .map_or(theme::ic::MUSIC_NOTE, |c| category_label(c).1);
+        // Fassung 7: Instrument-Knopf links (Symbol der Kategorie in Spurfarbe, Name, Pfeil).
+        if instrument_button(ui, icon, &name, theme::track_color(index), inst_w).clicked() {
             self.open_sound_picker(id);
         }
-        self.midi_input_combo(ui, id, (width - chip_w - gap).max(24.0));
+        // MIDI-Eingang rechts, 104 px: leuchtet bei Noten auf der spielenden Spur,
+        // gestrichelt ohne Gerät.
+        let status = self.midi.status();
+        let lit = self
+            .midi_seen
+            .1
+            .is_some_and(|t| t.elapsed().as_millis() < 150)
+            && self.live_midi_track() == Some(id);
+        let look = match &status {
+            MidiStatus::Connected(_) if lit => MidiInLook::Notes,
+            MidiStatus::Connected(_) => MidiInLook::Connected,
+            _ => MidiInLook::NoDevice,
+        };
+        let r = midi_in_button(ui, &midi_input_label(&status), look)
+            .on_hover_text("MIDI-Eingang: spielt die scharf geschaltete MIDI-Spur");
+        egui::Popup::menu(&r).show(|ui| self.midi_choices(ui));
     }
 
     /// Wählt die Spur und klappt im Rack die Klangauswahl in der Kategorie ihres Klangs auf.

@@ -19,6 +19,7 @@ pub mod pad;
 pub mod piano_roll;
 pub mod segment;
 pub mod topbar;
+pub mod track_head;
 pub mod vu;
 pub mod wizard;
 
