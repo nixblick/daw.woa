@@ -28,19 +28,28 @@ impl Default for AkkordFenster {
     }
 }
 
+/// Farben eines Akkord-Chips: LCD-Fläche, Name in `lcd-text`, Stufe gedimmt. Die Fläche ist in
+/// beiden Themen dunkel, also kommt die Schrift aus dem LCD-Paar, nicht aus `text`.
+fn chip_colors(p: &theme::Palette) -> (egui::Color32, egui::Color32, egui::Color32) {
+    (p.lcd_bg, p.lcd_text, theme::mix(p.lcd_text, p.lcd_bg, 0.35))
+}
+
 /// Akkord-Chips (dunkle Kästchen mit Namen, darunter optional die Stufe).
 fn chord_chips(ui: &mut egui::Ui, names: &[String], degrees: Option<&[&str]>, big: bool) {
-    ui.horizontal_wrapped(|ui| {
+    // Eine Zeile ohne Umbruch (höchstens vier Akkorde, passt in den Browser).
+    let size = if big {
+        egui::vec2(36.0, 34.0)
+    } else {
+        egui::vec2(24.0, 18.0)
+    };
+    let (bg, ink, dim) = chip_colors(theme::pal());
+    ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 3.0;
         for (i, n) in names.iter().enumerate() {
-            let size = if big {
-                egui::vec2(36.0, 34.0)
-            } else {
-                egui::vec2(24.0, 18.0)
-            };
-            let (r, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+            let (r, resp) = ui.allocate_exact_size(size, egui::Sense::hover());
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, n));
             let p = ui.painter();
-            p.rect_filled(r, 3.0, theme::lcd_bg());
+            p.rect_filled(r, 3.0, bg);
             p.rect_stroke(
                 r,
                 3.0,
@@ -58,7 +67,7 @@ fn chord_chips(ui: &mut egui::Ui, names: &[String], degrees: Option<&[&str]>, bi
                 egui::Align2::CENTER_CENTER,
                 n,
                 egui::FontId::proportional(if big { 13.0 } else { 10.0 }),
-                theme::text(),
+                ink,
             );
             if let Some(d) = deg {
                 p.text(
@@ -66,7 +75,7 @@ fn chord_chips(ui: &mut egui::Ui, names: &[String], degrees: Option<&[&str]>, bi
                     egui::Align2::CENTER_CENTER,
                     *d,
                     egui::FontId::monospace(9.0),
-                    theme::text_dim(),
+                    dim,
                 );
             }
         }
@@ -196,8 +205,10 @@ impl AkkordFenster {
 /// Lautsprecher-Knopf „Vorhören“ einer Zeile.
 fn vorhoeren(ui: &mut egui::Ui, rect: egui::Rect, what: &str) -> egui::Response {
     let label = format!("{what} vorhören");
+    // `place`, nicht `put`: `put` schiebt den Cursor hinter den Knopf, dann rückte die nächste
+    // Folge nach oben und ihr Hinweis lag unter den Chips dieser Zeile.
     let r = ui
-        .put(
+        .place(
             rect,
             egui::Button::new(egui::RichText::new(egui_phosphor::regular::SPEAKER_HIGH).size(12.0))
                 .frame(false),
@@ -256,6 +267,75 @@ fn note_row(ui: &mut egui::Ui, color: egui::Color32, name: &str) {
 mod tests {
     use super::*;
     use egui_kittest::kittest::Queryable;
+
+    /// Kontrastverhältnis nach WCAG 2.1 (1 bis 21).
+    fn contrast(a: egui::Color32, b: egui::Color32) -> f32 {
+        let lum = |c: egui::Color32| {
+            let ch = |v: u8| {
+                let v = f32::from(v) / 255.0;
+                if v <= 0.039_28 {
+                    v / 12.92
+                } else {
+                    ((v + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * ch(c.r()) + 0.7152 * ch(c.g()) + 0.0722 * ch(c.b())
+        };
+        let (x, y) = (lum(a), lum(b));
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
+    }
+
+    #[test]
+    fn chord_chips_are_readable_in_every_theme() {
+        for p in &crate::theme::PALETTES {
+            let (bg, ink, dim) = chip_colors(p);
+            assert!(
+                contrast(ink, bg) >= 4.5,
+                "Akkordname zu blass: {ink:?} auf {bg:?}"
+            );
+            assert!(
+                contrast(dim, bg) >= 3.0,
+                "Stufe zu blass: {dim:?} auf {bg:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn chord_chips_sit_below_their_hint_without_overlap() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let state = AppState::new(tmp.path().join("rec"), std::time::Instant::now());
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(280.0, 900.0))
+            .build_ui_state(
+                |ui, s: &mut (AppState, AkkordFenster)| {
+                    if !crate::theme::install_fonts(ui.ctx()) {
+                        s.1.body(ui, &mut s.0, 0.0);
+                    }
+                },
+                (state, AkkordFenster::default()),
+            );
+        h.run_steps(2);
+        let rows: Vec<_> = CHORD_PROGRESSIONS
+            .iter()
+            .filter(|q| !q.minor)
+            .take(2)
+            .collect();
+        let first_chip = h
+            .get_all_by_label(&chord_names(rows[0], 0)[0])
+            .map(|n| n.rect())
+            .min_by(|a, b| a.top().total_cmp(&b.top()))
+            .expect("Chip der ersten Folge");
+        let hint0 = h.get_by_label(rows[0].hint).rect();
+        let hint1 = h.get_by_label(rows[1].hint).rect();
+        assert!(
+            first_chip.top() >= hint0.bottom() - 0.5,
+            "Chip liegt auf dem eigenen Hinweis: {first_chip:?} / {hint0:?}"
+        );
+        assert!(
+            first_chip.bottom() <= hint1.top() + 0.5,
+            "Chip liegt auf dem Hinweis der nächsten Folge: {first_chip:?} / {hint1:?}"
+        );
+    }
 
     #[test]
     fn chord_row_preview_sends_note_on_to_a_midi_track() {
