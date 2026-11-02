@@ -63,9 +63,16 @@ async fn agent_sets_reads_and_keeps_the_track_sound() {
         .unwrap();
 
     let r = ok(&call(&client, "track_sound", json!({"track": bass})).await);
-    assert!(r["sound"].is_null(), "new MIDI track plays the synth");
+    // Seit 0.38.0 spielt eine neue MIDI-Spur den Flügel.
+    assert_eq!(
+        r["sound"]["preset"], "Flügel",
+        "new MIDI track plays the grand"
+    );
     assert_eq!(r["soundfont_available"], true);
-    assert_eq!(r["presets"].as_array().unwrap().len(), 16);
+    assert_eq!(
+        r["presets"].as_array().unwrap().len(),
+        woa_model::SOUND_PRESETS.len()
+    );
 
     let r = ok(&call(
         &client,
@@ -123,7 +130,8 @@ async fn agent_sets_reads_and_keeps_the_track_sound() {
     {
         let s = session.lock().unwrap();
         let sound = |id: u64| s.project().track(woa_model::TrackId(id)).unwrap().sound;
-        assert_eq!(sound(kit), None);
+        // Die Spur selbst bleibt und spielt wieder ihren Anfangsklang, den Flügel.
+        assert_eq!(sound(kit), Some(woa_model::TrackSound::GRAND));
         let clip = woa_model::ClipId(d["clip"].as_u64().unwrap());
         assert!(s.project().clip(clip).is_none());
         assert_eq!(sound(bass).map(|x| x.program), Some(33));

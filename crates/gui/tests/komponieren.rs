@@ -214,13 +214,16 @@ fn instrument_is_its_own_rack_section_before_the_inserts() {
         instrument > top_of(&rig, "EINGANG"),
         "Instrument nach dem Eingang"
     );
-    assert!(!rig.find("Pad · GeneralUser GS").is_empty(), "Rolle · Bank");
+    assert!(
+        !rig.find("Streicher · GeneralUser GS").is_empty(),
+        "Kategorie · Bank"
+    );
     let open = rig.find("Klang wählen")[0];
     rig.click(open.center());
-    for role in ["Lead", "Bass", "Pad", "Kit"] {
-        assert!(!rig.find(role).is_empty(), "Rolle {role}");
+    for c in woa_model::SoundCategory::ALL {
+        assert!(!rig.find(c.name()).is_empty(), "Kategorie {}", c.name());
     }
-    // Rolle Bass, Klang E-Bass.
+    // Kategorie Bass, Klang E-Bass.
     let bass = rig.find(&format!("{} Bass", woa_gui::theme::ic::WAVE_SINE))[0];
     assert!(bass.top() > instrument, "Rollen im Abschnitt Instrument");
     rig.click(bass.center());
@@ -246,7 +249,7 @@ fn instrument_is_its_own_rack_section_before_the_inserts() {
         },
     ]);
     rig.wait(30);
-    let synth = rig.find("Eingebauter Synth")[0];
+    let synth = rig.find("Synth (einfach)")[0];
     rig.click(synth.center());
     assert_eq!(sound(&rig), None, "eingebauter Synth bleibt erreichbar");
 }
