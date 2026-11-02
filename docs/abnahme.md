@@ -4,7 +4,29 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Design-Runde 3: Party mit Lime, Wellenform, BPM (0.35.18, offen)
+## Design-Runde 3: Radio (0.35.19, offen)
+
+1. Radio bei 1920×1030: alles samt Wunschtitel ohne Scrollen sichtbar.
+2. Fehler auslösen (Stream ohne Server): Banner einzeilig mit Symbol, „Details“ zeigt den vollen Text.
+3. Sendereihe: keine Tasten „Deck A/B/C“, −10/+10 als Symbole; Rechtsklick auf ein geladenes Deck bietet „mit Blende“, „hart“ und rot „Leeren“.
+4. Rot nur live: „Auf Sendung“ in Ruhe neutral, auf Sendung rot; ON-AIR-Lampe links in der Stream-Zeile; Auto-Weiter als LED-Taste; Sätze 1–5 als Segmente.
+5. Deck: Restzeit-LCD mit „88:88“-Geistern und Balken, Start/Stopp mit Text, Cue/Vorhören/Zurück als Symbole mit Tooltip.
+6. Pegel: LED-Ketten sichtbar, Namensschild unten, dB nur im Tooltip; Processing als Zeilen mit Feld oder Schalter, Messzeile als LCD.
+
+Selbst geprüft von Claude: 233 Tests in `woa-gui`, clippy `-D warnings`, Screenshots dunkel/hell bei 1920×1030 und 1366×768.
+
+## Design-Runde 3: Studio (0.35.18, offen)
+
+1. Audio-Spur wählen, im Rack „Trim“ auf +6 dB ziehen: Fader bleibt, Pegel steigt; Strg+Z nimmt es zurück, Doppelklick = 0 dB.
+2. MIDI-Spur: kein „MIDI“-Schild im Spurkopf, Eingang zeigt das Gerät.
+3. Transport: Uhr-Symbol schaltet den Latenzausgleich, daneben ms; Takte/Zeit umschalten; „EXPORT“ öffnet den Export.
+4. Clip wählen: Fades in ms, Löschen mit Abstand rechts.
+5. Dock: Studio-Mixer · Piano-Roll · Automation · KI-Chat als Segmente; Klick auf den offenen Reiter klappt zu.
+6. Browser › Beats: Kit wählen, Preset klicken, neue Drum-Spur mit Beat am Abspielkopf; ein Strg+Z entfernt alles.
+
+Selbst geprüft von Claude: Tests von `woa-model`, `woa-engine`, `woa-agent`, `woa-gui` und Clippy grün, Screenshots vorher und nachher bei 1920×1030 und 1366×768 hell und dunkel unter Linux. Nicht unter Windows gesehen, kein Ton abgespielt.
+
+## Design-Runde 3: Party mit Lime, Wellenform, BPM (0.35.17, offen)
 
 1. Party öffnen, Titel mit Analyse laden: Restzeit als MM:SS mit Geistersegmenten, daneben BPM-LCD; Titel ohne Analyse zeigt kein BPM.
 2. Nach kurzer Zeit erscheint unter dem Deck die Wellenform mit Beatgrid; beim zweiten Laden sofort (Cache).

@@ -165,6 +165,9 @@ pub struct TrackNodes {
     pub gain_r: Option<NodeId>,
     /// Plugin-Knoten (Instrument und Effekte) mit der Kennung ihres Platzes.
     pub plugins: Vec<(InsertId, NodeId)>,
+    /// Eingangs-Trim vor den Inserts (Design-Runde 3): Knoten und ob er stereo ist
+    /// ([`BusStrip`], sonst ein Mono-[`Gain`]). `None` beim Bus.
+    pub trim: Option<(NodeId, bool)>,
 }
 
 impl TrackNodes {
@@ -240,6 +243,14 @@ impl ProjectGraph {
         let audible = audibility(project);
         for (t, &on) in project.tracks.iter().zip(&audible) {
             let Some(n) = tracks.get(&t.id) else { continue };
+            if let Some((node, stereo)) = n.trim {
+                let p = if stereo {
+                    bus_params::GAIN
+                } else {
+                    gain_params::GAIN
+                };
+                engine.set_param(node, p, trim_gain(t))?;
+            }
             let (g, l, r) = track_gains_with(t, on);
             let (bal_l, bal_r) = balance(t.pan);
             // Mit abgespielter Kurve bleibt vom festen Faktor nur Mute/Solo (Gain) bzw. 1.
@@ -394,6 +405,15 @@ pub fn audibility(project: &Project) -> Vec<bool> {
 /// [`audibility`]). Pan ist Constant-Power (cos/sin), Mitte = je -3 dB.
 pub fn track_gains(track: &Track, any_solo: bool) -> (f32, f32, f32) {
     track_gains_with(track, !track.mute && (!any_solo || track.solo))
+}
+
+/// Linearer Faktor des Eingangs-Trims einer Spur (vor den Inserts, getrennt vom Fader).
+pub fn trim_gain(track: &Track) -> f32 {
+    if track.trim_db.is_finite() {
+        10f64.powf(track.trim_db / 20.0) as f32
+    } else {
+        1.0
+    }
 }
 
 /// Wie [`track_gains`], mit fertig bestimmter Hörbarkeit.
@@ -577,6 +597,7 @@ pub fn build_project_graph_plugins(
                 sends: Vec::new(),
                 gain_r: None,
                 plugins: Vec::new(),
+                trim: None,
             },
         );
     }
@@ -646,7 +667,18 @@ pub fn build_project_graph_plugins(
         };
         let on = audible_of(t.id);
         let (g, l, r) = track_gains_with(t, on);
-        let mut tail = src;
+        // Eingangs-Trim direkt hinter der Quelle, vor Inserts und Plugin-Effekten.
+        let trim = if stereo_head {
+            let n = b.add_stereo(Box::new(BusStrip::new(trim_gain(t), 1.0, 1.0, None)));
+            b.connect_ch(src, 0, n, 0);
+            b.connect_ch(src, 1, n, 1);
+            (n, true)
+        } else {
+            let n = b.add_node(Gain::new(trim_gain(t)));
+            b.connect(src, n);
+            (n, false)
+        };
+        let mut tail = trim.0;
         let mut inserts = Vec::new();
         let mut plugin_nodes: Vec<(InsertId, NodeId)> = Vec::new();
         if let Some(slot) = t
@@ -828,6 +860,7 @@ pub fn build_project_graph_plugins(
                 sends,
                 gain_r,
                 plugins: plugin_nodes,
+                trim: Some(trim),
             },
         );
     }

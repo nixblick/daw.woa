@@ -42,6 +42,7 @@ live; gleichzeitiges Speichern in ihm und im Fenster überschreibt sich.
 | `add_track` | `name`, `kind` (`audio`/`midi`/`bus`, Standard `audio`) | neue Spur, liefert `track`-ID |
 | `rename_track` | `track`, `name` | Spur umbenennen |
 | `set_gain` | `track`, `gain_db` | Lautstärke in dB |
+| `set_trim` | `track`, `trim_db` | Eingangs-Trim in dB (−24 bis +24), vor den Inserts, getrennt vom Gain; ein Undo-Schritt |
 | `set_pan` | `track`, `pan` (-1..1) | Panorama |
 | `set_mute` | `track`, `mute` | stumm schalten |
 | `set_tempo` | `bpm` | Projekttempo |

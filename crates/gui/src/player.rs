@@ -361,6 +361,7 @@ impl Player {
             .iter()
             .map(|t| {
                 let mut extra: Vec<u64> = t.sends.iter().map(|s| s.level_db.to_bits()).collect();
+                extra.push(t.trim_db.to_bits());
                 for i in &t.inserts {
                     extra.push(u64::from(i.bypass));
                     extra.extend(i.params.iter().map(|p| p.to_bits()));

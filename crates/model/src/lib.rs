@@ -64,7 +64,7 @@ pub use plugin::{PluginParam, PluginRole, PluginSlot};
 pub use project::{
     Clip, ClipId, DEFAULT_TEMPO_BPM, FOLLOW_TEMPO_RANGE, FadeCurve, MAX_GAIN_DB, MAX_ID,
     MAX_SEND_DB, MAX_TEMPO_BPM, MIN_GAIN_DB, MIN_TEMPO_BPM, PITCH_RANGE, Project, ProjectMeta,
-    STRETCH_RANGE, Send, Track, TrackId, TrackKind, is_safe_audio_path,
+    STRETCH_RANGE, Send, TRIM_RANGE, Track, TrackId, TrackKind, is_safe_audio_path,
 };
 pub use session::Session;
 pub use sound::{SOUND_PRESETS, SoundBank, SoundPreset, SoundRole, TrackSound, preset_name};
