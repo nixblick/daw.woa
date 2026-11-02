@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use rtrb::Consumer;
 use woa_io::controller::{
-    Action, Bus, CtrlMsg, Layout, LedOut, Mapper, Mapping, Target, control_queue,
+    Action, Bus, CtrlMsg, DeckAction, Layout, LedOut, Mapper, Mapping, Target, control_queue,
 };
 use woa_io::midi::{MidiIn, MidiStatus, event_sink, stable_name};
 use woa_model::{MAX_GAIN_DB, MIN_GAIN_DB};
@@ -343,7 +343,7 @@ impl ControlDesk {
 /// Lernbare Deck-Ziele: Start/Stopp, Cue und Vorhören je Deck A–C.
 pub fn deck_targets() -> Vec<Target> {
     (0..woa_io::controller::DECKS)
-        .flat_map(|k| [Target::DeckStart(k), Target::DeckCue(k), Target::DeckPfl(k)])
+        .flat_map(|k| DeckAction::ALL.map(|a| Target::Deck(k, a)))
         .collect()
 }
 

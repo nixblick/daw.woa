@@ -83,8 +83,8 @@ PRs der Runde: #314 Party (0.35.17) · #317 Studio (0.35.18) · #313 Radio (0.35
 | Clip-Inspektor Werkzeuge | `IconButton` mit Tooltip, Löschen rechts mit Abstand | `widgets/icon_button.rs` | ✓ 0.35.21 #318 |
 | Clip-Optionen Rückwärts/Schleife/Stumm | Modell kennt sie nicht | – | entschieden von André: ja, eigenes Paket (geplant, noch nicht gebaut) |
 | Studio-Dock | Reiter als Segmente mit Symbol (`widgets::Segment`), Lösen/Einklappen nur Symbol | `widgets/segment.rs` | ✓ 0.35.18 #317, 0.35.21 #318, 0.35.23 #326 |
-| Rack im Mixer-Reiter | rechts, 340 px; „Ausgang / Pan“ bei 1920 × 1030 ganz sichtbar, sonst rollt nur das Rack | `gui/src/app.rs` | ✓ 0.35.18 #317, ✓ 0.35.25 #329 |
-| Analyse | bleibt eigenes Fenster; oben die Pegelansicht (Analog/Modern/Aus, analoges VU nur hier) | `gui/src/app.rs` (`level_view`) | entschieden von André, Pegelansicht ✓ 0.35.25 #329 |
+| Rack im Mixer-Reiter | rechts, 340 px; „Ausgang / Pan“ bei 1920 × 1030 ganz sichtbar, sonst rollt nur das Rack | `gui/src/app.rs` | ✓ 0.35.18 #317, ✓ 0.36.1 #329 |
+| Analyse | bleibt eigenes Fenster; oben die Pegelansicht (Analog/Modern/Aus, analoges VU nur hier) | `gui/src/app.rs` (`level_view`) | entschieden von André, Pegelansicht ✓ 0.36.1 #329 |
 | Piano-Roll Leiste | Clip-Kennung, D/V/E, Raster + Triolen „3“, Notenlänge, Quantisieren, Velocity, Tonart + Magnet, „Nur benutzte Töne“, Probeton, Zoom | `widgets/piano_roll.rs` | ✓ 0.35.20 #316 |
 | Klaviatur, Tonart-Zeilen 8 %, Clip-Bereich im Lineal, außen schraffiert | | `widgets/piano_roll.rs` (`hatch`) | ✓ 0.35.20 #316 |
 | Noten | Spurfarbe, Velocity-Helligkeit, Notennamen; Velocity-Spur mit Stiel und Kopf | `widgets/piano_roll.rs` | ✓ 0.35.20 #316 |
@@ -94,7 +94,7 @@ PRs der Runde: #314 Party (0.35.17) · #317 Studio (0.35.18) · #313 Radio (0.35
 | Drum-Klangbänke nachladen | – | – | entschieden von André: ja, eigenes Paket (geplant) |
 | Jingle-Assistent | Schrittleiste (6 Schritte), Wahlkarten mit Symbol, Zusammenfassung unten | `widgets/wizard.rs` | ✓ 0.35.20 #316, Fotomodus `WOA_JINGLE` 0.35.24 |
 | Widgets nach `widgets/` | piano_roll, drum_grid, wizard | `gui/src/widgets/` | ✓ 0.35.21 #318 |
-| Akkord-Vorhören | flüchtige Vorhör-Stimme mit dem Klang der Ausgabe (Akkorde = Streicher, Bass = E-Bass, Arpeggio = Lead), unabhängig von der gewählten Spur; Klick auf eine Ausgabe-Zeile spielt sie vor | `gui/src/akkorde.rs`, `gui/src/probeton.rs` (`voice_tap`, `VOICE_TRACK`) | ✓ 0.35.25 #329 (entschieden von André) |
+| Akkord-Vorhören | flüchtige Vorhör-Stimme mit dem Klang der Ausgabe (Akkorde = Streicher, Bass = E-Bass, Arpeggio = Lead), unabhängig von der gewählten Spur; Klick auf eine Ausgabe-Zeile spielt sie vor | `gui/src/akkorde.rs`, `gui/src/probeton.rs` (`voice_tap`, `VOICE_TRACK`) | ✓ 0.36.1 #329 (entschieden von André) |
 | Lautsprecher-Knopf an der Instrument-Kachel | Probeton beim Wählen der Kachel, kein eigener Knopf | Rack, Instrument | nicht bauen, entschieden von André (Klick auf die Kachel klingt) |
 
 ## §6 Trim
@@ -114,8 +114,8 @@ PRs der Runde: #314 Party (0.35.17) · #317 Studio (0.35.18) · #313 Radio (0.35
 | Screenshots aller Modi | dunkel und hell, 1920 × 1030, dazu 1366 × 768 für Radio und Produzent | `docs/design/ist/` | ✓ 0.35.24 |
 | Klickliste | „Design-Runde 3 gesamt“ | `docs/abnahme.md` | ✓ 0.35.24 |
 | Vollbild beim Start | `WOA_WINDOW` gibt feste Größe, F11 schaltet | `apps/woa/src/main.rs` | ✓ 0.35.21 #318 (entschieden von André) |
-| Ausgangspegel per MCP für Agenten | Werkzeug `output_levels` (nur lesend, nur Live-Modus): Spitze je Ausgang Notebook, Stream, Vorhören in dBFS; lesender Kanal App → Agent über Atomics, ohne Leihe der Sitzung | `agent/src/live.rs` (`OutputLevels`), `radio/src/pfl.rs` (Spitze), `gui/src/mcp_live.rs` | ✓ 0.35.25 #329 (entschieden von André: jetzt mitbauen) |
-| Decks per MIDI lernbar | Start/Stopp, Cue, Vorhören je Deck A–C: Rechtsklick „MIDI lernen“ an jeder Deck-Taste und Zeile „Decks:“ in der Zuordnungsliste; alte Dateien laden weiter | `io/src/controller.rs` (`DeckStart`/`DeckCue`/`DeckPfl`), `gui/src/radio.rs`, `gui/src/controls.rs` | ✓ 0.35.25 #329 (entschieden von André) |
+| Ausgangspegel per MCP für Agenten | Werkzeug `output_levels` (nur lesend, nur Live-Modus): Spitze je Ausgang Notebook, Stream, Vorhören in dBFS; lesender Kanal App → Agent über Atomics, ohne Leihe der Sitzung | `agent/src/live.rs` (`OutputLevels`), `radio/src/pfl.rs` (Spitze), `gui/src/mcp_live.rs` | ✓ 0.36.1 #329 (entschieden von André: jetzt mitbauen) |
+| Decks per MIDI lernbar | Start/Stopp, Cue, Vorhören je Deck A–C: Rechtsklick „MIDI lernen“ an jeder Deck-Taste und Zeile „Decks:“ in der Zuordnungsliste; alte Dateien laden weiter | `io/src/controller.rs` (`Target::Deck` + `DeckAction`, erweiterbar), `gui/src/radio.rs`, `gui/src/controls.rs` | ✓ 0.36.1 #329 (entschieden von André) |
 
 ## Punkte aus `auftrag-nachbesserung.md`
 
@@ -128,6 +128,35 @@ PRs der Runde: #314 Party (0.35.17) · #317 Studio (0.35.18) · #313 Radio (0.35
 | §2 Party: Wellenform, MM:SS, Eingaben, „Wdh.“, Fernbedienung | ✓ siehe §4 (0.35.17 #314) |
 | §3 Produzent: Transport, Browser statt Knopfreihe, Spurkopf, Inspektor, Akkordspur, Instrument im Rack, Piano-Roll, Drum-Raster, Jingle-Assistent, Studio-Dock | ✓ siehe §5 (Browser, Akkordspur, Instrument-Abschnitt seit Runde 2, 0.35.14/0.35.15) |
 | §4 Screenshots, Prüfliste, Klickliste | ✓ 0.35.24 |
+
+## DJ-Paket (0.36.0)
+
+Auftrag André 02.11.2026, Design-System Fassung 5 (DjWaves, DjDeck, DjMixer, RemoteCard, ScreenPartyDJ).
+
+| Baustein | Stand | Ort |
+|---|---|---|
+| Party-Umschalter Einfach / DJ, Auto-Übergang in DJ aus | ✓ | `crates/gui/src/party/dj.rs` (`view_bar`), `crates/radio/src/control/duo.rs` |
+| Einfach-Deck nur Play/Pause | ✓ | `crates/gui/src/party.rs` |
+| DjWaves: parallele Wellen mit Phase, Mausrad zoomt | ✓ | `party/dj.rs` (`dj_waves`) |
+| DjDeck: Camelot-Chip, BPM, Restzeit, Übersicht mit Hot Cues und Loop | ✓ | `party/dj.rs` (`dj_deck`, `overview`) |
+| Hot Cues 1–4, Auto-Loop 1/2/4/8/16, Cue halten, Play, Sync, Keylock | ✓ | `crates/radio/src/control/dj.rs` (`DjCommand`) |
+| Tempo ±8 % mit Anschieben, Jogwheel (anschieben, scratchen) | ✓ | `crates/dsp/src/dj.rs` (Leser, WSOLA), `party/dj.rs` (`jog`, `tempo_column`) |
+| DjMixer: Trim, EQ mit Kill, Filter, Cue, Kanalfader mit LED, Master, Kopfhörer Mix/Pegel, Crossfader weich/hart | ✓ | `crates/dsp/src/dj.rs`, `party/dj.rs` (`dj_mixer`) |
+| Kopfhörer-Cue nur über Vorhör-Ausgang, ohne Ausgang gesperrt | ✓ | `crates/radio/src/mixer.rs`, `party/dj.rs` |
+| Beatgrid-Lage und Camelot aus der Analyse | ✓ | `crates/dsp/src/dj.rs`, `crates/library/src/analysis.rs` |
+| Hot Cues und Schleife je Titel gespeichert (Schema 6, Migration mit Test) | ✓ | `crates/library/src/dj.rs` |
+| Playlist mit BPM, Tonart, „A/B laden“ | ✓ | `party/dj.rs` (`dj_playlist`) |
+| RemoteCard kompakt unter 900 px, QR 300 px (Q, Klick, Esc) | ✓ | `crates/gui/src/remote.rs` |
+| MCP `dj_state`, `dj_deck`, `dj_mixer` | ✓ | `crates/agent/src/dj.rs`, `docs/agent.md` |
+| Golden Files EQ, Filter, Crossfader-Kurve, Time-Stretch | ✓ | `tests/golden/dj_*.wav` |
+| MIDI-Lernen für DJ-Ziele | offen: Frage an André | – |
+
+Abweichungen:
+
+- **Fernbedienung in der DJ-Ansicht immer kompakt**, auch bei 1920 × 1030 (unten ist neben der Playlist nur eine Zeile Platz; der Auftrag nennt „Fernbedienung kompakt“).
+- **Keylock als laufendes WSOLA** im Deck-Leser, nach dem Muster des vorhandenen `woa_dsp::stretch` (offline): keine neue Abhängigkeit, feste Puffer, keine Allokation im Audio-Thread. Klanglich einfacher als ein Phasen-Vocoder; reicht für ±8 %.
+- **Tonart-Erkennung** liefert Dur/Moll aus der Bibliotheksanalyse; Camelot wird daraus abgeleitet.
+- **MIDI-Lernen** nicht gebaut: `woa_io::controller::Target` kennt nur Spuren, Pegel, Carts und Layout. Für die DJ-Ziele bräuchte es rund zwanzig neue Ziele samt Seite, Beschriftung, Weiterleitung und Lern-Oberfläche – nicht billig, daher Frage.
 
 ## Abweichungen vom Entwurf
 

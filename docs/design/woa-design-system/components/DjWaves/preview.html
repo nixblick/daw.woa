@@ -1,0 +1,15 @@
+<!-- @dsCard group="Party" height=200 width=1400 subtitle="Parallele Wellenformen mit Mittellinie und Phasenanzeige" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}.cap{font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0 0 6px}</style></head>
+<body>
+<div class="woa-dj"><div class="woa-pw" style="height:150px" data-tip="Beide Decks im Takt" data-hint="Oben Deck A, unten Deck B; die Mittellinie ist jetzt">
+ <span class="woa-pw__tag" style="top:4px;color:var(--da)">A · 124.0</span><canvas data-woa-wave data-seed="4" data-played=".5" data-color="--da" data-step="2" data-beats="32"></canvas>
+ <div class="woa-pw__mid"><span>PHASE</span><div class="woa-phase" data-tip="Phasenabweichung" data-hint="Grün in der Mitte = im Takt"><i style="left:calc(50% + 6px)"></i></div><span style="color:var(--ok)">+3 ms</span></div>
+ <span class="woa-pw__tag" style="bottom:4px;color:var(--db)">B · 124.0 (Sync)</span><canvas data-woa-wave data-seed="8" data-played=".5" data-color="--db" data-step="2" data-beats="32"></canvas>
+ <i class="woa-pw__line"></i>
+</div></div>
+<script>WOA.init();</script>
+</body>
+</html>

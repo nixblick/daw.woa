@@ -126,6 +126,8 @@ pub struct View {
     /// Party mit zwei Decks (`None`: aus). Dann sind `current`, `running`, `paused` und
     /// `remaining_title` die der hörbaren Seite.
     pub party: Option<crate::control::PartyDuoView>,
+    /// DJ-Ansicht der Party (DJ-Paket), `None` ohne Party.
+    pub dj: Option<crate::control::DjView>,
     pub mic_open: bool,
     /// Telefon auf Sendung.
     pub phone_on: bool,
@@ -376,6 +378,7 @@ fn run(
         }
         let st = c.status();
         let party = c.party_view();
+        let dj = c.dj_view();
         let target = c.show().target_lufs;
         let v = View {
             playlist: c
@@ -480,6 +483,7 @@ fn run(
             cart_set: c.show().cart_set,
             decks: (0..crate::DECKS).map(|k| deck_view(&c, k)).collect(),
             party,
+            dj,
             mic_open: st.mic_open.load(Ordering::Acquire),
             phone_on: st.phone_on.load(Ordering::Acquire),
             phone_peak: st.take_phone_peak(),

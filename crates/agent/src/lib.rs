@@ -27,6 +27,7 @@ use woa_model::{
 };
 
 pub mod audio;
+pub mod dj;
 pub mod freesound;
 pub mod http;
 pub mod jingle;
@@ -1053,6 +1054,8 @@ pub struct WoaAgent {
     takes: Arc<Takes>,
     /// Freesound access for `search_samples` and `import_sample` (J10).
     samples: freesound::Source,
+    /// Connection to the running app for the DJ tools (live mode only).
+    dj: Option<dj::DjBridge>,
     // Read by the code generated from `#[tool_handler]`.
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
@@ -1390,8 +1393,45 @@ impl WoaAgent {
             takes,
             dir,
             samples: freesound::Source::default(),
+            dj: None,
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// Connects the DJ tools to the running app (live mode).
+    pub fn with_dj(mut self, bridge: dj::DjBridge) -> Self {
+        self.dj = Some(bridge);
+        self
+    }
+
+    /// Runs DJ commands in the app (blocking thread) and returns its DJ state.
+    async fn dj_run(
+        &self,
+        make: impl FnOnce(&serde_json::Value) -> Result<Vec<woa_radio::control::DjCommand>, String>
+        + Send
+        + 'static,
+    ) -> Result<CallToolResult, McpError> {
+        let Some(bridge) = self.dj.clone() else {
+            return Ok(CallToolResult::error(vec![ContentBlock::text(dj::NO_APP)]));
+        };
+        off_runtime(move || {
+            let state = match bridge.call(Vec::new()) {
+                Ok(s) => s,
+                Err(e) => return Ok(CallToolResult::error(vec![ContentBlock::text(e)])),
+            };
+            let cmds = match make(&state) {
+                Ok(c) => c,
+                Err(e) => return Ok(CallToolResult::error(vec![ContentBlock::text(e)])),
+            };
+            if cmds.is_empty() {
+                return Ok(ok_json(state));
+            }
+            match bridge.call(cmds) {
+                Ok(s) => Ok(ok_json(s)),
+                Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(e)])),
+            }
+        })
+        .await
     }
 
     /// Replaces the Freesound access (address and key source), e.g. for tests.
@@ -1805,6 +1845,50 @@ fn remove_created(created: &[PathBuf]) {
 
 #[tool_router]
 impl WoaAgent {
+    #[tool(
+        description = "DJ view of the party in the running app: per deck (A, B) title index, playing, position/end (s), bpm and bpm_now, tempo fader (-1..1) and tempo_percent, key and Camelot key (key_match: fits the other deck), keylock, sync, beat phase (0..1), cue point, hot cues 1-4 (s), loop (s) and loop_beats, trim (dB), eq_lo/mid/hi (-1 kill .. +1), filter (-1 low-pass .. +1 high-pass), channel fader, headphone cue; mixer crossfader (0 A .. 1 B), curve_hard, master, phones_mix (0 cue .. 1 master), phones_level, cue_available (a headphone output exists). Live control only: nothing is undone or saved in the show."
+    )]
+    async fn dj_state(&self) -> Result<CallToolResult, McpError> {
+        self.dj_run(|_| Ok(Vec::new())).await
+    }
+
+    #[tool(
+        description = "Control one party deck (A or B) in the running app's DJ view: load (playlist index, deck must stand), play, pause, cue (tap: playing -> back to cue and stop, standing -> set cue here), sync (tempo and beat to the other deck; on=false turns it off; refused beyond +-8 % even at double/half tempo), hot_cue (slot 1-4: empty sets, set jumps, on=false clears), loop (beats 1/2/4/8/16 from the last beat; no beats = off), tempo (value -1..1 = -8..+8 %), keylock (on), seek (value seconds). Hot cues and loops are stored per title in the library. Returns the DJ state."
+    )]
+    async fn dj_deck(
+        &self,
+        Parameters(p): Parameters<dj::DjDeckParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.dj_run(move |_| {
+            let c = dj::deck_command(&p)?;
+            // Antippen: Cue drücken und loslassen.
+            Ok(match c {
+                woa_radio::control::DjCommand::CueDown { side } => {
+                    vec![c, woa_radio::control::DjCommand::CueUp { side }]
+                }
+                c => vec![c],
+            })
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Set a mixer control of the running app's party DJ view and return the DJ state. Controls: view (1 DJ, 0 simple), per deck (deck A or B): trim (dB -12..12), eq_lo, eq_mid, eq_hi (-1 kill, 0 neutral, +1 = +6 dB), filter (-1 low-pass .. 0 off .. +1 high-pass), fader (0..1), cue (1/0 headphone cue, needs a headphone output); global: crossfader (0 A .. 1 B), curve (1 hard, 0 soft), master (0..1), phones_mix (0 cue .. 1 master), phones_level (0..1). The headphone signal never reaches the broadcast. Read values with dj_state."
+    )]
+    async fn dj_mixer(
+        &self,
+        Parameters(p): Parameters<dj::DjMixerParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.dj_run(move |state| {
+            let ph = (
+                state["phones_mix"].as_f64().unwrap_or(0.5) as f32,
+                state["phones_level"].as_f64().unwrap_or(0.8) as f32,
+            );
+            Ok(vec![dj::mixer_command(&p, ph)?])
+        })
+        .await
+    }
+
     #[tool(
         description = "Project overview as JSON: name, tempo, tracks with ids, mixer settings and clips, undo/redo labels, unsaved changes."
     )]

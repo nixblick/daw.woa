@@ -65,6 +65,8 @@ struct LoanRequest {
 pub struct LiveDesk {
     rx: mpsc::Receiver<LoanRequest>,
     activity: Arc<AtomicU64>,
+    /// Aufträge der DJ-Werkzeuge (laufen ohne geliehene Sitzung).
+    dj: crate::dj::DjDesk,
 }
 
 impl LiveDesk {
@@ -95,6 +97,14 @@ impl LiveDesk {
             served += 1;
         }
         served
+    }
+
+    /// Bedient die wartenden DJ-Aufträge (Party-Decks der App) mit `f`.
+    pub fn serve_dj(
+        &self,
+        f: impl FnMut(&[woa_radio::control::DjCommand]) -> Result<serde_json::Value, String>,
+    ) -> usize {
+        self.dj.serve(f)
     }
 
     /// Sekunden seit dem letzten Kontakt eines KI-Clients, `None`: noch keiner.
@@ -198,22 +208,32 @@ pub struct LiveAgent {
     levels: Arc<OutputLevels>,
 }
 
+/// Werkzeuge, die keine Projektsitzung brauchen (Party-Decks der App).
+fn sessionless(name: &str) -> bool {
+    matches!(name, "dj_state" | "dj_deck" | "dj_mixer")
+}
+
 impl LiveAgent {
     /// Neuer Live-Agent und sein Gegenstück für den GUI-Thread. `wake` weckt die App
     /// (z. B. `ctx.request_repaint()`), damit sie den Aufruf sofort bedient.
     pub fn new(wake: Wake) -> (Self, LiveDesk) {
         let (tx, rx) = mpsc::channel();
         let activity = Arc::new(AtomicU64::new(0));
+        let (djb, djd) = crate::dj::bridge(wake.clone());
         (
             Self {
                 tx,
                 wake,
                 activity: activity.clone(),
-                catalog: WoaAgent::with_session(Session::new(""), PathBuf::new()),
+                catalog: WoaAgent::with_session(Session::new(""), PathBuf::new()).with_dj(djb),
                 current: Arc::new(Mutex::new(None)),
                 levels: Arc::new(OutputLevels::default()),
             },
-            LiveDesk { rx, activity },
+            LiveDesk {
+                rx,
+                activity,
+                dj: djd,
+            },
         )
     }
 
@@ -324,6 +344,10 @@ impl ServerHandler for LiveAgent {
         if request.name == OUTPUT_LEVELS_TOOL {
             // Nur lesen: keine Leihe der Sitzung, kein Rückgängig-Schritt.
             return Ok(text_result(true, self.levels.snapshot().to_string()));
+        }
+        if sessionless(&request.name) {
+            // Die Decks leben in der App; die Projektsitzung bleibt, wo sie ist.
+            return self.catalog.call_tool(request, context).await;
         }
         let loan = match self.borrow().await {
             Ok(l) => l,
@@ -473,6 +497,14 @@ impl LiveServer {
     /// Siehe [`LiveDesk::serve_pending`].
     pub fn serve_pending(&self, session: &mut Session, dir: &Path) -> usize {
         self.desk.serve_pending(session, dir)
+    }
+
+    /// Siehe [`LiveDesk::serve_dj`].
+    pub fn serve_dj(
+        &self,
+        f: impl FnMut(&[woa_radio::control::DjCommand]) -> Result<serde_json::Value, String>,
+    ) -> usize {
+        self.desk.serve_dj(f)
     }
 
     /// Siehe [`LiveDesk::idle_seconds`].

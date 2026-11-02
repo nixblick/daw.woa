@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Design-Runde 3b: Korrekturen nach Andrés Prüfung (0.35.25, offen)
+## Design-Runde 3b: Korrekturen nach Andrés Prüfung (0.36.1, offen)
 
 1. **Party:** Ein Titel auf Deck A, nichts läuft → Badge „BEREIT“ neutral (Mulde, grauer Rahmen), nicht Lime gefüllt.
    Titel auf dem anderen Deck vorgeladen → „VORGELADEN“ nur mit Lime-Rahmen und Lime-Schrift. Abspielen → „JETZT“
@@ -21,6 +21,35 @@ eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt,
    drücken → die Taste startet/stoppt, cued bzw. hört vor. Leeres Deck: in Einstellungen › Controller die Zeile
    „Decks:“ nutzen. Alte Zuordnungen bleiben.
 7. **KI (Live-Modus):** Radio läuft, Claude fragt `output_levels` → Notebook, Stream, Vorhören in dBFS; ändert nichts.
+
+## DJ-Paket (0.36.0, offen)
+
+Party oben auf „DJ“ stellen. Ohne Vorhör-Ausgang (Einstellungen → Ausgänge, Kanal 3/4) sind die
+Kopfhörer-Tasten gesperrt; für Schritt 6 einen Vorhör-Ausgang wählen.
+
+1. Umschalter „Einfach | DJ“: Einfach zeigt die Party wie bisher, Decks nur mit Play/Pause, Auto-Übergang an.
+   DJ zeigt oben die parallelen Wellen mit Phase, darunter Deck A · Mixer · Deck B (B gespiegelt), unten
+   Playlist, Wünsche, Fernbedienung kompakt; „Auto-Übergang“ ist grau mit „im DJ-Modus aus“.
+2. Playlist: „A“/„B“ lädt den Titel ins Deck; BPM und Tonart erscheinen, sobald die Bibliothek den Titel
+   analysiert hat. Der Camelot-Chip wird grün, wenn beide Tonarten zusammenpassen.
+3. Deck: Play/Pause (X bzw. Punkt); Cue im Stand setzt den Cue-Punkt, gehalten spielt er ab dort, loslassen
+   springt zurück (Z bzw. Komma). Hot Cue 1–4 setzen, noch einmal drücken springt hin, Umschalt+Klick löscht.
+   Auto-Loop 1/2/4/8/16, „Loop“ schaltet aus. Marken stehen in der Übersicht; Klick in die Übersicht springt.
+4. Tempo-Fader ±8 % mit Anzeige, Pfeile schieben kurz an; Keylock (Notensymbol) hält die Tonhöhe.
+   Jogwheel: Rand ziehen schiebt an, Plattenmitte ziehen scratcht.
+5. Sync (V bzw. Schrägstrich): Tempo und Takt springen ans andere Deck; die Phase oben steht still.
+6. Mixer: Trim, Hi/Mid/Lo (ganz links = Kill), Filter (links Tiefpass, rechts Hochpass), Kanalfader mit LED,
+   Master, Crossfader mit Kurve weich/hart. Kopfhörer-Cue je Kanal: nur im Vorhör-Ausgang hörbar, nie auf Sendung;
+   Mix (Cue↔Master) und Pegel am Kopfhörer.
+7. Hot Cues und Schleife bleiben nach Neustart am Titel (gespeichert in der Bibliothek).
+8. Fenster 1366 × 768: Fernbedienung als eine Zeile; Q, Klick auf QR oder Symbol zeigt den QR 300 px groß,
+   Klick oder Esc schließt. Bei 1920 × 1030 bleibt in „Einfach“ die große Karte.
+9. Agent (MCP): `dj_state` liest beide Decks und den Mixer, `dj_deck`/`dj_mixer` steuern sie.
+
+Selbst geprüft von Claude: Tests ohne Ton (Befehle, Analyse, Golden Files `tests/golden/dj_*.wav`,
+Migration Schema 5 → 6, Tasten gegen RESERVED_KEYS), Bilder Einfach und DJ, dunkel und hell, 1920 × 1030 und
+1366 × 768 im Fotomodus. Nicht geprüft: Ton über ein echtes Vierkanal-Interface, echte Maus-Bedienung
+(Jogwheel, Fader), Windows.
 
 ## Design-Runde 3 gesamt (0.35.24, offen)
 

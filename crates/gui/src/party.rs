@@ -11,6 +11,8 @@ use woa_radio::party::{Effect, PartyCommand, PartyLayout, PartyState, Side};
 use crate::radio::RadioDesk;
 use crate::theme;
 
+mod dj;
+
 /// Der Party-Modus.
 #[derive(Default)]
 pub struct PartyView {
@@ -34,6 +36,8 @@ pub struct PartyView {
     remote_h: f32,
     /// Fotomodus `WOA_REMOTE` hat die Fernbedienung schon eingeschaltet.
     photo_remote: bool,
+    /// DJ-Ansicht (DJ-Paket).
+    dj: dj::DjUi,
 }
 
 /// Wellenform und Tempo eines Decks: geladen für `path`, Ergebnis kommt aus einem
@@ -274,6 +278,17 @@ impl PartyView {
         let mut folder = false;
         // Ein Raster (Entwurf ScreenParty): 10 px zwischen Karten.
         ui.spacing_mut().item_spacing = egui::vec2(GAP, GAP);
+        let dj_view = view.dj.clone();
+        self.photo_dj_view(desk, dj_view.as_ref());
+        self.dj_feed(desk, dj_view.as_ref(), &db);
+        folder |= self.view_bar(ui, desk, dj_view.as_ref(), duo.auto);
+        if let Some(d) = dj_view.as_ref().filter(|d| d.dj) {
+            self.dj_ui(ui, desk, library, d, &mut cmds);
+            if folder {
+                Self::load_folder(desk);
+            }
+            return cmds;
+        }
         // Oben: zwei Decks.
         ui.columns(2, |cols| {
             for (k, side) in [Side::Left, Side::Right].into_iter().enumerate() {

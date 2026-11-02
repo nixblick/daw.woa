@@ -771,3 +771,79 @@ svg.woa-i{width:16px;height:16px;fill:currentColor;flex:none}
 .woa-pr2__r.blk.scale{background:color-mix(in srgb,var(--t) 8%,color-mix(in srgb,var(--text) 6%,transparent))}
 .woa-pr2__out{background:color-mix(in srgb,var(--text) 9%,transparent);background-image:repeating-linear-gradient(135deg,transparent 0 6px,color-mix(in srgb,var(--text) 5%,transparent) 6px 7px)}
 .woa-pr2__n{background:color-mix(in srgb,var(--t) calc(55% + var(--v,80) * .45%),var(--well));color:color-mix(in srgb,var(--t) 22%,#000)}
+
+/* =====================================================================
+   Fassung 5: DJ-Mixen im Party-Modus
+   ===================================================================== */
+.woa-dj{--da:var(--accent);--db:var(--track-1)}
+/* Parallele Wellenformen mit Mittellinie */
+.woa-pw{position:relative;background:var(--lcd-bg);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-well);overflow:hidden;display:grid;grid-template-rows:1fr 18px 1fr}
+.woa-pw canvas{display:block;width:100%;height:100%}
+.woa-pw__mid{display:flex;align-items:center;gap:10px;padding:0 10px;border-top:1px solid var(--led-off);border-bottom:1px solid var(--led-off);font-family:var(--font-mono);font-size:10px;color:var(--lcd-text)}
+.woa-pw__line{position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--lcd-text);box-shadow:0 0 6px var(--lcd-text);z-index:2}
+.woa-pw__tag{position:absolute;left:8px;font-family:var(--font-label);font-size:11px;font-weight:800;letter-spacing:.08em;z-index:3;padding:1px 6px;border-radius:var(--radius-sm);background:var(--lcd-bg)}
+.woa-phase{flex:1;height:6px;border-radius:3px;background:var(--led-off);position:relative}
+.woa-phase i{position:absolute;top:-2px;width:3px;height:10px;border-radius:1px;background:var(--ok)}
+.woa-phase::after{content:"";position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--lcd-text)}
+
+/* DJ-Deck */
+.woa-djd{--dc:var(--da);display:flex;flex-direction:column;gap:10px;padding:12px;background:var(--panel);border:1px solid var(--border);border-top:3px solid var(--dc);border-radius:var(--radius-party);min-width:0}
+.woa-djd__hd{display:flex;align-items:center;gap:10px;min-width:0}
+.woa-djd__ti{flex:1;min-width:0}
+.woa-djd__ti b{display:block;font-family:var(--font-label);font-size:22px;line-height:24px;font-weight:800;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.woa-djd__ti span{display:block;font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.woa-djd__lcd{display:flex;flex-direction:column;align-items:flex-end;gap:2px;padding:4px 10px;min-width:118px}
+.woa-djd__lcd .woa-seg{font-size:24px}
+.woa-djd__lcd small{font-family:var(--font-mono);font-size:11px;color:var(--lcd-text)}
+.woa-key-chip{display:inline-grid;place-items:center;min-width:34px;height:26px;padding:0 6px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--text);background:var(--well)}
+.woa-key-chip.is-match{border-color:var(--ok);color:var(--ok)}
+.woa-ov{position:relative;height:34px;background:var(--lcd-bg);border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden}
+.woa-ov canvas{display:block;width:100%;height:100%}
+.woa-ov__hc{position:absolute;top:0;bottom:0;width:2px;background:var(--c)}
+.woa-ov__hc::after{content:attr(data-n);position:absolute;top:0;left:2px;font-family:var(--font-mono);font-size:9px;font-weight:700;color:var(--lcd-bg);background:var(--c);padding:0 3px;border-radius:0 2px 2px 0}
+.woa-ov__loop{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--accent-2) 22%,transparent);border-left:1px solid var(--accent-2);border-right:1px solid var(--accent-2)}
+.woa-djd__body{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center}
+.woa-djd.is-mirror .woa-djd__body{grid-template-columns:auto minmax(0,1fr) auto}
+.woa-djd__ctl{display:flex;flex-direction:column;gap:10px;min-width:0}
+.woa-hc{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.woa-hc button{appearance:none;height:40px;border-radius:var(--radius-md);border:1px solid var(--border-strong);background:var(--surface);box-shadow:var(--shadow-key);color:var(--text);font-family:var(--font-label);font-size:14px;font-weight:800;cursor:pointer;position:relative;padding:0}
+.woa-hc button::before{content:"";position:absolute;left:4px;right:4px;bottom:3px;height:3px;border-radius:2px;background:var(--c)}
+.woa-hc button.is-empty{background:transparent;border-style:dashed;box-shadow:none;color:var(--text-dim)}
+.woa-hc button.is-empty::before{display:none}
+.woa-loop{display:flex;align-items:center;gap:6px}
+.woa-loop .woa-segs{flex:1}
+.woa-loop .woa-segs button{flex:1}
+.woa-djd__keys{display:grid;grid-template-columns:1fr 1.3fr 1fr auto;gap:8px;align-items:center}
+.woa-djd__keys .woa-bigkey{--key-party-h:52px;font-size:16px;padding:0 8px;min-width:0;gap:8px}
+.woa-djd__keys .woa-bigkey svg.woa-i{width:22px;height:22px}
+.woa-bigkey--cue{--c:var(--cue);--c-on:var(--lcd-bg)}
+.woa-bigkey.is-lit{border-color:var(--c);color:var(--text);box-shadow:var(--shadow-key-pressed),0 0 10px -2px var(--c)}
+.woa-tempo{display:flex;flex-direction:column;align-items:center;gap:6px}
+.woa-tempo .woa-fader{--fader-h:200px}
+.woa-tempo__v{font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--text)}
+.woa-tempo__nudge{display:flex;gap:4px}
+
+/* DJ-Mixer */
+.woa-djm{display:grid;grid-template-columns:1fr 92px 1fr;gap:6px;padding:12px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-party);align-content:start}
+.woa-djm__ch{--dc:var(--da);display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px 4px;border-radius:var(--radius-lg);background:color-mix(in srgb,var(--dc) 6%,var(--panel));border-top:3px solid var(--dc)}
+.woa-djm__ch .woa-knob{--knob-d:34px;width:52px}
+.woa-djm__ch .woa-knob__name{font-size:9px}
+.woa-djm__mid{display:flex;flex-direction:column;align-items:center;gap:8px;padding-top:6px}
+.woa-djm__mid .woa-knob{--knob-d:34px;width:62px}
+.woa-djm__fm{display:flex;gap:4px;align-items:stretch}
+.woa-djm__xf{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding-top:6px;border-top:1px solid var(--border)}
+.woa-djm__xf .woa-fader{flex:1;width:auto}
+.woa-djm__lab{font-family:var(--font-label);font-size:12px;font-weight:800;letter-spacing:.08em}
+
+/* Ansicht Einfach | DJ */
+.woa-pbar{display:flex;align-items:center;gap:12px;height:44px;padding:0 10px}
+
+/* Fernbedienung kompakt (Fenster < 900 px Höhe) + QR groß */
+.woa-remote--c{display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-party)}
+.woa-qr{flex:none;border-radius:var(--radius-md);background:repeating-conic-gradient(var(--text) 0 25%,var(--panel) 0 50%) 0 0/16px 16px;border:4px solid var(--text);cursor:zoom-in}
+.woa-qrbig{position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;padding:28px;background:color-mix(in srgb,var(--lcd-bg) 88%,transparent);border-radius:var(--radius-party)}
+.woa-qrbig .woa-qr{width:300px;height:300px;background-size:60px 60px;border-width:12px;cursor:zoom-out}
+.woa-pw{grid-template-rows:minmax(0,1fr) 18px minmax(0,1fr)}
+.woa-pw canvas{height:100%;min-height:0}
+.woa-djd__body{flex:1;align-items:center}
+.woa-djd .woa-jog::before{background:var(--dc);box-shadow:0 0 14px color-mix(in srgb,var(--dc) 55%,transparent)}

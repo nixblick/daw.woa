@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui;
-use woa_io::controller::{Bus, Target};
+use woa_io::controller::{Bus, DeckAction, Target};
 use woa_radio::control::PflSource;
 use woa_radio::mixer::LevelBus;
 use woa_radio::station::{Station, View, ViewEntry};
@@ -1066,7 +1066,7 @@ impl RadioDesk {
             }
             PflOutput::Kanal34 => match woa_engine::device::output_channels(&config) {
                 Ok(n) if n >= 4 => {
-                    let (h, mut player) = woa_radio::pfl::channel(rate);
+                    let (h, mut player) = woa_radio::pfl::channel_with_bus(rate, rate);
                     controller.set_pfl(Some(h));
                     tracing::info!(channels = n, "pfl on channels 3/4");
                     let f: woa_engine::device::AuxRender =
@@ -1094,7 +1094,7 @@ impl RadioDesk {
                     buffer_frames: None,
                 };
                 let prate = woa_engine::device::output_sample_rate(&cfg).unwrap_or(48_000);
-                let (h, mut player) = woa_radio::pfl::channel(prate);
+                let (h, mut player) = woa_radio::pfl::channel_with_bus(prate, rate);
                 let render: woa_engine::device::PairsRender = Box::new(move |bufs, frames| {
                     if let Some(b) = bufs.first_mut() {
                         player.process(&mut b.l[..frames], &mut b.r[..frames]);
@@ -1637,7 +1637,7 @@ impl RadioDesk {
             Target::Stop => self.with(|c| c.stop_or_pause()),
             Target::Cart(slot) if slot < CARTS => self.with(move |c| c.trigger_cart(slot)),
             // Decks A–C (André 02.11.2026): wie die Tasten am Deck.
-            Target::DeckStart(k) => {
+            Target::Deck(k, DeckAction::Start) => {
                 let Some(d) = self.view.decks.get(k) else {
                     return;
                 };
@@ -1647,8 +1647,10 @@ impl RadioDesk {
                     self.with(move |c| c.deck_play(k));
                 }
             }
-            Target::DeckCue(k) if k < self.view.decks.len() => self.with(move |c| c.deck_cue(k)),
-            Target::DeckPfl(k) if k < self.view.decks.len() => self.with(move |c| {
+            Target::Deck(k, DeckAction::Cue) if k < self.view.decks.len() => {
+                self.with(move |c| c.deck_cue(k))
+            }
+            Target::Deck(k, DeckAction::Pfl) if k < self.view.decks.len() => self.with(move |c| {
                 if let Err(e) = c.pfl_toggle(PflSource::Deck(k)) {
                     c.report(e);
                 }
@@ -1705,6 +1707,45 @@ impl RadioDesk {
     }
 
     /// ▶ Play bzw. Pause an einer Party-Seite.
+    /// Ein Kommando der DJ-Ansicht (DJ-Paket); Fehler erscheinen als Meldung.
+    pub fn dj(&self, cmd: woa_radio::control::DjCommand) {
+        self.with(move |c| {
+            if let Err(e) = c.dj(cmd) {
+                c.report(e);
+            }
+        });
+    }
+
+    /// Führt DJ-Kommandos des Agenten aus und liefert den DJ-Zustand (wartet höchstens 2 s
+    /// auf die Sendung).
+    pub fn dj_agent(
+        &self,
+        cmds: Vec<woa_radio::control::DjCommand>,
+    ) -> Result<serde_json::Value, String> {
+        if self.station.is_none() {
+            return Err("Keine Sendung offen: Party einschalten".into());
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.with(move |c| {
+            let mut r = Ok(());
+            for cmd in cmds {
+                if let Err(e) = c.dj(cmd) {
+                    r = Err(e);
+                    break;
+                }
+            }
+            let out = r.and_then(|()| {
+                let v = c
+                    .dj_view()
+                    .ok_or_else(|| "Party ist nicht an".to_string())?;
+                serde_json::to_value(v).map_err(|e| e.to_string())
+            });
+            let _ = tx.send(out);
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap_or_else(|_| Err("Die Sendung antwortet nicht".into()))
+    }
+
     pub fn party_side(&self, side: usize, play: bool) {
         self.with(move |c| {
             if play {
@@ -1758,7 +1799,9 @@ impl RadioDesk {
             Target::Mic => self.view.mic_open,
             Target::StartNext => self.view.running,
             Target::Cart(slot) => *slot < 32 && self.view.carts_playing & (1 << slot) != 0,
-            Target::DeckStart(k) => self.view.decks.get(*k).is_some_and(|d| d.playing),
+            Target::Deck(k, DeckAction::Start) => {
+                self.view.decks.get(*k).is_some_and(|d| d.playing)
+            }
             _ => false,
         }
     }
@@ -4734,7 +4777,7 @@ impl RadioDesk {
                             "Vorhören (PFL) im Kopfhörer"
                         })
                         .on_disabled_hover_text(self.pfl_hint());
-                        self.learn_menu(&r, Target::DeckPfl(k));
+                        self.learn_menu(&r, Target::Deck(k, DeckAction::Pfl));
                         if r.clicked() {
                             self.with(move |c| {
                                 if let Err(e) = c.pfl_toggle(PflSource::Deck(k)) {
@@ -4752,7 +4795,7 @@ impl RadioDesk {
                             SYMBOL_KEY,
                         )
                         .on_hover_text("Cue: zurück an den Anfang (Rechtsklick: MIDI lernen)");
-                        self.learn_menu(&r, Target::DeckCue(k));
+                        self.learn_menu(&r, Target::Deck(k, DeckAction::Cue));
                         if r.clicked() {
                             self.with(move |c| c.deck_cue(k));
                         }
@@ -4796,7 +4839,7 @@ impl RadioDesk {
                         let r = r.on_hover_text(format!(
                             "Deck {name}: {word} (Taste {name}, Rechtsklick: MIDI lernen)"
                         ));
-                        self.learn_menu(&r, Target::DeckStart(k));
+                        self.learn_menu(&r, Target::Deck(k, DeckAction::Start));
                         if r.clicked() {
                             if d.playing {
                                 self.with(move |c| c.deck_stop(k));
@@ -5660,17 +5703,17 @@ mod deck_drop_tests {
         run(&ctx, &mut desk, n, egui::RawInput::default());
         desk.deck_load_file(2, song);
         assert!(settle(&ctx, &mut desk, &mut n, |v| deck_title(v, 2).is_some()));
-        desk.press(Target::DeckStart(2));
+        desk.press(Target::Deck(2, DeckAction::Start));
         assert!(settle(&ctx, &mut desk, &mut n, |v| v.decks[2].playing));
-        assert!(desk.lit(&Target::DeckStart(2)));
-        desk.press(Target::DeckStart(2));
+        assert!(desk.lit(&Target::Deck(2, DeckAction::Start)));
+        desk.press(Target::Deck(2, DeckAction::Start));
         assert!(settle(&ctx, &mut desk, &mut n, |v| !v.decks[2].playing));
-        desk.press(Target::DeckStart(9));
+        desk.press(Target::Deck(9, DeckAction::Start));
         let src = include_str!("radio.rs");
         for t in [
-            "Target::DeckStart(k)",
-            "Target::DeckCue(k)",
-            "Target::DeckPfl(k)",
+            "Target::Deck(k, DeckAction::Start)",
+            "Target::Deck(k, DeckAction::Cue)",
+            "Target::Deck(k, DeckAction::Pfl)",
         ] {
             assert!(
                 src.contains(&format!("learn_menu(&r, {t})")),

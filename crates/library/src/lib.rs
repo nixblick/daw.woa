@@ -7,6 +7,7 @@
 //! wird abgelehnt statt beschädigt.
 
 pub mod analysis;
+pub mod dj;
 mod hash;
 pub mod import;
 pub mod plays;
@@ -25,7 +26,7 @@ pub use hash::file_hash;
 pub const DB_FILE: &str = "bibliothek.sqlite3";
 
 /// Aktuelle Schemaversion.
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 /// Längste Tag-Bezeichnung (Zeichen).
 pub const MAX_TAG_CHARS: usize = 40;
 /// Mehr Tags je Titel nimmt die Bibliothek nicht an.
@@ -98,7 +99,21 @@ CREATE TABLE waveforms (
 ) WITHOUT ROWID;
 ";
 
-const MIGRATIONS: [&str; 5] = [V1, V2, V3, V4, V5];
+/// DJ-Paket (0.36.0): Beatgrid-Lage je Titel und DJ-Marken (Hot Cues, Schleife) je Inhalt.
+/// Titel mit Tempo kommen noch einmal in die Analyse, damit sie ein Beatgrid bekommen.
+const V6: &str = "
+ALTER TABLE tracks ADD COLUMN beat_offset REAL;
+UPDATE tracks SET analyzed_hash = NULL WHERE bpm IS NOT NULL;
+CREATE TABLE dj_marks (
+    hash  TEXT NOT NULL,
+    slot  INTEGER NOT NULL,
+    start REAL NOT NULL,
+    end   REAL,
+    PRIMARY KEY (hash, slot)
+) WITHOUT ROWID;
+";
+
+const MIGRATIONS: [&str; 6] = [V1, V2, V3, V4, V5, V6];
 
 /// Fehler der Bibliothek, Text ohne Pfade.
 #[derive(Debug)]
@@ -205,6 +220,8 @@ pub struct Track {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Analysis {
     pub bpm: Option<f64>,
+    /// Sekunde des ersten Schlags (Beatgrid, Schema 6); nur mit Tempo.
+    pub beat_offset: Option<f64>,
     /// Anzeigename, z. B. „C-Dur“.
     pub key: Option<String>,
     /// Integrierte Lautheit in LUFS.
@@ -359,7 +376,7 @@ fn now_secs() -> i64 {
 const SELECT: &str = "SELECT t.id, t.path, t.hash, t.title, t.duration, t.kind, t.added, \
     (SELECT group_concat(tag, char(31)) FROM (SELECT tag FROM tags WHERE track_id = t.id ORDER BY tag)), \
     (t.analyzed_hash IS NOT NULL AND t.analyzed_hash = t.hash), \
-    t.bpm, t.key, t.lufs, t.true_peak, t.peak_db, t.lead, t.tail, t.cue_in, t.fade_out, t.cue_out \
+    t.bpm, t.key, t.lufs, t.true_peak, t.peak_db, t.lead, t.tail, t.cue_in, t.fade_out, t.cue_out, t.beat_offset \
     FROM tracks t";
 
 fn row_track(r: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
@@ -388,6 +405,7 @@ fn row_track(r: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
                 cue_in: r.get(16)?,
                 fade_out: r.get(17)?,
                 cue_out: r.get(18)?,
+                beat_offset: r.get(19)?,
             })
         } else {
             None
@@ -512,8 +530,8 @@ impl Library {
     pub fn set_analysis(&self, id: i64, hash: &str, a: &Analysis) -> Result<bool> {
         let n = self.conn.execute(
             "UPDATE tracks SET analyzed_hash = ?2, bpm = ?3, key = ?4, lufs = ?5, true_peak = ?6, \
-             peak_db = ?7, lead = ?8, tail = ?9, cue_in = ?10, fade_out = ?11, cue_out = ?12 \
-             WHERE id = ?1 AND hash = ?2",
+             peak_db = ?7, lead = ?8, tail = ?9, cue_in = ?10, fade_out = ?11, cue_out = ?12, \
+             beat_offset = ?13 WHERE id = ?1 AND hash = ?2",
             params![
                 id,
                 hash,
@@ -526,7 +544,8 @@ impl Library {
                 a.tail_silence,
                 a.cue_in,
                 a.fade_out,
-                a.cue_out
+                a.cue_out,
+                a.beat_offset
             ],
         )?;
         Ok(n > 0)
