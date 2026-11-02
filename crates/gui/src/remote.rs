@@ -145,6 +145,14 @@ impl RemoteView {
         cmds
     }
 
+    /// Zeichnet die Karte immer kompakt (DJ-Ansicht: unten ist wenig Platz).
+    pub fn ui_small(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        self.qr_keys(&ctx);
+        self.qr_overlay(&ctx);
+        self.ui_compact(ui);
+    }
+
     /// Zeichnet die Karte.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();

@@ -140,8 +140,10 @@ impl PartyView {
                 ("Einfach", false, "Große Tasten, Auto-Übergang"),
                 ("DJ", true, "Zwei Decks und Mixer zum Mixen von Hand"),
             ] {
-                let r = crate::widgets::Key::new(word, egui::vec2(0.0, 28.0))
-                    .font(theme::label_font(13.0))
+                let font = theme::label_font(13.0);
+                let w = crate::widgets::key_width(ui, word, &font, 56.0);
+                let r = crate::widgets::Key::new(word, egui::vec2(w, 28.0))
+                    .font(font)
                     .radius(theme::RADIUS_MD)
                     .color(theme::accent())
                     .on(on == want)
@@ -157,7 +159,7 @@ impl PartyView {
                 ui.add_enabled_ui(false, |ui| {
                     crate::widgets::Key::new(
                         &format!("{}  AUTO-ÜBERGANG", super::AUTO_ICON),
-                        egui::vec2(0.0, 28.0),
+                        egui::vec2(170.0, 28.0),
                     )
                     .font(theme::label_font(13.0))
                     .radius(theme::RADIUS_MD)
@@ -219,13 +221,20 @@ impl PartyView {
         };
         self.dj_waves(ui, dj, waves_h);
         let rest = ui.available_height();
-        let bottom_min = if win_h < COMPACT_BELOW { 150.0 } else { 200.0 };
+        let bottom_min = if win_h < COMPACT_BELOW { 175.0 } else { 220.0 };
         let deck_h = (rest - bottom_min - GAP).clamp(300.0, 560.0);
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = GAP;
+            // Rahmen zeichnen Rand und Innenabstand außerhalb der Größe: abziehen
+            // (Deck 2 × 12 + 2, Mixer 2 × 10 + 2), sonst ragt Deck B aus dem Fenster.
             let w = ((ui.available_width() - MIXER_W - 2.0 * GAP) / 2.0).max(300.0);
             for part in 0..3 {
-                let size = egui::vec2(if part == 1 { MIXER_W } else { w }, deck_h);
+                let (outer, frame) = if part == 1 {
+                    (MIXER_W, 22.0)
+                } else {
+                    (w, 26.0)
+                };
+                let size = egui::vec2(outer - frame, deck_h - frame);
                 ui.allocate_ui_with_layout(size, egui::Layout::top_down(egui::Align::Min), |ui| {
                     ui.set_min_size(size);
                     match part {
@@ -262,7 +271,7 @@ impl PartyView {
                             ui.spacing_mut().item_spacing = egui::vec2(GAP, GAP);
                             self.wish_card(ui, library, cmds);
                         });
-                    let r = ui.scope(|ui| self.remote.ui(ui)).response;
+                    let r = ui.scope(|ui| self.remote.ui_small(ui)).response;
                     self.remote_h = r.rect.height();
                 },
             );
@@ -271,12 +280,16 @@ impl PartyView {
 
     /// Fotomodus: `WOA_PARTY_VIEW=dj` schaltet beim ersten Bild die DJ-Ansicht ein.
     pub(super) fn photo_dj_view(&mut self, desk: &RadioDesk, dj: Option<&DjView>) {
-        if self.dj.photo_view || dj.is_none() {
+        let Some(dj) = dj else { return };
+        if self.dj.photo_view || dj.dj {
+            self.dj.photo_view = true;
             return;
         }
-        self.dj.photo_view = true;
         if std::env::var("WOA_PARTY_VIEW").as_deref() == Ok("dj") {
+            // Bis die Sendung die Ansicht zeigt (sie antwortet asynchron).
             desk.dj(DjCommand::View { dj: true });
+        } else {
+            self.dj.photo_view = true;
         }
     }
 
@@ -638,7 +651,7 @@ impl PartyView {
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.set_min_height(h - 24.0);
+                ui.set_min_height(h);
                 // Kante oben in Deckfarbe.
                 let top = ui.max_rect().expand(12.0);
                 ui.painter().hline(
@@ -683,36 +696,39 @@ impl PartyView {
                                 ok,
                             );
                         }
-                        ui.vertical(|ui| {
-                            ui.add(
-                                egui::Label::new(
-                                    egui::RichText::new(entry.map_or_else(
-                                        || "– leer –".to_string(),
-                                        |e| theme::display_text(&e.title).to_uppercase(),
-                                    ))
-                                    .font(theme::label_font(18.0))
-                                    .strong()
-                                    .color(theme::text()),
-                                )
-                                .truncate(),
-                            );
-                            let sub = match (&d.key, entry.and_then(|e| e.lufs)) {
-                                (Some(k), Some(l)) => format!("{k} · {l:.1} LUFS"),
-                                (Some(k), None) => k.clone(),
-                                (None, Some(l)) => format!("{l:.1} LUFS"),
-                                _ => String::new(),
-                            };
-                            ui.label(egui::RichText::new(sub).size(12.0).color(theme::text_dim()));
-                        });
                     });
                 });
+                {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(entry.map_or_else(
+                                || "– leer –".to_string(),
+                                |e| theme::display_text(&e.title).to_uppercase(),
+                            ))
+                            .font(theme::label_font(18.0))
+                            .strong()
+                            .color(theme::text()),
+                        )
+                        .truncate(),
+                    );
+                    let sub = match (&d.key, entry.and_then(|e| e.lufs)) {
+                        (Some(k), Some(l)) => format!("{k} · {l:.1} LUFS"),
+                        (Some(k), None) => k.clone(),
+                        (None, Some(l)) => format!("{l:.1} LUFS"),
+                        _ => String::new(),
+                    };
+                    ui.label(egui::RichText::new(sub).size(12.0).color(theme::text_dim()));
+                }
                 if other.camelot.is_some() && d.camelot.is_some() && !d.key_match {
                     // nichts: der Chip bleibt grau.
                 }
                 self.overview(ui, desk, d, side);
                 ui.add_space(6.0);
                 let body_h = ui.available_height().max(120.0);
-                let jog_d = (body_h - 8.0).clamp(90.0, 190.0);
+                // Plattenteller: so groß wie Höhe und Breite (Tasten brauchen 200 px) erlauben.
+                let jog_d = (body_h - 8.0)
+                    .min(ui.available_width() - 56.0 - 200.0 - 24.0)
+                    .clamp(90.0, 190.0);
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing.x = 12.0;
                     let tempo_w = 56.0;
@@ -1280,7 +1296,7 @@ fn dj_mixer(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView) {
         .inner_margin(egui::Margin::same(10))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.set_min_height(h - 20.0);
+            ui.set_min_height(h);
             let strip_h = (h - 20.0 - 50.0).max(200.0);
             let w = ui.available_width();
             let cw = (w - 2.0 * 8.0) / 3.0;
@@ -1309,7 +1325,7 @@ fn dj_mixer(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView) {
                 ui.label(theme::panel_label("B").color(deck_color(1)));
                 for (word, hard) in [("weich", false), ("hart", true)] {
                     let on = dj.curve_hard == hard;
-                    let r = crate::widgets::Key::new(word, egui::vec2(0.0, 24.0))
+                    let r = crate::widgets::Key::new(word, egui::vec2(52.0, 24.0))
                         .font(theme::label_font(12.0))
                         .radius(theme::RADIUS_SM)
                         .color(theme::accent())
