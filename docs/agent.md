@@ -88,6 +88,14 @@ live; gleichzeitiges Speichern in ihm und im Fenster überschreibt sich.
 | `export_jingle` | `name` (nur Dateiname, kein Pfad), `target_lufs` (optional, Vorgabe: Ziel der Sendung aus `radio.json`), `cart` (optional, 1–16) | Fertiges Jingle (J6): Verstärkung auf die Ziel-Lautheit, Limiter auf −1 dBFS, WAV in den Jingle-Ordner der App (`WOA/Jingles` oder der eigene aus den Einstellungen), Eintrag als Jingle in der Bibliothek, auf Wunsch auf die Cart. Vorhandene Dateien bleiben, der nächste freie Name wird genommen; gleicher Inhalt gilt als schon vorhanden. Derselbe Weg wie „Exportieren → Als Jingle“ |
 | `undo` / `redo` | – | letzten Schritt zurück / wieder her |
 | `save` | – | atomar in den Projektordner schreiben |
+| `dj_state` | – | DJ-Ansicht der Party in der laufenden App lesen (DJ-Paket): je Deck A/B Titel, Stelle, BPM und aktuelles Tempo, Tempo-Fader und Prozent, Tonart mit Camelot und ob sie zum anderen Deck passt, Keylock, Sync, Lage im Takt, Cue-Punkt, Hot Cues 1–4, Schleife, Trim, EQ, Filter, Kanalfader, Kopfhörer-Cue; Crossfader, Kurve, Master, Kopfhörer-Mix und -Pegel, ob ein Vorhör-Ausgang da ist |
+| `dj_deck` | `deck` (`A`/`B`), `action` (`load`, `play`, `pause`, `cue`, `sync`, `hot_cue`, `loop`, `tempo`, `keylock`, `seek`), je nach Aktion `index`, `slot` (1–4), `beats` (1/2/4/8/16), `value`, `on` | ein Deck steuern: laden (Deck muss stehen), Play/Pause, Cue antippen, Sync an/aus (Tempo und Takt, auch Doppel-/Halbtempo; über ±8 % abgelehnt), Hot Cue setzen/anspringen/löschen, Auto-Loop, Tempo −1..1 (= ±8 %), Keylock, springen; liefert den Zustand |
+| `dj_mixer` | `control` (`view`, `trim`, `eq_lo`, `eq_mid`, `eq_hi`, `filter`, `fader`, `cue`, `crossfader`, `curve`, `master`, `phones_mix`, `phones_level`), `value`, `deck` (für Kanalregler) | einen Mixer-Regler setzen; liefert den Zustand. Der Kopfhörer geht nie auf Sendung |
+
+Die drei `dj_*`-Werkzeuge steuern die Party-Decks der **laufenden App** (Live-Modus) und brauchen
+keine Projektsitzung; ohne App antworten sie mit einem Hinweis. Sie sind Live-Steuerung wie der
+Probeton: kein Rückgängig-Schritt, nichts in der Sendung gespeichert. Nur Hot Cues und Schleifen
+landen je Titel in der Bibliothek.
 
 Klang entsteht offline im Control-Bereich (`woa_dsp::generate`, nie im Audio-Thread) und liegt als
 Datei im Projekt; die GUI spielt ihn wie jede Aufnahme. Gemessen wird nach ITU-R BS.1770

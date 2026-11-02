@@ -217,6 +217,10 @@ pub enum Cmd {
     /// Party-Crossfader (0 = links, 1 = rechts). `frames == 0`: von Hand (kurz geglättet),
     /// sonst fährt er in so vielen Frames hin. Eine Handbewegung ersetzt jede Fahrt.
     PartyFader { to: f32, frames: usize },
+    /// DJ-Ansicht der Party (flüchtig, siehe [`crate::djmix`]).
+    Dj(crate::djmix::DjCmd),
+    /// Kopfhörer-Bus der DJ-Ansicht zum Vorhör-Ausgang (nur dorthin, nie auf Sendung).
+    CueBus(Option<Owned<woa_engine::pairs::LinkTx>>),
 }
 
 /// Lock-frei lesbarer Zustand des Mixers.
@@ -287,6 +291,14 @@ pub struct Status {
     pub party_done: [AtomicU32; PARTY_SIDES],
     /// Stellung des Party-Crossfaders, wie der Mixer sie gerade fährt (f32-Bits).
     pub party_fader: AtomicU32,
+    /// DJ-Ansicht: wirksames Tempo je Seite (f64-Bits), Spitze je Kanal nach dem Fader,
+    /// Master-Spitze und Kopfhörer-Spitze seit dem letzten Abholen (f32-Bits).
+    pub dj_speed: [AtomicU64; PARTY_SIDES],
+    pub dj_peak: [AtomicU32; PARTY_SIDES],
+    pub dj_master_peak: AtomicU32,
+    pub dj_phones_peak: AtomicU32,
+    /// Der Kopfhörer-Bus ist mit einem Vorhör-Ausgang verbunden.
+    pub dj_cue_bus: AtomicBool,
 }
 
 impl Default for Status {
@@ -327,6 +339,11 @@ impl Default for Status {
             party_end: std::array::from_fn(|_| AtomicU64::new(0)),
             party_done: std::array::from_fn(|_| AtomicU32::new(0)),
             party_fader: AtomicU32::new(0),
+            dj_speed: std::array::from_fn(|_| AtomicU64::new(1.0f64.to_bits())),
+            dj_peak: std::array::from_fn(|_| AtomicU32::new(0)),
+            dj_master_peak: AtomicU32::new(0),
+            dj_phones_peak: AtomicU32::new(0),
+            dj_cue_bus: AtomicBool::new(false),
         }
     }
 }
@@ -554,6 +571,46 @@ impl DeckPlay {
         (out, false)
     }
 
+    /// Ein Frame in der DJ-Ansicht: über den Leser des Kanals (Tempo, Keylock, Scratch,
+    /// Schleife). Blenden und „fertig“ wie [`Self::tick`].
+    #[inline]
+    fn tick_dj(&mut self, ch: &mut crate::djmix::DjChan) -> ((f32, f32), bool) {
+        if self.pos != ch.synced {
+            ch.reader.seek(self.pos as f64);
+        }
+        ch.ctl.start = self.start as f64;
+        ch.ctl.end = self.end as f64;
+        ch.ctl.speed = ch.effective_speed();
+        if !self.playing {
+            ch.synced = self.pos;
+            return ((0.0, 0.0), false);
+        }
+        let mut g = self.gain;
+        if let Some(n) = self.stopping {
+            g *= n as f32 / self.stop_total.max(1) as f32;
+            if n <= 1 {
+                self.playing = false;
+                self.stopping = None;
+            } else {
+                self.stopping = Some(n - 1);
+            }
+        }
+        if let Some((p, len)) = self.fade_in {
+            g *= crossfade(p as f32 / len as f32).1;
+            self.fade_in = (p + 1 < len).then_some((p + 1, len));
+        }
+        let (l, r) = ch.reader.next(&self.buf.left, &self.buf.right, &ch.ctl);
+        self.pos = (ch.reader.position().max(0.0) as usize).min(self.end);
+        ch.synced = self.pos;
+        let ended = ch.ctl.speed >= 0.0 && ch.ctl.looped.is_none() && ch.reader.at_end(&ch.ctl);
+        if ended {
+            self.playing = false;
+            self.stopping = None;
+            self.fade_in = None;
+        }
+        ((l * g, r * g), ended)
+    }
+
     /// (Zustand, Stelle, Ende) für [`Status`].
     fn state(d: Option<&Self>) -> (u32, u64, u64) {
         match d {
@@ -627,6 +684,8 @@ pub struct Mixer {
     /// Party: zwei eigene Seiten über den Crossfader, im Musikzweig.
     party: [Option<DeckPlay>; PARTY_SIDES],
     party_fader: Fader,
+    /// DJ-Ansicht der Party (Leser, EQ, Filter, Fader, Kopfhörer-Bus).
+    dj: crate::djmix::DjMix,
     voice_pending: Option<VoicePending>,
     voice: Option<VoicePlay>,
     mic: Option<Owned<rtrb::Consumer<f32>>>,
@@ -709,6 +768,7 @@ impl Mixer {
             decks: std::array::from_fn(|_| None),
             party: std::array::from_fn(|_| None),
             party_fader: Fader::new(0.0, r),
+            dj: crate::djmix::DjMix::new(r),
             voice_pending: None,
             voice: None,
             mic: None,
@@ -936,6 +996,14 @@ impl Mixer {
                 }
                 Cmd::PartyPlay(side) => {
                     if let Some(Some(d)) = self.party.get_mut(side) {
+                        if let Some(f) = self
+                            .dj
+                            .chans
+                            .get_mut(side)
+                            .and_then(|c| c.pending_jump.take())
+                        {
+                            d.pos = f as usize;
+                        }
                         d.play(0);
                     }
                 }
@@ -962,6 +1030,30 @@ impl Mixer {
                     }
                 }
                 Cmd::PartyFader { to, frames } => self.party_fader.set(to, frames),
+                Cmd::Dj(c) => {
+                    if let crate::djmix::DjCmd::Jump { side, frame } = c
+                        && let Some(Some(d)) = self.party.get_mut(side)
+                    {
+                        let last = d.end.saturating_sub(1).max(d.start);
+                        let to = frame.max(d.start as f64).min(last as f64);
+                        if d.stopping.is_some() {
+                            // Erst ausblenden, dann springen (sonst läuft die Blende ab dem Ziel).
+                            self.dj.chans[side].pending_jump = Some(to);
+                        } else {
+                            self.dj.chans[side].pending_jump = None;
+                            self.dj.apply(crate::djmix::DjCmd::Jump { side, frame: to });
+                            d.pos = to as usize;
+                        }
+                    } else {
+                        self.dj.apply(c);
+                    }
+                }
+                Cmd::CueBus(tx) => {
+                    self.status
+                        .dj_cue_bus
+                        .store(tx.is_some(), Ordering::Release);
+                    self.dj.cue_bus = tx;
+                }
                 Cmd::Record(p) => self.rec = p,
                 Cmd::Stream(p) => self.stream = p,
                 Cmd::SetProcessing { bus, mic } => {
@@ -1235,14 +1327,56 @@ impl Mixer {
             }
 
             // Party: zwei Seiten über den Crossfader (Constant-Power), im Musikzweig.
-            let (pa, pb) = fader_gains(self.party_fader.tick());
-            for (k, (slot, g)) in self.party.iter_mut().zip([pa, pb]).enumerate() {
-                if let Some(d) = slot {
-                    let ((l, r), ended) = d.tick();
-                    ml += l * g;
-                    mr += r * g;
-                    if ended {
-                        self.status.party_done[k].fetch_add(1, Ordering::Release);
+            let xpos = self.party_fader.tick();
+            if self.dj.on {
+                // DJ-Ansicht: Leser, Trim, EQ, Filter, Kanalfader, Kurve, Master. Der
+                // Kopfhörer-Bus geht nur in seinen eigenen Ring.
+                let (pa, pb) = woa_dsp::dj::xfader_gains(xpos, self.dj.curve);
+                let (mut sum, mut cue) = ((0.0f32, 0.0f32), (0.0f32, 0.0f32));
+                for (k, (slot, g)) in self.party.iter_mut().zip([pa, pb]).enumerate() {
+                    let ch = &mut self.dj.chans[k];
+                    let trim = ch.trim.tick();
+                    let fg = ch.fader.tick();
+                    if let Some(d) = slot {
+                        let ((l, r), ended) = d.tick_dj(ch);
+                        if !d.playing
+                            && let Some(f) = ch.pending_jump.take()
+                        {
+                            ch.reader.seek(f);
+                            d.pos = f as usize;
+                            ch.synced = d.pos;
+                        }
+                        let (l, r) = ch.eq.process(l * trim, r * trim);
+                        let (l, r) = ch.filter.process(l, r);
+                        if ch.cue {
+                            cue.0 += l;
+                            cue.1 += r;
+                        }
+                        let (l, r) = (l * fg, r * fg);
+                        ch.peak = ch.peak.max(l.abs()).max(r.abs());
+                        sum.0 += l * g;
+                        sum.1 += r * g;
+                        if ended {
+                            self.status.party_done[k].fetch_add(1, Ordering::Release);
+                        }
+                    }
+                }
+                let mg = self.dj.master.tick();
+                let sum = (sum.0 * mg, sum.1 * mg);
+                self.dj.master_peak = self.dj.master_peak.max(sum.0.abs()).max(sum.1.abs());
+                ml += sum.0;
+                mr += sum.1;
+                self.dj.phones(cue, sum);
+            } else {
+                let (pa, pb) = fader_gains(xpos);
+                for (k, (slot, g)) in self.party.iter_mut().zip([pa, pb]).enumerate() {
+                    if let Some(d) = slot {
+                        let ((l, r), ended) = d.tick();
+                        ml += l * g;
+                        mr += r * g;
+                        if ended {
+                            self.status.party_done[k].fetch_add(1, Ordering::Release);
+                        }
                     }
                 }
             }
@@ -1452,6 +1586,7 @@ impl Mixer {
         }
         self.guests.end_block();
         self.publish(peak, mic_peak, reduction);
+        self.dj.reset_peaks();
         store_max(&self.status.phone_peak, phone_peak);
         store_max(&self.status.pult_peak, pult_peak);
         for (cell, v) in self.status.bus_peaks.iter().zip(bus_peaks) {
@@ -1519,6 +1654,12 @@ impl Mixer {
         }
         s.party_fader
             .store(self.party_fader.pos().to_bits(), Ordering::Release);
+        for (k, ch) in self.dj.chans.iter().enumerate() {
+            s.dj_speed[k].store(ch.effective_speed().to_bits(), Ordering::Release);
+            store_max(&s.dj_peak[k], ch.peak);
+        }
+        store_max(&s.dj_master_peak, self.dj.master_peak);
+        store_max(&s.dj_phones_peak, self.dj.phones_peak);
         s.mic_open.store(self.mic_open, Ordering::Release);
         s.phone_on.store(self.phone_on, Ordering::Release);
         s.voice.store(self.voice.is_some(), Ordering::Release);

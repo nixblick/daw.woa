@@ -17,10 +17,12 @@ use crate::events::{Action, EventClock, EventTable, MissedWhy};
 use crate::level::{auto_gain_db, db_to_gain};
 use crate::mixer::{Cmd, Mixer, NONE, Status};
 
+pub mod dj;
 mod duo;
 use crate::pfl::{PflCmd, PflHandle};
 use crate::show::{CartEntry, PlaylistEntry, RadioShow};
 use crate::{CARTS, RECORDINGS_DIR};
+pub use dj::{Band, DjCommand, DjDeckView, DjMarksChange, DjTrackInfo, DjView};
 pub use duo::{PartyDuoView, PartySideView};
 
 /// Kommandos im Flug zum Audio-Thread.
@@ -214,6 +216,8 @@ pub struct Controller {
     deck_return_fired: [bool; crate::DECKS],
     /// Party mit zwei Decks (`None`: aus).
     duo: Option<duo::Duo>,
+    /// DJ-Ansicht der Party (flüchtig).
+    dj: dj::DjCtl,
 }
 
 /// Ein Zeit-Event in der Playlist.
@@ -275,6 +279,7 @@ impl Controller {
             deck_done_seen: [0; crate::DECKS],
             deck_return_fired: [false; crate::DECKS],
             duo: None,
+            dj: dj::DjCtl::default(),
         };
         c.replace_show(show);
         (c, mixer)
@@ -1615,6 +1620,7 @@ impl Controller {
         self.event_tick(now);
         self.deck_return_tick();
         self.party_tick();
+        self.dj_tick();
     }
 
     fn pump_queue(&mut self) {
@@ -1807,7 +1813,12 @@ impl Controller {
     // ---- Vorhören (PFL) --------------------------------------------------------------
 
     /// Hängt einen Kopfhörer-Ausgang ein oder aus.
-    pub fn set_pfl(&mut self, pfl: Option<PflHandle>) {
+    pub fn set_pfl(&mut self, mut pfl: Option<PflHandle>) {
+        // DJ-Kopfhörer-Bus: die Sendeseite geht einmal an den Mixer, die Empfangsseite sitzt
+        // im Vorhör-Spieler. Ohne Ausgang gibt es keinen Bus (Cue-Tasten gesperrt).
+        let tx = pfl.as_mut().and_then(|h| h.bus_tx.take());
+        let tx = tx.map(|t| basedrop::Owned::new(&self.collector.handle(), t));
+        self.send(Cmd::CueBus(tx));
         self.pfl = pfl;
     }
 

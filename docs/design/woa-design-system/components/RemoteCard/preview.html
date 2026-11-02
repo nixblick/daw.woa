@@ -1,0 +1,14 @@
+<!-- @dsCard group="Party" height=520 width=900 subtitle="Fernbedienung: kompakt unter 900 px Fensterhöhe, QR groß per Klick" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}.cap{font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0 0 6px}</style></head>
+<body>
+
+<div style="display:grid;grid-template-columns:400px 380px;gap:24px;align-items:start">
+ <div><p class="cap">Kompakt (Fensterhöhe &lt; 900 px)</p><div class="woa-remote--c"><div class="woa-qr" style="width:64px;height:64px" data-tip="QR groß zeigen" data-hint="Für Handys aus Abstand"></div><div class="woa-col" style="gap:3px;flex:1;min-width:0"><span class="woa-label" style="color:var(--accent-2)">Fernbedienung</span><span class="woa-mono" style="font-size:12px">woa.local:8080 · PIN 4711</span><span class="woa-pill woa-pill--ok is-active" style="align-self:flex-start">9 Handys</span></div><button class="woa-ib woa-ib--lg" data-woa-icon="fullscreen" data-tip="QR groß" data-kbd="Q"></button><button class="woa-key is-lit" data-tip="Fernbedienung im WLAN"><span class="woa-key__led"></span>An</button></div></div>
+ <div><p class="cap">QR groß (Klick oder Q, Esc schließt)</p><div class="woa-qrbig" data-woa-mode="party"><div class="woa-qr"></div><b style="font-size:18px">woa.local:8080 · PIN 4711</b><span class="woa-dim" style="font-size:12px">Klick oder Esc schließt</span></div></div>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>

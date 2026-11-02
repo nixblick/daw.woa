@@ -129,6 +129,35 @@ PRs der Runde: #314 Party (0.35.17) · #317 Studio (0.35.18) · #313 Radio (0.35
 | §3 Produzent: Transport, Browser statt Knopfreihe, Spurkopf, Inspektor, Akkordspur, Instrument im Rack, Piano-Roll, Drum-Raster, Jingle-Assistent, Studio-Dock | ✓ siehe §5 (Browser, Akkordspur, Instrument-Abschnitt seit Runde 2, 0.35.14/0.35.15) |
 | §4 Screenshots, Prüfliste, Klickliste | ✓ 0.35.24 |
 
+## DJ-Paket (0.36.0)
+
+Auftrag André 02.11.2026, Design-System Fassung 5 (DjWaves, DjDeck, DjMixer, RemoteCard, ScreenPartyDJ).
+
+| Baustein | Stand | Ort |
+|---|---|---|
+| Party-Umschalter Einfach / DJ, Auto-Übergang in DJ aus | ✓ | `crates/gui/src/party/dj.rs` (`view_bar`), `crates/radio/src/control/duo.rs` |
+| Einfach-Deck nur Play/Pause | ✓ | `crates/gui/src/party.rs` |
+| DjWaves: parallele Wellen mit Phase, Mausrad zoomt | ✓ | `party/dj.rs` (`dj_waves`) |
+| DjDeck: Camelot-Chip, BPM, Restzeit, Übersicht mit Hot Cues und Loop | ✓ | `party/dj.rs` (`dj_deck`, `overview`) |
+| Hot Cues 1–4, Auto-Loop 1/2/4/8/16, Cue halten, Play, Sync, Keylock | ✓ | `crates/radio/src/control/dj.rs` (`DjCommand`) |
+| Tempo ±8 % mit Anschieben, Jogwheel (anschieben, scratchen) | ✓ | `crates/dsp/src/dj.rs` (Leser, WSOLA), `party/dj.rs` (`jog`, `tempo_column`) |
+| DjMixer: Trim, EQ mit Kill, Filter, Cue, Kanalfader mit LED, Master, Kopfhörer Mix/Pegel, Crossfader weich/hart | ✓ | `crates/dsp/src/dj.rs`, `party/dj.rs` (`dj_mixer`) |
+| Kopfhörer-Cue nur über Vorhör-Ausgang, ohne Ausgang gesperrt | ✓ | `crates/radio/src/mixer.rs`, `party/dj.rs` |
+| Beatgrid-Lage und Camelot aus der Analyse | ✓ | `crates/dsp/src/dj.rs`, `crates/library/src/analysis.rs` |
+| Hot Cues und Schleife je Titel gespeichert (Schema 6, Migration mit Test) | ✓ | `crates/library/src/dj.rs` |
+| Playlist mit BPM, Tonart, „A/B laden“ | ✓ | `party/dj.rs` (`dj_playlist`) |
+| RemoteCard kompakt unter 900 px, QR 300 px (Q, Klick, Esc) | ✓ | `crates/gui/src/remote.rs` |
+| MCP `dj_state`, `dj_deck`, `dj_mixer` | ✓ | `crates/agent/src/dj.rs`, `docs/agent.md` |
+| Golden Files EQ, Filter, Crossfader-Kurve, Time-Stretch | ✓ | `tests/golden/dj_*.wav` |
+| MIDI-Lernen für DJ-Ziele | offen: Frage an André | – |
+
+Abweichungen:
+
+- **Fernbedienung in der DJ-Ansicht immer kompakt**, auch bei 1920 × 1030 (unten ist neben der Playlist nur eine Zeile Platz; der Auftrag nennt „Fernbedienung kompakt“).
+- **Keylock als laufendes WSOLA** im Deck-Leser, nach dem Muster des vorhandenen `woa_dsp::stretch` (offline): keine neue Abhängigkeit, feste Puffer, keine Allokation im Audio-Thread. Klanglich einfacher als ein Phasen-Vocoder; reicht für ±8 %.
+- **Tonart-Erkennung** liefert Dur/Moll aus der Bibliotheksanalyse; Camelot wird daraus abgeleitet.
+- **MIDI-Lernen** nicht gebaut: `woa_io::controller::Target` kennt nur Spuren, Pegel, Carts und Layout. Für die DJ-Ziele bräuchte es rund zwanzig neue Ziele samt Seite, Beschriftung, Weiterleitung und Lern-Oberfläche – nicht billig, daher Frage.
+
 ## Abweichungen vom Entwurf
 
 - **Probeton ist kein `woa_model::Command`:** Er ändert das Projekt nicht und gehört daher weder in die Undo-Kette noch in die Projektdatei. Er ist ein eigener `Probe`-Befehl (Note an/aus), den Tests ohne Ton lesen.

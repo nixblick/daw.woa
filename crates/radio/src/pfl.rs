@@ -40,7 +40,12 @@ pub struct PflHandle {
     pub status: Arc<PflStatus>,
     /// Abtastrate des PFL-Ausgangs.
     pub rate: u32,
+    /// Sendeseite des DJ-Kopfhörer-Busses (der Controller reicht sie einmal an den Mixer).
+    pub(crate) bus_tx: Option<woa_engine::pairs::LinkTx>,
 }
+
+/// Block, in dem der DJ-Kopfhörer-Bus aus seinem Ring geholt wird.
+const BUS_CHUNK: usize = 256;
 
 /// Der Spieler im Audio-Thread.
 pub struct PflPlayer {
@@ -51,6 +56,20 @@ pub struct PflPlayer {
     stopping: Option<usize>,
     ramp: usize,
     fade_in: usize,
+    /// DJ-Kopfhörer-Bus vom Mixer (Cue + Master der DJ-Ansicht), wird dazugemischt.
+    bus: Option<woa_engine::pairs::LinkRx>,
+    bus_l: [f32; BUS_CHUNK],
+    bus_r: [f32; BUS_CHUNK],
+}
+
+/// Wie [`channel`], dazu der DJ-Kopfhörer-Bus vom Mixer (`mixer_rate`) zu diesem Ausgang.
+/// Nur dieser Weg trägt den Bus: er endet im Kopfhörer, nie im Mixer.
+pub fn channel_with_bus(rate: u32, mixer_rate: u32) -> (PflHandle, PflPlayer) {
+    let (mut h, mut p) = channel(rate);
+    let (tx, rx, _stats) = woa_engine::pairs::link(mixer_rate, rate.max(1));
+    h.bus_tx = Some(tx);
+    p.bus = Some(rx);
+    (h, p)
 }
 
 /// Legt Steuerseite und Spieler für einen Ausgang mit `rate` an.
@@ -63,6 +82,7 @@ pub fn channel(rate: u32) -> (PflHandle, PflPlayer) {
             cmds: p,
             status: Arc::clone(&status),
             rate: rate.max(1),
+            bus_tx: None,
         },
         PflPlayer {
             cmds: c,
@@ -71,6 +91,9 @@ pub fn channel(rate: u32) -> (PflHandle, PflPlayer) {
             stopping: None,
             ramp,
             fade_in: 0,
+            bus: None,
+            bus_l: [0.0; BUS_CHUNK],
+            bus_r: [0.0; BUS_CHUNK],
         },
     )
 }
@@ -138,6 +161,18 @@ impl PflPlayer {
             }
             left[i] = l;
             right[i] = r;
+        }
+        if let Some(bus) = self.bus.as_mut() {
+            let mut off = 0;
+            while off < n {
+                let k = (n - off).min(BUS_CHUNK);
+                bus.pull(&mut self.bus_l[..k], &mut self.bus_r[..k]);
+                for j in 0..k {
+                    left[off + j] += self.bus_l[j];
+                    right[off + j] += self.bus_r[j];
+                }
+                off += k;
+            }
         }
         let pos = self.voice.as_ref().map_or(0, |(_, p)| *p as u64);
         self.status

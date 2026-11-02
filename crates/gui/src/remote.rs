@@ -25,6 +25,31 @@ const OSC_PORT: u16 = 9000;
 const PUBLISH_EVERY: Duration = Duration::from_millis(250);
 /// Kantenlänge des QR-Codes in der Karte.
 const QR_SIDE: f32 = 120.0;
+/// Kantenlänge des QR-Codes in der kompakten Karte.
+const QR_SMALL: f32 = 64.0;
+/// Kantenlänge des großen QR-Codes über der Ansicht.
+const QR_BIG: f32 = 300.0;
+/// Unter dieser Fensterhöhe ist die Karte kompakt (eine Zeile).
+pub const COMPACT_BELOW: f32 = 900.0;
+
+/// Was die Karte zeigt: Adresse, PIN, Handyzahl. Im Fotomodus (`WOA_SCREENSHOT`) stehen
+/// Platzhalter da, damit keine LAN-Adresse und keine PIN in Bildern landen.
+struct Shown {
+    url: String,
+    host: String,
+    pin: String,
+    phones: usize,
+}
+
+/// Platzhalter für Bilder.
+fn photo_mode() -> bool {
+    std::env::var_os("WOA_SCREENSHOT").is_some()
+}
+
+/// Kompakte Karte bei dieser Fensterhöhe?
+pub fn compact(window_h: f32) -> bool {
+    window_h < COMPACT_BELOW
+}
 
 /// Zustand der Karte.
 #[derive(Default)]
@@ -36,6 +61,8 @@ pub struct RemoteView {
     last_publish: Option<Instant>,
     signature: Option<CatalogSig>,
     qr: Option<(String, QrMatrix)>,
+    /// QR-Code groß über der Ansicht (RemoteCard: Klick auf den QR, Symbol oder Taste Q).
+    qr_big: bool,
 }
 
 impl RemoteView {
@@ -118,9 +145,23 @@ impl RemoteView {
         cmds
     }
 
+    /// Zeichnet die Karte immer kompakt (DJ-Ansicht: unten ist wenig Platz).
+    pub fn ui_small(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        self.qr_keys(&ctx);
+        self.qr_overlay(&ctx);
+        self.ui_compact(ui);
+    }
+
     /// Zeichnet die Karte.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        self.qr_keys(&ctx);
+        self.qr_overlay(&ctx);
+        if compact(ctx.content_rect().height()) {
+            self.ui_compact(ui);
+            return;
+        }
         theme::card_frame()
             .inner_margin(egui::Margin::same(14))
             .show(ui, |ui| {
@@ -163,6 +204,201 @@ impl RemoteView {
             });
     }
 
+    /// Adresse, PIN und Handyzahl (Platzhalter im Fotomodus).
+    fn shown(&self) -> Option<Shown> {
+        let r = self.remote.as_ref()?;
+        if photo_mode() {
+            return Some(Shown {
+                url: "http://woa.local:8080/?pin=4711".into(),
+                host: "woa.local:8080".into(),
+                pin: "4711".into(),
+                phones: 9,
+            });
+        }
+        let pin = r.guest_pin();
+        let url = r.join_url(&pin);
+        let host = url
+            .split("/?")
+            .next()
+            .unwrap_or("")
+            .trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .trim_end_matches('/')
+            .to_string();
+        Some(Shown {
+            url,
+            host,
+            pin,
+            phones: r.clients(),
+        })
+    }
+
+    /// Taste Q zeigt den QR groß, Esc schließt (nur ohne Textfokus und mit laufender Karte).
+    fn qr_keys(&mut self, ctx: &egui::Context) {
+        if self.remote.is_none() {
+            self.qr_big = false;
+            return;
+        }
+        if ctx.egui_wants_keyboard_input() {
+            return;
+        }
+        ctx.input_mut(|i| {
+            if i.consume_key(egui::Modifiers::NONE, egui::Key::Q) {
+                self.qr_big = !self.qr_big;
+            }
+            if self.qr_big && i.consume_key(egui::Modifiers::NONE, egui::Key::Escape) {
+                self.qr_big = false;
+            }
+        });
+    }
+
+    /// Großer QR-Code (300 px) über der Ansicht; Klick irgendwo schließt.
+    fn qr_overlay(&mut self, ctx: &egui::Context) {
+        if !self.qr_big {
+            return;
+        }
+        let Some(sh) = self.shown() else { return };
+        self.refresh_qr(&sh.url);
+        let Some((_, m)) = &self.qr else { return };
+        let screen = ctx.content_rect();
+        let mut close = false;
+        egui::Area::new(egui::Id::new("remote-qr-big"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(screen.min)
+            .show(ctx, |ui| {
+                let (rect, resp) = ui.allocate_exact_size(screen.size(), egui::Sense::click());
+                ui.painter()
+                    .rect_filled(rect, 0.0, egui::Color32::from_black_alpha(170));
+                let card = egui::Rect::from_center_size(
+                    rect.center(),
+                    egui::vec2(QR_BIG + 40.0, QR_BIG + 90.0),
+                );
+                ui.painter().rect_filled(card, 8.0, theme::panel());
+                let mut child = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(card.shrink(20.0))
+                        .layout(egui::Layout::top_down(egui::Align::Center)),
+                );
+                draw_qr(&mut child, m, QR_BIG);
+                child.label(
+                    egui::RichText::new(format!("{} · PIN {}", sh.host, sh.pin))
+                        .monospace()
+                        .size(16.0)
+                        .color(theme::text()),
+                );
+                child.label(
+                    egui::RichText::new("Klick oder Esc schließt")
+                        .size(12.0)
+                        .color(theme::text_dim()),
+                );
+                close = resp.clicked();
+            });
+        if close {
+            self.qr_big = false;
+        }
+    }
+
+    fn refresh_qr(&mut self, url: &str) {
+        if self.qr.as_ref().map(|(u, _)| u.as_str()) != Some(url) {
+            self.qr = qr(url).map(|m| (url.to_string(), m));
+        }
+    }
+
+    /// Kompakte Karte (Fensterhöhe unter 900 px): eine Zeile mit QR 64 px, Adresse · PIN,
+    /// Handyzahl, „QR groß“ und „An“.
+    fn ui_compact(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        theme::card_frame()
+            .inner_margin(egui::Margin::same(10))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 12.0;
+                    let shown = self.shown();
+                    if let Some(sh) = &shown {
+                        self.refresh_qr(&sh.url);
+                        if let Some((_, m)) = &self.qr {
+                            let r = draw_qr(ui, m, QR_SMALL);
+                            let r = ui
+                                .interact(
+                                    r.rect,
+                                    egui::Id::new("remote-qr-small"),
+                                    egui::Sense::click(),
+                                )
+                                .on_hover_text("QR groß zeigen (Taste Q)");
+                            if r.clicked() {
+                                self.qr_big = true;
+                            }
+                        }
+                    }
+                    ui.vertical(|ui| {
+                        ui.label(theme::panel_label("FERNBEDIENUNG").color(theme::accent_2()));
+                        match &shown {
+                            Some(sh) => {
+                                ui.label(
+                                    egui::RichText::new(format!("{} · PIN {}", sh.host, sh.pin))
+                                        .monospace()
+                                        .size(12.0)
+                                        .color(theme::text_dim()),
+                                );
+                                theme::status_pill(
+                                    ui,
+                                    &format!(
+                                        "{} {}",
+                                        sh.phones,
+                                        if sh.phones == 1 { "Handy" } else { "Handys" }
+                                    ),
+                                    theme::ok(),
+                                    sh.phones > 0,
+                                );
+                            }
+                            None => {
+                                ui.label(
+                                    egui::RichText::new("Handys im WLAN wünschen Titel")
+                                        .size(12.0)
+                                        .color(theme::text_dim()),
+                                );
+                            }
+                        }
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let on = self.remote.is_some();
+                        let label = format!("{} AN", theme::ic::WIFI_HIGH);
+                        let r = crate::widgets::Key::new(&label, egui::vec2(72.0, 32.0))
+                            .font(theme::label_font(14.0))
+                            .radius(theme::RADIUS_MD)
+                            .color(theme::accent_2())
+                            .ink(theme::on_accent_2())
+                            .on(on)
+                            .ui(ui)
+                            .on_hover_text(if on {
+                                "Fernbedienung im WLAN ist an. Klick: aus (Handys werden getrennt)"
+                            } else {
+                                "Fernbedienung im WLAN einschalten"
+                            });
+                        if r.clicked() {
+                            if on {
+                                self.stop();
+                            } else {
+                                self.start(&ctx);
+                            }
+                        }
+                        if on
+                            && ui
+                                .add(egui::Button::new(theme::ic::ARROWS_OUT_SIMPLE))
+                                .on_hover_text("QR groß (Taste Q)")
+                                .clicked()
+                        {
+                            self.qr_big = true;
+                        }
+                    });
+                });
+                if let Some(e) = &self.error {
+                    ui.label(egui::RichText::new(e).color(theme::danger_text()));
+                }
+            });
+    }
+
     fn ui_off(&mut self, ui: &mut egui::Ui) {
         ui.label(
             egui::RichText::new("Handys im WLAN zeigen die Party und wünschen Titel.")
@@ -186,21 +422,21 @@ impl RemoteView {
 
     fn ui_on(&mut self, ui: &mut egui::Ui) {
         let Some(r) = &self.remote else { return };
-        let guest_url = r.join_url(&r.guest_pin());
-        let pin = r.guest_pin();
-        let dj_pin = r.dj_pin();
-        let dj_url = r.join_url(&dj_pin);
-        let osc = r.osc_addr();
-        let phones = r.clients();
+        let (dj_pin, dj_url, osc) = if photo_mode() {
+            (
+                "0000".to_string(),
+                "http://woa.local:8080/?pin=0000".to_string(),
+                None,
+            )
+        } else {
+            let p = r.dj_pin();
+            let u = r.join_url(&p);
+            (p, u, r.osc_addr())
+        };
+        let Some(sh) = self.shown() else { return };
+        let (guest_url, pin, phones, host) = (sh.url, sh.pin, sh.phones, sh.host);
         let plain = guest_url.split("/?").next().unwrap_or("").to_string();
-        let host = plain
-            .trim_start_matches("http://")
-            .trim_start_matches("https://")
-            .trim_end_matches('/')
-            .to_string();
-        if self.qr.as_ref().map(|(u, _)| u) != Some(&guest_url) {
-            self.qr = qr(&guest_url).map(|m| (guest_url.clone(), m));
-        }
+        self.refresh_qr(&guest_url);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 14.0;
             if let Some((_, m)) = &self.qr {
@@ -297,4 +533,20 @@ pub(crate) fn draw_qr(ui: &mut egui::Ui, m: &QrMatrix, side: f32) -> egui::Respo
         }
     }
     resp
+}
+
+#[cfg(test)]
+mod compact_tests {
+    use super::*;
+
+    /// RemoteCard: unter 900 px Fensterhöhe kompakt, bei 1030 px (1920 × 1030) groß.
+    #[test]
+    fn remote_card_is_compact_below_900_px() {
+        assert!(compact(768.0));
+        assert!(compact(899.0));
+        assert!(!compact(900.0));
+        assert!(!compact(1030.0));
+        assert_eq!(QR_SMALL, 64.0);
+        assert_eq!(QR_BIG, 300.0);
+    }
 }

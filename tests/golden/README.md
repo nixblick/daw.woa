@@ -7,3 +7,5 @@ Mischpult mit Bus, Send und Effekten: `crates/engine/tests/mixer.rs` (`mixer_bus
 Eingebaute Effekte (Paket 17): `crates/dsp/tests/effects.rs` (`effects_p17_chain.wav`, 48 kHz, Mono, f32, neun Effekte hintereinander auf demselben Testsignal, Toleranz 1e-3 wegen Gleitkomma-Unterschieden zwischen Linux und Windows). Die Rauschunterdrückung steht nicht darin; sie wird gemessen (Pegel, gleiches Ergebnis live und im Export).
 
 Neu schreiben: `WOA_BLESS=1 cargo test`. Instrumente: `crates/dsp/tests/instruments.rs` (48 kHz, Mono, f32, Toleranz 1e-4).
+
+DJ-Paket (0.36.0): `crates/dsp/tests/dj.rs` (`dj_eq_filter_1s.wav`, `dj_crossfader_2x1s.wav`, `dj_stretch_2x40k.wav`; 48 kHz, Mono, f32, Toleranz 1e-3).

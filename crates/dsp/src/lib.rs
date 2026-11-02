@@ -13,6 +13,7 @@
 pub mod analysis;
 pub mod automation;
 pub mod clock;
+pub mod dj;
 pub mod dynamics;
 pub mod effects;
 pub mod fx;

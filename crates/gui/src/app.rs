@@ -2530,7 +2530,15 @@ impl WoaApp {
         let Some((path, frames)) = &mut self.photo else {
             return;
         };
-        if *frames == 20 {
+        // `WOA_PHOTO_FRAMES=n` wartet länger (etwa bis Wellenformen gelesen sind).
+        let at = std::env::var("WOA_PHOTO_FRAMES")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(20);
+        if *frames < at {
+            ctx.request_repaint_after(std::time::Duration::from_millis(30));
+        }
+        if *frames == at {
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
         }
         let image = ctx.input(|i| {
@@ -6539,6 +6547,7 @@ impl eframe::App for WoaApp {
         if self.mcp_live.frame(ctx, &mut self.state) > 0 {
             self.produktionen.mark_stale();
         }
+        self.mcp_live.serve_dj(self.radio.as_ref());
         self.update_frame(ctx);
         if self.state.autosave_due(Instant::now()) {
             self.capture_plugins();
