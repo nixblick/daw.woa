@@ -16,7 +16,21 @@ impl Stereo {
     pub fn frames(&self) -> usize {
         self.left.len().min(self.right.len())
     }
+
+    /// Ende des Hörbaren zwischen `start` und `end`: der Frame nach dem letzten Sample über
+    /// [`SILENCE`]. Stille am Ende (z. B. hinter einem Jingle) zählt nicht (#324).
+    pub fn audible_end(&self, start: usize, end: usize) -> usize {
+        let end = end.min(self.frames());
+        let start = start.min(end);
+        (start..end)
+            .rev()
+            .find(|&i| self.left[i].abs() > SILENCE || self.right[i].abs() > SILENCE)
+            .map_or(start, |i| i + 1)
+    }
 }
+
+/// Unter diesem Betrag gilt ein Sample als still (−50 dBFS).
+pub const SILENCE: f32 = 0.003_162_278;
 
 /// Formate, die der Sendeablauf lesen kann (wie die Engine, `woa_engine::decode::EXTENSIONS`).
 pub fn is_supported(path: &Path) -> bool {

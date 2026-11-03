@@ -58,6 +58,8 @@ const DECK_ROW_H: f32 = 44.0;
 enum RowDrop {
     /// Auf Deck `k` laden.
     Deck(usize),
+    /// Dem Cart-Pad `slot` zuweisen (#323).
+    Cart(usize),
     /// In der Playlist an diese Stelle verschieben.
     Row(usize),
     /// Daneben oder auf sich selbst: nichts.
@@ -69,11 +71,15 @@ fn row_drop_target(
     pos: egui::Pos2,
     from: usize,
     decks: &[egui::Rect],
+    carts: &[egui::Rect],
     playlist: egui::Rect,
     rows: &[egui::Rect],
 ) -> RowDrop {
     if let Some(k) = decks.iter().position(|r| r.contains(pos)) {
         return RowDrop::Deck(k);
+    }
+    if let Some(slot) = carts.iter().position(|r| r.contains(pos)) {
+        return RowDrop::Cart(slot);
     }
     if !playlist.contains(pos) {
         return RowDrop::Nothing;
@@ -562,8 +568,9 @@ pub struct RadioDesk {
     row_selected: Option<usize>,
     /// Playlist-Zeile unter der Maus im letzten Bild (zeigt Verschieben und Entfernen).
     row_hover: Option<usize>,
-    /// Nummer einer Playlist-Zeile wird gerade eingetippt (#92): Zeile und Text.
-    pos_edit: Option<(usize, String)>,
+    /// Nummer einer Playlist-Zeile wird gerade eingetippt (#92): Zeile, Text und ob der Fokus
+    /// schon gesetzt wurde (nur einmal, #322).
+    pos_edit: Option<(usize, String, bool)>,
     /// Cart, das die nächste gedrückte Taste als neue Taste bekommt.
     key_capture: Option<usize>,
     /// Offenes Umbenennen (#292): was, Text, Fokus schon gesetzt.
@@ -581,7 +588,8 @@ pub struct RadioDesk {
     /// Fenster „Verwalten“ und Auswahl der aktiven Playlist.
     manage: crate::manage::ManageWindow,
     /// Eigener Strom für das Vorhören auf einem zweiten Gerät.
-    _pfl_output: Option<woa_engine::device::ManagedOutput>,
+    /// Vorhören auf einem zweiten Gerät, im eigenen Thread überwacht (#291).
+    _pfl_output: crate::outputs::OutputWatch,
     /// Warum das Vorhören keinen Ausgang hat (aus oder Fehler beim Öffnen); `None` = offen.
     pfl_note: Option<String>,
 }
@@ -1213,8 +1221,7 @@ impl RadioDesk {
             data_dir: dir.to_path_buf(),
             station: Station::spawn(controller).ok(),
             opened: crate::outputs::Opened {
-                _master: None,
-                _followers: Vec::new(),
+                watch: crate::outputs::OutputWatch::default(),
                 warnings: Vec::new(),
                 faults: Vec::new(),
                 links: Vec::new(),
@@ -1312,7 +1319,7 @@ impl RadioDesk {
             voice_editor: None,
             cue_seen: std::collections::HashMap::new(),
             manage: crate::manage::ManageWindow::default(),
-            _pfl_output: pfl_output,
+            _pfl_output: crate::outputs::OutputWatch::spawn(pfl_output.into_iter().collect()),
             pfl_note,
         }
     }
@@ -1416,10 +1423,9 @@ impl RadioDesk {
     /// Rettungsknopf „Ausgabe neu verbinden“: öffnet Sendeausgänge und Vorhören sofort neu.
     /// Das Ergebnis steht oben im Sendepult.
     pub fn reconnect_outputs(&mut self) {
-        let mut ok = self.outputs.reconnect_now();
-        if let Some(o) = self._pfl_output.as_mut() {
-            ok &= !matches!(o.reconnect_now(), woa_engine::device::Reconnect::Failed(_));
-        }
+        // Im Wächter-Thread (#291); das Ergebnis meldet `tick`.
+        let ok = self.outputs.reconnect_now();
+        self._pfl_output.reconnect_now();
         self.error = if ok {
             None
         } else {
@@ -1430,9 +1436,11 @@ impl RadioDesk {
     /// Ein Takt: Schnappschuss holen, speichern, fremde Änderungen an radio.json laden.
     /// `player_active`: Der Player-Strom läuft gleichzeitig (für das Log).
     pub fn tick(&mut self, player_active: bool) {
-        self.outputs.poll();
-        if let Some(o) = self._pfl_output.as_mut() {
-            o.poll();
+        // Die Ströme prüft und öffnet der Wächter-Thread neu (#291); hier nur sein Ergebnis.
+        let main = self.outputs.watch.take_reconnected();
+        let pfl = self._pfl_output.take_reconnected();
+        if main == Some(false) || pfl == Some(false) {
+            self.error = Some("Neu verbinden hat nicht geklappt, WOA versucht es weiter".into());
         }
         let Some(st) = &self.station else { return };
         self.view = st.view();
@@ -2213,7 +2221,8 @@ impl RadioDesk {
         }
     }
 
-    /// Aufs Fenster gezogene Dateien: auf ein Deck die erste, sonst alle in die Playlist.
+    /// Aufs Fenster gezogene Dateien: auf ein Deck oder Cart-Pad die erste, sonst alle in die
+    /// Playlist.
     fn drop_os_files(&mut self, ctx: &egui::Context) {
         let dropped: Vec<PathBuf> = ctx.input(|i| {
             i.raw
@@ -2225,9 +2234,14 @@ impl RadioDesk {
         if !dropped.is_empty() {
             let pos = ctx.input(|i| i.pointer.latest_pos());
             let deck = pos.and_then(|p| self.deck_rects.iter().position(|r| r.contains(p)));
+            let cart = pos.and_then(|p| self.cart_rects.iter().position(|r| r.contains(p)));
             if let Some(k) = deck {
                 if let Some(path) = dropped.into_iter().next() {
                     self.deck_load_file(k, path);
+                }
+            } else if let Some(slot) = cart {
+                if let Some(path) = dropped.into_iter().next() {
+                    self.assign_cart_file(slot, path);
                 }
             } else if let Some(s) = &self.station {
                 s.add_files(dropped);
@@ -2622,7 +2636,9 @@ impl RadioDesk {
             self.learn_menu(&r, Target::StartNext);
 
             let r = console_key(ui, theme::icf::STOP, "Stopp", theme::on_air(), false, KEY_H)
-                .on_hover_text("Stopp: 1× hält an wie Pause, 2× stoppt");
+                .on_hover_text(
+                    "Stopp: 1× hält an wie Pause, 2× stoppt; ein von Hand gestartetes Deck hält an",
+                );
             if r.clicked() {
                 self.with(|c| c.stop_or_pause());
             }
@@ -3640,18 +3656,23 @@ impl RadioDesk {
                             )
                             .on_hover_text("Ziehen zum Verschieben");
                             // Nummer eintippen (#92): Klick, Zahl, Enter verschiebt den Titel.
-                            let editing = self.pos_edit.as_ref().is_some_and(|(k, _)| *k == i);
+                            let editing = self.pos_edit.as_ref().is_some_and(|(k, _, _)| *k == i);
                             if editing {
                                 let len = v.playlist.len();
                                 let mut done = None;
-                                if let Some((_, text)) = self.pos_edit.as_mut() {
+                                if let Some((_, text, focused)) = self.pos_edit.as_mut() {
                                     let r = ui.add(
                                         egui::TextEdit::singleline(text)
                                             .desired_width(26.0)
                                             .font(egui::TextStyle::Monospace),
                                     );
-                                    r.request_focus();
-                                    if r.lost_focus() {
+                                    // Fokus nur einmal setzen (#322): sonst holt jedes Bild ihn
+                                    // zurück, und Tab, Esc oder ein Klick daneben enden nie.
+                                    if !*focused {
+                                        r.request_focus();
+                                        *focused = true;
+                                    }
+                                    if r.lost_focus() || (*focused && !r.has_focus()) {
                                         let enter =
                                             ui.input(|inp| inp.key_pressed(egui::Key::Enter));
                                         done = Some(
@@ -3686,7 +3707,7 @@ impl RadioDesk {
                                     )
                                     .on_hover_text("Klicken und neue Nummer eintippen (Enter)");
                                 if r.clicked() {
-                                    self.pos_edit = Some((i, (i + 1).to_string()));
+                                    self.pos_edit = Some((i, (i + 1).to_string(), false));
                                 }
                             }
                             let thumb = self.covers.as_mut().and_then(|c| c.thumb(&e.path));
@@ -3908,6 +3929,7 @@ impl RadioDesk {
                 pos,
                 from,
                 &self.deck_rects,
+                &self.cart_rects,
                 self.playlist_rect,
                 &self.row_rects,
             ) {
@@ -3916,6 +3938,11 @@ impl RadioDesk {
                         c.report(e);
                     }
                 }),
+                RowDrop::Cart(slot) => {
+                    if let Some(path) = self.view.playlist.get(from).map(|e| e.path.clone()) {
+                        self.assign_cart_file(slot, path);
+                    }
+                }
                 RowDrop::Row(to) => self.with(move |c| {
                     c.move_entry(from, to);
                 }),
@@ -4618,11 +4645,7 @@ impl RadioDesk {
             return true;
         }
         if let Some(slot) = self.cart_rects.iter().position(|r| r.contains(pos)) {
-            self.with(move |c| {
-                if let Err(e) = c.assign_cart(slot, Some(path)) {
-                    c.report(e);
-                }
-            });
+            self.assign_cart_file(slot, path);
             return true;
         }
         if self.playlist_rect.contains(pos)
@@ -4632,6 +4655,15 @@ impl RadioDesk {
             return true;
         }
         false
+    }
+
+    /// Belegt Cart-Pad `slot` mit einer Datei (Ziehen aus Bibliothek, Playlist, Explorer).
+    fn assign_cart_file(&self, slot: usize, path: PathBuf) {
+        self.with(move |c| {
+            if let Err(e) = c.assign_cart(slot, Some(path)) {
+                c.report(e);
+            }
+        });
     }
 
     /// Legt eine Datei auf Deck `k` (steht danach am Cue-In).
@@ -5199,8 +5231,10 @@ mod tests {
         let rows: Vec<Rect> = (0..5)
             .map(|k| Rect::from_min_size(pos2(10.0, 450.0 + 50.0 * k as f32), vec2(880.0, 46.0)))
             .collect();
-        let t = |p| row_drop_target(p, 1, &decks, playlist, &rows);
+        let carts = [Rect::from_min_size(pos2(1000.0, 400.0), vec2(90.0, 60.0))];
+        let t = |p| row_drop_target(p, 1, &decks, &carts, playlist, &rows);
         assert_eq!(t(pos2(1200.0, 220.0)), RowDrop::Deck(1));
+        assert_eq!(t(pos2(1040.0, 430.0)), RowDrop::Cart(0), "#323");
         assert_eq!(t(pos2(500.0, 620.0)), RowDrop::Row(3));
         // Auf sich selbst, in die Lücke oder außerhalb der Playlist: nichts.
         assert_eq!(t(pos2(500.0, 520.0)), RowDrop::Nothing);
@@ -5208,7 +5242,7 @@ mod tests {
         assert_eq!(t(pos2(950.0, 50.0)), RowDrop::Nothing);
         // Zeilen, die aus der Playlist gerollt sind, zählen nicht.
         assert_eq!(
-            row_drop_target(pos2(500.0, 620.0), 1, &decks, Rect::NOTHING, &rows),
+            row_drop_target(pos2(500.0, 620.0), 1, &decks, &carts, Rect::NOTHING, &rows),
             RowDrop::Nothing
         );
     }
@@ -5961,6 +5995,130 @@ mod deck_drop_tests {
             settle(&ctx, &mut desk, &mut n, |v| deck_title(v, 0).is_some()),
             "Titel liegt auf Deck A"
         );
+    }
+
+    /// #322: Nach dem Klick auf die Nummer kommt man mit Esc, Tab oder einem Klick daneben
+    /// wieder aus dem Feld; Enter verschiebt.
+    #[test]
+    fn playlist_number_field_can_be_left() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = wav(dir.path(), "a.wav");
+        let b = wav(dir.path(), "b.wav");
+        let ctx = egui::Context::default();
+        let mut desk = RadioDesk::headless(dir.path());
+        let mut n = 0;
+        run(&ctx, &mut desk, n, egui::RawInput::default());
+        if let Some(s) = &desk.station {
+            s.add_files(vec![a, b.clone()]);
+        }
+        assert!(settle(&ctx, &mut desk, &mut n, |v| v.playlist.len() == 2));
+        let key = |k| Event::Key {
+            key: k,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for leave in [
+            vec![key(egui::Key::Escape)],
+            vec![key(egui::Key::Tab)],
+            vec![
+                Event::PointerMoved(pos2(5.0, 5.0)),
+                Event::PointerButton {
+                    pos: pos2(5.0, 5.0),
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+                Event::PointerButton {
+                    pos: pos2(5.0, 5.0),
+                    button: PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        ] {
+            desk.pos_edit = Some((0, "1".into(), false));
+            for _ in 0..3 {
+                n += 1;
+                run(&ctx, &mut desk, n, egui::RawInput::default());
+            }
+            assert!(desk.pos_edit.is_some(), "Feld offen");
+            n += 1;
+            run(&ctx, &mut desk, n, events(leave.clone()));
+            for _ in 0..2 {
+                n += 1;
+                run(&ctx, &mut desk, n, egui::RawInput::default());
+            }
+            assert!(desk.pos_edit.is_none(), "Feld bleibt nach {leave:?}");
+        }
+        // Enter verschiebt: Titel 1 an Stelle 2.
+        desk.pos_edit = Some((0, "2".into(), false));
+        for _ in 0..3 {
+            n += 1;
+            run(&ctx, &mut desk, n, egui::RawInput::default());
+        }
+        n += 1;
+        run(&ctx, &mut desk, n, events(vec![key(egui::Key::Enter)]));
+        assert!(desk.pos_edit.is_none());
+        assert!(settle(&ctx, &mut desk, &mut n, |v| v.playlist[0].path == b));
+    }
+
+    /// #360: „→ Playlist“ aus der Bibliothek (Party) hängt hinten an, auch wenn nichts läuft
+    /// (vorher landete der Titel als Nächster ganz oben).
+    #[test]
+    fn library_title_is_appended_at_the_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = wav(dir.path(), "a.wav");
+        let b = wav(dir.path(), "b.wav");
+        let c = wav(dir.path(), "c.wav");
+        let ctx = egui::Context::default();
+        let mut desk = RadioDesk::headless(dir.path());
+        let mut n = 0;
+        run(&ctx, &mut desk, n, egui::RawInput::default());
+        if let Some(s) = &desk.station {
+            s.add_files(vec![a, b]);
+        }
+        assert!(settle(&ctx, &mut desk, &mut n, |v| v.playlist.len() == 2));
+        desk.party_insert(c.clone(), crate::party::library_add_at());
+        assert!(settle(&ctx, &mut desk, &mut n, |v| v.playlist.len() == 3));
+        assert_eq!(desk.view().playlist[2].path, c, "hinten angehängt");
+    }
+
+    /// #323: Datei aus dem Explorer auf ein Cart-Pad belegt das Pad (ging in die Playlist).
+    #[test]
+    fn explorer_file_dropped_on_a_cart_lands_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let song = wav(dir.path(), "cart.wav");
+        let ctx = egui::Context::default();
+        let mut desk = RadioDesk::headless(dir.path());
+        let mut n = 0;
+        run(&ctx, &mut desk, n, egui::RawInput::default());
+        settle(&ctx, &mut desk, &mut n, |_| true);
+        let pad = *desk.cart_rects.first().expect("Cart-Pads gezeichnet");
+        assert!(pad.width() > 0.0, "Pad 1 sichtbar: {pad:?}");
+        let p = pad.center();
+        n += 1;
+        run(&ctx, &mut desk, n, events(vec![Event::PointerMoved(p)]));
+        n += 1;
+        let input = egui::RawInput {
+            events: vec![Event::PointerMoved(p)],
+            dropped_files: vec![egui::DroppedFile {
+                path: Some(song),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        run(&ctx, &mut desk, n, input);
+        assert!(
+            settle(&ctx, &mut desk, &mut n, |v| v
+                .carts
+                .first()
+                .is_some_and(Option::is_some)),
+            "Pad 1 belegt: {:?}",
+            desk.view().carts.first()
+        );
+        assert!(desk.view().playlist.is_empty(), "nicht in die Playlist");
     }
 
     #[test]
