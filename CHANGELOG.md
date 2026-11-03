@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.14 — 2026-11-03
+
+- **Datenschutz Design-Bilder:** Drei Bilder unter `docs/design/ist/` zeigten unter WUNSCHTITEL einen Pfad mit einem lokalen Benutzernamen und sind neu im Fotomodus aufgenommen (`WOA_SCREENSHOT`, `WOA_WINDOW=1920x1030`, leerer Daten- und Konfigurationsordner unter `/tmp/woa-foto-0.41.14/`): `ist-f7-onair-dunkel-…` (`WOA_ONAIR=1`), `ist-f7-abnahme-dunkel-…` (`WOA_ABNAHME=1`), `ist-f7-fragen-dunkel-…` (`WOA_FRAGEN=1`); Dateinamen gleich, Verweise stimmen. Alle 94 PNGs unter `docs/` per Texterkennung geprüft, Wunschtitel-Leiste aller Ist-Bilder angesehen: sonst keine privaten Pfade. Die Git-Historie bleibt unverändert.
+
 ## 0.41.12 — 2026-11-03
 
 - **Hörer-Chip oben liest vom Statistik-Server:** „HÖRER x | y“ neben ON AIR nimmt `jetzt.aktuell` und die Spitze der laufenden Sendung aus `hoerer_url` (Vorgabe `https://feedback.wironair.de/api/hoerer`), höchstens alle 30 s im Hintergrund, „–“ bei Fehler. Bisher fragte woa-streamd `/7.html` am Admin-Port, der von außen zu ist, darum blieb der Chip leer. Fenster und Chip teilen sich jetzt den Abruf (`hoerer::Abruf`). Tests: `chip_numbers_come_from_the_server_answer`, `chip_stays_dash_without_test_server`.
