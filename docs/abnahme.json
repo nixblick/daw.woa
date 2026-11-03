@@ -527,6 +527,15 @@
       "erwartet": "Die Oberfläche bleibt bedienbar; WOA verbindet die Ausgabe im Hintergrund neu.",
       "version": "0.41.2",
       "ticket": 291
+    },
+    {
+      "id": "sendung-neustart",
+      "ansicht": "Radio",
+      "titel": "Sendung beenden und gleich neu starten",
+      "tun": "Radio: „Auf Sendung“, warten bis grün. „Sendung beenden“, sofort danach „Auf Sendung“; das Ganze zweimal.",
+      "erwartet": "Nach wenigen Sekunden wieder grün mit dem Sendemix, keine Zeile „Verbindung zu woa-streamd unterbrochen“, kein „Stream In Use“; im Shoutcast-Log je Beenden ein Abmelden der Quelle.",
+      "version": "0.41.5",
+      "ticket": 367
     }
   ]
 }

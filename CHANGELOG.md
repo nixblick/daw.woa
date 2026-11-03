@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.5 — 2026-11-03
+
+- **Fehler: „Sendung beenden“ und gleich wieder „Auf Sendung“ ließ zwei woa-streamd laufen (#367).** Ja, es war ein Fehler. „Sendung beenden“ schickte `Stop` und kehrte sofort zurück; der nächste Start fand den alten woa-streamd noch am Leben und hängte sich an ihn, oder ein neuer startete, während der alte noch abräumte und dabei die Link-Datei und den Socket des neuen löschte. Ein `Stop` konnte zudem verloren gehen, wenn das Hello der nächsten Sendung die Verbindung vorher ablöste. Folge: Oberfläche „Verbindung zu woa-streamd unterbrochen, verbinde neu …“, der zweite woa-streamd bekam vom Server „Stream In Use“, zu hören war nur die Notfall-Playlist. Jetzt: „Sendung beenden“ wartet (höchstens 5 s), bis woa-streamd sich beim Server abgemeldet hat, und schickt `Stop` erneut, falls er nicht endet (`link::stop_daemon`); woa-streamd wertet `Stop` auch auf einer abgelösten Verbindung aus und löscht beim Beenden nur seine eigene Link- und Socket-Datei. Die Sendetaste ist entprellt (1,5 s), ein zweiter Klick aus einem hängenden Fenster startet oder beendet nichts mehr. Test: `failover::quick_restart_never_leaves_two_streamd` (start → ende → start sechsmal hintereinander gegen einen Attrappen-Server, der wie Shoutcast nur eine Quelle annimmt; scheitert auf 0.41.1).
+
 ## 0.41.4 — 2026-11-03
 
 - **CI ohne Fehlalarm (André 03.11.: „erst gar nicht so viele Ereignisse mit Rot-Meldungen“):** rote Läufe nur noch bei echten Fehlern.
