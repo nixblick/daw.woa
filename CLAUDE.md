@@ -67,6 +67,13 @@ Mitbewerber-Analysen, keine geklonten Referenz-Repos. Solches liegt lokal unter 
 `docs/design/woa-design-system/README.md` ist die verbindliche Gestaltungsvorgabe für `crates/gui`:
 Tokens (`tokens.json`) sind verbindlich, die Screen-Entwürfe sind Zielbilder.
 
+**Einstellungen einsortieren** (André, 03.11.2026): Jede Einstellung ist ein Eintrag im Register
+`crates/gui/src/settings.rs` (Bereich, Gruppe, Titel, Suchwörter mit Umgangssprache, Felder); Fenster,
+Filter und Menü-Abkürzungen bauen sich daraus. Betrifft sie nur eine Ansicht → deren Bereich (Radio,
+Party, Produzent). Braucht sie ein fremdes Konto oder einen Schlüssel → „Dienste und Konten“, Gruppe
+nach Zweck (Assistent, Stimmen und Klänge, Steuerung von außen …; fehlt der Zweck, neue Gruppe).
+Sonst → Allgemein bzw. Audio und Geräte. Neue Einstellung = Register-Eintrag, kein Umbau.
+
 ## Struktur
 
 `crates/` Bibliotheken (model, engine, dsp, io, library, plugins, radio, stream, guests, remote, agent,

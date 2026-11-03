@@ -125,5 +125,8 @@ fn chat_tab_sits_in_the_studio_dock_and_says_what_is_missing() {
         !rig.find("Noch keine KI eingerichtet.").is_empty(),
         "Hinweis ohne Anbieter fehlt"
     );
-    assert!(!rig.find("Einstellungen → KI öffnen").is_empty());
+    assert!(
+        !rig.find("Einstellungen › Dienste und Konten öffnen")
+            .is_empty()
+    );
 }

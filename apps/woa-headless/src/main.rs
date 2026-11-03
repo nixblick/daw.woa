@@ -481,7 +481,7 @@ fn cmd_mcp_stdio(path: &std::path::Path) -> Result<(), String> {
 
 fn cmd_mcp_http(path: &std::path::Path, bind: std::net::IpAddr, port: u16) -> Result<(), String> {
     let token =
-        mcp_token().ok_or("Kein Zugriffstoken: in WOA unter Einstellungen → KI & MCP erzeugen")?;
+        mcp_token().ok_or("Kein Zugriffstoken: in WOA unter Einstellungen › Dienste und Konten › Hintergrund-Server erzeugen")?;
     woa_agent::http::run_http(path, std::net::SocketAddr::new(bind, port), token)
         .map_err(|e| e.to_string())
 }

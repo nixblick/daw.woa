@@ -222,7 +222,7 @@ impl Browser {
                 note(
                     ui,
                     "Samples von Freesound sucht die KI für dich (eigener Schlüssel unter \
-                     Einstellungen → KI). Treffer landen in der Bibliothek, mit Lizenz-Hinweis.",
+                     Einstellungen › Dienste und Konten). Treffer landen in der Bibliothek, mit Lizenz-Hinweis.",
                 );
                 if entry(
                     ui,

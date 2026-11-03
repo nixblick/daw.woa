@@ -217,3 +217,36 @@ je 1920 × 1030, dunkel, mit leerem Daten- und Konfigurationsordner (Fotomodus, 
   Playlist leer (keine Nutzerdaten im Fotomodus).
 - Gefunden beim Foto: Einstellungen-Fenster legte Treffer nebeneinander und wuchs über die ganze Breite
   (ScrollArea erbte die waagerechte Anordnung); behoben, MIDI-Eingang und PFL dort als Aufklapper.
+
+## Einstellungen neu gegliedert (0.42.0, André 03.11.2026)
+
+Ein Fenster (Strg+,, Zahnrad in der Kopfleiste öffnet beim Bereich der Ansicht), sieben feste Bereiche:
+Allgemein · Audio und Geräte · Radio · Party · Produzent · Dienste und Konten · Entwickler (nur im
+Entwickler-Modus). Das Register `crates/gui/src/settings.rs` speist Fenster, Filter und die Abkürzungen im
+Menü „Einstellungen“ (springen an die Stelle, 2 s markiert). Der Bereich „KI“ ist aufgelöst: unter
+„Dienste und Konten“ stehen Karten nach Zweck (Assistent · Stimmen und Klänge · Steuerung von außen ·
+Sendung als Querverweis), je Karte Name, Status-Chip, Technik-Marke „API“/„MCP“ und Aktion. Bilder
+`ist-einstellungen-<bereich>-{dunkel,hell}-1920x1030-0.42.0.png`.
+
+**Einsortier-Regel:** Betrifft eine Einstellung nur eine Ansicht → deren Bereich. Braucht sie ein fremdes
+Konto oder einen Schlüssel → Dienste und Konten, Gruppe nach Zweck (fehlt der Zweck: neue Gruppe in
+`SERVICE_GROUPS`). Sonst → Allgemein bzw. Audio und Geräte. Neue Einstellung = Register-Eintrag, kein
+Umbau. Tests prüfen: jedes `GuiConfig`-Feld ist registriert oder begründet ohne Oberfläche
+(`NO_UI_FIELDS`), Umgangssprache findet das Richtige („11 labs“, „stimme“, „shoutcast“, „stream“, „mcp“).
+
+### Abweichungen vom Entwurf
+
+- **Status der Assistent-Karten** kommt aus `config.json` (gewählt / eingerichtet / nicht eingerichtet), ohne
+  Schlüsselbund und ohne Netz. ElevenLabs und Freesound zeigen „Schlüssel gespeichert“ (im Hintergrund
+  nachgesehen), „verbunden“ erst nach „Prüfen“ im Einrichten-Fenster (kostet nichts, aber ist ein Netzaufruf).
+- **Mistral** gibt es nicht als eigenen Anbieter; erreichbar über OpenRouter (Suchwort „mistral“).
+- **Piper** hat keine Karte (gibt es noch nicht), nur ein Hinweis unter „Stimmen und Klänge“.
+- **Sprache, Metronom, Party-Analyse, Decks** haben keine Einstellung in WOA; deshalb nicht im Register.
+- **Rack-Werte im Radio** (Crossfade, Ducking, Stopp-Blende, Processing), Wunschordner, DJ-Kurve und
+  Klangbank wohnen in ihrer Ansicht; die Zeile im Fenster wechselt mit „Im … zeigen“ dorthin.
+- **Pult-Modus** bleibt im Fenster Ausgänge (dort wird die Ausgabe neu geöffnet); die Zeile unter Radio
+  zeigt an/aus und öffnet es.
+- **Menüeintrag ohne „…“** („Alle Einstellungen (Strg+,)“), wie seit 0.37.0 für alle Menüs.
+- Das Einrichten-Fenster (vorher „KI“) heißt „Dienste und Konten“, Reiter „Einrichten“, „Steuerung von
+  außen (MCP)“, „Anbieter und Werkzeuge“.
+

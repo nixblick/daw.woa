@@ -24,7 +24,7 @@ unter Windows gesehen.
 Vorher einmal: Konto bei elevenlabs.io anlegen (kostenloser Plan reicht zum Ausprobieren), dort Profil → API Keys →
 Schlüssel erzeugen.
 
-1. **Einstellungen → KI:** unten „ElevenLabs-Schlüssel“ einfügen, Speichern → darunter steht „… von … Credits übrig
+1. **Einstellungen › Dienste und Konten › ElevenLabs „Einrichten“:** unten „ElevenLabs-Schlüssel“ einfügen, Speichern → darunter steht „… von … Credits übrig
    (Abo „free“)“. Prüfen → dieselbe Zeile neu. Ein falscher Schlüssel → rote Zeile „lehnt den Schlüssel ab (HTTP 401)“.
 2. **Jingle bauen → Schritt Stimme:** Sprecher „ElevenLabs“ wählen (ohne Schlüssel ausgegraut), Text eintippen, Stimme
    wählen → „Sprache erzeugen …“ → Kasten mit „≈ n Credits“ und Datenschutz-Hinweis. Abbrechen → nichts passiert.
@@ -33,7 +33,7 @@ Schlüssel erzeugen.
    so lang wie der Jingle. Bibliothek: die drei Klänge stehen mit Schlagwort „elevenlabs“ drin, die Dateien liegen im
    Jingle-Ordner, daneben je eine `.herkunft.json` mit dem Text.
 4. **Claude über MCP:** „Sprich ‚Hallo Welt‘ auf Spur 1“ → `tts_generate` legt den Clip an.
-5. **Entfernen:** Einstellungen → KI → Entfernen → im Jingle-Assistenten ist ElevenLabs wieder ausgegraut.
+5. **Entfernen:** Einstellungen › Dienste und Konten › ElevenLabs „Einrichten“ → Entfernen → im Jingle-Assistenten ist ElevenLabs wieder ausgegraut.
 
 Selbst geprüft von Claude: Tests gegen einen lokalen Mock-Server (Konto, Stimmen mit Seiten, Sprache, Effekt, Musik,
 401, 402, 429, 422, kein Netz, kein Schlüssel; der Schlüssel steht in keiner Meldung), Fotomodus Einstellungen und
@@ -310,7 +310,7 @@ Selbst geprüft von Claude: Tests für die Migration alter `radio.json` in Satz 
 
 ## J10 Sample-Suche (0.35.0, offen)
 
-1. Bei freesound.org anmelden, unter freesound.org/apiv2/apply einen API-Schlüssel holen. In WOA Einstellungen → KI → „Freesound-Schlüssel“ einfügen, „Speichern“: das Feld zeigt „gespeichert …“.
+1. Bei freesound.org anmelden, unter freesound.org/apiv2/apply einen API-Schlüssel holen. In WOA Einstellungen › Dienste und Konten › Freesound „Einrichten“ → „Freesound-Schlüssel“ einfügen, „Speichern“: das Feld zeigt „gespeichert …“.
 2. Claude per MCP: `search_samples` mit `text: "riser"`: jeder Treffer hat `license` CC0 oder CC BY.
 3. `import_sample` mit einer `id` aus Schritt 2 auf eine Audio-Spur: Clip steht da und klingt; im Projektordner steht in `notizen.md` eine Zeile mit Titel, Urheber, Lizenz und Link.
 4. `project.json` und `notizen.md` öffnen: der Schlüssel steht nirgends.
@@ -1469,7 +1469,7 @@ Selbst geprüft von Claude: neue Tests ohne Ton für den Wechsel links/rechts ü
 
 ## KI live in der App und Fenster „Produktionen“ (0.34.50, offen)
 
-Kein Ton nötig. Voraussetzung: unter Einstellungen → KI & MCP ist ein Zugriffstoken erzeugt.
+Kein Ton nötig. Voraussetzung: unter Einstellungen › Dienste und Konten › Hintergrund-Server ist ein Zugriffstoken erzeugt.
 
 1. WOA starten (Produzent). Unten rechts steht „KI bereit“.
 2. In Claude Desktop (unverändert eingerichtet, `woa-headless mcp …`) sagen: „Leg eine Audiospur ‚Test‘ an.“ Die Spur erscheint sofort in WOA, in der Kopfleiste (Status-Gruppe) steht „KI verbunden“.

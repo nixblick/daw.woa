@@ -1,5 +1,5 @@
 {
-  "stand": "2026-11-02",
+  "stand": "2026-11-03",
   "punkte": [
     {
       "id": "klang-neue-midi-spur",
@@ -94,9 +94,9 @@
       "id": "entwickler-freischalten",
       "ansicht": "Einstellungen",
       "titel": "Entwickler-Modus freischalten und beenden",
-      "tun": "Einstellungen → „Entwickler-Modus“, Kennwort eingeben, „Freischalten“. WOA neu starten. Dann Entwickler → „Entwickler-Modus beenden“.",
+      "tun": "Strg+, › Allgemein › „Entwickler-Modus“ „Freischalten“, Kennwort eingeben. WOA neu starten. Dann Entwickler → „Entwickler-Modus beenden“.",
       "erwartet": "Das Menü „Entwickler“ steht direkt vor „Hilfe“, auch nach dem Neustart; nach dem Beenden ist es weg.",
-      "version": "0.37.0"
+      "version": "0.42.0"
     },
     {
       "id": "fragen-fenster",
@@ -394,17 +394,49 @@
       "id": "f7-einstellungen",
       "ansicht": "Einstellungen",
       "titel": "Einstellungen mit Filter",
-      "tun": "Strg+, drücken, „midi“ tippen, Enter.",
-      "erwartet": "Links Bereiche mit Trefferzahl, rechts die Treffer; Enter springt zum ersten und markiert ihn 2 s.",
-      "version": "0.41.0"
+      "tun": "Strg+, drücken, „11 labs“ tippen, Enter; dann „shoutcast“, Enter.",
+      "erwartet": "Links sieben Bereiche (Entwickler nur im Entwickler-Modus) mit Trefferzahl; „11 labs“ springt zu Dienste und Konten › ElevenLabs, „shoutcast“ zu Radio › Sendung, jeweils 2 s markiert.",
+      "version": "0.42.0"
     },
     {
       "id": "f7-ki",
       "ansicht": "Einstellungen",
-      "titel": "KI-Schlüssel und Stimme",
-      "tun": "Einstellungen › KI ansehen; Jingle-Assistent, Schritt Stimme mit ElevenLabs.",
+      "titel": "ElevenLabs-Schlüssel und Stimme",
+      "tun": "Strg+, › Dienste und Konten › ElevenLabs „Einrichten“; Jingle-Assistent, Schritt Stimme mit ElevenLabs.",
       "erwartet": "Zustandschip des Schlüssels, Entfernen fragt nach, Datenschutz-Hinweis immer sichtbar; Stimme: Ähnlichkeit-Regler, Fehler mit „Erneut“.",
-      "version": "0.41.0"
+      "version": "0.42.0"
+    },
+    {
+      "id": "einst-bereiche",
+      "ansicht": "Einstellungen",
+      "titel": "Sieben Bereiche, kein KI mehr",
+      "tun": "Strg+, drücken und links jeden Bereich anklicken.",
+      "erwartet": "Allgemein, Audio und Geräte, Radio, Party, Produzent, Dienste und Konten (Entwickler nur im Entwickler-Modus); jede frühere Einstellung steht in einem davon, einen Bereich „KI“ gibt es nicht mehr.",
+      "version": "0.42.0"
+    },
+    {
+      "id": "einst-dienste",
+      "ansicht": "Einstellungen",
+      "titel": "Dienste und Konten als Karten",
+      "tun": "Bereich Dienste und Konten ansehen, beim ersten Assistenten „Einrichten“.",
+      "erwartet": "Gruppen Assistent, Stimmen und Klänge, Steuerung von außen, Sendung; jede Karte mit Status-Chip und kleiner Marke API oder MCP; „Einrichten“ öffnet das Fenster Dienste und Konten. Shoutcast steht als Querverweis und springt zu Radio › Sendung.",
+      "version": "0.42.0"
+    },
+    {
+      "id": "einst-menue-sprung",
+      "ansicht": "Einstellungen",
+      "titel": "Menü-Abkürzung springt",
+      "tun": "Menü Einstellungen › „Sendung: Stream-Server und Kennwort“.",
+      "erwartet": "Das Fenster öffnet bei Radio, die Zeile Sendung ist 2 s markiert; „Öffnen“ zeigt die Shoutcast-Einstellungen wie bisher.",
+      "version": "0.42.0"
+    },
+    {
+      "id": "einst-zahnrad",
+      "ansicht": "Allgemein",
+      "titel": "Zahnrad je Ansicht",
+      "tun": "In Radio, Party und Produzent oben rechts das Zahnrad neben dem Modus-Umschalter klicken.",
+      "erwartet": "Das Fenster öffnet jeweils beim Bereich Radio, Party bzw. Produzent.",
+      "version": "0.42.0"
     }
   ]
 }
