@@ -1,7 +1,8 @@
 # Changelog
 
-## 0.42.0 — 2026-11-03
+## 0.41.1 — 2026-11-03
 
+- Version 0.41.1 statt 0.42.0: 0.42.0 bleibt der ersten Version für alle vorbehalten (André 03.11.).
 - **Einstellungen neu gegliedert (André 03.11.2026):** ein Fenster (Strg+,) mit sieben festen Bereichen: Allgemein (Erscheinungsbild, Speicherorte, Updates, Datenschutz, Entwickler-Modus freischalten) · Audio und Geräte (Soundkarten, Vorhören, Telefon, MIDI-Controller) · Radio (Sendung/Shoutcast, Pult-Modus, Übergänge, Ducking, Processing, Wunschordner) · Party (DJ-Kurve) · Produzent (Klangbänke, Piano-Roll, Plugins) · Dienste und Konten · Entwickler (nur im Entwickler-Modus). Der Bereich „KI“ ist aufgelöst: „Dienste und Konten“ zeigt Karten nach Zweck (Assistent: Claude, ChatGPT, OpenRouter, Ollama, LM Studio, Werkzeuge · Stimmen und Klänge: ElevenLabs, Freesound · Steuerung von außen: Claude Desktop/Code, Hintergrund-Server · Sendung: Querverweis Shoutcast), je Karte Status-Chip, Technik-Marke „API“/„MCP“ und Aktion. Menü „Einstellungen“: oben „Alle Einstellungen (Strg+,)“, darunter die Abkürzungen je Bereich, die an die Stelle im Fenster springen und sie 2 s markieren. Zahnrad in der Kopfleiste öffnet das Fenster beim Bereich der aktuellen Ansicht. Ein Register (`settings::REGISTRY`) speist Fenster, Filter und Menü; Suchwörter mit Umgangssprache („11 labs“, „stimme“, „tts“, „shoutcast“, „mcp“). Das bisherige Fenster „KI“ heißt „Dienste und Konten“. Einsortier-Regel in `CLAUDE.md` und `docs/design/umsetzung.md`. Fotomodus `WOA_SETTINGS_AREA=<Bereich>`. Tests: `settings::tests` (Bereiche, Gruppen, Umgangssprache, jedes `GuiConfig`-Feld registriert, auch bei CRLF-Checkout unter Windows, Menü aus dem Register).
 
 ## 0.41.0 — 2026-11-02
