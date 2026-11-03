@@ -54,6 +54,14 @@ MAX_SENDUNGEN = 200
 # Titel: höchstens so viele Zeichen, Rumpf höchstens so viele Bytes.
 TITEL_MAX = 200
 TITEL_RUMPF_MAX = 2048
+# CORS nur für GET /api/jetzt und /api/hoerer, nur für diese Ursprünge (Startseite
+# wir-on-air.de); keine Wildcard, keine Credentials.
+CORS_URSPRUENGE = frozenset({
+    "https://www.wir-on-air.de", "https://wir-on-air.de",
+    "https://www.wironair.de", "https://wironair.de",
+})
+CORS_PFADE = ("/api/jetzt", "/api/hoerer")
+
 # /api/jetzt: so lange zwischengespeichert, so viele zuletzt gespielte Titel.
 JETZT_CACHE = 10
 JETZT_ZULETZT = 10
@@ -346,9 +354,20 @@ def handler_fuer(db_pfad, titel=None):
         def log_message(self, *a):  # keine Zugriffszeilen mit IPs
             pass
 
+        def _cors(self):
+            """Origin echoen, wenn erlaubt und Pfad freigegeben; Vary immer auf diesen Pfaden."""
+            if urlparse(self.path).path not in CORS_PFADE:
+                return
+            self.send_header("Vary", "Origin")
+            herkunft = self.headers.get("Origin")
+            if herkunft in CORS_URSPRUENGE:
+                self.send_header("Access-Control-Allow-Origin", herkunft)
+
         def _json(self, code, obj):
             body = json.dumps(obj, ensure_ascii=False).encode()
             self.send_response(code)
+            if self.command == "GET":
+                self._cors()
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
@@ -391,9 +410,21 @@ def handler_fuer(db_pfad, titel=None):
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Cache-Control", f"public, max-age={JETZT_CACHE}")
+            self._cors()
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def do_OPTIONS(self):
+            if urlparse(self.path).path not in CORS_PFADE:
+                return self._json(404, {"fehler": "unbekannt"})
+            self.send_response(204)
+            self._cors()
+            if self.headers.get("Origin") in CORS_URSPRUENGE:
+                self.send_header("Access-Control-Allow-Methods", "GET")
+                self.send_header("Access-Control-Max-Age", "86400")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
 
         def do_POST(self):
             if urlparse(self.path).path != "/api/titel":

@@ -322,6 +322,44 @@ class JetztTests(unittest.TestCase):
             srv.shutdown()
             srv.server_close()
 
+    def test_cors_nur_fuer_wir_on_air(self):
+        self.proben([5])
+        srv, url = starte(hoerer.handler_fuer(self.pfad, {"quelle": self.dnas_url, "sid": 1}))
+
+        def hole(pfad, herkunft=None, methode="GET"):
+            req = urllib.request.Request(url + pfad, method=methode)
+            if herkunft:
+                req.add_header("Origin", herkunft)
+            with urllib.request.urlopen(req) as r:
+                return r.status, r.headers
+
+        try:
+            for o in sorted(hoerer.CORS_URSPRUENGE):
+                for p in ("/api/jetzt", "/api/hoerer"):
+                    _, k = hole(p, o)
+                    self.assertEqual(k.get("Access-Control-Allow-Origin"), o)
+                    self.assertEqual(k.get("Vary"), "Origin")
+                    self.assertIsNone(k.get("Access-Control-Allow-Credentials"))
+            for o in (None, "https://evil.example", "http://www.wir-on-air.de",
+                      "https://www.wir-on-air.de.evil.example", "null"):
+                _, k = hole("/api/jetzt", o)
+                self.assertIsNone(k.get("Access-Control-Allow-Origin"))
+                self.assertEqual(k.get("Vary"), "Origin")
+            _, k = hole("/api/hoerer/healthz", "https://wironair.de")
+            self.assertIsNone(k.get("Access-Control-Allow-Origin"))
+            code, k = hole("/api/jetzt", "https://wironair.de", "OPTIONS")
+            self.assertEqual(code, 204)
+            self.assertEqual(k.get("Access-Control-Allow-Methods"), "GET")
+            code, k = hole("/api/jetzt", "https://evil.example", "OPTIONS")
+            self.assertIsNone(k.get("Access-Control-Allow-Origin"))
+            self.assertIsNone(k.get("Access-Control-Allow-Methods"))
+            with self.assertRaises(urllib.error.HTTPError) as e:
+                hole("/api/titel", "https://wironair.de", "OPTIONS")
+            self.assertEqual(e.exception.code, 404)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
 
 if __name__ == "__main__":
     unittest.main()
