@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.18 — 2026-11-03
+
+- **Sammler: CORS für die Startseite:** `GET /api/jetzt` und `GET /api/hoerer` senden `Access-Control-Allow-Origin` nur für genau `https://www.wir-on-air.de`, `https://wir-on-air.de`, `https://www.wironair.de` und `https://wironair.de` (Origin geprüft und zurückgegeben, `Vary: Origin`, keine Wildcard, keine Credentials). `OPTIONS` auf diesen Pfaden antwortet 204 (`GET`). Am nginx (bretteins.infra, Rolle edge) ist nichts zu ändern: er reicht die Köpfe durch; `limit_except GET` sperrt zwar `OPTIONS`, ein schlichter `fetch` ohne eigene Köpfe braucht aber keinen Vorabruf. Test: `test_cors_nur_fuer_wir_on_air` (Attrappe).
+
 ## 0.41.17 — 2026-11-03
 
 - **README deutlich aktualisiert:** Stand 0.41.x mit Senden über `woa-streamd`, Titel über den eigenen Server, Hörer-Statistik und Hörer-Seite, Dienste und Konten (MCP, Chat-Anbieter, ElevenLabs), Audio-Geräte an einem Ort, Pult-Modus. Bilder aus `docs/design/ist/` eingebunden (hell/dunkel nach Systemthema), Download und Webseite www.wir-on-air.de verlinkt.
