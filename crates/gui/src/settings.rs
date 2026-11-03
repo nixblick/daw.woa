@@ -114,6 +114,7 @@ pub enum SettingId {
     Outputs,
     ReconnectOutput,
     Pfl,
+    Mic,
     Phone,
     MidiInput,
     Controls,
@@ -277,9 +278,10 @@ pub const REGISTRY: &[Entry] = &[
         S::Outputs,
         A::Audio,
         "Soundkarten",
-        "Ausgänge (Soundkarten)",
-        "Welche Soundkarte Player, Sendeausgänge und Pult nutzen",
-        "ausgang gerät kopfhörer lautsprecher audio interface pult soundkarte boxen",
+        "Audio-Geräte",
+        "Der eine Ort für Soundkarten: Ausgänge, Vorhören, Mikrofon, Telefon und Pult",
+        "ausgang eingang gerät kopfhörer lautsprecher audio interface pult soundkarte boxen \
+         mikro mikrofon mic quelle externes mikro usb codec telefon pfl",
     )
     .menu()
     .fields(&["outputs"]),
@@ -293,24 +295,31 @@ pub const REGISTRY: &[Entry] = &[
     )
     .menu(),
     row(
+        S::Mic,
+        A::Audio,
+        "Soundkarten",
+        "Mikrofon",
+        "Welches Mikro auf Sendung geht; gewählt in Audio-Geräte",
+        "mikro mikrofon mic eingang quelle extern externes usb sprechen",
+    )
+    .fields(&["mic"]),
+    row(
         S::Pfl,
         A::Audio,
-        "Ein- und Ausgänge",
+        "Soundkarten",
         "Vorhören (PFL)",
-        "Wohin das Vorhören geht",
+        "Kopfhörer zum Vorhören; gewählt in Audio-Geräte",
         "pfl cue vorhören kopfhörer",
     )
-    .menu()
     .fields(&["pfl_output"]),
     row(
         S::Phone,
         A::Audio,
-        "Telefon",
+        "Soundkarten",
         "Telefon (Eingang für den Anrufer)",
-        "Eingang und Pegel für Anrufer in der Sendung",
+        "Eingang für Anrufer in der Sendung; gewählt in Audio-Geräte",
         "anruf telefon hybrid gast anrufer",
     )
-    .menu()
     .fields(&["phone"]),
     row(
         S::MidiInput,
@@ -348,7 +357,7 @@ pub const REGISTRY: &[Entry] = &[
         A::Radio,
         "Sendung",
         "Pult-Modus",
-        "Die Sendung kommt vom Eingang des externen Mischpults (im Fenster Ausgänge)",
+        "Die Sendung kommt vom Eingang des externen Mischpults; gewählt in Audio-Geräte",
         "pult mischpult extern mixer",
     )
     .fields(&["pult"]),
@@ -995,7 +1004,11 @@ mod tests {
         assert!(names("ki").contains(&"ElevenLabs"));
         assert!(names("chatgpt").contains(&"ChatGPT (OpenAI)"));
         assert!(names("kennwort").contains(&"Sendung: Stream-Server und Kennwort"));
-        assert!(names("soundkarte").contains(&"Ausgänge (Soundkarten)"));
+        assert!(names("soundkarte").contains(&"Audio-Geräte"));
+        // André 03.11.: „wo stell ich denn die mikro quelle ein?“
+        for q in ["mikro", "mikrofon", "externes mikro", "eingang"] {
+            assert!(names(q).contains(&"Audio-Geräte"), "{q}");
+        }
         assert!(
             names("KOPFHOERER").contains(&"Ausgabe neu verbinden"),
             "Umlaute egal"
@@ -1050,13 +1063,20 @@ mod tests {
             .collect();
         for n in [
             "Sendung: Stream-Server und Kennwort",
-            "Ausgänge (Soundkarten)",
-            "Vorhören (PFL)",
+            "Audio-Geräte",
             "Controller und MIDI-Learn",
             "Assistent (Chat)",
             "Entwickler-Modus",
         ] {
             assert!(all.contains(&n), "{n} fehlt im Menü");
+        }
+        // Ein Einstieg für Soundkarten (André 03.11.: „doppelt gemoppelt“).
+        for n in [
+            "Vorhören (PFL)",
+            "Telefon (Eingang für den Anrufer)",
+            "Mikrofon",
+        ] {
+            assert!(!all.contains(&n), "{n} doppelt im Menü");
         }
     }
 

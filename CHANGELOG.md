@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.41.6 — 2026-11-03
+
+Fehlerbehebung und Übersicht, einzige neue Funktion: Mikrofon wählen (André 03.11.: „wo stell ich denn die mikro quelle ein? … doppelt gemoppelt, ich blicke da nicht durch“).
+
+- **Ein Ort für alle Soundkarten: „Audio-Geräte“.** Das Fenster (Einstellungen › Audio und Geräte, Menü Einstellungen) ist gegliedert in Ausgänge (Gerät und Kanalpaar je Quelle der Sendung), Vorhören (PFL) und Eingänge (Mikrofon, Telefon, Pult-Eingang). Jede Zeile sagt in einem Satz, wofür sie ist. Vorher wählten das Untermenü „Vorhören (PFL)“, das Fenster „Ausgänge (Soundkarten)“ und das Fenster „Telefon“ Geräte getrennt. Diese Zeilen sind jetzt nur noch Verweise („In Audio-Geräte öffnen“), Meldungen zeigen auf „Einstellungen › Audio-Geräte“. Die Aufnahmequelle einer Spur im Produzenten bleibt an der Spur.
+- **Mikrofon wählbar (neu):** Gerät und Kanalpaar, gespeichert (`mic` in `config.json`), sofort wirksam, auch bei offenem Mikro. Vorgabe Systemstandard wie bisher. Fehlt das Gerät, kommt eine klare Meldung, kein stiller Wechsel auf ein anderes Mikro. Ursache: das Radio öffnete immer das Standard-Eingabegerät. Der Live-Eingang hält jetzt auch das Kanalpaar ein.
+- **Bestehende Einstellungen bleiben gültig:** Ausgänge, Vorhören, Telefon und Pult werden unverändert gelesen. Tests: `config_before_audio_devices_window_loads_unchanged`, `outputs_ui::tests` (Mikro-Vorgabe, Mikro-Wahl, ein Satz je Zeile, `devices_are_listed_only_here`), Suche „mikro“/„externes mikro“ findet Audio-Geräte, keine doppelten Menüeinträge.
+
 ## 0.41.4 — 2026-11-03
 
 - **CI ohne Fehlalarm (André 03.11.: „erst gar nicht so viele Ereignisse mit Rot-Meldungen“):** rote Läufe nur noch bei echten Fehlern.

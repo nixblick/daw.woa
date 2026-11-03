@@ -190,7 +190,7 @@ impl ProduktionenWindow {
                         .add_enabled(pfl, egui::Button::new(theme::ic::HEADPHONES).small())
                         .on_hover_text("Vorhören im Kopfhörer (PFL, nie auf Sendung)")
                         .on_disabled_hover_text(
-                            "Vorhören braucht einen Kopfhörer-Ausgang (Einstellungen → Vorhören)",
+                            "Vorhören braucht einen Kopfhörer-Ausgang (Einstellungen › Audio-Geräte › Vorhören)",
                         )
                         .clicked()
                     {

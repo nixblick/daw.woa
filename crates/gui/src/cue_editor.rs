@@ -462,7 +462,7 @@ impl CueEditor {
             let hint = if pfl_available {
                 "Im Kopfhörer (PFL) ab dem gewählten Marker, nie auf Sendung"
             } else {
-                "Kein Kopfhörer-Ausgang: Einstellungen → Vorhören (PFL)"
+                "Kein Kopfhörer-Ausgang: Einstellungen › Audio-Geräte › Vorhören (PFL)"
             };
             if ui
                 .add_enabled(

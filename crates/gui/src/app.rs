@@ -323,8 +323,6 @@ pub struct WoaApp {
     chat_ui: crate::chat_ui::ChatUi,
     /// Der MCP-Server im Hintergrund ist nach der Konfiguration angelaufen.
     ki_started: bool,
-    /// Fenster „Telefon“ (Eingang für den Anrufer).
-    phone_ui: crate::phone::PhoneUi,
     ordner_ui: crate::ordner::OrdnerUi,
 }
 
@@ -549,7 +547,6 @@ impl WoaApp {
             ki_ui: crate::ki_ui::KiUi::default(),
             chat_ui: crate::chat_ui::ChatUi::default(),
             ki_started: false,
-            phone_ui: crate::phone::PhoneUi::default(),
             ordner_ui: crate::ordner::OrdnerUi::default(),
             midi,
             midi_seen: (0, None),
@@ -876,31 +873,75 @@ impl WoaApp {
         }
     }
 
-    /// Fenster „Ausgänge“: übernommene Zuordnung wird gespeichert; die Radio-Ausgabe öffnet
-    /// neu, sobald nichts läuft (sonst beim nächsten Öffnen).
+    /// Gespeicherte Wahl aller Audio-Geräte, mit der das Fenster öffnet.
+    fn audio_choice(&self) -> crate::outputs_ui::AudioChoice {
+        crate::outputs_ui::AudioChoice {
+            outputs: self.config.outputs.clone(),
+            pult: self.config.pult.clone(),
+            pfl: self.config.pfl_output.clone(),
+            mic: self.config.mic.clone(),
+            phone: self.config.phone.clone(),
+        }
+    }
+
+    /// Öffnet das Fenster „Audio-Geräte“ (der eine Ort für Soundkarten).
+    fn open_audio(&mut self) {
+        let choice = self.audio_choice();
+        self.outputs_ui.open(choice);
+    }
+
+    /// Fenster „Audio-Geräte“: Übernommenes wird gespeichert und nur angewendet, wo sich etwas
+    /// geändert hat. Mikrofon und Telefon gelten sofort. Ausgänge und Pult öffnen die
+    /// Radio-Ausgabe neu, sobald nichts läuft (sonst beim nächsten Öffnen); Vorhören wie bisher
+    /// über [`PflSwitch`].
     fn outputs_window(&mut self, ctx: &egui::Context) {
         let status = self.radio.as_ref().map(|r| {
             let mut lines = r.output_warnings().to_vec();
             lines.extend(r.output_links());
+            lines.extend(r.phone_lines());
+            if self.pfl_switch.pending {
+                lines.push("Vorhören: wirkt, sobald nichts mehr läuft.".into());
+            } else if let Some(note) = r.pfl_note()
+                && note != crate::radio::PFL_OFF
+            {
+                lines.push(note.to_string());
+            }
             (lines, r.is_on_air())
         });
         let (lines, on_air) = status.unwrap_or_default();
-        let Some((map, pult)) = self.outputs_ui.show(ctx, &lines, on_air) else {
+        let Some(choice) = self.outputs_ui.show(ctx, &lines, on_air) else {
             return;
         };
-        tracing::info!(pult = pult.on, "output map applied");
-        self.config.outputs = map;
-        self.config.pult = pult;
+        let before = self.audio_choice();
+        if choice == before {
+            return;
+        }
+        tracing::info!(pult = choice.pult.on, "audio devices applied");
+        let routing = choice.outputs != before.outputs || choice.pult != before.pult;
+        let pfl = choice.pfl != before.pfl;
+        self.config.outputs = choice.outputs;
+        self.config.pult = choice.pult;
+        self.config.pfl_output = choice.pfl;
+        self.config.mic = choice.mic.clone();
+        self.config.phone = choice.phone.clone();
         self.save_config();
-        if self.radio.as_ref().is_some_and(|r| !r.is_on_air()) {
+        let running = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
+        if routing && self.radio.is_some() && !running {
             self.radio = None;
             if self.config.mode.uses_desk() {
                 self.ensure_radio();
             }
+        } else if pfl && self.radio.is_some() && self.pfl_switch.choose(running) {
+            self.reopen_radio_for_pfl();
+        }
+        if let Some(r) = self.radio.as_mut() {
+            r.set_mic_config(choice.mic);
+            if choice.phone != before.phone {
+                r.set_phone_config(choice.phone);
+            }
         }
     }
 
-    /// Fenster „Telefon“: Der gewählte Eingang wird gespeichert und sofort geöffnet.
     /// Fenster „Speicherorte“ (#258): jede Änderung wird gespeichert und angewendet.
     fn ordner_window(&mut self, ctx: &egui::Context) {
         let Some(ordner) = self.ordner_ui.show(ctx, &self.config.ordner) else {
@@ -910,23 +951,6 @@ impl WoaApp {
         crate::ordner::apply(&ordner);
         self.config.ordner = ordner;
         self.save_config();
-    }
-
-    fn phone_window(&mut self, ctx: &egui::Context) {
-        let status: Vec<String> = self
-            .radio
-            .as_ref()
-            .map(|r| r.phone_lines())
-            .unwrap_or_default();
-        let Some(choice) = self.phone_ui.show(ctx, &status) else {
-            return;
-        };
-        tracing::info!("phone input applied");
-        self.config.phone = choice.clone();
-        self.save_config();
-        if let Some(r) = self.radio.as_mut() {
-            r.set_phone_config(choice);
-        }
     }
 
     fn save_config(&self) {
@@ -1138,67 +1162,10 @@ impl WoaApp {
             ));
             if let Some(r) = self.radio.as_mut() {
                 r.set_phone_config(self.config.phone.clone());
+                r.set_mic_config(self.config.mic.clone());
                 r.set_wish_folder(self.config.wish_folder.clone());
             }
         }
-    }
-
-    /// Untermenü „Vorhören (PFL)“ (Paket 15): aus, Kanal 3/4 des Sendegeräts oder ein
-    /// zweites Gerät. Gespeichert in `config.json`; die Radio-Ausgabe öffnet neu, sobald
-    /// nichts läuft (sonst ab dem nächsten Öffnen).
-    fn pfl_menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button("Vorhören (PFL)", |ui| {
-            ui.label(
-                egui::RichText::new("Kopfhörer, nie auf Sendung")
-                    .small()
-                    .color(theme::text_dim()),
-            );
-            let mut choice = self.config.pfl_output.clone();
-            ui.radio_value(&mut choice, crate::PflOutput::Aus, "Aus");
-            ui.radio_value(
-                &mut choice,
-                crate::PflOutput::Kanal34,
-                "Kanal 3/4 des Sendegeräts",
-            );
-            match woa_engine::device::list_output_devices() {
-                Ok(list) => {
-                    for d in list {
-                        ui.radio_value(
-                            &mut choice,
-                            crate::PflOutput::Geraet(d.id.clone()),
-                            format!("Gerät: {}", d.name),
-                        );
-                    }
-                }
-                Err(e) => {
-                    ui.label(format!("Geräte nicht lesbar: {e}"));
-                }
-            }
-            if choice != self.config.pfl_output {
-                tracing::info!(?choice, "pfl output chosen");
-                self.config.pfl_output = choice;
-                self.save_config();
-                let running = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
-                if self.radio.is_some() && self.pfl_switch.choose(running) {
-                    self.reopen_radio_for_pfl();
-                }
-            }
-            if self.pfl_switch.pending {
-                ui.label(
-                    egui::RichText::new("Wirkt, sobald nichts mehr läuft")
-                        .small()
-                        .color(theme::danger_text()),
-                );
-            } else if let Some(note) = self.radio.as_ref().and_then(RadioDesk::pfl_note)
-                && note != crate::radio::PFL_OFF
-            {
-                ui.label(
-                    egui::RichText::new(note)
-                        .small()
-                        .color(theme::danger_text()),
-                );
-            }
-        });
     }
 
     /// Öffnet die Radio-Ausgabe neu, damit die Vorhören-Wahl greift. Nur ohne laufende Sendung.
@@ -5758,7 +5725,7 @@ impl WoaApp {
                 Some(r) => r.preview_file(path),
                 None => {
                     self.state.status = Status::Error(
-                        "Vorhören braucht den Radio-Modus mit Kopfhörer-Ausgang (Einstellungen → Vorhören)".into(),
+                        "Vorhören braucht den Radio-Modus mit Kopfhörer-Ausgang (Einstellungen › Audio-Geräte › Vorhören)".into(),
                     );
                 }
             }
@@ -6207,10 +6174,14 @@ impl WoaApp {
         let mut go = None;
         match id {
             // Menülisten als Aufklapper: sonst sprengen sie die Zeile (Foto 0.41.0).
-            S::Pfl => {
-                ui.menu_button(format!("Wählen {}", theme::ic::CARET_DOWN), |ui| {
-                    self.pfl_menu(ui)
-                });
+            // Verweise auf den einen Ort für Soundkarten, keine zweiten Wähler.
+            S::Pfl | S::Mic | S::Phone => {
+                if ui
+                    .button(format!("In {} öffnen", crate::outputs_ui::WINDOW))
+                    .clicked()
+                {
+                    self.open_audio();
+                }
             }
             S::MidiInput => {
                 ui.menu_button(format!("Wählen {}", theme::ic::CARET_DOWN), |ui| {
@@ -6285,9 +6256,11 @@ impl WoaApp {
                 }
             }
             S::Pult => {
-                if ui.button("Ausgänge öffnen").clicked() {
-                    self.outputs_ui
-                        .open(&self.config.outputs, &self.config.pult);
+                if ui
+                    .button(format!("In {} öffnen", crate::outputs_ui::WINDOW))
+                    .clicked()
+                {
+                    self.open_audio();
                 }
                 let (t, tone) = if self.config.pult.on {
                     ("an", ChipTone::Ok)
@@ -6397,12 +6370,9 @@ impl WoaApp {
                     self.entwickler_beenden();
                 }
             }
-            S::Outputs if open(ui) => self
-                .outputs_ui
-                .open(&self.config.outputs, &self.config.pult),
+            S::Outputs if open(ui) => self.open_audio(),
             S::Stream if open(ui) => self.stream_ui.open(&self.config.stream, &self.data_dir),
             S::Folders if open(ui) => self.ordner_ui.open = true,
-            S::Phone if open(ui) => self.phone_ui.open(&self.config.phone),
             S::Controls if open(ui) => self.controls.window = true,
             S::Assistant if open(ui) => {
                 let project = self
@@ -7295,7 +7265,6 @@ impl WoaApp {
         self.controller_window(ctx);
         self.feedback_window(ctx);
         self.outputs_window(ctx);
-        self.phone_window(ctx);
         self.ordner_window(ctx);
         self.stream_window(ctx);
         self.ki_window(ctx);
@@ -10343,7 +10312,6 @@ mod nacharbeit_tests {
             "fn menu_items(",
             "fn entwickler_menu(",
             "fn update_menu(",
-            "fn pfl_menu(",
             "fn midi_menu(",
             "fn theme_menu(",
         ] {

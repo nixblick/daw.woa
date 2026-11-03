@@ -63,6 +63,9 @@ pub struct GuiConfig {
     /// Telefon-Eingang (Anrufer): Gerät und Kanalpaar. Vorgabe: keiner.
     #[serde(skip_serializing_if = "crate::phone::PhoneInput::is_default")]
     pub phone: crate::phone::PhoneInput,
+    /// Mikrofon des Radios: Gerät und Kanalpaar (seit 0.41.6). Vorgabe: Systemstandard.
+    #[serde(skip_serializing_if = "crate::outputs_ui::MicInput::is_default")]
+    pub mic: crate::outputs_ui::MicInput,
     /// Pult-Modus (#301): Sendung kommt vom Eingang des externen Mischpults. Vorgabe: aus.
     #[serde(skip_serializing_if = "woa_radio::routing::Pult::is_default")]
     pub pult: woa_radio::routing::Pult,
@@ -160,6 +163,7 @@ impl Default for GuiConfig {
             pfl_output: PflOutput::Aus,
             outputs: woa_radio::routing::OutputMap::default(),
             phone: crate::phone::PhoneInput::default(),
+            mic: crate::outputs_ui::MicInput::default(),
             pult: woa_radio::routing::Pult::default(),
             wish_folder: None,
             ordner: crate::ordner::Ordner::default(),
@@ -1076,5 +1080,32 @@ mod tests {
             req.contains(LOG_HEADER) && req.contains("Zeile eins"),
             "{req}"
         );
+    }
+
+    /// 0.41.6: Eine Konfiguration von vorher (ohne `mic`) lädt unverändert; das Mikrofon
+    /// bleibt beim Systemstandard und landet nicht in der Datei.
+    #[test]
+    fn config_before_audio_devices_window_loads_unchanged() {
+        let old = r#"{
+            "pfl_output": {"geraet": "kopfhoerer-1"},
+            "outputs": {"carts": {"device_id": "karte-3", "pair": 1}},
+            "phone": {"device_id": "karte-2", "device_name": "USB Audio", "pair": 1},
+            "pult": {"on": true, "input": {"device_id": "pult-1", "pair": 2}}
+        }"#;
+        let c: GuiConfig = serde_json::from_str(old).expect("alte config.json");
+        assert_eq!(c.pfl_output, PflOutput::Geraet("kopfhoerer-1".into()));
+        assert_eq!(c.phone.device_id.as_deref(), Some("karte-2"));
+        assert_eq!(c.phone.pair, 1);
+        assert!(c.pult.on);
+        assert_eq!(c.pult.input.device_id.as_deref(), Some("pult-1"));
+        assert_eq!(c.pult.input.pair, 2);
+        let carts = c.outputs.get(woa_radio::routing::Source::Carts);
+        assert_eq!(
+            (carts.device_id.as_deref(), carts.pair),
+            (Some("karte-3"), 1)
+        );
+        assert!(c.mic.is_default());
+        let saved = serde_json::to_string(&c).unwrap();
+        assert!(!saved.contains("\"mic\""), "{saved}");
     }
 }
