@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.17 — 2026-11-03
+
+- **README deutlich aktualisiert:** Stand 0.41.x mit Senden über `woa-streamd`, Titel über den eigenen Server, Hörer-Statistik und Hörer-Seite, Dienste und Konten (MCP, Chat-Anbieter, ElevenLabs), Audio-Geräte an einem Ort, Pult-Modus. Bilder aus `docs/design/ist/` eingebunden (hell/dunkel nach Systemthema), Download und Webseite www.wir-on-air.de verlinkt.
+
 ## 0.41.16 — 2026-11-03
 
 - **Hörer-Seite ohne Design auf `/`:** Die Seite lud CSS, Skript und Bilder relativ; auf stream.wironair.de/ landeten diese Abrufe beim Stream statt bei den Dateien. Jetzt absolut unter `/live/`.
