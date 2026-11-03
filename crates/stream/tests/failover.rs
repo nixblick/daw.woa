@@ -307,3 +307,77 @@ fn feeder_under_load_and_link_drop_leaves_no_gap() {
     feeder.stop_broadcast();
     assert!(daemon.join().unwrap().is_ok());
 }
+
+/// #367: „Sendung beenden“ und gleich wieder „Auf Sendung“ (start → ende → start → ende →
+/// start, wie die Oberfläche es macht). Nie zwei woa-streamd am Server („Stream In Use“),
+/// jede beendete Sendung meldet sich ab, der Feeder hängt am laufenden woa-streamd.
+#[test]
+fn quick_restart_never_leaves_two_streamd() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    let kw_file = tmp.path().join("source.pass");
+    std::fs::write(&kw_file, format!("{KW}\n")).unwrap();
+    let fake = start(KW);
+    let cfg = StreamConfig {
+        host: "127.0.0.1".into(),
+        port: fake.port - 1,
+        admin_port: Some(fake.admin),
+        stream_id: 1,
+        sample_rate: SR,
+        password_file: kw_file,
+        ..StreamConfig::default()
+    };
+    let link = link::link_path(&data);
+    let mut daemons = Vec::new();
+    // Wie `go_on_air` in der Oberfläche: woa-streamd nur starten, wenn keiner antwortet.
+    let on_air = |daemons: &mut Vec<std::thread::JoinHandle<Result<(), String>>>| {
+        if !link::is_alive(&link) {
+            let (cfg, data) = (cfg.clone(), data.clone());
+            daemons.push(std::thread::spawn(move || {
+                daemon::run(cfg, &data, Arc::new(AtomicBool::new(false)))
+            }));
+            assert!(wait_for(Duration::from_secs(3), || link::is_alive(&link)));
+        }
+        let (_producer, consumer) = rtrb::RingBuffer::<f32>::new(SR as usize * 2);
+        link::Feeder::spawn(consumer, SR, link.clone()).unwrap()
+    };
+    let f = on_air(&mut daemons);
+    assert!(wait_for(Duration::from_secs(3), || f.is_connected()));
+    assert!(wait_for(Duration::from_secs(3), || fake
+        .seen
+        .logins
+        .load(Ordering::Relaxed)
+        == 1));
+    // Mehrmals schnell hintereinander (Fenster hing, Klicks kamen gesammelt an).
+    let mut f = f;
+    for _ in 0..6 {
+        f.stop_broadcast();
+        f = on_air(&mut daemons);
+    }
+    let seen = &fake.seen;
+    // Ein „Stream In Use“ im Augenblick des Wechsels darf vorkommen (der Server hat das
+    // Trennen noch nicht verarbeitet); danach sendet genau eine Quelle, nicht keine.
+    assert!(
+        wait_for(Duration::from_secs(8), || seen
+            .active
+            .load(Ordering::SeqCst)
+            == 1
+            && f.is_connected()),
+        "in_use={}",
+        seen.in_use.load(Ordering::Relaxed)
+    );
+    assert!(f.is_connected(), "Feeder hängt am laufenden woa-streamd");
+    let finished = daemons.iter().filter(|d| d.is_finished()).count();
+    assert_eq!(daemons.len() - finished, 1, "genau ein woa-streamd läuft");
+    f.stop_broadcast();
+    for d in daemons {
+        assert!(d.join().unwrap().is_ok());
+    }
+    assert_eq!(seen.active.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        seen.logouts.load(Ordering::Relaxed),
+        seen.logins.load(Ordering::Relaxed),
+        "jede Sendung hat sich abgemeldet"
+    );
+    assert!(!link.exists());
+}

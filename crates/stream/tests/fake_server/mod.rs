@@ -19,6 +19,12 @@ pub struct Seen {
     /// Nach so vielen Bytes einmal die Quellverbindung trennen (0 = nie).
     pub drop_after: AtomicUsize,
     pub stop: AtomicBool,
+    /// Gerade angemeldete Quellen; wie Shoutcast nur eine je Stream („Stream In Use“).
+    pub active: AtomicUsize,
+    /// Abgewiesene zweite Quellen.
+    pub in_use: AtomicUsize,
+    /// Abgemeldete Quellen (Verbindung zu).
+    pub logouts: AtomicUsize,
 }
 
 pub struct Fake {
@@ -123,6 +129,23 @@ fn handle_source(mut s: TcpStream, expected: &str, seen: &Seen) {
         let _ = s.write_all(b"invalid password\r\n");
         return;
     }
+    if seen
+        .active
+        .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        seen.in_use.fetch_add(1, Ordering::Relaxed);
+        let _ = s.write_all(b"Stream In Use\r\n");
+        return;
+    }
+    struct Leave<'a>(&'a Seen);
+    impl Drop for Leave<'_> {
+        fn drop(&mut self) {
+            self.0.active.fetch_sub(1, Ordering::SeqCst);
+            self.0.logouts.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    let _leave = Leave(seen);
     s.write_all(b"OK2\r\nicy-caps:11\r\n\r\n").unwrap();
     s.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
     let headers = read_until_blank(&mut s);
