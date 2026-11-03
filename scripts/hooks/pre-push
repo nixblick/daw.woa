@@ -1,0 +1,4 @@
+#!/bin/sh
+# Versionierter pre-push-Hook: nur die schnelle Formatprüfung, damit kein Push an
+# `cargo fmt --check` in der CI scheitert. Aktivieren je Klon: git config core.hooksPath scripts/hooks
+exec "$(git rev-parse --show-toplevel)/scripts/vorflug.sh" --fmt
