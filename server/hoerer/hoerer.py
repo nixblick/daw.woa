@@ -10,6 +10,7 @@ Umgebung (alle mit Vorgabe):
   HOERER_DB      SQLite-Datei                      ./hoerer.sqlite
   HOERER_PORT    Port des JSON-Endpunkts           8082
   HOERER_TAKT    Sekunden zwischen zwei Abfragen   30
+  HOERER_BIND    Adresse des Endpunkts             127.0.0.1 (hinter dem Reverse-Proxy)
 """
 
 import json
@@ -31,6 +32,19 @@ FRISCH = 120
 VERLAUF_MAX = 360
 # Vorgabe-Zeitraum der Sendungsliste.
 VORGABE_TAGE = 30
+# Höchstens so viele Tage je Abfrage und so viele Sendungen in der Antwort.
+MAX_TAGE = 90
+MAX_SENDUNGEN = 200
+
+
+def zeitraum(q, jetzt):
+    """`von`/`bis` aus der Anfrage prüfen. ValueError bei Nicht-Zahlen oder bis < von;
+    ein zu langer Zeitraum wird auf MAX_TAGE vor `bis` gekürzt."""
+    bis = int(q.get("bis", [jetzt])[0])
+    von = int(q.get("von", [bis - VORGABE_TAGE * 86400])[0])
+    if bis < von:
+        raise ValueError("bis vor von")
+    return max(von, bis - MAX_TAGE * 86400), bis
 
 
 def parse_seven(text):
@@ -70,6 +84,7 @@ def lese(quelle, sid, timeout=5):
 
 def oeffne(pfad):
     db = sqlite3.connect(pfad, check_same_thread=False)
+    db.execute("PRAGMA journal_mode=WAL")
     db.execute(
         "CREATE TABLE IF NOT EXISTS proben ("
         "t INTEGER PRIMARY KEY, aktuell INTEGER NOT NULL, spitze INTEGER, "
@@ -142,23 +157,25 @@ def auswertung(db, von, bis, jetzt):
             "eindeutig": letzte[3],
             "quelle": bool(letzte[4]),
         }
-    liste = sendungen(zeilen, jetzt)
+    liste = sendungen(zeilen, jetzt)[:MAX_SENDUNGEN]
     verlauf = ausduennen(liste[0]["_werte"]) if liste else []
     for s in liste:
         del s["_werte"]
     return {"jetzt": jetzt_d, "verlauf": verlauf, "sendungen": liste}
 
 
-def sammler(db, quelle, sid, takt, stop, lock):
+def sammler(db, quelle, sid, takt, stop):
+    """Schreibt mit eigener Verbindung; Leser blockieren ihn nicht (WAL)."""
     while not stop.is_set():
         probe = lese(quelle, sid)
         if probe is not None:
-            with lock:
-                speichere(db, time.time(), probe)
+            speichere(db, time.time(), probe)
         stop.wait(takt)
 
 
-def handler_fuer(db, lock):
+def handler_fuer(db_pfad):
+    """Jede Anfrage liest über eine eigene, nur lesende Verbindung."""
+
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):  # keine Zugriffszeilen mit IPs
             pass
@@ -181,12 +198,14 @@ def handler_fuer(db, lock):
             q = parse_qs(u.query)
             jetzt = int(time.time())
             try:
-                bis = int(q.get("bis", [jetzt])[0])
-                von = int(q.get("von", [bis - VORGABE_TAGE * 86400])[0])
+                von, bis = zeitraum(q, jetzt)
             except ValueError:
-                return self._json(400, {"fehler": "von/bis: Unix-Sekunden"})
-            with lock:
+                return self._json(400, {"fehler": "von/bis: Unix-Sekunden, bis nicht vor von"})
+            db = sqlite3.connect(f"file:{db_pfad}?mode=ro", uri=True)
+            try:
                 return self._json(200, auswertung(db, von, bis, jetzt))
+            finally:
+                db.close()
 
     return H
 
@@ -194,14 +213,14 @@ def handler_fuer(db, lock):
 def main():
     quelle = os.environ.get("HOERER_QUELLE", "http://127.0.0.1:8000")
     sid = int(os.environ.get("HOERER_SID", "1"))
-    db = oeffne(os.environ.get("HOERER_DB", "hoerer.sqlite"))
+    pfad = os.environ.get("HOERER_DB", "hoerer.sqlite")
+    db = oeffne(pfad)
+    bind = os.environ.get("HOERER_BIND", "127.0.0.1")
     port = int(os.environ.get("HOERER_PORT", "8082"))
     takt = float(os.environ.get("HOERER_TAKT", "30"))
-    stop, lock = threading.Event(), threading.Lock()
-    threading.Thread(
-        target=sammler, args=(db, quelle, sid, takt, stop, lock), daemon=True
-    ).start()
-    ThreadingHTTPServer(("0.0.0.0", port), handler_fuer(db, lock)).serve_forever()
+    stop = threading.Event()
+    threading.Thread(target=sammler, args=(db, quelle, sid, takt, stop), daemon=True).start()
+    ThreadingHTTPServer((bind, port), handler_fuer(pfad)).serve_forever()
 
 
 if __name__ == "__main__":

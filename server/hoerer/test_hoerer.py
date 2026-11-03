@@ -4,6 +4,7 @@ Aufruf: python3 -m unittest discover -s server/hoerer"""
 import json
 import threading
 import unittest
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -63,16 +64,34 @@ class Tests(unittest.TestCase):
         self.assertEqual(len(hoerer.ausduennen(w, 100)), 100)
         self.assertEqual(hoerer.ausduennen(w[:3]), [[0, 0], [1, 1], [2, 2]])
 
-    def test_endpunkt_liefert_nur_zahlen(self):
+    def test_zeitraum_geprueft_und_begrenzt(self):
+        self.assertEqual(hoerer.zeitraum({}, 1000000), (1000000 - 30 * 86400, 1000000))
+        von, bis = hoerer.zeitraum({"von": ["0"], "bis": ["100000000"]}, 0)
+        self.assertEqual(bis - von, hoerer.MAX_TAGE * 86400)
+        with self.assertRaises(ValueError):
+            hoerer.zeitraum({"von": ["10"], "bis": ["5"]}, 0)
+        with self.assertRaises(ValueError):
+            hoerer.zeitraum({"von": ["x"]}, 0)
+
+    def test_sendungen_begrenzt(self):
         db = hoerer.oeffne(":memory:")
-        lock = threading.Lock()
+        for i in range(hoerer.MAX_SENDUNGEN + 20):
+            hoerer.speichere(db, i * 1000, {"aktuell": 1, "quelle": True, "spitze": 1, "eindeutig": 1})
+        d = hoerer.auswertung(db, 0, 10**9, 10**9)
+        self.assertEqual(len(d["sendungen"]), hoerer.MAX_SENDUNGEN)
+
+    def test_endpunkt_liefert_nur_zahlen(self):
+        import tempfile
         import time
 
+        tmp = tempfile.TemporaryDirectory()
+        pfad = tmp.name + "/h.sqlite"
+        db = hoerer.oeffne(pfad)
         jetzt = int(time.time())
         for i, n in enumerate([1, 5, 3]):
             hoerer.speichere(db, jetzt - 60 + i * 30,
                              {"aktuell": n, "quelle": True, "spitze": 7, "eindeutig": 4})
-        srv, url = starte(hoerer.handler_fuer(db, lock))
+        srv, url = starte(hoerer.handler_fuer(pfad))
         try:
             with urllib.request.urlopen(url + "/api/hoerer") as r:
                 d = json.load(r)
@@ -81,13 +100,18 @@ class Tests(unittest.TestCase):
             self.assertEqual(d["sendungen"][0]["spitze"], 5)
             self.assertEqual(d["sendungen"][0]["durchschnitt"], 3.0)
             self.assertEqual([p[1] for p in d["verlauf"]], [1, 5, 3])
-            text = json.dumps(d)
-            self.assertNotIn("127.0.0.1", text)
-            with urllib.request.urlopen(url + f"/api/hoerer?von={jetzt + 10}") as r:
+            self.assertNotIn("127.0.0.1", json.dumps(d))
+            with urllib.request.urlopen(url + f"/api/hoerer?von={jetzt + 10}&bis={jetzt + 20}") as r:
                 self.assertEqual(json.load(r)["sendungen"], [])
+            for bad in ["?von=abc", f"?von={jetzt}&bis={jetzt - 1}"]:
+                with self.assertRaises(urllib.error.HTTPError) as e:
+                    urllib.request.urlopen(url + "/api/hoerer" + bad)
+                self.assertEqual(e.exception.code, 400)
         finally:
             srv.shutdown()
-
+            srv.server_close()
+            db.close()
+            tmp.cleanup()
 
 if __name__ == "__main__":
     unittest.main()
