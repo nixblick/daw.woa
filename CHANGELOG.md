@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.41.12 — 2026-11-03
+
+- **Hörer-Chip oben liest vom Statistik-Server:** „HÖRER x | y“ neben ON AIR nimmt `jetzt.aktuell` und die Spitze der laufenden Sendung aus `hoerer_url` (Vorgabe `https://feedback.wironair.de/api/hoerer`), höchstens alle 30 s im Hintergrund, „–“ bei Fehler. Bisher fragte woa-streamd `/7.html` am Admin-Port, der von außen zu ist, darum blieb der Chip leer. Fenster und Chip teilen sich jetzt den Abruf (`hoerer::Abruf`). Tests: `chip_numbers_come_from_the_server_answer`, `chip_stays_dash_without_test_server`.
+- Der `/7.html`-Abruf in woa-streamd bleibt: Status-Zeile und Agent-Werkzeug (Sendestatus, `listeners`) nutzen ihn bei lokalem Server weiter.
+
 ## 0.41.11 — 2026-11-03
 
 Hörerzahlen (Auftrag André 03.11., Ausnahme von der Fehlerphase).

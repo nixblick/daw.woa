@@ -267,6 +267,7 @@ pub struct WoaApp {
     abnahme: crate::abnahme::AbnahmeWindow,
     hoerer: crate::hoerer::HoererWindow,
     hoerer_peak: crate::hoerer::SessionPeak,
+    hoerer_chip: crate::hoerer::ChipStand,
     /// Fotomodus (`WOA_SCREENSHOT=datei.png`): Zielpfad und gezählte Bilder.
     photo: Option<(PathBuf, u32)>,
     /// Party-Layout (Paket 35).
@@ -589,6 +590,7 @@ impl WoaApp {
             abnahme: Default::default(),
             hoerer: Default::default(),
             hoerer_peak: Default::default(),
+            hoerer_chip: Default::default(),
             party: crate::party::PartyView::with_panels(config.party_panels),
             photo: std::env::var_os("WOA_SCREENSHOT").map(|p| (PathBuf::from(p), 0)),
             selected_clips: Vec::new(),
@@ -2829,21 +2831,26 @@ impl WoaApp {
     }
 
     /// Hörer in der Kopfleiste, nur auf Sendung: „HÖRER 12 | 18“ (jetzt | Spitze der Sendung),
-    /// Zahl aus der öffentlichen Shoutcast-Kurzstatistik über woa-streamd (alle 15 s), „–“,
-    /// solange keine Zahl kommt. Farbe `ok`, Rot bleibt ON AIR. Klick: Hörer-Statistik.
+    /// Zahl aus `hoerer_url` (`jetzt.aktuell`, eigener Statistik-Server, höchstens alle 30 s im
+    /// Hintergrund), „–“, solange keine Zahl kommt oder der Server nicht antwortet. Farbe `ok`, Rot bleibt ON AIR. Klick: Hörer-Statistik.
     fn hoerer_chip(&mut self, ui: &mut egui::Ui, compact: bool) {
         let photo = self.photo.is_some() && std::env::var_os("WOA_ONAIR").is_some();
         let live = photo || self.radio.as_ref().is_some_and(RadioDesk::is_broadcasting);
+        if live && !photo {
+            self.hoerer_chip.poll(&self.config.hoerer_url);
+        }
         let current = if photo {
             Some(14)
+        } else if live {
+            self.hoerer_chip.aktuell
         } else {
-            self.radio
-                .as_ref()
-                .and_then(RadioDesk::stream_status)
-                .filter(|s| s.is_running(woa_stream::unix_now()))
-                .and_then(|s| s.listeners)
+            None
         };
         let peak = self.hoerer_peak.update(live, current);
+        let peak = match (peak, self.hoerer_chip.spitze_server.filter(|_| live)) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (a, b) => a.or(b),
+        };
         if !live {
             return;
         }
@@ -2869,8 +2876,8 @@ impl WoaApp {
                 "Hörer jetzt: {c} · Spitze dieser Sendung: {}\nKlick: Hörer-Statistik",
                 peak.unwrap_or(c)
             ),
-            None => "Hörerzahl noch nicht da (Server antwortet nicht oder kein Admin-Port \
-                     eingetragen).\nKlick: Hörer-Statistik"
+            None => "Hörerzahl noch nicht da (Statistik-Server antwortet nicht, \
+                     config.json: hoerer_url).\nKlick: Hörer-Statistik"
                 .to_string(),
         };
         let label = format!("Hörer {suffix}");
