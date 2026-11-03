@@ -155,6 +155,8 @@ pub enum Cmd {
         /// Start und Ende im Puffer (Frames, Cue-In und Cue-Out).
         start: usize,
         end: usize,
+        /// Bis hier duckt der Cart die Musik: Ende des Hörbaren, ohne Stille am Ende (#324).
+        duck_end: usize,
     },
     /// Cart anhalten.
     CartStop(usize),
@@ -649,6 +651,8 @@ struct Voice {
     pos: usize,
     /// Ende (Frames, Cue-Out).
     end: usize,
+    /// Ende des Hörbaren: danach duckt der Cart die Musik nicht mehr (#324).
+    duck_end: usize,
     gain: f32,
     /// Fade-Taste: verbleibende und gesamte Frames der Ausblendung.
     fading: Option<(usize, usize)>,
@@ -968,6 +972,7 @@ impl Mixer {
                     gain,
                     start,
                     end,
+                    duck_end,
                 } => {
                     if let Some(v) = self.carts.get_mut(slot) {
                         let end = end.min(buf.frames());
@@ -975,6 +980,7 @@ impl Mixer {
                             buf,
                             pos: start.min(end),
                             end,
+                            duck_end: duck_end.min(end),
                             gain,
                             fading: None,
                         });
@@ -1321,7 +1327,8 @@ impl Mixer {
         });
         self.trim_mic_backlog();
         // Carts ducken die Musik (#149); geprüft je Block, das reicht bei 80 ms Glättung.
-        let carts_on = self.carts.iter().any(Option::is_some);
+        // Nur solange er hörbar ist: Stille am Ende hält die Musik nicht unten (#324).
+        let carts_on = self.carts.iter().flatten().any(|c| c.pos < c.duck_end);
         if carts_on != self.carts_on {
             self.carts_on = carts_on;
             self.retarget_duck();

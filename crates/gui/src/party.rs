@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui;
 use woa_io::controller::Bus;
-use woa_radio::party::{Effect, PartyCommand, PartyLayout, PartyState, Side};
+use woa_radio::party::{PartyCommand, PartyLayout, PartyState, Side};
 
 use crate::radio::RadioDesk;
 use crate::theme;
@@ -865,15 +865,17 @@ impl PartyView {
                             false,
                             0.0,
                         )
-                        .on_hover_text("Hinter dem laufenden Titel einreihen (auch ziehen)")
+                        .on_hover_text(library_add_hint(self.wish_for.is_some()))
                         .clicked()
                         {
                             match self.wish_for.take() {
+                                // Ein Wunsch kommt hinter den laufenden Titel.
                                 Some(wish) => cmds.push(PartyCommand::QueueWish {
                                     wish,
                                     file: path.clone(),
                                 }),
-                                None => desk.party_effect(Effect::InsertNext(path.clone())),
+                                // Sonst hinten an die Playlist (#360).
+                                None => desk.party_insert(path.clone(), library_add_at()),
                             }
                         }
                     });
@@ -1079,10 +1081,23 @@ impl RadioDesk {
     }
 
     /// Datei an Stelle `at` einfügen (`None`: ans Ende).
-    fn party_insert(&self, path: PathBuf, at: Option<usize>) {
+    pub(crate) fn party_insert(&self, path: PathBuf, at: Option<usize>) {
         self.with(move |c| {
             c.add(&[path], at);
         });
+    }
+}
+
+/// Wohin „→ Playlist“ aus der Bibliothek legt: ans Ende (#360, André 03.11.2026).
+pub(crate) fn library_add_at() -> Option<usize> {
+    None
+}
+
+fn library_add_hint(wish: bool) -> &'static str {
+    if wish {
+        "Wunsch hinter dem laufenden Titel einreihen"
+    } else {
+        "Hinten an die Playlist anhängen (auch ziehen)"
     }
 }
 

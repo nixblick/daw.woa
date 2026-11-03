@@ -43,7 +43,6 @@ fn wait_until(limit: Duration, mut f: impl FnMut() -> bool) -> bool {
 
 #[cfg(unix)]
 mod scan {
-    use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
 
     use super::*;
@@ -122,20 +121,24 @@ mod scan {
         std::fs::create_dir_all(&plugins).expect("mkdir");
         let bad = fake_plugin(&plugins, "haengt.clap");
         let script = d.path().join("suche.sh");
-        std::fs::write(&script, "#!/bin/sh\nexec sleep 30\n").expect("script");
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        // Das Skript läuft über `/bin/sh`, statt selbst ausgeführt zu werden: Ein frisch
+        // geschriebenes Programm zu starten, während ein paralleler Test gerade forkt, scheitert
+        // unter Linux sporadisch mit ETXTBSY („Text file busy“). Dann stand im Problem
+        // „Suchprozess startet nicht“ statt „hängt“ (CI-Wackler 31.10.–02.11.).
+        std::fs::write(&script, "exec sleep 30\n").expect("script");
+        let mut cfg = host("/bin/sh", None);
+        cfg.prefix = vec![script.to_str().expect("utf8").to_string()];
 
         let mut bl = Blocklist::in_memory();
         let t0 = Instant::now();
-        let cat = Catalog::scan_guarded_with(
-            &[plugins],
-            &host(script.to_str().expect("utf8"), None),
-            &mut bl,
-            Duration::from_millis(300),
-        );
+        let cat = Catalog::scan_guarded_with(&[plugins], &cfg, &mut bl, Duration::from_millis(300));
         assert!(t0.elapsed() < Duration::from_secs(10), "no long wait");
         assert_eq!(cat.problems().len(), 1);
-        assert!(cat.problems()[0].reason.contains("hängt"));
+        assert!(
+            cat.problems()[0].reason.contains("hängt"),
+            "{:?}",
+            cat.problems()[0].reason
+        );
         assert!(bl.is_blocked(&bad));
         assert!(bl.reason(&bad).is_some_and(|r| r.contains("hängt")));
     }

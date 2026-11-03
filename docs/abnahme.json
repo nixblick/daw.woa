@@ -439,12 +439,102 @@
       "version": "0.41.1"
     },
     {
+      "id": "beenden-frage",
+      "ansicht": "Produzent",
+      "titel": "Beenden fragt: Speichern, Nicht speichern, Abbrechen",
+      "tun": "Projekt ändern, dann oben rechts das Fenster schließen.",
+      "erwartet": "Eine Frage mit „Speichern und beenden“, „Nicht speichern“ und „Abbrechen“. Abbrechen lässt WOA offen.",
+      "version": "0.41.2",
+      "ticket": 365
+    },
+    {
+      "id": "beenden-menue",
+      "ansicht": "Produzent",
+      "titel": "Datei › Beenden",
+      "tun": "Menü Datei öffnen, ganz unten „Beenden (Strg+Q)“ wählen (oder Strg+Q drücken).",
+      "erwartet": "WOA fragt bei ungespeichertem Projekt wie beim Fensterschließen; ohne Änderungen beendet es sofort.",
+      "version": "0.41.2",
+      "ticket": 362
+    },
+    {
+      "id": "update-abbrechen",
+      "ansicht": "Radio",
+      "titel": "Update später installieren",
+      "tun": "Mit ungespeichertem Projekt bei einem Update „Jetzt installieren“ drücken, dann „Abbrechen“.",
+      "erwartet": "WOA bleibt offen, nichts wird geladen; das Update lässt sich später wieder starten.",
+      "version": "0.41.2",
+      "ticket": 365
+    },
+    {
+      "id": "bibliothek-hinten",
+      "ansicht": "Radio",
+      "titel": "Titel aus der Bibliothek kommt ans Ende",
+      "tun": "In der Playlist stehen schon Titel. In der Bibliothek bei einem Titel „→ Playlist“ drücken.",
+      "erwartet": "Der Titel steht ganz unten in der Playlist, nicht oben.",
+      "version": "0.41.2",
+      "ticket": 360
+    },
+    {
+      "id": "deck-stopp",
+      "ansicht": "Radio",
+      "titel": "Deck stoppt aus dem Sendedeck",
+      "tun": "Playlist steht. Deck A von Hand starten, dann im Sendedeck „Stopp“ drücken (oder „Fade“).",
+      "erwartet": "Deck A hält an (bei Fade nach 3 s Ausblenden).",
+      "version": "0.41.2",
+      "ticket": 325
+    },
+    {
+      "id": "cart-ziehen",
+      "ansicht": "Radio",
+      "titel": "Datei auf ein Cart-Pad ziehen",
+      "tun": "Eine Audiodatei aus dem Explorer oder eine Playlist-Zeile auf ein Cart-Pad ziehen.",
+      "erwartet": "Das Pad trägt jetzt diesen Titel; die Playlist bleibt unverändert.",
+      "version": "0.41.2",
+      "ticket": 323
+    },
+    {
+      "id": "nummernfeld-verlassen",
+      "ansicht": "Radio",
+      "titel": "Nummernfeld der Playlist verlassen",
+      "tun": "In der Playlist die Nummer eines Titels anklicken, eine Zahl tippen, dann Esc (oder Tab, oder daneben klicken).",
+      "erwartet": "Das Feld schließt, der Titel bleibt, wo er war. Mit Enter statt Esc rückt er an die neue Stelle.",
+      "version": "0.41.2",
+      "ticket": 322
+    },
+    {
+      "id": "ducking-cart",
+      "ansicht": "Radio",
+      "titel": "Musik kommt nach einem Cart gleich wieder hoch",
+      "tun": "Bei laufender Musik ein kurzes Cart (Jingle) abspielen.",
+      "erwartet": "Sobald das Cart nicht mehr zu hören ist, kommt die Musik wieder hoch, ohne Pause in leiser Lautstärke.",
+      "version": "0.41.2",
+      "ticket": 324
+    },
+    {
+      "id": "lautstaerke-gleich",
+      "ansicht": "Radio",
+      "titel": "Lautstärke bleibt im Titel gleich",
+      "tun": "Eine Stunde Playlist senden und auf einen Titel achten, der vorher schwankte.",
+      "erwartet": "Innerhalb eines Titels keine Sprünge laut/leise.",
+      "version": "0.41.2",
+      "ticket": 147
+    },
+    {
+      "id": "kein-haenger",
+      "ansicht": "Radio",
+      "titel": "Kein Einfrieren beim Gerätewechsel",
+      "tun": "Während der Sendung das Ausgabegerät abziehen oder in Windows wechseln.",
+      "erwartet": "Die Oberfläche bleibt bedienbar; WOA verbindet die Ausgabe im Hintergrund neu.",
+      "version": "0.41.2",
+      "ticket": 291
+    },
+    {
       "id": "party-karten-ausblenden",
       "ansicht": "Party Einfach",
       "titel": "Wunschliste und Fernbedienung ausblenden",
       "tun": "In der Party oben „WUNSCHLISTE“ und „FERNBEDIENUNG“ ausschalten (oder Menü Ansicht). WOA neu starten.",
       "erwartet": "Beide Karten sind weg, die Bibliothek zeigt mehr Treffer nach unten. Nach dem Neustart ist es noch so. Eine eingeschaltete Fernbedienung läuft weiter (Chip „Fernbedienung an · ausgeblendet“).",
-      "version": "0.41.3",
+      "version": "0.41.5",
       "ticket": 361
     },
     {
@@ -453,7 +543,7 @@
       "titel": "Abhörlautstärke",
       "tun": "Im Produzent oben neben PEGEL den kleinen Regler mit Lautsprecher nach links ziehen, Doppelklick darauf.",
       "erwartet": "Wird leiser ohne Knacken, PEGEL bleibt gleich; Doppelklick wieder voll. Ein Export klingt unverändert.",
-      "version": "0.41.3",
+      "version": "0.41.5",
       "ticket": 358
     },
     {
@@ -462,7 +552,7 @@
       "titel": "Gesangseinsatz in Playlist und Deck",
       "tun": "Einen Titel mit Intro in die Playlist legen, warten, bis er gemessen ist, dann auf ein Deck laden.",
       "erwartet": "In der Zeile steht ein Mikrofon mit „≈0:12“ (geschätzt); im Deck „Gesang ab ≈0:12“ und ein Strich auf dem Balken. Cue-Punkte › Rechtsklick in die Wellenform › „Gesang beginnt hier“ setzt die Marke von Hand (ohne ≈).",
-      "version": "0.41.3",
+      "version": "0.41.5",
       "ticket": 299
     },
     {
@@ -471,7 +561,7 @@
       "titel": "Vorhören per Knopf",
       "tun": "Über eine Playlist-Zeile und ein belegtes Cart fahren, den Kopfhörer anklicken, nochmal klicken.",
       "erwartet": "Startet und stoppt das Vorhören wie am Deck, der Kopfhörer leuchtet solange; ein Klick daneben startet das Cart nicht.",
-      "version": "0.41.3",
+      "version": "0.41.5",
       "ticket": 273
     },
     {
@@ -480,7 +570,7 @@
       "titel": "Kräftige Pegel-LEDs",
       "tun": "Im Radio Musik laufen lassen und auf die Karte PEGEL schauen.",
       "erwartet": "Die LED-Ketten neben den Reglern sind breiter, mit dicken einzelnen LEDs, die leuchten; Regler und bunte Namensschilder sind wie vorher.",
-      "version": "0.41.3",
+      "version": "0.41.5",
       "ticket": 287
     }
   ]

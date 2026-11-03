@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.41.3 — 2026-11-03
+## 0.41.5 — 2026-11-03
+
+- Verbesserungspaket, geplant als 0.41.3; 0.41.2 und 0.41.4 kamen zuerst auf main, daher 0.41.5.
 
 - **Party: Wunschliste und Fernbedienung ausblendbar (#361):** Schalter „WUNSCHLISTE“ und „FERNBEDIENUNG“ in der Party-Ansichtsleiste und im Menü Ansicht (nur in der Party), dazu Einstellungen › Party › Ansicht. Ausgeblendet nimmt die Bibliothek den Platz und zeigt so viele Treffer, wie passen (mindestens 8, höchstens 40); im DJ steht sie anstelle der Wunschliste. Eine laufende Fernbedienung bleibt an und zeigt den Chip „Fernbedienung an · ausgeblendet“. Gemerkt in `party_panels`. Test: `party::tests`.
 - **Abhörlautstärke im Produzenten (#358):** kleiner waagerechter Regler mit Lautsprecher neben der PEGEL-LCD (Doppelklick: voll), auch unter Einstellungen › Produzent › Abhören. Wirkt nur am Lautsprecher nach dem Mix, gleitet je Sample (kein Knacken, keine Allokation); Pegel, Analyse und Export bleiben. Gemerkt in `monitor_volume`. Tests: `woa_dsp::monitor::tests`.
@@ -8,6 +10,27 @@
 - **Vorhören per Knopf in Playlist und Cart-Wall (#273):** Kopfhörer-Taste in der Playlist-Zeile (beim Hover/Auswahl, bleibt sichtbar, solange der Titel vorgehört wird) und oben rechts am belegten Cart (links neben dem Fade-Symbol); Klick startet, zweiter Klick stoppt, ohne PFL-Ausgang gesperrt mit Hinweis.
 - **Kräftigere Pegel-LEDs (#287):** LED-Ketten der Karte PEGEL 16 statt 10 px breit, weniger und dickere LEDs mit Fuge, leuchtende mit hellem Kern und Schein. Fader und farbige Namensschilder unverändert. Test: `level_leds_are_fat`.
 - Bilder 1920×1030 dunkel und hell: `docs/design/ist/ist-0.41.3-{party,produzent,radio}-{dunkel,hell}-1920x1030.png` (Party mit ausgeblendeten Karten, Produzent mit Abhörregler, Radio mit den neuen LEDs).
+
+## 0.41.4 — 2026-11-03
+
+- **CI ohne Fehlalarm (André 03.11.: „erst gar nicht so viele Ereignisse mit Rot-Meldungen“):** rote Läufe nur noch bei echten Fehlern.
+  - Wackeltests an der Ursache behoben: `scan::a_file_that_hangs_is_killed_and_blocked` startet das frisch geschriebene Skript über `/bin/sh` (vorher sporadisch ETXTBSY unter Linux, Problem „Suchprozess startet nicht“ statt „hängt“); `live::tests::forward_does_not_wait_…` wartet bis 10 s auf das DELETE statt 2 s; `webrtc_loopback` prüft am Pult und im Rückweg nur noch „Ton deutlich da“ (> -20 dB statt > -14 dB, gemessen -14,4 dB auf Windows); `radio::tests::many_rows_stay_fast` ist in der CI nur eine grobe Schranke (×5 + 20 ms), lokal bleibt ×2 + 2 ms.
+  - CI: `concurrency` je PR, ein neuer Push bricht den alten Lauf ab (auf `main` läuft jeder Lauf zu Ende).
+  - deny: `cargo-deny` direkt auf dem Runner statt im Container der Action (Toolchain-Meldung „musl is not installed“ weg). Lizenzen, Bans, Quellen laufen immer; Advisories/yanked in PRs nur, wenn sich ein fremdes Paket in `Cargo.lock` (checksum-/source-Zeile, nicht das Hochzählen der eigenen Version) oder `deny.toml` ändert. Voll und streng prüft `deny-woche.yml` montags und auf Knopfdruck.
+  - `scripts/vorflug.sh` (fmt, clippy, test) vor jedem Push, optionaler Hook `scripts/hooks/pre-push` (nur fmt) per `git config core.hooksPath scripts/hooks`; Regel in `CLAUDE.md`.
+
+## 0.41.2 — 2026-11-03
+
+Fehlerbehebung, keine neuen Funktionen (André 03.11.).
+
+- **Beenden fragt einheitlich (#365, #362):** Fenster schließen, Datei › Beenden (neu, unten, Strg+Q) und „Jetzt installieren“ gehen über eine Stelle (`exit::ExitGuard`). Bei ungespeichertem Projekt: „Speichern und beenden/installieren“, „Nicht speichern“, „Abbrechen“ (Esc). Abbrechen lässt WOA offen, das Update kommt später. Ursache: das Fenster schloss ohne Frage, das Update hatte nur Speichern, Beenden stand nur unter Entwickler. Tests: `exit::tests` (fünf), `closing_with_unsaved_changes_asks_save_discard_cancel`, `clean_project_quits_without_asking`.
+- **Bibliothek → Playlist hängt hinten an (#360):** Ursache: der Knopf „→ Playlist“ fügte als „als Nächstes“ ein, bei stehender Wiedergabe also ganz oben. Jetzt ans Ende; Wünsche gehen weiter hinter den laufenden Titel, Ziehen an die Ablegestelle. Test: `library_title_is_appended_at_the_end`.
+- **Von Hand gestartetes Deck stoppt aus dem Sendedeck (#325):** Ursache: „Stopp“ hielt bei stehender Playlist nur die Playlist an. Jetzt halten auch laufende Decks A–C an; „Fade“ blendete sie seit 0.41.0 schon aus. Test: `send_stop_and_fade_reach_a_manually_started_deck`.
+- **Ziehen auf Cart-Pads (#323):** Ursache: Dateien aus dem Explorer und Playlist-Zeilen landeten auf einem Cart in der Playlist. Jetzt belegen sie das Pad (wie die Bibliothek). Decks nahmen Dateien schon seit 0.35.6 an. Tests: `explorer_file_dropped_on_a_cart_lands_there`, `dragged_row_lands_on_deck_row_or_nowhere`.
+- **Nummernfeld der Playlist lässt sich verlassen (#322):** Ursache: das Feld holte sich in jedem Bild den Fokus zurück. Jetzt nur beim Öffnen; Esc, Tab und Klick daneben beenden ohne Verschieben, Enter verschiebt. Test: `playlist_number_field_can_be_left`.
+- **Ducking hebt nach Carts früher an (#324):** Ursache: die Musik blieb unten, bis das Cart samt stiller Ausklingzeit zu Ende war. Jetzt zählt nur der hörbare Teil (bis −50 dBFS). Die Release-Werte (Mikro 80 ms, Voice-Track 0,8 s, einstellbar) bleiben. Test: `cart_duck::silent_cart_tail_does_not_hold_the_music_down`.
+- **Lautstärke im Radio-Deck (#147):** Offline gemessen: die Verstärkung bleibt innerhalb eines Titels gleich (`constant_gain`, drei Tests); das Pumpen durch stille Cart-Enden ist mit #324 behoben. Kompressor und Spitzenbegrenzung wirken absichtlich.
+- **Keine UI-Hänger beim Geräteausfall (#291):** Ursache: Prüfen des Standardgeräts, Schließen und Neuöffnen der Ausgänge liefen im GUI-Takt und dauern unter Windows nach „output lost“ mehrere Sekunden. Jetzt in einem eigenen Thread je Ausgabe (`outputs::OutputWatch`), auch „Ausgabe neu verbinden“. Test: `watch_tests::streams_live_in_their_own_thread`.
 
 ## 0.41.1 — 2026-11-03
 
