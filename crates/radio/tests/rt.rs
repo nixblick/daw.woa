@@ -591,8 +591,9 @@ fn cart_ducks_music_and_releases_fast() {
     let a = tmp.path().join("musik.wav");
     let silent = tmp.path().join("stumm.wav");
     write_tone(&a, 4.0, 0.0, 0.2);
-    // A silent cart: the output is the music alone, so its gain is measurable.
-    write_tone(&silent, 0.5, 0.0, 0.0);
+    // A barely audible cart (-48 dBFS, #324 ducks only while a cart is audible): the output is
+    // almost the music alone, so its gain is measurable.
+    write_tone(&silent, 0.5, 0.0, 0.004);
     for on in [true, false] {
         let mut show = show_of(std::slice::from_ref(&a), 3.0);
         show.duck_db = -12.0;
@@ -616,7 +617,7 @@ fn cart_ducks_music_and_releases_fast() {
         if on {
             assert!((during - 0.251).abs() < 0.03, "ducked to {during}");
         } else {
-            assert!((during - 1.0).abs() < 1e-3, "not ducked: {during}");
+            assert!((during - 1.0).abs() < 0.03, "not ducked: {during}");
         }
         // Cart ends at 0.5 s; 0.4 s later the music is back.
         for _ in 0..75 {
