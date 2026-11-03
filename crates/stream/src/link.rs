@@ -424,6 +424,67 @@ pub fn is_alive(link: &Path) -> bool {
     open_raw(link).is_ok()
 }
 
+/// So lange wartet „Sendung beenden“, bis woa-streamd sich beim Server abgemeldet hat.
+pub const STOP_WAIT: Duration = Duration::from_secs(5);
+/// Kommt in dieser Zeit keine Abmeldung, geht `Stop` noch einmal hin.
+const STOP_RESEND: Duration = Duration::from_millis(700);
+
+/// Beendet den woa-streamd laut Link-Datei und wartet, bis er sich abgemeldet hat (er
+/// löscht die Link-Datei erst nach dem Trennen vom Server). Schickt `Stop` erneut, falls es
+/// verloren ging. `true`, wenn kein woa-streamd mehr läuft (#367: sonst startete die
+/// nächste Sendung einen zweiten, den der Server mit „Stream In Use“ abwies).
+pub fn stop_daemon(link: &Path, rate: u32) -> bool {
+    stop_daemon_with(link, rate, None, STOP_WAIT)
+}
+
+fn stop_daemon_with(link: &Path, rate: u32, mut conn: Option<LocalStream>, wait: Duration) -> bool {
+    let Some(target) = LinkInfo::read(link) else {
+        return true;
+    };
+    // Läuft noch derselbe woa-streamd? (Ein neuer schreibt ein neues Token.)
+    let same = || LinkInfo::read(link).is_some_and(|i| i.token == target.token);
+    let deadline = Instant::now() + wait;
+    let mut sent = false;
+    while Instant::now() < deadline {
+        if !same() {
+            return true;
+        }
+        if !sent {
+            if conn.is_none() {
+                conn = connect(link, rate).ok();
+            }
+            match conn.take() {
+                Some(mut s) => {
+                    sent = write_frame(&mut s, KIND_STOP, &[]).is_ok();
+                    // Verbindung offen lassen, bis woa-streamd sie schließt: sonst
+                    // verlöre ein Abriss vor dem Lesen den Rahmen.
+                    conn = Some(s);
+                }
+                None if !is_alive(link) => {
+                    // Link-Datei ohne Prozess (Absturz): nichts mehr zu beenden.
+                    return true;
+                }
+                None => {}
+            }
+            if sent {
+                let resend = Instant::now() + STOP_RESEND;
+                while Instant::now() < resend.min(deadline) && same() {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                sent = false;
+                conn = None;
+                continue;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let gone = !same();
+    if !gone {
+        tracing::warn!(pid = target.pid, "streamd did not stop in time");
+    }
+    gone
+}
+
 /// Neuer Versuch zum lokalen woa-streamd: 1 s, verdoppelt bis 10 s.
 const FEED_BACKOFF_MIN: Duration = Duration::from_secs(1);
 const FEED_BACKOFF_MAX: Duration = Duration::from_secs(10);
@@ -480,7 +541,8 @@ impl Feeder {
         self.reconnects.load(Ordering::Relaxed)
     }
 
-    /// Beendet die Sendung (woa-streamd meldet sich ab) und den Feeder.
+    /// Beendet die Sendung (woa-streamd meldet sich ab) und den Feeder. Kehrt erst zurück,
+    /// wenn woa-streamd beendet ist (höchstens [`STOP_WAIT`]).
     pub fn stop_broadcast(mut self) {
         let _ = self.tx.send(FeedMsg::Stop);
         if let Some(t) = self.thread.take() {
@@ -530,13 +592,8 @@ fn feed(
                     title = Some(t);
                 }
                 Ok(FeedMsg::Stop) => {
-                    if conn.is_none() {
-                        conn = connect(&link, rate).ok();
-                    }
-                    if let Some(s) = conn.as_mut() {
-                        let _ = write_frame(s, KIND_STOP, &[]);
-                    }
                     connected.store(false, Ordering::Relaxed);
+                    stop_daemon_with(&link, rate, conn.take(), STOP_WAIT);
                     return;
                 }
                 Ok(FeedMsg::Quit) | Err(TryRecvError::Disconnected) => {

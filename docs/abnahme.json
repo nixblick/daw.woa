@@ -437,6 +437,14 @@
       "tun": "In Radio, Party und Produzent oben rechts das Zahnrad neben dem Modus-Umschalter klicken.",
       "erwartet": "Das Fenster öffnet jeweils beim Bereich Radio, Party bzw. Produzent.",
       "version": "0.41.1"
+    },
+    {
+      "id": "sendung-neustart",
+      "ansicht": "Radio",
+      "titel": "Sendung beenden und gleich neu starten",
+      "tun": "Radio: „Auf Sendung“, warten bis grün. „Sendung beenden“, sofort danach „Auf Sendung“; das Ganze zweimal.",
+      "erwartet": "Nach wenigen Sekunden wieder grün mit dem Sendemix, keine Zeile „Verbindung zu woa-streamd unterbrochen“, kein „Stream In Use“; im Shoutcast-Log je Beenden ein Abmelden der Quelle.",
+      "version": "0.41.5"
     }
   ]
 }
