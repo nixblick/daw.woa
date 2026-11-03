@@ -202,9 +202,10 @@ fn collect(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
 }
 
 impl PartyView {
-    /// Tasten im Party-Modus (nur, wenn kein Textfeld den Fokus hat).
-    pub fn shortcuts(ctx: &egui::Context) -> Vec<PartyCommand> {
-        if ctx.egui_wants_keyboard_input() {
+    /// Tasten im Party-Modus (nur, wenn kein Textfeld den Fokus hat und kein Fenster wie das
+    /// Feedback-Formular darüber liegt: `blocked`, #386).
+    pub fn shortcuts(ctx: &egui::Context, blocked: bool) -> Vec<PartyCommand> {
+        if blocked || ctx.egui_wants_keyboard_input() {
             return Vec::new();
         }
         let n = egui::Modifiers::NONE;
@@ -1913,6 +1914,28 @@ fn party_input(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #386: Liegt ein Fenster wie das Feedback-Formular über der Party, steuern Tasten
+    /// die Party dahinter nicht mehr.
+    #[test]
+    fn party_keys_rest_behind_an_overlay() {
+        let ctx = egui::Context::default();
+        for (blocked, want) in [(false, 1), (true, 0)] {
+            let input = egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::Space,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            };
+            let mut got = Vec::new();
+            let _ = ctx.run_ui(input, |ui| got = PartyView::shortcuts(ui.ctx(), blocked));
+            assert_eq!(got.len(), want, "blocked={blocked}");
+        }
+    }
 
     /// Deck-Badges sind nie gefüllt: BEREIT neutral, VORGELADEN Lime-Rahmen, Laufen
     /// `accent`-Rahmen (André 02.11.2026: Lime heißt nur „eingeschaltet“).

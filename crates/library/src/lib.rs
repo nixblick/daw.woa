@@ -1014,6 +1014,42 @@ mod tests {
         assert_eq!(lib.count().unwrap(), 1);
     }
 
+    /// #386: Eine Bibliothek von 0.41.2 (Schema 6) öffnet, behält ihre Titel, findet sie
+    /// und kennt danach `vocal_start` (leer bis zur nächsten Analyse).
+    #[test]
+    fn migration_from_v6_keeps_tracks_searchable() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("lib.sqlite3");
+        {
+            let c = Connection::open(&db).unwrap();
+            for script in &MIGRATIONS[..6] {
+                c.execute_batch(script).unwrap();
+            }
+            c.execute(
+                "INSERT INTO tracks(path, hash, title, duration, kind, added) \
+                 VALUES ('/m/feuerwehr.wav', 'h6', '150 Jahre Feuerwehr', 180.0, 'music', 1)",
+                [],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO tracks_fts(rowid, title, tags, path) \
+                 SELECT id, title, '', path FROM tracks",
+                [],
+            )
+            .unwrap();
+            c.pragma_update(None, "user_version", 6).unwrap();
+        }
+        let lib = Library::open(&db).unwrap();
+        assert_eq!(lib.schema_version().unwrap(), SCHEMA_VERSION);
+        let r = lib.search(&q("feuerwehr")).unwrap();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].title, "150 Jahre Feuerwehr");
+        assert_eq!(r[0].analysis.as_ref().and_then(|a| a.vocal_start), None);
+        drop(lib);
+        let lib = Library::open_read_only(&db).unwrap();
+        assert_eq!(lib.search(&q("1")).unwrap().len(), 1);
+    }
+
     #[test]
     fn migration_from_v1_keeps_data_and_builds_the_index() {
         let dir = tempfile::tempdir().unwrap();
