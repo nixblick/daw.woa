@@ -2,6 +2,7 @@
 
 ## 0.41.0 — 2026-11-02
 
+- Alte Design-Zip (Fassung 6) entfernt, Fassung 7 liegt als Ordner in docs/design/woa-design-system/.
 - Formatierung (cargo fmt) nachgezogen.
 - **Fragen und To-dos, Abnahme (QuestionsWindow/AcceptanceWindow Fassung 7):** eigener Fensterkopf 44 px für Fragen, Abnahme, Einstellungen und Piano-Roll (Doppelklick maximiert, Esc schließt); Fragen mit Suchfeld 48 px, Filter Offen/Gesendet/Alle, Leuchtrahmen 1,5 s nach dem Senden und „Erneut senden“ nach Fehlern; Abnahme mit Tun/Soll nebeneinander, Tasten G/N, Zähler mit Balken. Einstellungen-Fenster: Treffer stehen untereinander (lagen nebeneinander), MIDI-Eingang und PFL als Aufklapper. Fotomodus `WOA_SETTINGS=<filter>` und `WOA_SOUNDPICKER`. Abnahmepunkte und Bilder in `docs/design/ist/ist-f7-*`.
 - **ON AIR als Lampe (TopBar Fassung 7):** oben rechts `woa-onair--bar` (28 px, 3-px-Rahmen) mit drei Zuständen: aus, an (gleiche Glut wie im Sende-Deck), gedimmt im Pult-Modus (#301).
