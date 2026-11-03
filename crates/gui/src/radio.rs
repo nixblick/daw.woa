@@ -540,6 +540,8 @@ pub struct RadioDesk {
     covers: Option<crate::covers::Covers>,
     /// Sendung: Feeder zum woa-streamd (nur wenn „Auf Sendung“).
     feeder: Option<Feeder>,
+    /// Letztes „Auf Sendung“/„Sendung beenden“ (Entprellen, #367).
+    air_toggled_at: Option<Instant>,
     stream_status: Option<StreamStatus>,
     stream_checked_at: Instant,
     sent_title: String,
@@ -613,6 +615,9 @@ fn bus_index(b: Bus) -> usize {
         Bus::Decks => 3,
     }
 }
+
+/// Mindestabstand zwischen zwei Klicks auf die Sendetaste.
+const AIR_DEBOUNCE: Duration = Duration::from_millis(1500);
 
 /// Pfad zu `woa-streamd` neben der laufenden App.
 fn streamd_exe() -> Result<PathBuf, String> {
@@ -1293,6 +1298,7 @@ impl RadioDesk {
             mic_dropped: Arc::new(AtomicU64::new(0)),
             covers: None,
             feeder: None,
+            air_toggled_at: None,
             stream_status: None,
             stream_checked_at: Instant::now(),
             sent_title: String::new(),
@@ -1353,8 +1359,26 @@ impl RadioDesk {
         }
     }
 
+    /// Zweiter Klick auf die Sendetaste binnen [`AIR_DEBOUNCE`] (hängendes Fenster, Doppelklick)
+    /// zählt nicht (#367: „sendung ende ×2“, „sendung start ×3“ in drei Sekunden).
+    fn air_bounce(&mut self) -> bool {
+        let now = Instant::now();
+        if self
+            .air_toggled_at
+            .is_some_and(|t| now.duration_since(t) < AIR_DEBOUNCE)
+        {
+            tracing::debug!("on-air toggle ignored (debounce)");
+            return true;
+        }
+        self.air_toggled_at = Some(now);
+        false
+    }
+
     /// „Auf Sendung“: woa-streamd starten (falls nötig) und den Sendemix hinschicken.
     pub fn go_on_air(&mut self) {
+        if self.feeder.is_some() || self.air_bounce() {
+            return;
+        }
         if self.station.is_none() {
             self.error = Some("Keine Sendesteuerung".into());
             return;
@@ -1371,11 +1395,19 @@ impl RadioDesk {
     }
 
     /// „Sendung beenden“: woa-streamd meldet sich beim Server ab und endet.
+    /// Wartet, bis woa-streamd sich abgemeldet hat; erst danach darf eine neue Sendung
+    /// starten, sonst liefen zwei (#367).
     pub fn go_off_air(&mut self) {
+        if self.air_bounce() {
+            return;
+        }
         tracing::info!("sendung ende");
         self.with(|c| c.set_stream_output(None));
-        if let Some(f) = self.feeder.take() {
-            f.stop_broadcast();
+        match self.feeder.take() {
+            Some(f) => f.stop_broadcast(),
+            None => {
+                woa_stream::link::stop_daemon(&link_path(&self.data_dir), self.rate);
+            }
         }
     }
 

@@ -19,7 +19,7 @@ use crate::config::StreamConfig;
 use crate::jitter::LiveBuffer;
 use crate::kennwort::Kennwort;
 use crate::link::{
-    HANDSHAKE, KIND_AUDIO, KIND_STOP, KIND_TITLE, LocalListener, LocalStream, MAX_FRAME,
+    HANDSHAKE, KIND_AUDIO, KIND_STOP, KIND_TITLE, LinkInfo, LocalListener, LocalStream, MAX_FRAME,
     decode_audio, is_alive, link_path, read_frame_patient, read_hello,
 };
 use crate::mp3::Mp3Encoder;
@@ -352,9 +352,13 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
     s.live_underruns = live_underruns;
     s.live_trims = live_trims;
     drop(uplink);
-    let _ = std::fs::remove_file(&link);
-    if !info.socket.as_os_str().is_empty() {
-        let _ = std::fs::remove_file(&info.socket);
+    // Nur die eigenen Dateien löschen, nie die eines Nachfolgers (#367). Socket zuerst:
+    // Wer auf das Verschwinden der Link-Datei wartet, startet danach gleich neu.
+    if LinkInfo::read(&link).is_none_or(|i| i.token == info.token) {
+        if !info.socket.as_os_str().is_empty() {
+            let _ = std::fs::remove_file(&info.socket);
+        }
+        let _ = std::fs::remove_file(&link);
     }
     let _ = status::write(&status_path, &s);
     tracing::info!("woa-streamd off air");
@@ -460,7 +464,8 @@ fn accept(
             }
         }
     }
-    listener.cleanup();
+    // Die Socket-Datei räumt `run` ab, nur solange sie noch uns gehört (#367).
+    drop(listener);
 }
 
 fn lock(inbox: &Mutex<Inbox>) -> std::sync::MutexGuard<'_, Inbox> {
@@ -515,7 +520,9 @@ fn serve(
     // Ein Resampler je Verbindung: Phase und letzter Frame bleiben über Häppchen erhalten.
     let mut rs = StreamResampler::new(in_rate, out_rate);
     let mut resampled = Vec::new();
-    while !stop.load(Ordering::Relaxed) && lock(inbox).generation == my_gen {
+    // Auch eine abgelöste Verbindung liest ihren Rest noch: ein `Stop` darin gilt (#367,
+    // sonst verdrängte das Hello der nächsten Sendung das `Stop` der vorigen).
+    while !stop.load(Ordering::Relaxed) {
         let go_on = || !stop.load(Ordering::Relaxed);
         match read_frame_patient(&mut s, &mut buf, MAX_FRAME, &go_on) {
             Ok(KIND_AUDIO) => {
@@ -534,7 +541,11 @@ fn serve(
                 ib.live.push(&resampled);
             }
             Ok(KIND_TITLE) => {
-                lock(inbox).title = Some(String::from_utf8_lossy(&buf).into_owned());
+                let mut ib = lock(inbox);
+                if ib.generation != my_gen {
+                    break;
+                }
+                ib.title = Some(String::from_utf8_lossy(&buf).into_owned());
             }
             Ok(KIND_STOP) => {
                 tracing::info!("stop from ui");
@@ -546,7 +557,12 @@ fn serve(
                 if matches!(
                     e.kind(),
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                ) => {}
+                ) =>
+            {
+                if lock(inbox).generation != my_gen {
+                    break;
+                }
+            }
             Err(_) => break,
         }
     }
