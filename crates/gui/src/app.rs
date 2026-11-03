@@ -516,7 +516,10 @@ impl WoaApp {
         let mut state = AppState::new(recovery_dir, Instant::now());
         let player = if open_audio {
             match Player::open() {
-                Ok(p) => Some(p),
+                Ok(p) => {
+                    p.set_monitor_volume(config.monitor_volume);
+                    Some(p)
+                }
                 Err(e) => {
                     tracing::error!(error = %e, "no playback device");
                     state.status = Status::Error(format!("Keine Wiedergabe: {e}"));
@@ -584,7 +587,7 @@ impl WoaApp {
             entwickler_tor: Default::default(),
             fragen: Default::default(),
             abnahme: Default::default(),
-            party: crate::party::PartyView::default(),
+            party: crate::party::PartyView::with_panels(config.party_panels),
             photo: std::env::var_os("WOA_SCREENSHOT").map(|p| (PathBuf::from(p), 0)),
             selected_clips: Vec::new(),
             export_lufs: Some(-16.0),
@@ -1969,6 +1972,9 @@ impl WoaApp {
                 .on_hover_text("Pegel der Summe (analoges VU: Analyse-Fenster › Pegelansicht)");
             }
 
+            // 3c. Abhörlautstärke (#358): kleiner Regler, nur der Lautsprecher.
+            self.monitor_volume_ui(ui);
+
             // 4. Latenz: Symbol-Schalter und Zusatz-Feld in ms.
             egui::Frame::new()
                 .fill(theme::well())
@@ -2895,6 +2901,19 @@ impl WoaApp {
             {
                 ui.close();
             }
+            // Party-Karten rechts (#361); der Zustand wird gemerkt.
+            let party = self.config.mode == Mode::Party;
+            if party
+                && ui
+                    .checkbox(&mut self.party.panels.remote, "Fernbedienung")
+                    .on_hover_text(
+                        "Fernbedienung in der Party zeigen; ausgeblendet läuft eine \
+                         eingeschaltete weiter",
+                    )
+                    .clicked()
+            {
+                ui.close();
+            }
             let mut clock = self.clock_editor.open;
             if ui
                 .checkbox(&mut clock, "Stundenuhr")
@@ -2902,6 +2921,16 @@ impl WoaApp {
                 .clicked()
             {
                 self.clock_editor.toggle();
+                ui.close();
+            }
+            if party
+                && ui
+                    .checkbox(&mut self.party.panels.wishes, "Wunschliste")
+                    .on_hover_text(
+                        "Wunschliste in der Party zeigen; ausgeblendet wächst die Bibliothek",
+                    )
+                    .clicked()
+            {
                 ui.close();
             }
             let mut events = self.event_editor.open;
@@ -6274,6 +6303,29 @@ impl WoaApp {
             | S::MicChain
             | S::WishFolder => go = show_in(ui, Mode::Radio),
             S::DjCurve => go = show_in(ui, Mode::Party),
+            S::PartyPanels => {
+                let mut p = self.config.party_panels;
+                let a = ui.checkbox(&mut p.wishes, "Wunschliste").changed();
+                let b = ui.checkbox(&mut p.remote, "Fernbedienung").changed();
+                if a || b {
+                    self.config.party_panels = p;
+                    self.party.panels = p;
+                    self.save_config();
+                }
+            }
+            S::MonitorVolume => {
+                let mut v = self.config.monitor_volume * 100.0;
+                if ui
+                    .add(egui::Slider::new(&mut v, 0.0..=100.0).suffix(" %"))
+                    .changed()
+                {
+                    self.config.monitor_volume = v / 100.0;
+                    if let Some(p) = &self.player {
+                        p.set_monitor_volume(v / 100.0);
+                    }
+                    self.save_config();
+                }
+            }
             S::SoundBanks => go = show_in(ui, Mode::Produzent),
             S::PianoRollWindow => {
                 let mut on = self.config.piano_roll_window;
@@ -7158,6 +7210,11 @@ impl eframe::App for WoaApp {
                 )
                 .show(ui, |ui| cmds = self.party.ui(ui, radio, &mut self.library));
             self.party.run(cmds, radio, &ctx);
+            // In der Party umgeschaltet (#361): merken.
+            if self.party.panels != self.config.party_panels {
+                self.config.party_panels = self.party.panels;
+                self.save_config();
+            }
             self.app_windows(&ctx);
             return;
         }
@@ -9243,6 +9300,53 @@ impl WoaApp {
     }
 }
 
+impl WoaApp {
+    /// Dezenter Abhörregler (#358): Lautsprecher-Symbol und ein schmaler waagerechter Fader.
+    /// Doppelklick setzt auf voll zurück. Ändert nur den Lautsprecher, nicht Mix, Pegel, Export.
+    fn monitor_volume_ui(&mut self, ui: &mut egui::Ui) {
+        let mut v = self.config.monitor_volume;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let icon = if v <= 0.0 {
+                theme::ic::SPEAKER_SLASH
+            } else if v < 0.5 {
+                theme::ic::SPEAKER_LOW
+            } else {
+                theme::ic::SPEAKER_HIGH
+            };
+            ui.label(
+                egui::RichText::new(icon)
+                    .size(15.0)
+                    .color(theme::text_dim()),
+            );
+            let r = crate::widgets::fader(
+                ui,
+                &mut v,
+                0.0..=1.0,
+                1.0,
+                egui::vec2(72.0, 18.0),
+                crate::widgets::Orient::Horizontal,
+            );
+            let label = "Abhörlautstärke";
+            r.widget_info(|| egui::WidgetInfo::slider(true, f64::from(v), label));
+            let r = r.on_hover_text(format!(
+                "Abhörlautstärke {:.0} % (nur Lautsprecher; Mix, Pegel und Export bleiben). \
+                 Doppelklick: voll",
+                v * 100.0
+            ));
+            if r.drag_stopped() || r.double_clicked() {
+                self.save_config();
+            }
+        });
+        if (v - self.config.monitor_volume).abs() > f32::EPSILON {
+            self.config.monitor_volume = v;
+            if let Some(p) = &self.player {
+                p.set_monitor_volume(v);
+            }
+        }
+    }
+}
+
 /// Menüleiste (André, 02.11.2026): je Gruppe zwischen zwei Trennern die Einträge in der
 /// Reihenfolge der Anzeige, als (Beschriftung, Stelle im Code von `menu_items`). Innerhalb einer
 /// Gruppe alphabetisch nach [`de_sort_key`]; ohne „…“. Die Tests prüfen beides und dass der Code
@@ -9306,7 +9410,9 @@ pub(crate) const MENU_GROUPS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("Bibliothek", "\"Bibliothek\""),
             ("Browser", "\"Browser\""),
+            ("Fernbedienung", "\"Fernbedienung\""),
             ("Stundenuhr", "\"Stundenuhr\""),
+            ("Wunschliste", "\"Wunschliste\""),
             ("Zeit-Events", "\"Zeit-Events\""),
         ],
     ),

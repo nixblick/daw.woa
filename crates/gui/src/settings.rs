@@ -129,7 +129,9 @@ pub enum SettingId {
     WishFolder,
     // Party
     DjCurve,
+    PartyPanels,
     // Produzent
+    MonitorVolume,
     SoundBanks,
     PianoRollWindow,
     Plugins,
@@ -418,7 +420,28 @@ pub const REGISTRY: &[Entry] = &[
         "Kurve des Crossfaders im DJ-Mixer (unter dem Crossfader)",
         "dj crossfader kurve weich hart übergang crossfade",
     ),
+    row(
+        S::PartyPanels,
+        A::Party,
+        "Ansicht",
+        "Wunschliste und Fernbedienung zeigen",
+        "Karten rechts in der Party ein- oder ausblenden; die Bibliothek nimmt den freien Platz. \
+         Eine laufende Fernbedienung bleibt an",
+        "wunsch wunschliste fernbedienung handy qr ausblenden einblenden verstecken platz \
+         bibliothek größer ansicht",
+    )
+    .fields(&["party_panels"]),
     // ── Produzent
+    row(
+        S::MonitorVolume,
+        A::Produzent,
+        "Abhören",
+        "Abhörlautstärke",
+        "Regler neben dem PEGEL in der Transportleiste; nur der Lautsprecher, Mix und Export \
+         bleiben gleich",
+        "lautstärke abhören leiser lauter monitor lautsprecher volume regler",
+    )
+    .fields(&["monitor_volume"]),
     row(
         S::SoundBanks,
         A::Produzent,

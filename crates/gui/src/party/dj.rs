@@ -191,6 +191,9 @@ impl PartyView {
                     desk.dj(DjCommand::View { dj: want });
                 }
             }
+            // Wunschliste und Fernbedienung ein-/ausblenden (#361).
+            ui.add_space(12.0);
+            self.panel_keys(ui);
             if on {
                 ui.add_space(8.0);
                 ui.add_enabled_ui(false, |ui| {
@@ -282,17 +285,36 @@ impl PartyView {
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
                     ui.set_width(right_w);
-                    let side_h = (h - self.remote_h - GAP).max(60.0);
+                    // Ausgeblendete Karten (#361): ohne Wunschliste steht hier die Bibliothek
+                    // und wächst in den freien Platz.
+                    let panels = self.panels;
+                    if !panels.remote {
+                        self.remote_h = 0.0;
+                    }
+                    let side_h = if panels.remote {
+                        (h - self.remote_h - GAP).max(60.0)
+                    } else {
+                        h - self.hidden_remote_h(panels)
+                    };
                     egui::ScrollArea::vertical()
                         .id_salt("party-dj-side")
                         .max_height(side_h)
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
                             ui.spacing_mut().item_spacing = egui::vec2(GAP, GAP);
-                            self.wish_card(ui, library, cmds);
+                            if panels.wishes {
+                                self.wish_card(ui, library, cmds);
+                            } else {
+                                let rows = super::library_rows(side_h);
+                                self.search_card(ui, desk, library, cmds, rows);
+                            }
                         });
-                    let r = ui.scope(|ui| self.remote.ui_small(ui)).response;
-                    self.remote_h = r.rect.height();
+                    if panels.remote {
+                        let r = ui.scope(|ui| self.remote.ui_small(ui)).response;
+                        self.remote_h = r.rect.height();
+                    } else {
+                        self.hidden_remote_chip(ui);
+                    }
                 },
             );
         });

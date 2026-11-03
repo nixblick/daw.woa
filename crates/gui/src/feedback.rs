@@ -85,6 +85,17 @@ pub struct GuiConfig {
     /// Schlüsselbund, nie hier.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub entwickler: bool,
+    /// Party: Wunschliste und Fernbedienung ein- oder ausgeblendet (#361). Vorgabe: beide da.
+    #[serde(skip_serializing_if = "crate::party::PartyPanels::is_default")]
+    pub party_panels: crate::party::PartyPanels,
+    /// Abhörlautstärke im Produzenten (#358), 0..=1 linear auf den Lautsprecher; Mix, Export
+    /// und Pegel bleiben unberührt. Vorgabe: 1 (voll).
+    #[serde(skip_serializing_if = "is_full_volume")]
+    pub monitor_volume: f32,
+}
+
+fn is_full_volume(v: &f32) -> bool {
+    (*v - 1.0).abs() < f32::EPSILON
 }
 
 /// Wohin das Vorhören (PFL) geht. Nie auf Kanal 1/2 der Sendung.
@@ -167,6 +178,8 @@ impl Default for GuiConfig {
             last_update_check: None,
             piano_roll_window: false,
             entwickler: false,
+            party_panels: crate::party::PartyPanels::default(),
+            monitor_volume: 1.0,
         }
     }
 }

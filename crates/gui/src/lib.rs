@@ -52,6 +52,7 @@ pub mod timeline;
 pub mod titel_tab;
 pub mod track_export;
 pub mod update;
+pub mod vocal_ui;
 pub mod voice_editor;
 pub mod widgets;
 mod wishes;

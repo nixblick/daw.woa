@@ -816,6 +816,7 @@ mod tests {
             gain_db: 0.0,
             cues: woa_radio::Cues::default(),
             voice: None,
+            vocal: None,
         }
     }
 

@@ -9,6 +9,7 @@ pub mod spectrogram;
 pub mod spectrum;
 pub mod stereo;
 pub mod track;
+pub mod vocal;
 
 /// Pegel in dBFS; `None` bei Stille.
 pub fn amp_to_db(amp: f64) -> Option<f64> {

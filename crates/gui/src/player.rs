@@ -119,6 +119,8 @@ pub struct Player {
     taps: HashMap<Option<TrackId>, TapHandle>,
     /// Was das Analyse-Fenster hören will (`None`: Fenster zu, alle Abgriffe aus).
     tap_source: Option<Option<TrackId>>,
+    /// Abhörlautstärke (#358).
+    volume: woa_dsp::monitor::MonitorVolume,
     /// Geladene CLAP-Plugins des Projekts; entsteht erst, wenn ein Projekt Plugins hat oder der
     /// Nutzer den Plugin-Browser öffnet (die Suche lädt Fremdcode).
     rack: Option<woa_plugins::PluginRack>,
@@ -154,6 +156,11 @@ fn load_cached(
 }
 
 impl Player {
+    /// Abhörlautstärke 0..=1 (#358), nur am Lautsprecher.
+    pub fn set_monitor_volume(&self, v: f32) {
+        self.volume.set(v);
+    }
+
     /// Öffnet den Standard-Ausgang.
     pub fn open() -> Result<Self, String> {
         let config = OutputConfig::default();
@@ -164,9 +171,13 @@ impl Player {
         // `start_output_with` im Transport), geloggt wird je Minute in `sync`.
         let xrun_transport = transport.clone();
         let mut processor = processor;
+        // Abhörlautstärke (#358) nur am Lautsprecher; Pegel, Analyse und Export davor.
+        let volume = woa_dsp::monitor::MonitorVolume::default();
+        let mut stage = volume.stage();
         let render: PairsRender = Box::new(move |bufs, frames| {
             if let Some(b) = bufs.first_mut() {
                 processor.process_stereo(&mut b.l[..frames], &mut b.r[..frames]);
+                stage.process(&mut b.l[..frames], &mut b.r[..frames]);
             }
         });
         let stream = ManagedOutput::open("player", &config, 1, true, render, move |e| {
@@ -179,6 +190,7 @@ impl Player {
             engine,
             transport,
             stream,
+            volume,
             suspended: false,
             xruns: XrunLog::new(Instant::now()),
             buffer_frames: config.buffer_frames,

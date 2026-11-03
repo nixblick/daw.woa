@@ -713,6 +713,7 @@ mod tests {
             gain_db: 0.0,
             cues: Default::default(),
             voice: None,
+            vocal: None,
         }
     }
 

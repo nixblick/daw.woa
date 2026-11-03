@@ -19,6 +19,7 @@ pub mod effects;
 pub mod fx;
 pub mod generate;
 pub mod instrument;
+pub mod monitor;
 pub mod plugin;
 pub mod sampler;
 pub mod soundfont;

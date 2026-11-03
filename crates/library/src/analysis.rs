@@ -71,6 +71,7 @@ pub fn to_analysis(a: &TrackAnalysis) -> Analysis {
         cue_in: a.cues.cue_in,
         fade_out: a.cues.fade_out,
         cue_out: a.cues.cue_out,
+        vocal_start: a.vocal_start,
     }
 }
 
@@ -378,6 +379,31 @@ mod tests {
         assert_eq!(lib.pending_analysis_count().unwrap(), 1);
         lib.clear_analysis(id).unwrap();
         assert!(lib.clear_analysis(999).is_err());
+    }
+
+    #[test]
+    fn vocal_start_is_stored_with_the_analysis() {
+        let lib = Library::open_in_memory().unwrap();
+        let id = match lib
+            .add_track(&crate::NewTrack {
+                path: "/x/v.wav".into(),
+                hash: "hv".into(),
+                title: "v".into(),
+                duration: 30.0,
+                kind: Kind::Music,
+            })
+            .unwrap()
+        {
+            crate::AddOutcome::Added(id) => id,
+            o => panic!("{o:?}"),
+        };
+        let a = Analysis {
+            vocal_start: Some(12.4),
+            ..Analysis::default()
+        };
+        assert!(lib.set_analysis(id, "hv", &a).unwrap());
+        let got = lib.get(id).unwrap().unwrap().analysis.unwrap();
+        assert_eq!(got.vocal_start, Some(12.4));
     }
 
     #[test]
