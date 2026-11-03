@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use crate::config::StreamConfig;
 use crate::kennwort::Kennwort;
-use crate::shoutcast::{Source, StreamError, listeners, titles_possible, update_title};
+use crate::shoutcast::{Source, StreamError, listener_stats, titles_possible, update_title};
 
 /// Höchstens so viele Sekunden MP3 warten während des Neuaufbaus.
 pub const BUFFER_SECONDS: usize = 5;
@@ -37,6 +37,9 @@ pub struct UplinkState {
     /// Anmeldung abgelehnt (Kennwort oder Stream-ID).
     pub auth_failed: bool,
     pub listeners: Option<u32>,
+    /// Spitze laut Server (seit dessen Start).
+    pub listeners_peak: Option<u32>,
+    pub listeners_unique: Option<u32>,
     pub connected_since: Option<Instant>,
     pub bytes_sent: u64,
     pub bytes_dropped: u64,
@@ -252,8 +255,12 @@ fn meta(cfg: &StreamConfig, kw: &Kennwort, rx: &Receiver<Job>, state: &Mutex<Upl
             set(state, |s| s.last_error = Some(e.to_string()));
         }
         if poll {
-            let n = listeners(cfg);
-            set(state, |s| s.listeners = n);
+            let n = listener_stats(cfg);
+            set(state, |s| {
+                s.listeners = n.map(|n| n.current);
+                s.listeners_peak = n.and_then(|n| n.peak);
+                s.listeners_unique = n.and_then(|n| n.unique);
+            });
         }
     }
 }

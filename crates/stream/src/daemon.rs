@@ -394,6 +394,8 @@ fn build_status(
         emergency: !live,
         ui_connected: ui,
         listeners: u.listeners,
+        listeners_peak: u.listeners_peak,
+        listeners_unique: u.listeners_unique,
         bitrate_kbps: cfg.bitrate_kbps,
         sample_rate: cfg.sample_rate,
         connected_seconds: u.connected_since.map_or(0, |t| t.elapsed().as_secs()),

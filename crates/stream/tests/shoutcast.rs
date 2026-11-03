@@ -66,6 +66,8 @@ fn logs_in_sends_mp3_and_title() {
     assert!(wait_for(Duration::from_secs(3), || up.state().listeners == Some(3)));
     assert_eq!(up.state().phase, Phase::Connected);
     assert_eq!(listeners(&cfg(&fake)), Some(3));
+    let st = woa_stream::shoutcast::listener_stats(&cfg(&fake)).unwrap();
+    assert_eq!((st.peak, st.unique), (Some(5), Some(3)));
 }
 
 #[test]

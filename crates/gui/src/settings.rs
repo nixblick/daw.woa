@@ -623,6 +623,10 @@ pub const NO_UI_FIELDS: &[(&str, &str)] = &[
     ("feedback_url", "nur config.json"),
     ("install_id", "zufällige Kennung, intern"),
     ("telemetry_url", "nur config.json"),
+    (
+        "hoerer_url",
+        "nur config.json (Statistik-Server, Vorgabe eigener Server)",
+    ),
     ("radio_buffer_frames", "nur config.json"),
     ("last_update_check", "intern"),
     (

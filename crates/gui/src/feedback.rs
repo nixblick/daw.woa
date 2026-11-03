@@ -30,6 +30,9 @@ pub struct GuiConfig {
     /// Log endpoint; default is our own server.
     #[serde(skip_serializing_if = "is_default_telemetry_url")]
     pub telemetry_url: String,
+    /// Hörer-Statistik des eigenen Servers (`server/hoerer`). Leer = aus.
+    #[serde(skip_serializing_if = "is_default_hoerer_url")]
+    pub hoerer_url: String,
     /// Layout: Produzent (Zeitleiste) oder Radio (Sendeablauf).
     pub mode: Mode,
     /// Farbthema: Dunkel (Vorgabe) oder Hell. Die Modusfarbe folgt dem Layout.
@@ -154,6 +157,10 @@ fn is_default_feedback_url(s: &str) -> bool {
     s == DEFAULT_FEEDBACK_URL
 }
 
+fn is_default_hoerer_url(s: &str) -> bool {
+    s == crate::hoerer::DEFAULT_HOERER_URL
+}
+
 fn is_default_telemetry_url(s: &str) -> bool {
     s == DEFAULT_INGEST_URL
 }
@@ -165,6 +172,7 @@ impl Default for GuiConfig {
             install_id: String::new(),
             telemetry_enabled: None,
             telemetry_url: DEFAULT_INGEST_URL.to_string(),
+            hoerer_url: crate::hoerer::DEFAULT_HOERER_URL.to_string(),
             mode: Mode::Produzent,
             theme: crate::theme::Theme::default(),
             vu_view: crate::widgets::VuView::default(),

@@ -265,6 +265,8 @@ pub struct WoaApp {
     entwickler_tor: crate::fragen::EntwicklerTor,
     fragen: crate::fragen::FragenWindow,
     abnahme: crate::abnahme::AbnahmeWindow,
+    hoerer: crate::hoerer::HoererWindow,
+    hoerer_peak: crate::hoerer::SessionPeak,
     /// Fotomodus (`WOA_SCREENSHOT=datei.png`): Zielpfad und gezählte Bilder.
     photo: Option<(PathBuf, u32)>,
     /// Party-Layout (Paket 35).
@@ -585,6 +587,8 @@ impl WoaApp {
             entwickler_tor: Default::default(),
             fragen: Default::default(),
             abnahme: Default::default(),
+            hoerer: Default::default(),
+            hoerer_peak: Default::default(),
             party: crate::party::PartyView::with_panels(config.party_panels),
             photo: std::env::var_os("WOA_SCREENSHOT").map(|p| (PathBuf::from(p), 0)),
             selected_clips: Vec::new(),
@@ -2610,6 +2614,10 @@ impl WoaApp {
             self.selected_clip = ids.first().copied();
             self.selected_clips = ids;
         }
+        if first && std::env::var_os("WOA_HOERER").is_some() {
+            // Fotomodus der Hörer-Statistik: Beispielzahlen statt Server.
+            self.hoerer.demo();
+        }
         if first && std::env::var_os("WOA_PIANOROLL").is_some() {
             // Fotomodus der Piano-Roll: ersten MIDI-Clip öffnen, zwei Noten wählen;
             // `WOA_PIANOROLL=kit` nimmt eine Kit-Spur (Drum-Raster), sonst keine.
@@ -2687,6 +2695,7 @@ impl WoaApp {
                             .goto(crate::settings::SettingId::McpLive, self.now);
                     }
                     self.rec_chip(ui, compact);
+                    self.hoerer_chip(ui, compact);
                     self.onair_lamp(ui, compact);
                     self.midi_lamp(ui, compact);
                     status_sep(ui);
@@ -2819,6 +2828,58 @@ impl WoaApp {
         self.radio.as_ref().is_some_and(|r| r.recording().is_some())
     }
 
+    /// Hörer in der Kopfleiste, nur auf Sendung: „HÖRER 12 | 18“ (jetzt | Spitze der Sendung),
+    /// Zahl aus der öffentlichen Shoutcast-Kurzstatistik über woa-streamd (alle 15 s), „–“,
+    /// solange keine Zahl kommt. Farbe `ok`, Rot bleibt ON AIR. Klick: Hörer-Statistik.
+    fn hoerer_chip(&mut self, ui: &mut egui::Ui, compact: bool) {
+        let photo = self.photo.is_some() && std::env::var_os("WOA_ONAIR").is_some();
+        let live = photo || self.radio.as_ref().is_some_and(RadioDesk::is_broadcasting);
+        let current = if photo {
+            Some(14)
+        } else {
+            self.radio
+                .as_ref()
+                .and_then(RadioDesk::stream_status)
+                .filter(|s| s.is_running(woa_stream::unix_now()))
+                .and_then(|s| s.listeners)
+        };
+        let peak = self.hoerer_peak.update(live, current);
+        if !live {
+            return;
+        }
+        let peak = if photo { Some(18) } else { peak };
+        let suffix = crate::hoerer::chip_suffix(current, peak);
+        let look = if current.is_some() {
+            ChipLook::On(theme::ok())
+        } else {
+            ChipLook::Off(theme::ok())
+        };
+        let resp = Chip {
+            icon: theme::ic::USERS_THREE,
+            word: "Hörer",
+            look,
+            compact,
+            click: true,
+            suffix: Some(&suffix),
+            blink: false,
+        }
+        .show(ui);
+        let tip = match current {
+            Some(c) => format!(
+                "Hörer jetzt: {c} · Spitze dieser Sendung: {}\nKlick: Hörer-Statistik",
+                peak.unwrap_or(c)
+            ),
+            None => "Hörerzahl noch nicht da (Server antwortet nicht oder kein Admin-Port \
+                     eingetragen).\nKlick: Hörer-Statistik"
+                .to_string(),
+        };
+        let label = format!("Hörer {suffix}");
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+        if resp.on_hover_text(tip).clicked() {
+            self.hoerer.open = true;
+        }
+    }
+
     fn onair_lamp(&mut self, ui: &mut egui::Ui, compact: bool) {
         // Fotomodus `WOA_ONAIR=1` zeigt die leuchtende Lampe ohne echte Sendung (#353).
         let photo_live = self.photo.is_some() && std::env::var_os("WOA_ONAIR").is_some();
@@ -2937,6 +2998,13 @@ impl WoaApp {
                          eingeschaltete weiter",
                     )
                     .clicked()
+            {
+                ui.close();
+            }
+            if ui
+                .checkbox(&mut self.hoerer.open, "Hörer-Statistik")
+                .on_hover_text("Hörer jetzt, Verlauf der Sendung und vergangene Sendungen (vom eigenen Server)")
+                .clicked()
             {
                 ui.close();
             }
@@ -7218,6 +7286,8 @@ impl eframe::App for WoaApp {
         self.now = ctx.input(|i| i.time);
         self.protokoll
             .show(&ctx, &crate::protokoll::log_dir(&self.data_dir));
+        self.hoerer
+            .show(&ctx, &self.config.hoerer_url, self.photo.is_some());
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Comma)) {
             if self.settings.open {
                 self.settings.open = false;
@@ -9518,6 +9588,7 @@ pub(crate) const MENU_GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Bibliothek", "\"Bibliothek\""),
             ("Browser", "\"Browser\""),
             ("Fernbedienung", "\"Fernbedienung\""),
+            ("Hörer-Statistik", "\"Hörer-Statistik\""),
             ("Stundenuhr", "\"Stundenuhr\""),
             ("Wunschliste", "\"Wunschliste\""),
             ("Zeit-Events", "\"Zeit-Events\""),

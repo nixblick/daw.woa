@@ -27,6 +27,9 @@ pub struct StreamStatus {
     /// Oberfläche verbunden (lokale Verbindung steht).
     pub ui_connected: bool,
     pub listeners: Option<u32>,
+    /// Spitze laut Server (seit dessen Start, nicht je Sendung).
+    pub listeners_peak: Option<u32>,
+    pub listeners_unique: Option<u32>,
     pub bitrate_kbps: u32,
     pub sample_rate: u32,
     /// Seit wann die Server-Verbindung steht (Sekunden).
