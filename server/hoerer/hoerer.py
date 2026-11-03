@@ -15,11 +15,19 @@ Umgebung (alle mit Vorgabe):
 Titel (POST /api/titel, nur wenn beide Dateien lesbar sind, sonst 503):
   HOERER_TITEL_QUELL_KW   Datei mit dem Shoutcast-Quellkennwort (Anmeldung der App)
   HOERER_TITEL_ADMIN_KW   Datei mit dem Shoutcast-Admin-Kennwort (für admin.cgi, intern)
+Jetzt (GET /api/jetzt, für die Hörer-Seite server/live/): Titel aus /currentsong, die
+zuletzt gespielten aus /played?type=json (beide im Docker-Netz, brauchen hidestats leer),
+Hörer jetzt und Spitze der laufenden Sendung aus SQLite, Status on_air/notfall/aus. Keine IPs,
+Titel als reiner Text (Steuerzeichen raus, Entities aufgelöst, gekürzt); die Seite setzt sie
+nur per textContent. JETZT_CACHE Sekunden Zwischenspeicher, damit viele Hörer Shoutcast nicht
+abfragen. Fällt Shoutcast aus, kommt trotzdem 200 mit leeren Titeln.
+
 Die App schickt `Authorization: Bearer <Quellkennwort>` und `{"titel": "..."}`. Der Dienst
 vergleicht konstantzeitig und ruft admin.cgi?mode=updinfo im Docker-Netz auf; das
 Admin-Kennwort verlässt den Server nie. Kennwörter stehen in keinem Log und keiner Antwort.
 """
 
+import html
 import hmac
 import json
 import os
@@ -46,6 +54,9 @@ MAX_SENDUNGEN = 200
 # Titel: höchstens so viele Zeichen, Rumpf höchstens so viele Bytes.
 TITEL_MAX = 200
 TITEL_RUMPF_MAX = 2048
+# /api/jetzt: so lange zwischengespeichert, so viele zuletzt gespielte Titel.
+JETZT_CACHE = 10
+JETZT_ZULETZT = 10
 
 
 def zeitraum(q, jetzt):
@@ -133,6 +144,105 @@ def setze_titel(quelle, sid, admin_kw, titel, timeout=5):
             return r.status == 200
     except Exception:  # noqa: BLE001 - die Ausnahme könnte die URL tragen: still
         return False
+
+
+def hole_text(url, timeout=3, limit=65536):
+    """GET mit Browser-Kennung (sonst liefert der DNAS den Stream); None bei jedem Fehler."""
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            if r.status != 200:
+                return None
+            return r.read(limit).decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 - Netz, HTTP, Zeitüberschreitung: alles still
+        return None
+
+
+def titel_text(roh):
+    """Shoutcast-Titel als reiner Text: Entities auflösen, dann titel_sauber."""
+    if not isinstance(roh, str):
+        return None
+    return titel_sauber(html.unescape(roh))
+
+
+def parse_played(text, n=JETZT_ZULETZT):
+    """/played?type=json → [{"t": unix|None, "titel": str}], neueste zuerst; Unbrauchbares fällt weg."""
+    try:
+        daten = json.loads(text)
+    except (TypeError, ValueError):
+        return []
+    if isinstance(daten, dict):  # manche DNAS-Fassungen packen die Liste ein
+        daten = daten.get("played") or daten.get("history") or []
+    if not isinstance(daten, list):
+        return []
+    aus = []
+    for e in daten:
+        if not isinstance(e, dict):
+            continue
+        t = titel_text(e.get("title"))
+        if t is None:
+            continue
+        try:
+            zeit = int(e.get("playedat"))
+        except (TypeError, ValueError):
+            zeit = None
+        aus.append({"t": zeit, "titel": t})
+        if len(aus) >= n:
+            break
+    return aus
+
+
+def titel_daten(quelle, sid):
+    """Aktueller Titel und Verlauf direkt vom DNAS (ohne Kennwort)."""
+    basis = quelle.rstrip("/")
+    jetzt = hole_text(f"{basis}/currentsong?sid={int(sid)}", limit=4096)
+    played = hole_text(f"{basis}/played?sid={int(sid)}&type=json")
+    titel = titel_text(jetzt) if jetzt is not None else None
+    zuletzt = parse_played(played) if played is not None else []
+    # /played enthält meist den laufenden Titel als ersten Eintrag: nicht doppelt zeigen.
+    if titel and zuletzt and zuletzt[0]["titel"] == titel:
+        zuletzt = zuletzt[1:]
+    return titel, zuletzt
+
+
+def jetzt_antwort(db, quelle, sid, jetzt):
+    """Alles, was die Hörer-Seite braucht, in einer Antwort."""
+    a = auswertung(db, jetzt - 86400, jetzt, jetzt)
+    j = a["jetzt"]
+    laufend = a["sendungen"][0] if a["sendungen"] and a["sendungen"][0]["laeuft"] else None
+    if j is None:
+        status = "aus"
+    elif j["quelle"]:
+        status = "on_air"
+    else:
+        status = "notfall"
+    titel, zuletzt = titel_daten(quelle, sid) if quelle and status != "aus" else (None, [])
+    return {
+        "t": jetzt,
+        "status": status,
+        "titel": titel,
+        "hoerer": j["aktuell"] if j else None,
+        "spitze": laufend["spitze"] if laufend else (j["spitze_server"] if j else None),
+        "sendung_seit": laufend["start"] if laufend else None,
+        "zuletzt": zuletzt,
+    }
+
+
+class JetztCache:
+    """Hält eine Antwort JETZT_CACHE Sekunden; nur ein Thread fragt Shoutcast gleichzeitig."""
+
+    def __init__(self, dauer=JETZT_CACHE):
+        self.dauer = dauer
+        self.lock = threading.Lock()
+        self.wert = None
+        self.zeit = 0.0
+
+    def hole(self, bauen, jetzt):
+        with self.lock:
+            if self.wert is None or jetzt - self.zeit >= self.dauer:
+                self.wert = bauen()
+                self.zeit = jetzt
+            return self.wert
 
 
 def oeffne(pfad):
@@ -228,7 +338,9 @@ def sammler(db, quelle, sid, takt, stop):
 
 def handler_fuer(db_pfad, titel=None):
     """Jede Anfrage liest über eine eigene, nur lesende Verbindung. `titel`: dict mit
-    quelle, sid, quell_kw, admin_kw (Dateipfade) für POST /api/titel, sonst None."""
+    quelle, sid, quell_kw, admin_kw (Dateipfade) für POST /api/titel und GET /api/jetzt
+    (dort nur quelle und sid), sonst None."""
+    cache = JetztCache()
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):  # keine Zugriffszeilen mit IPs
@@ -247,6 +359,8 @@ def handler_fuer(db_pfad, titel=None):
             u = urlparse(self.path)
             if u.path == "/api/hoerer/healthz":
                 return self._json(200, {"ok": True})
+            if u.path == "/api/jetzt":
+                return self._jetzt()
             if u.path != "/api/hoerer":
                 return self._json(404, {"fehler": "unbekannt"})
             q = parse_qs(u.query)
@@ -260,6 +374,26 @@ def handler_fuer(db_pfad, titel=None):
                 return self._json(200, auswertung(db, von, bis, jetzt))
             finally:
                 db.close()
+
+        def _jetzt(self):
+            quelle = (titel or {}).get("quelle")
+            sid = (titel or {}).get("sid", 1)
+
+            def bauen():
+                jetzt = int(time.time())
+                db = sqlite3.connect(f"file:{db_pfad}?mode=ro", uri=True)
+                try:
+                    return jetzt_antwort(db, quelle, sid, jetzt)
+                finally:
+                    db.close()
+
+            body = json.dumps(cache.hole(bauen, time.time()), ensure_ascii=False).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", f"public, max-age={JETZT_CACHE}")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
         def do_POST(self):
             if urlparse(self.path).path != "/api/titel":

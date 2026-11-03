@@ -208,5 +208,120 @@ class TitelTests(unittest.TestCase):
         self.assertEqual(self.post({"titel": "x"})[0], 502)
 
 
+class FakeDnas(BaseHTTPRequestHandler):
+    """Attrappe für /currentsong und /played; antwortet nur Browser-Kennungen mit Seiten."""
+    aktuell = "Band &amp; Co \u2013 Lied\x07"
+    played = json.dumps([
+        {"playedat": 300, "title": "Band &amp; Co \u2013 Lied"},
+        {"playedat": 200, "title": "<script>alert(1)</script>"},
+        {"playedat": "kaputt", "title": "Ohne Zeit"},
+        "Unsinn",
+        {"playedat": 100},
+    ])
+    code = 200
+    aufrufe = 0
+
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        FakeDnas.aufrufe += 1
+        if "Mozilla" not in (self.headers.get("User-Agent") or ""):
+            body, code = b"\xff\xfb audio", 200
+        elif self.path.startswith("/currentsong?sid=1"):
+            body, code = FakeDnas.aktuell.encode(), FakeDnas.code
+        elif self.path.startswith("/played?sid=1&type=json"):
+            body, code = FakeDnas.played.encode(), FakeDnas.code
+        else:
+            body, code = b"", 404
+        self.send_response(code)
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class JetztTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        import time
+
+        FakeDnas.code, FakeDnas.aufrufe = 200, 0
+        FakeDnas.played = JetztTests.played_vorgabe
+        self.tmp = tempfile.TemporaryDirectory()
+        self.pfad = self.tmp.name + "/h.sqlite"
+        self.db = hoerer.oeffne(self.pfad)
+        self.jetzt = int(time.time())
+        self.dnas, self.dnas_url = starte(FakeDnas)
+
+    played_vorgabe = FakeDnas.played
+
+    def tearDown(self):
+        self.dnas.shutdown()
+        self.dnas.server_close()
+        self.db.close()
+        self.tmp.cleanup()
+
+    def proben(self, werte, quelle=True):
+        for i, n in enumerate(werte):
+            hoerer.speichere(self.db, self.jetzt - 30 * (len(werte) - 1 - i),
+                             {"aktuell": n, "quelle": quelle, "spitze": 40, "eindeutig": 4})
+
+    def antwort(self):
+        return hoerer.jetzt_antwort(self.db, self.dnas_url, 1, self.jetzt)
+
+    def test_on_air_mit_titel_und_verlauf(self):
+        self.proben([2, 9, 4])
+        a = self.antwort()
+        self.assertEqual(a["status"], "on_air")
+        self.assertEqual((a["hoerer"], a["spitze"]), (4, 9))
+        self.assertEqual(a["titel"], "Band & Co \u2013 Lied")
+        # laufender Titel nicht doppelt, Kaputtes fällt weg, HTML bleibt reiner Text
+        self.assertEqual([z["titel"] for z in a["zuletzt"]], ["<script>alert(1)</script>", "Ohne Zeit"])
+        self.assertEqual([z["t"] for z in a["zuletzt"]], [200, None])
+        self.assertNotIn("127.0.0.1", json.dumps(a))
+
+    def test_notfall_ohne_quelle_und_aus_ohne_probe(self):
+        self.assertEqual(self.antwort()["status"], "aus")
+        self.assertEqual(FakeDnas.aufrufe, 0)
+        self.proben([3], quelle=False)
+        a = self.antwort()
+        self.assertEqual((a["status"], a["hoerer"], a["spitze"], a["sendung_seit"]), ("notfall", 3, 40, None))
+
+    def test_shoutcast_gesperrt_oder_weg_still(self):
+        self.proben([1])
+        FakeDnas.code = 403
+        a = self.antwort()
+        self.assertEqual((a["status"], a["titel"], a["zuletzt"]), ("on_air", None, []))
+        a = hoerer.jetzt_antwort(self.db, "http://127.0.0.1:9", 1, self.jetzt)
+        self.assertEqual((a["titel"], a["zuletzt"], a["hoerer"]), (None, [], 1))
+
+    def test_played_kaputt_und_lang(self):
+        self.assertEqual(hoerer.parse_played("kein json"), [])
+        self.assertEqual(hoerer.parse_played('{"x": 1}'), [])
+        self.assertEqual(hoerer.parse_played('{"played": [{"title": "A"}]}'), [{"t": None, "titel": "A"}])
+        viele = json.dumps([{"playedat": i, "title": "t" * 500} for i in range(50)])
+        z = hoerer.parse_played(viele)
+        self.assertEqual(len(z), hoerer.JETZT_ZULETZT)
+        self.assertEqual(len(z[0]["titel"]), hoerer.TITEL_MAX)
+
+    def test_endpunkt_cache_und_kopf(self):
+        self.proben([5])
+        srv, url = starte(hoerer.handler_fuer(self.pfad, {"quelle": self.dnas_url, "sid": 1}))
+        try:
+            for _ in range(3):
+                with urllib.request.urlopen(url + "/api/jetzt") as r:
+                    d = json.load(r)
+                    kopf = r.headers.get("Cache-Control")
+            self.assertEqual((d["status"], d["hoerer"]), ("on_air", 5))
+            self.assertIn("max-age=", kopf)
+            self.assertEqual(FakeDnas.aufrufe, 2)  # einmal currentsong + played, dann Cache
+            req = urllib.request.Request(url + "/api/jetzt", data=b"x", method="POST")
+            with self.assertRaises(urllib.error.HTTPError) as e:
+                urllib.request.urlopen(req)
+            self.assertEqual(e.exception.code, 404)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+
 if __name__ == "__main__":
     unittest.main()

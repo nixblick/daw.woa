@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.41.15 — 2026-11-03
+
+- **Hörer-Seite `server/live/`:** eine statische Seite für Hörer im Browser (ohne Framework, Build, Tracking, Cookies und externe Quellen; Schriften selbst gehostet, SIL OFL). Großer Knopf „Hören“ (Start per Klick, Browser blocken Autoplay mit Ton; `preload="none"`, damit ein Seitenaufruf keinen Hörer zählt; Stopp schließt die Verbindung), „Läuft gerade“, Hörer jetzt und Spitze, zuletzt gespielte Titel, Status ON AIR / Notfall-Schleife / Sendepause und optional die nächste Sendung aus `naechste.json`. Farben aus den Themen `radio` und `radio-hell` (folgt dem System), mobil tauglich, Tastatur-Fokus sichtbar, Statuswechsel per `aria-live`. Titel kommen nur per `textContent` ins Dokument.
+- **Sammler: `GET /api/jetzt`:** Titel aus `/currentsong`, die letzten zehn aus `/played?type=json` (im Docker-Netz, mit Browser-Kennung, Entities aufgelöst, Steuerzeichen raus, 200 Zeichen), Hörer und Spitze der laufenden Sendung aus SQLite. 10 s Zwischenspeicher (`Cache-Control: public, max-age=10`), keine IPs. Ist Shoutcast gesperrt oder weg, bleibt die Antwort 200 mit leeren Titeln. Tests: `JetztTests` in `server/hoerer/test_hoerer.py` (Attrappe, kein echter Server).
+
 ## 0.41.14 — 2026-11-03
 
 - **Datenschutz Design-Bilder:** Drei Bilder unter `docs/design/ist/` zeigten unter WUNSCHTITEL einen Pfad mit einem lokalen Benutzernamen und sind neu im Fotomodus aufgenommen (`WOA_SCREENSHOT`, `WOA_WINDOW=1920x1030`, leerer Daten- und Konfigurationsordner unter `/tmp/woa-foto-0.41.14/`): `ist-f7-onair-dunkel-…` (`WOA_ONAIR=1`), `ist-f7-abnahme-dunkel-…` (`WOA_ABNAHME=1`), `ist-f7-fragen-dunkel-…` (`WOA_FRAGEN=1`); Dateinamen gleich, Verweise stimmen. Alle 94 PNGs unter `docs/` per Texterkennung geprüft, Wunschtitel-Leiste aller Ist-Bilder angesehen: sonst keine privaten Pfade. Die Git-Historie bleibt unverändert.
