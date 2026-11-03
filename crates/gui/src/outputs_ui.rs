@@ -19,8 +19,8 @@ const PAIRS: u8 = 4;
 /// Name des Fensters, auf den Menü, Einstellungen und Meldungen verweisen.
 pub const WINDOW: &str = "Audio-Geräte";
 
-/// Gewähltes Mikrofon des Radios, gespeichert in `config.json` (Feld `mic`, seit 0.41.6).
-/// Ohne Wahl gilt das Standard-Eingabegerät des Systems (wie vor 0.41.6).
+/// Gewähltes Mikrofon des Radios, gespeichert in `config.json` (Feld `mic`, seit 0.41.7).
+/// Ohne Wahl gilt das Standard-Eingabegerät des Systems (wie vor 0.41.7).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MicInput {

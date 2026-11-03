@@ -81,6 +81,8 @@ pub struct Measured {
     /// Cue-Vorschlag aus der Stille vorn und hinten (Paket 25). Gilt nur für Titel ohne
     /// eigene Cue-Punkte; von Hand gesetzte haben Vorrang.
     pub auto_cues: crate::cues::Cues,
+    /// Geschätzter erster Gesangseinsatz in Sekunden (#299), `None` = keiner erkennbar.
+    pub vocal: Option<f64>,
 }
 
 /// Misst integrierte Lautheit, Spitze und Länge und schlägt Cue-Punkte vor.
@@ -95,6 +97,7 @@ pub fn measure(s: &Stereo, rate: u32) -> Measured {
         peak_db: (peak > 0.0).then(|| 20.0 * f64::from(peak).log10()),
         seconds: s.frames() as f64 / f64::from(rate.max(1)),
         auto_cues: suggest_cues(&s.left, &s.right, rate),
+        vocal: woa_dsp::analysis::vocal::detect_vocal_start(&s.left, &s.right, rate),
     }
 }
 

@@ -39,7 +39,7 @@ impl Marker {
         match self {
             Marker::CueIn => "Cue-In",
             Marker::CueOut => "Cue-Out",
-            Marker::Ramp => "Ramp",
+            Marker::Ramp => "Ramp (Gesang)",
             Marker::Hook => "Hook",
             Marker::FadeOut => "Fade-Out",
         }
@@ -77,7 +77,8 @@ impl Marker {
 }
 
 /// Marker, die die Analyse vorschlägt.
-const AUTO_MARKERS: [Marker; 3] = [Marker::CueIn, Marker::FadeOut, Marker::CueOut];
+/// Ramp ist der geschätzte erste Gesangseinsatz (#299).
+const AUTO_MARKERS: [Marker; 4] = [Marker::CueIn, Marker::Ramp, Marker::FadeOut, Marker::CueOut];
 
 /// Was der Editor nach einem Bild vom Radio-Layout will.
 #[derive(Debug, Clone, PartialEq)]
@@ -128,8 +129,10 @@ pub struct CueEditor {
     peaks: Option<Vec<f32>>,
     loading: Option<Receiver<PeakResult>>,
     error: Option<String>,
-    /// Vorschlag aus der Analyse (Stille vorn und hinten, Ausklang).
+    /// Vorschlag aus der Analyse (Stille vorn und hinten, Ausklang, Gesang geschätzt).
     auto: Cues,
+    /// Stelle des letzten Rechtsklicks in die Wellenform (Sekunden), für „Gesang beginnt hier“.
+    menu_at: Option<f64>,
 }
 
 impl CueEditor {
@@ -147,10 +150,13 @@ impl CueEditor {
             .name("woa-cue-peaks".into())
             .spawn(move || {
                 let r = woa_radio::audio::load_stereo(&p, PEAK_RATE).map(|s| {
+                    let mut auto = woa_radio::audio::suggest_cues(&s.left, &s.right, PEAK_RATE);
+                    auto.ramp =
+                        woa_dsp::analysis::vocal::detect_vocal_start(&s.left, &s.right, PEAK_RATE);
                     (
                         peaks(&s.left, &s.right, BINS),
                         s.frames() as f64 / f64::from(PEAK_RATE),
-                        woa_radio::audio::suggest_cues(&s.left, &s.right, PEAK_RATE),
+                        auto,
                     )
                 });
                 let _ = tx.send(r);
@@ -169,6 +175,7 @@ impl CueEditor {
             loading: Some(rx),
             error,
             auto: Cues::default(),
+            menu_at: None,
         }
     }
 
@@ -208,6 +215,12 @@ impl CueEditor {
         true
     }
 
+    /// „Gesang beginnt hier“: setzt die Ramp-Marke (von Hand, hat Vorrang vor der Schätzung).
+    pub fn set_vocal_here(&mut self, seconds: f64) {
+        Marker::Ramp.set(&mut self.draft, Some(seconds));
+        self.marker = Marker::Ramp;
+    }
+
     fn auto_text(&self) -> String {
         let parts: Vec<String> = AUTO_MARKERS
             .iter()
@@ -217,7 +230,7 @@ impl CueEditor {
         if self.loading.is_some() {
             String::new()
         } else if parts.is_empty() {
-            "Kein Vorschlag: keine Stille vorn oder hinten".into()
+            "Kein Vorschlag: keine Stille vorn oder hinten, kein Gesang erkannt".into()
         } else {
             format!("Vorschlag: {}", parts.join(" · "))
         }
@@ -354,7 +367,11 @@ impl CueEditor {
                     painter.text(
                         egui::pos2(x + 3.0, rect.bottom() - 2.0),
                         egui::Align2::LEFT_BOTTOM,
-                        format!("{} (Vorschlag)", m.label()),
+                        if m == Marker::Ramp {
+                            "Gesang (geschätzt)".to_string()
+                        } else {
+                            format!("{} (Vorschlag)", m.label())
+                        },
                         egui::FontId::proportional(10.0),
                         theme::mix(m.color(), theme::well(), 0.35),
                     );
@@ -366,6 +383,29 @@ impl CueEditor {
                 let s = (f64::from((pos.x - rect.left()) / rect.width()) * len).clamp(0.0, len);
                 self.marker
                     .set(&mut self.draft, Some((s * 100.0).round() / 100.0));
+            }
+            // Rechtsklick: „Gesang beginnt hier“ setzt die Ramp-Marke an diese Stelle (#299).
+            if resp.secondary_clicked()
+                && let Some(pos) = resp.interact_pointer_pos()
+            {
+                let s = (f64::from((pos.x - rect.left()) / rect.width()) * len).clamp(0.0, len);
+                self.menu_at = Some((s * 100.0).round() / 100.0);
+            }
+            if !self.cart {
+                resp.context_menu(|ui| {
+                    if let Some(s) = self.menu_at
+                        && ui
+                            .button(format!(
+                                "{} Gesang beginnt hier ({})",
+                                theme::ic::MICROPHONE_STAGE,
+                                crate::radio::clock(s)
+                            ))
+                            .clicked()
+                    {
+                        self.set_vocal_here(s);
+                        ui.close();
+                    }
+                });
             }
         }
         ui.add_space(4.0);
@@ -409,8 +449,8 @@ impl CueEditor {
             if ui
                 .add_enabled(can_fill, egui::Button::new("Vorschlag einsetzen"))
                 .on_hover_text(
-                    "Setzt Cue-In, Fade-Out und Cue-Out aus der Analyse (Stille vorn und hinten, \
-                     Beginn des Ausklangs). Schon gesetzte Marker bleiben unverändert.",
+                    "Setzt Cue-In, Ramp (Gesang, geschätzt), Fade-Out und Cue-Out aus der Analyse \
+                     (Stille vorn und hinten, Beginn des Ausklangs). Schon gesetzte Marker bleiben unverändert.",
                 )
                 .on_disabled_hover_text(if self.auto.is_empty() {
                     "Die Analyse schlägt hier nichts vor (keine Stille vorn oder hinten)"
@@ -558,6 +598,16 @@ mod tests {
         assert!(ed.draft.validate(ed.seconds).is_ok());
         assert!(!ed.can_fill_auto());
         assert!(!ed.fill_auto(), "zweites Mal nichts zu tun");
+    }
+
+    #[test]
+    fn vocal_here_sets_the_ramp_by_hand() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("fehlt.wav");
+        let mut ed = CueEditor::open(0, p, "x".into(), Some(30.0), Cues::default());
+        ed.set_vocal_here(12.5);
+        assert_eq!(ed.draft.ramp, Some(12.5));
+        assert_eq!(ed.marker, Marker::Ramp);
     }
 
     #[test]

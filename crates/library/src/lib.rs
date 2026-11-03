@@ -26,7 +26,7 @@ pub use hash::file_hash;
 pub const DB_FILE: &str = "bibliothek.sqlite3";
 
 /// Aktuelle Schemaversion.
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 /// Längste Tag-Bezeichnung (Zeichen).
 pub const MAX_TAG_CHARS: usize = 40;
 /// Mehr Tags je Titel nimmt die Bibliothek nicht an.
@@ -113,7 +113,14 @@ CREATE TABLE dj_marks (
 ) WITHOUT ROWID;
 ";
 
-const MIGRATIONS: [&str; 6] = [V1, V2, V3, V4, V5, V6];
+/// 0.41.3 (#299): geschätzter erster Gesangseinsatz je Titel. Schon analysierte Titel werden
+/// nicht neu gemessen (das dekodierte die ganze Bibliothek noch einmal); sie bekommen den Wert
+/// bei der nächsten Analyse ihres Inhalts.
+const V7: &str = "
+ALTER TABLE tracks ADD COLUMN vocal_start REAL;
+";
+
+const MIGRATIONS: [&str; 7] = [V1, V2, V3, V4, V5, V6, V7];
 
 /// Fehler der Bibliothek, Text ohne Pfade.
 #[derive(Debug)]
@@ -237,6 +244,8 @@ pub struct Analysis {
     pub cue_in: Option<f64>,
     pub fade_out: Option<f64>,
     pub cue_out: Option<f64>,
+    /// Geschätzter erster Gesangseinsatz in Sekunden (#299, Schema 7).
+    pub vocal_start: Option<f64>,
 }
 
 impl Analysis {
@@ -376,7 +385,7 @@ fn now_secs() -> i64 {
 const SELECT: &str = "SELECT t.id, t.path, t.hash, t.title, t.duration, t.kind, t.added, \
     (SELECT group_concat(tag, char(31)) FROM (SELECT tag FROM tags WHERE track_id = t.id ORDER BY tag)), \
     (t.analyzed_hash IS NOT NULL AND t.analyzed_hash = t.hash), \
-    t.bpm, t.key, t.lufs, t.true_peak, t.peak_db, t.lead, t.tail, t.cue_in, t.fade_out, t.cue_out, t.beat_offset \
+    t.bpm, t.key, t.lufs, t.true_peak, t.peak_db, t.lead, t.tail, t.cue_in, t.fade_out, t.cue_out, t.beat_offset, t.vocal_start \
     FROM tracks t";
 
 fn row_track(r: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
@@ -406,6 +415,7 @@ fn row_track(r: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
                 fade_out: r.get(17)?,
                 cue_out: r.get(18)?,
                 beat_offset: r.get(19)?,
+                vocal_start: r.get(20)?,
             })
         } else {
             None
@@ -531,7 +541,7 @@ impl Library {
         let n = self.conn.execute(
             "UPDATE tracks SET analyzed_hash = ?2, bpm = ?3, key = ?4, lufs = ?5, true_peak = ?6, \
              peak_db = ?7, lead = ?8, tail = ?9, cue_in = ?10, fade_out = ?11, cue_out = ?12, \
-             beat_offset = ?13 WHERE id = ?1 AND hash = ?2",
+             beat_offset = ?13, vocal_start = ?14 WHERE id = ?1 AND hash = ?2",
             params![
                 id,
                 hash,
@@ -545,7 +555,8 @@ impl Library {
                 a.cue_in,
                 a.fade_out,
                 a.cue_out,
-                a.beat_offset
+                a.beat_offset,
+                a.vocal_start
             ],
         )?;
         Ok(n > 0)

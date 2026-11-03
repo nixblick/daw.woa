@@ -40,6 +40,13 @@ pub struct PlaylistEntry {
     /// Eigener Anzeigename (#292); `None` = Dateiname.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Geschätzter erster Gesangseinsatz (#299), Sekunden ab Dateianfang. Die von Hand
+    /// gesetzte Ramp-Marke (`cues.ramp`) hat Vorrang, siehe [`vocal_mark`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocal: Option<f64>,
+    /// Stand der Messung ([`MEASURE_VERSION`]); ältere Messungen werden einmal nachgeholt.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub measured_v: u8,
     /// Laufzeit-Kennung (nicht gespeichert), vom Controller vergeben.
     #[serde(skip)]
     pub uid: u32,
@@ -56,6 +63,8 @@ impl PlaylistEntry {
             cues: Cues::default(),
             voice: None,
             name: None,
+            vocal: None,
+            measured_v: 0,
             uid: 0,
         }
     }
@@ -67,7 +76,10 @@ impl PlaylistEntry {
 
     /// Ist die gecachte Messung noch gültig?
     pub fn is_measured(&self) -> bool {
-        self.seconds.is_some() && self.stamp.is_some() && self.stamp == file_stamp(&self.path)
+        self.seconds.is_some()
+            && self.stamp.is_some()
+            && self.measured_v >= MEASURE_VERSION
+            && self.stamp == file_stamp(&self.path)
     }
 
     /// Übernimmt eine Messung samt aktuellem Dateistand.
@@ -76,6 +88,8 @@ impl PlaylistEntry {
         self.peak_db = m.peak_db;
         self.seconds = Some(m.seconds);
         self.stamp = file_stamp(&self.path);
+        self.vocal = m.vocal;
+        self.measured_v = MEASURE_VERSION;
         // Cue-Vorschlag nur, wo noch nichts gesetzt ist: von Hand gesetzte Punkte bleiben.
         if self.cues.is_empty() && m.auto_cues.validate(Some(m.seconds)).is_ok() {
             self.cues = m.auto_cues;
@@ -91,6 +105,39 @@ impl PlaylistEntry {
     pub fn gain_db(&self, target: f64) -> f64 {
         auto_gain_db(self.lufs, self.peak_db, target)
     }
+}
+
+/// Stand der Playlist-Messung: 1 = mit Gesangseinsatz (#299).
+pub const MEASURE_VERSION: u8 = 1;
+
+fn is_zero(v: &u8) -> bool {
+    *v == 0
+}
+
+/// Gesangseinsatz für die Anzeige (#299).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VocalMark {
+    /// Sekunden ab Dateianfang.
+    pub seconds: f64,
+    /// Aus der Analyse geschätzt (nicht von Hand gesetzt).
+    pub estimated: bool,
+}
+
+/// Die von Hand gesetzte Ramp-Marke gilt vor der Schätzung; eine Schätzung vor dem Cue-In
+/// oder hinter dem Cue-Out zählt nicht.
+pub fn vocal_mark(cues: &Cues, estimate: Option<f64>) -> Option<VocalMark> {
+    if let Some(r) = cues.ramp {
+        return Some(VocalMark {
+            seconds: r,
+            estimated: false,
+        });
+    }
+    let s = estimate.filter(|s| s.is_finite())?;
+    let inside = s > cues.start() && cues.cue_out.is_none_or(|o| s < o);
+    inside.then_some(VocalMark {
+        seconds: s,
+        estimated: true,
+    })
 }
 
 /// Dateiname ohne Endung.
@@ -109,6 +156,9 @@ pub struct CartEntry {
     /// Start- und Endpunkt des Carts (nur Cue-In und Cue-Out zählen).
     #[serde(default, skip_serializing_if = "Cues::is_empty")]
     pub cues: Cues,
+    /// Geschätzter Gesangseinsatz (#299), nur auf Decks (vom Playlist-Titel übernommen).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocal: Option<f64>,
 }
 
 impl CartEntry {
@@ -119,6 +169,7 @@ impl CartEntry {
             path,
             label,
             cues: Cues::default(),
+            vocal: None,
         }
     }
 }
@@ -657,6 +708,58 @@ mod tests {
     }
 
     #[test]
+    fn manual_ramp_wins_over_the_vocal_estimate() {
+        let mut c = Cues::default();
+        assert_eq!(vocal_mark(&c, None), None);
+        assert_eq!(
+            vocal_mark(&c, Some(12.0)),
+            Some(VocalMark {
+                seconds: 12.0,
+                estimated: true
+            })
+        );
+        c.ramp = Some(9.5);
+        assert_eq!(
+            vocal_mark(&c, Some(12.0)),
+            Some(VocalMark {
+                seconds: 9.5,
+                estimated: false
+            })
+        );
+        // Schätzung außerhalb von Cue-In … Cue-Out zählt nicht.
+        let c = Cues {
+            cue_in: Some(13.0),
+            ..Cues::default()
+        };
+        assert_eq!(vocal_mark(&c, Some(12.0)), None);
+    }
+
+    #[test]
+    fn old_measurements_are_taken_again_once_for_the_vocal_start() {
+        let dir = std::env::temp_dir().join(format!("woa-vocal-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("a.wav");
+        std::fs::write(&f, b"x").unwrap();
+        let mut e = PlaylistEntry::new(&f);
+        e.seconds = Some(10.0);
+        e.stamp = file_stamp(&f);
+        assert!(!e.is_measured(), "Messung von vor 0.41.3 gilt als alt");
+        e.set_measured(Measured {
+            lufs: None,
+            peak_db: None,
+            seconds: 10.0,
+            auto_cues: Cues::default(),
+            vocal: Some(3.0),
+        });
+        assert!(e.is_measured());
+        assert_eq!(e.vocal, Some(3.0));
+        let back: PlaylistEntry =
+            serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
+        assert_eq!(back.measured_v, MEASURE_VERSION);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn measuring_proposes_cues_but_never_overrides_manual_ones() {
         let auto = Cues {
             cue_in: Some(1.0),
@@ -669,6 +772,7 @@ mod tests {
             peak_db: Some(-3.0),
             seconds: 12.0,
             auto_cues: auto,
+            vocal: Some(4.5),
         };
         let mut fresh = PlaylistEntry::new("/musik/a.wav");
         fresh.set_measured(m);

@@ -845,22 +845,31 @@ pub fn bus_meter(painter: &egui::Painter, rect: Rect, level: f32, hold: f32) {
     }
     let frac = |v: f32| ((20.0 * v.max(1e-6).log10() + 60.0) / 60.0).clamp(0.0, 1.0);
     let (lit, held) = (frac(level), frac(hold));
-    let segments = ((inner.height() / 4.0).floor() as usize).clamp(10, 40);
-    let gap = 1.0f32;
+    // Kräftige Einzel-LEDs (#287): weniger, dickere Segmente mit sichtbarer Fuge; leuchtende
+    // bekommen einen hellen Kern und einen weichen Schein, aus bleiben dunkel getönt.
+    let (segments, gap) = bus_segments(inner.height());
     let seg_h = (inner.height() - gap * (segments as f32 - 1.0)) / segments as f32;
     let lit_count = (lit * segments as f32).ceil() as usize;
     let hold_seg = (held * segments as f32).ceil() as usize;
     for i in 0..segments {
         let base = bus_color(bus_zone((i + 1) as f32 / segments as f32 * 60.0 - 60.0));
         let on = (i < lit_count && lit > 0.005) || (hold_seg > 0 && i + 1 == hold_seg);
-        let col = if on { base } else { mix(base, lcd_bg(), 0.86) };
         let y0 = inner.bottom() - (i as f32 + 1.0) * seg_h - i as f32 * gap;
-        painter.rect_filled(
-            Rect::from_min_size(egui::pos2(inner.left(), y0), vec2(inner.width(), seg_h)),
-            0.0,
-            col,
-        );
+        let seg = Rect::from_min_size(egui::pos2(inner.left(), y0), vec2(inner.width(), seg_h));
+        if on {
+            painter.rect_filled(seg.expand(1.0), 2.5, base.gamma_multiply(0.30));
+            painter.rect_filled(seg, 1.5, base);
+            let core = seg.shrink2(vec2(seg.width() * 0.22, seg_h * 0.28));
+            painter.rect_filled(core, 1.0, mix(base, Color32::WHITE, 0.45));
+        } else {
+            painter.rect_filled(seg, 1.5, mix(base, lcd_bg(), 0.84));
+        }
     }
+}
+
+/// Anzahl und Fuge der LEDs einer senkrechten Kette (#287): etwa 7 px je LED, 2 px Fuge.
+pub fn bus_segments(height: f32) -> (usize, f32) {
+    (((height / 7.0).floor() as usize).clamp(8, 24), 2.0)
 }
 
 /// Probe für Fotomodus und Tests: `WOA_THEME=hell` oder `dunkel` schlägt die Einstellung.

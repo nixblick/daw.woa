@@ -534,7 +534,7 @@
       "titel": "Externes Mikrofon wählen",
       "tun": "Einstellungen › Audio und Geräte › Audio-Geräte öffnen, unter Eingänge bei Mikrofon das externe Gerät und das Kanalpaar wählen, Übernehmen. Im Radio Mikro auf und sprechen.",
       "erwartet": "Der Pegel kommt vom gewählten Mikro, nicht vom eingebauten. Nach einem Neustart steht die Wahl noch da.",
-      "version": "0.41.6"
+      "version": "0.41.7"
     },
     {
       "id": "audio-mikro-sofort",
@@ -542,7 +542,7 @@
       "titel": "Mikro-Wechsel wirkt sofort",
       "tun": "Mikro offen lassen, in Audio-Geräte ein anderes Mikrofon wählen und Übernehmen.",
       "erwartet": "Das Mikro bleibt offen und kommt jetzt vom neuen Gerät. Fehlt das Gerät, steht eine klare Meldung da und das Mikro ist zu.",
-      "version": "0.41.6"
+      "version": "0.41.7"
     },
     {
       "id": "audio-ein-ort",
@@ -550,7 +550,7 @@
       "titel": "Ein Ort für alle Soundkarten",
       "tun": "Im Menü Einstellungen und im Fenster Einstellungen nach Vorhören, Telefon und Mikrofon suchen.",
       "erwartet": "Es gibt nur noch einen Wähler: das Fenster Audio-Geräte mit Ausgänge, Vorhören (PFL) und Eingänge (Mikrofon, Telefon, Pult). Die anderen Zeilen haben nur „In Audio-Geräte öffnen“. Jede Zeile im Fenster sagt in einem Satz, wofür sie ist.",
-      "version": "0.41.6"
+      "version": "0.41.7"
     },
     {
       "id": "audio-alte-einstellung",
@@ -558,7 +558,52 @@
       "titel": "Alte Geräte-Einstellungen bleiben",
       "tun": "Nach dem Update Audio-Geräte öffnen.",
       "erwartet": "Ausgänge, Vorhören, Telefon und Pult stehen wie vorher; Mikrofon steht auf Systemstandard.",
-      "version": "0.41.6"
+      "version": "0.41.7"
+    },
+    {
+      "id": "party-karten-ausblenden",
+      "ansicht": "Party Einfach",
+      "titel": "Wunschliste und Fernbedienung ausblenden",
+      "tun": "In der Party oben „WUNSCHLISTE“ und „FERNBEDIENUNG“ ausschalten (oder Menü Ansicht). WOA neu starten.",
+      "erwartet": "Beide Karten sind weg, die Bibliothek zeigt mehr Treffer nach unten. Nach dem Neustart ist es noch so. Eine eingeschaltete Fernbedienung läuft weiter (Chip „Fernbedienung an · ausgeblendet“).",
+      "version": "0.41.6",
+      "ticket": 361
+    },
+    {
+      "id": "abhoerlautstaerke",
+      "ansicht": "Produzent",
+      "titel": "Abhörlautstärke",
+      "tun": "Im Produzent oben neben PEGEL den kleinen Regler mit Lautsprecher nach links ziehen, Doppelklick darauf.",
+      "erwartet": "Wird leiser ohne Knacken, PEGEL bleibt gleich; Doppelklick wieder voll. Ein Export klingt unverändert.",
+      "version": "0.41.6",
+      "ticket": 358
+    },
+    {
+      "id": "gesangseinsatz",
+      "ansicht": "Radio",
+      "titel": "Gesangseinsatz in Playlist und Deck",
+      "tun": "Einen Titel mit Intro in die Playlist legen, warten, bis er gemessen ist, dann auf ein Deck laden.",
+      "erwartet": "In der Zeile steht ein Mikrofon mit „≈0:12“ (geschätzt); im Deck „Gesang ab ≈0:12“ und ein Strich auf dem Balken. Cue-Punkte › Rechtsklick in die Wellenform › „Gesang beginnt hier“ setzt die Marke von Hand (ohne ≈).",
+      "version": "0.41.6",
+      "ticket": 299
+    },
+    {
+      "id": "vorhoeren-knopf",
+      "ansicht": "Radio",
+      "titel": "Vorhören per Knopf",
+      "tun": "Über eine Playlist-Zeile und ein belegtes Cart fahren, den Kopfhörer anklicken, nochmal klicken.",
+      "erwartet": "Startet und stoppt das Vorhören wie am Deck, der Kopfhörer leuchtet solange; ein Klick daneben startet das Cart nicht.",
+      "version": "0.41.6",
+      "ticket": 273
+    },
+    {
+      "id": "pegel-leds-fett",
+      "ansicht": "Radio",
+      "titel": "Kräftige Pegel-LEDs",
+      "tun": "Im Radio Musik laufen lassen und auf die Karte PEGEL schauen.",
+      "erwartet": "Die LED-Ketten neben den Reglern sind breiter, mit dicken einzelnen LEDs, die leuchten; Regler und bunte Namensschilder sind wie vorher.",
+      "version": "0.41.6",
+      "ticket": 287
     },
     {
       "id": "sendung-neustart",

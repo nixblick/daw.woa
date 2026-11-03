@@ -143,6 +143,8 @@ pub struct TrackAnalysis {
     pub key: Option<Key>,
     pub silence: Silence,
     pub cues: AutoCues,
+    /// Geschätzter erster Gesangseinsatz in Sekunden (#299, siehe [`super::vocal`]).
+    pub vocal_start: Option<f64>,
 }
 
 /// Verstärkung in dB, die `lufs` auf `target` bringt, ohne dass die Spitze über `ceiling`
@@ -510,6 +512,7 @@ pub fn analyze(left: &[f32], right: &[f32], rate: u32) -> TrackAnalysis {
         key: detect_key(&mono, rate),
         silence: detect_silence(left, right, rate, SILENCE_DB),
         cues: suggest_cues(left, right, rate),
+        vocal_start: super::vocal::detect_vocal_start(left, right, rate),
     }
 }
 

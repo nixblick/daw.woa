@@ -1,12 +1,22 @@
 # Changelog
 
-## 0.41.6 — 2026-11-03
+## 0.41.7 — 2026-11-03
 
 Fehlerbehebung und Übersicht, einzige neue Funktion: Mikrofon wählen (André 03.11.: „wo stell ich denn die mikro quelle ein? … doppelt gemoppelt, ich blicke da nicht durch“).
 
 - **Ein Ort für alle Soundkarten: „Audio-Geräte“.** Das Fenster (Einstellungen › Audio und Geräte, Menü Einstellungen) ist gegliedert in Ausgänge (Gerät und Kanalpaar je Quelle der Sendung), Vorhören (PFL) und Eingänge (Mikrofon, Telefon, Pult-Eingang). Jede Zeile sagt in einem Satz, wofür sie ist. Vorher wählten das Untermenü „Vorhören (PFL)“, das Fenster „Ausgänge (Soundkarten)“ und das Fenster „Telefon“ Geräte getrennt. Diese Zeilen sind jetzt nur noch Verweise („In Audio-Geräte öffnen“), Meldungen zeigen auf „Einstellungen › Audio-Geräte“. Die Aufnahmequelle einer Spur im Produzenten bleibt an der Spur.
 - **Mikrofon wählbar (neu):** Gerät und Kanalpaar, gespeichert (`mic` in `config.json`), sofort wirksam, auch bei offenem Mikro. Vorgabe Systemstandard wie bisher. Fehlt das Gerät, kommt eine klare Meldung, kein stiller Wechsel auf ein anderes Mikro. Ursache: das Radio öffnete immer das Standard-Eingabegerät. Der Live-Eingang hält jetzt auch das Kanalpaar ein.
 - **Bestehende Einstellungen bleiben gültig:** Ausgänge, Vorhören, Telefon und Pult werden unverändert gelesen. Tests: `config_before_audio_devices_window_loads_unchanged`, `outputs_ui::tests` (Mikro-Vorgabe, Mikro-Wahl, ein Satz je Zeile, `devices_are_listed_only_here`), Suche „mikro“/„externes mikro“ findet Audio-Geräte, keine doppelten Menüeinträge (auch `kopfleiste::every_former_menu_entry_is_still_reachable`).
+
+## 0.41.6 — 2026-11-03
+
+- Verbesserungspaket, geplant als 0.41.3; 0.41.2, 0.41.4 und 0.41.5 kamen zuerst auf main, daher 0.41.6.
+- **Party: Wunschliste und Fernbedienung ausblendbar (#361):** Schalter „WUNSCHLISTE“ und „FERNBEDIENUNG“ in der Party-Ansichtsleiste und im Menü Ansicht (nur in der Party), dazu Einstellungen › Party › Ansicht. Ausgeblendet nimmt die Bibliothek den Platz und zeigt so viele Treffer, wie passen (mindestens 8, höchstens 40); im DJ steht sie anstelle der Wunschliste. Eine laufende Fernbedienung bleibt an und zeigt den Chip „Fernbedienung an · ausgeblendet“. Gemerkt in `party_panels`. Test: `party::tests`.
+- **Abhörlautstärke im Produzenten (#358):** kleiner waagerechter Regler mit Lautsprecher neben der PEGEL-LCD (Doppelklick: voll), auch unter Einstellungen › Produzent › Abhören. Wirkt nur am Lautsprecher nach dem Mix, gleitet je Sample (kein Knacken, keine Allokation); Pegel, Analyse und Export bleiben. Gemerkt in `monitor_volume`. Tests: `woa_dsp::monitor::tests`.
+- **Gesangseinsatz je Titel (#299):** Die Analyse schätzt den ersten Gesang (Mitte-minus-Seite im Sprachband, erste 90 s, Hintergrund) und legt ihn in der Bibliothek ab (Schema 7, Spalte `vocal_start`) und an Playlist-Titeln/Carts. Playlist: Mikrofon und Rampzeit ab Cue-In links der Lautheit, geschätzt mit „≈“ in gedämpfter Farbe; Deck: „Gesang ab …“ und Strich auf dem Fortschrittsbalken. Von Hand: Cue-Editor › Rechtsklick in die Wellenform › „Gesang beginnt hier“ setzt die Ramp-Marke, die vor der Schätzung gilt; „Vorschlag einsetzen“ setzt die Ramp mit. Bereits gemessene Playlist-Titel werden einmal nachgemessen. Tests: `analysis::vocal::tests`, `show::tests`, `analysis::tests::vocal_start_is_stored_with_the_analysis`, `vocal_ui::tests`, `cue_editor::tests`.
+- **Vorhören per Knopf in Playlist und Cart-Wall (#273):** Kopfhörer-Taste in der Playlist-Zeile (beim Hover/Auswahl, bleibt sichtbar, solange der Titel vorgehört wird) und oben rechts am belegten Cart (links neben dem Fade-Symbol); Klick startet, zweiter Klick stoppt, ohne PFL-Ausgang gesperrt mit Hinweis.
+- **Kräftigere Pegel-LEDs (#287):** LED-Ketten der Karte PEGEL 16 statt 10 px breit, weniger und dickere LEDs mit Fuge, leuchtende mit hellem Kern und Schein. Fader und farbige Namensschilder unverändert. Test: `level_leds_are_fat`.
+- Bilder 1920×1030 dunkel und hell: `docs/design/ist/ist-0.41.3-{party,produzent,radio}-{dunkel,hell}-1920x1030.png` (Party mit ausgeblendeten Karten, Produzent mit Abhörregler, Radio mit den neuen LEDs).
 
 ## 0.41.5 — 2026-11-03
 

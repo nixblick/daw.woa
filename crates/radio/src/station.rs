@@ -37,6 +37,8 @@ pub struct ViewEntry {
     pub cues: crate::cues::Cues,
     /// Voice-Track: Beginn der Stimme, ob der Eintrag auf „prüfen“ steht (Paket 30).
     pub voice: Option<VoiceBrief>,
+    /// Erster Gesangseinsatz (#299): Ramp-Marke oder Schätzung.
+    pub vocal: Option<crate::show::VocalMark>,
 }
 
 /// Kurzform eines Voice-Tracks für die Anzeige.
@@ -60,6 +62,8 @@ pub struct DeckView {
     pub length: f64,
     /// „Zurück zur Playlist“ an (gilt auch für ein leeres Deck).
     pub back_to_playlist: bool,
+    /// Erster Gesangseinsatz (#299): Ramp-Marke oder Schätzung.
+    pub vocal: Option<crate::show::VocalMark>,
 }
 
 /// Schnappschuss für die Oberfläche.
@@ -332,6 +336,7 @@ fn deck_view(c: &Controller, k: usize) -> DeckView {
         remaining: end.saturating_sub(pos) as f64 / rate,
         length: (end as f64 / rate - start).max(0.0),
         back_to_playlist: c.deck_return(k),
+        vocal: entry.and_then(|e| crate::show::vocal_mark(&e.cues, e.vocal)),
     }
 }
 
@@ -396,6 +401,11 @@ fn run(
                         params: v.params,
                         check: v.check,
                     }),
+                    vocal: e
+                        .voice
+                        .is_none()
+                        .then(|| crate::show::vocal_mark(&e.cues, e.vocal))
+                        .flatten(),
                 })
                 .collect(),
             playlists: c.show().playlist_names(),

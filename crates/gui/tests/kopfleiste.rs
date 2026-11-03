@@ -260,7 +260,7 @@ fn every_former_menu_entry_is_still_reachable() {
         (
             "Einstellungen",
             &[
-                // Ausgänge, Vorhören, Telefon, Mikrofon: im Fenster Audio-Geräte (0.41.6).
+                // Ausgänge, Vorhören, Telefon, Mikrofon: im Fenster Audio-Geräte (0.41.7).
                 "Audio-Geräte",
                 "Ausgabe neu verbinden",
                 "MIDI-Eingang",
