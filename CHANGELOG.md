@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.41.4 — 2026-11-03
+
+- **CI ohne Fehlalarm (André 03.11.: „erst gar nicht so viele Ereignisse mit Rot-Meldungen“):** rote Läufe nur noch bei echten Fehlern.
+  - Wackeltests an der Ursache behoben: `scan::a_file_that_hangs_is_killed_and_blocked` startet das frisch geschriebene Skript über `/bin/sh` (vorher sporadisch ETXTBSY unter Linux, Problem „Suchprozess startet nicht“ statt „hängt“); `live::tests::forward_does_not_wait_…` wartet bis 10 s auf das DELETE statt 2 s; `webrtc_loopback` prüft am Pult und im Rückweg nur noch „Ton deutlich da“ (> -20 dB statt > -14 dB, gemessen -14,4 dB auf Windows); `radio::tests::many_rows_stay_fast` ist in der CI nur eine grobe Schranke (×5 + 20 ms), lokal bleibt ×2 + 2 ms.
+  - CI: `concurrency` je PR, ein neuer Push bricht den alten Lauf ab (auf `main` läuft jeder Lauf zu Ende).
+  - deny: `cargo-deny` direkt auf dem Runner statt im Container der Action (Toolchain-Meldung „musl is not installed“ weg). Lizenzen, Bans, Quellen laufen immer; Advisories/yanked in PRs nur, wenn sich ein fremdes Paket in `Cargo.lock` (checksum-/source-Zeile, nicht das Hochzählen der eigenen Version) oder `deny.toml` ändert. Voll und streng prüft `deny-woche.yml` montags und auf Knopfdruck.
+  - `scripts/vorflug.sh` (fmt, clippy, test) vor jedem Push, optionaler Hook `scripts/hooks/pre-push` (nur fmt) per `git config core.hooksPath scripts/hooks`; Regel in `CLAUDE.md`.
+
 ## 0.41.2 — 2026-11-03
 
 Fehlerbehebung, keine neuen Funktionen (André 03.11.).

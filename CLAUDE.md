@@ -35,6 +35,12 @@ Notfall-Playlist laufen als eigener Prozess (`apps/woa-streamd`).
    Lokal (Notebook, 7 GB RAM) nur `clippy` und `cargo test -p <geänderte Crates>`; die volle Testsuite
    läuft nur in der CI, die auf `main` Pflicht ist (André, 30.10.2026). Ein Rust-Bau gleichzeitig,
    `CARGO_TARGET_DIR` unter `~/.cache`, nie unter `/tmp`.
+   **Vor jedem Push `scripts/vorflug.sh`** (fmt --check, clippy -D warnings, test; lokal mit
+   `-p <Crate>` für die geänderten Crates). Ein vergessenes `cargo fmt` war zweimal Anlass für rote
+   CI-Mails (André 03.11.2026). Optionaler Hook je Klon, prüft vor jedem Push nur das Format:
+   `git config core.hooksPath scripts/hooks` (aus: `git config --unset core.hooksPath`).
+   Tests warten auf Ereignisse statt auf feste Uhrzeiten und setzen keine engen Wandzeit-Grenzen;
+   Leistungsmessungen sind in der CI (`CI` gesetzt) nur grobe Schranken.
 3. Golden-File-Tests für den Klang (`tests/golden/`), `assert_no_alloc` für Echtzeit,
    Snapshot-Tests (`insta`) für das Projektformat.
 4. Testen per Feedback-Button: Screenshot plus Hinweis wird Issue, Agent arbeitet Issues ab.
