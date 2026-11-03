@@ -22,12 +22,97 @@ pub struct Fault {
     reported: bool,
 }
 
+/// Ströme in einem eigenen Thread (#291): Prüfen des Standardgeräts, Schließen und Neuöffnen
+/// eines ausgefallenen Geräts dauern unter Windows (WASAPI) mitunter viele Sekunden. Liefen sie
+/// im GUI-Takt, stand die Oberfläche so lange still. Der Thread lebt, solange der Wächter lebt;
+/// beim Fallenlassen schließt er die Ströme und endet.
+#[derive(Default)]
+pub struct OutputWatch {
+    tx: Option<std::sync::mpsc::Sender<()>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+    /// Ergebnis des letzten „Neu verbinden“ (`true`: alle laufen), einmal abholbar.
+    reconnected: Arc<std::sync::Mutex<Option<bool>>>,
+    /// Gab es beim Öffnen einen ersten Strom (das Hauptgerät)?
+    any: bool,
+}
+
+/// So oft prüft der Wächter die Ströme.
+const WATCH_EVERY: std::time::Duration = std::time::Duration::from_millis(100);
+
+impl OutputWatch {
+    /// Übernimmt die Ströme. Ohne Ströme kein Thread.
+    pub fn spawn(mut outs: Vec<ManagedOutput>) -> Self {
+        if outs.is_empty() {
+            return Self::default();
+        }
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        let reconnected = Arc::new(std::sync::Mutex::new(None));
+        let done = Arc::clone(&reconnected);
+        let thread = std::thread::Builder::new()
+            .name("woa-output-watch".into())
+            .spawn(move || {
+                loop {
+                    match rx.recv_timeout(WATCH_EVERY) {
+                        Ok(()) => {
+                            let ok = outs
+                                .iter_mut()
+                                .all(|o| !matches!(o.reconnect_now(), Reconnect::Failed(_)));
+                            if let Ok(mut r) = done.lock() {
+                                *r = Some(ok);
+                            }
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                            for o in &mut outs {
+                                o.poll();
+                            }
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    }
+                }
+                // Ströme hier schließen, nicht im GUI-Thread.
+                drop(outs);
+            })
+            .ok();
+        Self {
+            tx: Some(tx),
+            thread,
+            reconnected,
+            any: true,
+        }
+    }
+
+    /// „Neu verbinden“ anstoßen; das Ergebnis holt [`Self::take_reconnected`] ab.
+    pub fn reconnect_now(&self) {
+        if let Some(tx) = &self.tx {
+            let _ = tx.send(());
+        }
+    }
+
+    /// Ergebnis des letzten „Neu verbinden“, falls schon da.
+    pub fn take_reconnected(&self) -> Option<bool> {
+        self.reconnected.lock().ok().and_then(|mut r| r.take())
+    }
+
+    /// Läuft ein Wächter (es gab beim Öffnen einen Strom)?
+    pub fn is_active(&self) -> bool {
+        self.any
+    }
+}
+
+impl Drop for OutputWatch {
+    fn drop(&mut self) {
+        // Erst den Kanal schließen, dann warten: das Gerät ist danach frei zum Neuöffnen.
+        self.tx = None;
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
 /// Was `open` geöffnet hat.
 pub struct Opened {
-    /// Strom des Hauptgeräts, `None` wenn es sich nicht öffnen ließ.
-    pub _master: Option<ManagedOutput>,
-    /// Ströme der weiteren Geräte (leben, solange das Feld lebt).
-    pub _followers: Vec<ManagedOutput>,
+    /// Hauptgerät (falls es aufging) und weitere Geräte, im eigenen Thread überwacht (#291).
+    pub watch: OutputWatch,
     /// Meldungen für die Oberfläche: fehlende Geräte, Ersatz, Fehler beim Öffnen.
     pub warnings: Vec<String>,
     pub faults: Vec<Fault>,
@@ -52,21 +137,11 @@ impl Opened {
         out
     }
 
-    /// Öffnet ausgefallene Ströme neu und folgt einem gewechselten Standardgerät. Im GUI-Takt
-    /// aufrufen, nie im Audio-Thread.
-    pub fn poll(&mut self) {
-        for out in self._master.iter_mut().chain(self._followers.iter_mut()) {
-            out.poll();
-        }
-    }
-
-    /// Rettungsknopf: alle Ströme sofort neu öffnen. `true`, wenn alle liefen.
-    pub fn reconnect_now(&mut self) -> bool {
-        let mut ok = self._master.is_some();
-        for out in self._master.iter_mut().chain(self._followers.iter_mut()) {
-            ok &= !matches!(out.reconnect_now(), Reconnect::Failed(_));
-        }
-        ok
+    /// Rettungsknopf: alle Ströme neu öffnen (im Wächter-Thread). `false`, wenn es gar keinen
+    /// Strom gibt; das Ergebnis kommt über [`OutputWatch::take_reconnected`].
+    pub fn reconnect_now(&self) -> bool {
+        self.watch.reconnect_now();
+        self.watch.is_active()
     }
 
     /// Eine Zeile je Ring: Füllstand und Ausfälle, für die Einstellungen.
@@ -251,11 +326,37 @@ pub fn open(
             None
         }
     };
+    // Das Hauptgerät steht vorn: es gab einen Strom, wenn es aufging.
+    let watch = match master {
+        Some(m) => OutputWatch::spawn(std::iter::once(m).chain(followers).collect()),
+        None => {
+            drop(followers);
+            OutputWatch::default()
+        }
+    };
     Opened {
-        _master: master,
-        _followers: followers,
+        watch,
         warnings,
         faults,
         links,
+    }
+}
+
+#[cfg(test)]
+mod watch_tests {
+    use super::*;
+
+    /// #291: Die Ströme wandern in den Wächter-Thread; der GUI-Takt fasst kein Gerät mehr an.
+    #[test]
+    fn streams_live_in_their_own_thread() {
+        fn is_send<T: Send>() {}
+        is_send::<ManagedOutput>();
+        let w = OutputWatch::spawn(Vec::new());
+        assert!(!w.is_active());
+        let t = std::time::Instant::now();
+        w.reconnect_now();
+        assert_eq!(w.take_reconnected(), None);
+        drop(w);
+        assert!(t.elapsed() < std::time::Duration::from_millis(50));
     }
 }
