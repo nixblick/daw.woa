@@ -35,9 +35,9 @@ jobs:
 
   # Pflichtprüfung „deny“ (Branch-Schutz), läuft daher immer. Lizenzen, Bans und Quellen hängen
   # nur am eigenen Code und laufen immer. Advisories/yanked ändern sich von außen (ein Paket
-  # wird zurückgezogen, ein Advisory erscheint) und machten fremde PRs rot, die Cargo.lock gar
-  # nicht anfassen. Sie laufen hier nur, wenn Cargo.lock, ein Cargo.toml oder deny.toml sich
-  # ändern; sonst prüft sie der wöchentliche Lauf (deny-woche.yml) mit voller Schärfe.
+  # wird zurückgezogen, ein Advisory erscheint) und machten PRs rot, die keine Abhängigkeit
+  # anfassen. Sie laufen hier nur, wenn sich ein fremdes Paket in Cargo.lock oder deny.toml
+  # ändert; sonst prüft sie der wöchentliche Lauf (deny-woche.yml) mit voller Schärfe.
   # cargo-deny direkt auf dem Runner statt im Container der cargo-deny-action: deren Container
   # kannte die Toolchain aus rust-toolchain.toml nicht („override toolchain … musl is not
   # installed“).
@@ -61,7 +61,10 @@ jobs:
           if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             echo "changed=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          if git diff --name-only "$BASE" HEAD | grep -qE '(^|/)(Cargo\.lock|Cargo\.toml|deny\.toml)$'; then
+          # Fremde Pakete geändert = in Cargo.lock ändert sich eine checksum- oder source-Zeile.
+          # Das Hochzählen der eigenen Workspace-Version (jeder PR) zählt nicht.
+          if git diff --name-only "$BASE" HEAD | grep -qx 'deny\.toml' \
+            || git diff "$BASE" HEAD -- Cargo.lock | grep -qE '^[+-](checksum|source) = '; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
