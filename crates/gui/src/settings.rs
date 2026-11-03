@@ -1062,7 +1062,7 @@ mod tests {
 
     /// Feldnamen von `GuiConfig`, aus dem Quelltext (serde lässt Vorgaben aus).
     fn config_fields() -> Vec<String> {
-        let src = include_str!("feedback.rs");
+        let src = include_str!("feedback.rs").replace("\r\n", "\n");
         let body = src
             .split("pub struct GuiConfig {")
             .nth(1)
