@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.41.8 — 2026-11-03
+
+Fehlerbehebung aus Andrés Rückmeldungen vom 03.11. (Fehlerphase).
+
+- **Cart-Wall: Beim Start von Jingle 3 fiel Jingle 4 aus dem Bild, auch maximiert (#369, #370).** Ursache: Das Fade-Symbol eines laufenden Carts (und das Vorhören-Symbol beim Hover) wurde mit `scope_builder` gezeichnet; im Raster belegte das eine eigene Zelle und schob alle folgenden Carts eine Stelle weiter. Jetzt liegen beide Symbole in einem Kind-Bereich ohne eigenen Platz. Test: `radio::tests::playing_or_hovered_cart_keeps_the_grid` (laufend und Hover, alle 16 in vier Reihen; scheitert mit dem alten Weg). Betrifft wohl auch #388.
+- **ON AIR oben rechts leuchtete nicht trotz Sendung (#387).** Ursache: Im Pult-Modus war die Lampe „gedimmt“ (72 % Richtung dunkles Rotglas) und las sich wie aus. Das Wiederanhängen an woa-streamd war in Ordnung. Jetzt leuchtet sie auf Sendung immer voll; der Pult-Modus zeigt sich nur am kleineren Schein. Test: `widgets::lamp::tests::bar_lamp_is_off_on_or_dimmed_in_pult_mode`.
+- **Vorhören bei den Decks ging nur bei stehendem Song (#373, #374).** Ursache: Eine neue Kopfhörer-Wahl wartete, bis nichts mehr lief, weil dafür die ganze Radio-Ausgabe neu geöffnet wurde. Ein eigenes Kopfhörer-Gerät ist aber ein eigener Strom: es wird jetzt sofort getauscht, die Sendung läuft weiter. Nur Kanal 3/4 des Sendegeräts wartet wie bisher. Test: `app::pfl_switch_tests::own_headphone_device_switches_live`.
+- **Vorgehörtes Deck lief nicht sichtbar (#375).** Ein Deck, das im Kopfhörer läuft, leuchtet jetzt wie ein laufendes Deck, die Restzeit zählt ab der Vorhör-Stelle herunter und darunter steht „Vorhören im Kopfhörer“; Start/Stopp und Fade bleiben beim echten Abspielen. Neu in der Ansicht: `pfl_position`. Test: `radio::tests::previewed_deck_runs_visibly`.
+- **Bibliothek in der Party ohne Rückmeldung, und aktiv trotz Feedback-Formular (#386).** Ursachen: Ansicht › Bibliothek setzte in der Party nur den Haken, das Fenster wurde dort nie gezeichnet. Die Party-Tasten (Leertaste, N, P …) liefen auch bei offenem Feedback-Formular weiter, und die Bibliothekssuche behielt den Tastaturfokus. Jetzt öffnet das Fenster auch in der Party, Party-Tasten ruhen unter einem Fenster wie dem Formular, und das Formular nimmt beim Öffnen den Fokus. Die Migration Schema 6 → 7 („library migration from=6 to=7“) ist kein Fehler: geprüft mit einer echten v6-Datenbank. Tests: `party_bibliothek::library_window_opens_in_party_mode`, `party::tests::party_keys_rest_behind_an_overlay`, `tests::migration_from_v6_keeps_tracks_searchable`.
+
 ## 0.41.7 — 2026-11-03
 
 Fehlerbehebung und Übersicht, einzige neue Funktion: Mikrofon wählen (André 03.11.: „wo stell ich denn die mikro quelle ein? … doppelt gemoppelt, ich blicke da nicht durch“).

@@ -1910,6 +1910,11 @@ impl Controller {
         self.pfl.as_ref().is_some_and(PflHandle::is_playing)
     }
 
+    /// Stelle des Vorhörens in Sekunden ab Dateianfang (0 ohne Kopfhörer-Ausgang).
+    pub fn pfl_position(&self) -> f64 {
+        self.pfl.as_ref().map_or(0.0, PflHandle::position_seconds)
+    }
+
     fn pfl_play(&mut self, path: &Path, from: f64) -> Result<(), String> {
         let Some(rate) = self.pfl.as_ref().map(|h| h.rate) else {
             return Err("Kein Kopfhörer-Ausgang für das Vorhören eingestellt".into());

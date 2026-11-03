@@ -934,6 +934,13 @@ impl WoaApp {
             if self.config.mode.uses_desk() {
                 self.ensure_radio();
             }
+        } else if pfl && pfl_live_swap(&before.pfl, &self.config.pfl_output) {
+            // #373/#374: eigenes Kopfhörer-Gerät sofort, auch wenn die Playlist läuft.
+            self.pfl_switch.pending = false;
+            let choice = self.config.pfl_output.clone();
+            if let Some(r) = self.radio.as_mut() {
+                r.swap_pfl_device(&choice);
+            }
         } else if pfl && self.radio.is_some() && self.pfl_switch.choose(running) {
             self.reopen_radio_for_pfl();
         }
@@ -2712,7 +2719,13 @@ impl WoaApp {
             .on_hover_text("Fehler gefunden, Idee gehabt? Schreib uns direkt aus WOA.")
             .clicked()
         {
-            let _ = ctx;
+            // #386: Ein Textfeld dahinter (Bibliothekssuche) behält sonst den Fokus und
+            // nimmt die Tasten, während das Formular offen ist.
+            ctx.memory_mut(|m| {
+                if let Some(id) = m.focused() {
+                    m.surrender_focus(id);
+                }
+            });
             self.feedback.open();
             self.image_error = None;
         }
@@ -7040,7 +7053,7 @@ impl eframe::App for WoaApp {
             self.party.state.fullscreen = on;
         }
         if self.config.mode == Mode::Party {
-            let cmds = crate::party::PartyView::shortcuts(ctx);
+            let cmds = crate::party::PartyView::shortcuts(ctx, self.overlay_open(ctx));
             if let Some(r) = self.radio.as_mut() {
                 self.party.run(cmds, r, ctx);
             }
@@ -7211,6 +7224,8 @@ impl eframe::App for WoaApp {
                 )
                 .show(ui, |ui| cmds = self.party.ui(ui, radio, &mut self.library));
             self.party.run(cmds, radio, &ctx);
+            // #386: Ansicht → Bibliothek öffnet das Fenster auch in der Party.
+            self.library_window(&ctx);
             // In der Party umgeschaltet (#361): merken.
             if self.party.panels != self.config.party_panels {
                 self.config.party_panels = self.party.panels;
@@ -9789,6 +9804,13 @@ mod tests {
     }
 }
 
+/// Lässt sich die Vorhör-Wahl ohne Neuöffnen der Sendeausgänge tauschen? Ja, solange weder
+/// die alte noch die neue Wahl Kanal 3/4 des Sendegeräts ist (#373/#374).
+fn pfl_live_swap(before: &crate::feedback::PflOutput, after: &crate::feedback::PflOutput) -> bool {
+    use crate::feedback::PflOutput;
+    !matches!(before, PflOutput::Kanal34) && !matches!(after, PflOutput::Kanal34)
+}
+
 /// Wann eine neue Vorhören-Wahl greift: sofort, wenn nichts läuft, sonst nach dem Stopp.
 /// Die laufende Sendung wird nie für das Vorhören unterbrochen.
 #[derive(Debug, Default)]
@@ -9835,6 +9857,19 @@ mod pfl_switch_tests {
         assert!(s.choose(false));
         assert!(!s.pending);
         assert!(!s.poll(false));
+    }
+
+    /// #373/#374: Ein eigenes Kopfhörer-Gerät wird auch bei laufender Playlist sofort
+    /// getauscht; nur Kanal 3/4 hängt am Sendegerät und wartet, bis nichts mehr läuft.
+    #[test]
+    fn own_headphone_device_switches_live() {
+        use crate::feedback::PflOutput;
+        let dev = |s: &str| PflOutput::Geraet(s.into());
+        assert!(super::pfl_live_swap(&dev("a"), &dev("b")));
+        assert!(super::pfl_live_swap(&PflOutput::Aus, &dev("b")));
+        assert!(super::pfl_live_swap(&dev("a"), &PflOutput::Aus));
+        assert!(!super::pfl_live_swap(&PflOutput::Kanal34, &dev("b")));
+        assert!(!super::pfl_live_swap(&dev("a"), &PflOutput::Kanal34));
     }
 }
 
