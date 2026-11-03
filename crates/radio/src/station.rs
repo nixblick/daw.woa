@@ -169,6 +169,8 @@ pub struct View {
     pub pfl_playing: bool,
     /// Was gerade vorgehört wird (nur solange es läuft), für „Vorhören stoppen“ (#205).
     pub pfl_source: Option<crate::control::PflSource>,
+    /// Stelle des Vorhörens in Sekunden ab Dateianfang (#375: das vorgehörte Deck läuft sichtbar).
+    pub pfl_position: f64,
     /// Cue-Bearbeitungen lassen sich zurücknehmen / wiederholen.
     pub cues_undo: bool,
     pub cues_redo: bool,
@@ -529,6 +531,7 @@ fn run(
             pfl_available: c.has_pfl(),
             pfl_playing: c.pfl_playing(),
             pfl_source: c.pfl_current(),
+            pfl_position: c.pfl_position(),
             cues_undo: c.can_undo_cues(),
             cues_redo: c.can_redo_cues(),
             next_event: c.next_event(crate::control::wall_now()),

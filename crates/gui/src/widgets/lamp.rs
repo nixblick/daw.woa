@@ -25,8 +25,8 @@ pub enum LampState {
     Off,
     /// Auf Sendung: leuchtet mit Glut wie im Sende-Deck.
     On,
-    /// Auf Sendung im Pult-Modus (#301, die Sendung kommt vom Mischpult): 72 % Füllung,
-    /// kleiner Schein.
+    /// Auf Sendung im Pult-Modus (#301, die Sendung kommt vom Mischpult): volle Füllung
+    /// (#387), kleiner Schein.
     Dim,
 }
 
@@ -43,11 +43,9 @@ pub fn onair_state(live: bool, pult: bool) -> LampState {
 pub fn bar_colors(state: LampState) -> (Color32, Color32) {
     match state {
         LampState::Off => lamp_colors(false),
-        LampState::On => lamp_colors(true),
-        LampState::Dim => (
-            theme::mix(theme::on_air_fill(), lamp_colors(false).0, 0.72),
-            Color32::WHITE,
-        ),
+        // #387: Auch im Pult-Modus leuchtet die Lampe voll; 72 % Richtung Rotglas las sich
+        // wie „aus“. Der Pult-Modus zeigt sich nur am kleineren Schein.
+        LampState::On | LampState::Dim => lamp_colors(true),
     }
 }
 
@@ -147,16 +145,13 @@ mod tests {
         assert_eq!(onair_state(false, true), LampState::Off);
         assert_eq!(onair_state(true, false), LampState::On);
         assert_eq!(onair_state(true, true), LampState::Dim);
-        let lum = |c: Color32| u32::from(c.r()) + u32::from(c.g()) + u32::from(c.b());
-        let (off, _) = bar_colors(LampState::Off);
         let (dim, dim_ink) = bar_colors(LampState::Dim);
         let (on, on_ink) = bar_colors(LampState::On);
         assert_eq!(on, lamp_colors(true).0, "gleiche Glut wie im Sende-Deck");
-        assert!(
-            lum(off) < lum(dim) && lum(dim) < lum(on),
-            "gedimmt liegt dazwischen"
-        );
         assert_eq!(on_ink, Color32::WHITE);
         assert_eq!(dim_ink, Color32::WHITE);
+        // #387: Im Pult-Modus las sich die Lampe (72 % Richtung Rotglas) wie „aus“. Auf
+        // Sendung leuchtet sie voll, der Pult-Modus zeigt sich nur am kleineren Schein.
+        assert_eq!(dim, on, "auf Sendung im Pult-Modus leuchtet die Lampe");
     }
 }

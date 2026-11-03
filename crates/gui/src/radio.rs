@@ -1121,33 +1121,17 @@ impl RadioDesk {
                     (None, None)
                 }
             },
-            PflOutput::Geraet(id) => {
-                let cfg = woa_engine::device::OutputConfig {
-                    device_id: Some(id.clone()),
-                    buffer_frames: None,
-                };
-                let prate = woa_engine::device::output_sample_rate(&cfg).unwrap_or(48_000);
-                let (h, mut player) = woa_radio::pfl::channel_with_bus(prate, rate);
-                let render: woa_engine::device::PairsRender = Box::new(move |bufs, frames| {
-                    if let Some(b) = bufs.first_mut() {
-                        player.process(&mut b.l[..frames], &mut b.r[..frames]);
-                    }
-                });
-                match woa_engine::device::ManagedOutput::open("pfl", &cfg, 1, false, render, |_| {})
-                {
-                    Ok(st) => {
-                        tracing::info!(device = %id, rate = prate, "pfl on second device");
-                        controller.set_pfl(Some(h));
-                        (None, Some(st))
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, device = %id, "pfl output failed");
-                        pfl_note = Some(format!("Vorhören aus: Kopfhörer-Gerät geht nicht ({e})"));
-                        error.clone_from(&pfl_note);
-                        (None, None)
-                    }
+            PflOutput::Geraet(id) => match open_pfl_device(id, rate) {
+                Ok((h, st)) => {
+                    controller.set_pfl(Some(h));
+                    (None, Some(st))
                 }
-            }
+                Err(e) => {
+                    pfl_note = Some(e);
+                    error.clone_from(&pfl_note);
+                    (None, None)
+                }
+            },
         };
         // Pult-Eingang öffnen; geht er nicht, kommt die Sendung weiter aus WOA (mit Meldung).
         let mut pult_stream: Option<Stream> = None;
@@ -1468,6 +1452,30 @@ impl RadioDesk {
     pub(crate) fn with(&self, f: impl FnOnce(&mut Controller) + Send + 'static) {
         if let Some(s) = &self.station {
             s.with(f);
+        }
+    }
+
+    /// Tauscht das Kopfhörer-Gerät fürs Vorhören, ohne die Sendeausgänge anzufassen (#373/#374):
+    /// Ein eigenes Gerät ist ein eigener Strom und darf auch bei laufender Playlist wechseln.
+    /// Nur für `Aus` und `Geraet`; Kanal 3/4 hängt am Sendegerät (siehe `WoaApp`).
+    pub fn swap_pfl_device(&mut self, pfl: &PflOutput) {
+        tracing::info!(choice = ?pfl, "pfl: switching headphone device live");
+        self.with(|c| c.set_pfl(None));
+        // Alter Strom zu, bevor das neue Gerät aufgeht (dasselbe Gerät ginge sonst nicht auf).
+        self._pfl_output = crate::outputs::OutputWatch::default();
+        match pfl {
+            PflOutput::Geraet(id) => match open_pfl_device(id, self.rate) {
+                Ok((h, st)) => {
+                    self.with(move |c| c.set_pfl(Some(h)));
+                    self._pfl_output = crate::outputs::OutputWatch::spawn(vec![st]);
+                    self.pfl_note = None;
+                }
+                Err(e) => {
+                    self.error = Some(e.clone());
+                    self.pfl_note = Some(e);
+                }
+            },
+            _ => self.pfl_note = Some(PFL_OFF.into()),
         }
     }
 
@@ -4235,17 +4243,15 @@ impl RadioDesk {
                             r.rect.right_top() + egui::vec2(-28.0, 4.0),
                             egui::vec2(24.0, 24.0),
                         );
-                        let fr = ui
-                            .scope_builder(egui::UiBuilder::new().max_rect(at), |ui| {
-                                fade_button(
-                                    ui,
-                                    FadeShape::Icon(24.0),
-                                    &format!("Fade Cart {}", slot + 1),
-                                    true,
-                                    pr,
-                                )
-                            })
-                            .inner;
+                        // Eigener Kind-Bereich ohne Platz im Raster (#369/#370): `scope_builder`
+                        // belegte eine Grid-Zelle und schob den Nachbarn aus dem Bild.
+                        let fr = fade_button(
+                            &mut ui.new_child(egui::UiBuilder::new().max_rect(at)),
+                            FadeShape::Icon(24.0),
+                            &format!("Fade Cart {}", slot + 1),
+                            true,
+                            pr,
+                        );
                         if fr.clicked() {
                             self.fades.press(FadeKey::Cart(slot), now);
                             self.with(move |c| c.fade_cart(slot));
@@ -4261,8 +4267,9 @@ impl RadioDesk {
                             egui::vec2(24.0, 24.0),
                         );
                         let hint = self.pfl_hint();
-                        let pr = ui
-                            .scope_builder(egui::UiBuilder::new().max_rect(at), |ui| {
+                        let pr = {
+                            let ui = &mut ui.new_child(egui::UiBuilder::new().max_rect(at));
+                            {
                                 let k = icon_key(
                                     ui,
                                     theme::ic::HEADPHONES,
@@ -4281,8 +4288,8 @@ impl RadioDesk {
                                 } else {
                                     k.on_disabled_hover_text(hint)
                                 }
-                            })
-                            .inner;
+                            }
+                        };
                         if pr.clicked() {
                             self.with(move |c| {
                                 if let Err(e) = c.pfl_toggle(PflSource::Cart(slot)) {
@@ -4984,10 +4991,20 @@ impl RadioDesk {
 
     fn deck_rows(&mut self, ui: &mut egui::Ui, v: &View) {
         for k in 0..woa_radio::DECKS {
-            let d = v.decks.get(k).cloned().unwrap_or_default();
+            let mut d = v.decks.get(k).cloned().unwrap_or_default();
             let name = woa_radio::show::deck_name(k);
             let loaded = d.title.is_some();
-            let urgent = d.playing && d.remaining < 10.0;
+            // #375: Wird das Deck vorgehört, läuft es sichtbar (egal auf welchem Ausgang).
+            let pfl_pos = (v.pfl_source == Some(PflSource::Deck(k))).then_some(v.pfl_position);
+            let previewing = pfl_pos.is_some() && !d.playing;
+            // `runs` färbt Zeile, Buchstabe und Uhr; die Tasten folgen weiter `d.playing`.
+            let runs;
+            (runs, d.remaining) = deck_shown(&d, pfl_pos);
+            if previewing {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(100));
+            }
+            let urgent = runs && d.remaining < 10.0;
             // Unter 10 s blinkt die Restzeit rot (RadioDecks).
             let urgent_on = urgent && crate::widgets::blink_on(ui.input(|i| i.time), 2.0);
             if urgent {
@@ -5002,7 +5019,7 @@ impl RadioDesk {
                     .is_some_and(|p| self.deck_rects[k].contains(p));
             let fill = if drop_here {
                 theme::mix(theme::accent_2(), theme::surface(), 0.88)
-            } else if d.playing {
+            } else if runs {
                 theme::mix(theme::accent(), theme::surface(), 0.90)
             } else if loaded {
                 theme::surface()
@@ -5011,7 +5028,7 @@ impl RadioDesk {
             };
             let edge = if drop_here {
                 theme::accent_2()
-            } else if d.playing {
+            } else if runs {
                 theme::accent()
             } else if loaded {
                 theme::border_strong()
@@ -5039,7 +5056,7 @@ impl RadioDesk {
                         egui::Align2::CENTER_CENTER,
                         name.to_string(),
                         theme::label_font(30.0),
-                        if d.playing {
+                        if runs {
                             theme::lcd_ink()
                         } else {
                             theme::mix(theme::lcd_text(), theme::lcd_bg(), 0.55)
@@ -5226,7 +5243,13 @@ impl RadioDesk {
                                 let (t, sub) = if drop_here {
                                     ("Hier ablegen".to_string(), String::new())
                                 } else if let Some(t) = d.title.clone() {
-                                    let state = if d.playing { "läuft" } else { "Deck geladen" };
+                                    let state = if previewing {
+                                        "Vorhören im Kopfhörer"
+                                    } else if d.playing {
+                                        "läuft"
+                                    } else {
+                                        "Deck geladen"
+                                    };
                                     // Rampzeit (#299): wie lange das Intro bis zum Gesang läuft.
                                     let sub = match &d.vocal {
                                         Some(m) => format!(
@@ -5400,6 +5423,99 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// #369/#370: Ein laufendes Cart (Fade-Symbol) und das Vorhören-Symbol beim Hover
+    /// dürfen im Raster keine eigene Zelle belegen; sonst rutscht der Nachbar aus dem Bild.
+    #[test]
+    fn playing_or_hovered_cart_keeps_the_grid() {
+        for case in ["playing", "hover"] {
+            let dir = tempfile::tempdir().unwrap();
+            let (w, h) = (1920.0, 1040.0);
+            let mut harness = egui_kittest::Harness::builder()
+                .with_size(egui::vec2(w, h))
+                .build_ui_state(
+                    |ui, d: &mut super::RadioDesk| {
+                        let ctx = ui.ctx().clone();
+                        let fresh = ctx.data_mut(|m| {
+                            let id = egui::Id::new("test_fonts");
+                            let fresh = m.get_temp::<bool>(id).is_none();
+                            m.insert_temp(id, true);
+                            fresh
+                        });
+                        if fresh {
+                            crate::theme::install_fonts(&ctx);
+                            crate::theme::apply(
+                                &ctx,
+                                crate::theme::Theme::Dunkel,
+                                crate::theme::Mode::Radio,
+                            );
+                            return;
+                        }
+                        egui::CentralPanel::default()
+                            .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(14, 12)))
+                            .show(ui, |ui| d.ui(ui));
+                    },
+                    {
+                        let mut d = super::RadioDesk::headless(dir.path());
+                        d.view.cart_sets = (1..=5).map(|i| format!("Satz {i}")).collect();
+                        d.view.carts = (1..=16).map(|i| Some(format!("Jingle {i}"))).collect();
+                        d.view.cart_remaining = vec![30.0; 16];
+                        if case == "playing" {
+                            d.view.carts_playing = 1 << 2;
+                        }
+                        d
+                    },
+                );
+            harness.run_steps(3);
+            if case == "hover" {
+                let at = harness.state().cart_rects[2].center();
+                harness
+                    .input_mut()
+                    .events
+                    .push(egui::Event::PointerMoved(at));
+            }
+            harness.run_steps(3);
+            let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h));
+            let rects = &harness.state().cart_rects;
+            assert_eq!(rects.len(), 16, "{case}");
+            for row in 0..4 {
+                let y = rects[row * 4].min.y;
+                for col in 1..4 {
+                    let r = rects[row * 4 + col];
+                    assert!(
+                        (r.min.y - y).abs() < 0.5 && r.min.x > rects[row * 4 + col - 1].max.x,
+                        "{case}: Cart {} bei {r:?} nicht in Reihe {}",
+                        row * 4 + col + 1,
+                        row + 1
+                    );
+                }
+            }
+            for (i, r) in rects.iter().enumerate() {
+                assert!(window.contains_rect(*r), "{case}: Cart {} außerhalb", i + 1);
+            }
+        }
+    }
+
+    /// #375: Hört man ein Deck vor, läuft es sichtbar (Restzeit zählt ab der Vorhör-Stelle).
+    #[test]
+    fn previewed_deck_runs_visibly() {
+        let d = woa_radio::station::DeckView {
+            title: Some("Intro".into()),
+            playing: false,
+            remaining: 13.0,
+            length: 13.0,
+            ..Default::default()
+        };
+        assert_eq!(super::deck_shown(&d, None), (false, 13.0));
+        assert_eq!(super::deck_shown(&d, Some(3.0)), (true, 10.0));
+        assert_eq!(super::deck_shown(&d, Some(99.0)), (true, 0.0));
+        let live = woa_radio::station::DeckView {
+            playing: true,
+            remaining: 5.0,
+            ..d
+        };
+        assert_eq!(super::deck_shown(&live, Some(1.0)), (true, 5.0));
     }
 
     #[test]
@@ -5964,6 +6080,43 @@ mod link_line_tests {
 /// wird, damit man ihn dort auch wieder stoppen kann.
 fn row_pfl_shown(tools: bool, previewing: bool) -> bool {
     tools || previewing
+}
+
+/// Öffnet das Kopfhörer-Gerät `id` als eigenen Strom fürs Vorhören (Mixer-Takt `rate`).
+fn open_pfl_device(
+    id: &str,
+    rate: u32,
+) -> Result<(woa_radio::pfl::PflHandle, woa_engine::device::ManagedOutput), String> {
+    let cfg = woa_engine::device::OutputConfig {
+        device_id: Some(id.to_string()),
+        buffer_frames: None,
+    };
+    let prate = woa_engine::device::output_sample_rate(&cfg).unwrap_or(48_000);
+    let (h, mut player) = woa_radio::pfl::channel_with_bus(prate, rate);
+    let render: woa_engine::device::PairsRender = Box::new(move |bufs, frames| {
+        if let Some(b) = bufs.first_mut() {
+            player.process(&mut b.l[..frames], &mut b.r[..frames]);
+        }
+    });
+    match woa_engine::device::ManagedOutput::open("pfl", &cfg, 1, false, render, |_| {}) {
+        Ok(st) => {
+            tracing::info!(device = %id, rate = prate, "pfl on second device");
+            Ok((h, st))
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, device = %id, "pfl output failed");
+            Err(format!("Vorhören aus: Kopfhörer-Gerät geht nicht ({e})"))
+        }
+    }
+}
+
+/// Läuft ein Deck sichtbar, und wie viel Restzeit zeigt es? Spielt es nicht, wird aber
+/// vorgehört (`pfl_pos`: Stelle in der Datei), zählt die Restzeit ab dort (#375).
+pub(crate) fn deck_shown(d: &woa_radio::station::DeckView, pfl_pos: Option<f64>) -> (bool, f64) {
+    match pfl_pos {
+        Some(pos) if !d.playing => (true, (d.cues.start() + d.length - pos).clamp(0.0, d.length)),
+        _ => (d.playing, d.remaining),
+    }
 }
 
 pub fn pfl_hint_for(note: Option<&str>) -> String {

@@ -2,6 +2,60 @@
   "stand": "2026-11-03",
   "punkte": [
     {
+      "id": "cart-wall-laufend-raster",
+      "ansicht": "Radio",
+      "titel": "Cart-Wall bleibt beim Abspielen im Raster",
+      "tun": "Cart 3 starten, dann Cart 6, auch im maximierten Fenster. Mit der Maus über belegte Carts fahren.",
+      "erwartet": "Alle 16 Carts bleiben an ihrem Platz in vier Reihen zu je vier; Cart 4 und 8 bleiben sichtbar, keine Lücke.",
+      "version": "0.41.8",
+      "ticket": 369
+    },
+    {
+      "id": "onair-pult-modus",
+      "ansicht": "Radio",
+      "titel": "ON AIR leuchtet auch im Pult-Modus",
+      "tun": "Pult-Modus an (Audio-Geräte › Pult), Auf Sendung gehen.",
+      "erwartet": "ON AIR oben rechts leuchtet voll rot wie die Lampe im Sende-Deck.",
+      "version": "0.41.8",
+      "ticket": 387
+    },
+    {
+      "id": "vorhoeren-geraet-sofort",
+      "ansicht": "Radio",
+      "titel": "Kopfhörer-Gerät wechseln, während ein Song läuft",
+      "tun": "Playlist läuft. In Audio-Geräte bei Vorhören ein anderes Kopfhörer-Gerät wählen, Übernehmen, dann bei Deck A auf den Kopfhörer klicken.",
+      "erwartet": "Das Deck ist sofort im neuen Kopfhörer zu hören; die Playlist läuft ohne Unterbrechung weiter.",
+      "version": "0.41.8",
+      "ticket": 374
+    },
+    {
+      "id": "vorhoeren-deck-sichtbar",
+      "ansicht": "Radio",
+      "titel": "Vorgehörtes Deck läuft sichtbar",
+      "tun": "Bei Deck A auf den Kopfhörer klicken.",
+      "erwartet": "Deck A leuchtet wie ein laufendes Deck, die Restzeit zählt herunter, darunter „Vorhören im Kopfhörer“. Zweiter Klick stoppt.",
+      "version": "0.41.8",
+      "ticket": 375
+    },
+    {
+      "id": "party-bibliothek-fenster",
+      "ansicht": "Party Einfach",
+      "titel": "Ansicht › Bibliothek in der Party",
+      "tun": "In der Party Menü Ansicht › Bibliothek anklicken.",
+      "erwartet": "Das Fenster Bibliothek geht auf.",
+      "version": "0.41.8",
+      "ticket": 386
+    },
+    {
+      "id": "party-feedback-tasten",
+      "ansicht": "Party Einfach",
+      "titel": "Feedback-Formular nimmt die Tasten",
+      "tun": "In der Party in die Bibliothekssuche klicken, dann Feedback öffnen und Leertaste oder Buchstaben tippen.",
+      "erwartet": "Die Suche ändert sich nicht und die Party startet oder stoppt nicht; getippt wird nur im Formular.",
+      "version": "0.41.8",
+      "ticket": 386
+    },
+    {
       "id": "klang-neue-midi-spur",
       "ansicht": "Produzent",
       "titel": "Neue MIDI-Spur spielt Flügel",
