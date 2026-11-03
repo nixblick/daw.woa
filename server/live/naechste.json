@@ -1,0 +1,4 @@
+{
+  "_hinweis": "Nächste Sendungen für die Hörer-Seite. start als ISO-Zeit mit Zone, dauer_min in Minuten. Angezeigt wird die früheste, die noch nicht vorbei ist; leer = Kasten ausgeblendet.",
+  "sendungen": []
+}

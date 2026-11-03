@@ -31,6 +31,19 @@ nur lesend eingehängt (`HOERER_TITEL_QUELL_KW`, `HOERER_TITEL_ADMIN_KW`); fehlt
 der Endpunkt 503. Antworten: 204 gesetzt, 400 Titel fehlt, 401 Kennwort falsch, 413 zu groß,
 502 Shoutcast lehnt ab. nginx bremst je IP (30/min).
 
+## Hörer-Seite (`live/`)
+
+Statische Seite für Hörer im Browser: `index.html`, `live.css`, `live.js`, selbst gehostete
+Schriften (`fonts/`, SIL OFL) und `naechste.json` (nächste Sendungen, ISO-Zeit mit Zone; leer =
+Kasten aus). Sie holt alle 15 s `GET /api/jetzt` vom Sammler und spielt `/stream` erst auf Klick.
+Der Reverse-Proxy liefert sie auf dem Stream-Namen aus, `/api/jetzt` und `/api/hoerer` gehen an
+den Sammler. Lokal ansehen: Ordner mit einem statischen Server ausliefern und eine Beispiel-Datei
+unter `api/jetzt` danebenlegen.
+
+`GET /api/jetzt` liefert `status` (`on_air` Quelle verbunden, `notfall` Server läuft ohne
+Quelle, `aus` keine frische Probe), `titel`, `hoerer`, `spitze`, `sendung_seit` und `zuletzt`
+(`[{t, titel}]`). 10 s Zwischenspeicher, keine IPs.
+
 ### Geheimnisse
 
 Nur einer: der fine-grained Token (`nixblick/daw.woa`, Issues: Read and write). Er entsteht

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.41.15 — 2026-11-03
+
+- **Hörer-Seite `server/live/`:** eine statische Seite für Hörer im Browser (ohne Framework, Build, Tracking, Cookies und externe Quellen; Schriften selbst gehostet, SIL OFL). Großer Knopf „Hören“ (Start per Klick, Browser blocken Autoplay mit Ton; `preload="none"`, damit ein Seitenaufruf keinen Hörer zählt; Stopp schließt die Verbindung), „Läuft gerade“, Hörer jetzt und Spitze, zuletzt gespielte Titel, Status ON AIR / Notfall-Schleife / Sendepause und optional die nächste Sendung aus `naechste.json`. Farben aus den Themen `radio` und `radio-hell` (folgt dem System), mobil tauglich, Tastatur-Fokus sichtbar, Statuswechsel per `aria-live`. Titel kommen nur per `textContent` ins Dokument.
+- **Sammler: `GET /api/jetzt`:** Titel aus `/currentsong`, die letzten zehn aus `/played?type=json` (im Docker-Netz, mit Browser-Kennung, Entities aufgelöst, Steuerzeichen raus, 200 Zeichen), Hörer und Spitze der laufenden Sendung aus SQLite. 10 s Zwischenspeicher (`Cache-Control: public, max-age=10`), keine IPs. Ist Shoutcast gesperrt oder weg, bleibt die Antwort 200 mit leeren Titeln. Tests: `JetztTests` in `server/hoerer/test_hoerer.py` (Attrappe, kein echter Server).
+
 ## 0.41.13 — 2026-11-03
 
 - **Titel für Hörer auch bei entferntem Shoutcast:** Bisher sendete WOA gegen den eigenen Server keinen Titel, weil `admin.cgi?mode=updinfo` den Admin-Port (von außen zu) und das Kennwort im Klartext in der URL braucht. Jetzt geht der Titel per HTTPS an den Sendeserver (`POST https://<host>/api/titel`, abweichend per `title_url` in der Stream-Konfiguration; `http://` nur auf Loopback, keine Weiterleitungen). Die App weist sich mit dem Quellkennwort aus dem Schlüsselbund aus (`Authorization: Bearer`), ein neues Geheimnis gibt es nicht. Lokal bleibt alles wie bisher. Bei einer IP als Host ohne `title_url` bleibt der Titel aus (kein Zertifikat). Tests: `title_url_only_for_remote_shoutcast_names`, `title_body_is_short_and_one_line`, `remote_title_goes_to_server_endpoint`.

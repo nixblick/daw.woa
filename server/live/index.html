@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WOA – Wir on Air · Live</title>
+<meta name="description" content="Wir on Air live hören: läuft gerade, Hörer, zuletzt gespielt.">
+<meta name="color-scheme" content="dark light">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="live.css">
+<script src="live.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#inhalt">Zum Inhalt</a>
+<header class="kopf">
+  <img src="woa-mark.svg" alt="" width="40" height="40">
+  <div>
+    <p class="marke">WOA – Wir on Air</p>
+    <p class="unter">raDio rEvoLutIoN</p>
+  </div>
+  <p id="status" class="status status-aus" role="status" aria-live="polite">
+    <span class="lampe" aria-hidden="true"></span><span id="status-text">Verbinde …</span>
+  </p>
+</header>
+
+<main id="inhalt">
+  <section class="pult" aria-labelledby="jetzt-label">
+    <h1 id="jetzt-label" class="label">Läuft gerade</h1>
+    <div class="lcd">
+      <p id="titel" class="titel">–</p>
+      <p id="seit" class="seit"></p>
+    </div>
+
+    <div class="play-zeile">
+      <button id="play" class="play" type="button" aria-pressed="false">
+        <svg class="ic ic-play" viewBox="0 0 256 256" aria-hidden="true"><path d="M240 128a15.74 15.74 0 0 1-7.6 13.51L88.32 229.65a16 16 0 0 1-16.2.3A15.86 15.86 0 0 1 64 216.13V39.87a15.86 15.86 0 0 1 8.12-13.82 16 16 0 0 1 16.2.3l144.08 88.14A15.74 15.74 0 0 1 240 128Z"/></svg>
+        <svg class="ic ic-stop" viewBox="0 0 256 256" aria-hidden="true"><path d="M216 56v144a16 16 0 0 1-16 16H56a16 16 0 0 1-16-16V56a16 16 0 0 1 16-16h144a16 16 0 0 1 16 16Z"/></svg>
+        <span id="play-text">Hören</span>
+      </button>
+      <label class="laut">
+        <span class="label">Lautstärke</span>
+        <input id="laut" type="range" min="0" max="1" step="0.05" value="1">
+      </label>
+    </div>
+    <p id="hinweis" class="hinweis" aria-live="polite"></p>
+    <audio id="audio" preload="none"></audio>
+
+    <dl class="zahlen">
+      <div><dt class="label">Hörer jetzt</dt><dd id="hoerer">–</dd></div>
+      <div><dt class="label">Spitze</dt><dd id="spitze">–</dd></div>
+    </dl>
+  </section>
+
+  <section id="naechste-box" class="karte" aria-labelledby="naechste-label" hidden>
+    <h2 id="naechste-label" class="label">Nächste Sendung</h2>
+    <p id="naechste" class="naechste"></p>
+  </section>
+
+  <section class="karte" aria-labelledby="zuletzt-label">
+    <h2 id="zuletzt-label" class="label">Zuletzt gespielt</h2>
+    <ol id="zuletzt" class="zuletzt"></ol>
+    <p id="zuletzt-leer" class="leer">Noch keine Titel.</p>
+  </section>
+</main>
+
+<footer class="fuss">
+  <p>Kein Tracking, keine Cookies. Stream direkt: <a id="direkt" href="/stream">/stream</a> (für VLC, Winamp und Co.)</p>
+  <p>Gesendet mit <a href="https://github.com/nixblick/daw.woa">WOA</a>, freie Software (GPLv3).</p>
+</footer>
+<noscript><p class="fuss">Ohne JavaScript: Stream direkt öffnen unter <a href="/stream">/stream</a>.</p></noscript>
+</body>
+</html>
