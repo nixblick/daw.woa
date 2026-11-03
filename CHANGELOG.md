@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.41.9 — 2026-11-03
+
+Fehlerpaket aus Andrés Tickets vom 03.11. (0.41.8 ist das Radio-Paket daneben).
+
+- **Einstellungen gehen nicht mehr verloren (#380):** Beim Schließen und beim Neuaufbau des Pults wird radio.json sofort geschrieben (vorher gingen Änderungen der letzten 0,7 s verloren). Eine nur berührte Datei mit unserem eigenen Inhalt gilt nicht mehr als „von außen geändert“, das Verwerfen lokaler Änderungen entfällt dann. config.json wird atomar geschrieben; eine kaputte Datei wird als `config.json.kaputt` aufgehoben statt beim nächsten Speichern alles auf Vorgabe zu setzen. Speicherfehler bleiben sichtbar. Tests: `radio::save_380`, `config_save_is_atomic_and_broken_file_is_kept`.
+- **Einstellungen-Fenster breiter und gemerkt (#379), Zeile Klangbank je Spur lesbar (#378):** Start 1100×760, mindestens 720 breit, gezogene Größe in `settings_size`. Beschreibungen brechen um und laufen nicht mehr unter die Knöpfe. Test: `rows_never_run_under_their_buttons`.
+- **ElevenLabs einrichten (#377):** „Einrichten“ rollt zum ElevenLabs-Block, der nennt die nötigen Rechte (Text to Speech, Sound Effects, Music Generation = Access, Voices = Read, User = Access nur fürs Guthaben, sonst No Access) und empfiehlt Credit-Limit und „Auto-disable if leaked“. Fehlt ein Recht, sagt die Meldung „Schlüssel gültig, aber Recht X fehlt“ statt „abgelehnt (HTTP 401)“; fehlt nur „User“, gilt der Schlüssel ohne Guthabenanzeige. Eingefügte Leerzeichen und Umbrüche werden entfernt. Karten: aktiv/eingerichtet grün, Fehler orange. Tests (Attrappe): `missing_permissions_are_named_and_user_read_is_optional`, `pasted_key_is_cleaned_and_rights_are_listed`.
+- **Einrichten übernimmt den Anbieter (#376):** Ollama, OpenAI usw. sowie Claude Desktop/Code sind beim Öffnen vorgewählt (nur im Entwurf). Test: `setup_opens_with_the_clicked_provider`.
+- **MIDI-Learn an Deck-Tasten (#371):** Der Text ist richtig (Deck-Tasten sind lernbar, 0.36.1); ohne gewählten Controller sagt die Leiste jetzt, dass erst ein Gerät zu wählen ist. Test: `learn_text_says_when_no_controller_is_chosen`.
 ## 0.41.8 — 2026-11-03
 
 Fehlerbehebung aus Andrés Rückmeldungen vom 03.11. (Fehlerphase).

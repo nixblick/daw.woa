@@ -2209,14 +2209,29 @@ impl WoaApp {
 
     /// Fenster schließen (X, Alt+F4): bei ungespeichertem Projekt erst fragen.
     fn close_guard(&mut self, ctx: &egui::Context) {
-        if ctx.input(|i| i.viewport().close_requested())
-            && !self.exit.request(
-                crate::exit::ExitReason::Quit,
-                self.state.session().is_dirty(),
-            )
-        {
+        if !ctx.input(|i| i.viewport().close_requested()) {
+            return;
+        }
+        if self.exit.request(
+            crate::exit::ExitReason::Quit,
+            self.state.session().is_dirty(),
+        ) {
+            // Einstellungen sichern, bevor das Fenster geht (#380): Radio-Einstellungen aus
+            // radio.json und config.json, nicht erst beim nächsten Takt.
+            self.flush_settings(ctx);
+        } else {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         }
+    }
+
+    /// Schreibt alle Einstellungen sofort (#380): Sendepult (radio.json), Fenstergröße der
+    /// Einstellungen und config.json.
+    fn flush_settings(&mut self, ctx: &egui::Context) {
+        if let Some(r) = self.radio.as_mut() {
+            r.flush();
+        }
+        self.remember_settings_size(ctx);
+        self.save_config();
     }
 
     fn new_project(&mut self) {
@@ -6181,6 +6196,15 @@ impl WoaApp {
         }
     }
 
+    /// Merkt die gezogene Größe des Fensters Einstellungen in `config.json` (#379), erst wenn
+    /// die Maus losgelassen ist (nicht bei jedem Bild des Ziehens).
+    fn remember_settings_size(&mut self, ctx: &egui::Context) {
+        if self.settings.size != self.config.settings_size && !ctx.input(|i| i.pointer.any_down()) {
+            self.config.settings_size = self.settings.size;
+            self.save_config();
+        }
+    }
+
     /// Sets where setting changes are saved (`config.json`).
     pub fn set_config_path(&mut self, path: PathBuf) {
         self.config_path = Some(path);
@@ -6362,8 +6386,12 @@ impl WoaApp {
             }
             S::Provider(i) => {
                 if setup(ui) {
-                    self.ki_ui
-                        .open_at(&self.config.ki, &self.data_dir, KiTab::Setup);
+                    // Den angeklickten Anbieter gleich vorwählen (#376).
+                    self.ki_ui.open_for(
+                        &self.config.ki,
+                        &self.data_dir,
+                        woa_assistant::Pick::Preset(usize::from(i)),
+                    );
                 }
                 let (t, tone) = provider_state(&self.config.ki, usize::from(i));
                 StateChip::new(t, tone).show(ui);
@@ -6376,34 +6404,51 @@ impl WoaApp {
             }
             S::ElevenLabs | S::Freesound => {
                 if setup(ui) {
-                    self.ki_ui
-                        .open_at(&self.config.ki, &self.data_dir, KiTab::Setup);
+                    if id == S::ElevenLabs {
+                        self.ki_ui.open_elevenlabs(&self.config.ki, &self.data_dir);
+                    } else {
+                        self.ki_ui
+                            .open_at(&self.config.ki, &self.data_dir, KiTab::Setup);
+                    }
                 }
                 let account = if id == S::ElevenLabs {
                     woa_agent::elevenlabs::KEY_ACCOUNT
                 } else {
                     woa_agent::freesound::KEY_ACCOUNT
                 };
-                let (t, tone) = match self.service_keys.get(&self.data_dir, account) {
-                    None => {
+                // Grün = aktiv, Orange = Fehler bei der letzten Prüfung (#377).
+                use crate::elevenlabs_ui::KeyState;
+                let checked = (id == S::ElevenLabs).then(|| self.ki_ui.elevenlabs_state());
+                let (t, tone) = match (self.service_keys.get(&self.data_dir, account), checked) {
+                    (_, Some(KeyState::Invalid)) => ("Fehler", ChipTone::Warn),
+                    (None, _) => {
                         ui.ctx()
                             .request_repaint_after(std::time::Duration::from_millis(150));
                         ("prüfe", ChipTone::Busy)
                     }
-                    Some(Some(_)) => ("Schlüssel gespeichert", ChipTone::Ok),
-                    Some(None) => ("nicht eingerichtet", ChipTone::Neutral),
+                    (Some(Some(_)), Some(KeyState::Connected)) => ("verbunden", ChipTone::Ok),
+                    (Some(Some(_)), _) => ("Schlüssel gespeichert", ChipTone::Ok),
+                    (Some(None), _) => ("nicht eingerichtet", ChipTone::Neutral),
                 };
                 StateChip::new(t, tone).show(ui);
             }
             S::McpLive => {
                 if setup(ui) {
-                    self.ki_ui
-                        .open_at(&self.config.ki, &self.data_dir, KiTab::Setup);
+                    // Claude Desktop/Code vorwählen (#376), den schon gewählten Client behalten.
+                    let client = match self.config.ki.pick() {
+                        Some(woa_assistant::Pick::Mcp(c)) => c,
+                        _ => woa_assistant::McpClient::ALL[0],
+                    };
+                    self.ki_ui.open_for(
+                        &self.config.ki,
+                        &self.data_dir,
+                        woa_assistant::Pick::Mcp(client),
+                    );
                 }
                 use crate::mcp_live::LiveStatus;
                 let (t, tone) = match self.mcp_live.status() {
                     LiveStatus::Connected => ("verbunden", ChipTone::Ok),
-                    LiveStatus::Ready => ("bereit", ChipTone::Neutral),
+                    LiveStatus::Ready => ("bereit", ChipTone::Ok),
                     LiveStatus::Off => ("nicht verbunden", ChipTone::Neutral),
                 };
                 StateChip::new(t, tone).show(ui);
@@ -6413,7 +6458,9 @@ impl WoaApp {
                     self.ki_ui
                         .open_at(&self.config.ki, &self.data_dir, KiTab::Server);
                 }
-                let (t, tone) = if self.ki_ui.http_running() {
+                let (t, tone) = if self.ki_ui.http_error().is_some() {
+                    ("Fehler", ChipTone::Warn)
+                } else if self.ki_ui.http_running() {
                     ("läuft", ChipTone::Ok)
                 } else {
                     ("aus", ChipTone::Neutral)
@@ -7184,8 +7231,12 @@ impl eframe::App for WoaApp {
         self.settings_was_open = self.settings.open;
         self.settings.dev = self.config.entwickler;
         let mut settings = std::mem::take(&mut self.settings);
+        if settings.size.is_none() {
+            settings.size = self.config.settings_size;
+        }
         settings.show(&ctx, |ui, id| self.setting_row(ui, id));
         self.settings = settings;
+        self.remember_settings_size(&ctx);
         if let Some(id) = self.settings_goto.take() {
             self.settings.goto(id, self.now);
         }
@@ -9515,7 +9566,8 @@ pub(crate) fn provider_state(
         .iter()
         .any(|p| p.kind == kind && p.base_url == url)
     {
-        ("eingerichtet", ChipTone::Neutral)
+        // Eingerichtet heißt nutzbar: grün wie „gewählt“ (#377).
+        ("eingerichtet", ChipTone::Ok)
     } else {
         ("nicht eingerichtet", ChipTone::Neutral)
     }

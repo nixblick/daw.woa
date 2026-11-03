@@ -95,6 +95,9 @@ pub struct GuiConfig {
     /// und Pegel bleiben unberührt. Vorgabe: 1 (voll).
     #[serde(skip_serializing_if = "is_full_volume")]
     pub monitor_volume: f32,
+    /// Größe des Fensters Einstellungen, wie der Nutzer es gezogen hat (#379).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settings_size: Option<[f32; 2]>,
 }
 
 fn is_full_volume(v: &f32) -> bool {
@@ -184,6 +187,7 @@ impl Default for GuiConfig {
             entwickler: false,
             party_panels: crate::party::PartyPanels::default(),
             monitor_volume: 1.0,
+            settings_size: None,
         }
     }
 }
@@ -217,7 +221,22 @@ impl GuiConfig {
             std::fs::create_dir_all(dir)?;
         }
         let text = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
-        std::fs::write(path, text)
+        // Atomar (#380): erst eine Nachbardatei, dann umbenennen. Ein Abbruch mitten im
+        // Schreiben (Ausschalten, Absturz beim Beenden) ließ sonst eine halbe config.json
+        // zurück, die beim nächsten Start als kaputt galt und alle Einstellungen verwarf.
+        let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
+        let r = (|| {
+            use std::io::Write;
+            let mut f = std::fs::File::create(&tmp)?;
+            f.write_all(text.as_bytes())?;
+            f.sync_all()?;
+            drop(f);
+            std::fs::rename(&tmp, path)
+        })();
+        if r.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        r
     }
 
     /// Reads `path`; a missing or broken file yields defaults (logged).
@@ -230,10 +249,17 @@ impl GuiConfig {
                 return Self::default();
             }
         };
-        let mut cfg: Self = serde_json::from_str(&text).unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "config invalid, using defaults");
-            Self::default()
-        });
+        let mut cfg: Self = match serde_json::from_str(&text) {
+            Ok(c) => c,
+            Err(e) => {
+                // Nicht still überschreiben (#380): die kaputte Datei bleibt als Kopie liegen,
+                // sonst schreibt der nächste Speichervorgang Vorgaben über alle Einstellungen.
+                let keep = path.with_extension("json.kaputt");
+                let _ = std::fs::copy(path, &keep);
+                tracing::warn!(error = %e, kept = %keep.display(), "config invalid, using defaults");
+                Self::default()
+            }
+        };
         cfg.stream = cfg.stream.migrate();
         cfg
     }
@@ -657,6 +683,25 @@ pub fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, png::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #380: Speichern ist atomar, eine kaputte config.json bleibt als Kopie erhalten.
+    #[test]
+    fn config_save_is_atomic_and_broken_file_is_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("config.json");
+        let c = GuiConfig {
+            settings_size: Some([1200.0, 800.0]),
+            ..GuiConfig::default()
+        };
+        c.save(&p).unwrap();
+        assert_eq!(GuiConfig::load(&p).settings_size, Some([1200.0, 800.0]));
+        let left: Vec<_> = std::fs::read_dir(tmp.path()).unwrap().collect();
+        assert_eq!(left.len(), 1, "keine Temp-Datei bleibt liegen");
+        std::fs::write(&p, "{\"theme\": ").unwrap();
+        let d = GuiConfig::load(&p);
+        assert_eq!(d.settings_size, None);
+        assert!(tmp.path().join("config.json.kaputt").exists());
+    }
 
     #[test]
     fn output_map_is_saved_only_when_set_and_old_configs_load() {

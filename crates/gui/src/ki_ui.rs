@@ -64,6 +64,36 @@ impl KiUi {
         self.tab = tab;
     }
 
+    /// Öffnet die Seite Einrichten mit `pick` schon im Feld „Anbieter“ (#376): wer in den
+    /// Einstellungen bei Ollama auf „Einrichten“ klickt, muss Ollama nicht noch einmal wählen.
+    /// Nur im Entwurf; gespeichert wird erst mit „Speichern“.
+    pub fn open_for(&mut self, saved: &KiConfig, data_dir: &Path, pick: woa_assistant::Pick) {
+        self.open_at(saved, data_dir, Tab::Setup);
+        self.draft.choose(pick);
+    }
+
+    /// Öffnet Einrichten und rollt zum ElevenLabs-Schlüssel (#377).
+    pub fn open_elevenlabs(&mut self, saved: &KiConfig, data_dir: &Path) {
+        self.open_at(saved, data_dir, Tab::Setup);
+        self.setup.focus_elevenlabs = true;
+    }
+
+    /// Fehler des HTTP-Hintergrund-Servers, falls er nicht starten konnte.
+    pub fn http_error(&self) -> Option<&str> {
+        self.proc_error.as_deref()
+    }
+
+    /// Zustand des ElevenLabs-Schlüssels, wie ihn die Seite Einrichten zuletzt gesehen hat.
+    pub fn elevenlabs_state(&self) -> crate::elevenlabs_ui::KeyState {
+        self.setup.elevenlabs_state()
+    }
+
+    /// Entwurf im Fenster (für Tests).
+    #[cfg(test)]
+    pub(crate) fn draft(&self) -> &KiConfig {
+        &self.draft
+    }
+
     /// Läuft der HTTP-Hintergrund-Server?
     pub fn http_running(&self) -> bool {
         self.proc.is_some()
@@ -559,5 +589,34 @@ mod tests {
         ui.apply(&cfg, tmp.path());
         assert!(ui.running().is_none());
         assert!(ui.proc_error.is_some());
+    }
+}
+
+#[cfg(test)]
+mod tests_376 {
+    use super::*;
+    use woa_assistant::{McpClient, Pick, ProviderConfig};
+
+    /// #376: „Einrichten“ an einer Anbieter-Karte öffnet mit genau diesem Anbieter, für alle.
+    #[test]
+    fn setup_opens_with_the_clicked_provider() {
+        let dir = tempfile::tempdir().unwrap();
+        let saved = KiConfig::default();
+        for i in 0..ProviderConfig::presets().len() {
+            let mut k = KiUi::default();
+            k.open_for(&saved, dir.path(), Pick::Preset(i));
+            assert_eq!(k.draft().pick(), Some(Pick::Preset(i)), "Anbieter {i}");
+            assert_eq!(k.tab, Tab::Setup);
+            assert_eq!(
+                saved,
+                KiConfig::default(),
+                "gespeichert wird erst mit Speichern"
+            );
+        }
+        for c in McpClient::ALL {
+            let mut k = KiUi::default();
+            k.open_for(&saved, dir.path(), Pick::Mcp(c));
+            assert_eq!(k.draft().pick(), Some(Pick::Mcp(c)));
+        }
     }
 }

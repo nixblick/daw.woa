@@ -92,6 +92,8 @@ pub struct KiSetup {
     fs_input: String,
     /// ElevenLabs-Zugang (Sprache, Effekte, Musik).
     elevenlabs: crate::elevenlabs_ui::Zugang,
+    /// Beim nächsten Bild zum ElevenLabs-Block rollen (#377: er lag unter dem Fensterrand).
+    pub focus_elevenlabs: bool,
     keys: KeyStatus,
     models: HashMap<String, Vec<String>>,
     busy: bool,
@@ -202,6 +204,7 @@ impl KiSetup {
             key_input: String::new(),
             fs_input: String::new(),
             elevenlabs: crate::elevenlabs_ui::Zugang::default(),
+            focus_elevenlabs: false,
             keys: KeyStatus::with_lookup(lookup),
             models: HashMap::new(),
             busy: false,
@@ -271,6 +274,11 @@ impl KiSetup {
             let r = cfg.provider(&dir).models();
             let _ = tx.send(Msg::Models(cfg.id, r));
         });
+    }
+
+    /// Zustand des ElevenLabs-Schlüssels (für die Karte in den Einstellungen, #377).
+    pub fn elevenlabs_state(&self) -> crate::elevenlabs_ui::KeyState {
+        self.elevenlabs.state()
     }
 
     /// Zeichnet die Seite. `true`: die Wahl hat sich geändert und soll gespeichert werden.
@@ -363,7 +371,10 @@ impl KiSetup {
         ui.add_space(6.0);
         self.freesound_row(ui, data_dir);
         ui.add_space(4.0);
-        self.elevenlabs.show(ui, data_dir);
+        let r = ui.scope(|ui| self.elevenlabs.show(ui, data_dir)).response;
+        if std::mem::take(&mut self.focus_elevenlabs) {
+            r.scroll_to_me(Some(egui::Align::TOP));
+        }
         if let Some(n) = &self.note {
             ui.label(egui::RichText::new(n).small().color(theme::text_dim()));
         }

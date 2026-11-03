@@ -62,6 +62,9 @@ pub enum Fehler {
     KeinSchluessel,
     /// HTTP 401: Schlüssel falsch, abgelaufen oder ohne Recht.
     SchluesselAbgelehnt,
+    /// HTTP 401/403 mit `missing_permissions`: der Schlüssel gilt, ihm fehlt aber ein Recht
+    /// (#377). Feld: Name des Rechts bei ElevenLabs, etwa `user_read`.
+    RechtFehlt(String),
     /// HTTP 402: Guthaben (Credits) aufgebraucht.
     Kontingent,
     /// HTTP 429: zu viele Anfragen oder zu viele gleichzeitig.
@@ -88,6 +91,12 @@ impl std::fmt::Display for Fehler {
                 f,
                 "ElevenLabs lehnt den Schlüssel ab (HTTP 401). Bitte unter Einstellungen › \
                  Dienste und Konten › ElevenLabs neu eintragen."
+            ),
+            Self::RechtFehlt(r) => write!(
+                f,
+                "ElevenLabs: Der Schlüssel ist gültig, aber ihm fehlt das Recht „{}“. Im \
+                 ElevenLabs-Konto unter API Keys beim Schlüssel freischalten.",
+                recht_klartext(r)
             ),
             Self::Kontingent => write!(
                 f,
@@ -116,9 +125,22 @@ pub struct Konto {
     pub character_count: i64,
     pub character_limit: i64,
     pub reset_unix: Option<i64>,
+    /// Der Schlüssel gilt, darf das Guthaben aber nicht lesen (Recht „User“ fehlt, #377).
+    pub ohne_guthaben: bool,
 }
 
 impl Konto {
+    /// Gültiger Schlüssel ohne Recht „User“: kein Guthaben bekannt.
+    pub fn ohne_guthaben() -> Self {
+        Self {
+            tier: String::new(),
+            character_count: 0,
+            character_limit: 0,
+            reset_unix: None,
+            ohne_guthaben: true,
+        }
+    }
+
     /// Verbleibende Credits (Zeichen) im laufenden Abrechnungszeitraum.
     pub fn remaining(&self) -> i64 {
         (self.character_limit - self.character_count).max(0)
@@ -298,9 +320,15 @@ impl Source {
     }
 
     /// Kontostand (prüft zugleich den Schlüssel).
+    ///
+    /// Fehlt dem Schlüssel nur das Recht „User“ (`user_read`), ist er trotzdem gültig: dann
+    /// ein Konto ohne Guthabenanzeige statt „abgelehnt“ (#377).
     pub fn konto(&self) -> Result<Konto, Fehler> {
-        let v = self.get_json("/v1/user/subscription", &[])?;
-        parse_konto(&v).ok_or_else(|| Fehler::Antwort("Felder fehlen".into()))
+        match self.get_json("/v1/user/subscription", &[]) {
+            Ok(v) => parse_konto(&v).ok_or_else(|| Fehler::Antwort("Felder fehlen".into())),
+            Err(Fehler::RechtFehlt(r)) if r == "user_read" => Ok(Konto::ohne_guthaben()),
+            Err(e) => Err(e),
+        }
     }
 
     fn get_json(&self, path: &str, query: &[(&str, &str)]) -> Result<serde_json::Value, Fehler> {
@@ -469,6 +497,7 @@ pub fn parse_konto(v: &serde_json::Value) -> Option<Konto> {
         reset_unix: v
             .get("next_character_count_reset_unix")
             .and_then(serde_json::Value::as_i64),
+        ohne_guthaben: false,
     })
 }
 
@@ -792,6 +821,55 @@ pub fn detail_message(body: &str) -> String {
     }
 }
 
+/// Rechte, die WOA am Schlüssel braucht (#377), als (Bereich in der ElevenLabs-Oberfläche,
+/// Stufe, wofür). Abgeleitet aus den Aufrufen in dieser Datei; alles andere „No Access“.
+pub const RECHTE: [(&str, &str, &str); 5] = [
+    ("Text to Speech", "Access", "Sprache"),
+    ("Sound Effects", "Access", "Effekte"),
+    ("Music Generation", "Access", "Musikbetten"),
+    ("Voices", "Read", "Stimmenliste"),
+    (
+        "User",
+        "Access",
+        "nur Guthaben-Anzeige (/v1/user/subscription)",
+    ),
+];
+
+/// Name eines ElevenLabs-Rechts (`user_read`) in der Schreibweise der Oberfläche.
+pub fn recht_klartext(r: &str) -> String {
+    match r {
+        "user_read" => "User".into(),
+        "text_to_speech" => "Text to Speech".into(),
+        "sound_generation" | "sound_effects" => "Sound Effects".into(),
+        "music_generation" => "Music Generation".into(),
+        "voices_read" => "Voices (Read)".into(),
+        "voices_write" => "Voices (Write)".into(),
+        "" => "unbekannt".into(),
+        other => other.into(),
+    }
+}
+
+/// Fehlendes Recht aus der Fehlermeldung, etwa
+/// `missing_permissions: The API key you used is missing the permission user_read to …`.
+pub fn fehlendes_recht(detail: &str) -> Option<String> {
+    let lower = detail.to_ascii_lowercase();
+    if !lower.contains("missing_permission") && !lower.contains("missing the permission") {
+        return None;
+    }
+    let name = lower
+        .split("permission ")
+        .skip(1)
+        .find_map(|rest| {
+            let w: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            (!w.is_empty() && w != "to").then_some(w)
+        })
+        .unwrap_or_default();
+    Some(name)
+}
+
 fn check(resp: &mut ureq::http::Response<ureq::Body>, key: &str) -> Result<(), Fehler> {
     let status = resp.status().as_u16();
     if (200..300).contains(&status) {
@@ -805,8 +883,12 @@ fn check(resp: &mut ureq::http::Response<ureq::Body>, key: &str) -> Result<(), F
         .unwrap_or_default();
     let detail = scrub(&detail_message(&body), key);
     let code_quota = detail.contains("quota_exceeded") || detail.contains("insufficient_credits");
+    let missing = (status == 401 || status == 403)
+        .then(|| fehlendes_recht(&detail))
+        .flatten();
     Err(match status {
         401 if code_quota => Fehler::Kontingent,
+        _ if missing.is_some() => Fehler::RechtFehlt(missing.unwrap_or_default()),
         401 | 403 => Fehler::SchluesselAbgelehnt,
         402 => Fehler::Kontingent,
         429 => Fehler::ZuViele,
