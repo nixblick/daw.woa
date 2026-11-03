@@ -309,7 +309,7 @@ enum StreamFail {
 
 /// Testton in Echtzeit an den Server, Titel wenn ein Admin-Port da ist.
 fn cmd_stream_test(cfg: &woa_stream::StreamConfig, seconds: u32) -> Result<(), StreamFail> {
-    use woa_stream::shoutcast::{Source, StreamError, update_title};
+    use woa_stream::shoutcast::{Source, StreamError};
     let other = |e: String| StreamFail::Other(e);
     cfg.validate().map_err(other)?;
     let kw = woa_stream::Kennwort::from_file(&cfg.password_file).map_err(other)?;
@@ -322,13 +322,13 @@ fn cmd_stream_test(cfg: &woa_stream::StreamConfig, seconds: u32) -> Result<(), S
     };
     let mut src = Source::connect(cfg, &kw).map_err(map)?;
     println!("stream-test: angemeldet bei {}", cfg.label());
-    if woa_stream::shoutcast::titles_possible(cfg) {
-        match update_title(cfg, &kw, "WOA stream-test") {
+    if woa_stream::shoutcast::titles_reachable(cfg) {
+        match woa_stream::shoutcast::set_title(cfg, &kw, "WOA stream-test") {
             Ok(()) => println!("stream-test: Titel gesetzt"),
             Err(e) => println!("stream-test: Titel nicht gesetzt: {e}"),
         }
     } else {
-        println!("stream-test: Titel ausgelassen (nur mit Admin-Port bei lokalem Server)");
+        println!("stream-test: Titel ausgelassen (lokal ohne Admin-Port oder IP ohne Titel-URL)");
     }
     let block = (cfg.sample_rate / 10) as usize;
     let start = std::time::Instant::now();
