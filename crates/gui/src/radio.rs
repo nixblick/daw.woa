@@ -115,7 +115,7 @@ fn typed_position(text: &str, len: usize) -> Option<usize> {
 }
 
 /// Breite der Hover-Knöpfe (hoch, runter, entfernen) am rechten Rand einer Playlist-Zeile.
-const ROW_TOOLS_W: f32 = 66.0;
+const ROW_TOOLS_W: f32 = 90.0;
 /// Spalte Dauer und Spalte Lautheit der Playlist.
 const DUR_W: f32 = 48.0;
 const LUFS_W: f32 = 52.0;
@@ -725,7 +725,8 @@ fn meter_strip(ui: &mut egui::Ui, m: MeterHold, name: &str, size: egui::Vec2) {
 const FADER_HEIGHT: f32 = 130.0;
 /// Breite eines Kanalzugs und seiner LED-Kette (RadioLevels: 56 px, LED-Kette sichtbar).
 const STRIP_W: f32 = 56.0;
-const METER_W: f32 = 10.0;
+/// LED-Kette neben dem Fader, seit #287 kräftiger (vorher 10 px).
+const METER_W: f32 = 16.0;
 /// Breite, ab der Pegel und Processing nebeneinander stehen statt untereinander.
 const LEVELS_SIDE_BY_SIDE: f32 = 720.0;
 
@@ -811,12 +812,12 @@ pub(crate) fn level_faders(
             ui.set_width(STRIP_W);
             ui.spacing_mut().item_spacing.y = 4.0;
             ui.horizontal(|ui| {
-                ui.add_space((STRIP_W - 2.0 * METER_W) / 2.0);
+                ui.add_space((STRIP_W - 1.5 * METER_W) / 2.0);
                 meter_strip(
                     ui,
                     meters[4],
                     "Master",
-                    egui::vec2(2.0 * METER_W, FADER_HEIGHT),
+                    egui::vec2(1.5 * METER_W, FADER_HEIGHT),
                 );
             });
             ui.add_space(20.0);
@@ -3774,7 +3775,11 @@ impl RadioDesk {
                             // Der Titel klickt nicht selbst: Klick, Doppelklick und Menü gehören
                             // der ganzen Zeile (#302).
                             // Rechts bleiben Badge, Lautheit, Dauer und Knöpfe frei.
-                            let right = ROW_TOOLS_W + DUR_W + LUFS_W + ROW_BADGE_W;
+                            let right = ROW_TOOLS_W
+                                + DUR_W
+                                + LUFS_W
+                                + ROW_BADGE_W
+                                + crate::vocal_ui::VOCAL_W;
                             let w = (ui.available_width() - right).max(40.0);
                             ui.allocate_ui(egui::vec2(w, 20.0), |ui| {
                                 ui.add(
@@ -3795,10 +3800,43 @@ impl RadioDesk {
                                         egui::Layout::right_to_left(egui::Align::Center),
                                         |ui| {
                                             ui.set_min_width(ROW_TOOLS_W);
-                                            if !tools {
+                                            let here = v.pfl_source == Some(PflSource::Title(i));
+                                            if !row_pfl_shown(tools, here) {
                                                 return;
                                             }
                                             ui.spacing_mut().item_spacing.x = 2.0;
+                                            // Vorhören (#273) wie am Deck; bleibt sichtbar,
+                                            // solange dieser Titel im Kopfhörer läuft.
+                                            let r = icon_key(
+                                                ui,
+                                                theme::ic::HEADPHONES,
+                                                &format!("Vorhören Titel {}", i + 1),
+                                                theme::cue(),
+                                                here,
+                                                v.pfl_available,
+                                                22.0,
+                                            );
+                                            let r = if v.pfl_available {
+                                                r.on_hover_text(if here {
+                                                    "Vorhören stoppen"
+                                                } else {
+                                                    "Im Kopfhörer vorhören (nie auf Sendung)"
+                                                })
+                                            } else {
+                                                r.on_disabled_hover_text(self.pfl_hint())
+                                            };
+                                            if r.clicked() {
+                                                self.with(move |c| {
+                                                    if let Err(e) =
+                                                        c.pfl_toggle(PflSource::Title(i))
+                                                    {
+                                                        c.report(e);
+                                                    }
+                                                });
+                                            }
+                                            if !tools {
+                                                return;
+                                            }
                                             let icon = |ui: &mut egui::Ui, t: &str, tip: &str| {
                                                 ui.add(egui::Button::new(t).small().frame(false))
                                                     .on_hover_text(tip)
@@ -3850,6 +3888,13 @@ impl RadioDesk {
                                     if let Some(lb) = lufs_badge {
                                         lufs.on_hover_text(lb);
                                     }
+                                    // Gesangseinsatz (#299) links neben der Lautheit.
+                                    crate::vocal_ui::vocal_tag(
+                                        ui,
+                                        e.vocal,
+                                        e.cues.start(),
+                                        crate::vocal_ui::VOCAL_W,
+                                    );
                                     if on_air {
                                         theme::status_pill(ui, "ON AIR", theme::on_air(), true);
                                         // Fade in der laufenden Zeile (FadeButton, #274).
@@ -4095,6 +4140,46 @@ impl RadioDesk {
                         if fr.clicked() {
                             self.fades.press(FadeKey::Cart(slot), now);
                             self.with(move |c| c.fade_cart(slot));
+                        }
+                    }
+                    // Vorhören (#273) oben rechts, links neben dem Fade-Symbol: beim Hover über
+                    // einem belegten Pad und solange es vorgehört wird.
+                    let pfl_here = v.pfl_source == Some(PflSource::Cart(slot));
+                    if label.is_some() && (pfl_here || ui.rect_contains_pointer(r.rect)) {
+                        let x = if playing { -54.0 } else { -28.0 };
+                        let at = egui::Rect::from_min_size(
+                            r.rect.right_top() + egui::vec2(x, 4.0),
+                            egui::vec2(24.0, 24.0),
+                        );
+                        let hint = self.pfl_hint();
+                        let pr = ui
+                            .scope_builder(egui::UiBuilder::new().max_rect(at), |ui| {
+                                let k = icon_key(
+                                    ui,
+                                    theme::ic::HEADPHONES,
+                                    &format!("Vorhören Cart {}", slot + 1),
+                                    theme::cue(),
+                                    pfl_here,
+                                    v.pfl_available,
+                                    24.0,
+                                );
+                                if v.pfl_available {
+                                    k.on_hover_text(if pfl_here {
+                                        "Vorhören stoppen"
+                                    } else {
+                                        "Im Kopfhörer vorhören (nie auf Sendung)"
+                                    })
+                                } else {
+                                    k.on_disabled_hover_text(hint)
+                                }
+                            })
+                            .inner;
+                        if pr.clicked() {
+                            self.with(move |c| {
+                                if let Err(e) = c.pfl_toggle(PflSource::Cart(slot)) {
+                                    c.report(e);
+                                }
+                            });
                         }
                     }
 
@@ -4899,6 +4984,16 @@ impl RadioDesk {
                                 f.set_width(bar.width() * frac);
                                 ui.painter().rect_filled(f, 2.0, ink);
                             }
+                            // Gesangseinsatz (#299) als Strich auf dem Balken.
+                            if loaded {
+                                crate::vocal_ui::vocal_tick(
+                                    ui.painter(),
+                                    bar,
+                                    d.vocal,
+                                    d.cues.start(),
+                                    d.length,
+                                );
+                            }
                         },
                     );
                     // Tasten rechts: Start/Stopp mit Text, Cue, Vorhören und Rückweg als Symbole;
@@ -5022,14 +5117,16 @@ impl RadioDesk {
                                 let (t, sub) = if drop_here {
                                     ("Hier ablegen".to_string(), String::new())
                                 } else if let Some(t) = d.title.clone() {
-                                    (
-                                        t,
-                                        if d.playing {
-                                            "läuft".to_string()
-                                        } else {
-                                            "Deck geladen".to_string()
-                                        },
-                                    )
+                                    let state = if d.playing { "läuft" } else { "Deck geladen" };
+                                    // Rampzeit (#299): wie lange das Intro bis zum Gesang läuft.
+                                    let sub = match &d.vocal {
+                                        Some(m) => format!(
+                                            "{state} · Gesang ab {}",
+                                            crate::vocal_ui::vocal_text(m, d.cues.start())
+                                        ),
+                                        None => state.to_string(),
+                                    };
+                                    (t, sub)
                                 } else {
                                     (
                                         "Leer".to_string(),
@@ -5618,6 +5715,16 @@ mod tests {
     }
 
     #[test]
+    fn level_leds_are_fat() {
+        // #287: kräftige LEDs, Fader und Namensschilder bleiben.
+        const { assert!(super::METER_W >= 16.0) };
+        let (n, gap) = crate::theme::bus_segments(super::FADER_HEIGHT - 2.0);
+        let seg_h = (super::FADER_HEIGHT - 2.0 - gap * (n as f32 - 1.0)) / n as f32;
+        assert!(seg_h >= 4.5, "LED {seg_h} px hoch");
+        const { assert!(36.0 + 2.0 + super::METER_W <= super::STRIP_W) };
+    }
+
+    #[test]
     fn led_meter_colour_steps() {
         use crate::theme::{BusZone, bus_zone};
         assert_eq!(bus_zone(-1.0), BusZone::Red);
@@ -5744,6 +5851,12 @@ mod link_line_tests {
 }
 
 /// Tooltip-Text: der Grund, falls bekannt, sonst der allgemeine Hinweis.
+/// Vorhör-Knopf einer Playlist-Zeile (#273): beim Hover/Auswahl und solange der Titel vorgehört
+/// wird, damit man ihn dort auch wieder stoppen kann.
+fn row_pfl_shown(tools: bool, previewing: bool) -> bool {
+    tools || previewing
+}
+
 pub fn pfl_hint_for(note: Option<&str>) -> String {
     note.map_or_else(|| NO_PFL.to_string(), str::to_string)
 }
@@ -5751,6 +5864,13 @@ pub fn pfl_hint_for(note: Option<&str>) -> String {
 #[cfg(test)]
 mod pfl_hint_tests {
     use super::*;
+
+    #[test]
+    fn row_preview_key_stays_while_the_title_is_previewed() {
+        assert!(!row_pfl_shown(false, false));
+        assert!(row_pfl_shown(true, false));
+        assert!(row_pfl_shown(false, true), "zum Stoppen sichtbar");
+    }
 
     #[test]
     fn hint_shows_open_error() {

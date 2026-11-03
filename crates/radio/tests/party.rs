@@ -61,6 +61,7 @@ fn view_of(c: &Controller) -> View {
                 gain_db: 0.0,
                 cues: e.cues,
                 voice: None,
+                vocal: None,
             })
             .collect(),
         current: c.current_index(),

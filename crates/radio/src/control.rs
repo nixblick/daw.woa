@@ -1218,6 +1218,8 @@ impl Controller {
         entry.cues = Cues {
             cue_in: cues.cue_in,
             cue_out: cues.cue_out,
+            // Gesangseinsatz (#299) nur zur Anzeige am Deck.
+            ramp: cues.ramp,
             ..Cues::default()
         };
         self.show.decks[deck] = Some(entry);
@@ -1233,13 +1235,17 @@ impl Controller {
 
     /// Legt Playlist-Titel `index` auf Deck `deck` (mit seinen Cue-Punkten).
     pub fn deck_load_title(&mut self, deck: usize, index: usize) -> Result<(), String> {
-        let (path, cues) = self
+        let (path, cues, vocal) = self
             .show
             .playlist
             .get(index)
-            .map(|e| (e.path.clone(), e.cues))
+            .map(|e| (e.path.clone(), e.cues, e.vocal))
             .ok_or_else(|| format!("Titel {} gibt es nicht", index + 1))?;
-        self.deck_load(deck, path, cues)
+        self.deck_load(deck, path, cues)?;
+        if let Some(Some(d)) = self.show.decks.get_mut(deck) {
+            d.vocal = vocal;
+        }
+        Ok(())
     }
 
     /// Deck starten.

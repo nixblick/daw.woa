@@ -131,7 +131,7 @@ mod tests {
             c.pragma_update(None, "user_version", 5).unwrap();
         }
         let lib = Library::open(&p).unwrap();
-        assert_eq!(lib.schema_version().unwrap(), 6);
+        assert_eq!(lib.schema_version().unwrap(), crate::SCHEMA_VERSION);
         // Titel mit Tempo kommen für das Beatgrid noch einmal in die Analyse, die ohne nicht.
         let pending: Vec<i64> = lib
             .pending_analysis(10)

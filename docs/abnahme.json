@@ -529,6 +529,51 @@
       "ticket": 291
     },
     {
+      "id": "party-karten-ausblenden",
+      "ansicht": "Party Einfach",
+      "titel": "Wunschliste und Fernbedienung ausblenden",
+      "tun": "In der Party oben „WUNSCHLISTE“ und „FERNBEDIENUNG“ ausschalten (oder Menü Ansicht). WOA neu starten.",
+      "erwartet": "Beide Karten sind weg, die Bibliothek zeigt mehr Treffer nach unten. Nach dem Neustart ist es noch so. Eine eingeschaltete Fernbedienung läuft weiter (Chip „Fernbedienung an · ausgeblendet“).",
+      "version": "0.41.6",
+      "ticket": 361
+    },
+    {
+      "id": "abhoerlautstaerke",
+      "ansicht": "Produzent",
+      "titel": "Abhörlautstärke",
+      "tun": "Im Produzent oben neben PEGEL den kleinen Regler mit Lautsprecher nach links ziehen, Doppelklick darauf.",
+      "erwartet": "Wird leiser ohne Knacken, PEGEL bleibt gleich; Doppelklick wieder voll. Ein Export klingt unverändert.",
+      "version": "0.41.6",
+      "ticket": 358
+    },
+    {
+      "id": "gesangseinsatz",
+      "ansicht": "Radio",
+      "titel": "Gesangseinsatz in Playlist und Deck",
+      "tun": "Einen Titel mit Intro in die Playlist legen, warten, bis er gemessen ist, dann auf ein Deck laden.",
+      "erwartet": "In der Zeile steht ein Mikrofon mit „≈0:12“ (geschätzt); im Deck „Gesang ab ≈0:12“ und ein Strich auf dem Balken. Cue-Punkte › Rechtsklick in die Wellenform › „Gesang beginnt hier“ setzt die Marke von Hand (ohne ≈).",
+      "version": "0.41.6",
+      "ticket": 299
+    },
+    {
+      "id": "vorhoeren-knopf",
+      "ansicht": "Radio",
+      "titel": "Vorhören per Knopf",
+      "tun": "Über eine Playlist-Zeile und ein belegtes Cart fahren, den Kopfhörer anklicken, nochmal klicken.",
+      "erwartet": "Startet und stoppt das Vorhören wie am Deck, der Kopfhörer leuchtet solange; ein Klick daneben startet das Cart nicht.",
+      "version": "0.41.6",
+      "ticket": 273
+    },
+    {
+      "id": "pegel-leds-fett",
+      "ansicht": "Radio",
+      "titel": "Kräftige Pegel-LEDs",
+      "tun": "Im Radio Musik laufen lassen und auf die Karte PEGEL schauen.",
+      "erwartet": "Die LED-Ketten neben den Reglern sind breiter, mit dicken einzelnen LEDs, die leuchten; Regler und bunte Namensschilder sind wie vorher.",
+      "version": "0.41.6",
+      "ticket": 287
+    },
+    {
       "id": "sendung-neustart",
       "ansicht": "Radio",
       "titel": "Sendung beenden und gleich neu starten",

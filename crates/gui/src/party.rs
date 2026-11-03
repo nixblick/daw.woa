@@ -38,6 +38,50 @@ pub struct PartyView {
     photo_remote: bool,
     /// DJ-Ansicht (DJ-Paket).
     dj: dj::DjUi,
+    /// Wunschliste und Fernbedienung ein- oder ausgeblendet (#361); die App gleicht das mit
+    /// der Einstellung ab und merkt es sich.
+    pub panels: PartyPanels,
+}
+
+/// Welche Karten rechts in der Party stehen (#361). Ausblenden ändert nur die Anzeige: eine
+/// laufende Fernbedienung bleibt an, Wünsche kommen weiter an.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct PartyPanels {
+    pub wishes: bool,
+    pub remote: bool,
+}
+
+impl Default for PartyPanels {
+    fn default() -> Self {
+        Self {
+            wishes: true,
+            remote: true,
+        }
+    }
+}
+
+impl PartyPanels {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// Höhe einer Trefferzeile der Bibliothek (Taste „→ Playlist“ 36 px plus Abstand).
+const HIT_ROW_H: f32 = 46.0;
+/// Kopf der Bibliothekskarte: Überschrift, Suchfeld, Innenabstand.
+const LIBRARY_HEAD_H: f32 = 110.0;
+/// So viele Treffer zeigt die Bibliothek mindestens (bisher fest).
+const MIN_HITS: usize = 8;
+
+/// Treffer, die in `height` passen: mindestens [`MIN_HITS`], höchstens 40 (#361).
+pub fn library_rows(height: f32) -> usize {
+    let fit = ((height - LIBRARY_HEAD_H) / HIT_ROW_H).floor();
+    if fit.is_finite() && fit > 0.0 {
+        (fit as usize).clamp(MIN_HITS, 40)
+    } else {
+        MIN_HITS
+    }
 }
 
 /// Wellenform und Tempo eines Decks: geladen für `path`, Ergebnis kommt aus einem
@@ -319,18 +363,38 @@ impl PartyView {
                     ui.set_width(right_w);
                     // Bibliothek und Wunschliste scrollen; die Fernbedienung steht darunter
                     // fest, damit QR, Adresse, PIN und Handyzahl sichtbar sind, sobald sie an ist.
-                    let side_h = (h - self.remote_h - GAP).max(120.0);
+                    // Ausgeblendete Karten (#361) geben ihren Platz an die Bibliothek ab.
+                    let panels = self.panels;
+                    if !panels.remote {
+                        self.remote_h = 0.0;
+                    }
+                    let side_h = if panels.remote {
+                        (h - self.remote_h - GAP).max(120.0)
+                    } else {
+                        h - self.hidden_remote_h(panels)
+                    };
+                    let rows = if panels.wishes {
+                        MIN_HITS
+                    } else {
+                        library_rows(side_h)
+                    };
                     egui::ScrollArea::vertical()
                         .id_salt("party-side")
                         .max_height(side_h)
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
                             ui.spacing_mut().item_spacing = egui::vec2(GAP, GAP);
-                            self.search_card(ui, desk, library, &mut cmds);
-                            self.wish_card(ui, library, &mut cmds);
+                            self.search_card(ui, desk, library, &mut cmds, rows);
+                            if panels.wishes {
+                                self.wish_card(ui, library, &mut cmds);
+                            }
                         });
-                    let r = ui.scope(|ui| self.remote.ui(ui)).response;
-                    self.remote_h = r.rect.height();
+                    if panels.remote {
+                        let r = ui.scope(|ui| self.remote.ui(ui)).response;
+                        self.remote_h = r.rect.height();
+                    } else {
+                        self.hidden_remote_chip(ui);
+                    }
                 },
             );
         });
@@ -338,6 +402,79 @@ impl PartyView {
             Self::load_folder(desk);
         }
         cmds
+    }
+
+    /// Neue Party-Ansicht mit gemerkten Karten (#361).
+    pub fn with_panels(panels: PartyPanels) -> Self {
+        Self {
+            panels,
+            ..Default::default()
+        }
+    }
+
+    /// Platz für den Hinweis auf eine ausgeblendete, aber laufende Fernbedienung.
+    pub(crate) fn hidden_remote_h(&self, panels: PartyPanels) -> f32 {
+        if !panels.remote && self.remote.is_on() {
+            HIDDEN_REMOTE_H
+        } else {
+            0.0
+        }
+    }
+
+    /// Ausgeblendete Fernbedienung, die noch läuft: ein Chip, damit sie nicht unbemerkt offen
+    /// bleibt (Handys können weiter steuern). Klick blendet die Karte wieder ein.
+    pub(crate) fn hidden_remote_chip(&mut self, ui: &mut egui::Ui) {
+        if !self.remote.is_on() {
+            return;
+        }
+        ui.add_space(GAP);
+        let r = crate::widgets::StateChip::new(
+            "FERNBEDIENUNG AN · AUSGEBLENDET",
+            crate::widgets::ChipTone::Ok,
+        )
+        .show(ui)
+        .interact(egui::Sense::click())
+        .on_hover_text("Handys im WLAN steuern weiter mit. Klick: Karte wieder zeigen");
+        if r.clicked() {
+            self.panels.remote = true;
+        }
+    }
+
+    /// Schalter „Wunschliste“ und „Fernbedienung“ (#361) in der Ansichtsleiste.
+    pub(crate) fn panel_keys(&mut self, ui: &mut egui::Ui) {
+        for (icon, word, on, tip) in [
+            (
+                theme::ic::HEART,
+                "WUNSCHLISTE",
+                self.panels.wishes,
+                "Wunschliste rechts ein- oder ausblenden (auch Menü Ansicht)",
+            ),
+            (
+                theme::ic::DEVICE_MOBILE,
+                "FERNBEDIENUNG",
+                self.panels.remote,
+                "Fernbedienung rechts ein- oder ausblenden; eine laufende bleibt an \
+                 (auch Menü Ansicht)",
+            ),
+        ] {
+            let text = format!("{icon}  {word}");
+            let font = theme::label_font(13.0);
+            let w = crate::widgets::key_width(ui, &text, &font, 56.0);
+            let r = crate::widgets::Key::new(&text, egui::vec2(w, 28.0))
+                .font(font)
+                .radius(theme::RADIUS_MD)
+                .color(theme::accent_2())
+                .on(on)
+                .ui(ui)
+                .on_hover_text(tip);
+            if r.clicked() {
+                if word == "WUNSCHLISTE" {
+                    self.panels.wishes = !on;
+                } else {
+                    self.panels.remote = !on;
+                }
+            }
+        }
     }
 
     /// Lädt die Wunschliste beim ersten Bild und speichert sie nach jeder Änderung.
@@ -660,9 +797,14 @@ impl PartyView {
         desk: &mut RadioDesk,
         library: &mut crate::library::LibraryWindow,
         cmds: &mut Vec<PartyCommand>,
+        rows: usize,
     ) {
         side_card().show(ui, |ui| {
             ui.set_width(ui.available_width());
+            // Ohne Wunschliste füllt die Bibliothek die Spalte nach unten (#361).
+            if rows > MIN_HITS {
+                ui.set_min_height(LIBRARY_HEAD_H + rows as f32 * HIT_ROW_H - 40.0);
+            }
             ui.horizontal(|ui| {
                 ui.label(theme::panel_label("BIBLIOTHEK").color(theme::accent_2()));
                 if let Some(w) = &self.wish_for {
@@ -692,7 +834,7 @@ impl PartyView {
             if self.search.trim().is_empty() {
                 return;
             }
-            let hits: Vec<_> = library.results().iter().take(8).cloned().collect();
+            let hits: Vec<_> = library.results().iter().take(rows).cloned().collect();
             if hits.is_empty() {
                 ui.label(egui::RichText::new("Kein Treffer.").color(theme::text_dim()));
             }
@@ -1194,6 +1336,8 @@ fn fader_pos_at(x: f32, left: f32, width: f32) -> f32 {
 
 /// Abstand zwischen Karten und Tasten (ein Raster, Entwurf „Arbeitsfläche“).
 const GAP: f32 = 10.0;
+/// Höhe des Chips „Fernbedienung an · ausgeblendet“ samt Abstand.
+const HIDDEN_REMOTE_H: f32 = 40.0;
 /// Höhe der Schalter neben dem Crossfader.
 const SWITCH_H: f32 = 48.0;
 /// Höhe einer Playlist-Zeile.
@@ -2123,6 +2267,18 @@ mod tests {
     }
 
     /// Suche und Wunsch-Eingabe als `woa-input`: 44 px hoch, über die volle Breite.
+    #[test]
+    fn hidden_panels_let_the_library_grow() {
+        assert_eq!(library_rows(0.0), MIN_HITS);
+        assert_eq!(library_rows(f32::NAN), MIN_HITS);
+        assert!(library_rows(900.0) > MIN_HITS, "mehr Platz, mehr Treffer");
+        assert_eq!(library_rows(1e6), 40);
+        let p = PartyPanels::default();
+        assert!(p.wishes && p.remote && p.is_default());
+        let j: PartyPanels = serde_json::from_str(r#"{"wishes":false}"#).unwrap();
+        assert!(!j.wishes && j.remote, "fehlende Felder: sichtbar");
+    }
+
     #[test]
     fn party_input_is_44_px() {
         let ctx = theme::test_context();

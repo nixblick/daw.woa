@@ -21,6 +21,7 @@ fn entry(title: &str, path: &str) -> ViewEntry {
         gain_db: 0.0,
         cues: Default::default(),
         voice: None,
+        vocal: None,
     }
 }
 
