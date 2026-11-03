@@ -3,6 +3,10 @@
 ## 0.41.14 — 2026-11-03
 
 - **Datenschutz Design-Bilder:** Drei Bilder unter `docs/design/ist/` zeigten unter WUNSCHTITEL einen Pfad mit einem lokalen Benutzernamen und sind neu im Fotomodus aufgenommen (`WOA_SCREENSHOT`, `WOA_WINDOW=1920x1030`, leerer Daten- und Konfigurationsordner unter `/tmp/woa-foto-0.41.14/`): `ist-f7-onair-dunkel-…` (`WOA_ONAIR=1`), `ist-f7-abnahme-dunkel-…` (`WOA_ABNAHME=1`), `ist-f7-fragen-dunkel-…` (`WOA_FRAGEN=1`); Dateinamen gleich, Verweise stimmen. Alle 94 PNGs unter `docs/` per Texterkennung geprüft, Wunschtitel-Leiste aller Ist-Bilder angesehen: sonst keine privaten Pfade. Die Git-Historie bleibt unverändert.
+## 0.41.13 — 2026-11-03
+
+- **Titel für Hörer auch bei entferntem Shoutcast:** Bisher sendete WOA gegen den eigenen Server keinen Titel, weil `admin.cgi?mode=updinfo` den Admin-Port (von außen zu) und das Kennwort im Klartext in der URL braucht. Jetzt geht der Titel per HTTPS an den Sendeserver (`POST https://<host>/api/titel`, abweichend per `title_url` in der Stream-Konfiguration; `http://` nur auf Loopback, keine Weiterleitungen). Die App weist sich mit dem Quellkennwort aus dem Schlüsselbund aus (`Authorization: Bearer`), ein neues Geheimnis gibt es nicht. Lokal bleibt alles wie bisher. Bei einer IP als Host ohne `title_url` bleibt der Titel aus (kein Zertifikat). Tests: `title_url_only_for_remote_shoutcast_names`, `title_body_is_short_and_one_line`, `remote_title_goes_to_server_endpoint`.
+- **Sammler `server/hoerer/hoerer.py` nimmt `POST /api/titel` an:** vergleicht konstantzeitig mit der eingehängten Quellkennwort-Datei, säubert und kürzt den Titel (200 Zeichen, Rumpf höchstens 2 KB) und ruft `admin.cgi` im Docker-Netz mit dem Admin-Kennwort aus einer Datei auf; Kennwörter stehen in keinem Log und keiner Antwort. Ohne Kennwortdateien 503. nginx-Vorlage um `/api/titel` (nur POST, 30/min je IP) ergänzt. Tests: `TitelTests` in `server/hoerer/test_hoerer.py`.
 
 ## 0.41.12 — 2026-11-03
 

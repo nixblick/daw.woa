@@ -145,6 +145,9 @@ pub struct StreamConfig {
     /// Admin-Port (Shoutcast: meist `portbase`) für Titel (`admin.cgi?mode=updinfo`) und
     /// Hörerzahl (`/7.html`). `None` = nicht erreichbar: dann keine Titel und keine Hörerzahl.
     pub admin_port: Option<u16>,
+    /// Titel-Endpunkt des eigenen Sendeservers (`POST`, HTTPS) für entfernte Shoutcast-Server.
+    /// Leer = `https://<host>/api/titel`. Siehe [`crate::shoutcast::title_url`].
+    pub title_url: String,
     /// Stream-ID im DNAS (`streamid`), meist 1.
     pub stream_id: u32,
     /// MP3-Bitrate (CBR) in kbit/s.
@@ -175,6 +178,7 @@ impl Default for StreamConfig {
             port: 8000,
             user: "source".to_string(),
             admin_port: None,
+            title_url: String::new(),
             stream_id: 1,
             bitrate_kbps: 128,
             sample_rate: 44_100,

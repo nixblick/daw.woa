@@ -11,8 +11,10 @@
 //! Shoutcast v2). Das
 //! v1-Protokoll hat keinen Weg für Titel in der Quellverbindung (die `icy-*`-Kopfzeilen
 //! gelten nur einmal beim Anmelden). Titel gehen per HTTP an `admin.cgi?mode=updinfo` mit
-//! dem Kennwort in der URL. Deshalb nur bei Loopback-Host und Admin-Port; gegen einen
-//! entfernten Server gibt es vorerst keine Titel.
+//! dem Kennwort in der URL. Deshalb nur bei Loopback-Host und Admin-Port. Bei einem
+//! entfernten Server geht der Titel per HTTPS an den eigenen Sendeserver (`POST /api/titel`,
+//! [`title_url`]); der ruft `admin.cgi` im Docker-Netz mit dem Admin-Kennwort auf, das den
+//! Server nie verlässt. Die App weist sich dort mit dem Quell-Kennwort aus.
 //!
 //! Alles mit `std::net`, blockierend mit Zeitgrenzen; der Aufrufer ist ein eigener Thread.
 
@@ -317,6 +319,110 @@ pub fn update_title(cfg: &StreamConfig, kw: &Kennwort, title: &str) -> Result<()
     }
 }
 
+/// Höchstlänge eines Titels in Zeichen (der Server kürzt ebenso).
+pub const TITLE_MAX: usize = 200;
+
+/// Titel-Endpunkt für einen entfernten Shoutcast-Server, sonst `None` (lokal, Icecast,
+/// IP-Adresse ohne eingetragene URL). Nur `https://`, `http://` nur auf Loopback (Tests).
+pub fn title_url(cfg: &StreamConfig) -> Option<String> {
+    let host = cfg.host.trim();
+    if !cfg.protocol.is_shoutcast() || host.is_empty() || is_loopback(host) {
+        return None;
+    }
+    let u = cfg.title_url.trim();
+    if !u.is_empty() {
+        return title_url_ok(u).then(|| u.to_string());
+    }
+    // Eine IP hat kein Zertifikat auf der Edge; dann muss die URL eingetragen sein.
+    let h = host.trim_start_matches('[').trim_end_matches(']');
+    if h.parse::<std::net::IpAddr>().is_ok() {
+        return None;
+    }
+    Some(format!("https://{host}/api/titel"))
+}
+
+fn title_url_ok(u: &str) -> bool {
+    if u.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return false;
+    }
+    if u.starts_with("https://") {
+        return true;
+    }
+    u.strip_prefix("http://")
+        .and_then(|r| r.split(['/', '?']).next())
+        .map(|hp| {
+            let host = hp.rsplit_once(':').map_or(hp, |(h, p)| {
+                if p.chars().all(|c| c.is_ascii_digit()) {
+                    h
+                } else {
+                    hp
+                }
+            });
+            is_loopback(host)
+        })
+        .unwrap_or(false)
+}
+
+/// Kann ein Titel gesetzt werden, lokal oder über den Sendeserver?
+pub fn titles_reachable(cfg: &StreamConfig) -> bool {
+    titles_possible(cfg) || title_url(cfg).is_some()
+}
+
+/// Titel kürzen und einzeilig machen.
+pub fn clean_title(title: &str) -> String {
+    one_line(title).trim().chars().take(TITLE_MAX).collect()
+}
+
+/// JSON-Rumpf für `POST /api/titel`. Die Stream-ID kennt der Server selbst.
+pub fn title_body(title: &str) -> String {
+    serde_json::json!({ "titel": clean_title(title) }).to_string()
+}
+
+/// Titel über den Sendeserver setzen (`POST <title_url>`, `Authorization: Bearer <Quell-Kennwort>`).
+/// Keine Weiterleitungen (sonst ginge der Kopf an eine fremde Adresse). Der Kennwort-Kopf
+/// steht in keinem Fehler und keinem Log.
+pub fn update_title_via_server(url: &str, kw: &Kennwort, title: &str) -> Result<(), StreamError> {
+    if !title_url_ok(url) {
+        return Err(StreamError::Refused(
+            "Titel-URL muss https:// sein (http nur lokal)".into(),
+        ));
+    }
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(IO_TIMEOUT))
+        .max_redirects(0)
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let resp = agent
+        .post(url)
+        .header("Authorization", &format!("Bearer {}", kw.expose()))
+        .header("Content-Type", "application/json")
+        .header("User-Agent", USER_AGENT)
+        .send(title_body(title).as_bytes())
+        .map_err(|e| StreamError::Connect(format!("Titel-Server: {e}")))?;
+    match resp.status().as_u16() {
+        200 | 204 => Ok(()),
+        401 | 403 => Err(StreamError::AuthFailed),
+        404 => Err(StreamError::Refused(
+            "Titel: Server kennt /api/titel nicht".into(),
+        )),
+        code => Err(StreamError::Refused(format!("Titel: HTTP {code}"))),
+    }
+}
+
+/// Titel setzen: lokal per `admin.cgi`, entfernt über den Sendeserver.
+pub fn set_title(cfg: &StreamConfig, kw: &Kennwort, title: &str) -> Result<(), StreamError> {
+    if titles_possible(cfg) {
+        return update_title(cfg, kw, title);
+    }
+    match title_url(cfg) {
+        Some(u) => update_title_via_server(&u, kw, title),
+        None => Err(StreamError::Refused(
+            "Titel: kein Weg (lokal ohne Admin-Port oder IP ohne Titel-URL)".into(),
+        )),
+    }
+}
+
 /// Hörerzahlen aus der öffentlichen Kurzstatistik `/7.html?sid=n` (ohne Kennwort).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ListenerStats {
@@ -371,6 +477,38 @@ mod tests {
             parse_seven("4").map(|s| (s.current, s.peak)),
             Some((4, None))
         );
+    }
+
+    #[test]
+    fn title_url_only_for_remote_shoutcast_names() {
+        let mut c = StreamConfig {
+            host: "stream.wironair.de".into(),
+            ..StreamConfig::default()
+        };
+        assert_eq!(
+            title_url(&c).as_deref(),
+            Some("https://stream.wironair.de/api/titel")
+        );
+        c.host = "127.0.0.1".into();
+        assert_eq!(title_url(&c), None);
+        c.host = "203.0.113.5".into();
+        assert_eq!(title_url(&c), None);
+        c.title_url = "https://feedback.wironair.de/api/titel".into();
+        assert!(title_url(&c).is_some());
+        c.title_url = "http://203.0.113.5/api/titel".into();
+        assert_eq!(title_url(&c), None, "kein Klartext übers Netz");
+        c.title_url = "http://127.0.0.1:9/api/titel".into();
+        assert!(title_url(&c).is_some());
+        c.protocol = crate::Protocol::Icecast;
+        assert_eq!(title_url(&c), None);
+    }
+
+    #[test]
+    fn title_body_is_short_and_one_line() {
+        let long = "x".repeat(500);
+        let v: serde_json::Value = serde_json::from_str(&title_body(&long)).unwrap();
+        assert_eq!(v["titel"].as_str().unwrap().chars().count(), TITLE_MAX);
+        assert_eq!(clean_title(" a\r\nb "), "ab");
     }
 
     #[test]

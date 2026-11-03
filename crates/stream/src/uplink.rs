@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use crate::config::StreamConfig;
 use crate::kennwort::Kennwort;
-use crate::shoutcast::{Source, StreamError, listener_stats, titles_possible, update_title};
+use crate::shoutcast::{Source, StreamError, listener_stats, set_title, titles_reachable};
 
 /// Höchstens so viele Sekunden MP3 warten während des Neuaufbaus.
 pub const BUFFER_SECONDS: usize = 5;
@@ -217,7 +217,7 @@ fn run(cfg: StreamConfig, kw: Kennwort, rx: Receiver<Msg>, state: Arc<Mutex<Upli
 
         // Titel und Hörer (nur verbunden).
         if source.is_some() {
-            if !titles_possible(&cfg) {
+            if !titles_reachable(&cfg) {
                 title_pending = false;
             }
             if title_pending && let Some(t) = title.as_deref() {
@@ -249,7 +249,7 @@ fn meta(cfg: &StreamConfig, kw: &Kennwort, rx: &Receiver<Job>, state: &Mutex<Upl
             }
         }
         if let Some(t) = title
-            && let Err(e) = update_title(cfg, kw, &t)
+            && let Err(e) = set_title(cfg, kw, &t)
         {
             tracing::warn!(error = %e, "title update failed");
             set(state, |s| s.last_error = Some(e.to_string()));

@@ -142,3 +142,60 @@ fn titles_only_on_loopback() {
     let e = update_title(&remote, &Kennwort::from_value(KW), "x").unwrap_err();
     assert!(matches!(e, StreamError::Refused(_)), "{e:?}");
 }
+
+/// Entfernter Server: Titel geht als POST mit Bearer-Kopf an den Sendeserver, nicht an admin.cgi.
+#[test]
+fn remote_title_goes_to_server_endpoint() {
+    use std::io::{Read, Write};
+    use woa_stream::shoutcast::update_title_via_server;
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = l.local_addr().unwrap().port();
+    let srv = std::thread::spawn(move || {
+        let mut got = Vec::new();
+        for code in ["204 No Content", "401 Unauthorized"] {
+            let (mut s, _) = l.accept().unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut buf = vec![0u8; 4096];
+            let mut req = Vec::new();
+            loop {
+                let n = s.read(&mut buf).unwrap();
+                req.extend_from_slice(&buf[..n]);
+                let t = String::from_utf8_lossy(&req);
+                if let Some((head, body)) = t.split_once("\r\n\r\n") {
+                    let len = head
+                        .lines()
+                        .find_map(|l| {
+                            l.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|v| v.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap_or(0);
+                    if body.len() >= len || n == 0 {
+                        break;
+                    }
+                }
+            }
+            got.push(String::from_utf8_lossy(&req).to_string());
+            write!(
+                s,
+                "HTTP/1.1 {code}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            .unwrap();
+        }
+        got
+    });
+    let url = format!("http://127.0.0.1:{port}/api/titel");
+    let kw = Kennwort::from_value(KW);
+    update_title_via_server(&url, &kw, "Probe – Äh").unwrap();
+    assert!(matches!(
+        update_title_via_server(&url, &Kennwort::from_value("falsch"), "x"),
+        Err(woa_stream::shoutcast::StreamError::AuthFailed)
+    ));
+    let got = srv.join().unwrap();
+    assert!(got[0].starts_with("POST /api/titel "));
+    assert!(got[0].contains(&format!("Bearer {KW}")));
+    assert!(got[0].contains("\"titel\":\"Probe – Äh\""));
+    assert!(!got[0].contains("admin.cgi"));
+    // Kein Klartext übers Netz: http nur auf Loopback.
+    assert!(update_title_via_server("http://198.51.100.1/api/titel", &kw, "x").is_err());
+}

@@ -113,5 +113,100 @@ class Tests(unittest.TestCase):
             db.close()
             tmp.cleanup()
 
+class FakeAdmin(BaseHTTPRequestHandler):
+    pfade = []
+    erwartet = "adm&in"
+
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        from urllib.parse import parse_qs, urlparse
+
+        FakeAdmin.pfade.append(self.path)
+        u = urlparse(self.path)
+        q = parse_qs(u.query)
+        ok = (
+            u.path == "/admin.cgi"
+            and q.get("sid") == ["1"]
+            and q.get("mode") == ["updinfo"]
+            and q.get("pass") == [FakeAdmin.erwartet]
+        )
+        self.send_response(200 if ok else 403)
+        self.end_headers()
+
+
+def lied(pfad):
+    from urllib.parse import parse_qs, urlparse
+
+    return parse_qs(urlparse(pfad).query)["song"][0]
+
+
+class TitelTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        d = self.tmp.name
+        for name, wert in [("q", "quelle-kw\n"), ("a", FakeAdmin.erwartet + "\n")]:
+            with open(f"{d}/{name}", "w") as f:
+                f.write(wert)
+        self.admin, admin_url = starte(FakeAdmin)
+        FakeAdmin.pfade = []
+        self.titel = {"quelle": admin_url, "sid": 1, "quell_kw": f"{d}/q", "admin_kw": f"{d}/a"}
+        hoerer.oeffne(f"{d}/h.sqlite").close()
+        self.srv, self.url = starte(hoerer.handler_fuer(f"{d}/h.sqlite", self.titel))
+
+    def tearDown(self):
+        self.srv.shutdown()
+        self.admin.shutdown()
+        self.tmp.cleanup()
+
+    def post(self, body, kw="quelle-kw", url=None):
+        daten = body if isinstance(body, bytes) else json.dumps(body).encode()
+        req = urllib.request.Request(url or self.url + "/api/titel", data=daten, method="POST")
+        if kw is not None:
+            req.add_header("Authorization", f"Bearer {kw}")
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read()
+
+    def test_titel_geht_mit_admin_kennwort_an_shoutcast(self):
+        code, _ = self.post({"titel": "Probe – Äh & Co\r\n"})
+        self.assertEqual(code, 204)
+        self.assertEqual(len(FakeAdmin.pfade), 1)
+        self.assertEqual(lied(FakeAdmin.pfade[0]), "Probe – Äh & Co")
+
+    def test_falsches_oder_fehlendes_kennwort(self):
+        for kw in ["falsch", None, FakeAdmin.erwartet, ""]:
+            code, body = self.post({"titel": "x"}, kw=kw)
+            self.assertEqual(code, 401, kw)
+            self.assertNotIn(b"quelle-kw", body)
+            self.assertNotIn(b"adm", body)
+        self.assertEqual(FakeAdmin.pfade, [])
+
+    def test_titel_begrenzt_und_geprueft(self):
+        self.assertEqual(self.post({"titel": "y" * 500})[0], 204)
+        self.assertEqual(lied(FakeAdmin.pfade[0]), "y" * hoerer.TITEL_MAX)
+        self.assertEqual(self.post({"titel": " \x00 "})[0], 400)
+        self.assertEqual(self.post({"anders": 1})[0], 400)
+        self.assertEqual(self.post(b"kein json")[0], 400)
+        self.assertEqual(self.post(b"[1]")[0], 400)
+        self.assertEqual(self.post(b"x" * (hoerer.TITEL_RUMPF_MAX + 1))[0], 413)
+        self.assertEqual(self.post({"titel": "x"}, url=self.url + "/api/hoerer")[0], 404)
+
+    def test_ohne_kennwortdateien_aus(self):
+        self.titel["admin_kw"] = self.tmp.name + "/fehlt"
+        self.assertEqual(self.post({"titel": "x"})[0], 503)
+        self.assertEqual(FakeAdmin.pfade, [])
+
+    def test_shoutcast_lehnt_ab(self):
+        with open(self.titel["admin_kw"], "w") as f:
+            f.write("anders")
+        self.assertEqual(self.post({"titel": "x"})[0], 502)
+
+
 if __name__ == "__main__":
     unittest.main()
