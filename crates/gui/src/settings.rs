@@ -1,39 +1,45 @@
-//! Einstellungen (ScreenSettings + SettingsFilter, Design Fassung 7): Bereiche links, Filter
-//! oben findet jede Einstellung, Enter springt zum ersten Treffer und markiert ihn 2 s. Eine
-//! Liste ([`REGISTRY`]) speist Filter und Anzeige; jede Zeile öffnet denselben Dialog wie das
-//! Menü Einstellungen.
+//! Einstellungen (ScreenSettings + SettingsFilter, Design Fassung 7; Gliederung André
+//! 03.11.2026): ein Fenster (Strg+,) mit sieben festen Bereichen. Eine Liste ([`REGISTRY`])
+//! speist Fenster, Filter und die Abkürzungen im Menü „Einstellungen“.
+//!
+//! **Einsortier-Regel** (auch in `CLAUDE.md` und `docs/design/umsetzung.md`): betrifft eine
+//! Einstellung nur eine Ansicht, gehört sie in deren Bereich (Radio, Party, Produzent); braucht
+//! sie ein fremdes Konto oder einen Schlüssel, gehört sie unter „Dienste und Konten“ in die
+//! Gruppe ihres Zwecks (fehlt der Zweck, kommt eine neue Gruppe in [`SERVICE_GROUPS`]); sonst
+//! nach Allgemein bzw. Audio und Geräte. Eine neue Einstellung ist ein Eintrag hier, kein Umbau.
 
-/// Bereich links.
+/// Bereich links. Reihenfolge = Anzeige.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Area {
+    Allgemein,
     Audio,
-    Sendung,
-    Midi,
-    Ki,
-    Ablage,
-    Datenschutz,
+    Radio,
+    Party,
+    Produzent,
+    Dienste,
+    /// Nur im Entwickler-Modus sichtbar.
     Entwickler,
 }
 
 impl Area {
     pub const ALL: [Area; 7] = [
+        Area::Allgemein,
         Area::Audio,
-        Area::Sendung,
-        Area::Midi,
-        Area::Ki,
-        Area::Ablage,
-        Area::Datenschutz,
+        Area::Radio,
+        Area::Party,
+        Area::Produzent,
+        Area::Dienste,
         Area::Entwickler,
     ];
 
     pub fn name(self) -> &'static str {
         match self {
-            Area::Audio => "Audio",
-            Area::Sendung => "Sendung",
-            Area::Midi => "MIDI",
-            Area::Ki => "KI",
-            Area::Ablage => "Speicherorte",
-            Area::Datenschutz => "Datenschutz",
+            Area::Allgemein => "Allgemein",
+            Area::Audio => "Audio und Geräte",
+            Area::Radio => "Radio",
+            Area::Party => "Party",
+            Area::Produzent => "Produzent",
+            Area::Dienste => "Dienste und Konten",
             Area::Entwickler => "Entwickler",
         }
     }
@@ -41,130 +47,553 @@ impl Area {
     pub fn icon(self) -> &'static str {
         use egui_phosphor::regular as ic;
         match self {
+            Area::Allgemein => ic::GEAR_SIX,
             Area::Audio => ic::SPEAKER_HIGH,
-            Area::Sendung => ic::BROADCAST,
-            Area::Midi => ic::PIANO_KEYS,
-            Area::Ki => ic::SPARKLE,
-            Area::Ablage => ic::FOLDER,
-            Area::Datenschutz => ic::SHIELD_CHECK,
+            Area::Radio => ic::RADIO,
+            Area::Party => ic::CONFETTI,
+            Area::Produzent => ic::PIANO_KEYS,
+            Area::Dienste => ic::PLUGS_CONNECTED,
             Area::Entwickler => ic::CODE,
+        }
+    }
+
+    /// Nur im Entwickler-Modus zu sehen.
+    pub fn dev_only(self) -> bool {
+        self == Area::Entwickler
+    }
+
+    /// Bereiche, die man mit diesem Entwickler-Stand sieht.
+    pub fn visible(dev: bool) -> impl Iterator<Item = Area> {
+        Area::ALL.into_iter().filter(move |a| dev || !a.dev_only())
+    }
+}
+
+/// Gruppen unter „Dienste und Konten“, nach Zweck (nicht nach Technik).
+pub const SERVICE_GROUPS: [&str; 4] = [
+    "Assistent",
+    "Stimmen und Klänge",
+    "Steuerung von außen",
+    "Sendung",
+];
+
+/// Kleine Technik-Marke auf einer Dienst-Karte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mark {
+    Api,
+    Mcp,
+}
+
+impl Mark {
+    pub fn label(self) -> &'static str {
+        match self {
+            Mark::Api => "API",
+            Mark::Mcp => "MCP",
         }
     }
 }
 
-/// Was eine Zeile öffnet (der Aufrufer führt es aus).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SettingId {
-    Assistant,
-    ReconnectOutput,
-    Outputs,
-    Pfl,
-    Ki,
-    Stream,
-    Phone,
-    Folders,
-    Controls,
-    MidiInput,
-    Telemetry,
-    Developer,
+/// Zeile (Einstellung) oder Karte (Dienst mit Status).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Row,
+    Card(Option<Mark>),
 }
 
-/// Eine Einstellung: Bereich, Name (wie im Menü), Beschreibung, Suchwörter.
+/// Was eine Zeile bedient (der Aufrufer zeichnet das Bedienelement).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SettingId {
+    // Allgemein
+    Theme,
+    VuView,
+    Folders,
+    AutoUpdate,
+    CheckUpdates,
+    Telemetry,
+    Developer,
+    // Audio und Geräte
+    Outputs,
+    ReconnectOutput,
+    Pfl,
+    Phone,
+    MidiInput,
+    Controls,
+    // Radio
+    Stream,
+    Pult,
+    Crossfade,
+    Ducking,
+    CartDuck,
+    StopFade,
+    BusProcessing,
+    MicChain,
+    WishFolder,
+    // Party
+    DjCurve,
+    // Produzent
+    SoundBanks,
+    PianoRollWindow,
+    Plugins,
+    // Dienste und Konten
+    /// Index in `ProviderConfig::presets()`.
+    Provider(u8),
+    Assistant,
+    Tools,
+    ElevenLabs,
+    Freesound,
+    McpLive,
+    McpHttp,
+    StreamRef,
+    // Entwickler
+    Abnahme,
+    Fragen,
+    DevEnd,
+}
+
+/// Eine Einstellung: Bereich, Gruppe, Titel (wie im Menü), Beschreibung, Suchwörter
+/// (Umgangssprache und Synonyme), Menü-Abkürzung, die `GuiConfig`-Felder, die sie bedient.
 #[derive(Debug, Clone, Copy)]
 pub struct Entry {
     pub id: SettingId,
     pub area: Area,
+    pub group: &'static str,
     pub name: &'static str,
     pub desc: &'static str,
     pub keys: &'static str,
+    /// Steht als Abkürzung im Menü „Einstellungen“.
+    pub menu: bool,
+    pub fields: &'static [&'static str],
+    pub kind: Kind,
 }
 
-/// Alle Einstellungen. Neue Menüeinträge unter „Einstellungen“ gehören hier hinein (Test).
+const fn row(
+    id: SettingId,
+    area: Area,
+    group: &'static str,
+    name: &'static str,
+    desc: &'static str,
+    keys: &'static str,
+) -> Entry {
+    Entry {
+        id,
+        area,
+        group,
+        name,
+        desc,
+        keys,
+        menu: false,
+        fields: &[],
+        kind: Kind::Row,
+    }
+}
+
+impl Entry {
+    const fn menu(mut self) -> Self {
+        self.menu = true;
+        self
+    }
+    const fn fields(mut self, f: &'static [&'static str]) -> Self {
+        self.fields = f;
+        self
+    }
+    const fn card(mut self, m: Option<Mark>) -> Self {
+        self.kind = Kind::Card(m);
+        self
+    }
+}
+
+use Area as A;
+use SettingId as S;
+
+/// Alle Einstellungen, nach Bereich geordnet (die Reihenfolge entscheidet den ersten Treffer).
 pub const REGISTRY: &[Entry] = &[
-    Entry {
-        id: SettingId::Outputs,
-        area: Area::Audio,
-        name: "Ausgänge (Soundkarten)",
-        desc: "Welche Soundkarte Player, Sendeausgänge und Pult nutzen",
-        keys: "ausgang gerät kopfhörer lautsprecher audio interface pult",
-    },
-    Entry {
-        id: SettingId::ReconnectOutput,
-        area: Area::Audio,
-        name: "Ausgabe neu verbinden",
-        desc: "Öffnet alle Ausgänge neu auf dem aktuellen Standardgerät, z. B. nach dem Einstecken der Kopfhörer",
-        keys: "kopfhörer neu verbinden ton weg",
-    },
-    Entry {
-        id: SettingId::Pfl,
-        area: Area::Audio,
-        name: "Vorhören (PFL)",
-        desc: "Wohin das Vorhören geht",
-        keys: "pfl cue vorhören kopfhörer",
-    },
-    Entry {
-        id: SettingId::Phone,
-        area: Area::Audio,
-        name: "Telefon (Eingang für den Anrufer)",
-        desc: "Eingang und Pegel für Anrufer in der Sendung",
-        keys: "anruf telefon hybrid gast",
-    },
-    Entry {
-        id: SettingId::Stream,
-        area: Area::Sendung,
-        name: "Sendung: Stream-Server und Kennwort",
-        desc: "Shoutcast oder Icecast: Adresse, Port, Kennwort, Verbindung testen",
-        keys: "stream shoutcast icecast server port senden",
-    },
-    Entry {
-        id: SettingId::Controls,
-        area: Area::Midi,
-        name: "Controller und MIDI-Learn",
-        desc: "Tasten und Regler eines Controllers zuordnen",
-        keys: "controller learn fader tasten zuordnen",
-    },
-    Entry {
-        id: SettingId::MidiInput,
-        area: Area::Midi,
-        name: "MIDI-Eingang",
-        desc: "Gerät, das die scharf geschaltete MIDI-Spur spielt",
-        keys: "keyboard klaviatur gerät midi",
-    },
-    Entry {
-        id: SettingId::Ki,
-        area: Area::Ki,
-        name: "KI",
-        desc: "Anbieter wählen: Claude über MCP oder ein Sprachmodell; Schlüssel nur im Schlüsselbund",
-        keys: "ki ai schlüssel api key elevenlabs anbieter modell",
-    },
-    Entry {
-        id: SettingId::Assistant,
-        area: Area::Ki,
-        name: "Assistent (Chat)",
-        desc: "Chat mit einem Sprachmodell, das WOA bedienen kann",
-        keys: "chat assistent sprachmodell",
-    },
-    Entry {
-        id: SettingId::Folders,
-        area: Area::Ablage,
-        name: "Speicherorte",
-        desc: "Wo WOA Projekte, Mitschnitte und Exporte ablegt",
-        keys: "ordner pfad projekte mitschnitt export",
-    },
-    Entry {
-        id: SettingId::Telemetry,
-        area: Area::Datenschutz,
-        name: "Fehlercodes anonym senden (ab nächstem Start)",
-        desc: "Nur Fehlercodes, keine Inhalte; ab dem nächsten Start",
-        keys: "telemetrie fehler anonym datenschutz",
-    },
-    Entry {
-        id: SettingId::Developer,
-        area: Area::Entwickler,
-        name: "Entwickler-Modus",
-        desc: "Für alle, die mitentwickeln: per Kennwort freischalten",
-        keys: "entwickler kennwort abnahme fragen",
-    },
+    // ── Allgemein
+    row(
+        S::Theme,
+        A::Allgemein,
+        "Erscheinungsbild",
+        "Erscheinungsbild",
+        "Hell oder Dunkel; die Akzentfarbe folgt der Ansicht",
+        "thema farbe hell dunkel dark mode light aussehen design",
+    )
+    .fields(&["theme"]),
+    row(
+        S::VuView,
+        A::Allgemein,
+        "Erscheinungsbild",
+        "Pegelansicht (Analyse-Fenster)",
+        "Analog (VU), Modern (Balken) oder aus",
+        "pegel vu meter balken analog anzeige",
+    )
+    .fields(&["vu_view"]),
+    row(
+        S::Folders,
+        A::Allgemein,
+        "Speicherorte",
+        "Speicherorte",
+        "Wo WOA Projekte, Mitschnitte und Exporte ablegt",
+        "ordner pfad projekte mitschnitt export ablage verzeichnis",
+    )
+    .menu()
+    .fields(&["ordner"]),
+    row(
+        S::AutoUpdate,
+        A::Allgemein,
+        "Updates",
+        "Beim Start nach Updates suchen (einmal am Tag)",
+        "Sucht beim Start höchstens einmal am Tag nach einer neuen Version",
+        "update aktualisieren neue version start",
+    )
+    .fields(&["auto_update"]),
+    row(
+        S::CheckUpdates,
+        A::Allgemein,
+        "Updates",
+        "Jetzt nach Updates suchen",
+        "Sofort nach einer neuen Version suchen",
+        "update aktualisieren neue version",
+    ),
+    row(
+        S::Telemetry,
+        A::Allgemein,
+        "Datenschutz",
+        "Fehlercodes anonym senden (ab nächstem Start)",
+        "Nur Fehlercodes, keine Inhalte; ab dem nächsten Start",
+        "telemetrie fehler anonym datenschutz privatsphäre tracking",
+    )
+    .menu()
+    .fields(&["telemetry_enabled"]),
+    row(
+        S::Developer,
+        A::Allgemein,
+        "Entwickler",
+        "Entwickler-Modus",
+        "Für alle, die mitentwickeln: per Kennwort freischalten",
+        "entwickler kennwort abnahme fragen developer",
+    )
+    .menu()
+    .fields(&["entwickler"]),
+    // ── Audio und Geräte
+    row(
+        S::Outputs,
+        A::Audio,
+        "Soundkarten",
+        "Ausgänge (Soundkarten)",
+        "Welche Soundkarte Player, Sendeausgänge und Pult nutzen",
+        "ausgang gerät kopfhörer lautsprecher audio interface pult soundkarte boxen",
+    )
+    .menu()
+    .fields(&["outputs"]),
+    row(
+        S::ReconnectOutput,
+        A::Audio,
+        "Soundkarten",
+        "Ausgabe neu verbinden",
+        "Öffnet alle Ausgänge neu auf dem aktuellen Standardgerät, z. B. nach dem Einstecken der Kopfhörer",
+        "kopfhörer neu verbinden ton weg kein ton",
+    )
+    .menu(),
+    row(
+        S::Pfl,
+        A::Audio,
+        "Ein- und Ausgänge",
+        "Vorhören (PFL)",
+        "Wohin das Vorhören geht",
+        "pfl cue vorhören kopfhörer",
+    )
+    .menu()
+    .fields(&["pfl_output"]),
+    row(
+        S::Phone,
+        A::Audio,
+        "Telefon",
+        "Telefon (Eingang für den Anrufer)",
+        "Eingang und Pegel für Anrufer in der Sendung",
+        "anruf telefon hybrid gast anrufer",
+    )
+    .menu()
+    .fields(&["phone"]),
+    row(
+        S::MidiInput,
+        A::Audio,
+        "MIDI-Controller",
+        "MIDI-Eingang",
+        "Gerät, das die scharf geschaltete MIDI-Spur spielt",
+        "keyboard klaviatur gerät midi",
+    )
+    .menu()
+    .fields(&["midi_input"]),
+    row(
+        S::Controls,
+        A::Audio,
+        "MIDI-Controller",
+        "Controller und MIDI-Learn",
+        "Tasten und Regler eines Controllers zuordnen",
+        "controller learn fader tasten zuordnen midi",
+    )
+    .menu()
+    .fields(&["controller_input", "controller_maps"]),
+    // ── Radio
+    row(
+        S::Stream,
+        A::Radio,
+        "Sendung",
+        "Sendung: Stream-Server und Kennwort",
+        "Shoutcast oder Icecast: Adresse, Port, Kennwort, Verbindung testen",
+        "stream shoutcast icecast server port senden streaming",
+    )
+    .menu()
+    .fields(&["stream"]),
+    row(
+        S::Pult,
+        A::Radio,
+        "Sendung",
+        "Pult-Modus",
+        "Die Sendung kommt vom Eingang des externen Mischpults (im Fenster Ausgänge)",
+        "pult mischpult extern mixer",
+    )
+    .fields(&["pult"]),
+    row(
+        S::Crossfade,
+        A::Radio,
+        "Übergänge (Rack im Radio)",
+        "Crossfade-Blende",
+        "Länge der Überblendung zwischen Titeln",
+        "crossfade blende überblendung übergang fade",
+    ),
+    row(
+        S::StopFade,
+        A::Radio,
+        "Übergänge (Rack im Radio)",
+        "Stopp blendet aus",
+        "Stopp an Sende-Player und Decks blendet über die eingestellte Dauer aus",
+        "stopp ausblenden fade decks",
+    ),
+    row(
+        S::Ducking,
+        A::Radio,
+        "Ducking",
+        "Musik-Ducking",
+        "Absenkung der Musik, wenn das Mikro offen ist",
+        "ducking mikro leiser absenken",
+    ),
+    row(
+        S::CartDuck,
+        A::Radio,
+        "Ducking",
+        "Ducking auch bei Carts",
+        "Musik leiser, solange ein Cart spielt",
+        "ducking cart jingle",
+    ),
+    row(
+        S::BusProcessing,
+        A::Radio,
+        "Processing",
+        "Sendebus-Processing",
+        "Lautheitsregelung, Kompressor und Limiter auf der Sendung",
+        "processing lautheit lufs kompressor limiter",
+    ),
+    row(
+        S::MicChain,
+        A::Radio,
+        "Processing",
+        "Mikro-Kette",
+        "Hochpass, Präsenz, Gate und Kompressor fürs Mikro",
+        "mikro mikrofon gate kompressor processing",
+    ),
+    row(
+        S::WishFolder,
+        A::Radio,
+        "Wunschtitel",
+        "Wunschordner",
+        "Ordner, aus dem Wunschtitel kommen (im Radio bei den Wunschtiteln)",
+        "wunsch wunschtitel ordner hörer",
+    )
+    .fields(&["wish_folder"]),
+    // ── Party
+    row(
+        S::DjCurve,
+        A::Party,
+        "DJ",
+        "Übergang weich oder hart",
+        "Kurve des Crossfaders im DJ-Mixer (unter dem Crossfader)",
+        "dj crossfader kurve weich hart übergang crossfade",
+    ),
+    // ── Produzent
+    row(
+        S::SoundBanks,
+        A::Produzent,
+        "Klänge und Bänke",
+        "Klangbank je Spur",
+        "Im Rack der MIDI-Spur; GeneralUser GS ist eingebaut, weitere Bänke kommen beim ersten Gebrauch",
+        "klang bank soundfont instrument sound",
+    ),
+    row(
+        S::PianoRollWindow,
+        A::Produzent,
+        "Piano-Roll",
+        "Piano-Roll als eigenes Fenster",
+        "Aus: im Studio-Dock; an: eigenes Fenster",
+        "piano roll noten fenster dock",
+    )
+    .fields(&["piano_roll_window"]),
+    row(
+        S::Plugins,
+        A::Produzent,
+        "Plugins",
+        "Plugins neu suchen",
+        "Liest die Plugin-Ordner noch einmal; gesperrte Plugins stehen im Rack unter „+ Plugin“",
+        "plugin clap vst effekt instrument scan",
+    ),
+    // ── Dienste und Konten · Assistent
+    row(
+        S::Provider(0),
+        A::Dienste,
+        "Assistent",
+        "Claude (Anthropic)",
+        "Chat-Assistent mit eigenem Schlüssel",
+        "ki ai claude anthropic chat assistent sprachmodell llm schlüssel",
+    )
+    .card(Some(Mark::Api))
+    .fields(&["ki"]),
+    row(
+        S::Provider(1),
+        A::Dienste,
+        "Assistent",
+        "ChatGPT (OpenAI)",
+        "Chat-Assistent mit eigenem Schlüssel",
+        "ki ai chatgpt gpt openai chat assistent sprachmodell llm schlüssel",
+    )
+    .card(Some(Mark::Api)),
+    row(
+        S::Provider(2),
+        A::Dienste,
+        "Assistent",
+        "OpenRouter",
+        "Viele Modelle über ein Konto, etwa Mistral oder Llama",
+        "ki ai openrouter mistral llama gemini chat assistent sprachmodell schlüssel",
+    )
+    .card(Some(Mark::Api)),
+    row(
+        S::Provider(3),
+        A::Dienste,
+        "Assistent",
+        "Ollama (lokal)",
+        "Sprachmodell auf diesem Rechner, ohne Konto",
+        "ki ai ollama lokal offline chat assistent sprachmodell",
+    )
+    .card(Some(Mark::Api)),
+    row(
+        S::Provider(4),
+        A::Dienste,
+        "Assistent",
+        "LM Studio (lokal)",
+        "Sprachmodell auf diesem Rechner, ohne Konto",
+        "ki ai lm studio lokal offline chat assistent sprachmodell",
+    )
+    .card(Some(Mark::Api)),
+    row(
+        S::Assistant,
+        A::Dienste,
+        "Assistent",
+        "Assistent (Chat)",
+        "Chat mit dem gewählten Sprachmodell, das WOA bedienen kann",
+        "ki ai chat assistent sprachmodell fragen",
+    )
+    .menu(),
+    row(
+        S::Tools,
+        A::Dienste,
+        "Assistent",
+        "Werkzeuge für den Assistenten",
+        "Andere Dienste als Werkzeuge anbinden und WOAs eigene Werkzeuge an/aus",
+        "ki ai werkzeuge tools server extern",
+    )
+    .card(Some(Mark::Mcp)),
+    // ── Dienste und Konten · Stimmen und Klänge
+    row(
+        S::ElevenLabs,
+        A::Dienste,
+        "Stimmen und Klänge",
+        "ElevenLabs",
+        "Stimmen, Soundeffekte und Musik mit deinem eigenen Konto; Schlüssel nur im Schlüsselbund",
+        "elevenlabs eleven labs 11 labs 11labs stimme stimmen tts text to speech sprecher \
+         sprachausgabe vorlesen ki ai voice soundeffekt",
+    )
+    .card(Some(Mark::Api)),
+    row(
+        S::Freesound,
+        A::Dienste,
+        "Stimmen und Klänge",
+        "Freesound",
+        "Samples suchen mit eigenem, kostenlosem Schlüssel",
+        "freesound samples geräusche klänge sounds schlüssel",
+    )
+    .card(Some(Mark::Api)),
+    // ── Dienste und Konten · Steuerung von außen
+    row(
+        S::McpLive,
+        A::Dienste,
+        "Steuerung von außen",
+        "Claude Desktop und Claude Code",
+        "Ein Agent bedient WOA live in diesem Fenster",
+        "mcp agent claude desktop code steuerung extern ki ai fernsteuerung",
+    )
+    .card(Some(Mark::Mcp)),
+    row(
+        S::McpHttp,
+        A::Dienste,
+        "Steuerung von außen",
+        "Hintergrund-Server",
+        "WOA wartet mit Zugriffstoken auf andere Programme (nur auf Wunsch, bis WOA schließt)",
+        "mcp api http server token port agent netzwerk",
+    )
+    .card(Some(Mark::Mcp)),
+    // ── Dienste und Konten · Sendung (Querverweis)
+    row(
+        S::StreamRef,
+        A::Dienste,
+        "Sendung",
+        "Shoutcast und Icecast",
+        "Wird unter Radio › Sendung eingerichtet",
+        "stream shoutcast icecast server senden",
+    )
+    .card(None),
+    // ── Entwickler (nur im Entwickler-Modus)
+    row(
+        S::Abnahme,
+        A::Entwickler,
+        "Werkzeuge",
+        "Abnahme",
+        "Was abzunehmen ist, je Ansicht",
+        "abnahme prüfpunkte test",
+    ),
+    row(
+        S::Fragen,
+        A::Entwickler,
+        "Werkzeuge",
+        "Fragen und To-dos",
+        "Inhaltliche Entscheidungen mit Vorschlägen",
+        "fragen todo entscheidung",
+    ),
+    row(
+        S::DevEnd,
+        A::Entwickler,
+        "Werkzeuge",
+        "Entwickler-Modus beenden",
+        "Blendet Menü und Bereich Entwickler wieder aus",
+        "entwickler beenden aus",
+    ),
+];
+
+/// `GuiConfig`-Felder ohne eigene Oberfläche, mit Grund (Test: jedes Feld ist registriert
+/// oder steht hier).
+pub const NO_UI_FIELDS: &[(&str, &str)] = &[
+    ("feedback_url", "nur config.json"),
+    ("install_id", "zufällige Kennung, intern"),
+    ("telemetry_url", "nur config.json"),
+    ("radio_buffer_frames", "nur config.json"),
+    ("last_update_check", "intern"),
+    ("mode", "Modus-Umschalter in der Kopfleiste, wird gemerkt"),
 ];
 
 /// Für die Suche: klein, Umlaute wie Grundbuchstabe (auch „ae“, „oe“, „ue“), ß wie ss.
@@ -182,16 +611,47 @@ pub fn fold(s: &str) -> String {
     out.replace("ae", "a").replace("oe", "o").replace("ue", "u")
 }
 
-/// Treffer für `query` (ohne Groß/Klein, Umlaute wie Grundbuchstabe), leer = alle.
-pub fn filter(query: &str) -> Vec<&'static Entry> {
+/// Der Eintrag zu `id`.
+pub fn entry(id: SettingId) -> Option<&'static Entry> {
+    REGISTRY.iter().find(|e| e.id == id)
+}
+
+/// Treffer für `query` (ohne Groß/Klein, Umlaute wie Grundbuchstabe), leer = alle. Ohne
+/// Entwickler-Modus fehlt der Bereich Entwickler.
+pub fn filter(query: &str, dev: bool) -> Vec<&'static Entry> {
     let q = fold(query.trim());
     REGISTRY
         .iter()
+        .filter(|e| dev || !e.area.dev_only())
         .filter(|e| {
             q.is_empty()
-                || [e.name, e.desc, e.keys, e.area.name()]
+                || [e.name, e.desc, e.keys, e.group, e.area.name()]
                     .iter()
                     .any(|t| fold(t).contains(&q))
+        })
+        .collect()
+}
+
+/// Abkürzungen im Menü „Einstellungen“: je Bereich alphabetisch.
+pub fn menu_entries(dev: bool) -> Vec<(Area, Vec<&'static Entry>)> {
+    Area::visible(dev)
+        .map(|a| {
+            let mut v: Vec<_> = REGISTRY.iter().filter(|e| e.menu && e.area == a).collect();
+            v.sort_by_key(|e| sort_key(e.name));
+            (a, v)
+        })
+        .filter(|(_, v)| !v.is_empty())
+        .collect()
+}
+
+fn sort_key(s: &str) -> String {
+    s.chars()
+        .flat_map(char::to_lowercase)
+        .map(|c| match c {
+            'ä' => 'a',
+            'ö' => 'o',
+            'ü' => 'u',
+            c => c,
         })
         .collect()
 }
@@ -210,6 +670,8 @@ pub struct SettingsWindow {
     pub maximized: bool,
     pub area: Area,
     pub query: String,
+    /// Entwickler-Modus an (setzt die App je Bild).
+    pub dev: bool,
     /// Markierte Zeile und Startzeit (egui-Zeit).
     pub marked: Option<(SettingId, f64)>,
 }
@@ -219,8 +681,9 @@ impl Default for SettingsWindow {
         Self {
             open: false,
             maximized: false,
-            area: Area::Audio,
+            area: Area::Allgemein,
             query: String::new(),
+            dev: false,
             marked: None,
         }
     }
@@ -229,10 +692,29 @@ impl Default for SettingsWindow {
 impl SettingsWindow {
     /// Enter im Filter: zum ersten Treffer springen (Bereich wechseln) und ihn markieren.
     pub fn jump(&mut self, now: f64) -> Option<SettingId> {
-        let e = filter(&self.query).first().copied()?;
+        let e = filter(&self.query, self.dev).first().copied()?;
         self.area = e.area;
         self.marked = Some((e.id, now));
         Some(e.id)
+    }
+
+    /// Menü-Abkürzung: Fenster auf, Bereich von `id`, Filter leer, Zeile 2 s markiert.
+    pub fn goto(&mut self, id: SettingId, now: f64) {
+        let Some(e) = entry(id) else {
+            return;
+        };
+        self.open = true;
+        self.query.clear();
+        self.area = e.area;
+        self.marked = Some((id, now));
+    }
+
+    /// Zahnrad einer Ansicht: Fenster beim Bereich dieser Ansicht.
+    pub fn open_area(&mut self, area: Area) {
+        self.open = true;
+        self.query.clear();
+        self.area = area;
+        self.marked = None;
     }
 
     /// Ist `id` gerade markiert?
@@ -241,10 +723,14 @@ impl SettingsWindow {
             .is_some_and(|(m, t0)| m == id && (0.0..MARK_SECONDS).contains(&(now - t0)))
     }
 
-    /// Zeichnet das Fenster. `row` zeichnet das Bedienelement einer Einstellung (Aufrufer).
+    /// Zeichnet das Fenster. `row` zeichnet rechts das Bedienelement einer Einstellung bzw.
+    /// Status und Aktionen einer Dienst-Karte (Aufrufer).
     pub fn show(&mut self, ctx: &egui::Context, mut row: impl FnMut(&mut egui::Ui, SettingId)) {
         if !self.open {
             return;
+        }
+        if !self.dev && self.area.dev_only() {
+            self.area = Area::Allgemein;
         }
         let mut open = true;
         let now = ctx.input(|i| i.time);
@@ -274,13 +760,13 @@ impl SettingsWindow {
                 self.jump(now);
             }
             ui.add_space(theme::SPACE_2);
-            let hits = filter(&self.query);
+            let hits = filter(&self.query, self.dev);
             let filtering = !self.query.trim().is_empty();
             ui.horizontal_top(|ui| {
                 // Bereiche links, mit Trefferzahl beim Filtern.
                 ui.vertical(|ui| {
-                    ui.set_width(180.0);
-                    for a in Area::ALL {
+                    ui.set_width(200.0);
+                    for a in Area::visible(self.dev) {
                         let n = hits.iter().filter(|e| e.area == a).count();
                         let text = if filtering {
                             format!("{} {}  ({n})", a.icon(), a.name())
@@ -288,7 +774,7 @@ impl SettingsWindow {
                             format!("{} {}", a.icon(), a.name())
                         };
                         let b = egui::Button::selectable(self.area == a, text)
-                            .min_size(egui::vec2(180.0, 30.0));
+                            .min_size(egui::vec2(200.0, 30.0));
                         if ui.add_enabled(!filtering || n > 0, b).clicked() {
                             self.area = a;
                         }
@@ -307,52 +793,35 @@ impl SettingsWindow {
                         if shown.is_empty() {
                             ui.weak("Keine Einstellung gefunden");
                         }
+                        let mut last_group = None;
                         for e in shown {
-                            let marked = self.is_marked(e.id, now);
-                            let fr = egui::Frame::new()
-                                .fill(if marked {
-                                    theme::mix(theme::cue(), theme::panel(), 0.82)
+                            let head = (e.area, e.group);
+                            if last_group != Some(head) {
+                                if last_group.is_some() {
+                                    ui.add_space(theme::SPACE_2);
+                                }
+                                let title = if filtering {
+                                    format!("{} › {}", e.area.name(), e.group)
                                 } else {
-                                    theme::surface()
-                                })
-                                .stroke(egui::Stroke::new(
-                                    if marked { 1.5 } else { 1.0 },
-                                    if marked {
-                                        theme::cue()
-                                    } else {
-                                        theme::border()
-                                    },
-                                ))
-                                .corner_radius(theme::RADIUS_MD)
-                                .inner_margin(egui::Margin::same(10))
-                                .show(ui, |ui| {
-                                    ui.set_width(ui.available_width());
-                                    ui.horizontal(|ui| {
-                                        ui.vertical(|ui| {
-                                            ui.label(
-                                                egui::RichText::new(e.name)
-                                                    .strong()
-                                                    .color(theme::text()),
-                                            );
-                                            ui.label(
-                                                egui::RichText::new(e.desc)
-                                                    .small()
-                                                    .color(theme::text_dim()),
-                                            );
-                                        });
-                                        // Bedienelement rechts, so hoch wie die Zeile (sonst wächst sie).
-                                        ui.allocate_ui_with_layout(
-                                            egui::vec2(ui.available_width(), 36.0),
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| row(ui, e.id),
-                                        );
-                                    });
-                                });
-                            if marked {
-                                fr.response.scroll_to_me(Some(egui::Align::Center));
-                                ctx.request_repaint();
+                                    e.group.to_string()
+                                };
+                                ui.label(theme::panel_label(title));
+                                ui.add_space(theme::SPACE_1);
+                                last_group = Some(head);
                             }
+                            self.entry_ui(ui, ctx, e, now, &mut row);
                             ui.add_space(theme::SPACE_1);
+                        }
+                        if !filtering && self.area == Area::Dienste {
+                            ui.add_space(theme::SPACE_2);
+                            ui.label(
+                                egui::RichText::new(
+                                    "Weitere Stimmen, etwa Piper auf diesem Rechner, kommen \
+                                     unter „Stimmen und Klänge“ dazu.",
+                                )
+                                .small()
+                                .color(theme::text_dim()),
+                            );
                         }
                     })
                 });
@@ -363,6 +832,65 @@ impl SettingsWindow {
             self.open = false;
         }
     }
+
+    fn entry_ui(
+        &self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        e: &Entry,
+        now: f64,
+        row: &mut impl FnMut(&mut egui::Ui, SettingId),
+    ) {
+        let marked = self.is_marked(e.id, now);
+        let card = matches!(e.kind, Kind::Card(_));
+        let fr = egui::Frame::new()
+            .fill(if marked {
+                theme::mix(theme::cue(), theme::panel(), 0.82)
+            } else if card {
+                theme::panel()
+            } else {
+                theme::surface()
+            })
+            .stroke(egui::Stroke::new(
+                if marked { 1.5 } else { 1.0 },
+                if marked {
+                    theme::cue()
+                } else {
+                    theme::border()
+                },
+            ))
+            .corner_radius(theme::RADIUS_MD)
+            .inner_margin(egui::Margin::same(10))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(e.name).strong().color(theme::text()));
+                            if let Kind::Card(Some(m)) = e.kind {
+                                crate::widgets::StateChip::new(
+                                    m.label(),
+                                    crate::widgets::ChipTone::Neutral,
+                                )
+                                .show(ui)
+                                .on_hover_text("Technik, über die WOA den Dienst anspricht");
+                            }
+                        });
+                        ui.label(egui::RichText::new(e.desc).small().color(theme::text_dim()));
+                    });
+                    // Bedienelement rechts, so hoch wie die Zeile (sonst wächst sie).
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(ui.available_width(), 36.0),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| row(ui, e.id),
+                    );
+                });
+            });
+        if marked {
+            fr.response.scroll_to_me(Some(egui::Align::Center));
+            ctx.request_repaint();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -370,7 +898,11 @@ mod tests {
     use super::*;
 
     fn names(q: &str) -> Vec<&'static str> {
-        filter(q).iter().map(|e| e.name).collect()
+        filter(q, false).iter().map(|e| e.name).collect()
+    }
+
+    fn first(q: &str) -> SettingId {
+        filter(q, false).first().map(|e| e.id).expect(q)
     }
 
     #[test]
@@ -380,7 +912,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(w.jump(10.0), Some(SettingId::Stream));
-        assert_eq!(w.area, Area::Sendung);
+        assert_eq!(w.area, Area::Radio);
         assert!(w.is_marked(SettingId::Stream, 11.9));
         assert!(!w.is_marked(SettingId::Stream, 12.0), "nach 2 s aus");
         w.query = "xyzzy".into();
@@ -388,15 +920,81 @@ mod tests {
     }
 
     #[test]
-    fn empty_filter_lists_everything() {
-        assert_eq!(filter("").len(), REGISTRY.len());
-        assert!(REGISTRY.len() >= 12);
+    fn seven_fixed_areas_in_order() {
+        let n: Vec<_> = Area::ALL.iter().map(|a| a.name()).collect();
+        assert_eq!(
+            n,
+            [
+                "Allgemein",
+                "Audio und Geräte",
+                "Radio",
+                "Party",
+                "Produzent",
+                "Dienste und Konten",
+                "Entwickler"
+            ]
+        );
+        assert!(!n.contains(&"KI"), "Bereich KI ist aufgelöst");
+        assert_eq!(Area::visible(false).count(), 6);
+        assert_eq!(Area::visible(true).count(), 7);
     }
 
     #[test]
-    fn filter_finds_by_name_description_keyword_and_area() {
+    fn every_area_has_entries_and_registry_is_ordered_by_area() {
+        for a in Area::ALL {
+            assert!(REGISTRY.iter().any(|e| e.area == a), "{} leer", a.name());
+        }
+        let pos = |a: Area| Area::ALL.iter().position(|x| *x == a);
+        assert!(
+            REGISTRY
+                .windows(2)
+                .all(|w| pos(w[0].area) <= pos(w[1].area)),
+            "REGISTRY nach Bereich ordnen"
+        );
+    }
+
+    #[test]
+    fn ids_and_titles_are_unique() {
+        for (i, a) in REGISTRY.iter().enumerate() {
+            for b in &REGISTRY[i + 1..] {
+                assert_ne!(a.id, b.id, "{} doppelt", a.name);
+                assert_ne!(a.name, b.name, "Titel doppelt");
+            }
+        }
+    }
+
+    #[test]
+    fn services_sit_in_purpose_groups_and_only_there_are_cards() {
+        for e in REGISTRY {
+            if e.area == Area::Dienste {
+                assert!(SERVICE_GROUPS.contains(&e.group), "{}: {}", e.name, e.group);
+            } else {
+                assert_eq!(e.kind, Kind::Row, "{} ist keine Dienst-Karte", e.name);
+            }
+        }
+        assert_eq!(
+            entry(S::ElevenLabs).unwrap().kind,
+            Kind::Card(Some(Mark::Api))
+        );
+        assert_eq!(entry(S::McpLive).unwrap().kind, Kind::Card(Some(Mark::Mcp)));
+        // Shoutcast bleibt unter Radio, unter Dienste nur als Querverweis.
+        assert_eq!(entry(S::Stream).unwrap().area, Area::Radio);
+        assert_eq!(entry(S::StreamRef).unwrap().kind, Kind::Card(None));
+    }
+
+    #[test]
+    fn colloquial_queries_find_the_right_place() {
+        assert_eq!(first("11 labs"), S::ElevenLabs);
+        assert_eq!(first("11labs"), S::ElevenLabs);
+        assert_eq!(first("Eleven Labs"), S::ElevenLabs);
+        assert_eq!(first("stimme"), S::ElevenLabs);
+        assert_eq!(first("TTS"), S::ElevenLabs);
+        assert_eq!(first("shoutcast"), S::Stream);
+        assert_eq!(first("stream"), S::Stream);
+        assert_eq!(first("mcp"), S::McpLive);
+        assert!(names("ki").contains(&"ElevenLabs"));
+        assert!(names("chatgpt").contains(&"ChatGPT (OpenAI)"));
         assert!(names("kennwort").contains(&"Sendung: Stream-Server und Kennwort"));
-        assert_eq!(names("icecast"), ["Sendung: Stream-Server und Kennwort"]);
         assert!(names("soundkarte").contains(&"Ausgänge (Soundkarten)"));
         assert!(
             names("KOPFHOERER").contains(&"Ausgabe neu verbinden"),
@@ -404,20 +1002,94 @@ mod tests {
         );
         assert!(names("midi").contains(&"Controller und MIDI-Learn"));
         assert!(names("datenschutz").contains(&"Fehlercodes anonym senden (ab nächstem Start)"));
-        assert!(filter("xyzzy").is_empty());
+        assert!(filter("xyzzy", false).is_empty());
     }
 
     #[test]
-    fn every_settings_menu_entry_is_in_the_registry() {
-        for (group, items) in crate::app::MENU_GROUPS {
-            if !group.starts_with("Einstellungen") {
-                continue;
-            }
-            for (label, _) in *items {
-                assert!(
-                    REGISTRY.iter().any(|e| e.name == *label),
-                    "{group} › {label} fehlt in settings::REGISTRY"
-                );
+    fn developer_area_only_in_developer_mode_but_unlock_always_reachable() {
+        assert!(filter("", false).iter().all(|e| e.area != Area::Entwickler));
+        assert!(filter("abnahme", true).iter().any(|e| e.id == S::Abnahme));
+        assert_eq!(entry(S::Developer).unwrap().area, Area::Allgemein);
+        let mut w = SettingsWindow {
+            query: "beenden".into(),
+            ..Default::default()
+        };
+        assert_eq!(w.jump(0.0), None);
+        w.dev = true;
+        assert_eq!(w.jump(0.0), Some(S::DevEnd));
+    }
+
+    #[test]
+    fn menu_shortcut_opens_the_window_at_its_place_and_marks_it() {
+        let mut w = SettingsWindow {
+            query: "midi".into(),
+            ..Default::default()
+        };
+        w.goto(S::Stream, 5.0);
+        assert!(w.open);
+        assert!(w.query.is_empty());
+        assert_eq!(w.area, Area::Radio);
+        assert!(w.is_marked(S::Stream, 6.5));
+        w.open_area(Area::Party);
+        assert_eq!(w.area, Area::Party);
+    }
+
+    #[test]
+    fn menu_shortcuts_come_from_the_registry_sorted_per_area() {
+        let m = menu_entries(false);
+        assert!(m.iter().all(|(a, _)| !a.dev_only()));
+        for (_, v) in &m {
+            let keys: Vec<_> = v.iter().map(|e| sort_key(e.name)).collect();
+            let mut s = keys.clone();
+            s.sort();
+            assert_eq!(keys, s);
+        }
+        let all: Vec<_> = m
+            .iter()
+            .flat_map(|(_, v)| v.iter().map(|e| e.name))
+            .collect();
+        for n in [
+            "Sendung: Stream-Server und Kennwort",
+            "Ausgänge (Soundkarten)",
+            "Vorhören (PFL)",
+            "Controller und MIDI-Learn",
+            "Assistent (Chat)",
+            "Entwickler-Modus",
+        ] {
+            assert!(all.contains(&n), "{n} fehlt im Menü");
+        }
+    }
+
+    /// Feldnamen von `GuiConfig`, aus dem Quelltext (serde lässt Vorgaben aus).
+    fn config_fields() -> Vec<String> {
+        let src = include_str!("feedback.rs");
+        let body = src
+            .split("pub struct GuiConfig {")
+            .nth(1)
+            .and_then(|s| s.split("\n}\n").next())
+            .expect("GuiConfig");
+        body.lines()
+            .filter_map(|l| l.trim().strip_prefix("pub "))
+            .filter_map(|l| l.split(':').next())
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn every_config_field_with_ui_is_registered() {
+        let fields = config_fields();
+        assert!(fields.len() >= 20, "{fields:?}");
+        for f in &fields {
+            let reg = REGISTRY.iter().any(|e| e.fields.contains(&f.as_str()));
+            let skip = NO_UI_FIELDS.iter().any(|(n, _)| n == f);
+            assert!(
+                reg ^ skip,
+                "Feld {f}: registrieren oder in NO_UI_FIELDS (genau eins)"
+            );
+        }
+        for e in REGISTRY {
+            for f in e.fields {
+                assert!(fields.iter().any(|x| x == f), "{}: kein Feld {f}", e.name);
             }
         }
     }

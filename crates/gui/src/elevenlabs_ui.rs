@@ -1,4 +1,4 @@
-//! ElevenLabs in der Oberfläche: Zugang unter Einstellungen → KI ([`Zugang`]) und der
+//! ElevenLabs in der Oberfläche: Zugang unter Einstellungen › Dienste und Konten ([`Zugang`]) und der
 //! Erzeuger für den Jingle-Assistenten ([`Erzeuger`]: Sprache, Effekt, Bett).
 //!
 //! Schlüsselbund und Netz nie im UI-Thread: jeder Schritt läuft in einem kurzen
@@ -189,7 +189,7 @@ fn unix_now() -> i64 {
         .map_or(0, |d| d.as_secs() as i64)
 }
 
-/// Zeile „ElevenLabs-Schlüssel“ unter Einstellungen → KI.
+/// Zeile „ElevenLabs-Schlüssel“ im Fenster Dienste und Konten.
 pub struct Zugang {
     input: String,
     stored: Option<Option<Ort>>,

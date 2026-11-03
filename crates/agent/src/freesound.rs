@@ -171,8 +171,8 @@ fn http(url: &str) -> Result<ureq::Agent, String> {
 impl Source {
     fn key(&self) -> Result<String, String> {
         (self.key)().ok_or_else(|| {
-            "Kein Freesound-Schlüssel. Leg deinen eigenen unter Einstellungen → KI → \
-             „Freesound-Schlüssel“ ab (kostenlos unter freesound.org/apiv2/apply)."
+            "Kein Freesound-Schlüssel. Leg deinen eigenen unter Einstellungen › Dienste und \
+             Konten › Freesound ab (kostenlos unter freesound.org/apiv2/apply)."
                 .to_string()
         })
     }

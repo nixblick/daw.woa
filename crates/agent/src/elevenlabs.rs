@@ -81,13 +81,13 @@ impl std::fmt::Display for Fehler {
         match self {
             Self::KeinSchluessel => write!(
                 f,
-                "Kein ElevenLabs-Schlüssel. Leg deinen eigenen unter Einstellungen → KI → \
-                 „ElevenLabs-Schlüssel“ ab."
+                "Kein ElevenLabs-Schlüssel. Leg deinen eigenen unter Einstellungen › Dienste und \
+                 Konten › ElevenLabs ab."
             ),
             Self::SchluesselAbgelehnt => write!(
                 f,
-                "ElevenLabs lehnt den Schlüssel ab (HTTP 401). Bitte unter Einstellungen → KI \
-                 neu eintragen."
+                "ElevenLabs lehnt den Schlüssel ab (HTTP 401). Bitte unter Einstellungen › \
+                 Dienste und Konten › ElevenLabs neu eintragen."
             ),
             Self::Kontingent => write!(
                 f,

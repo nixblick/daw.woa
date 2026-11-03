@@ -1,4 +1,5 @@
-//! Fenster „KI“: vorn die einfache Seite „KI einrichten“ ([`crate::ki_setup`]), dahinter
+//! Fenster „Dienste und Konten“ (bis 0.41 „KI“; öffnen die Karten unter Einstellungen ›
+//! Dienste und Konten): vorn die einfache Seite „Einrichten“ ([`crate::ki_setup`]), dahinter
 //! unter „Erweitert“ WOA als MCP-Server für beliebige Clients (Claude Desktop, Claude Code,
 //! andere). Das Zugriffstoken liegt im Schlüsselbund des Systems, nie in `config.json`
 //! ([`woa_secrets`]); im Fenster ist es maskiert, „Kopieren“ legt es in die Zwischenablage.
@@ -17,8 +18,9 @@ use crate::theme;
 /// Platzhalter für den Namen dieses Rechners in Schnipseln für Clients im Netz.
 const NETWORK_HOST: &str = "<IP-dieses-Rechners>";
 
-#[derive(Default, Clone, Copy, PartialEq)]
-enum Tab {
+/// Seite des Fensters, auf der eine Dienst-Karte es öffnet.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub enum Tab {
     #[default]
     Setup,
     Server,
@@ -54,6 +56,17 @@ impl KiUi {
         self.note = None;
         self.assistant.reset(&self.draft);
         self.tab = Tab::Setup;
+    }
+
+    /// Öffnet das Fenster auf einer bestimmten Seite.
+    pub fn open_at(&mut self, saved: &KiConfig, data_dir: &Path, tab: Tab) {
+        self.open(saved, data_dir);
+        self.tab = tab;
+    }
+
+    /// Läuft der HTTP-Hintergrund-Server?
+    pub fn http_running(&self) -> bool {
+        self.proc.is_some()
     }
 
     /// Wurde das Token seit dem letzten Aufruf neu erzeugt? (Hook für den Live-Server.)
@@ -138,7 +151,7 @@ impl KiUi {
         let mut open = true;
         let mut save = false;
         let mut changed = false;
-        egui::Window::new("KI")
+        egui::Window::new("Dienste und Konten")
             .open(&mut open)
             .collapsible(false)
             .default_width(600.0)
@@ -148,16 +161,16 @@ impl KiUi {
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.selectable_value(&mut self.tab, Tab::Setup, "KI einrichten");
+                            ui.selectable_value(&mut self.tab, Tab::Setup, "Einrichten");
                             ui.selectable_value(
                                 &mut self.tab,
                                 Tab::Server,
-                                "Erweitert: MCP-Server",
+                                "Steuerung von außen (MCP)",
                             );
                             ui.selectable_value(
                                 &mut self.tab,
                                 Tab::Assistant,
-                                "Erweitert: Anbieter und Werkzeuge",
+                                "Anbieter und Werkzeuge",
                             );
                         });
                         ui.separator();

@@ -54,7 +54,7 @@ impl ChatUi {
         if let Some(c) = cfg.mcp_client {
             self.problem = Some(format!(
                 "Du hast {} gewählt: dort sprichst du mit WOA. Für den Chat hier wähle unter \
-                 Einstellungen → KI einen API-Anbieter (Anthropic, Ollama …).",
+                 Einstellungen › Dienste und Konten › Assistent einen API-Anbieter (Anthropic, Ollama …).",
                 c.label()
             ));
             return;
@@ -155,7 +155,10 @@ impl ChatUi {
         if let Some(p) = &self.problem {
             ui.label(egui::RichText::new(p).color(theme::warn()));
             ui.horizontal(|ui| {
-                if ui.link("Einstellungen → KI öffnen").clicked() {
+                if ui
+                    .link("Einstellungen › Dienste und Konten öffnen")
+                    .clicked()
+                {
                     settings = true;
                 }
                 if ui.button("Erneut versuchen").clicked() {
@@ -212,7 +215,7 @@ impl ChatUi {
         (restart, settings)
     }
 
-    /// Reiter „KI-Chat“ im Studio-Dock. `true`: „Einstellungen → KI“ wurde angeklickt.
+    /// Reiter „KI-Chat“ im Studio-Dock. `true`: „Einstellungen › Dienste und Konten“ wurde angeklickt.
     pub fn dock(
         &mut self,
         ui: &mut egui::Ui,
@@ -242,7 +245,7 @@ impl ChatUi {
     }
 
     /// Schwebendes Fenster (Menü „Assistent (Chat)“ außerhalb des Produzenten).
-    /// `true`: „Einstellungen → KI“ wurde angeklickt.
+    /// `true`: „Einstellungen › Dienste und Konten“ wurde angeklickt.
     pub fn show(
         &mut self,
         ctx: &egui::Context,

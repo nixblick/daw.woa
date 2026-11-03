@@ -451,7 +451,7 @@ impl JingleAssistent {
                     egui::Button::selectable(self.elevenlabs_sprecher && key, "ElevenLabs"),
                 )
                 .on_disabled_hover_text(
-                    "Eigenen ElevenLabs-Schlüssel unter Einstellungen → KI eintragen",
+                    "Eigenen ElevenLabs-Schlüssel unter Einstellungen › Dienste und Konten eintragen",
                 )
                 .clicked()
             {

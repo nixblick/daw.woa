@@ -254,6 +254,12 @@ pub struct WoaApp {
     protokoll: crate::protokoll::ProtokollWindow,
     /// Fenster Einstellungen (Fassung 7: Bereiche, Filter).
     settings: crate::settings::SettingsWindow,
+    /// Liegt ein Schlüssel für einen Dienst (Karten unter Dienste und Konten)? Im Hintergrund
+    /// nachgesehen, beim Öffnen des Fensters neu.
+    service_keys: crate::ki_setup::KeyStatus,
+    /// Sprung, den eine Zeile im Fenster anfordert (nach dem Zeichnen ausgeführt).
+    settings_goto: Option<crate::settings::SettingId>,
+    settings_was_open: bool,
     /// Entwickler-Modus: Freischalt-Fenster und „Fragen und To-dos“.
     entwickler_tor: crate::fragen::EntwicklerTor,
     fragen: crate::fragen::FragenWindow,
@@ -572,6 +578,9 @@ impl WoaApp {
             frame_watch: woa_telemetry::FrameWatch::new(),
             protokoll: Default::default(),
             settings: Default::default(),
+            service_keys: Default::default(),
+            settings_goto: None,
+            settings_was_open: false,
             entwickler_tor: Default::default(),
             fragen: Default::default(),
             abnahme: Default::default(),
@@ -822,7 +831,8 @@ impl WoaApp {
             .chat_ui
             .show(ctx, &self.config.ki, &self.data_dir, project.as_deref())
         {
-            self.ki_ui.open(&self.config.ki, &self.data_dir);
+            self.settings
+                .goto(crate::settings::SettingId::Provider(0), self.now);
         }
         let applied = self.ki_ui.show(ctx, &self.data_dir, project.as_deref());
         if self.ki_ui.take_token_changed() {
@@ -2485,6 +2495,18 @@ impl WoaApp {
             self.settings.open = true;
             self.settings.query = q;
         }
+        if first && let Ok(a) = std::env::var("WOA_SETTINGS_AREA") {
+            // Fotomodus je Bereich: Name wie links im Fenster (Entwickler nur für dieses Bild).
+            if let Some(area) = crate::settings::Area::ALL
+                .into_iter()
+                .find(|x| x.name() == a)
+            {
+                if area.dev_only() {
+                    self.config.entwickler = true;
+                }
+                self.settings.open_area(area);
+            }
+        }
         if n == 4 && std::env::var_os("WOA_SOUNDPICKER").is_some() {
             // Fotomodus Klangauswahl: erste MIDI-Spur (mit WOA_DEMO_SONG), nur Anzeige.
             let id = self
@@ -2536,7 +2558,7 @@ impl WoaApp {
             }
         }
         if first && std::env::var_os("WOA_KI").is_some() {
-            // Fotomodus Einstellungen › KI (u. a. ElevenLabs-Schlüssel).
+            // Fotomodus Fenster „Dienste und Konten“ (u. a. ElevenLabs-Schlüssel).
             self.ki_ui.open(&self.config.ki, &self.data_dir);
         }
         if first && std::env::var_os("WOA_DEMO_SONG").is_some() {
@@ -2639,13 +2661,29 @@ impl WoaApp {
                     if let Some(r) = self.mcp_live.chip(ui, compact)
                         && r.clicked()
                     {
-                        self.ki_ui.open(&self.config.ki, &self.data_dir);
+                        self.settings
+                            .goto(crate::settings::SettingId::McpLive, self.now);
                     }
                     self.rec_chip(ui, compact);
                     self.onair_lamp(ui, compact);
                     self.midi_lamp(ui, compact);
                     status_sep(ui);
                     self.mode_switch(ui, compact);
+                    // Zahnrad: Einstellungen beim Bereich der aktuellen Ansicht.
+                    let area = self.mode_area();
+                    if topbar_chip(
+                        ui,
+                        theme::ic::GEAR_SIX,
+                        "Einstellungen der Ansicht",
+                        ChipLook::Plain,
+                        true,
+                        true,
+                    )
+                    .on_hover_text(format!("Einstellungen › {} (Strg+,)", area.name()))
+                    .clicked()
+                    {
+                        self.settings.open_area(area);
+                    }
                 });
                 ui.add_space(TOPBAR_GROUP_GAP);
                 self.update_info(ui);
@@ -2881,113 +2919,30 @@ impl WoaApp {
         self.photo_menu(ui, "Ansicht", &r.response);
         let r = ui.menu_button("Einstellungen", |ui| {
             if ui
-                .button(format!("{} Alle Einstellungen (Strg+,)", theme::ic::GEAR_SIX))
+                .button(format!(
+                    "{} Alle Einstellungen (Strg+,)",
+                    theme::ic::GEAR_SIX
+                ))
                 .on_hover_text("Fenster mit Bereichen und Filter, der jede Einstellung findet")
                 .clicked()
             {
-                self.settings.open = true;
+                self.settings.open_area(self.mode_area());
                 ui.close();
             }
-            ui.separator();
-            ui.label(
-                egui::RichText::new("Audio")
-                    .small()
-                    .color(theme::text_dim()),
-            );
-            if ui
-                .button("Assistent (Chat)")
-                .on_hover_text("Chat mit einem Sprachmodell deiner Wahl, das WOA bedienen kann")
-                .clicked()
-            {
-                let project = self
-                    .state
-                    .session()
-                    .path()
-                    .map(std::path::Path::to_path_buf);
-                if self.config.mode == Mode::Produzent {
-                    // Im Produzenten wohnt der Chat im Studio-Dock.
-                    self.studio_dock = StudioDockTab::Chat;
-                } else {
-                    self.chat_ui
-                        .open(&self.config.ki, &self.data_dir, project.as_deref());
+            // Abkürzungen aus dem Register: springen an die Stelle im Fenster (2 s markiert).
+            for (area, entries) in crate::settings::menu_entries(self.config.entwickler) {
+                ui.separator();
+                ui.label(
+                    egui::RichText::new(area.name())
+                        .small()
+                        .color(theme::text_dim()),
+                );
+                for e in entries {
+                    if ui.button(e.name).on_hover_text(e.desc).clicked() {
+                        self.settings.goto(e.id, self.now);
+                        ui.close();
+                    }
                 }
-                ui.close();
-            }
-            if ui
-                .button("Ausgabe neu verbinden")
-                .on_hover_text(
-                    "Öffnet Player, Sendeausgänge und Vorhören neu auf dem aktuellen \
-                     Standardgerät, z. B. nach dem Einstecken der Kopfhörer",
-                )
-                .clicked()
-            {
-                if let Some(p) = self.player.as_mut() {
-                    p.reconnect_output();
-                }
-                if let Some(r) = self.radio.as_mut() {
-                    r.reconnect_outputs();
-                }
-                tracing::info!("output reconnect by button");
-                ui.close();
-            }
-            if ui.button("Ausgänge (Soundkarten)").clicked() {
-                self.outputs_ui.open(&self.config.outputs, &self.config.pult);
-                ui.close();
-            }
-            if ui
-                .button("KI")
-                .on_hover_text(
-                    "Anbieter wählen: Claude Desktop/Code über MCP oder ein Sprachmodell für den KI-Chat",
-                )
-                .clicked()
-            {
-                self.ki_ui.open(&self.config.ki, &self.data_dir);
-                ui.close();
-            }
-            if ui
-                .button("Sendung: Stream-Server und Kennwort")
-                .on_hover_text("Shoutcast oder Icecast: Adresse, Port, Kennwort, Verbindung testen")
-                .clicked()
-            {
-                self.stream_ui.open(&self.config.stream, &self.data_dir);
-                ui.close();
-            }
-            if ui
-                .button("Speicherorte")
-                .on_hover_text("Wo WOA Projekte, Mitschnitte und Exporte ablegt (WOA-Ordner)")
-                .clicked()
-            {
-                self.ordner_ui.open = true;
-                ui.close();
-            }
-            if ui.button("Telefon (Eingang für den Anrufer)").clicked() {
-                self.phone_ui.open(&self.config.phone);
-                ui.close();
-            }
-            self.pfl_menu(ui);
-            ui.separator();
-            ui.label(egui::RichText::new("MIDI").small().color(theme::text_dim()));
-            if ui.button("Controller und MIDI-Learn").clicked() {
-                self.controls.window = true;
-                ui.close();
-            }
-            self.midi_menu(ui);
-            ui.separator();
-            if ui
-                .button("Entwickler-Modus")
-                .on_hover_text("Für alle, die mitentwickeln: per Kennwort freischalten")
-                .clicked()
-            {
-                self.entwickler_tor.open = true;
-                ui.close();
-            }
-            let mut on = self.config.telemetry_enabled == Some(true);
-            if ui
-                .checkbox(&mut on, "Fehlercodes anonym senden (ab nächstem Start)")
-                .on_hover_text(TELEMETRY_HINT)
-                .changed()
-            {
-                self.set_telemetry(on);
             }
         });
         self.photo_menu(ui, "Einstellungen", &r.response);
@@ -6192,10 +6147,34 @@ impl WoaApp {
         self.config_path = Some(path);
     }
 
-    /// Bedienelement einer Zeile im Fenster Einstellungen: dieselbe Wirkung wie im Menü.
+    /// Bereich im Fenster Einstellungen, der zur aktuellen Ansicht gehört (Zahnrad, Strg+,).
+    fn mode_area(&self) -> crate::settings::Area {
+        use crate::settings::Area;
+        match self.config.mode {
+            Mode::Produzent => Area::Produzent,
+            Mode::Radio => Area::Radio,
+            Mode::Party => Area::Party,
+        }
+    }
+
+    /// Bedienelement einer Zeile im Fenster Einstellungen bzw. Status und Aktion einer
+    /// Dienst-Karte: dieselbe Wirkung wie bisher im Menü und in den Dialogen.
     fn setting_row(&mut self, ui: &mut egui::Ui, id: crate::settings::SettingId) {
+        use crate::ki_ui::Tab as KiTab;
         use crate::settings::SettingId as S;
+        use crate::widgets::{ChipTone, StateChip};
         let open = |ui: &mut egui::Ui| ui.button("Öffnen").clicked();
+        let setup = |ui: &mut egui::Ui| ui.button("Einrichten").clicked();
+        // Einstellungen, die in einer Ansicht wohnen: dorthin wechseln.
+        let show_in = |ui: &mut egui::Ui, mode: Mode| {
+            let name = match mode {
+                Mode::Produzent => "Im Produzenten zeigen",
+                Mode::Radio => "Im Radio zeigen",
+                Mode::Party => "In Party zeigen",
+            };
+            ui.button(name).clicked().then_some(mode)
+        };
+        let mut go = None;
         match id {
             // Menülisten als Aufklapper: sonst sprengen sie die Zeile (Foto 0.41.0).
             S::Pfl => {
@@ -6208,6 +6187,46 @@ impl WoaApp {
                     self.midi_menu(ui)
                 });
             }
+            S::Theme => {
+                for t in [theme::Theme::Hell, theme::Theme::Dunkel] {
+                    if ui
+                        .selectable_value(&mut self.config.theme, t, t.label())
+                        .changed()
+                    {
+                        self.save_config();
+                    }
+                }
+            }
+            S::VuView => {
+                ui.menu_button(
+                    format!("{} {}", self.config.vu_view.label(), theme::ic::CARET_DOWN),
+                    |ui| {
+                        for v in crate::widgets::VuView::ALL {
+                            if ui
+                                .radio_value(&mut self.config.vu_view, v, v.label())
+                                .changed()
+                            {
+                                self.save_config();
+                            }
+                        }
+                    },
+                );
+            }
+            S::AutoUpdate => {
+                let mut on = self.config.auto_update;
+                if ui.checkbox(&mut on, "").changed() {
+                    self.config.auto_update = on;
+                    self.save_config();
+                }
+            }
+            S::CheckUpdates => {
+                if ui
+                    .add_enabled(!self.update.busy(), egui::Button::new("Jetzt suchen"))
+                    .clicked()
+                {
+                    self.check_updates_now(ui.ctx());
+                }
+            }
             S::Telemetry => {
                 let mut on = self.config.telemetry_enabled == Some(true);
                 if ui
@@ -6216,6 +6235,13 @@ impl WoaApp {
                     .changed()
                 {
                     self.set_telemetry(on);
+                }
+            }
+            S::Developer => {
+                if self.config.entwickler {
+                    StateChip::new("an", ChipTone::Ok).show(ui);
+                } else if ui.button("Freischalten").clicked() {
+                    self.entwickler_tor.open = true;
                 }
             }
             S::ReconnectOutput => {
@@ -6228,15 +6254,126 @@ impl WoaApp {
                     }
                 }
             }
+            S::Pult => {
+                if ui.button("Ausgänge öffnen").clicked() {
+                    self.outputs_ui
+                        .open(&self.config.outputs, &self.config.pult);
+                }
+                let (t, tone) = if self.config.pult.on {
+                    ("an", ChipTone::Ok)
+                } else {
+                    ("aus", ChipTone::Neutral)
+                };
+                StateChip::new(t, tone).show(ui);
+            }
+            S::Crossfade
+            | S::Ducking
+            | S::CartDuck
+            | S::StopFade
+            | S::BusProcessing
+            | S::MicChain
+            | S::WishFolder => go = show_in(ui, Mode::Radio),
+            S::DjCurve => go = show_in(ui, Mode::Party),
+            S::SoundBanks => go = show_in(ui, Mode::Produzent),
+            S::PianoRollWindow => {
+                let mut on = self.config.piano_roll_window;
+                if ui.checkbox(&mut on, "").changed() {
+                    self.config.piano_roll_window = on;
+                    self.piano_roll_floating = on;
+                    self.save_config();
+                }
+            }
+            S::Plugins => {
+                if ui
+                    .add_enabled(self.player.is_some(), egui::Button::new("Neu suchen"))
+                    .clicked()
+                    && let Some(p) = self.player.as_mut()
+                {
+                    p.rescan_plugins();
+                }
+            }
+            S::Provider(i) => {
+                if setup(ui) {
+                    self.ki_ui
+                        .open_at(&self.config.ki, &self.data_dir, KiTab::Setup);
+                }
+                let (t, tone) = provider_state(&self.config.ki, usize::from(i));
+                StateChip::new(t, tone).show(ui);
+            }
+            S::Tools => {
+                if open(ui) {
+                    self.ki_ui
+                        .open_at(&self.config.ki, &self.data_dir, KiTab::Assistant);
+                }
+            }
+            S::ElevenLabs | S::Freesound => {
+                if setup(ui) {
+                    self.ki_ui
+                        .open_at(&self.config.ki, &self.data_dir, KiTab::Setup);
+                }
+                let account = if id == S::ElevenLabs {
+                    woa_agent::elevenlabs::KEY_ACCOUNT
+                } else {
+                    woa_agent::freesound::KEY_ACCOUNT
+                };
+                let (t, tone) = match self.service_keys.get(&self.data_dir, account) {
+                    None => {
+                        ui.ctx()
+                            .request_repaint_after(std::time::Duration::from_millis(150));
+                        ("prüfe", ChipTone::Busy)
+                    }
+                    Some(Some(_)) => ("Schlüssel gespeichert", ChipTone::Ok),
+                    Some(None) => ("nicht eingerichtet", ChipTone::Neutral),
+                };
+                StateChip::new(t, tone).show(ui);
+            }
+            S::McpLive => {
+                if setup(ui) {
+                    self.ki_ui
+                        .open_at(&self.config.ki, &self.data_dir, KiTab::Setup);
+                }
+                use crate::mcp_live::LiveStatus;
+                let (t, tone) = match self.mcp_live.status() {
+                    LiveStatus::Connected => ("verbunden", ChipTone::Ok),
+                    LiveStatus::Ready => ("bereit", ChipTone::Neutral),
+                    LiveStatus::Off => ("nicht verbunden", ChipTone::Neutral),
+                };
+                StateChip::new(t, tone).show(ui);
+            }
+            S::McpHttp => {
+                if open(ui) {
+                    self.ki_ui
+                        .open_at(&self.config.ki, &self.data_dir, KiTab::Server);
+                }
+                let (t, tone) = if self.ki_ui.http_running() {
+                    ("läuft", ChipTone::Ok)
+                } else {
+                    ("aus", ChipTone::Neutral)
+                };
+                StateChip::new(t, tone).show(ui);
+            }
+            S::StreamRef => {
+                if ui
+                    .button(format!("Zu Radio › Sendung {}", theme::ic::CARET_RIGHT))
+                    .clicked()
+                {
+                    self.settings_goto = Some(S::Stream);
+                }
+            }
+            S::Abnahme if open(ui) => self.abnahme.open_window(ui.ctx()),
+            S::Fragen if open(ui) => self.fragen.open_window(ui.ctx()),
+            S::DevEnd => {
+                if ui.button("Beenden").clicked() {
+                    self.entwickler_beenden();
+                }
+            }
             S::Outputs if open(ui) => self
                 .outputs_ui
                 .open(&self.config.outputs, &self.config.pult),
-            S::Ki if open(ui) => self.ki_ui.open(&self.config.ki, &self.data_dir),
             S::Stream if open(ui) => self.stream_ui.open(&self.config.stream, &self.data_dir),
             S::Folders if open(ui) => self.ordner_ui.open = true,
             S::Phone if open(ui) => self.phone_ui.open(&self.config.phone),
             S::Controls if open(ui) => self.controls.window = true,
-            S::Developer if open(ui) => self.entwickler_tor.open = true,
             S::Assistant if open(ui) => {
                 let project = self
                     .state
@@ -6251,6 +6388,9 @@ impl WoaApp {
                 }
             }
             _ => {}
+        }
+        if let Some(mode) = go {
+            self.set_mode(mode);
         }
     }
 
@@ -6965,11 +7105,24 @@ impl eframe::App for WoaApp {
         self.protokoll
             .show(&ctx, &crate::protokoll::log_dir(&self.data_dir));
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Comma)) {
-            self.settings.open = !self.settings.open;
+            if self.settings.open {
+                self.settings.open = false;
+            } else {
+                self.settings.open_area(self.mode_area());
+            }
         }
+        if self.settings.open && !self.settings_was_open {
+            // Schlüssel-Status frisch nachsehen (im Hintergrund, nie im UI-Thread).
+            self.service_keys = Default::default();
+        }
+        self.settings_was_open = self.settings.open;
+        self.settings.dev = self.config.entwickler;
         let mut settings = std::mem::take(&mut self.settings);
         settings.show(&ctx, |ui, id| self.setting_row(ui, id));
         self.settings = settings;
+        if let Some(id) = self.settings_goto.take() {
+            self.settings.goto(id, self.now);
+        }
         // Die Schriften gelten erst ab dem nächsten Durchlauf (sonst fehlen die Familien
         // `label` und `seg`): beim allerersten Bild nur setzen und neu zeichnen lassen.
         if theme::install_fonts(&ctx) {
@@ -7372,7 +7525,8 @@ impl WoaApp {
                         .chat_ui
                         .dock(ui, &self.config.ki, &self.data_dir, project.as_deref())
                     {
-                        self.ki_ui.open(&self.config.ki, &self.data_dir);
+                        self.settings
+                            .goto(crate::settings::SettingId::Provider(0), self.now);
                     }
                 }
             }
@@ -9158,42 +9312,6 @@ pub(crate) const MENU_GROUPS: &[(&str, &[(&str, &str)])] = &[
     ),
     ("Ansicht", &[("Erscheinungsbild", "self.theme_menu(ui)")]),
     (
-        "Einstellungen › Audio",
-        &[
-            ("Assistent (Chat)", "\"Assistent (Chat)\""),
-            ("Ausgabe neu verbinden", "\"Ausgabe neu verbinden\""),
-            ("Ausgänge (Soundkarten)", "\"Ausgänge (Soundkarten)\""),
-            ("KI", "\"KI\""),
-            (
-                "Sendung: Stream-Server und Kennwort",
-                "\"Sendung: Stream-Server und Kennwort\"",
-            ),
-            ("Speicherorte", "\"Speicherorte\""),
-            (
-                "Telefon (Eingang für den Anrufer)",
-                "\"Telefon (Eingang für den Anrufer)\"",
-            ),
-            ("Vorhören (PFL)", "self.pfl_menu(ui)"),
-        ],
-    ),
-    (
-        "Einstellungen › MIDI",
-        &[
-            ("Controller und MIDI-Learn", "\"Controller und MIDI-Learn\""),
-            ("MIDI-Eingang", "self.midi_menu(ui)"),
-        ],
-    ),
-    (
-        "Einstellungen",
-        &[
-            ("Entwickler-Modus", "\"Entwickler-Modus\""),
-            (
-                "Fehlercodes anonym senden (ab nächstem Start)",
-                "\"Fehlercodes anonym senden (ab nächstem Start)\"",
-            ),
-        ],
-    ),
-    (
         "Entwickler",
         &[
             ("Entwickler-Modus beenden", "\"Entwickler-Modus beenden\""),
@@ -9214,6 +9332,33 @@ pub(crate) const MENU_GROUPS: &[(&str, &[(&str, &str)])] = &[
     ),
     ("Hilfe", &[("Über WOA", "\"Über WOA\"")]),
 ];
+
+/// Status einer Assistent-Karte aus `config.json` (ohne Schlüsselbund): gewählt, eingerichtet
+/// oder nicht eingerichtet.
+pub(crate) fn provider_state(
+    ki: &woa_assistant::KiConfig,
+    preset: usize,
+) -> (&'static str, crate::widgets::ChipTone) {
+    use crate::widgets::ChipTone;
+    if ki.pick() == Some(woa_assistant::Pick::Preset(preset)) {
+        return ("gewählt", ChipTone::Ok);
+    }
+    let Some((_, kind, url)) = woa_assistant::ProviderConfig::presets()
+        .get(preset)
+        .copied()
+    else {
+        return ("nicht eingerichtet", ChipTone::Neutral);
+    };
+    if ki
+        .providers
+        .iter()
+        .any(|p| p.kind == kind && p.base_url == url)
+    {
+        ("eingerichtet", ChipTone::Neutral)
+    } else {
+        ("nicht eingerichtet", ChipTone::Neutral)
+    }
+}
 
 /// Sortierschlüssel nach DIN 5007-1: Groß/klein egal, Umlaute wie Grundbuchstabe, ß wie ss.
 #[cfg(test)]
