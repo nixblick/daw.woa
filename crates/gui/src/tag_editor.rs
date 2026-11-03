@@ -7,6 +7,7 @@
 //! ([`woa_library::tags::write_fields`]); die Wiedergabe läuft aus dem Speicher und merkt
 //! nichts. Hält ein anderes Programm die Datei (Windows), versucht WOA es selbst wieder.
 
+use crate::ordner::Modal;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
@@ -504,7 +505,7 @@ impl TagEditor {
             if ui.button("Bild …").on_hover_text("JPEG oder PNG").clicked()
                 && let Some(p) = rfd::FileDialog::new()
                     .add_filter("Bild", &["jpg", "jpeg", "png"])
-                    .pick_file()
+                    .pick_file_modal()
             {
                 self.set_cover_file(&p);
             }

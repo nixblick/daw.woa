@@ -5,6 +5,7 @@
 //! Läuft komplett im UI-Thread und im Import-Hintergrund-Thread von `woa-library`; mit dem
 //! Audio-Thread hat es nichts zu tun (Vorhören geht über den vorhandenen PFL-Weg der App).
 
+use crate::ordner::Modal;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -597,7 +598,7 @@ impl LibraryWindow {
                 .clicked()
                 && let Some(dir) = crate::ordner::dialog_musik()
                     .set_title("Ordner mit Musik, Samples oder Jingles")
-                    .pick_folder()
+                    .pick_folder_modal()
             {
                 self.start_import(&dir);
             }

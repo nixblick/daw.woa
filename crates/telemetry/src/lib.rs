@@ -35,7 +35,7 @@ pub use upload::{
     DEFAULT_INGEST_URL, Event, LOG_BURST, LOG_WINDOW, Level, UploadConfig, UploadLayer, Uploader,
     new_install_id,
 };
-pub use watch::{FrameWatch, METRIC_TARGET, metric};
+pub use watch::{FrameWatch, METRIC_TARGET, PauseGuard, metric, pause};
 
 /// Tage, die Logdateien liegen bleiben (eine Datei je Tag).
 pub const LOG_RETENTION_DAYS: usize = 30;

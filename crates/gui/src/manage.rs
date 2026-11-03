@@ -6,6 +6,7 @@
 //! Die laufende Playlist lässt sich auf Sendung nicht löschen, ein Wechsel lässt den
 //! laufenden Titel und die Decks weiterspielen.
 
+use crate::ordner::Modal;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -210,7 +211,7 @@ impl ManageWindow {
                 if ui.button("M3U importieren …").clicked()
                     && let Some(p) = crate::ordner::dialog(crate::ordner::Art::Sendungen)
                         .add_filter("M3U", &["m3u", "m3u8"])
-                        .pick_file()
+                        .pick_file_modal()
                 {
                     out.push(Action::Import(p));
                 }
@@ -271,7 +272,7 @@ impl ManageWindow {
                                 woa_engine::decode::FILTER_NAME,
                                 &woa_engine::decode::dialog_extensions(),
                             )
-                            .pick_files()
+                            .pick_files_modal()
                     {
                         out.push(Action::Add(sel, files));
                     }
@@ -386,7 +387,7 @@ impl ManageWindow {
             if let Some(p) = crate::ordner::dialog(crate::ordner::Art::Sendungen)
                 .add_filter("M3U8", &["m3u8"])
                 .set_file_name(format!("{name}.m3u8"))
-                .save_file()
+                .save_file_modal()
             {
                 out.push(Action::Export(i, p));
             }

@@ -8,7 +8,7 @@
 //! Leerlauf zählt nicht: egui zeichnet ohne Eingabe keine Frames, gemessen wird nur, was
 //! zwischen Anfang und Ende eines Frames liegt.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -67,6 +67,7 @@ impl FrameWatch {
         FrameGuard {
             inner: self.0.clone(),
             start: Instant::now(),
+            paused_at_start: PAUSED_TOTAL_MS.load(Ordering::Relaxed),
         }
     }
 
@@ -206,11 +207,19 @@ impl Default for FrameWatch {
 pub struct FrameGuard {
     inner: Arc<Inner>,
     start: Instant,
+    paused_at_start: u64,
 }
 
 impl Drop for FrameGuard {
     fn drop(&mut self) {
-        self.inner.end(self.start.elapsed());
+        let paused = PAUSED_TOTAL_MS
+            .load(Ordering::Relaxed)
+            .saturating_sub(self.paused_at_start);
+        self.inner.end(
+            self.start
+                .elapsed()
+                .saturating_sub(Duration::from_millis(paused)),
+        );
     }
 }
 
@@ -218,26 +227,84 @@ fn ms_since(epoch: Instant) -> u64 {
     epoch.elapsed().as_millis() as u64
 }
 
-/// Meldet einen laufenden Hänger einmal ab [`HANG_MS`] und danach alle 10 s erneut.
+/// Anzahl gerade offener Messpausen (modale Dialoge).
+static PAUSED: AtomicU32 = AtomicU32::new(0);
+/// Summe aller bisher beendeten Messpausen in ms.
+static PAUSED_TOTAL_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Hält die Messung an, solange der Wert lebt. Für modale Dialoge (Datei wählen, Ordner
+/// wählen, Speichern unter): Der Frame steht dort, weil der Mensch wählt, nicht weil die
+/// Oberfläche hängt. Die Zeit zählt weder als Hänger noch in `ui.frame_slow`.
+#[must_use = "die Pause gilt nur, solange der Wert lebt"]
+pub struct PauseGuard(Instant);
+
+/// Beginnt eine Messpause (siehe [`PauseGuard`]).
+pub fn pause() -> PauseGuard {
+    PAUSED.fetch_add(1, Ordering::Relaxed);
+    PauseGuard(Instant::now())
+}
+
+impl Drop for PauseGuard {
+    fn drop(&mut self) {
+        PAUSED_TOTAL_MS.fetch_add(self.0.elapsed().as_millis() as u64, Ordering::Relaxed);
+        PAUSED.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// Zustand des Wächters: meldet einen laufenden Hänger einmal ab [`HANG_MS`] und danach
+/// alle 10 s erneut. Reine Rechnung, damit sie ohne Uhr testbar ist.
+struct Dog {
+    reported_for: u64,
+    next_at: u64,
+    /// Ende der letzten Pause in ms seit `epoch`: davor zählt ein Frame nicht.
+    floor: u64,
+}
+
+impl Dog {
+    fn new() -> Self {
+        Self {
+            reported_for: 0,
+            next_at: HANG_MS,
+            floor: 0,
+        }
+    }
+
+    /// Ein Schritt: `now` und `start` in ms seit `epoch` (`start` 0 = kein Frame),
+    /// `paused` = eine Messpause läuft. Gibt die offene Dauer zurück, wenn zu melden ist.
+    fn tick(&mut self, now: u64, start: u64, paused: bool) -> Option<u64> {
+        if paused {
+            self.floor = now;
+        }
+        if start == 0 {
+            self.reported_for = 0;
+            self.next_at = HANG_MS;
+            return None;
+        }
+        if start != self.reported_for {
+            self.reported_for = start;
+            self.next_at = HANG_MS;
+        }
+        if paused {
+            self.next_at = HANG_MS;
+            return None;
+        }
+        let open = now.saturating_sub(start.max(self.floor));
+        if open >= self.next_at {
+            self.next_at = open + 10_000;
+            return Some(open);
+        }
+        None
+    }
+}
+
 fn watchdog(busy_since: &AtomicU64, epoch: Instant) {
-    let mut reported_for = 0u64;
-    let mut next_at = HANG_MS;
+    let mut dog = Dog::new();
     loop {
         std::thread::sleep(Duration::from_millis(250));
         let start = busy_since.load(Ordering::Relaxed);
-        if start == 0 {
-            reported_for = 0;
-            next_at = HANG_MS;
-            continue;
-        }
-        if start != reported_for {
-            reported_for = start;
-            next_at = HANG_MS;
-        }
-        let open = ms_since(epoch).saturating_sub(start);
-        if open >= next_at {
+        let paused = PAUSED.load(Ordering::Relaxed) > 0;
+        if let Some(open) = dog.tick(ms_since(epoch), start, paused) {
             tracing::warn!(art = "ui.hang_open", wert = open, "ui frame hangs");
-            next_at = open + 10_000;
         }
     }
 }
@@ -306,6 +373,43 @@ mod tests {
         drop(w.frame());
         assert!(!w.summary_due());
         assert_eq!(w.0.stats.lock().unwrap().0.frames, 1);
+    }
+
+    #[test]
+    fn a_frame_open_for_long_is_reported_then_every_ten_seconds() {
+        let mut d = Dog::new();
+        assert_eq!(d.tick(1_000, 100, false), None);
+        assert_eq!(d.tick(2_100, 100, false), Some(2_000));
+        assert_eq!(d.tick(5_000, 100, false), None);
+        assert_eq!(d.tick(12_200, 100, false), Some(12_100));
+    }
+
+    #[test]
+    fn a_modal_dialog_is_not_a_hang() {
+        let mut d = Dog::new();
+        // Frame beginnt bei 100 ms, der Dialog steht 20 s offen.
+        for now in (250..20_000).step_by(250) {
+            assert_eq!(d.tick(now, 100, true), None, "bei {now} ms");
+        }
+        // Dialog zu: ab hier zählt ein Frame von vorn.
+        assert_eq!(d.tick(20_250, 100, false), None);
+        // Letzte Pause-Messung bei 19 750 ms: ab dort läuft die Uhr, 2 s später ein Hänger.
+        assert_eq!(d.tick(21_700, 100, false), None);
+        assert_eq!(d.tick(21_800, 100, false), Some(2_050));
+    }
+
+    #[test]
+    fn pause_time_is_taken_off_the_frame() {
+        let w = FrameWatch::new();
+        let t = PAUSED_TOTAL_MS.load(Ordering::Relaxed);
+        let g = w.frame();
+        let p = pause();
+        std::thread::sleep(Duration::from_millis(20));
+        drop(p);
+        assert!(PAUSED_TOTAL_MS.load(Ordering::Relaxed) >= t + 20);
+        // Der Frame war nur wegen der Pause lang: 0 ms, nicht langsam.
+        drop(g);
+        assert!(w.0.stats.lock().unwrap().0.max_ms < 5);
     }
 
     #[test]

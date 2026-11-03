@@ -4,6 +4,7 @@
 //! andere). Das Zugriffstoken liegt im Schlüsselbund des Systems, nie in `config.json`
 //! ([`woa_secrets`]); im Fenster ist es maskiert, „Kopieren“ legt es in die Zwischenablage.
 
+use crate::ordner::Modal;
 use std::path::{Path, PathBuf};
 
 use eframe::egui;
@@ -349,7 +350,7 @@ impl KiUi {
                 .map_or("keiner gewählt".to_string(), |p| p.display().to_string());
             ui.label(egui::RichText::new(text).monospace());
             if ui.button("Wählen …").clicked()
-                && let Some(dir) = rfd::FileDialog::new().pick_folder()
+                && let Some(dir) = rfd::FileDialog::new().pick_folder_modal()
             {
                 cfg.project = Some(dir);
             }

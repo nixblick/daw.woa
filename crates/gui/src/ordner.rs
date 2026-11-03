@@ -70,6 +70,35 @@ pub fn dialog_musik() -> rfd::FileDialog {
     dialog_in(&musik())
 }
 
+/// Blockierende Dateidialoge mit Messpause: Der Frame steht, solange der Mensch wählt; das
+/// ist kein Hänger und kein langsamer Frame (`woa_telemetry::pause`). Im GUI-Code nur diese
+/// Aufrufe benutzen, nie `pick_file()` und Verwandte (Test `dialogs_pause_the_watch`).
+pub trait Modal: Sized {
+    fn pick_file_modal(self) -> Option<PathBuf>;
+    fn pick_files_modal(self) -> Option<Vec<PathBuf>>;
+    fn pick_folder_modal(self) -> Option<PathBuf>;
+    fn save_file_modal(self) -> Option<PathBuf>;
+}
+
+impl Modal for rfd::FileDialog {
+    fn pick_file_modal(self) -> Option<PathBuf> {
+        let _pause = woa_telemetry::pause();
+        self.pick_file()
+    }
+    fn pick_files_modal(self) -> Option<Vec<PathBuf>> {
+        let _pause = woa_telemetry::pause();
+        self.pick_files()
+    }
+    fn pick_folder_modal(self) -> Option<PathBuf> {
+        let _pause = woa_telemetry::pause();
+        self.pick_folder()
+    }
+    fn save_file_modal(self) -> Option<PathBuf> {
+        let _pause = woa_telemetry::pause();
+        self.save_file()
+    }
+}
+
 /// Fenster „Speicherorte“ in den Einstellungen: eine Zeile je Art mit „Ändern …“.
 /// Jede Änderung gilt sofort; „Vorgabe“ erscheint nur bei einem eigenen Ordner.
 #[derive(Default)]
@@ -164,7 +193,9 @@ fn reset_clicked(ui: &mut eframe::egui::Ui, own: bool) -> bool {
 }
 
 fn pick(start: &Path) -> Option<PathBuf> {
-    dialog_in(start).set_title("Ordner wählen").pick_folder()
+    dialog_in(start)
+        .set_title("Ordner wählen")
+        .pick_folder_modal()
 }
 
 #[cfg(test)]
@@ -196,6 +227,34 @@ mod tests {
         assert_eq!(o.dir_in(Art::Exporte, music), PathBuf::from("/b/Exporte"));
         // Leer = Basisordner/Unterordner.
         assert_eq!(o.dir_in(Art::Jingles, music), PathBuf::from("/b/Jingles"));
+    }
+
+    #[test]
+    fn dialogs_pause_the_watch() {
+        // Ein blockierender Dialog ohne Messpause zählt als Hänger (Ticket #398).
+        let raw = [
+            ".pick_file()",
+            ".pick_files()",
+            ".pick_folder()",
+            ".save_file()",
+        ];
+        for (name, src) in [
+            ("app.rs", include_str!("app.rs")),
+            ("event_editor.rs", include_str!("event_editor.rs")),
+            ("ki_ui.rs", include_str!("ki_ui.rs")),
+            ("library.rs", include_str!("library.rs")),
+            ("manage.rs", include_str!("manage.rs")),
+            ("party.rs", include_str!("party.rs")),
+            ("radio.rs", include_str!("radio.rs")),
+            ("tag_editor.rs", include_str!("tag_editor.rs")),
+        ] {
+            for f in raw {
+                assert!(
+                    !src.contains(f),
+                    "{name}: {f} ohne Messpause, nimm `_modal`"
+                );
+            }
+        }
     }
 
     #[test]

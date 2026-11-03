@@ -6,6 +6,7 @@
 //! (`woa_radio::events`). Ortszeit und Sommerzeit übernimmt der Editor von der Stundenuhr, damit
 //! es nur eine Einstellung gibt.
 
+use crate::ordner::Modal;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -286,7 +287,7 @@ impl EventEditor {
                 .clicked()
                 && let Some(p) = crate::ordner::dialog(crate::ordner::Art::Jingles)
                     .add_filter("Audio", &["wav", "mp3", "flac", "ogg"])
-                    .pick_file()
+                    .pick_file_modal()
             {
                 self.add_event(&p);
             }

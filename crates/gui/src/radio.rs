@@ -2,6 +2,7 @@
 //! Mikrofon mit Ducking, Mitschnitt. Alle Logik steckt in `woa_radio`; hier wird nur
 //! gezeichnet und weitergereicht.
 
+use crate::ordner::Modal;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -1725,7 +1726,7 @@ impl RadioDesk {
                 woa_engine::decode::FILTER_NAME,
                 &woa_engine::decode::dialog_extensions(),
             )
-            .pick_files()
+            .pick_files_modal()
             && let Some(s) = &self.station
         {
             s.add_files(files);
@@ -2163,7 +2164,7 @@ impl RadioDesk {
                          der Liste",
                     )
                     .clicked()
-                    && let Some(dir) = crate::ordner::dialog_musik().pick_folder()
+                    && let Some(dir) = crate::ordner::dialog_musik().pick_folder_modal()
                 {
                     self.set_wish_folder(Some(dir.clone()));
                     self.wish_chosen = Some(dir);
@@ -3186,7 +3187,7 @@ impl RadioDesk {
                             woa_engine::decode::FILTER_NAME,
                             &woa_engine::decode::dialog_extensions(),
                         )
-                        .pick_file()
+                        .pick_file_modal()
                 {
                     self.add_guest(woa_guests::TestSignal::File(p));
                 }
@@ -4602,7 +4603,7 @@ impl RadioDesk {
                 woa_engine::decode::FILTER_NAME,
                 &woa_engine::decode::dialog_extensions(),
             )
-            .pick_file()
+            .pick_file_modal()
         {
             self.add_voice_file(path, Some(at));
         }
@@ -4914,7 +4915,7 @@ impl RadioDesk {
                 woa_engine::decode::FILTER_NAME,
                 &woa_engine::decode::dialog_extensions(),
             )
-            .pick_file()
+            .pick_file_modal()
         {
             self.deck_load_file(k, path);
         }
@@ -5352,7 +5353,7 @@ impl RadioDesk {
                 woa_engine::decode::FILTER_NAME,
                 &woa_engine::decode::dialog_extensions(),
             )
-            .pick_file()
+            .pick_file_modal()
         {
             self.with(move |c| {
                 if let Err(e) = c.assign_cart(slot, Some(path)) {

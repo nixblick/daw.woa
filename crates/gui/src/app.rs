@@ -1,5 +1,6 @@
 //! The eframe window. Thin: reads [`AppState`], forwards user actions to it.
 
+use crate::ordner::Modal;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -2095,7 +2096,7 @@ impl WoaApp {
         if let Some(dir) = crate::ordner::dialog(crate::ordner::Art::Projekte)
             .set_title("Projekt speichern")
             .set_file_name(format!("{}.woa", self.state.project().meta.name))
-            .save_file()
+            .save_file_modal()
         {
             self.state.save_as(&dir);
         }
@@ -2107,7 +2108,7 @@ impl WoaApp {
             .set_title("Als DAWproject exportieren")
             .add_filter("DAWproject", &["dawproject"])
             .set_file_name(format!("{}.dawproject", self.state.project().meta.name))
-            .save_file()
+            .save_file_modal()
         else {
             return;
         };
@@ -2144,7 +2145,7 @@ impl WoaApp {
         let Some(file) = crate::ordner::dialog(crate::ordner::Art::Projekte)
             .set_title("DAWproject öffnen")
             .add_filter("DAWproject", &["dawproject"])
-            .pick_file()
+            .pick_file_modal()
         else {
             return;
         };
@@ -2246,7 +2247,7 @@ impl WoaApp {
         }
         if let Some(dir) = crate::ordner::dialog(crate::ordner::Art::Projekte)
             .set_title("Projektordner (.woa) öffnen")
-            .pick_folder()
+            .pick_folder_modal()
         {
             self.state.open(&dir);
         }
@@ -3409,7 +3410,7 @@ impl WoaApp {
         let Some(path) = crate::ordner::dialog_musik()
             .set_title("Audiodatei importieren")
             .add_filter(woa_engine::decode::FILTER_NAME, &ext_refs)
-            .pick_file()
+            .pick_file_modal()
         else {
             return;
         };
@@ -3504,7 +3505,7 @@ impl WoaApp {
         let Some(path) = crate::ordner::dialog(crate::ordner::Art::Midi)
             .set_title("MIDI importieren")
             .add_filter("MIDI", &["mid", "midi"])
-            .pick_file()
+            .pick_file_modal()
         else {
             return;
         };
@@ -3555,7 +3556,7 @@ impl WoaApp {
             .set_title("MIDI exportieren")
             .set_file_name(format!("{name}.mid"))
             .add_filter("MIDI", &["mid"])
-            .save_file()
+            .save_file_modal()
         else {
             return;
         };
@@ -5929,7 +5930,7 @@ impl WoaApp {
             .set_title("Spur exportieren")
             .set_file_name(&req.file_name)
             .add_filter(req.format.label(), &[ext])
-            .save_file()
+            .save_file_modal()
         else {
             return;
         };
@@ -6069,7 +6070,7 @@ impl WoaApp {
             .set_title("Exportieren")
             .set_file_name(format!("{name}.{ext}"))
             .add_filter(spec.format.label(), &[ext])
-            .save_file()?;
+            .save_file_modal()?;
         let out = if out.extension().is_none() {
             out.with_extension(ext)
         } else {
@@ -6111,7 +6112,7 @@ impl WoaApp {
     ) -> Option<Status> {
         let parent = crate::ordner::dialog(crate::ordner::Art::Exporte)
             .set_title("Ordner für die Stems wählen")
-            .pick_folder()?;
+            .pick_folder_modal()?;
         // Eigener Unterordner „<Projekt> Stems“, damit nichts Fremdes überschrieben wird.
         let dir = parent.join(format!("{} Stems", woa_engine::stems::sanitize_name(name)));
         if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -6828,7 +6829,7 @@ impl WoaApp {
                                         .clicked()
                                         && let Some(p) = rfd::FileDialog::new()
                                             .add_filter("Bild", &["png", "jpg", "jpeg"])
-                                            .pick_file()
+                                            .pick_file_modal()
                                     {
                                         let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                                         let res = std::fs::read(&p)

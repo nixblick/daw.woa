@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.10 — 2026-11-03
+
+- **Dateidialoge zählen nicht mehr als Oberflächen-Hänger (#398):** Datei-, Ordner- und Speichern-unter-Dialoge blockieren den Frame, solange der Mensch wählt; der Wächter meldete das als `ui.hang_open` (ab 12 s) und `ui.frame_slow`. Sie laufen jetzt über `ordner::Modal` und halten die Messung an (`woa_telemetry::pause`); die Pause wird auch aus der Frame-Dauer herausgerechnet. Ursache der zwei Meldungen ist eine Vermutung (kein Kontext im Log); ein echter Hänger bleibt sichtbar und kommt wieder. Tests: `a_modal_dialog_is_not_a_hang`, `pause_time_is_taken_off_the_frame`, `dialogs_pause_the_watch`.
+
 ## 0.41.9 — 2026-11-03
 
 Fehlerpaket aus Andrés Tickets vom 03.11. (0.41.8 ist das Radio-Paket daneben).
