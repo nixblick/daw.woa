@@ -918,7 +918,8 @@ mod tests {
         assert!(lines[1].contains("\"result\""), "{out}");
         // Der Testserver notiert das DELETE in seinem eigenen Faden; unter Windows kommt
         // das oft erst nach der Rückkehr von `forward` an (#256).
-        for _ in 0..200 {
+        // Großzügige Obergrenze (10 s): Gewartet wird auf das Ereignis, nicht auf die Uhr.
+        for _ in 0..1000 {
             if seen.lock().unwrap().len() >= 4 {
                 break;
             }

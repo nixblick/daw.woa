@@ -4,6 +4,13 @@ on:
     branches: [main]
   pull_request:
 
+# Ein neuer Push auf denselben PR-Zweig bricht den alten Lauf ab, statt ihn zu Ende (und
+# womöglich rot) laufen zu lassen. Abgebrochen ist nicht fehlgeschlagen: keine Fehlermail.
+# Auf main läuft jeder Push zu Ende, damit jeder Stand dort ein Ergebnis hat.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     strategy:
@@ -26,8 +33,41 @@ jobs:
       - if: runner.os == 'Windows'
         run: cargo clippy -p woa-engine --features device --all-targets -- -D warnings
 
+  # Pflichtprüfung „deny“ (Branch-Schutz), läuft daher immer. Lizenzen, Bans und Quellen hängen
+  # nur am eigenen Code und laufen immer. Advisories/yanked ändern sich von außen (ein Paket
+  # wird zurückgezogen, ein Advisory erscheint) und machten PRs rot, die keine Abhängigkeit
+  # anfassen. Sie laufen hier nur, wenn sich ein fremdes Paket in Cargo.lock oder deny.toml
+  # ändert; sonst prüft sie der wöchentliche Lauf (deny-woche.yml) mit voller Schärfe.
+  # cargo-deny direkt auf dem Runner statt im Container der cargo-deny-action: deren Container
+  # kannte die Toolchain aus rust-toolchain.toml nicht („override toolchain … musl is not
+  # installed“).
   deny:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: cargo deny check bans licenses sources
+      - name: Abhängigkeiten geändert?
+        id: deps
+        shell: bash
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Fremde Pakete geändert = in Cargo.lock ändert sich eine checksum- oder source-Zeile.
+          # Das Hochzählen der eigenen Workspace-Version (jeder PR) zählt nicht.
+          if git diff --name-only "$BASE" HEAD | grep -qx 'deny\.toml' \
+            || git diff "$BASE" HEAD -- Cargo.lock | grep -qE '^[+-](checksum|source) = '; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.deps.outputs.changed == 'true'
+        run: cargo deny check advisories

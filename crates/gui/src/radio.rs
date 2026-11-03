@@ -5429,7 +5429,17 @@ mod tests {
         let plain = ms(false);
         let area = ms(true);
         eprintln!("300 Zeilen: {area:.2} ms je Bild mit Klickfläche, {plain:.2} ms ohne");
-        assert!(area < plain * 2.0 + 2.0, "{area:.1} ms gegen {plain:.1} ms");
+        // Auf geteilten CI-Runnern schwanken Wandzeiten stark (Windows 01.11.: rot ohne
+        // Codeänderung). Dort fängt die Schranke nur einen groben Rückfall; die enge gilt lokal.
+        let (factor, slack) = if std::env::var_os("CI").is_some() {
+            (5.0, 20.0)
+        } else {
+            (2.0, 2.0)
+        };
+        assert!(
+            area < plain * factor + slack,
+            "{area:.1} ms gegen {plain:.1} ms"
+        );
     }
 
     #[test]
