@@ -424,3 +424,36 @@ async fn mcp_tools_without_key_fail_in_german_without_network() {
     let _ = client.cancel().await;
     let _ = client2.cancel().await;
 }
+
+/// #377 (André 03.11.2026, eingeschränkter Schlüssel): fehlt nur das Recht „User“, gilt der
+/// Schlüssel trotzdem (ohne Guthabenanzeige); fehlt ein anderes Recht, nennt die Meldung es im
+/// Klartext; ein falscher Schlüssel bleibt „abgelehnt“. Alles gegen die Attrappe.
+#[test]
+fn missing_permissions_are_named_and_user_read_is_optional() {
+    let user = r#"{"detail":{"status":"missing_permissions","message":"The API key you used is missing the permission user_read to execute this operation."}}"#;
+    let (api, _) = fake(Mode::Status(401, user));
+    let k = src(&api, Some(KEY)).konto().unwrap();
+    assert!(k.ohne_guthaben, "{k:?}");
+
+    let tts = r#"{"detail":{"status":"missing_permissions","message":"The API key you used is missing the permission text_to_speech to execute this operation."}}"#;
+    let (api, _) = fake(Mode::Status(403, tts));
+    let e = src(&api, Some(KEY))
+        .sprechen(&SprachAuftrag::new("Hallo", "Stimme1"))
+        .unwrap_err();
+    assert_eq!(e, Fehler::RechtFehlt("text_to_speech".into()));
+    let text = e.to_string();
+    assert!(
+        text.contains("Text to Speech") && text.contains("gültig"),
+        "{text}"
+    );
+    assert!(!text.contains(KEY));
+
+    let bad = r#"{"detail":{"status":"invalid_api_key","message":"Invalid API key"}}"#;
+    let (api, _) = fake(Mode::Status(401, bad));
+    assert_eq!(
+        src(&api, Some(KEY)).konto().unwrap_err(),
+        Fehler::SchluesselAbgelehnt
+    );
+    assert_eq!(elevenlabs::recht_klartext("user_read"), "User");
+    assert_eq!(elevenlabs::RECHTE.len(), 5);
+}

@@ -533,6 +533,12 @@ pub struct RadioDesk {
     /// „Trennen“ einmal geklickt: Kanal und Zeitpunkt; der zweite Klick binnen 3 s trennt.
     guest_hangup_armed: Option<(usize, Instant)>,
     saved_revision: u64,
+    /// Was dieses Pult zuletzt nach radio.json geschrieben hat (#380): Ändert sich nur die
+    /// Uhrzeit der Datei (Windows, Virenscanner), ist das keine fremde Änderung.
+    last_written: Option<RadioShow>,
+    /// Letzter Fehler beim Schreiben von radio.json; bleibt stehen, bis es wieder klappt
+    /// (#380: die Meldung wurde vorher von anderen Meldungen im selben Feld verdrängt).
+    save_error: Option<String>,
     saved_at: Instant,
     known_mtime: Option<SystemTime>,
     checked_at: Instant,
@@ -1026,6 +1032,13 @@ fn cart_key_of(name: &str) -> Option<egui::Key> {
     egui::Key::from_name(name).filter(|k| !RESERVED_KEYS.contains(k))
 }
 
+/// Beim Verwerfen des Pults (Schließen, Neu-Öffnen für Vorhören oder Ausgänge) erst sichern (#380).
+impl Drop for RadioDesk {
+    fn drop(&mut self) {
+        self.flush();
+    }
+}
+
 impl RadioDesk {
     /// Zone der Uhrzeit-Anzeige: Versatz in Minuten im Winter, EU-Sommerzeit ja/nein.
     pub fn set_zone(&mut self, base_min: i32, eu_dst: bool) {
@@ -1293,6 +1306,8 @@ impl RadioDesk {
             invite_qr: None,
             guest_hangup_armed: None,
             saved_revision: 0,
+            last_written: None,
+            save_error: None,
             saved_at: Instant::now(),
             known_mtime,
             checked_at: Instant::now(),
@@ -1552,14 +1567,15 @@ impl RadioDesk {
                 );
             }
         }
-        let Some(st) = &self.station else { return };
+        if self.station.is_none() {
+            return;
+        }
         let now = Instant::now();
         let mut check_now = false;
         if self.view.revision != self.saved_revision
             && now.duration_since(self.saved_at).as_millis() >= 700
         {
-            let m = mtime(&self.radio_path);
-            if m.is_some() && m != self.known_mtime {
+            if self.foreign_change() {
                 // Erst die fremde Änderung (build_playlist) übernehmen, nicht überschreiben.
                 self.saved_revision = self.view.revision;
                 self.error = Some(
@@ -1569,12 +1585,14 @@ impl RadioDesk {
                 );
                 check_now = true;
             } else {
-                match st.show().save(&self.radio_path) {
-                    Ok(()) => {
-                        self.saved_revision = self.view.revision;
-                        self.known_mtime = mtime(&self.radio_path);
-                    }
-                    Err(e) => self.error = Some(format!("radio.json nicht gespeichert: {e}")),
+                let show = self
+                    .station
+                    .as_ref()
+                    .map(|st| st.show())
+                    .unwrap_or_default();
+                self.write_show(&show);
+                if self.save_error.is_none() {
+                    self.saved_revision = self.view.revision;
                 }
             }
             self.saved_at = now;
@@ -1596,6 +1614,63 @@ impl RadioDesk {
                 }
             }
         }
+    }
+
+    /// Hat jemand anderes radio.json geändert, seit dieses Pult es gelesen oder geschrieben
+    /// hat? Nur die Uhrzeit zählt nicht: Steht auf der Platte genau das, was wir zuletzt
+    /// geschrieben haben, ist es unsere Datei (#380).
+    fn foreign_change(&mut self) -> bool {
+        let m = mtime(&self.radio_path);
+        if m.is_none() || m == self.known_mtime {
+            return false;
+        }
+        match (&self.last_written, RadioShow::load(&self.radio_path)) {
+            (Some(ours), Ok(disk)) if *ours == disk => {
+                self.known_mtime = m;
+                false
+            }
+            _ => true,
+        }
+    }
+
+    /// Schreibt `show` nach radio.json und merkt sich Stand und Uhrzeit.
+    fn write_show(&mut self, show: &RadioShow) {
+        match show.save(&self.radio_path) {
+            Ok(()) => {
+                self.known_mtime = mtime(&self.radio_path);
+                self.last_written = RadioShow::load(&self.radio_path).ok();
+                self.save_error = None;
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "radio.json not saved");
+                let msg = format!("radio.json nicht gespeichert: {e}");
+                self.error = Some(msg.clone());
+                self.save_error = Some(msg);
+            }
+        }
+    }
+
+    /// Sichert sofort, was noch nicht in radio.json steht (#380): beim Schließen von WOA und
+    /// bevor das Pult neu geöffnet wird (Vorhören, Ausgänge). Vorher ging eine Änderung der
+    /// letzten 0,7 s verloren, und ein neu geöffnetes Pult las den alten Stand.
+    pub fn flush(&mut self) {
+        let Some(st) = &self.station else { return };
+        let show = st.show_synced(Duration::from_secs(1));
+        let on_disk = self.last_written.as_ref() == Some(&show)
+            || (self.last_written.is_none()
+                && RadioShow::load(&self.radio_path).ok() == Some(show.clone()));
+        if on_disk || self.foreign_change() {
+            return;
+        }
+        self.write_show(&show);
+        if self.save_error.is_none() {
+            tracing::info!("radio.json flushed");
+        }
+    }
+
+    /// Fehler beim Speichern von radio.json, falls der letzte Versuch scheiterte.
+    pub fn save_error(&self) -> Option<&str> {
+        self.save_error.as_deref()
     }
 
     /// Letzter Schnappschuss der Sendung (für den AutoDJ).
@@ -6567,5 +6642,63 @@ mod design3_tests {
             w.bottom() <= 990.0,
             "Wunschtitel bei {w:?} unter dem Fensterrand"
         );
+    }
+}
+
+/// #380: Einstellungen des Sendepults überleben Schließen und Neu-Öffnen.
+#[cfg(test)]
+mod save_380 {
+    use super::*;
+
+    /// Schalter umlegen und das Pult sofort verwerfen (Schließen, Vorhören neu öffnen):
+    /// der Stand steht trotzdem in radio.json. Vorher gingen die letzten 0,7 s verloren.
+    #[test]
+    fn change_survives_immediate_drop() {
+        let dir = tempfile::tempdir().unwrap();
+        let desk = RadioDesk::headless(dir.path());
+        desk.with(|c| c.set_stop_fade(true, 0.5));
+        desk.with(|c| c.set_cart_duck(false));
+        drop(desk);
+        let s = RadioShow::load(&dir.path().join("radio.json")).unwrap();
+        assert!(s.stop_fade, "Stopp blendet aus nicht gespeichert");
+        assert!((s.stop_fade_seconds - 0.5).abs() < 1e-9);
+        assert!(!s.cart_duck, "Ducking bei Carts nicht gespeichert");
+    }
+
+    /// Nur die Uhrzeit der Datei ändert sich (Windows, Virenscanner), der Inhalt ist unserer:
+    /// das ist keine fremde Änderung, die nächste Einstellung wird gespeichert, nicht verworfen.
+    #[test]
+    fn touched_file_with_our_content_is_not_foreign() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("radio.json");
+        let mut desk = RadioDesk::headless(dir.path());
+        desk.with(|c| c.set_crossfade(4.0));
+        desk.flush();
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::thread::sleep(Duration::from_millis(30));
+        std::fs::write(&path, text).unwrap();
+        desk.known_mtime = Some(SystemTime::UNIX_EPOCH);
+        assert!(!desk.foreign_change());
+        // Eine echte fremde Änderung bleibt fremd.
+        let mut other = RadioShow::load(&path).unwrap();
+        other.crossfade_seconds = 9.0;
+        other.save(&path).unwrap();
+        desk.known_mtime = Some(SystemTime::UNIX_EPOCH);
+        assert!(desk.foreign_change());
+    }
+
+    /// Fehler beim Schreiben bleiben sichtbar und werden nicht als gespeichert gezählt.
+    #[test]
+    fn save_error_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut desk = RadioDesk::headless(dir.path());
+        desk.radio_path = dir.path().join("radio.txt");
+        desk.with(|c| c.set_duck(-20.0));
+        desk.flush();
+        assert!(
+            desk.save_error()
+                .is_some_and(|e| e.contains("nicht gespeichert"))
+        );
+        desk.radio_path = dir.path().join("radio.json");
     }
 }

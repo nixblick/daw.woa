@@ -198,13 +198,12 @@ impl ControlDesk {
     }
 
     /// Kurzer Text für das Lernen, `None` = es wird nicht gelernt.
+    ///
+    /// #371: Ohne gewählten Controller kann das Lernen nie fertig werden (gelernt wird nur vom
+    /// Controller-Eingang, nicht vom MIDI-Eingang fürs Keyboard); dann sagt der Text das.
     pub fn learning_text(&self) -> Option<String> {
-        self.mapper.learning().map(|t| {
-            format!(
-                "MIDI-Learn: {} – jetzt Regler bewegen oder Pad drücken",
-                t.label()
-            )
-        })
+        let t = self.mapper.learning()?;
+        Some(learn_text(&t.label(), self.input.wanted().is_some()))
     }
 
     /// Fenster mit Geräteauswahl und Zuordnungsliste. `true` = Einstellungen geändert
@@ -358,6 +357,18 @@ fn maps_for(config: &GuiConfig, name: &str) -> Vec<Mapping> {
 
 /// Kontextmenü-Eintrag „MIDI lernen“ unter einem Widget; zeigt die Quelle, wenn schon
 /// zugeordnet. Liefert das Ziel, wenn gewählt.
+/// Text der Lern-Leiste für `label`; `has_device`: ein Controller ist gewählt.
+pub fn learn_text(label: &str, has_device: bool) -> String {
+    if has_device {
+        format!("MIDI-Learn: {label} – jetzt Regler bewegen oder Pad drücken")
+    } else {
+        format!(
+            "MIDI-Learn: {label} – kein Controller gewählt. Erst in den Einstellungen unter \
+             „Controller und MIDI-Learn“ ein Gerät wählen."
+        )
+    }
+}
+
 pub fn learn_menu(ui: &mut egui::Ui, target: Target, bound: Option<String>) -> Option<Target> {
     let mut chosen = None;
     let text = match bound {
@@ -374,6 +385,18 @@ pub fn learn_menu(ui: &mut egui::Ui, target: Target, bound: Option<String>) -> O
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #371: Mit Controller die bekannte Aufforderung, ohne einen klarer Hinweis.
+    #[test]
+    fn learn_text_says_when_no_controller_is_chosen() {
+        let with = learn_text("Deck A Start/Stopp", true);
+        assert_eq!(
+            with,
+            "MIDI-Learn: Deck A Start/Stopp – jetzt Regler bewegen oder Pad drücken"
+        );
+        let without = learn_text("Deck A Start/Stopp", false);
+        assert!(without.contains("kein Controller gewählt"), "{without}");
+    }
 
     #[test]
     fn decks_a_to_c_are_in_the_learn_list() {

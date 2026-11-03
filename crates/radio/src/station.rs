@@ -296,6 +296,17 @@ impl Station {
         self.view.lock().map(|v| v.clone()).unwrap_or_default()
     }
 
+    /// Inhalt für `radio.json` nach allen schon geschickten Aufträgen (#380): wartet, bis der
+    /// Control-Thread die Warteschlange bis hierher abgearbeitet hat (höchstens `timeout`),
+    /// sonst der letzte Schnappschuss. Zum Sichern vor dem Schließen.
+    pub fn show_synced(&self, timeout: std::time::Duration) -> RadioShow {
+        let (tx, rx) = channel();
+        self.with(move |c| {
+            let _ = tx.send(c.show().clone());
+        });
+        rx.recv_timeout(timeout).unwrap_or_else(|_| self.show())
+    }
+
     /// Aktueller Inhalt für `radio.json`.
     pub fn show(&self) -> RadioShow {
         self.show.lock().map(|s| s.clone()).unwrap_or_default()

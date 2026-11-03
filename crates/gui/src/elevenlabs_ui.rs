@@ -146,8 +146,40 @@ fn privacy_note(ui: &mut egui::Ui) {
         });
 }
 
+/// Eingefügter Schlüssel ohne Leerzeichen und Zeilenumbrüche (#377: beim Kopieren aus dem
+/// Browser kam oft ein Umbruch mit, ElevenLabs lehnte den Schlüssel dann ab).
+pub fn clean_key(raw: &str) -> String {
+    raw.split_whitespace().collect()
+}
+
+/// Kurze Info, welche Rechte der Schlüssel braucht (#377, aus `woa_agent::elevenlabs::RECHTE`).
+pub fn rechte_text() -> String {
+    let mut t = String::from("Rechte für den Schlüssel (ElevenLabs › API Keys › bearbeiten): ");
+    let teile: Vec<String> = elevenlabs::RECHTE
+        .iter()
+        .map(|(b, stufe, wofuer)| format!("{b} = {stufe} ({wofuer})"))
+        .collect();
+    t.push_str(&teile.join(", "));
+    t.push_str(
+        "; alles andere No Access. Tipp: ein Credit-Limit setzen und „Auto-disable if leaked“ \
+         eingeschaltet lassen.",
+    );
+    t
+}
+
 /// Credits als LCD: übrig groß, Balken, „von N · Abo“, Erneuerung.
 fn credits_lcd(ui: &mut egui::Ui, k: &Konto) {
+    if k.ohne_guthaben {
+        ui.label(
+            egui::RichText::new(
+                "Schlüssel gültig. Guthaben nicht lesbar: dem Schlüssel fehlt das Recht „User“ \
+                 (nur für diese Anzeige nötig).",
+            )
+            .small()
+            .color(theme::text_dim()),
+        );
+        return;
+    }
     egui::Frame::new()
         .fill(theme::well())
         .corner_radius(theme::RADIUS_MD)
@@ -255,9 +287,14 @@ impl Zugang {
         });
     }
 
+    /// Zustand wie im Chip neben „ElevenLabs“.
+    pub fn state(&self) -> KeyState {
+        key_state(self.stored, self.konto.as_ref(), self.busy)
+    }
+
     /// Speichert den eingegebenen Schlüssel und prüft ihn gleich am Konto.
     pub fn save(&mut self, data_dir: &Path) {
-        let key = std::mem::take(&mut self.input).trim().to_string();
+        let key = clean_key(&std::mem::take(&mut self.input));
         if key.is_empty() {
             return;
         }
@@ -386,6 +423,11 @@ impl Zugang {
             }
             None => {}
         }
+        ui.label(
+            egui::RichText::new(rechte_text())
+                .small()
+                .color(theme::text_dim()),
+        );
         privacy_note(ui);
     }
 }
@@ -891,6 +933,7 @@ mod tests {
             character_count: 100,
             character_limit: 10_000,
             reset_unix: None,
+            ohne_guthaben: false,
         })
     }
 
@@ -939,6 +982,7 @@ mod tests {
             character_count: 7_500,
             character_limit: 30_000,
             reset_unix: None,
+            ohne_guthaben: false,
         });
         let bad: Result<Konto, String> = Err("401".into());
         assert_eq!(key_state(None, None, false), KeyState::Busy);
@@ -976,5 +1020,25 @@ mod tests {
         assert!(e.retry(), "Erneut: zeigt wieder den Kostenkasten");
         assert!(e.confirm.is_some());
         assert!(!e.retry(), "nur einmal");
+    }
+
+    /// #377: Eingefügter Schlüssel ohne Umbruch und Leerzeichen; die Rechte-Info nennt alle.
+    #[test]
+    fn pasted_key_is_cleaned_and_rights_are_listed() {
+        assert_eq!(clean_key("  sk_ab12\r\ncd34 \n"), "sk_ab12cd34");
+        let t = rechte_text();
+        for w in [
+            "Text to Speech = Access",
+            "Sound Effects = Access",
+            "Music Generation = Access",
+            "Voices = Read",
+            "User = Access",
+            "No Access",
+            "Credit-Limit",
+            "Auto-disable if leaked",
+        ] {
+            assert!(t.contains(w), "{w} fehlt: {t}");
+        }
+        assert_eq!(credit_share(&Konto::ohne_guthaben()), 0.0);
     }
 }

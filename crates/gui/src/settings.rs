@@ -625,6 +625,10 @@ pub const NO_UI_FIELDS: &[(&str, &str)] = &[
     ("telemetry_url", "nur config.json"),
     ("radio_buffer_frames", "nur config.json"),
     ("last_update_check", "intern"),
+    (
+        "settings_size",
+        "gezogene Größe des Fensters Einstellungen, wird gemerkt (#379)",
+    ),
     ("mode", "Modus-Umschalter in der Kopfleiste, wird gemerkt"),
 ];
 
@@ -706,6 +710,22 @@ pub struct SettingsWindow {
     pub dev: bool,
     /// Markierte Zeile und Startzeit (egui-Zeit).
     pub marked: Option<(SettingId, f64)>,
+    /// Größe des Fensters (nicht maximiert), vom Nutzer gezogen; die App merkt sie sich in
+    /// `config.json` (#379). `None` = [`DEFAULT_SIZE`].
+    pub size: Option<[f32; 2]>,
+}
+
+/// Größe beim ersten Öffnen (#379): so breit, dass Beschreibung und Knöpfe nebeneinander
+/// passen (vorher 780 px, dann lief der Text unter die Knöpfe).
+pub const DEFAULT_SIZE: [f32; 2] = [1100.0, 760.0];
+/// Kleinste Breite, bei der eine Zeile noch Text links und Knöpfe rechts zeigt.
+pub const MIN_WIDTH: f32 = 720.0;
+
+/// Gemerkte Größe auf den Bildschirm `screen` begrenzt (ein kleinerer Monitor schneidet sonst ab).
+pub fn start_size(saved: Option<[f32; 2]>, screen: egui::Vec2) -> egui::Vec2 {
+    let [w, h] = saved.unwrap_or(DEFAULT_SIZE);
+    let max = (screen - egui::vec2(40.0, 40.0)).max(egui::vec2(MIN_WIDTH, 320.0));
+    egui::vec2(w.max(MIN_WIDTH), h.max(320.0)).min(max)
 }
 
 impl Default for SettingsWindow {
@@ -717,6 +737,7 @@ impl Default for SettingsWindow {
             query: String::new(),
             dev: false,
             marked: None,
+            size: None,
         }
     }
 }
@@ -767,7 +788,13 @@ impl SettingsWindow {
         let mut open = true;
         let now = ctx.input(|i| i.time);
         let mut max = self.maximized;
-        crate::fragen::fenster(ctx, "Einstellungen", max).show(ctx, |ui| {
+        let mut win = crate::fragen::fenster(ctx, "Einstellungen", max);
+        if !max {
+            win = win
+                .default_size(start_size(self.size, ctx.content_rect().size()))
+                .min_width(MIN_WIDTH);
+        }
+        let shown = win.show(ctx, |ui| {
             crate::fragen::kopf(
                 ui,
                 egui_phosphor::regular::GEAR_SIX,
@@ -859,10 +886,26 @@ impl SettingsWindow {
                 });
             });
         });
+        // Gezogene Größe merken (#379), nicht im maximierten Zustand.
+        if !self.maximized
+            && let Some(r) = &shown
+        {
+            let sz = r.response.rect.size();
+            let new = [sz.x.round(), sz.y.round()];
+            if self.size != Some(new) && (self.size.is_some() || self.size_touched(new)) {
+                self.size = Some(new);
+            }
+        }
         self.maximized = max;
         if !open {
             self.open = false;
         }
+    }
+
+    /// Ohne gemerkte Größe zählt nur eine Größe, die vom Start-Wert abweicht (also gezogen).
+    fn size_touched(&self, new: [f32; 2]) -> bool {
+        let d = DEFAULT_SIZE;
+        (new[0] - d[0]).abs() > 2.0 || (new[1] - d[1]).abs() > 2.0
     }
 
     fn entry_ui(
@@ -895,9 +938,15 @@ impl SettingsWindow {
             .inner_margin(egui::Margin::same(10))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
+                // Breite der Bedienelemente aus dem letzten Bild (#378): der Text links bekommt
+                // nur den Rest und bricht um, statt unter die Knöpfe zu laufen.
+                let ctrl_id = ui.id().with(("setting_ctrl_w", e.id));
+                let ctrl_w: f32 = ctx.data(|d| d.get_temp(ctrl_id)).unwrap_or(240.0);
+                let text_w = (ui.available_width() - ctrl_w - 16.0).max(160.0);
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
-                        ui.horizontal(|ui| {
+                        ui.set_width(text_w);
+                        ui.horizontal_wrapped(|ui| {
                             ui.label(egui::RichText::new(e.name).strong().color(theme::text()));
                             if let Kind::Card(Some(m)) = e.kind {
                                 crate::widgets::StateChip::new(
@@ -908,14 +957,28 @@ impl SettingsWindow {
                                 .on_hover_text("Technik, über die WOA den Dienst anspricht");
                             }
                         });
-                        ui.label(egui::RichText::new(e.desc).small().color(theme::text_dim()));
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(e.desc).small().color(theme::text_dim()),
+                            )
+                            .wrap(),
+                        );
                     });
                     // Bedienelement rechts, so hoch wie die Zeile (sonst wächst sie).
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(ui.available_width(), 36.0),
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| row(ui, e.id),
-                    );
+                    let used = ui
+                        .allocate_ui_with_layout(
+                            egui::vec2(ui.available_width(), 36.0),
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                row(ui, e.id);
+                                ui.min_rect().width()
+                            },
+                        )
+                        .inner;
+                    if (used - ctrl_w).abs() > 1.0 {
+                        ctx.data_mut(|d| d.insert_temp(ctrl_id, used));
+                        ctx.request_repaint();
+                    }
                 });
             });
         if marked {
@@ -1135,5 +1198,64 @@ mod tests {
                 assert!(fields.iter().any(|x| x == f), "{}: kein Feld {f}", e.name);
             }
         }
+    }
+
+    /// #378/#379: Das Fenster öffnet breit genug, Beschreibung und Knopf überlappen nicht,
+    /// auch nicht bei der kleinsten Breite (Text bricht um).
+    #[test]
+    fn rows_never_run_under_their_buttons() {
+        use egui_kittest::kittest::Queryable;
+        for size in [None, Some([MIN_WIDTH, 600.0])] {
+            let mut h = egui_kittest::Harness::builder()
+                .with_size(egui::vec2(1920.0, 1009.0))
+                .build_ui_state(
+                    |ui, w: &mut SettingsWindow| {
+                        let ctx = ui.ctx().clone();
+                        if crate::theme::install_fonts(&ctx) {
+                            crate::theme::apply(
+                                &ctx,
+                                crate::theme::Theme::Dunkel,
+                                crate::theme::Mode::Radio,
+                            );
+                            return;
+                        }
+                        w.show(&ctx, |ui, _| {
+                            let _ = ui.button("Im Produzenten zeigen");
+                        });
+                    },
+                    SettingsWindow {
+                        open: true,
+                        area: Area::Produzent,
+                        size,
+                        ..Default::default()
+                    },
+                );
+            h.run_steps(6);
+            let desc = entry(SettingId::SoundBanks).unwrap().desc;
+            let text = h.get_by_label(desc).rect();
+            let buttons: Vec<_> = h
+                .query_all_by_label("Im Produzenten zeigen")
+                .map(|n: egui_kittest::Node<'_>| n.rect())
+                .collect();
+            assert!(!buttons.is_empty());
+            for b in buttons {
+                assert!(
+                    !text.intersects(b) || text.max.y <= b.min.y || b.max.y <= text.min.y,
+                    "{size:?}: Text {text:?} unter Knopf {b:?}"
+                );
+            }
+            if size.is_none() {
+                let win = h.get_by_label("Einstellung suchen").rect();
+                assert!(win.width() >= 900.0, "Fenster zu schmal: {win:?}");
+            }
+        }
+        assert_eq!(
+            start_size(None, egui::vec2(1366.0, 700.0)),
+            egui::vec2(1100.0, 660.0)
+        );
+        assert_eq!(
+            start_size(Some([1500.0, 900.0]), egui::vec2(1920.0, 1009.0)),
+            egui::vec2(1500.0, 900.0)
+        );
     }
 }

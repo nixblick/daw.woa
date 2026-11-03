@@ -613,6 +613,60 @@
       "erwartet": "Nach wenigen Sekunden wieder grün mit dem Sendemix, keine Zeile „Verbindung zu woa-streamd unterbrochen“, kein „Stream In Use“; im Shoutcast-Log je Beenden ein Abmelden der Quelle.",
       "version": "0.41.5",
       "ticket": 367
+    },
+    {
+      "id": "einstellungen-bleiben",
+      "ansicht": "Radio",
+      "titel": "Einstellungen bleiben nach Neustart",
+      "tun": "Einstellungen: „Stopp blendet aus“ umschalten, eine weitere Einstellung ändern, sofort WOA schließen und neu starten.",
+      "erwartet": "Beide Änderungen sind noch da.",
+      "version": "0.41.9",
+      "ticket": 380
+    },
+    {
+      "id": "einstellungen-breite",
+      "ansicht": "Radio",
+      "titel": "Einstellungen-Fenster breit und gemerkt",
+      "tun": "Einstellungen öffnen, Fenster breiter ziehen, schließen, WOA neu starten, wieder öffnen.",
+      "erwartet": "Startet breit ohne überlappende Texte; die gezogene Größe ist nach dem Neustart wieder da.",
+      "version": "0.41.9",
+      "ticket": 379
+    },
+    {
+      "id": "klangbank-zeile",
+      "ansicht": "Produzent",
+      "titel": "Zeile Klangbank je Spur lesbar",
+      "tun": "Einstellungen › Produzent: Zeile „Klangbank je Spur“ ansehen, Fenster schmaler ziehen.",
+      "erwartet": "Beschreibung bricht um, nichts läuft unter Knöpfe.",
+      "version": "0.41.9",
+      "ticket": 378
+    },
+    {
+      "id": "elevenlabs-einrichten",
+      "ansicht": "Radio",
+      "titel": "ElevenLabs einrichten mit eingeschränktem Schlüssel",
+      "tun": "Einstellungen › ElevenLabs › Einrichten: Schlüssel ohne Recht „User“ einfügen (gern mit Zeilenumbruch), speichern.",
+      "erwartet": "Fenster rollt zu ElevenLabs, Rechte-Hinweis sichtbar; Schlüssel gilt („Guthaben nicht lesbar“) statt „abgelehnt“; Karte grün, bei Fehler orange.",
+      "version": "0.41.9",
+      "ticket": 377
+    },
+    {
+      "id": "anbieter-vorwahl",
+      "ansicht": "Radio",
+      "titel": "Einrichten übernimmt den Anbieter",
+      "tun": "Einstellungen › KI: bei Ollama auf „Einrichten“, danach bei einem anderen Anbieter.",
+      "erwartet": "Das Fenster zeigt jeweils genau den angeklickten Anbieter.",
+      "version": "0.41.9",
+      "ticket": 376
+    },
+    {
+      "id": "midi-learn-hinweis",
+      "ansicht": "Radio",
+      "titel": "MIDI-Learn an Deck-Taste",
+      "tun": "Rechtsklick auf Start/Stopp von Deck A › MIDI lernen, einmal mit und einmal ohne gewählten Controller.",
+      "erwartet": "Mit Controller: „jetzt Regler bewegen oder Pad drücken“, Taste lernt. Ohne: Hinweis „kein Controller gewählt“.",
+      "version": "0.41.9",
+      "ticket": 371
     }
   ]
 }
