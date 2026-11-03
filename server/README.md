@@ -12,6 +12,16 @@ Der Server läuft als Instanz einer Rolle in einem privaten Infrastruktur-Repo.
 |---|---|
 | `feedback/nginx-feedback.wironair.de.conf` | vhost für den Edge-nginx, TLS per certbot-Webroot |
 
+## Hörer-Statistik (`hoerer/`)
+
+`hoerer/hoerer.py` (nur Python-Standardbibliothek) läuft auf dem Sendeserver neben Shoutcast,
+liest alle 30 s die öffentliche Kurzstatistik `/7.html` (ohne Kennwort) und speichert Zeit,
+aktuelle Hörer, Spitze, eindeutige Hörer und „Quelle verbunden“ in SQLite. Das läuft auch, wenn
+die App aus ist oder die Notfall-Playlist sendet. `GET /api/hoerer?von=&bis=` (Unix-Sekunden,
+Vorgabe 30 Tage) liefert `jetzt`, den `verlauf` der neuesten Sendung und die `sendungen`
+(Start, Ende, Dauer, Spitze, Durchschnitt), keine IPs oder User-Agents. Einstellungen per
+Umgebung, siehe Kopf der Datei. Tests: `python3 -m unittest discover -s server/hoerer`.
+
 ### Geheimnisse
 
 Nur einer: der fine-grained Token (`nixblick/daw.woa`, Issues: Read and write). Er entsteht

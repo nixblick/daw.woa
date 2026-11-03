@@ -317,25 +317,61 @@ pub fn update_title(cfg: &StreamConfig, kw: &Kennwort, title: &str) -> Result<()
     }
 }
 
-/// Hörerzahl über die öffentliche Kurzstatistik `/7.html?sid=n`
-/// (`aktuell,status,spitze,max,eindeutig,bitrate,titel`). `None`, wenn nicht abfragbar.
-pub fn listeners(cfg: &StreamConfig) -> Option<u32> {
+/// Hörerzahlen aus der öffentlichen Kurzstatistik `/7.html?sid=n` (ohne Kennwort).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ListenerStats {
+    pub current: u32,
+    /// Spitze laut Server (seit dessen Start, nicht je Sendung).
+    pub peak: Option<u32>,
+    pub unique: Option<u32>,
+}
+
+/// Liest `aktuell,status,spitze,max,eindeutig,bitrate,titel` aus dem Text von `/7.html`.
+pub fn parse_seven(body: &str) -> Option<ListenerStats> {
+    let inner = body
+        .split_once("<body>")
+        .map_or(body, |(_, b)| b)
+        .split("</body>")
+        .next()
+        .unwrap_or("");
+    let f: Vec<&str> = inner.split(',').map(str::trim).collect();
+    let num = |i: usize| f.get(i).and_then(|v| v.parse::<u32>().ok());
+    Some(ListenerStats {
+        current: num(0)?,
+        peak: num(2),
+        unique: num(4),
+    })
+}
+
+/// Hörerzahlen über `/7.html?sid=n`. `None`, wenn nicht abfragbar.
+pub fn listener_stats(cfg: &StreamConfig) -> Option<ListenerStats> {
     let (code, body) = http_get(cfg, &format!("/7.html?sid={}", cfg.stream_id)).ok()?;
     if code != 200 {
         return None;
     }
-    let inner = body
-        .split_once("<body>")
-        .map_or(body.as_str(), |(_, b)| b)
-        .split("</body>")
-        .next()
-        .unwrap_or("");
-    inner.split(',').next()?.trim().parse().ok()
+    parse_seven(&body)
+}
+
+/// Nur die aktuelle Hörerzahl. `None`, wenn nicht abfragbar.
+pub fn listeners(cfg: &StreamConfig) -> Option<u32> {
+    listener_stats(cfg).map(|s| s.current)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn seven_html_gives_current_peak_unique() {
+        let s =
+            parse_seven("<html><body>12,1,18,100,9,128,Titel, mit Komma</body></html>").unwrap();
+        assert_eq!((s.current, s.peak, s.unique), (12, Some(18), Some(9)));
+        assert_eq!(parse_seven("<html><body>kaputt</body></html>"), None);
+        assert_eq!(
+            parse_seven("4").map(|s| (s.current, s.peak)),
+            Some((4, None))
+        );
+    }
 
     #[test]
     fn encodes_query_values() {

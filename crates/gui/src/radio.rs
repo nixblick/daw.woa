@@ -1715,6 +1715,11 @@ impl RadioDesk {
         self.view.running
     }
 
+    /// Auf Sendung (woa-streamd wird gespeist), ohne das Mikro.
+    pub fn is_broadcasting(&self) -> bool {
+        self.feeder.is_some()
+    }
+
     /// Live für die ON-AIR-Lampe: nur „Auf Sendung“ (Feeder läuft), nicht das Mikro (#225).
     pub fn is_live(&self) -> bool {
         onair_lamp_lit(self.feeder.is_some(), self.view.mic_open)

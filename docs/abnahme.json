@@ -2,6 +2,22 @@
   "stand": "2026-11-03",
   "punkte": [
     {
+      "id": "hoerer-chip",
+      "ansicht": "Radio",
+      "titel": "Hörerzahl oben in der Kopfleiste",
+      "tun": "Auf Sendung gehen und 30 s warten. Mit einem zweiten Gerät den Stream hören.",
+      "erwartet": "Neben ON AIR steht „HÖRER 1 | 1“ (jetzt | Spitze dieser Sendung), grün, nicht rot; bis die erste Zahl kommt „–“. Nach Sendungsende ist der Eintrag weg. Klick öffnet die Hörer-Statistik.",
+      "version": "0.41.11"
+    },
+    {
+      "id": "hoerer-statistik",
+      "ansicht": "Radio",
+      "titel": "Fenster Hörer-Statistik",
+      "tun": "Ansicht › Hörer-Statistik öffnen (erst nachdem der Sammler auf dem Server läuft).",
+      "erwartet": "Kacheln Jetzt, Spitze, Schnitt, Eindeutig; Linienverlauf der laufenden oder letzten Sendung; Liste der Sendungen der letzten 30 Tage mit Beginn, Dauer, Spitze, Schnitt. Ohne Server: klare Meldung „Statistik-Server nicht erreichbar“.",
+      "version": "0.41.11"
+    },
+    {
       "id": "cart-wall-laufend-raster",
       "ansicht": "Radio",
       "titel": "Cart-Wall bleibt beim Abspielen im Raster",
