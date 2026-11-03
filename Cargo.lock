@@ -7561,6 +7561,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tracing",
+ "ureq",
  "woa-guests",
  "woa-radio",
  "woa-secrets",
