@@ -25,9 +25,9 @@ use crate::voice_editor::{VoiceAction, VoiceEditor, VoiceInput};
 use crate::xrun::XrunLog;
 use woa_engine::localtime::Zone;
 
-const NO_PFL: &str = "Kein Kopfhörer-Ausgang: Einstellungen → Vorhören (PFL)";
+const NO_PFL: &str = "Kein Kopfhörer-Ausgang: Einstellungen › Audio-Geräte › Vorhören (PFL)";
 /// Tooltip, wenn das Vorhören in den Einstellungen aus ist.
-pub const PFL_OFF: &str = "Vorhören ist aus: Einstellungen → Vorhören (PFL)";
+pub const PFL_OFF: &str = "Vorhören ist aus: Einstellungen › Audio-Geräte › Vorhören (PFL)";
 
 /// Knopf „Vorhören“: läuft gerade diese Quelle, wird er zu „⏹ Vorhören stoppen“ (hervorgehoben),
 /// ein Klick darauf stoppt (#205).
@@ -497,6 +497,8 @@ pub struct RadioDesk {
     /// Meldungen aus dem Öffnen, die in den Einstellungen stehen bleiben.
     output_warnings: Vec<String>,
     mic: Option<Stream>,
+    /// Gewähltes Mikrofon (Fenster Audio-Geräte), Vorgabe Systemstandard.
+    mic_cfg: crate::outputs_ui::MicInput,
     /// Telefon-Eingang (Anrufer): Strom, gewählte Einstellung, Meldung, Zähler, Pegel.
     phone: Option<Stream>,
     phone_cfg: crate::phone::PhoneInput,
@@ -1268,6 +1270,7 @@ impl RadioDesk {
             outputs: opened,
             output_warnings,
             mic: None,
+            mic_cfg: crate::outputs_ui::MicInput::default(),
             phone: None,
             phone_cfg: crate::phone::PhoneInput::default(),
             phone_error: None,
@@ -1502,8 +1505,8 @@ impl RadioDesk {
             self.phone_stats = None;
             self.with(|c| c.set_phone_input(None));
             self.phone_error = Some(format!(
-                "Der Telefon-Eingang {} ist ausgefallen (abgezogen?). Bitte anstecken und im \
-                 Telefon-Fenster „Übernehmen“ drücken.",
+                "Der Telefon-Eingang {} ist ausgefallen (abgezogen?). Bitte anstecken und unter \
+                 Einstellungen › Audio-Geräte „Übernehmen“ drücken.",
                 self.phone_cfg.label()
             ));
         }
@@ -1878,35 +1881,66 @@ impl RadioDesk {
             );
             return;
         }
-        if self.mic.is_none() {
-            let (producer, consumer) = rtrb::RingBuffer::new(self.rate as usize);
-            match woa_engine::record::start_live_input(
-                &woa_engine::record::InputConfig::default(),
-                producer,
-                Arc::clone(&self.mic_dropped),
-                |e| tracing::warn!(error = %e, "mic input"),
-            ) {
-                Ok((stream, rate)) if rate == self.rate => {
-                    self.mic = Some(Box::new(stream));
-                    self.with(move |c| c.set_mic_input(Some(consumer)));
-                }
-                Ok((_, rate)) => {
-                    self.error = Some(format!(
-                        "Mikrofon läuft mit {rate} Hz, die Ausgabe mit {} Hz. Bitte im System \
-                         gleich einstellen.",
-                        self.rate
-                    ));
-                    return;
-                }
-                Err(e) => {
-                    self.error = Some(format!("Kein Mikrofon: {e}"));
-                    return;
-                }
-            }
+        if self.mic.is_none() && !self.open_mic() {
+            return;
         }
         let open = !self.view.mic_open;
         self.view.mic_open = open;
         self.with(move |c| c.set_mic_open(open));
+    }
+
+    /// Öffnet das gewählte Mikrofon (Fenster Audio-Geräte; ohne Wahl der Systemstandard).
+    /// `false` mit Meldung, wenn es nicht geht; nie ein anderes Gerät stillschweigend.
+    fn open_mic(&mut self) -> bool {
+        let (producer, consumer) = rtrb::RingBuffer::new(self.rate as usize);
+        match woa_engine::record::start_live_input(
+            &self.mic_cfg.input_config(),
+            producer,
+            Arc::clone(&self.mic_dropped),
+            |e| tracing::warn!(error = %e, "mic input"),
+        ) {
+            Ok((stream, rate)) if rate == self.rate => {
+                tracing::info!(device = %self.mic_cfg.label(), "mic input open");
+                self.mic = Some(Box::new(stream));
+                self.with(move |c| c.set_mic_input(Some(consumer)));
+                true
+            }
+            Ok((_, rate)) => {
+                self.error = Some(format!(
+                    "Mikrofon {} läuft mit {rate} Hz, die Ausgabe mit {} Hz. Bitte im System \
+                     gleich einstellen.",
+                    self.mic_cfg.label(),
+                    self.rate
+                ));
+                false
+            }
+            Err(e) => {
+                self.error = Some(format!(
+                    "Mikrofon {} lässt sich nicht öffnen oder fehlt ({e}). Einstellungen › \
+                     Audio-Geräte, dort unter Eingänge das Mikrofon wählen.",
+                    self.mic_cfg.label()
+                ));
+                false
+            }
+        }
+    }
+
+    /// Neue Wahl des Mikrofons, sofort wirksam: Ein offenes Mikro wechselt auf das neue Gerät;
+    /// geht es nicht, ist das Mikro zu (mit Meldung).
+    pub fn set_mic_config(&mut self, cfg: crate::outputs_ui::MicInput) {
+        if cfg == self.mic_cfg {
+            return;
+        }
+        self.mic_cfg = cfg;
+        if self.mic.is_none() {
+            return;
+        }
+        self.mic = None;
+        self.with(|c| c.set_mic_input(None));
+        if self.view.mic_open && !self.open_mic() {
+            self.view.mic_open = false;
+            self.with(|c| c.set_mic_open(false));
+        }
     }
 
     /// Neue Einstellung für den Telefon-Eingang: schließt den alten und öffnet den neuen.
@@ -1938,7 +1972,7 @@ impl RadioDesk {
             Err(e) => {
                 self.phone_error = Some(format!(
                     "Telefon-Eingang {} lässt sich nicht öffnen oder fehlt ({e}). Die Sendung \
-                     läuft weiter. Bitte anstecken und im Telefon-Fenster „Übernehmen“ drücken.",
+                     läuft weiter. Bitte anstecken und unter Einstellungen › Audio-Geräte „Übernehmen“ drücken.",
                     self.phone_cfg.label()
                 ));
             }
@@ -1951,8 +1985,8 @@ impl RadioDesk {
         if on && self.phone.is_none() {
             if self.phone_cfg.device_id.is_none() {
                 self.phone_error = Some(
-                    "Kein Telefon-Eingang gewählt. Einstellungen, Telefon …, dort Gerät und \
-                     Kanalpaar wählen."
+                    "Kein Telefon-Eingang gewählt. Einstellungen › Audio-Geräte, dort unter \
+                     Eingänge Gerät und Kanalpaar wählen."
                         .into(),
                 );
                 return;

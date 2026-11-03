@@ -964,7 +964,7 @@ impl LibraryWindow {
                     .fill(theme::surface()),
                 )
                 .on_disabled_hover_text(
-                    "Kein Kopfhörer-Ausgang: Radio-Modus und Einstellungen → Vorhören (PFL)",
+                    "Kein Kopfhörer-Ausgang: Radio-Modus und Einstellungen › Audio-Geräte › Vorhören (PFL)",
                 )
                 .clicked()
             {

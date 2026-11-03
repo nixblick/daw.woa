@@ -233,6 +233,8 @@ Konto oder einen Schlüssel → Dienste und Konten, Gruppe nach Zweck (fehlt der
 `SERVICE_GROUPS`). Sonst → Allgemein bzw. Audio und Geräte. Neue Einstellung = Register-Eintrag, kein
 Umbau. Tests prüfen: jedes `GuiConfig`-Feld ist registriert oder begründet ohne Oberfläche
 (`NO_UI_FIELDS`), Umgangssprache findet das Richtige („11 labs“, „stimme“, „shoutcast“, „stream“, „mcp“).
+Audio-Geräte (Ausgänge, Vorhören, Mikrofon, Telefon, Pult-Eingang) haben genau ein Fenster
+„Audio-Geräte“; Register-Zeilen und Meldungen verweisen dorthin.
 
 ### Abweichungen vom Entwurf
 

@@ -79,6 +79,9 @@ Filter und Menü-Abkürzungen bauen sich daraus. Betrifft sie nur eine Ansicht �
 Party, Produzent). Braucht sie ein fremdes Konto oder einen Schlüssel → „Dienste und Konten“, Gruppe
 nach Zweck (Assistent, Stimmen und Klänge, Steuerung von außen …; fehlt der Zweck, neue Gruppe).
 Sonst → Allgemein bzw. Audio und Geräte. Neue Einstellung = Register-Eintrag, kein Umbau.
+**Audio-Geräte an einem Ort** (André, 03.11.2026): Soundkarten (Ausgänge, Vorhören, Mikrofon, Telefon,
+Pult-Eingang) werden nur im Fenster „Audio-Geräte“ (`outputs_ui.rs`) gewählt. Andere Stellen verweisen
+dorthin, keine zweiten Wähler (Test `devices_are_listed_only_here`). Ausnahme: Aufnahmequelle je Spur.
 
 ## Struktur
 

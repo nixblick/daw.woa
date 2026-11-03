@@ -529,6 +529,38 @@
       "ticket": 291
     },
     {
+      "id": "audio-mikro-waehlen",
+      "ansicht": "Einstellungen",
+      "titel": "Externes Mikrofon wählen",
+      "tun": "Einstellungen › Audio und Geräte › Audio-Geräte öffnen, unter Eingänge bei Mikrofon das externe Gerät und das Kanalpaar wählen, Übernehmen. Im Radio Mikro auf und sprechen.",
+      "erwartet": "Der Pegel kommt vom gewählten Mikro, nicht vom eingebauten. Nach einem Neustart steht die Wahl noch da.",
+      "version": "0.41.7"
+    },
+    {
+      "id": "audio-mikro-sofort",
+      "ansicht": "Radio",
+      "titel": "Mikro-Wechsel wirkt sofort",
+      "tun": "Mikro offen lassen, in Audio-Geräte ein anderes Mikrofon wählen und Übernehmen.",
+      "erwartet": "Das Mikro bleibt offen und kommt jetzt vom neuen Gerät. Fehlt das Gerät, steht eine klare Meldung da und das Mikro ist zu.",
+      "version": "0.41.7"
+    },
+    {
+      "id": "audio-ein-ort",
+      "ansicht": "Einstellungen",
+      "titel": "Ein Ort für alle Soundkarten",
+      "tun": "Im Menü Einstellungen und im Fenster Einstellungen nach Vorhören, Telefon und Mikrofon suchen.",
+      "erwartet": "Es gibt nur noch einen Wähler: das Fenster Audio-Geräte mit Ausgänge, Vorhören (PFL) und Eingänge (Mikrofon, Telefon, Pult). Die anderen Zeilen haben nur „In Audio-Geräte öffnen“. Jede Zeile im Fenster sagt in einem Satz, wofür sie ist.",
+      "version": "0.41.7"
+    },
+    {
+      "id": "audio-alte-einstellung",
+      "ansicht": "Allgemein",
+      "titel": "Alte Geräte-Einstellungen bleiben",
+      "tun": "Nach dem Update Audio-Geräte öffnen.",
+      "erwartet": "Ausgänge, Vorhören, Telefon und Pult stehen wie vorher; Mikrofon steht auf Systemstandard.",
+      "version": "0.41.7"
+    },
+    {
       "id": "party-karten-ausblenden",
       "ansicht": "Party Einfach",
       "titel": "Wunschliste und Fernbedienung ausblenden",

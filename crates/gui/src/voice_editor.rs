@@ -494,7 +494,7 @@ impl VoiceEditor {
             let hint = if pfl_available {
                 "A, Stimme und B im Kopfhörer (PFL), nie auf Sendung. Zuerst „Übernehmen“."
             } else {
-                "Kein Kopfhörer-Ausgang: Einstellungen → Vorhören (PFL)"
+                "Kein Kopfhörer-Ausgang: Einstellungen › Audio-Geräte › Vorhören (PFL)"
             };
             if ui
                 .add_enabled(

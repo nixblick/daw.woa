@@ -260,10 +260,9 @@ fn every_former_menu_entry_is_still_reachable() {
         (
             "Einstellungen",
             &[
-                "Ausgänge (Soundkarten)",
-                "Vorhören (PFL)",
+                // Ausgänge, Vorhören, Telefon, Mikrofon: im Fenster Audio-Geräte (0.41.7).
+                "Audio-Geräte",
                 "Ausgabe neu verbinden",
-                "Telefon",
                 "MIDI-Eingang",
                 "Controller und MIDI-Learn",
                 "Fehlercodes anonym senden",

@@ -364,12 +364,14 @@ pub fn start_live_input(
         let stream_config = supported.config();
         let sample_rate = stream_config.sample_rate;
         let channels = usize::from(stream_config.channels).max(1);
+        // Kanalpaar wie bei `start_pair_input` (fehlt es, gilt Kanal 1/2).
+        let (cl, cr) = pair_channels(config.pair, channels);
         let stream = device.build_input_stream(
             stream_config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                for frame in data.chunks(channels) {
-                    let l = frame[0];
-                    let r = if channels > 1 { frame[1] } else { l };
+                for frame in data.chunks_exact(channels) {
+                    let l = frame[cl];
+                    let r = frame[cr];
                     if producer.slots() < 2 {
                         dropped.fetch_add(1, Ordering::Relaxed);
                         continue;

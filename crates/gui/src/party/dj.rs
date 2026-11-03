@@ -1513,7 +1513,7 @@ fn channel(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView, side: usize, size: 
         .on_hover_text(if avail {
             "Kopfhörer-Cue: dieses Deck auf den Vorhör-Ausgang (geht nie auf Sendung)"
         } else {
-            "Kein Vorhör-Ausgang: Einstellungen → Ausgänge → Vorhören (Kanal 3/4 oder eigenes Gerät)"
+            "Kein Vorhör-Ausgang: Einstellungen › Audio-Geräte › Vorhören (Kanal 3/4 oder eigenes Gerät)"
         });
     if r.clicked() {
         desk.dj(DjCommand::Cue { side, on: !d.cue });
