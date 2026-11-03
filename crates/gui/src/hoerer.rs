@@ -1,7 +1,7 @@
-//! Hörer: Zahl oben in der Kopfleiste (aus der Status-Datei von woa-streamd, die die
-//! öffentliche Shoutcast-Kurzstatistik liest) und Fenster „Hörer-Statistik“. Die Statistik
-//! sammelt der eigene Server (`server/hoerer`), auch wenn die App aus ist; das Fenster liest
-//! nur dessen Endpunkt `/api/hoerer` (André 03.11.2026: „die daten sollten vom server kommen“).
+//! Hörer: Zahl oben in der Kopfleiste und Fenster „Hörer-Statistik“. Beide lesen nur den
+//! Endpunkt `/api/hoerer` des eigenen Servers (`server/hoerer`, sammelt auch ohne App; André
+//! 03.11.2026: „die daten sollten vom server kommen“). Der Shoutcast-Admin-Port ist von außen
+//! zu, darum fragt der Chip nicht mehr den Sendeserver selbst (0.41.12).
 
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::{Duration, Instant};
@@ -90,8 +90,8 @@ pub fn chip_suffix(current: Option<u32>, peak: Option<u32>) -> String {
     }
 }
 
-/// Spitze der laufenden Sendung, aus den Zahlen der Status-Datei (die Spitze des Servers gilt
-/// seit dessen Start, nicht je Sendung).
+/// Spitze der laufenden Sendung, aus den gelesenen Zahlen (die Spitze des Servers gilt seit
+/// dessen Start, nicht je Sendung).
 #[derive(Debug, Default)]
 pub struct SessionPeak {
     on_air: bool,
@@ -138,6 +138,73 @@ pub fn datum(unix: u64) -> String {
     )
 }
 
+/// Holt `/api/hoerer` im Hintergrund, höchstens alle [`REFRESH`]; blockiert nie den UI-Thread.
+/// Gemeinsam für Fenster und Chip.
+#[derive(Default)]
+pub struct Abruf {
+    rx: Option<Receiver<Result<Auswertung, String>>>,
+    geholt: Option<Instant>,
+}
+
+impl Abruf {
+    /// Liefert ein fertiges Ergebnis, sonst `None`; stößt bei Fälligkeit den nächsten Abruf an.
+    pub fn poll(&mut self, url: &str) -> Option<Result<Auswertung, String>> {
+        let mut out = None;
+        if let Some(rx) = &self.rx {
+            match rx.try_recv() {
+                Ok(r) => {
+                    out = Some(r);
+                    self.rx = None;
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => self.rx = None,
+            }
+        }
+        let due = self.geholt.is_none_or(|t| t.elapsed() >= REFRESH);
+        if self.rx.is_none() && due {
+            self.geholt = Some(Instant::now());
+            let (tx, rx) = channel();
+            let url = url.to_string();
+            let spawned = std::thread::Builder::new()
+                .name("woa-hoerer".into())
+                .spawn(move || {
+                    let _ = tx.send(fetch(&url));
+                });
+            match spawned {
+                Ok(_) => self.rx = Some(rx),
+                Err(e) => out = Some(Err(e.to_string())),
+            }
+        }
+        out
+    }
+}
+
+/// Zahlen für den Chip aus einer Antwort: (jetzt, Spitze der laufenden Sendung).
+pub fn chip_zahlen(a: &Auswertung) -> (Option<u32>, Option<u32>) {
+    let jetzt = a.jetzt.as_ref().map(|j| j.aktuell);
+    let spitze = a.sendungen.first().filter(|s| s.laeuft).map(|s| s.spitze);
+    (jetzt, spitze)
+}
+
+/// Stand des Chips oben: letzte gültige Zahl vom Server, „–“ bei Fehler.
+#[derive(Default)]
+pub struct ChipStand {
+    abruf: Abruf,
+    pub aktuell: Option<u32>,
+    pub spitze_server: Option<u32>,
+}
+
+impl ChipStand {
+    /// Nur auf Sendung aufrufen; fragt höchstens alle 30 s im Hintergrund.
+    pub fn poll(&mut self, url: &str) {
+        match self.abruf.poll(url) {
+            Some(Ok(a)) => (self.aktuell, self.spitze_server) = chip_zahlen(&a),
+            Some(Err(_)) => (self.aktuell, self.spitze_server) = (None, None),
+            None => {}
+        }
+    }
+}
+
 enum Stand {
     Leer,
     Fehler(String),
@@ -149,8 +216,7 @@ pub struct HoererWindow {
     pub open: bool,
     maximized: bool,
     stand: Stand,
-    rx: Option<Receiver<Result<Auswertung, String>>>,
-    geholt: Option<Instant>,
+    abruf: Abruf,
 }
 
 impl Default for HoererWindow {
@@ -159,8 +225,7 @@ impl Default for HoererWindow {
             open: false,
             maximized: false,
             stand: Stand::Leer,
-            rx: None,
-            geholt: None,
+            abruf: Abruf::default(),
         }
     }
 }
@@ -169,7 +234,7 @@ impl HoererWindow {
     /// Fotomodus: Beispielzahlen statt Server.
     pub fn demo(&mut self) {
         self.open = true;
-        self.geholt = Some(Instant::now());
+        self.abruf.geholt = Some(Instant::now());
         let start = 1_793_700_000;
         let verlauf = (0..60u64)
             .map(|i| {
@@ -218,33 +283,11 @@ impl HoererWindow {
     }
 
     fn poll(&mut self, url: &str) {
-        if let Some(rx) = &self.rx {
-            match rx.try_recv() {
-                Ok(r) => {
-                    self.stand = match r {
-                        Ok(a) => Stand::Daten(a),
-                        Err(e) => Stand::Fehler(e),
-                    };
-                    self.rx = None;
-                }
-                Err(TryRecvError::Empty) => {}
-                Err(TryRecvError::Disconnected) => self.rx = None,
-            }
-        }
-        let due = self.geholt.is_none_or(|t| t.elapsed() >= REFRESH);
-        if self.rx.is_none() && due {
-            self.geholt = Some(Instant::now());
-            let (tx, rx) = channel();
-            let url = url.to_string();
-            let spawned = std::thread::Builder::new()
-                .name("woa-hoerer".into())
-                .spawn(move || {
-                    let _ = tx.send(fetch(&url));
-                });
-            match spawned {
-                Ok(_) => self.rx = Some(rx),
-                Err(e) => self.stand = Stand::Fehler(e.to_string()),
-            }
+        if let Some(r) = self.abruf.poll(url) {
+            self.stand = match r {
+                Ok(a) => Stand::Daten(a),
+                Err(e) => Stand::Fehler(e),
+            };
         }
     }
 
@@ -281,12 +324,9 @@ impl HoererWindow {
                 Stand::Fehler(e) => {
                     ui.label(egui::RichText::new(e).color(theme::danger_text()));
                     ui.label(
-                        egui::RichText::new(
-                            "Die Zahl oben in der Kopfleiste kommt direkt vom Sendeserver und \
-                             geht trotzdem, solange du auf Sendung bist. Neuer Versuch in 30 s.",
-                        )
-                        .small()
-                        .color(theme::text_dim()),
+                        egui::RichText::new("Neuer Versuch in 30 s.")
+                            .small()
+                            .color(theme::text_dim()),
                     );
                 }
                 Stand::Daten(a) => inhalt(ui, a),
@@ -442,6 +482,33 @@ mod tests {
         assert_eq!(chip_suffix(Some(20), Some(18)), "20 | 20");
         assert_eq!(chip_suffix(Some(3), None), "3 | 3");
         assert_eq!(chip_suffix(None, Some(5)), "–");
+    }
+
+    #[test]
+    fn chip_numbers_come_from_the_server_answer() {
+        let a = parse(
+            r#"{"jetzt":{"t":1,"aktuell":7},"sendungen":[{"start":0,"ende":1,"dauer_s":1,"spitze":12,"durchschnitt":5.0,"laeuft":true}]}"#,
+        )
+        .unwrap();
+        assert_eq!(chip_zahlen(&a), (Some(7), Some(12)));
+        let alt = parse(
+            r#"{"jetzt":{"t":1,"aktuell":0},"sendungen":[{"start":0,"ende":1,"dauer_s":1,"spitze":12,"durchschnitt":5.0}]}"#,
+        )
+        .unwrap();
+        assert_eq!(chip_zahlen(&alt), (Some(0), None));
+        assert_eq!(chip_zahlen(&Auswertung::default()), (None, None));
+    }
+
+    #[test]
+    fn chip_stays_dash_without_test_server() {
+        let mut c = ChipStand::default();
+        c.poll("https://feedback.wironair.de/api/hoerer");
+        for _ in 0..100 {
+            c.poll("https://feedback.wironair.de/api/hoerer");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(c.aktuell, None);
+        assert_eq!(chip_suffix(c.aktuell, None), "–");
     }
 
     #[test]
