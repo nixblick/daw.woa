@@ -1014,6 +1014,14 @@ impl Controller {
     pub fn stop_or_pause(&mut self) {
         if !self.running || self.status.current.load(Ordering::Acquire) == NONE {
             self.stop();
+            // Läuft statt der Playlist ein von Hand gestartetes Deck, hält Stopp es an (#325).
+            for deck in 0..crate::DECKS {
+                if self.status.deck_state[deck].load(Ordering::Acquire)
+                    == crate::mixer::DECK_PLAYING
+                {
+                    self.deck_stop(deck);
+                }
+            }
             return;
         }
         let frames = if self.show.stop_fade {
@@ -1489,12 +1497,14 @@ impl Controller {
                 .map(|c| c.cues)
                 .unwrap_or_default();
             let f = cues.frames(self.rate, buf.frames());
+            let duck_end = buf.audible_end(f.start, f.end);
             self.send(Cmd::Cart {
                 slot,
                 buf,
                 gain: 1.0,
                 start: f.start,
                 end: f.end,
+                duck_end,
             });
         }
     }

@@ -105,8 +105,8 @@ pub struct WoaApp {
     feedback_thumbs: Vec<((&'static str, usize), egui::TextureHandle)>,
     /// Update-Hinweis (Suche und Download im Hintergrund).
     update: crate::update::UpdateState,
-    /// Frage „Projekt speichern?“ vor der Installation ist offen.
-    update_confirm: bool,
+    /// Frage „Projekt speichern?“ vor Beenden, Fenster schließen und Update (#365, #362).
+    exit: crate::exit::ExitGuard,
     /// Beim ersten Bild automatisch suchen (nur in der echten App, nicht in Tests).
     update_autostart: bool,
     /// Track being renamed and its edit buffer.
@@ -610,7 +610,7 @@ impl WoaApp {
             image_error: None,
             feedback_thumbs: Vec::new(),
             update: crate::update::UpdateState::default(),
-            update_confirm: false,
+            exit: crate::exit::ExitGuard::default(),
             update_autostart: open_audio,
             rename: None,
             gain_drag: None,
@@ -2217,6 +2217,28 @@ impl WoaApp {
         true
     }
 
+    /// Datei › Beenden (Strg+Q): über dieselbe Frage wie Fenster schließen und Update.
+    fn quit(&mut self, ctx: &egui::Context) {
+        if self.exit.request(
+            crate::exit::ExitReason::Quit,
+            self.state.session().is_dirty(),
+        ) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    /// Fenster schließen (X, Alt+F4): bei ungespeichertem Projekt erst fragen.
+    fn close_guard(&mut self, ctx: &egui::Context) {
+        if ctx.input(|i| i.viewport().close_requested())
+            && !self.exit.request(
+                crate::exit::ExitReason::Quit,
+                self.state.session().is_dirty(),
+            )
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        }
+    }
+
     fn new_project(&mut self) {
         if self.save_before_replace("Neues Projekt") {
             self.state.new_project();
@@ -2286,6 +2308,9 @@ impl WoaApp {
             && !pr.keys(ctx, &mut self.state)
         {
             self.piano_roll = None;
+        }
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Q)) {
+            self.quit(ctx);
         }
         let (undo, redo, save, open, new, record) = ctx.input_mut(|i| {
             let m = egui::Modifiers::COMMAND;
@@ -2640,6 +2665,7 @@ impl WoaApp {
                 Ok(()) => tracing::info!(path = %path.display(), "photo saved"),
                 Err(e) => tracing::error!(error = %e, "photo failed"),
             }
+            self.exit.allow(crate::exit::ExitReason::Quit);
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         ctx.request_repaint();
@@ -2859,6 +2885,10 @@ impl WoaApp {
                     self.import_midi();
                 }
             });
+            ui.separator();
+            if ui.button("Beenden (Strg+Q)").clicked() {
+                self.quit(ui.ctx());
+            }
         });
         self.photo_menu(ui, "Datei", &r.response);
         let r = ui.menu_button("Bearbeiten", |ui| {
@@ -6923,6 +6953,7 @@ impl WoaApp {
 
 impl eframe::App for WoaApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.close_guard(ctx);
         self.repaint_debug(ctx);
         self.drain_midi_takes();
         if self.config.mode.uses_desk() {
@@ -7145,7 +7176,7 @@ impl eframe::App for WoaApp {
                     .inner_margin(egui::Margin::symmetric(12, 5)),
             )
             .show(ui, |ui| self.menu(ui, &ctx));
-        self.update_confirm_window(&ctx);
+        self.exit_confirm_window(&ctx);
         if self.config.mode == Mode::Party
             && let Some(radio) = self.radio.as_mut()
         {
@@ -9019,6 +9050,15 @@ impl WoaApp {
                 self.update.start_check(false, Self::update_wake(ctx));
             }
         }
+        // Update-Download gescheitert: das Beenden fand nicht statt, beim nächsten Mal fragen.
+        if self.exit.confirmed_for() == Some(crate::exit::ExitReason::Update)
+            && !matches!(
+                self.update.phase,
+                crate::update::Phase::Downloading(_) | crate::update::Phase::Ready(..)
+            )
+        {
+            self.exit.reset();
+        }
         match self.update.poll() {
             Event::None => {}
             Event::Checked { ok, message } => {
@@ -9045,23 +9085,22 @@ impl WoaApp {
     /// startet die neue Version nach der Installation selbst (`RESTARTWOA=1`).
     #[cfg(windows)]
     fn update_install(&mut self, ctx: &egui::Context, msi: &std::path::Path) {
-        if self.state.session().is_dirty() {
-            self.save();
-            if self.state.session().is_dirty() {
-                self.update.back_to_available();
-                self.state.status = Status::Error(
-                    "Update nicht installiert: erst das Projekt speichern, dann noch einmal".into(),
-                );
-                return;
-            }
+        // Während des Downloads geändert: dieselbe Frage; die Antwort installiert dann.
+        if !self.exit.request(
+            crate::exit::ExitReason::Update,
+            self.state.session().is_dirty(),
+        ) {
+            return;
         }
         match woa_updater::launch_installer(msi) {
             Ok(()) => {
                 tracing::info!("installer started, closing");
+                self.exit.allow(crate::exit::ExitReason::Update);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             Err(e) => {
                 tracing::warn!(error = %e, "installer not started");
+                self.exit.reset();
                 self.update.install_failed(&e.to_string());
             }
         }
@@ -9130,12 +9169,13 @@ impl WoaApp {
                                     return;
                                 }
                                 #[cfg(windows)]
-                                if ui.small_button("Jetzt installieren").clicked() {
-                                    if self.state.session().is_dirty() {
-                                        self.update_confirm = true;
-                                    } else {
-                                        self.update.start_download(Self::update_wake(ui.ctx()));
-                                    }
+                                if ui.small_button("Jetzt installieren").clicked()
+                                    && self.exit.request(
+                                        crate::exit::ExitReason::Update,
+                                        self.state.session().is_dirty(),
+                                    )
+                                {
+                                    self.update.start_download(Self::update_wake(ui.ctx()));
                                 }
                                 #[cfg(not(windows))]
                                 ui.hyperlink_to("Zur Release-Seite", woa_updater::RELEASES_PAGE);
@@ -9152,36 +9192,66 @@ impl WoaApp {
         ui.ctx().data_mut(|d| d.insert_temp(id, used));
     }
 
-    /// Ungespeichertes Projekt: erst speichern, dann laden und installieren.
-    fn update_confirm_window(&mut self, ctx: &egui::Context) {
-        if !self.update_confirm {
+    /// Frage „Projekt speichern?“ vor Beenden, Fenster schließen und Update (#365):
+    /// Speichern, Nicht speichern, Abbrechen. Abbrechen lässt WOA offen.
+    fn exit_confirm_window(&mut self, ctx: &egui::Context) {
+        use crate::exit::{Choice, ExitReason};
+        let Some(reason) = self.exit.asking() else {
             return;
-        }
-        let mut go = false;
-        let mut cancel = false;
+        };
+        let (text, save_label) = match reason {
+            ExitReason::Quit => (
+                "Das Projekt hat ungespeicherte Änderungen. Vor dem Beenden speichern?",
+                "Speichern und beenden",
+            ),
+            ExitReason::Update => (
+                "Das Projekt hat ungespeicherte Änderungen. WOA wird für das Update beendet.",
+                "Speichern und installieren",
+            ),
+        };
+        let mut choice = None;
         egui::Window::new("Projekt speichern?")
             .collapsible(false)
             .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
-                ui.label(
-                    "Das Projekt hat ungespeicherte Änderungen. WOA wird für das Update beendet.",
-                );
+                ui.label(text);
                 ui.horizontal(|ui| {
-                    go = ui.button("Speichern und installieren").clicked();
-                    cancel = ui.button("Abbrechen").clicked();
+                    if ui.button(save_label).clicked() {
+                        choice = Some(Choice::Save);
+                    }
+                    if ui.button("Nicht speichern").clicked() {
+                        choice = Some(Choice::Discard);
+                    }
+                    if ui.button("Abbrechen").clicked() {
+                        choice = Some(Choice::Cancel);
+                    }
                 });
             });
-        if go {
-            self.update_confirm = false;
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            choice = Some(Choice::Cancel);
+        }
+        let Some(choice) = choice else {
+            return;
+        };
+        if choice == Choice::Save {
             self.save();
-            if self.state.session().is_dirty() {
-                self.state.status =
-                    Status::Error("Update abgebrochen: Projekt nicht gespeichert".into());
-            } else {
+        }
+        let clean = !self.state.session().is_dirty();
+        if choice == Choice::Save && !clean {
+            self.state.status = Status::Error("Nicht gespeichert: bitte wählen".into());
+        }
+        match self.exit.answer(choice, clean) {
+            Some(ExitReason::Quit) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Some(ExitReason::Update) => {
+                #[cfg(windows)]
+                if let crate::update::Phase::Ready(_, msi) = self.update.phase.clone() {
+                    self.update_install(ctx, &msi);
+                    return;
+                }
                 self.update.start_download(Self::update_wake(ctx));
             }
-        } else if cancel {
-            self.update_confirm = false;
+            None => {}
         }
     }
 
@@ -9265,6 +9335,7 @@ pub(crate) const MENU_GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Importieren", "\"Importieren\""),
         ],
     ),
+    ("Datei", &[("Beenden (Strg+Q)", "\"Beenden (Strg+Q)\"")]),
     (
         "Datei › Exportieren",
         &[
@@ -10284,6 +10355,82 @@ mod nacharbeit_tests {
                 );
             }
         }
+    }
+
+    /// #365/#362: Fenster schließen und Strg+Q fragen bei ungespeichertem Projekt mit
+    /// Speichern · Nicht speichern · Abbrechen; Abbrechen lässt WOA offen.
+    #[test]
+    fn closing_with_unsaved_changes_asks_save_discard_cancel() {
+        let mut rig = Rig::new(Mode::Produzent);
+        rig.app.state_mut().add_midi_track().unwrap();
+        assert!(rig.app.state.session().is_dirty());
+        // Fenster schließen (X).
+        rig.n += 1;
+        let mut input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1920.0, 1030.0),
+            )),
+            time: Some(f64::from(rig.n) * 0.05),
+            ..Default::default()
+        };
+        input
+            .viewports
+            .entry(egui::ViewportId::ROOT)
+            .or_default()
+            .events
+            .push(egui::ViewportEvent::Close);
+        let (app, frame) = (&mut rig.app, &mut rig.frame);
+        let out = rig.ctx.run_ui(input, |ui| {
+            eframe::App::logic(app, ui.ctx(), frame);
+            eframe::App::ui(app, ui, frame);
+        });
+        let cmds = &out.viewport_output[&egui::ViewportId::ROOT].commands;
+        assert!(
+            cmds.contains(&egui::ViewportCommand::CancelClose),
+            "Schließen nicht angehalten: {cmds:?}"
+        );
+        rig.step(Vec::new());
+        for b in ["Speichern und beenden", "Nicht speichern", "Abbrechen"] {
+            assert!(rig.any(|l| l == b), "Knopf „{b}“ fehlt");
+        }
+        // Esc = Abbrechen: Frage weg, WOA bleibt offen.
+        rig.commands.clear();
+        rig.step(vec![egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]);
+        rig.step(Vec::new());
+        assert!(!rig.any(|l| l == "Nicht speichern"), "Frage nicht zu");
+        assert!(!rig.commands.contains(&egui::ViewportCommand::Close));
+        // Strg+Q fragt dasselbe.
+        rig.step(vec![egui::Event::Key {
+            key: egui::Key::Q,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        }]);
+        rig.step(Vec::new());
+        assert!(rig.any(|l| l == "Nicht speichern"), "Strg+Q fragt nicht");
+        assert!(!rig.commands.contains(&egui::ViewportCommand::Close));
+    }
+
+    #[test]
+    fn clean_project_quits_without_asking() {
+        let mut rig = Rig::new(Mode::Produzent);
+        rig.app.exit = crate::exit::ExitGuard::default();
+        rig.step(vec![egui::Event::Key {
+            key: egui::Key::Q,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        }]);
+        assert!(rig.commands.contains(&egui::ViewportCommand::Close));
     }
 
     #[test]
