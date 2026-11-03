@@ -5641,14 +5641,11 @@ mod tests {
     #[test]
     fn level_leds_are_fat() {
         // #287: kräftige LEDs, Fader und Namensschilder bleiben.
-        assert!(super::METER_W >= 16.0);
+        const { assert!(super::METER_W >= 16.0) };
         let (n, gap) = crate::theme::bus_segments(super::FADER_HEIGHT - 2.0);
         let seg_h = (super::FADER_HEIGHT - 2.0 - gap * (n as f32 - 1.0)) / n as f32;
         assert!(seg_h >= 4.5, "LED {seg_h} px hoch");
-        assert!(
-            36.0 + 2.0 + super::METER_W <= super::STRIP_W,
-            "passt in den Kanalzug"
-        );
+        const { assert!(36.0 + 2.0 + super::METER_W <= super::STRIP_W) };
     }
 
     #[test]

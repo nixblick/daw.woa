@@ -801,6 +801,10 @@ impl PartyView {
     ) {
         side_card().show(ui, |ui| {
             ui.set_width(ui.available_width());
+            // Ohne Wunschliste füllt die Bibliothek die Spalte nach unten (#361).
+            if rows > MIN_HITS {
+                ui.set_min_height(LIBRARY_HEAD_H + rows as f32 * HIT_ROW_H - 40.0);
+            }
             ui.horizontal(|ui| {
                 ui.label(theme::panel_label("BIBLIOTHEK").color(theme::accent_2()));
                 if let Some(w) = &self.wish_for {

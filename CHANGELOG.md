@@ -7,6 +7,7 @@
 - **Gesangseinsatz je Titel (#299):** Die Analyse schätzt den ersten Gesang (Mitte-minus-Seite im Sprachband, erste 90 s, Hintergrund) und legt ihn in der Bibliothek ab (Schema 7, Spalte `vocal_start`) und an Playlist-Titeln/Carts. Playlist: Mikrofon und Rampzeit ab Cue-In links der Lautheit, geschätzt mit „≈“ in gedämpfter Farbe; Deck: „Gesang ab …“ und Strich auf dem Fortschrittsbalken. Von Hand: Cue-Editor › Rechtsklick in die Wellenform › „Gesang beginnt hier“ setzt die Ramp-Marke, die vor der Schätzung gilt; „Vorschlag einsetzen“ setzt die Ramp mit. Bereits gemessene Playlist-Titel werden einmal nachgemessen. Tests: `analysis::vocal::tests`, `show::tests`, `analysis::tests::vocal_start_is_stored_with_the_analysis`, `vocal_ui::tests`, `cue_editor::tests`.
 - **Vorhören per Knopf in Playlist und Cart-Wall (#273):** Kopfhörer-Taste in der Playlist-Zeile (beim Hover/Auswahl, bleibt sichtbar, solange der Titel vorgehört wird) und oben rechts am belegten Cart (links neben dem Fade-Symbol); Klick startet, zweiter Klick stoppt, ohne PFL-Ausgang gesperrt mit Hinweis.
 - **Kräftigere Pegel-LEDs (#287):** LED-Ketten der Karte PEGEL 16 statt 10 px breit, weniger und dickere LEDs mit Fuge, leuchtende mit hellem Kern und Schein. Fader und farbige Namensschilder unverändert. Test: `level_leds_are_fat`.
+- Bilder 1920×1030 dunkel und hell: `docs/design/ist/ist-0.41.3-{party,produzent,radio}-{dunkel,hell}-1920x1030.png` (Party mit ausgeblendeten Karten, Produzent mit Abhörregler, Radio mit den neuen LEDs).
 
 ## 0.41.1 — 2026-11-03
 
