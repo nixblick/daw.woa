@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.16 — 2026-11-03
+
+- **Hörer-Seite ohne Design auf `/`:** Die Seite lud CSS, Skript und Bilder relativ; auf stream.wironair.de/ landeten diese Abrufe beim Stream statt bei den Dateien. Jetzt absolut unter `/live/`.
+
 ## 0.41.15 — 2026-11-03
 
 - **Hörer-Seite `server/live/`:** eine statische Seite für Hörer im Browser (ohne Framework, Build, Tracking, Cookies und externe Quellen; Schriften selbst gehostet, SIL OFL). Großer Knopf „Hören“ (Start per Klick, Browser blocken Autoplay mit Ton; `preload="none"`, damit ein Seitenaufruf keinen Hörer zählt; Stopp schließt die Verbindung), „Läuft gerade“, Hörer jetzt und Spitze, zuletzt gespielte Titel, Status ON AIR / Notfall-Schleife / Sendepause und optional die nächste Sendung aus `naechste.json`. Farben aus den Themen `radio` und `radio-hell` (folgt dem System), mobil tauglich, Tastatur-Fokus sichtbar, Statuswechsel per `aria-live`. Titel kommen nur per `textContent` ins Dokument.

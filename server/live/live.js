@@ -42,7 +42,7 @@
   }
 
   function naechste() {
-    fetch("naechste.json", { cache: "no-cache", credentials: "omit" })
+    fetch("/live/naechste.json", { cache: "no-cache", credentials: "omit" })
       .then(function (r) { return r.ok ? r.json() : { sendungen: [] }; })
       .then(function (k) {
         var jetzt = Date.now();
