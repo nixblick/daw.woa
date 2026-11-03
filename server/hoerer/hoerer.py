@@ -11,8 +11,16 @@ Umgebung (alle mit Vorgabe):
   HOERER_PORT    Port des JSON-Endpunkts           8082
   HOERER_TAKT    Sekunden zwischen zwei Abfragen   30
   HOERER_BIND    Adresse des Endpunkts             127.0.0.1 (hinter dem Reverse-Proxy)
+
+Titel (POST /api/titel, nur wenn beide Dateien lesbar sind, sonst 503):
+  HOERER_TITEL_QUELL_KW   Datei mit dem Shoutcast-Quellkennwort (Anmeldung der App)
+  HOERER_TITEL_ADMIN_KW   Datei mit dem Shoutcast-Admin-Kennwort (für admin.cgi, intern)
+Die App schickt `Authorization: Bearer <Quellkennwort>` und `{"titel": "..."}`. Der Dienst
+vergleicht konstantzeitig und ruft admin.cgi?mode=updinfo im Docker-Netz auf; das
+Admin-Kennwort verlässt den Server nie. Kennwörter stehen in keinem Log und keiner Antwort.
 """
 
+import hmac
 import json
 import os
 import sqlite3
@@ -20,7 +28,7 @@ import threading
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 # Shoutcast liefert /7.html nur an Browser-Kennungen als Text aus.
 USER_AGENT = "Mozilla/5.0 (WOA hoerer)"
@@ -35,6 +43,9 @@ VORGABE_TAGE = 30
 # Höchstens so viele Tage je Abfrage und so viele Sendungen in der Antwort.
 MAX_TAGE = 90
 MAX_SENDUNGEN = 200
+# Titel: höchstens so viele Zeichen, Rumpf höchstens so viele Bytes.
+TITEL_MAX = 200
+TITEL_RUMPF_MAX = 2048
 
 
 def zeitraum(q, jetzt):
@@ -80,6 +91,48 @@ def lese(quelle, sid, timeout=5):
             return parse_seven(r.read(4096).decode("utf-8", "replace"))
     except Exception:  # noqa: BLE001 - Netz, HTTP, Zeitüberschreitung: alles still
         return None
+
+
+def lies_kennwort(pfad):
+    """Erste Zeile der Datei, ohne Zeilenende; None, wenn leer oder nicht lesbar."""
+    if not pfad:
+        return None
+    try:
+        with open(pfad, encoding="utf-8") as f:
+            kw = f.readline().strip()
+    except OSError:
+        return None
+    return kw or None
+
+
+def titel_sauber(roh):
+    """Steuerzeichen raus, getrimmt, auf TITEL_MAX gekürzt; None, wenn nichts bleibt."""
+    if not isinstance(roh, str):
+        return None
+    t = "".join(c for c in roh if c.isprintable()).strip()[:TITEL_MAX]
+    return t or None
+
+
+def kennwort_passt(kopf, erwartet):
+    """`Bearer <kw>` konstantzeitig gegen das erwartete Kennwort."""
+    if not kopf or not erwartet or not kopf.startswith("Bearer "):
+        return False
+    return hmac.compare_digest(kopf[7:].encode(), erwartet.encode())
+
+
+def setze_titel(quelle, sid, admin_kw, titel, timeout=5):
+    """admin.cgi?mode=updinfo intern aufrufen. True bei HTTP 200. Die URL enthält das
+    Admin-Kennwort und wird deshalb nie geloggt oder weitergegeben."""
+    url = (
+        f"{quelle.rstrip('/')}/admin.cgi?sid={int(sid)}&pass={quote(admin_kw, safe='')}"
+        f"&mode=updinfo&song={quote(titel, safe='')}"
+    )
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status == 200
+    except Exception:  # noqa: BLE001 - die Ausnahme könnte die URL tragen: still
+        return False
 
 
 def oeffne(pfad):
@@ -173,8 +226,9 @@ def sammler(db, quelle, sid, takt, stop):
         stop.wait(takt)
 
 
-def handler_fuer(db_pfad):
-    """Jede Anfrage liest über eine eigene, nur lesende Verbindung."""
+def handler_fuer(db_pfad, titel=None):
+    """Jede Anfrage liest über eine eigene, nur lesende Verbindung. `titel`: dict mit
+    quelle, sid, quell_kw, admin_kw (Dateipfade) für POST /api/titel, sonst None."""
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):  # keine Zugriffszeilen mit IPs
@@ -207,6 +261,33 @@ def handler_fuer(db_pfad):
             finally:
                 db.close()
 
+        def do_POST(self):
+            if urlparse(self.path).path != "/api/titel":
+                return self._json(404, {"fehler": "unbekannt"})
+            quell_kw = lies_kennwort(titel and titel.get("quell_kw"))
+            admin_kw = lies_kennwort(titel and titel.get("admin_kw"))
+            if not quell_kw or not admin_kw:
+                return self._json(503, {"fehler": "Titel hier nicht eingerichtet"})
+            if not kennwort_passt(self.headers.get("Authorization"), quell_kw):
+                return self._json(401, {"fehler": "nicht berechtigt"})
+            try:
+                laenge = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                laenge = -1
+            if laenge < 0 or laenge > TITEL_RUMPF_MAX:
+                return self._json(413, {"fehler": "zu groß"})
+            try:
+                t = titel_sauber(json.loads(self.rfile.read(laenge) or b"null").get("titel"))
+            except (ValueError, AttributeError):
+                t = None
+            if t is None:
+                return self._json(400, {"fehler": "titel fehlt"})
+            if not setze_titel(titel["quelle"], titel["sid"], admin_kw, t):
+                return self._json(502, {"fehler": "Shoutcast nahm den Titel nicht an"})
+            self.send_response(204)
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+
     return H
 
 
@@ -220,7 +301,13 @@ def main():
     takt = float(os.environ.get("HOERER_TAKT", "30"))
     stop = threading.Event()
     threading.Thread(target=sammler, args=(db, quelle, sid, takt, stop), daemon=True).start()
-    ThreadingHTTPServer((bind, port), handler_fuer(pfad)).serve_forever()
+    titel = {
+        "quelle": quelle,
+        "sid": sid,
+        "quell_kw": os.environ.get("HOERER_TITEL_QUELL_KW", ""),
+        "admin_kw": os.environ.get("HOERER_TITEL_ADMIN_KW", ""),
+    }
+    ThreadingHTTPServer((bind, port), handler_fuer(pfad, titel)).serve_forever()
 
 
 if __name__ == "__main__":
