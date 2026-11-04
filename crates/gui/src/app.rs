@@ -2197,7 +2197,7 @@ impl WoaApp {
             return;
         };
         let mut choice = None;
-        egui::Window::new("Projekt überschreiben?")
+        let shown = egui::Window::new("Projekt überschreiben?")
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
@@ -2216,7 +2216,10 @@ impl WoaApp {
                     }
                 });
             });
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+        // #441: Esc = Abbrechen, über die gemeinsame Esc-Regel.
+        if let Some(r) = &shown
+            && crate::esc::frage(ctx, r.response.layer_id, "overwrite-confirm")
+        {
             choice = Some(false);
         }
         match choice {
@@ -2345,7 +2348,7 @@ impl WoaApp {
             return;
         }
         let mut choice = None;
-        egui::Window::new("Projekt speichern?")
+        let shown = egui::Window::new("Projekt speichern?")
             .id(egui::Id::new("replace-confirm"))
             .collapsible(false)
             .resizable(false)
@@ -2364,7 +2367,10 @@ impl WoaApp {
                     }
                 });
             });
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+        // #441: Esc = Abbrechen, über die gemeinsame Esc-Regel.
+        if let Some(r) = &shown
+            && crate::esc::frage(ctx, r.response.layer_id, "replace-confirm")
+        {
             choice = Some(Choice::Cancel);
         }
         match choice {
@@ -6798,7 +6804,7 @@ impl WoaApp {
             return;
         }
         let mut open = true;
-        egui::Window::new("Über WOA")
+        let shown = egui::Window::new("Über WOA")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -6900,9 +6906,9 @@ impl WoaApp {
                     .color(theme::text_dim()),
                 );
             });
-        // #441: Esc schließt wie bei den übrigen Fenstern (nur ohne Textfokus).
-        if ctx.memory(|m| m.focused().is_none())
-            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        // #441: Esc schließt über die gemeinsame Esc-Regel.
+        if let Some(r) = &shown
+            && crate::esc::fenster(ctx, r.response.layer_id, "about")
         {
             open = false;
         }
@@ -7317,6 +7323,8 @@ impl WoaApp {
 
 impl eframe::App for WoaApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // #441: Esc gehört zuerst dem obersten Fenster bzw. der offenen Frage.
+        crate::esc::beginn(ctx);
         if std::mem::take(&mut self.maximize_on_start) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
         }
@@ -7797,7 +7805,7 @@ impl WoaApp {
         let mut open = true;
         let mut vu_view = self.config.vu_view;
         if let Some(view) = self.analysis.as_mut() {
-            egui::Window::new("Analyse")
+            let shown = egui::Window::new("Analyse")
                 .open(&mut open)
                 .default_size([760.0, 540.0])
                 .min_size([420.0, 360.0])
@@ -7808,6 +7816,12 @@ impl WoaApp {
                     ui.add_space(4.0);
                     view.ui(ui, &tracks, playing);
                 });
+            // #441: Esc schließt die Analyse wie die übrigen Fenster.
+            if let Some(r) = &shown
+                && crate::esc::fenster(ctx, r.response.layer_id, "analyse")
+            {
+                open = false;
+            }
         }
         self.analysis_open = open;
         if vu_view != self.config.vu_view {
@@ -9631,7 +9645,7 @@ impl WoaApp {
             ),
         };
         let mut choice = None;
-        egui::Window::new("Projekt speichern?")
+        let shown = egui::Window::new("Projekt speichern?")
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
@@ -9649,7 +9663,10 @@ impl WoaApp {
                     }
                 });
             });
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+        // #441: Esc = Abbrechen, über die gemeinsame Esc-Regel.
+        if let Some(r) = &shown
+            && crate::esc::frage(ctx, r.response.layer_id, "exit-confirm")
+        {
             choice = Some(Choice::Cancel);
         }
         let Some(choice) = choice else {
@@ -11004,6 +11021,178 @@ mod nacharbeit_tests {
             modifiers: egui::Modifiers::NONE,
         }]);
         assert!(!rig.app.about_open, "Esc schließt Über WOA nicht");
+    }
+
+    fn esc() -> egui::Event {
+        egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// #441: Esc schließt die Bibliothek (Party › Ansicht › Bibliothek).
+    #[test]
+    fn escape_closes_library_in_party() {
+        let mut rig = Rig::new(Mode::Party);
+        rig.app.library.open = true;
+        rig.step(Vec::new());
+        rig.step(vec![esc()]);
+        assert!(!rig.app.library.open, "Esc schließt die Bibliothek nicht");
+    }
+
+    /// #441: Esc schließt die Analyse als Fenster.
+    #[test]
+    fn escape_closes_analysis_window() {
+        let mut rig = Rig::new(Mode::Produzent);
+        rig.app.analysis_open = true;
+        // Ohne Audio legt erst der Player die Ansicht an.
+        rig.app.analysis = Some(crate::analysis::AnalysisView::new(48_000));
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        assert!(rig.any(|l| l == "Analyse"), "Analyse-Fenster fehlt");
+        rig.step(vec![esc()]);
+        assert!(!rig.app.analysis_open, "Esc schließt die Analyse nicht");
+    }
+
+    /// #441/#408: Esc in „Projekt speichern?“ beim Beenden heißt Abbrechen, in jeder Ansicht.
+    #[test]
+    fn escape_cancels_exit_question_in_every_view() {
+        for mode in [Mode::Produzent, Mode::Radio, Mode::Party] {
+            let mut rig = Rig::new(mode);
+            assert!(!rig.app.exit.request(crate::exit::ExitReason::Quit, true));
+            rig.step(Vec::new());
+            assert!(rig.any(|l| l == "Nicht speichern"), "{mode:?}: Frage fehlt");
+            rig.step(vec![esc()]);
+            assert!(
+                rig.app.exit.asking().is_none(),
+                "{mode:?}: Esc bricht nicht ab"
+            );
+            assert!(!rig.commands.contains(&egui::ViewportCommand::Close));
+        }
+    }
+
+    /// #441: Esc schließt Einstellungen und „Fragen und To-dos“ (gemeinsame Regel).
+    #[test]
+    fn escape_closes_settings_and_questions() {
+        let mut rig = Rig::new(Mode::Produzent);
+        rig.app.settings.open = true;
+        rig.step(Vec::new());
+        rig.step(vec![esc()]);
+        assert!(!rig.app.settings.open, "Einstellungen bleiben offen");
+        rig.app.config.entwickler = true;
+        rig.app.fragen.open = true;
+        rig.step(Vec::new());
+        rig.step(vec![esc()]);
+        assert!(!rig.app.fragen.open, "Fragen und To-dos bleiben offen");
+    }
+
+    /// #441: Ein Esc schließt nur das oberste Fenster, nicht alle.
+    #[test]
+    fn escape_closes_only_the_top_window() {
+        let mut rig = Rig::new(Mode::Produzent);
+        rig.app.library.open = true;
+        rig.step(Vec::new());
+        rig.app.about_open = true;
+        rig.step(Vec::new());
+        rig.step(vec![esc()]);
+        assert!(!rig.app.about_open, "oberstes Fenster bleibt offen");
+        assert!(rig.app.library.open, "darunter liegendes Fenster mit zu");
+        rig.step(vec![esc()]);
+        assert!(
+            !rig.app.library.open,
+            "zweites Esc schließt die Bibliothek nicht"
+        );
+    }
+
+    /// #441: Eine offene Frage geht vor; das Fenster darunter bleibt.
+    #[test]
+    fn escape_cancels_question_before_window() {
+        let mut rig = Rig::new(Mode::Produzent);
+        rig.app.library.open = true;
+        rig.step(Vec::new());
+        assert!(!rig.app.exit.request(crate::exit::ExitReason::Quit, true));
+        rig.step(Vec::new());
+        rig.step(vec![esc()]);
+        assert!(rig.app.exit.asking().is_none(), "Frage bleibt");
+        assert!(rig.app.library.open, "Bibliothek mit zu");
+    }
+
+    /// #442: Bei Skalierung 125 % und 150 % (maximiert 1920 × 1030 Pixel) trifft ein Klick den
+    /// Knopf ganz rechts oben. Prüft die Umrechnung in egui; den Windows-Fensterfehler selbst
+    /// zeigt nur das Gerät (Prüfpunkt `maximiert-klicks`).
+    #[test]
+    fn click_hits_right_edge_when_scaled() {
+        for ppp in [1.25_f32, 1.5] {
+            let mut rig = Rig::new(Mode::Radio);
+            let step = |rig: &mut Rig, events: Vec<egui::Event>| {
+                rig.n += 1;
+                let mut input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1920.0 / ppp, 1030.0 / ppp),
+                    )),
+                    time: Some(f64::from(rig.n) * 0.05),
+                    events,
+                    ..Default::default()
+                };
+                input
+                    .viewports
+                    .entry(egui::ViewportId::ROOT)
+                    .or_default()
+                    .native_pixels_per_point = Some(ppp);
+                let (app, frame) = (&mut rig.app, &mut rig.frame);
+                let out = rig.ctx.run_ui(input, |ui| {
+                    eframe::App::logic(app, ui.ctx(), frame);
+                    eframe::App::ui(app, ui, frame);
+                });
+                rig.nodes.clear();
+                if let Some(u) = out.platform_output.accesskit_update {
+                    for (_, node) in u.nodes {
+                        let label = node.label().map(str::to_string).unwrap_or_default();
+                        if let Some(b) = node.bounds() {
+                            // egui meldet AccessKit-Flächen in Punkten, wie die Ereignisse.
+                            let r = egui::Rect::from_min_max(
+                                egui::pos2(b.x0 as f32, b.y0 as f32),
+                                egui::pos2(b.x1 as f32, b.y1 as f32),
+                            );
+                            rig.nodes.push((label, String::new(), r));
+                        }
+                    }
+                }
+            };
+            step(&mut rig, Vec::new());
+            step(&mut rig, Vec::new());
+            assert!((rig.ctx.pixels_per_point() - ppp).abs() < 1e-3);
+            let at = rig
+                .nodes
+                .iter()
+                .filter(|(l, _, r)| l.contains("Party") && r.width() > 0.0 && r.center().y < 60.0)
+                .map(|(_, _, r)| r.center())
+                .max_by(|a, b| a.x.total_cmp(&b.x))
+                .expect("Party-Knopf oben rechts");
+            assert!(
+                at.x > 1920.0 / ppp * 0.5,
+                "{ppp}: Knopf nicht rechts: {at:?}"
+            );
+            let ev = |pressed| egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            step(&mut rig, vec![egui::Event::PointerMoved(at)]);
+            step(&mut rig, vec![ev(true)]);
+            step(&mut rig, vec![ev(false)]);
+            step(&mut rig, Vec::new());
+            assert_eq!(
+                rig.app.config.mode,
+                Mode::Party,
+                "{ppp}: Klick rechts kam nicht an"
+            );
+        }
     }
 
     #[test]

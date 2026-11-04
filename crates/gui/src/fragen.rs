@@ -814,8 +814,8 @@ pub(crate) fn kopf(
     if r.double_clicked() {
         *maximized = !*maximized;
     }
-    if ui.input(|i| i.key_pressed(egui::Key::Escape)) && ui.ctx().memory(|m| m.focused().is_none())
-    {
+    // #441: Esc über die gemeinsame Regel: nur das oberste Fenster schließt.
+    if crate::esc::fenster(ui.ctx(), ui.layer_id(), ui.id()) {
         *open = false;
     }
     ui.add_space(theme::SPACE_2);
