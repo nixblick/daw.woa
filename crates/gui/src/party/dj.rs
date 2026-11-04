@@ -21,6 +21,10 @@ const MIXER_W: f32 = 390.0;
 /// Unter dieser Deck-Innenbreite rutschen Restzeit, BPM und Tonart in eine zweite Kopfzeile (#443).
 /// Lücke zwischen den Auto-Loop-Zahlen und der LOOP-Taste.
 const LOOP_GAP: f32 = 6.0;
+/// Tempo-Spalte: Breite und die zwei Anschiebe-Tasten darunter (#443: 2 × 27 + 2 = 56).
+const TEMPO_W: f32 = 56.0;
+const NUDGE_GAP: f32 = 2.0;
+const NUDGE_W: f32 = (TEMPO_W - NUDGE_GAP) / 2.0;
 const HEAD_WIDE_MIN: f32 = 560.0;
 /// Sichtbares Fenster der Wellen in Sekunden (Mausrad zoomt).
 const ZOOM_DEFAULT: f64 = 12.0;
@@ -1277,7 +1281,7 @@ fn tempo_column(
     h: f32,
     nudging: &mut [bool; 2],
 ) {
-    ui.allocate_ui_with_layout(egui::vec2(56.0, h), egui::Layout::top_down(egui::Align::Center), |ui| {
+    ui.allocate_ui_with_layout(egui::vec2(TEMPO_W, h), egui::Layout::top_down(egui::Align::Center), |ui| {
         ui.spacing_mut().item_spacing.y = 4.0;
         ui.label(theme::panel_label("TEMPO"));
         let fh = (h - 80.0).max(60.0);
@@ -1299,13 +1303,18 @@ fn tempo_column(
         r.on_hover_text("Tempo ±8 % (oben langsamer, unten schneller wie am Plattenspieler); Doppelklick = 0 %");
         ui.label(egui::RichText::new(format!("{:+.1} %", d.tempo_percent)).monospace().size(12.0));
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
+            // #443: beide Tasten zusammen genau so breit wie die Spalte (56 px); mit der
+            // Grund-Polsterung waren sie 70 px breit und schoben Deck B 14 px aus dem Fenster.
+            ui.spacing_mut().item_spacing.x = NUDGE_GAP;
+            ui.spacing_mut().button_padding = egui::vec2(2.0, 1.0);
             let mut any = false;
             for (icon, dir, tip) in [
                 (theme::ic::CARET_LEFT, -1.0, "Halten: langsamer anschieben"),
                 (theme::ic::CARET_RIGHT, 1.0, "Halten: schneller anschieben"),
             ] {
-                let r = ui.add(egui::Button::new(icon).min_size(egui::vec2(24.0, 22.0))).on_hover_text(tip);
+                let r = ui
+                    .add_sized(egui::vec2(NUDGE_W, 22.0), egui::Button::new(icon))
+                    .on_hover_text(tip);
                 if r.is_pointer_button_down_on() {
                     any = true;
                     if !nudging[side] {

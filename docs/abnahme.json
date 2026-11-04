@@ -153,6 +153,24 @@
       "ticket": 332
     },
     {
+      "id": "dj-1280-nacharbeit",
+      "ansicht": "Party DJ",
+      "titel": "DJ bei 1280 px: Deck B und Wunschliste ganz im Fenster",
+      "tun": "Fenster auf etwa 1280 px Breite ziehen, Party › DJ, zwei Titel auf die Decks legen.",
+      "erwartet": "Deck B endet mit Rand vor dem Fensterrand, Jogwheel ganz zu sehen; die Tasten ‹ › unter dem Tempo-Regler stehen in der Spalte. Wunschliste und Fernbedienung („AN“) sind rechts nicht angeschnitten.",
+      "version": "0.41.24",
+      "ticket": 443
+    },
+    {
+      "id": "produzent-1280-nacharbeit",
+      "ansicht": "Produzent",
+      "titel": "Transport und Klangauswahl bei 1280 und 1366 px",
+      "tun": "Fenster auf etwa 1280 px Breite ziehen, Loop und Punch an, eine MIDI-Spur wählen, im Rack die Klangauswahl öffnen. Danach maximieren.",
+      "erwartet": "Takte/Zeit, Raster, Zoom, LUFS und Export stehen rechtsbündig in einer eigenen Zeile unter Zeitanzeige und Pegel-LEDs, nichts liegt darüber; das ms-Feld steht neben dem Latenz-Schalter. Das Rack endet vor dem Fensterrand, Vorhören-Knöpfe sind ganz zu sehen. Maximiert (1920 px) ist der Transport wieder eine Zeile.",
+      "version": "0.41.24",
+      "ticket": 443
+    },
+    {
       "id": "fix-log-warnung",
       "ansicht": "Allgemein",
       "titel": "Keine Schrift-Warnung im Protokoll",
