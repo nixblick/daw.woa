@@ -16,15 +16,17 @@ $old = '0.0.1'
 $name = 'WOA - Wir on Air'
 $dir = Join-Path $env:LOCALAPPDATA 'Programs\WOA'
 $machineDir = Join-Path $env:ProgramFiles 'WOA'
-$hkcu = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
-$hklm = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
-        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
-
-function Get-Entries($keys) {
-  @(Get-ItemProperty $keys -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq $name })
+# Ein MSI pro Benutzer schreibt keinen Uninstall-Schlüssel unter HKCU (Release-Lauf v0.41.28: 0 Treffer
+# nach erfolgreicher Installation); Windows Installer führt es unter Installer\UserData\<SID>. Darum fragt
+# der Test Windows Installer selbst, Kontext 2 = pro Benutzer (nicht verwaltet), 4 = für alle Benutzer.
+function Get-Msi([int] $context) {
+  $wi = New-Object -ComObject WindowsInstaller.Installer
+  @($wi.ProductsEx('', '', $context) | ForEach-Object {
+      [pscustomobject]@{ ProductCode = $_.ProductCode(); DisplayName = $_.InstallProperty('ProductName'); DisplayVersion = $_.InstallProperty('VersionString') }
+    } | Where-Object { $_.DisplayName -eq $name })
 }
-function Get-Installed { Get-Entries $hkcu }
-function Get-Machine { Get-Entries $hklm }
+function Get-Installed { Get-Msi 2 }
+function Get-Machine { Get-Msi 4 }
 function Run-Msi([string[]] $msiArgs, [int[]] $ok = @(0)) {
   $p = Start-Process msiexec.exe -ArgumentList $msiArgs -Wait -PassThru
   if ($ok -notcontains $p.ExitCode) { throw "msiexec $($msiArgs -join ' ') endete mit $($p.ExitCode)" }

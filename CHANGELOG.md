@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.30 — 2026-11-05
+
+- **Upgrade-Probe findet die Installation pro Benutzer (#452):** Der Release-Lauf v0.41.28 brach in `test-upgrade.ps1` ab: Das MSI pro Benutzer installierte (msiexec 0), der Test fand aber keinen Eintrag, weil er unter `HKCU\…\Uninstall` suchte. Windows Installer führt Installationen pro Benutzer nicht dort. Der Test fragt jetzt Windows Installer selbst (`ProductsEx`, Kontext pro Benutzer bzw. für alle Benutzer). Die App selbst ist unverändert. Workspace-Version 0.41.30.
+
 ## 0.41.29 — 2026-11-04
 
 - **Schnellerer Start: Grafik-Backend festgelegt (#279, Teil 1):** wgpu sucht nicht mehr über alle Backends, sondern unter Linux nur Vulkan, unter Windows DX12 und Vulkan (vorher auch OpenGL/EGL und Software-Treiber). Die Grafikkarte wird mit `LowPower` gewählt, damit auf Hybrid-Notebooks die schlafende Karte nicht geweckt wird. `WOA_WGPU_BACKEND=gl|vulkan|dx12|all` übersteuert, `WGPU_POWER_PREF` ebenso. Die Startzeile im Log nennt `t_wgpu_ms` und `t_fonts_ms`, eine zweite Zeile „woa app ready“ `t_app_ms` und `t_ready_ms`. Tests `backends_are_pinned_per_os_and_overridable`, `wgpu_configuration_prefers_low_power`. Noch offen: gestaffelter Start der Audio-/MIDI-/Plugin-/Bibliotheks-Init und die Messung am Gerät. Workspace-Version 0.41.29.
