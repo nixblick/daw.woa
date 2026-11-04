@@ -432,6 +432,13 @@ pub struct ListenerStats {
     pub unique: Option<u32>,
 }
 
+impl ListenerStats {
+    /// Eindeutige Hörer; `current` zählt Verbindungen und gilt nur, wenn `unique` fehlt.
+    pub fn listeners(&self) -> u32 {
+        self.unique.unwrap_or(self.current)
+    }
+}
+
 /// Liest `aktuell,status,spitze,max,eindeutig,bitrate,titel` aus dem Text von `/7.html`.
 pub fn parse_seven(body: &str) -> Option<ListenerStats> {
     let inner = body
@@ -458,9 +465,9 @@ pub fn listener_stats(cfg: &StreamConfig) -> Option<ListenerStats> {
     parse_seven(&body)
 }
 
-/// Nur die aktuelle Hörerzahl. `None`, wenn nicht abfragbar.
+/// Nur die Hörerzahl (eindeutige Hörer). `None`, wenn nicht abfragbar.
 pub fn listeners(cfg: &StreamConfig) -> Option<u32> {
-    listener_stats(cfg).map(|s| s.current)
+    listener_stats(cfg).map(|s| s.listeners())
 }
 
 #[cfg(test)]
@@ -472,6 +479,10 @@ mod tests {
         let s =
             parse_seven("<html><body>12,1,18,100,9,128,Titel, mit Komma</body></html>").unwrap();
         assert_eq!((s.current, s.peak, s.unique), (12, Some(18), Some(9)));
+        assert_eq!(s.listeners(), 9);
+        // 04.11.2026: ein iPhone, zwei Verbindungen = ein Hörer.
+        assert_eq!(parse_seven("<body>2,1,2,50,1,128,X</body>").unwrap().listeners(), 1);
+        assert_eq!(parse_seven("4").unwrap().listeners(), 4);
         assert_eq!(parse_seven("<html><body>kaputt</body></html>"), None);
         assert_eq!(
             parse_seven("4").map(|s| (s.current, s.peak)),

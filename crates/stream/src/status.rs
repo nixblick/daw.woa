@@ -26,8 +26,9 @@ pub struct StreamStatus {
     pub emergency: bool,
     /// Oberfläche verbunden (lokale Verbindung steht).
     pub ui_connected: bool,
+    /// Eindeutige Hörer (Rückfall: Verbindungen, wenn der Server keine eindeutigen meldet).
     pub listeners: Option<u32>,
-    /// Spitze laut Server (seit dessen Start, nicht je Sendung).
+    /// Spitze laut Server: zählt Verbindungen seit dessen Start, nicht Hörer je Sendung. (seit dessen Start, nicht je Sendung).
     pub listeners_peak: Option<u32>,
     pub listeners_unique: Option<u32>,
     pub bitrate_kbps: u32,

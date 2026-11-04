@@ -90,12 +90,13 @@ class Tests(unittest.TestCase):
         jetzt = int(time.time())
         for i, n in enumerate([1, 5, 3]):
             hoerer.speichere(db, jetzt - 60 + i * 30,
-                             {"aktuell": n, "quelle": True, "spitze": 7, "eindeutig": 4})
+                             {"aktuell": n + 1, "quelle": True, "spitze": 7, "eindeutig": n})
         srv, url = starte(hoerer.handler_fuer(pfad))
         try:
             with urllib.request.urlopen(url + "/api/hoerer") as r:
                 d = json.load(r)
             self.assertEqual(d["jetzt"]["aktuell"], 3)
+            self.assertEqual(d["jetzt"]["verbindungen"], 4)
             self.assertEqual(d["jetzt"]["spitze_server"], 7)
             self.assertEqual(d["sendungen"][0]["spitze"], 5)
             self.assertEqual(d["sendungen"][0]["durchschnitt"], 3.0)
@@ -263,7 +264,7 @@ class JetztTests(unittest.TestCase):
     def proben(self, werte, quelle=True):
         for i, n in enumerate(werte):
             hoerer.speichere(self.db, self.jetzt - 30 * (len(werte) - 1 - i),
-                             {"aktuell": n, "quelle": quelle, "spitze": 40, "eindeutig": 4})
+                             {"aktuell": 2 * n, "quelle": quelle, "spitze": 40, "eindeutig": n})
 
     def antwort(self):
         return hoerer.jetzt_antwort(self.db, self.dnas_url, 1, self.jetzt)
@@ -284,7 +285,17 @@ class JetztTests(unittest.TestCase):
         self.assertEqual(FakeDnas.aufrufe, 0)
         self.proben([3], quelle=False)
         a = self.antwort()
-        self.assertEqual((a["status"], a["hoerer"], a["spitze"], a["sendung_seit"]), ("notfall", 3, 40, None))
+        self.assertEqual((a["status"], a["hoerer"], a["spitze"], a["sendung_seit"]), ("notfall", 3, 3, None))
+
+    def test_hoerer_sind_eindeutige_nicht_verbindungen(self):
+        # 04.11.2026: ein iPhone, zwei Verbindungen (7.html: 2,1,2,50,1,...) -> 1 Hörer.
+        hoerer.speichere(self.db, self.jetzt, hoerer.parse_seven("<body>2,1,2,50,1,128,X</body>"))
+        a = self.antwort()
+        self.assertEqual((a["hoerer"], a["spitze"]), (1, 1))
+
+    def test_ohne_eindeutig_zaehlt_aktuell(self):
+        hoerer.speichere(self.db, self.jetzt, {"aktuell": 2, "quelle": True, "spitze": 2, "eindeutig": None})
+        self.assertEqual(self.antwort()["hoerer"], 2)
 
     def test_shoutcast_gesperrt_oder_weg_still(self):
         self.proben([1])

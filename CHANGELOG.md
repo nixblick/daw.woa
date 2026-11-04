@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.19 — 2026-11-04
+
+- **Hörer = eindeutige Hörer statt Verbindungen:** Ein iPhone (Safari) öffnet zwei Verbindungen zugleich; `/7.html` meldete `2,1,2,50,1,…` und überall standen 2 Hörer, obwohl nur einer zuhörte. Jetzt zählt überall Feld 4 (`eindeutig`/`unique`), Rückfall auf `aktuell` nur, wenn es fehlt. Sammler: `/api/jetzt` (`hoerer`, `spitze`) und `/api/hoerer` (`jetzt.aktuell`, Verlauf, Sendungsspitze und -schnitt) aus den gespeicherten eindeutigen Werten; die Shoutcast-Spitze (zählt Verbindungen) fällt als Rückfall weg; neues Feld `jetzt.verbindungen`. Felder bleiben kompatibel, Hörer-Seite und Startseite brauchen keine Änderung. `woa-streamd` meldet `listeners` eindeutig; App-Chip und Fenster „Hörer-Statistik“ ebenso (Kachel „Verbindungen“ statt „Eindeutig“). Tests: Attrappen mit `2,1,2,50,1`.
+
 ## 0.41.18 — 2026-11-03
 
 - **Sammler: CORS für die Startseite:** `GET /api/jetzt` und `GET /api/hoerer` senden `Access-Control-Allow-Origin` nur für genau `https://www.wir-on-air.de`, `https://wir-on-air.de`, `https://www.wironair.de` und `https://wironair.de` (Origin geprüft und zurückgegeben, `Vary: Origin`, keine Wildcard, keine Credentials). `OPTIONS` auf diesen Pfaden antwortet 204 (`GET`). Am nginx (bretteins.infra, Rolle edge) ist nichts zu ändern: er reicht die Köpfe durch; `limit_except GET` sperrt zwar `OPTIONS`, ein schlichter `fetch` ohne eigene Köpfe braucht aber keinen Vorabruf. Test: `test_cors_nur_fuer_wir_on_air` (Attrappe).
