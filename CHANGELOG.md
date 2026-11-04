@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.28 — 2026-11-04
+
+- **Upgrade-Probe baut die alte Form wieder (#452):** Der Release-Lauf v0.41.27 brach in `test-upgrade.ps1` ab: Das MSI pro Benutzer baute, die nachgebaute alte Form für alle Benutzer (`-d Legacy=1`) nicht (`WIX0094`, `RemoveFolder` verwies auf `PROGRAMSFOLDER`, den es nur pro Benutzer gibt). Die Zeile steht jetzt nur in der Form pro Benutzer. Test `directory_refs_defined_in_both_forms` (vorher rot). Workspace-Version 0.41.28.
+
 ## 0.41.27 — 2026-11-04
 
 - **Windows-MSI baut wieder (#452):** Der Release-Lauf v0.41.26 brach im WiX-Schritt ab (`WIX0230`): Komponenten mit Dateien und HKCU-KeyPath bekommen keine automatische GUID. `WoaExe` und `Sounds` haben jetzt feste GUIDs. Test `file_components_have_fixed_guid` (vorher rot). Workspace-Version 0.41.27.

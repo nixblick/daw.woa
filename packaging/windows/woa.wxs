@@ -52,7 +52,10 @@
         <File Source="$(var.Bin)\woa-streamd.exe" />
         <File Source="LICENSE" Name="LICENSE.txt" />
         <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+<?if $(var.Legacy) = "1" ?>
+<?else?>
         <RemoveFolder Id="RemoveProgramsFolder" Directory="PROGRAMSFOLDER" On="uninstall" />
+<?endif ?>
         <RegistryValue Root="HKCU" Key="Software\creaVisions\WOA" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
       </Component>
       <Component Id="StartMenu" Directory="ProgramMenuFolder">

@@ -104,3 +104,41 @@ fn file_components_have_fixed_guid() {
         );
     }
 }
+
+/// Die alte Form (`-d Legacy=1`, nur für test-upgrade.ps1) muss ebenfalls bauen. Release-Lauf v0.41.27:
+/// WIX0094 `Directory:PROGRAMSFOLDER` fehlte dort. Jede `Directory="X"`-Referenz braucht in BEIDEN
+/// Formen eine Definition `Id="X"`.
+/// Rotprobe (04.11.2026, RemoveFolder ohne Legacy-Weiche): panicked: Legacy: PROGRAMSFOLDER nicht definiert
+#[test]
+fn directory_refs_defined_in_both_forms() {
+    for (name, text) in [("perUser", product()), ("Legacy", legacy())] {
+        for teil in text.split("Directory=\"").skip(1) {
+            let id = teil.split('"').next().unwrap();
+            let definiert = text.contains(&format!("<Directory Id=\"{id}\""))
+                || text.contains(&format!("<StandardDirectory Id=\"{id}\""));
+            assert!(definiert, "{name}: {id} nicht definiert");
+        }
+    }
+}
+
+/// Gegenstück zu `product()`: nur der Legacy-Zweig jeder Weiche.
+fn legacy() -> String {
+    let mut out = String::new();
+    let mut skip = false;
+    let mut in_if = false;
+    for line in WXS.lines() {
+        let t = line.trim();
+        if t.starts_with("<?if $(var.Legacy)") {
+            in_if = true;
+        } else if in_if && t.starts_with("<?else?>") {
+            skip = true;
+        } else if in_if && t.starts_with("<?endif") {
+            skip = false;
+            in_if = false;
+        } else if !skip {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
