@@ -286,6 +286,8 @@ pub struct WoaApp {
     party: crate::party::PartyView,
     /// Datenordner (radio.json, Mitschnitte).
     data_dir: PathBuf,
+    /// Fenster nach dem ersten Bild per Befehl maximieren (#442), nicht schon beim Anlegen.
+    maximize_on_start: bool,
     /// Bibliotheks-Fenster (Paket 24).
     library: crate::library::LibraryWindow,
     /// Live-MCP-Server: Claude arbeitet auf diesem Projekt (André 31.10.2026).
@@ -666,6 +668,7 @@ impl WoaApp {
             analysis_buf: (Vec::new(), Vec::new()),
             last_title: String::new(),
             data_dir: woa_radio::data_dir(),
+            maximize_on_start: false,
             library: crate::library::LibraryWindow::new(
                 woa_radio::data_dir().join(crate::library::DB_FILE),
             ),
@@ -774,6 +777,12 @@ impl WoaApp {
         self.selected_track
             .filter(|id| p.track(*id).is_some())
             .or_else(|| p.tracks.first().map(|t| t.id))
+    }
+
+    /// Maximizes the window by command on the first frame. `with_maximized` at window creation
+    /// left Windows with a window drawn at 2/3 size whose right part got no mouse input (#442).
+    pub fn maximize_on_start(&mut self) {
+        self.maximize_on_start = true;
     }
 
     /// Sets the data folder (radio.json, recordings). Default: the WOA data folder.
@@ -7279,6 +7288,9 @@ impl WoaApp {
 
 impl eframe::App for WoaApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if std::mem::take(&mut self.maximize_on_start) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+        }
         self.close_guard(ctx);
         self.repaint_debug(ctx);
         self.drain_midi_takes();
@@ -10680,6 +10692,22 @@ mod nacharbeit_tests {
             repeat: false,
             modifiers: egui::Modifiers::NONE,
         }]
+    }
+
+    #[test]
+    fn maximize_is_sent_once_by_command_on_first_frame() {
+        let maximized = |rig: &Rig| {
+            rig.commands
+                .iter()
+                .filter(|c| matches!(c, egui::ViewportCommand::Maximized(true)))
+                .count()
+        };
+        let mut rig = Rig::new(Mode::Produzent);
+        assert_eq!(maximized(&rig), 0);
+        rig.app.maximize_on_start();
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        assert_eq!(maximized(&rig), 1);
     }
 
     fn fullscreen_cmds(rig: &Rig) -> Vec<bool> {

@@ -753,6 +753,14 @@
       "tun": "Mit der Maus über ein belegtes Cart-Pad fahren; dann ein Cart starten und darüber fahren.",
       "erwartet": "Kopfhörer- und Fade-Symbol liegen sauber oben rechts; kein Tastenschild, keine LED und kein Titeltext darunter. Kein Nachbar-Pad verschiebt sich.",
       "version": "0.41.20"
+    },
+    {
+      "id": "maximiert-klicks",
+      "ansicht": "Allgemein",
+      "titel": "Klicks im maximierten Fenster (#442)",
+      "tun": "WOA starten (maximiert) und im Radio auf START bei Deck A/B, den Kopfhörer, PARTY/RADIO oben rechts klicken. Mit echter Maus.",
+      "erwartet": "Das Fenster füllt den Bildschirm, und alle Knöpfe, auch rechts, reagieren.",
+      "version": "0.41.22"
     }
   ]
 }

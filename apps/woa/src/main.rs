@@ -82,13 +82,13 @@ fn main() -> ExitCode {
     let mut viewport = eframe::egui::ViewportBuilder::default().with_title("WOA");
     let start = start_window(std::env::var("WOA_WINDOW").ok().as_deref());
     viewport = match start {
-        // Maximiert mit Rahmen anlegen (nie `with_fullscreen`: unter Windows entstand so ein
-        // Fenster ohne Rahmen in 2/3 Größe, 0.36.1). F11 schaltet Vollbild an und zurück.
+        // Mit Rahmen anlegen und nach dem ersten Bild per Befehl maximieren (nie `with_fullscreen`
+        // oder `with_maximized`: unter Windows entstand so ein Fenster in 2/3 Größe, dessen rechter
+        // Teil keine Mausklicks bekam, 0.36.1 und #442). F11 schaltet Vollbild an und zurück.
         StartWindow::Maximized => viewport
             .with_inner_size(WINDOWED_SIZE)
             .with_decorations(true)
-            .with_resizable(true)
-            .with_maximized(true),
+            .with_resizable(true),
         StartWindow::Fixed(size) => viewport.with_inner_size(size),
     };
     if let Some(icon) = woa_gui::theme::app_icon() {
@@ -117,6 +117,9 @@ fn main() -> ExitCode {
             );
             tracing::info!(feedback, telemetry, "{line}");
             let mut app = WoaApp::new(config, recovery);
+            if start == StartWindow::Maximized {
+                app.maximize_on_start();
+            }
             app.set_config_path(config_path);
             app.set_data_dir(data_dir);
             // `woa <projektordner>` öffnet das Projekt gleich beim Start.

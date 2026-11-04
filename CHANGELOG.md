@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.22 — 2026-11-04
+
+- **Maximiertes Fenster: Klicks rechts gehen wieder (#442):** WOA maximierte sich schon beim Anlegen des Fensters (`with_maximized`). Unter Windows 11 mit Skalierung füllte das Fenster dann nur etwa zwei Drittel, und die Eingabe rechts kam nicht an. Jetzt wird mit Rahmen angelegt und nach dem ersten Bild per Befehl maximiert (wie F11 schon). Test: `maximize_is_sent_once_by_command_on_first_frame`. Ob es unter Windows wirkt, zeigt nur die echte Maus am Gerät: Prüfpunkt `maximiert-klicks`.
+
 ## 0.41.21 — 2026-11-04
 
 - **„Über WOA“ schließt mit Esc (#441):** Wie Einstellungen und die übrigen Fenster schließt Esc jetzt auch das Fenster „Über WOA“ (nur ohne Textfokus). Test: `escape_closes_about_window`.
