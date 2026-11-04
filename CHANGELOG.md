@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.33 — 2026-11-05
+
+- **Upgrade-Probe: alte Form mit eigenen Komponenten-GUIDs (#452):** Der Release-Lauf v0.41.32 belegt den Filter aus 0.41.32: Von zwei Uninstall-Einträgen unter HKLM bleibt genau die alte Installation, sie wird entfernt. Rot war danach `Program Files\WOA leer`: Die nachgebaute alte Form (`-d Legacy=1`) nutzte dieselben festen Komponenten-GUIDs wie die neue. Windows Installer zählte die Komponente deshalb doppelt und ließ die Dateien liegen. Die echten MSI bis 0.41.25 hatten automatische GUIDs, betroffen war nur der Test. Die alte Form hat jetzt eigene GUIDs. Test `legacy_form_has_its_own_component_guids` (vorher rot). Workspace-Version 0.41.33.
+
 ## 0.41.32 — 2026-11-05
 
 - **Umstieg entfernt nur die alte Installation, nie die neue (#452):** Der Release-Lauf v0.41.30 zeigte: Der Uninstall-Zweig unter HKLM listet auch die neue Installation pro Benutzer. `legacy.rs` hätte beim ersten Start beide per `msiexec /x` entfernt, also auch sich selbst. Jetzt bleibt nur ein ProductCode, den Windows Installer für alle Benutzer führt (`HKLM\SOFTWARE\Classes\Installer\Products\<gepackte GUID>`, neu `per_machine_key`). `test-upgrade.ps1` filtert genauso und prüft, dass genau die alte Installation übrig bleibt. Der Lauf belegt außerdem: Das MSI pro Benutzer installiert, aktualisiert und deinstalliert ohne Fehler. Test `per_machine_key_packs_the_guid`. Workspace-Version 0.41.32.

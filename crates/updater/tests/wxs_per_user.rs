@@ -97,7 +97,8 @@ fn file_components_have_fixed_guid() {
         let guid = kopf
             .split("Guid=\"")
             .nth(1)
-            .and_then(|s| s.split('"').next());
+            .and_then(|s| s.split('"').next())
+            .map(|g| resolve(&p, g));
         assert!(
             matches!(guid, Some(g) if g.len() == 36 && g != "*"),
             "Komponente {id} ohne feste Guid"
@@ -141,4 +142,34 @@ fn legacy() -> String {
         }
     }
     out
+}
+
+/// `$(var.Name)` aus den `<?define Name = "..." ?>` des jeweiligen Zweigs auflösen.
+fn resolve(text: &str, value: &str) -> String {
+    let Some(name) = value
+        .strip_prefix("$(var.")
+        .and_then(|v| v.strip_suffix(')'))
+    else {
+        return value.to_owned();
+    };
+    let kopf = format!("<?define {name} = \"");
+    text.lines()
+        .find_map(|l| l.trim().strip_prefix(kopf.as_str()))
+        .and_then(|r| r.split('"').next())
+        .unwrap_or("")
+        .to_owned()
+}
+
+/// Release-Lauf v0.41.32: Mit denselben Komponenten-GUIDs in beiden Formen zählte Windows Installer
+/// die Komponente doppelt; das Entfernen der alten Installation ließ `Program Files\WOA` stehen.
+/// Rotprobe (05.11.2026, Legacy mit denselben GUIDs): GuidSounds gleich in beiden Formen
+#[test]
+fn legacy_form_has_its_own_component_guids() {
+    for var in ["GuidExe", "GuidSounds"] {
+        let neu = resolve(&product(), &format!("$(var.{var})"));
+        let alt = resolve(&legacy(), &format!("$(var.{var})"));
+        assert_eq!(neu.len(), 36, "{var} pro Benutzer");
+        assert_eq!(alt.len(), 36, "{var} Legacy");
+        assert_ne!(neu, alt, "{var} gleich in beiden Formen");
+    }
 }

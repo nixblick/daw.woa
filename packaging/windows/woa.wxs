@@ -12,8 +12,15 @@
 <?endif ?>
 <?if $(var.Legacy) = "1" ?>
   <?define Scope = "perMachine" ?>
+  <!-- Eigene Komponenten-GUIDs: Die echten MSI bis 0.41.25 hatten automatische GUIDs (Datei-KeyPath).
+       Mit denselben festen GUIDs wie pro Benutzer zählte Windows Installer die Komponente doppelt und
+       ließ beim Entfernen der alten Installation Program Files\WOA stehen (Release-Lauf v0.41.32). -->
+  <?define GuidExe = "2AB931FD-CFDE-4E27-BF5D-9B996E970D9C" ?>
+  <?define GuidSounds = "A36A8BC0-D328-4268-8DAC-8622512405C3" ?>
 <?else?>
   <?define Scope = "perUser" ?>
+  <?define GuidExe = "804F5582-B4FB-4D8D-B025-7839CD211E05" ?>
+  <?define GuidSounds = "55014719-06D9-4207-BCB7-1F21062631E9" ?>
 <?endif ?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="WOA - Wir on Air" Manufacturer="creaVisions" Version="$(var.Version)"
@@ -46,7 +53,7 @@
          ihre Ordner bei der Deinstallation weg. Nutzerdaten (%APPDATA%\woa, Music\WOA) gehören
          keiner Komponente und bleiben. -->
     <ComponentGroup Id="Programme" Directory="INSTALLFOLDER">
-      <Component Id="WoaExe" Guid="804F5582-B4FB-4D8D-B025-7839CD211E05">
+      <Component Id="WoaExe" Guid="$(var.GuidExe)">
         <File Id="woa.exe" Source="$(var.Bin)\woa.exe" />
         <File Source="$(var.Bin)\woa-headless.exe" />
         <File Source="$(var.Bin)\woa-streamd.exe" />
@@ -68,7 +75,7 @@
     <!-- SoundFont für die MIDI-Klänge (#265): soundfont.rs sucht sounds\ neben woa.exe.
          Vorher: packaging/fetch-soundfont.sh dist/sounds (feste SHA-256). -->
     <ComponentGroup Id="Klaenge" Directory="SOUNDSFOLDER">
-      <Component Id="Sounds" Guid="55014719-06D9-4207-BCB7-1F21062631E9">
+      <Component Id="Sounds" Guid="$(var.GuidSounds)">
         <File Source="dist\sounds\GeneralUser-GS.sf2" />
         <File Source="dist\sounds\GeneralUser-GS-LICENSE.txt" />
         <RemoveFolder Id="RemoveSoundsFolder" On="uninstall" />
