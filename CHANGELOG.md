@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.21 — 2026-11-04
+
+- **„Über WOA“ schließt mit Esc (#441):** Wie Einstellungen und die übrigen Fenster schließt Esc jetzt auch das Fenster „Über WOA“ (nur ohne Textfokus). Test: `escape_closes_about_window`.
+
 ## 0.41.20 — 2026-11-04
 
 - **Version:** Cargo-Version auf 0.41.20 gesetzt (Testversion mit den Fixes unten).

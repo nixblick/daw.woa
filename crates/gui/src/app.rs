@@ -6862,6 +6862,12 @@ impl WoaApp {
                     .color(theme::text_dim()),
                 );
             });
+        // #441: Esc schließt wie bei den übrigen Fenstern (nur ohne Textfokus).
+        if ctx.memory(|m| m.focused().is_none())
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            open = false;
+        }
         self.about_open = open;
     }
 
@@ -10913,6 +10919,23 @@ mod nacharbeit_tests {
         assert!(rig.app.replace_ask.is_none());
         assert_eq!(rig.app.state.project().tracks.len(), 1);
         assert!(rig.app.state.session().is_dirty());
+    }
+
+    /// #441: Esc schließt „Über WOA“ wie die übrigen Fenster.
+    #[test]
+    fn escape_closes_about_window() {
+        let mut rig = Rig::new(Mode::Produzent);
+        rig.app.about_open = true;
+        rig.step(Vec::new());
+        assert!(rig.app.about_open);
+        rig.step(vec![egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]);
+        assert!(!rig.app.about_open, "Esc schließt Über WOA nicht");
     }
 
     #[test]
