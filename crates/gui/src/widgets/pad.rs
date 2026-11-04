@@ -79,6 +79,9 @@ pub struct CartPad<'a> {
     pub remaining: Option<f64>,
     /// Gesamtdauer in Sekunden (#292), rechts unten solange das Pad steht.
     pub seconds: Option<f64>,
+    /// Zahl der Symbole (je 24 px), die der Aufrufer oben rechts über das Pad legt
+    /// (Fade, Vorhören). Die Ecke bleibt dann frei: keine Taste, keine LED, Titel kürzer (#388).
+    pub actions: usize,
 }
 
 /// Gesamtdauer eines Carts: „0:12“, „1:30“.
@@ -147,7 +150,9 @@ impl CartPad<'_> {
         let num_pos = egui::pos2(rect.left() + 8.0, body_mid - number.size().y / 2.0);
         let text_left = num_pos.x + number.size().x + 8.0;
         p.galley(num_pos, number, ink);
-        let mut text_right = rect.right() - 18.0;
+        // Platz für die Symbole des Aufrufers oben rechts (#388): 24 px je Symbol, 2 px Abstand.
+        let corner = rect.right() - 4.0 - 26.0 * self.actions as f32;
+        let mut text_right = (rect.right() - 18.0).min(corner - 4.0);
         let count = self
             .remaining
             .filter(|_| state == PadState::Playing)
@@ -164,9 +169,10 @@ impl CartPad<'_> {
             let g = p.layout_no_wrap(t.clone(), egui::FontId::monospace(size), c);
             let at = egui::pos2(
                 rect.right() - 8.0 - g.size().x,
-                rect.bottom() - BAR_H - 5.0 - g.size().y,
+                // Unter den Symbolen oben rechts 3 px tiefer, damit nichts übereinander liegt.
+                rect.bottom() - BAR_H - if self.actions > 0 { 2.0 } else { 5.0 } - g.size().y,
             );
-            text_right = at.x - 6.0;
+            text_right = text_right.min(at.x - 6.0);
             p.galley(at, g, c);
         }
         let shown = self.title.unwrap_or("leer");
@@ -175,7 +181,7 @@ impl CartPad<'_> {
         let title_pos = egui::pos2(text_left, body_mid - title.size().y / 2.0);
         p.with_clip_rect(rect.shrink(2.0))
             .galley(title_pos, title, ink);
-        if self.capturing || self.key.is_some() {
+        if self.actions == 0 && (self.capturing || self.key.is_some()) {
             let text = if self.capturing {
                 "?"
             } else {
@@ -214,7 +220,9 @@ impl CartPad<'_> {
             PadState::Ready => self.color,
             PadState::Empty => theme::led_off(),
         };
-        p.circle_filled(egui::pos2(rect.right() - 10.0, rect.top() + 10.0), 3.5, led);
+        if self.actions == 0 {
+            p.circle_filled(egui::pos2(rect.right() - 10.0, rect.top() + 10.0), 3.5, led);
+        }
         // Farbbalken unten: Spurfarbe 35 %, laufend der Fortschritt in voller Farbe.
         if state != PadState::Empty {
             let bar = Rect::from_min_max(
@@ -250,6 +258,58 @@ impl CartPad<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #388: Liegen Fade- und Vorhören-Symbol oben rechts über dem Pad, zeichnet das Pad dort
+    /// nichts (keine Taste, keine LED, Titel endet davor).
+    #[test]
+    fn pad_leaves_the_corner_free_for_icons() {
+        for actions in [1usize, 2] {
+            let ctx = egui::Context::default();
+            theme::install_fonts(&ctx);
+            let size = egui::vec2(220.0, 52.0);
+            let mut drawn = Vec::new();
+            for _ in 0..3 {
+                let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    CartPad {
+                        number: 7,
+                        title: Some("Ein sehr langer Jingle-Titel"),
+                        key: Some("F7"),
+                        capturing: false,
+                        playing: actions == 2,
+                        color: Color32::RED,
+                        remaining: Some(10.0),
+                        seconds: Some(15.0),
+                        actions,
+                    }
+                    .ui(ui, size);
+                });
+                drawn = out.shapes;
+            }
+            let pad = drawn
+                .iter()
+                .find_map(|c| match &c.shape {
+                    egui::Shape::Rect(r) if (r.rect.size() - size).length() < 0.5 => Some(r.rect),
+                    _ => None,
+                })
+                .expect("Pad-Fläche");
+            let corner = Rect::from_min_max(
+                egui::pos2(pad.right() - 4.0 - 26.0 * actions as f32, pad.top()),
+                egui::pos2(pad.right(), pad.top() + 28.0),
+            );
+            for c in &drawn {
+                let hit = match &c.shape {
+                    egui::Shape::Text(t) => t.visual_bounding_rect().intersects(corner),
+                    egui::Shape::Circle(k) => corner.contains(k.center),
+                    _ => false,
+                };
+                assert!(
+                    !hit,
+                    "{actions} Symbol(e): {:?} liegt unter den Symbolen",
+                    c.shape
+                );
+            }
+        }
+    }
 
     /// Design-Runde 2: belegt neutral (`surface`), laufend `accent-soft`, leer ohne Fläche; der
     /// Farbbalken unten trägt die Spurfarbe zu 35 %. Nummer fast padhoch, Titel höchstens zwei Zeilen.
