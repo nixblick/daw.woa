@@ -25,7 +25,7 @@
       "erwartet": "Alle 16 Carts bleiben an ihrem Platz in vier Reihen zu je vier; Cart 4 und 8 bleiben sichtbar, keine Lücke.",
       "version": "0.41.8",
       "ticket": 369,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "onair-pult-modus",
@@ -62,7 +62,7 @@
       "erwartet": "Das Fenster Bibliothek geht auf.",
       "version": "0.41.8",
       "ticket": 386,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "party-feedback-tasten",
@@ -90,7 +90,7 @@
       "erwartet": "Das Rack zeigt die Klangauswahl (Klavier, Bass, Gitarre, Streicher, Bläser, Synth, Drums), ein kurzer Probeton Trompete, Spurkopf und Clip-Kopf zeigen „Trompete“.",
       "version": "0.38.0",
       "ticket": 335,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "klang-synth-bleibt",
@@ -100,7 +100,7 @@
       "erwartet": "Der Spurkopf zeigt „Synth (einfach)“ und es klingt wie der alte Synth.",
       "version": "0.38.0",
       "ticket": 335,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "klang-altes-projekt",
@@ -128,7 +128,7 @@
       "erwartet": "Der Clip heißt „Flügel“, rechts im Clip-Kopf steht „FLÜGEL“, die Noten klingen nach Flügel. Klick auf den Klangnamen im Clip-Kopf öffnet die Klangauswahl.",
       "version": "0.38.0",
       "ticket": 335,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "fix-spuren-hoehe",
@@ -138,7 +138,7 @@
       "erwartet": "Die Spuren oben bleiben gleich hoch, im Spurkopf ist die zweite Zeile (Eingang, Trim) ganz zu sehen.",
       "version": "0.37.1",
       "ticket": 334,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "fenster-1280",
@@ -192,7 +192,7 @@
       "tun": "Datei, Bearbeiten, Ansicht, Einstellungen und Hilfe aufklappen.",
       "erwartet": "Kein Eintrag endet auf „…“; innerhalb jeder Gruppe stehen die Einträge alphabetisch.",
       "version": "0.37.0",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "entwickler-freischalten",
@@ -210,7 +210,7 @@
       "erwartet": "Jede Frage ist eine Karte mit Ticket-Pille und Status; das Fenster füllt die App und kommt beim zweiten Klick in alter Größe zurück.",
       "version": "0.39.0",
       "ticket": 337,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "fragen-kommentar-anders",
@@ -220,7 +220,7 @@
       "erwartet": "„anders“ ist sofort gewählt, „Senden“ wird aktiv.",
       "version": "0.39.0",
       "ticket": 338,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "fragen-suche",
@@ -229,7 +229,7 @@
       "tun": "Oben ins Suchfeld ein Wort oder eine Ticketnummer tippen, dann mit dem Kreuz leeren.",
       "erwartet": "Nur passende Karten bleiben, Blöcke ohne Treffer verschwinden; ohne Treffer steht „Nichts gefunden“. Leeren zeigt wieder alles.",
       "version": "0.39.0",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "abnahme-fenster",
@@ -246,7 +246,7 @@
       "tun": "Titel auf Deck A, nichts läuft. Einen Titel auf dem anderen Deck vorladen, dann abspielen.",
       "erwartet": "„BEREIT“ neutral grau, „VORGELADEN“ nur mit Lime-Rahmen und -Schrift, „JETZT“ mit Rahmen in der Modusfarbe, nie gefüllt.",
       "version": "0.36.1",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "rack-ausgang-pan",
@@ -255,7 +255,7 @@
       "tun": "Fenster 1920 × 1030, Spur wählen, Dock-Reiter Studio-Mixer. Viele Effekte einfügen.",
       "erwartet": "„AUSGANG“ und „Pan“ ganz sichtbar; mit vielen Effekten rollt nur das Rack, das Dock bleibt gleich hoch.",
       "version": "0.36.1",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "transport-pegel",
@@ -280,7 +280,7 @@
       "tun": "Browser → Akkorde, Lautsprecher an einer Folge. Zeilen „Akkorde“, „Bass“, „Arpeggio“ anklicken.",
       "erwartet": "Akkord mit Streichern, dann Streicher, E-Bass, Klavier. Es entsteht keine Spur.",
       "version": "0.36.1",
-      "geprueft": "claude 2026-11-04",
+      "geprueft": "abnahme-lauf 2026-11-04",
       "geprueft_hinweis": "ohne Klang geprüft (keine hörbaren Tests)"
     },
     {
@@ -298,7 +298,7 @@
       "tun": "Party oben zwischen „Einfach“ und „DJ“ umschalten.",
       "erwartet": "Einfach wie bisher. DJ zeigt oben Wellen mit Phase, darunter Deck A · Mixer · Deck B (B gespiegelt), unten Playlist, Wünsche und Fernbedienung; Auto-Übergang ist grau.",
       "version": "0.36.0",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "dj-laden-tonart",
@@ -348,7 +348,7 @@
       "tun": "Abspielen und aufnehmen, Loop, Punch und „Stopp am Ende“ einschalten.",
       "erwartet": "Play leuchtet grün, Aufnahme rot; Loop, Punch und Stopp sind hell hinterlegt mit Akzent-Rand.",
       "version": "0.35.23",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "deck-tasten-abc",
@@ -357,7 +357,7 @@
       "tun": "Titel auf Deck B ziehen, Taste B drücken, nochmal B. In der Playlist-Suche B tippen.",
       "erwartet": "Deck B startet und stoppt; beim Tippen in der Suche startet kein Deck.",
       "version": "0.35.22",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "trim-aufnahme",
@@ -390,7 +390,7 @@
       "tun": "Radio bei 1920 × 1030 öffnen.",
       "erwartet": "Alles bis zu den Wunschtiteln ist ohne Scrollen zu sehen.",
       "version": "0.35.19",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "radio-deck-menue",
@@ -423,7 +423,7 @@
       "tun": "Magnet an, eine Note auf einen Ton außerhalb der Tonart ziehen; dann „Nur benutzte Töne“.",
       "erwartet": "Die Note rastet auf den nächsten Ton der Tonart; leere Zeilen verschwinden.",
       "version": "0.35.20",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "kopfleiste-onair-leuchtet",
@@ -489,7 +489,7 @@
       "tun": "Einen Titel spielen und im Sende-Deck „Fade“ drücken; dann je Deck A–C und an einem Cart.",
       "erwartet": "Blendet in 3 s aus und stoppt; die Taste füllt sich und zeigt die Restzeit; zweiter Druck stoppt sofort.",
       "version": "0.41.0",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "f7-spurkopf",
@@ -506,7 +506,7 @@
       "tun": "Im Rack „Klang suchen“ „trom“ tippen, bei Trompete auf Vorhören.",
       "erwartet": "Trompete erscheint über alle Kategorien; Vorhören spielt einen kurzen Ton, ohne den Klang zu wechseln.",
       "version": "0.41.0",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "f7-einstellungen",
@@ -515,7 +515,7 @@
       "tun": "Strg+, drücken, „11 labs“ tippen, Enter; dann „shoutcast“, Enter.",
       "erwartet": "Links sieben Bereiche (Entwickler nur im Entwickler-Modus) mit Trefferzahl; „11 labs“ springt zu Dienste und Konten › ElevenLabs, „shoutcast“ zu Radio › Sendung, jeweils 2 s markiert.",
       "version": "0.41.1",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "f7-ki",
@@ -532,7 +532,7 @@
       "tun": "Strg+, drücken und links jeden Bereich anklicken.",
       "erwartet": "Allgemein, Audio und Geräte, Radio, Party, Produzent, Dienste und Konten (Entwickler nur im Entwickler-Modus); jede frühere Einstellung steht in einem davon, einen Bereich „KI“ gibt es nicht mehr.",
       "version": "0.41.1",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "einst-dienste",
@@ -541,7 +541,7 @@
       "tun": "Bereich Dienste und Konten ansehen, beim ersten Assistenten „Einrichten“.",
       "erwartet": "Gruppen Assistent, Stimmen und Klänge, Steuerung von außen, Sendung; jede Karte mit Status-Chip und kleiner Marke API oder MCP; „Einrichten“ öffnet das Fenster Dienste und Konten. Shoutcast steht als Querverweis und springt zu Radio › Sendung.",
       "version": "0.41.1",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "einst-menue-sprung",
@@ -550,7 +550,7 @@
       "tun": "Menü Einstellungen › „Sendung: Stream-Server und Kennwort“.",
       "erwartet": "Das Fenster öffnet bei Radio, die Zeile Sendung ist 2 s markiert; „Öffnen“ zeigt die Shoutcast-Einstellungen wie bisher.",
       "version": "0.41.1",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "einst-zahnrad",
@@ -559,7 +559,7 @@
       "tun": "In Radio, Party und Produzent oben rechts das Zahnrad neben dem Modus-Umschalter klicken.",
       "erwartet": "Das Fenster öffnet jeweils beim Bereich Radio, Party bzw. Produzent.",
       "version": "0.41.1",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "beenden-frage",
@@ -569,7 +569,7 @@
       "erwartet": "Eine Frage mit „Speichern und beenden“, „Nicht speichern“ und „Abbrechen“. Abbrechen lässt WOA offen.",
       "version": "0.41.2",
       "ticket": 365,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "beenden-menue",
@@ -579,7 +579,7 @@
       "erwartet": "WOA fragt bei ungespeichertem Projekt wie beim Fensterschließen; ohne Änderungen beendet es sofort.",
       "version": "0.41.2",
       "ticket": 362,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "update-abbrechen",
@@ -607,7 +607,7 @@
       "erwartet": "Deck A hält an (bei Fade nach 3 s Ausblenden).",
       "version": "0.41.2",
       "ticket": 325,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "cart-ziehen",
@@ -677,7 +677,7 @@
       "tun": "Im Menü Einstellungen und im Fenster Einstellungen nach Vorhören, Telefon und Mikrofon suchen.",
       "erwartet": "Es gibt nur noch einen Wähler: das Fenster Audio-Geräte mit Ausgänge, Vorhören (PFL) und Eingänge (Mikrofon, Telefon, Pult). Die anderen Zeilen haben nur „In Audio-Geräte öffnen“. Jede Zeile im Fenster sagt in einem Satz, wofür sie ist.",
       "version": "0.41.7",
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "audio-alte-einstellung",
@@ -695,7 +695,7 @@
       "erwartet": "Beide Karten sind weg, die Bibliothek zeigt mehr Treffer nach unten. Nach dem Neustart ist es noch so. Eine eingeschaltete Fernbedienung läuft weiter (Chip „Fernbedienung an · ausgeblendet“).",
       "version": "0.41.6",
       "ticket": 361,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "abhoerlautstaerke",
@@ -759,7 +759,7 @@
       "erwartet": "Startet breit ohne überlappende Texte; die gezogene Größe ist nach dem Neustart wieder da.",
       "version": "0.41.9",
       "ticket": 379,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "klangbank-zeile",
@@ -787,7 +787,7 @@
       "erwartet": "Das Fenster zeigt jeweils genau den angeklickten Anbieter.",
       "version": "0.41.9",
       "ticket": 376,
-      "geprueft": "claude 2026-11-04"
+      "geprueft": "abnahme-lauf 2026-11-04"
     },
     {
       "id": "midi-learn-hinweis",
