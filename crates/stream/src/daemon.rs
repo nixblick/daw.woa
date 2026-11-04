@@ -256,6 +256,7 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
     let mut sent_title = String::new();
     let mut next_status = Instant::now();
     let mut live_now = false;
+    let mut emergency_on = false;
     let (mut live_underruns, mut live_trims) = (0u32, 0u32);
     let mut logged = (0u32, 0u32);
     let mut next_jitter_log = Instant::now();
@@ -281,6 +282,19 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
                 ib.live.pull(&mut ll, &mut lr, connected);
                 live_underruns = ib.live.underruns;
                 live_trims = ib.live.trims;
+                if live_ok == emergency_on {
+                    emergency_on = !live_ok;
+                    if emergency_on {
+                        let reason = if connected {
+                            "silence"
+                        } else {
+                            "ui disconnected"
+                        };
+                        tracing::warn!(reason, "emergency on");
+                    } else {
+                        tracing::info!("emergency off");
+                    }
+                }
                 (live_ok, ib.title.clone())
             };
             live_now = live_ok;
