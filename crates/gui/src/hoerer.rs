@@ -26,8 +26,18 @@ pub struct Jetzt {
     pub spitze_server: Option<u32>,
     #[serde(default)]
     pub eindeutig: Option<u32>,
+    /// Offene Verbindungen (ein Gerät hat oft zwei); ältere Server liefern das Feld nicht.
+    #[serde(default)]
+    pub verbindungen: Option<u32>,
     #[serde(default)]
     pub quelle: bool,
+}
+
+impl Jetzt {
+    /// Hörer = eindeutige Hörer; `aktuell` zählt Verbindungen und gilt nur ohne `eindeutig`.
+    pub fn hoerer(&self) -> u32 {
+        self.eindeutig.unwrap_or(self.aktuell)
+    }
 }
 
 /// Eine Sendung (zusammenhängend „Quelle verbunden“).
@@ -181,7 +191,7 @@ impl Abruf {
 
 /// Zahlen für den Chip aus einer Antwort: (jetzt, Spitze der laufenden Sendung).
 pub fn chip_zahlen(a: &Auswertung) -> (Option<u32>, Option<u32>) {
-    let jetzt = a.jetzt.as_ref().map(|j| j.aktuell);
+    let jetzt = a.jetzt.as_ref().map(Jetzt::hoerer);
     let spitze = a.sendungen.first().filter(|s| s.laeuft).map(|s| s.spitze);
     (jetzt, spitze)
 }
@@ -249,7 +259,8 @@ impl HoererWindow {
                 t: start + 3600,
                 aktuell: 14,
                 spitze_server: Some(31),
-                eindeutig: Some(22),
+                eindeutig: Some(14),
+                verbindungen: Some(16),
                 quelle: true,
             }),
             verlauf,
@@ -358,7 +369,7 @@ fn opt(v: Option<u32>) -> String {
 fn inhalt(ui: &mut egui::Ui, a: &Auswertung) {
     let laufend = a.sendungen.first().filter(|s| s.laeuft);
     ui.horizontal(|ui| {
-        kachel(ui, "Jetzt", &opt(a.jetzt.as_ref().map(|j| j.aktuell)));
+        kachel(ui, "Jetzt", &opt(a.jetzt.as_ref().map(Jetzt::hoerer)));
         kachel(ui, "Spitze Sendung", &opt(laufend.map(|s| s.spitze)));
         kachel(
             ui,
@@ -367,8 +378,11 @@ fn inhalt(ui: &mut egui::Ui, a: &Auswertung) {
         );
         kachel(
             ui,
-            "Eindeutig",
-            &opt(a.jetzt.as_ref().and_then(|j| j.eindeutig)),
+            "Verbindungen",
+            &opt(a
+                .jetzt
+                .as_ref()
+                .map(|j| j.verbindungen.unwrap_or(j.aktuell))),
         );
     });
     ui.add_space(theme::SPACE_3);
@@ -565,7 +579,18 @@ mod tests {
                "sendungen":[{"start":1,"ende":3,"dauer_s":2,"spitze":5,"durchschnitt":3.0,"laeuft":true}]}"#,
         );
         let a = fetch(&url).unwrap();
-        assert_eq!(a.jetzt.unwrap().aktuell, 3);
+        let j = a.jetzt.unwrap();
+        assert_eq!(j.aktuell, 3);
+        // 04.11.2026: Hörer = eindeutig, nicht Verbindungen.
+        assert_eq!(j.hoerer(), 4);
+        assert_eq!(
+            chip_zahlen(&parse(r#"{"jetzt":{"t":5,"aktuell":2,"eindeutig":1}}"#).unwrap()).0,
+            Some(1)
+        );
+        assert_eq!(
+            chip_zahlen(&parse(r#"{"jetzt":{"t":5,"aktuell":2}}"#).unwrap()).0,
+            Some(2)
+        );
         assert_eq!(a.verlauf, vec![(1, 1), (2, 5), (3, 3)]);
         assert_eq!(a.sendungen[0].spitze, 5);
     }

@@ -2847,6 +2847,7 @@ impl WoaApp {
             None
         };
         let peak = self.hoerer_peak.update(live, current);
+        // `spitze_server` ist die Sendungsspitze des Sammlers (eindeutige Hörer).
         let peak = match (peak, self.hoerer_chip.spitze_server.filter(|_| live)) {
             (Some(a), Some(b)) => Some(a.max(b)),
             (a, b) => a.or(b),

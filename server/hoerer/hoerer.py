@@ -230,7 +230,8 @@ def jetzt_antwort(db, quelle, sid, jetzt):
         "status": status,
         "titel": titel,
         "hoerer": j["aktuell"] if j else None,
-        "spitze": laufend["spitze"] if laufend else (j["spitze_server"] if j else None),
+        # Shoutcast-Spitze zählt Verbindungen; ohne laufende Sendung gilt die jetzige Zahl.
+        "spitze": laufend["spitze"] if laufend else (j["aktuell"] if j else None),
         "sendung_seit": laufend["start"] if laufend else None,
         "zuletzt": zuletzt,
     }
@@ -313,7 +314,7 @@ def ausduennen(werte, n=VERLAUF_MAX):
 
 def auswertung(db, von, bis, jetzt):
     zeilen = db.execute(
-        "SELECT t, aktuell, quelle FROM proben WHERE t BETWEEN ? AND ? ORDER BY t",
+        "SELECT t, COALESCE(eindeutig, aktuell), quelle FROM proben WHERE t BETWEEN ? AND ? ORDER BY t",
         (von, bis),
     ).fetchall()
     letzte = db.execute(
@@ -323,7 +324,9 @@ def auswertung(db, von, bis, jetzt):
     if letzte and jetzt - letzte[0] <= FRISCH:
         jetzt_d = {
             "t": letzte[0],
-            "aktuell": letzte[1],
+            # Hörer = eindeutige Hörer (ein iPhone öffnet oft zwei Verbindungen).
+            "aktuell": letzte[3] if letzte[3] is not None else letzte[1],
+            "verbindungen": letzte[1],
             "spitze_server": letzte[2],
             "eindeutig": letzte[3],
             "quelle": bool(letzte[4]),

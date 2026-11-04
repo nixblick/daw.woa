@@ -257,7 +257,8 @@ fn meta(cfg: &StreamConfig, kw: &Kennwort, rx: &Receiver<Job>, state: &Mutex<Upl
         if poll {
             let n = listener_stats(cfg);
             set(state, |s| {
-                s.listeners = n.map(|n| n.current);
+                // Hörer = eindeutige Hörer: ein iPhone öffnet oft zwei Verbindungen.
+                s.listeners = n.map(|n| n.listeners());
                 s.listeners_peak = n.and_then(|n| n.peak);
                 s.listeners_unique = n.and_then(|n| n.unique);
             });
