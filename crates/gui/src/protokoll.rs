@@ -114,7 +114,7 @@ impl ProtokollWindow {
             self.rows_key = Some((filter, Instant::now()));
         }
         let rows = std::mem::take(&mut self.rows);
-        egui::Window::new(format!("{} Protokoll", theme::ic::LIST_BULLETS))
+        let esc_resp = egui::Window::new(format!("{} Protokoll", theme::ic::LIST_BULLETS))
             .open(&mut open)
             .default_size([640.0, 380.0])
             .show(ctx, |ui| {
@@ -200,6 +200,10 @@ impl ProtokollWindow {
                     },
                 );
             });
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "protokoll") {
+            open = false;
+        }
         self.rows = rows;
         self.open = open;
         if !open {

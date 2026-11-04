@@ -196,6 +196,12 @@ fn input_row(
 }
 
 impl OutputsUi {
+    /// Ist das Fenster offen? (Tests)
+    #[cfg(test)]
+    pub(crate) fn is_open(&self) -> bool {
+        self.open
+    }
+
     /// Öffnet das Fenster mit der gespeicherten Wahl und liest die Geräte neu.
     pub fn open(&mut self, saved: AudioChoice) {
         self.open = true;
@@ -240,7 +246,7 @@ impl OutputsUi {
         // #443: Das Fenster bleibt im Bild. Oben beginnen, auf die Fensterhöhe begrenzen, Rest rollt.
         let screen = ctx.content_rect();
         let scroll_h = window_scroll_height(screen.height());
-        egui::Window::new(WINDOW)
+        let resp = egui::Window::new(WINDOW)
             .open(&mut open)
             .collapsible(false)
             .default_width(640.0_f32.min((screen.width() - 40.0).max(320.0)))
@@ -303,6 +309,10 @@ impl OutputsUi {
                         }
                     });
             });
+        // #441: Esc schließt Audio-Geräte über die gemeinsame Regel (oberstes Fenster zuerst).
+        if crate::esc::nach(ctx, &resp, "audio-geraete") {
+            open = false;
+        }
         if refresh {
             self.refresh();
         }

@@ -248,12 +248,16 @@ impl EventEditor {
             return;
         }
         let mut open = true;
-        egui::Window::new("Zeit-Events")
+        let esc_resp = egui::Window::new("Zeit-Events")
             .open(&mut open)
             .collapsible(false)
             .default_width(760.0)
             .frame(theme::card_frame())
             .show(ctx, |ui| self.body(ui, view));
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "zeit-events") {
+            open = false;
+        }
         if !open {
             self.open = false;
             self.flush();

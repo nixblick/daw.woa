@@ -217,13 +217,17 @@ impl ExportDialog {
         }
         let mut open = true;
         let mut result = None;
-        egui::Window::new("Exportieren")
+        let esc_resp = egui::Window::new("Exportieren")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .frame(theme::card_frame())
             .show(ctx, |ui| result = self.body(ui));
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "export") {
+            open = false;
+        }
         self.open = open && result.is_none();
         result
     }

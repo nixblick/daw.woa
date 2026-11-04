@@ -143,6 +143,10 @@ impl ProduktionenWindow {
             .min_size([360.0, 200.0])
             .frame(theme::card_frame())
             .show(ctx, |ui| self.body(ui, pfl, &mut out));
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &resp, "produktionen") {
+            open = false;
+        }
         self.open = open;
         if let (Some((_, pos)), Some(r)) = (&out.drop, &resp)
             && r.response.rect.contains(*pos)

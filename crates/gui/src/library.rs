@@ -367,12 +367,16 @@ impl LibraryWindow {
         let mut changed = false;
         if self.tag_editor_open {
             let mut open = true;
-            egui::Window::new("Titelinfos")
+            let esc_resp = egui::Window::new("Titelinfos")
                 .open(&mut open)
                 .default_width(460.0)
                 .resizable(false)
                 .frame(theme::card_frame())
                 .show(ctx, |ui| changed = ed.ui(ui));
+            // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+            if crate::esc::nach(ctx, &esc_resp, "titelinfos") {
+                open = false;
+            }
             self.tag_editor_open = open;
         } else {
             ed.tick(ctx);

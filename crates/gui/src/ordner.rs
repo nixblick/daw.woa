@@ -117,7 +117,7 @@ impl OrdnerUi {
         let mut draft = saved.clone();
         let mut changed = false;
         let mut open = true;
-        egui::Window::new("Speicherorte")
+        let esc_resp = egui::Window::new("Speicherorte")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -159,6 +159,10 @@ impl OrdnerUi {
                         }
                     });
             });
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "speicherorte") {
+            open = false;
+        }
         self.open = open;
         changed.then_some(draft)
     }

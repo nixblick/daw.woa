@@ -839,6 +839,24 @@
       "erwartet": "Die Frage verschwindet wie bei „Abbrechen“; WOA bleibt offen, ein offenes Fenster dahinter bleibt offen.",
       "version": "0.41.24",
       "ticket": 441
+    },
+    {
+      "id": "esc-audio-geraete",
+      "ansicht": "Einstellungen",
+      "titel": "Esc schließt das oberste Fenster (#441)",
+      "tun": "Einstellungen › Audio und Geräte › Audio-Geräte › Öffnen, dann Esc, noch einmal Esc. Danach nur Audio-Geräte öffnen (Einstellungen schließen), ins Fenster klicken und Esc. Ebenso Speicherorte, Controller und MIDI-Learn und Sendung aus den Einstellungen öffnen und mit Esc schließen.",
+      "erwartet": "Das erste Esc schließt Audio-Geräte, die Einstellungen darunter bleiben offen; das zweite Esc schließt die Einstellungen. Audio-Geräte allein schließt mit Esc, auch nach einem Klick ins Fenster. Jedes Fenster aus den Einstellungen schließt mit Esc.",
+      "version": "0.41.25",
+      "ticket": 441
+    },
+    {
+      "id": "dj-1280",
+      "ansicht": "Party DJ",
+      "titel": "DJ-Ansicht bei 1280×800 ohne Abschneiden (#443)",
+      "tun": "Fenster auf 1280×800 stellen (auch mit Windows-Skalierung 125 %), Party › DJ, je einen Titel auf Deck A und Deck B laden. Danach dasselbe bei 1280×720.",
+      "erwartet": "Deck A, Mischpult und Deck B stehen nebeneinander ganz im Fenster, nichts ragt rechts hinaus; Wunschliste und Fernbedienung sind rechts unten zu sehen. Bei 100 % passt alles ohne Rollen, bei 125 % lässt sich die Ansicht senkrecht rollen, statt abgeschnitten zu werden.",
+      "version": "0.41.25",
+      "ticket": 443
     }
   ]
 }

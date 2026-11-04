@@ -7042,6 +7042,10 @@ impl WoaApp {
                     }),
             )
             .show(ctx, |ui| {
+                // #441: Esc schließt den Feedback-Dialog (modal, geht Fenstern vor).
+                if crate::esc::frage(ui.ctx(), ui.layer_id(), "feedback") {
+                    close = true;
+                }
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new(theme::ic::CHAT_CIRCLE_TEXT)
@@ -10516,8 +10520,10 @@ mod nacharbeit_tests {
         /// Beschriftung, Wert und Fläche jedes Knotens.
         nodes: Vec<(String, String, egui::Rect)>,
         commands: Vec<egui::ViewportCommand>,
-        /// Fenstergröße (Standard 1920 × 1030).
+        /// Fenstergröße in Punkten (Standard 1920 × 1030).
         size: egui::Vec2,
+        /// Skalierung wie unter Windows (1,0 = 100 %, 1,25 = 125 %).
+        ppp: f32,
         _tmp: tempfile::TempDir,
     }
 
@@ -10543,6 +10549,7 @@ mod nacharbeit_tests {
                 nodes: Vec::new(),
                 commands: Vec::new(),
                 size: egui::vec2(1920.0, 1030.0),
+                ppp: 1.0,
                 _tmp: tmp,
             };
             rig.step(Vec::new());
@@ -10558,7 +10565,11 @@ mod nacharbeit_tests {
                 events,
                 ..Default::default()
             };
-            input.viewports.entry(egui::ViewportId::ROOT).or_default();
+            input
+                .viewports
+                .entry(egui::ViewportId::ROOT)
+                .or_default()
+                .native_pixels_per_point = Some(self.ppp);
             let (app, frame) = (&mut self.app, &mut self.frame);
             let out = self.ctx.run_ui(input, |ui| {
                 eframe::App::logic(app, ui.ctx(), frame);
@@ -11205,6 +11216,210 @@ mod nacharbeit_tests {
         assert!(
             !rig.app.library.open,
             "zweites Esc schließt die Bibliothek nicht"
+        );
+    }
+
+    impl Rig {
+        /// Linksklick auf `pos` (Bewegen, Drücken, Loslassen).
+        fn click_at(&mut self, pos: egui::Pos2) {
+            let ev = |pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            self.step(vec![egui::Event::PointerMoved(pos)]);
+            self.step(vec![ev(true)]);
+            self.step(vec![ev(false)]);
+            self.step(Vec::new());
+        }
+
+        fn rect_of(&self, label: &str) -> egui::Rect {
+            self.nodes
+                .iter()
+                .find(|(l, _, r)| l == label && r.width() > 0.0)
+                .map(|(_, _, r)| *r)
+                .unwrap_or_else(|| panic!("„{label}“ nicht zu sehen"))
+        }
+    }
+
+    /// Einstellungen › Audio und Geräte › „In Audio-Geräte öffnen“ wie in der Abnahme.
+    fn open_audio_from_settings(rig: &mut Rig) {
+        rig.app.settings.open = true;
+        rig.app.settings.open_area(crate::settings::Area::Audio);
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        let knopf = format!("In {} öffnen", crate::outputs_ui::WINDOW);
+        let pos = rig.rect_of(&knopf).center();
+        rig.click_at(pos);
+        assert!(rig.app.outputs_ui.is_open(), "Audio-Geräte nicht offen");
+        assert!(rig.app.settings.open);
+    }
+
+    /// #441 (Abnahme 0.41.24): Einstellungen und Audio-Geräte offen: Esc schließt zuerst das
+    /// oberste Fenster Audio-Geräte, das zweite Esc die Einstellungen.
+    #[test]
+    fn escape_closes_audio_devices_above_settings() {
+        let mut rig = Rig::new(Mode::Produzent);
+        open_audio_from_settings(&mut rig);
+        rig.step(vec![esc()]);
+        assert!(
+            !rig.app.outputs_ui.is_open(),
+            "Esc schließt Audio-Geräte nicht"
+        );
+        assert!(
+            rig.app.settings.open,
+            "Esc schließt die Einstellungen darunter"
+        );
+        rig.step(Vec::new());
+        rig.step(vec![esc()]);
+        assert!(
+            !rig.app.settings.open,
+            "zweites Esc schließt die Einstellungen nicht"
+        );
+    }
+
+    /// #441: Audio-Geräte allein schließt mit Esc, auch nach einem Klick ins Fenster.
+    #[test]
+    fn escape_closes_audio_devices_alone_after_click() {
+        for klick in [false, true] {
+            let mut rig = Rig::new(Mode::Produzent);
+            open_audio_from_settings(&mut rig);
+            rig.app.settings.open = false;
+            rig.step(Vec::new());
+            rig.step(Vec::new());
+            if klick {
+                // Klick ins Fenster: „Geräte neu lesen“ liest nur die Liste, schließt nichts.
+                let pos = rig.rect_of("Geräte neu lesen").center();
+                rig.click_at(pos);
+                assert!(rig.app.outputs_ui.is_open());
+            }
+            rig.step(vec![esc()]);
+            assert!(
+                !rig.app.outputs_ui.is_open(),
+                "Esc schließt Audio-Geräte nicht (Klick: {klick})"
+            );
+        }
+    }
+
+    /// Kurzer Ton als WAV (nur Datei, nichts wird abgespielt).
+    fn test_wav(path: &std::path::Path, hz: f32) {
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(path, spec).unwrap();
+        for i in 0..48_000 * 4 {
+            let s = (i as f32 * hz * std::f32::consts::TAU / 48_000.0).sin();
+            w.write_sample((s * 6000.0) as i16).unwrap();
+            w.write_sample((s * 6000.0) as i16).unwrap();
+        }
+        w.finalize().unwrap();
+    }
+
+    /// #443 (Abnahme 0.41.24): Party › DJ mit zwei geladenen Titeln bei 1280 px Breite
+    /// (Fenster 1280 × 800 und 1280 × 720, auch 125 % Skalierung wie unter Windows): kein
+    /// Bedienelement ragt rechts oder unten aus dem Fenster, Deck B samt Jog-Scheibe und die
+    /// Bibliothek rechts unten bleiben ganz sichtbar.
+    #[test]
+    fn party_dj_with_loaded_decks_fits_1280() {
+        use woa_radio::control::DjCommand;
+        let mut fails = Vec::new();
+        for (w, h, ppp) in [
+            (1280.0_f32, 800.0_f32, 1.0_f32),
+            (1280.0, 720.0, 1.0),
+            (1280.0, 800.0, 1.25),
+            (1280.0, 720.0, 1.25),
+        ] {
+            let mut rig = Rig::new(Mode::Party);
+            rig.ppp = ppp;
+            rig.size = egui::vec2(w / ppp, h / ppp);
+            let dir = rig._tmp.path().join("titel");
+            std::fs::create_dir_all(&dir).unwrap();
+            let files: Vec<_> = [
+                ("Erster Testtitel mit langem Namen", 220.0),
+                ("Zweiter Testtitel", 330.0),
+            ]
+            .iter()
+            .map(|(n, hz)| {
+                let p = dir.join(format!("{n}.wav"));
+                test_wav(&p, *hz);
+                p
+            })
+            .collect();
+            {
+                let r = rig.app.radio.as_ref().unwrap();
+                r.append_files(files);
+                r.dj(DjCommand::View { dj: true });
+            }
+            let t0 = std::time::Instant::now();
+            let mut loaded = false;
+            while t0.elapsed() < std::time::Duration::from_secs(8) {
+                rig.step(Vec::new());
+                let r = rig.app.radio.as_ref().unwrap();
+                let v = r.view();
+                if v.playlist.len() == 2 && !loaded {
+                    r.dj(DjCommand::Load { side: 0, index: 0 });
+                    r.dj(DjCommand::Load { side: 1, index: 1 });
+                    loaded = true;
+                }
+                if v.dj
+                    .as_ref()
+                    .is_some_and(|d| d.dj && d.decks.iter().all(|k| k.index.is_some()))
+                {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            // Auf das Ende der Analyse warten: „Analyse fehlgeschlagen“ samt Knopf ist der
+            // breiteste Deck-Kopf (unter Last kam er erst spät, der Test war dann zufällig rot).
+            let t1 = std::time::Instant::now();
+            while t1.elapsed() < std::time::Duration::from_secs(20)
+                && rig.any(|l| l.ends_with("Analyse"))
+            {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                rig.step(Vec::new());
+            }
+            for _ in 0..4 {
+                rig.step(Vec::new());
+            }
+            assert!(
+                !rig.any(|l| l.ends_with("Analyse")),
+                "{w}×{h} @{ppp}: Analyse läuft noch"
+            );
+            let dj = rig.app.radio.as_ref().unwrap().view().dj.clone();
+            assert!(
+                dj.as_ref()
+                    .is_some_and(|d| d.dj && d.decks.iter().all(|k| k.index.is_some())),
+                "{w}×{h} @{ppp}: Decks nicht geladen"
+            );
+            assert!(rig.any(|l| l == "DECK B"), "{w}×{h} @{ppp}: Deck B fehlt");
+            let (sw, sh) = (rig.size.x, rig.size.y);
+            let bad: Vec<_> = rig
+                .nodes
+                .iter()
+                .filter(|(l, _, r)| {
+                    // Waagerecht: nichts über den rechten Rand. Senkrecht nur, was immer zu
+                    // sehen sein muss (Listen darunter rollen in ihrer Karte); bei 125 % sind
+                    // es nur 576 bzw. 640 Punkte Höhe, dort rollt die DJ-Ansicht senkrecht.
+                    let must = ppp == 1.0
+                        && (l == "DECK B" || l.ends_with(" AN") || l.ends_with("WUNSCH"));
+                    r.is_positive()
+                        && r.width() < sw * 0.8
+                        && (r.max.x > sw + 0.5 || (must && r.max.y > sh + 0.5))
+                })
+                .map(|(l, v, r)| (l.clone(), v.clone(), *r))
+                .collect();
+            if !bad.is_empty() {
+                fails.push(format!("{w}×{h} @{ppp} ({sw}×{sh} pt): {bad:?}"));
+            }
+        }
+        assert!(
+            fails.is_empty(),
+            "Party DJ abgeschnitten:\n{}",
+            fails.join("\n")
         );
     }
 

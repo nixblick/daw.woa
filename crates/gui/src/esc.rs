@@ -100,6 +100,16 @@ pub fn fenster(ctx: &Context, layer: LayerId, key: impl std::hash::Hash + std::f
     anmelden(ctx, layer, Id::new(("esc", key)), false)
 }
 
+/// Fenster nach `Window::show` anmelden (Antwort von `show`); `true`: Esc schließt es jetzt.
+pub fn nach<R>(
+    ctx: &Context,
+    resp: &Option<egui::InnerResponse<R>>,
+    key: impl std::hash::Hash + std::fmt::Debug,
+) -> bool {
+    resp.as_ref()
+        .is_some_and(|r| fenster(ctx, r.response.layer_id, key))
+}
+
 /// Offene Frage anmelden; `true`: Esc bricht sie jetzt ab. Fragen gehen Fenstern vor.
 pub fn frage(ctx: &Context, layer: LayerId, key: impl std::hash::Hash + std::fmt::Debug) -> bool {
     anmelden(ctx, layer, Id::new(("esc", key)), true)

@@ -18,13 +18,22 @@ use crate::theme;
 pub(super) const WAVES_H: f32 = 150.0;
 /// Breite des Mixers zwischen den Decks.
 const MIXER_W: f32 = 390.0;
-/// Unter dieser Deck-Innenbreite rutschen Restzeit, BPM und Tonart in eine zweite Kopfzeile (#443).
+const MIXER_MIN_W: f32 = 270.0;
+/// Mindestbreite der Tastenspalte im Deck (Auto-Loop-Zeile mit LOOP-Taste); darunter wird die
+/// Jog-Scheibe kleiner (#443).
+#[cfg(test)]
+const KEYS_MIN_W: f32 = 168.0;
+/// Kleinste Jog-Scheibe (#443).
+const JOG_MIN: f32 = 64.0;
+/// Wunschbreite der Tastenspalte (Cue, Play, Sync lesbar nebeneinander).
+const KEYS_WANT_W: f32 = 210.0;
 /// Lücke zwischen den Auto-Loop-Zahlen und der LOOP-Taste.
 const LOOP_GAP: f32 = 6.0;
 /// Tempo-Spalte: Breite und die zwei Anschiebe-Tasten darunter (#443: 2 × 27 + 2 = 56).
 const TEMPO_W: f32 = 56.0;
 const NUDGE_GAP: f32 = 2.0;
 const NUDGE_W: f32 = (TEMPO_W - NUDGE_GAP) / 2.0;
+/// Unter dieser Deck-Innenbreite rutschen Restzeit, BPM und Tonart in eine zweite Kopfzeile (#443).
 const HEAD_WIDE_MIN: f32 = 560.0;
 /// Sichtbares Fenster der Wellen in Sekunden (Mausrad zoomt).
 const ZOOM_DEFAULT: f64 = 12.0;
@@ -73,12 +82,17 @@ fn three_columns(
     h: f32,
     mut part: impl FnMut(&mut egui::Ui, usize),
 ) -> [Rect; 3] {
-    let w = ((ui.available_width() - MIXER_W - 2.0 * GAP) / 2.0).max(300.0);
+    // #443: Bei schmalem Fenster (1280 px mit 125 % sind 1024 Punkte) schrumpft auch das
+    // Mischpult; die Decks bekommen nie mehr als den Rest (früher mindestens 300 px, dann
+    // ragte Deck B aus dem Fenster).
+    let avail = ui.available_width();
+    let mixer_w = mixer_width(avail);
+    let w = ((avail - mixer_w - 2.0 * GAP) / 2.0).max(0.0);
     let mut rects = [Rect::NOTHING; 3];
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = GAP;
         for (k, r) in rects.iter_mut().enumerate() {
-            let size = egui::vec2(if k == 1 { MIXER_W } else { w }, h);
+            let size = egui::vec2(if k == 1 { mixer_w } else { w }, h);
             *r = ui
                 .allocate_ui_with_layout(size, egui::Layout::top_down(egui::Align::Min), |ui| {
                     ui.set_min_size(size);
@@ -92,6 +106,11 @@ fn three_columns(
     rects
 }
 
+/// Breite des Mischpults: 390 px, in schmalen Fenstern 30 % der Breite, mindestens 270 px (#443).
+fn mixer_width(avail: f32) -> f32 {
+    MIXER_W.min((avail * 0.3).max(MIXER_MIN_W))
+}
+
 /// Was ein Klick auf eine Hot-Cue-Taste tut (#331): `Some(clear)` schickt das Kommando.
 /// Links setzt bzw. springt an (mit Umschalt: löschen), rechts löscht eine belegte Taste.
 fn hot_cue_click(primary: bool, secondary: bool, shift: bool, set: bool) -> Option<bool> {
@@ -99,6 +118,17 @@ fn hot_cue_click(primary: bool, secondary: bool, shift: bool, set: bool) -> Opti
         return set.then_some(true);
     }
     primary.then_some(shift)
+}
+
+/// Jog-Scheibe und Tastenspalte im Deck-Körper (#443): Jog, zwei Abstände zu 12 px, Tasten
+/// und Tempo-Spalte füllen höchstens `w`. Die Tasten möchten 210 px; wird es enger, wird
+/// zuerst die Scheibe kleiner (bis 64 px), danach die Tasten (bis 168 px).
+fn deck_body_widths(w: f32, body_h: f32) -> (f32, f32) {
+    let jog = (body_h - 8.0)
+        .min(w - TEMPO_W - KEYS_WANT_W - 24.0)
+        .clamp(JOG_MIN, 190.0);
+    let center = (w - jog - TEMPO_W - 24.0).max(60.0);
+    (jog, center)
 }
 
 /// Breite einer Auto-Loop-Zahl: n Tasten, Lücke, LOOP-Taste (`lw`) und n + 1 Abstände zu 2 px
@@ -178,6 +208,8 @@ pub(super) fn phase_ms(a: &DjDeckView, b: &DjDeckView) -> Option<f64> {
 
 /// Kompakte Fernbedienung unter dieser Fensterhöhe (RemoteCard).
 pub(super) const COMPACT_BELOW: f32 = 900.0;
+/// Kleinste Höhe der DJ-Ansicht unter der Umschaltleiste; darunter rollt sie senkrecht (#443).
+const DJ_MIN_H: f32 = 600.0;
 
 impl PartyView {
     /// Leiste oben: Ansicht Einfach|DJ, Auto-Übergang (in DJ aus), Kopfhörer-Ausgang.
@@ -273,23 +305,66 @@ impl PartyView {
         let v = desk.view().clone();
         self.ask_meta(&v, library.db_path());
         let full_h = ui.available_height();
+        // #443: In sehr niedrigen Fenstern (1280 × 800 oder × 720 mit 125 % Skalierung) passt
+        // nicht alles untereinander: dann rollt die Ansicht senkrecht, statt unten Fernbedienung
+        // und Wunschliste abzuschneiden. Waagerecht bleibt alles im Fenster.
+        if full_h < DJ_MIN_H {
+            egui::ScrollArea::vertical()
+                .id_salt("party-dj-klein")
+                .auto_shrink([false, false])
+                .max_height(full_h)
+                .show(ui, |ui| {
+                    self.dj_body(ui, desk, library, dj, &v, cmds, DJ_MIN_H);
+                });
+        } else {
+            self.dj_body(ui, desk, library, dj, &v, cmds, full_h);
+        }
+    }
+
+    /// Wellen, Decks mit Mischpult, unten Playlist und rechte Spalte in der Höhe `full_h`.
+    #[allow(clippy::too_many_arguments)]
+    fn dj_body(
+        &mut self,
+        ui: &mut egui::Ui,
+        desk: &mut RadioDesk,
+        library: &mut crate::library::LibraryWindow,
+        dj: &DjView,
+        v: &woa_radio::station::View,
+        cmds: &mut Vec<woa_radio::party::PartyCommand>,
+        full_h: f32,
+    ) {
+        let top = ui.cursor().top();
+        let used = |ui: &egui::Ui| ui.cursor().top() - top;
         let win_h = ui.ctx().content_rect().height();
-        let waves_h = if win_h < COMPACT_BELOW {
+        // #443: 1280 × 720 mit 125 % sind nur 576 Punkte Höhe: Wellen, Decks und unten
+        // Playlist/Bibliothek teilen sich, was da ist, statt unten über den Rand zu laufen.
+        let waves_h = if win_h < 620.0 {
+            64.0
+        } else if win_h < 700.0 {
+            80.0
+        } else if win_h < COMPACT_BELOW {
             110.0
         } else {
             WAVES_H
         };
         self.dj_waves(ui, dj, waves_h);
-        let rest = ui.available_height();
-        let bottom_min = if win_h < COMPACT_BELOW { 175.0 } else { 220.0 };
-        let deck_h = (rest - bottom_min - GAP).clamp(300.0, 560.0);
+        let rest = full_h - used(ui);
+        let bottom_min = if win_h < 700.0 {
+            // Fernbedienung (eine Zeile) und darüber zwei Zeilen Wunschliste.
+            150.0
+        } else if win_h < COMPACT_BELOW {
+            175.0
+        } else {
+            220.0
+        };
+        let deck_min = if win_h < 700.0 { 200.0 } else { 300.0 };
+        let deck_h = (rest - bottom_min - GAP).clamp(deck_min, 560.0);
         three_columns(ui, deck_h, |ui, part| match part {
-            0 => self.dj_deck(ui, desk, dj, &v, 0),
+            0 => self.dj_deck(ui, desk, dj, v, 0),
             1 => dj_mixer(ui, desk, dj),
-            _ => self.dj_deck(ui, desk, dj, &v, 1),
+            _ => self.dj_deck(ui, desk, dj, v, 1),
         });
-        let _ = full_h;
-        let h = ui.available_height();
+        let h = (full_h - used(ui)).max(0.0);
         let (left_w, right_w) = super::columns_split(ui.available_width());
         ui.horizontal_top(|ui| {
             ui.allocate_ui_with_layout(
@@ -297,7 +372,7 @@ impl PartyView {
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
                     ui.set_width(left_w);
-                    self.dj_playlist(ui, desk, dj, &v, h);
+                    self.dj_playlist(ui, desk, dj, v, h);
                 },
             );
             ui.allocate_ui_with_layout(
@@ -747,7 +822,16 @@ impl PartyView {
                         d.key_match,
                     );
                 };
-                ui.horizontal(|ui| {
+                // #443: Im schmalen Deck brechen die Chips um („Analyse fehlgeschlagen“ samt
+                // Knopf ist breiter als ein Deck bei 1280 px und 125 %).
+                let chip_row = |ui: &mut egui::Ui, add: &mut dyn FnMut(&mut egui::Ui)| {
+                    if narrow_head {
+                        ui.horizontal_wrapped(|ui| add(ui));
+                    } else {
+                        ui.horizontal(|ui| add(ui));
+                    }
+                };
+                chip_row(ui, &mut |ui: &mut egui::Ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
                     use crate::widgets::{ChipTone, StateChip};
                     // Fassung 7: alle Chips 28 px auf einer Mittellinie.
@@ -776,11 +860,16 @@ impl PartyView {
                                 .on_hover_text("Tempo und Tonart werden gemessen");
                         }
                         Analysis::Failed => {
-                            StateChip::new("Analyse fehlgeschlagen", ChipTone::Warn)
+                            let text = if narrow_head {
+                                "Kein Tempo"
+                            } else {
+                                "Analyse fehlgeschlagen"
+                            };
+                            StateChip::new(text, ChipTone::Warn)
                                 .icon(theme::ic::WARNING)
                                 .dj()
                                 .show(ui)
-                                .on_hover_text("Kein Tempo gefunden");
+                                .on_hover_text("Analyse fehlgeschlagen: kein Tempo gefunden");
                             if crate::widgets::icon_button::IconButton::new(
                                 theme::ic::ARROW_CLOCKWISE,
                                 "Neu analysieren",
@@ -835,14 +924,11 @@ impl PartyView {
                 self.overview(ui, desk, d, side);
                 ui.add_space(6.0);
                 let body_h = ui.available_height().max(120.0);
-                // Plattenteller: so groß wie Höhe und Breite (Tasten brauchen 200 px) erlauben.
-                let jog_d = (body_h - 8.0)
-                    .min(ui.available_width() - 56.0 - 200.0 - 24.0)
-                    .clamp(90.0, 190.0);
+                // Plattenteller: so groß wie Höhe und Breite erlauben; die Tasten brauchen
+                // 168 px (Auto-Loop-Zeile), bei engem Deck wird die Jog-Scheibe kleiner (#443).
+                let (jog_d, center_w) = deck_body_widths(ui.available_width(), body_h);
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing.x = 12.0;
-                    let tempo_w = 56.0;
-                    let center_w = (ui.available_width() - jog_d - tempo_w - 24.0).max(200.0);
                     let order: [u8; 3] = if side == 0 { [0, 1, 2] } else { [2, 1, 0] };
                     for part in order {
                         match part {
@@ -1164,7 +1250,7 @@ impl PartyView {
         let meta = self.dj.meta.lock().map(|g| g.clone()).unwrap_or_default();
         theme::card_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.set_min_height(h - 20.0);
+            ui.set_min_height((h - 20.0).max(0.0));
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
                 ui.label(theme::panel_label("PLAYLIST").color(theme::accent_2()));
@@ -1194,7 +1280,7 @@ impl PartyView {
             });
             let row_h = 24.0;
             let w = ui.available_width();
-            let cols = [w - 300.0, 60.0, 50.0, 70.0, 90.0];
+            let cols = [(w - 300.0).max(60.0), 60.0, 50.0, 70.0, 90.0];
             let head = |ui: &mut egui::Ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
@@ -1842,6 +1928,28 @@ mod tests {
             let row = kw * (0.85 + 1.3 + 0.85) + 36.0 + 3.0 * 8.0;
             assert!(row <= w + 0.01, "{w}: Transportzeile {row}");
         }
+    }
+
+    /// #443: Jog-Scheibe, Tasten und Tempo-Spalte passen in jedes Deck ab 300 px; die Tasten
+    /// behalten mindestens die Breite der Auto-Loop-Zeile, die Scheibe wird kleiner.
+    #[test]
+    fn deck_body_fits_and_jog_shrinks_first() {
+        let mut last_jog = f32::MAX;
+        for w in [520.0_f32, 450.0, 400.0, 350.0, 320.0, 313.0] {
+            let (jog, keys) = deck_body_widths(w, 260.0);
+            assert!(
+                jog + keys + TEMPO_W + 24.0 <= w + 0.01,
+                "{w}: {jog} + {keys} zu breit"
+            );
+            assert!(keys >= KEYS_MIN_W - 0.01, "{w}: Tasten {keys}");
+            assert!(jog >= JOG_MIN && jog <= last_jog, "{w}: Jog {jog}");
+            last_jog = jog;
+        }
+        let n = woa_radio::control::dj::LOOP_BEATS.len() as f32;
+        assert!(
+            n * 12.0 + LOOP_GAP + 90.0 + (n + 1.0) * 2.0 <= KEYS_MIN_W,
+            "Auto-Loop-Zeile breiter als die kleinste Tastenspalte"
+        );
     }
 
     #[test]

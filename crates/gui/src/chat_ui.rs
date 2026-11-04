@@ -263,13 +263,17 @@ impl ChatUi {
         }
         let mut open = true;
         let (mut restart, mut settings) = (false, false);
-        egui::Window::new("KI-Chat")
+        let esc_resp = egui::Window::new("KI-Chat")
             .open(&mut open)
             .collapsible(false)
             .default_size([520.0, 520.0])
             .show(ctx, |ui| {
                 (restart, settings) = self.body(ui, cfg, 380.0);
             });
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "ki-chat") {
+            open = false;
+        }
         if restart {
             self.start(cfg, data_dir, project);
         }

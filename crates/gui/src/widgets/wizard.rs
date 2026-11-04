@@ -146,11 +146,15 @@ impl JingleAssistent {
         self.erzeugtes_einsetzen(ctx, state);
         let mut open = self.open;
         let mut out = None;
-        egui::Window::new("Jingle bauen")
+        let esc_resp = egui::Window::new("Jingle bauen")
             .open(&mut open)
             .resizable(false)
             .default_width(380.0)
             .show(ctx, |ui| out = self.body(ui, state));
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "jingle") {
+            open = false;
+        }
         self.open = open;
         out
     }
