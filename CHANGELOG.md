@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.25 — 2026-11-04
+
+- **Esc schließt das oberste Fenster, auch Audio-Geräte (#441, Abnahme 0.41.24):** Ursache: Das Fenster „Audio-Geräte“ (`outputs_ui.rs`) war nicht bei der gemeinsamen Esc-Regel (`esc.rs`) angemeldet. Lagen Einstellungen und Audio-Geräte übereinander, kannte die Regel nur die Einstellungen und schloss sie; Audio-Geräte allein sah gar kein Esc. Jetzt meldet sich Audio-Geräte an (neu `esc::nach` für die Antwort von `Window::show`); „oberstes“ folgt der Ebenen-Reihenfolge von egui (zuletzt geöffnet bzw. angeklickt liegt oben). Ebenso nachgemeldet: Controller und MIDI-Learn, Speicherorte, Sendung: Stream-Server, Dienste und Konten, Entwickler-Modus, KI-Chat, Exportieren, Spur exportieren, Stundenuhr und AutoDJ, Zeit-Events, Verwalten, Protokoll, Produktionen, Titelinfos, Jingle bauen, Cue- und Voice-Editor; Feedback, „Playlist wechseln?“ und „Umbenennen“ als Fragen (Esc = Abbrechen). Tests (vorher rot): `escape_closes_audio_devices_above_settings`, `escape_closes_audio_devices_alone_after_click` (über den Knopf in den Einstellungen geöffnet, mit und ohne Klick ins Fenster). Prüfpunkt `esc-audio-geraete`. Workspace-Version 0.41.25.
+
 ## 0.41.24 — 2026-11-04
 
 - **Klickliste** „Abnahme-Nacharbeit 04.11.“ in `docs/abnahme.md` (#441–#444); Workspace-Version 0.41.24.

@@ -1024,7 +1024,7 @@ impl EntwicklerTor {
         }
         let mut aktion = TorAktion::Keine;
         let mut open = self.open;
-        egui::Window::new("Entwickler-Modus")
+        let esc_resp = egui::Window::new("Entwickler-Modus")
             .open(&mut open)
             .resizable(false)
             .collapsible(false)
@@ -1055,6 +1055,10 @@ impl EntwicklerTor {
                     ui.label(egui::RichText::new(n).small().color(theme::text_dim()));
                 }
             });
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "entwickler-tor") {
+            open = false;
+        }
         self.open = open;
         if !open {
             self.kennwort.clear();

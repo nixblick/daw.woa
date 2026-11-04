@@ -4967,7 +4967,10 @@ impl RadioDesk {
                     if ui.button("Übernehmen").clicked() || enter {
                         done = Some(true);
                     }
+                    // #441: Esc heißt Abbrechen, über die gemeinsame Regel (Fragen zuerst).
+                    let esc = crate::esc::frage(ui.ctx(), ui.layer_id(), "umbenennen");
                     if ui.button("Abbrechen").clicked()
+                        || esc
                         || ui.input(|i| i.key_pressed(egui::Key::Escape))
                     {
                         done = Some(false);

@@ -196,11 +196,15 @@ impl VoiceEditor {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
         let mut out = Vec::new();
-        egui::Window::new(format!("Voice-Track: {}", self.input.title))
+        let esc_resp = egui::Window::new(format!("Voice-Track: {}", self.input.title))
             .id(egui::Id::new("woa-voice-editor"))
             .open(open)
             .default_width(720.0)
             .show(ctx, |ui| self.body(ui, pfl, &mut out));
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "voice-editor") {
+            *open = false;
+        }
         out
     }
 

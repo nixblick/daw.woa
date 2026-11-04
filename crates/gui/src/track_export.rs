@@ -71,7 +71,7 @@ impl TrackExportDialog {
     pub(crate) fn show(&mut self, ctx: &egui::Context) -> Result<Option<TrackExportRequest>, ()> {
         let mut open = true;
         let mut result = None;
-        egui::Window::new("Spur exportieren")
+        let esc_resp = egui::Window::new("Spur exportieren")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -115,6 +115,10 @@ impl TrackExportDialog {
                     result = Some(self.request());
                 }
             });
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "spur-export") {
+            open = false;
+        }
         if !open {
             return Err(());
         }

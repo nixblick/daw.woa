@@ -139,7 +139,10 @@ impl ManageWindow {
                         act = Some(Action::Select(i));
                         keep = false;
                     }
+                    // #441: Esc heißt Abbrechen, über die gemeinsame Regel (Fragen zuerst).
+                    let esc = crate::esc::frage(ui.ctx(), ui.layer_id(), "playlist-wechseln");
                     if ui.button("Abbrechen").clicked()
+                        || esc
                         || ui.input(|i| i.key_pressed(egui::Key::Escape))
                     {
                         keep = false;
@@ -170,7 +173,7 @@ impl ManageWindow {
             self.selected = show.active.min(n.saturating_sub(1));
         }
         let mut open = true;
-        egui::Window::new("Verwalten")
+        let esc_resp = egui::Window::new("Verwalten")
             .open(&mut open)
             .default_size([760.0, 460.0])
             .show(ctx, |ui| {
@@ -189,6 +192,10 @@ impl ManageWindow {
                     }
                 }
             });
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "verwalten") {
+            open = false;
+        }
         self.open = open;
         out
     }

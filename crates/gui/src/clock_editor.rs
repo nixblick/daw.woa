@@ -521,12 +521,16 @@ impl ClockEditor {
             return;
         }
         let mut open = true;
-        egui::Window::new("Stundenuhr und AutoDJ")
+        let esc_resp = egui::Window::new("Stundenuhr und AutoDJ")
             .open(&mut open)
             .collapsible(false)
             .default_width(620.0)
             .frame(theme::card_frame())
             .show(ctx, |ui| self.body(ui));
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "stundenuhr") {
+            open = false;
+        }
         if !open {
             self.open = false;
             self.flush();

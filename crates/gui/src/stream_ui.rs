@@ -135,7 +135,7 @@ impl StreamUi {
         let mut open = true;
         let mut test = false;
         let mut save = false;
-        egui::Window::new("Sendung: Stream-Server")
+        let esc_resp = egui::Window::new("Sendung: Stream-Server")
             .open(&mut open)
             .collapsible(false)
             .default_width(480.0)
@@ -206,6 +206,10 @@ impl StreamUi {
                     );
                 }
             });
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "sendung") {
+            open = false;
+        }
         if test {
             self.start_test(ctx, data_dir);
         }

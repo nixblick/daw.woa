@@ -182,7 +182,7 @@ impl KiUi {
         let mut open = true;
         let mut save = false;
         let mut changed = false;
-        egui::Window::new("Dienste und Konten")
+        let esc_resp = egui::Window::new("Dienste und Konten")
             .open(&mut open)
             .collapsible(false)
             .default_width(600.0)
@@ -229,6 +229,10 @@ impl KiUi {
                         }
                     });
             });
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "dienste") {
+            open = false;
+        }
         let mut applied = None;
         if changed && !save && open {
             // Die Wahl im Dropdown gilt sofort; das Fenster bleibt offen.

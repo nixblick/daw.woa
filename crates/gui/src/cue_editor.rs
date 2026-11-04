@@ -274,11 +274,15 @@ impl CueEditor {
         } else {
             format!("Cue-Punkte: {}", self.title)
         };
-        egui::Window::new(title)
+        let esc_resp = egui::Window::new(title)
             .id(egui::Id::new("woa-cue-editor"))
             .open(open)
             .default_width(640.0)
             .show(ctx, |ui| self.body(ui, pfl, undo, &mut out));
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "cue-editor") {
+            *open = false;
+        }
         out
     }
 

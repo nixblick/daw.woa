@@ -214,10 +214,14 @@ impl ControlDesk {
         }
         let mut open = true;
         let mut changed = false;
-        egui::Window::new("Controller und MIDI-Learn")
+        let esc_resp = egui::Window::new("Controller und MIDI-Learn")
             .open(&mut open)
             .default_width(460.0)
             .show(ctx, |ui| changed = self.window_ui(ui, config));
+        // #441: Esc schließt das oberste Fenster (gemeinsame Regel).
+        if crate::esc::nach(ctx, &esc_resp, "controller") {
+            open = false;
+        }
         self.window = open;
         changed
     }

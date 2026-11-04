@@ -7042,6 +7042,10 @@ impl WoaApp {
                     }),
             )
             .show(ctx, |ui| {
+                // #441: Esc schließt den Feedback-Dialog (modal, geht Fenstern vor).
+                if crate::esc::frage(ui.ctx(), ui.layer_id(), "feedback") {
+                    close = true;
+                }
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new(theme::ic::CHAT_CIRCLE_TEXT)
@@ -11206,6 +11210,89 @@ mod nacharbeit_tests {
             !rig.app.library.open,
             "zweites Esc schließt die Bibliothek nicht"
         );
+    }
+
+    impl Rig {
+        /// Linksklick auf `pos` (Bewegen, Drücken, Loslassen).
+        fn click_at(&mut self, pos: egui::Pos2) {
+            let ev = |pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            self.step(vec![egui::Event::PointerMoved(pos)]);
+            self.step(vec![ev(true)]);
+            self.step(vec![ev(false)]);
+            self.step(Vec::new());
+        }
+
+        fn rect_of(&self, label: &str) -> egui::Rect {
+            self.nodes
+                .iter()
+                .find(|(l, _, r)| l == label && r.width() > 0.0)
+                .map(|(_, _, r)| *r)
+                .unwrap_or_else(|| panic!("„{label}“ nicht zu sehen"))
+        }
+    }
+
+    /// Einstellungen › Audio und Geräte › „In Audio-Geräte öffnen“ wie in der Abnahme.
+    fn open_audio_from_settings(rig: &mut Rig) {
+        rig.app.settings.open = true;
+        rig.app.settings.open_area(crate::settings::Area::Audio);
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        let knopf = format!("In {} öffnen", crate::outputs_ui::WINDOW);
+        let pos = rig.rect_of(&knopf).center();
+        rig.click_at(pos);
+        assert!(rig.app.outputs_ui.is_open(), "Audio-Geräte nicht offen");
+        assert!(rig.app.settings.open);
+    }
+
+    /// #441 (Abnahme 0.41.24): Einstellungen und Audio-Geräte offen: Esc schließt zuerst das
+    /// oberste Fenster Audio-Geräte, das zweite Esc die Einstellungen.
+    #[test]
+    fn escape_closes_audio_devices_above_settings() {
+        let mut rig = Rig::new(Mode::Produzent);
+        open_audio_from_settings(&mut rig);
+        rig.step(vec![esc()]);
+        assert!(
+            !rig.app.outputs_ui.is_open(),
+            "Esc schließt Audio-Geräte nicht"
+        );
+        assert!(
+            rig.app.settings.open,
+            "Esc schließt die Einstellungen darunter"
+        );
+        rig.step(Vec::new());
+        rig.step(vec![esc()]);
+        assert!(
+            !rig.app.settings.open,
+            "zweites Esc schließt die Einstellungen nicht"
+        );
+    }
+
+    /// #441: Audio-Geräte allein schließt mit Esc, auch nach einem Klick ins Fenster.
+    #[test]
+    fn escape_closes_audio_devices_alone_after_click() {
+        for klick in [false, true] {
+            let mut rig = Rig::new(Mode::Produzent);
+            open_audio_from_settings(&mut rig);
+            rig.app.settings.open = false;
+            rig.step(Vec::new());
+            rig.step(Vec::new());
+            if klick {
+                // Klick ins Fenster: „Geräte neu lesen“ liest nur die Liste, schließt nichts.
+                let pos = rig.rect_of("Geräte neu lesen").center();
+                rig.click_at(pos);
+                assert!(rig.app.outputs_ui.is_open());
+            }
+            rig.step(vec![esc()]);
+            assert!(
+                !rig.app.outputs_ui.is_open(),
+                "Esc schließt Audio-Geräte nicht (Klick: {klick})"
+            );
+        }
     }
 
     /// #441: Eine offene Frage geht vor; das Fenster darunter bleibt.
