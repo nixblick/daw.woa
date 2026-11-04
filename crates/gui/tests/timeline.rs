@@ -571,15 +571,16 @@ fn cut_is_ignored_while_export_dialog_is_open() {
 }
 
 #[test]
-fn new_project_saves_unsaved_changes_first() {
+fn new_project_asks_before_dropping_unsaved_changes() {
+    // #408: Neu fragt Speichern · Nicht speichern · Abbrechen statt Speichern zu erzwingen.
     let mut rig = Rig::new();
     let proj = rig.dir.join("song.woa");
     assert!(rig.app.state_mut().save_as(&proj));
     rig.app.state_mut().add_track().expect("track");
     assert!(rig.app.state().session().is_dirty());
     rig.key(egui::Key::N, egui::Modifiers::COMMAND);
-    assert!(rig.app.state().project().tracks.is_empty(), "new project");
-    let mut again = AppState::new(rig.dir.join("rec2"), Instant::now());
-    assert!(again.open(&proj));
-    assert_eq!(again.project().tracks.len(), 1, "change saved before Neu");
+    assert_eq!(rig.app.state().project().tracks.len(), 1, "asks first");
+    rig.key(egui::Key::Escape, egui::Modifiers::NONE);
+    assert_eq!(rig.app.state().project().tracks.len(), 1, "cancel keeps it");
+    assert!(rig.app.state().session().is_dirty(), "not saved silently");
 }

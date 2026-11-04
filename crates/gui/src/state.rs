@@ -1496,8 +1496,17 @@ impl AppState {
         self.status = Status::Info("Neues Projekt".into());
     }
 
-    /// Opens a project folder.
+    /// Opens a project folder (or the single project inside a plain folder, #405).
     pub fn open(&mut self, dir: &Path) -> bool {
+        let dir = match open_target(dir) {
+            Ok(d) => d,
+            Err(msg) => {
+                tracing::warn!(path = %dir.display(), "not a project folder");
+                self.status = Status::Error(msg);
+                return false;
+            }
+        };
+        let dir = dir.as_path();
         match Session::open(dir) {
             Ok(session) => {
                 self.session = limited(session);
@@ -1525,9 +1534,25 @@ impl AppState {
         self.session.path().is_none()
     }
 
-    /// Saves into `dir` (appends `.woa` if missing) and adopts it as project folder.
+    /// Whether saving into `target` (from [`save_target`]) would replace another,
+    /// existing project (#409): the UI must ask first.
+    pub fn overwrites_other_project(&self, target: &Path) -> bool {
+        target.join(woa_model::store::PROJECT_FILE).is_file() && self.session.path() != Some(target)
+    }
+
+    /// Saves into `dir` (appends `.woa` if missing, never inside another `.woa` package)
+    /// and adopts it as project folder. Replacing another project keeps its old
+    /// `project.json` as `project.json.bak` (#409).
     pub fn save_as(&mut self, dir: &Path) -> bool {
-        let dir = with_woa_extension(dir);
+        let dir = save_target(dir);
+        if self.overwrites_other_project(&dir) {
+            let file = dir.join(woa_model::store::PROJECT_FILE);
+            if let Err(e) = std::fs::copy(&file, dir.join("project.json.bak")) {
+                tracing::error!(error = %e, "project backup failed");
+                self.status = Status::Error(format!("Sicherung project.json.bak: {e}"));
+                return false;
+            }
+        }
         if let Err(e) = self.copy_takes(&dir) {
             tracing::error!(error = %e, "copying takes failed");
             self.status = Status::Error(format!("Aufnahmen kopieren: {e}"));
@@ -1585,6 +1610,59 @@ impl AppState {
     }
 }
 
+/// Where "save as" really writes (#409): `<name>.woa`, and never nested inside another
+/// project package. A choice inside `A.woa/…` lands next to `A.woa` instead.
+pub fn save_target(chosen: &Path) -> PathBuf {
+    let dir = with_woa_extension(chosen);
+    let outer = dir
+        .ancestors()
+        .skip(1)
+        .filter(|a| a.extension().is_some_and(|e| e == "woa"))
+        .last();
+    match (outer.and_then(Path::parent), dir.file_name()) {
+        (Some(parent), Some(name)) => parent.join(name),
+        _ => dir,
+    }
+}
+
+/// Which folder "open" really means (#405): a `.woa` project folder as chosen, or, when
+/// a plain folder holding exactly one project was picked, that project. Otherwise a
+/// message that says what to pick.
+pub fn open_target(chosen: &Path) -> Result<PathBuf, String> {
+    let is_project = |d: &Path| {
+        d.join(woa_model::store::PROJECT_FILE).is_file()
+            || d.join(woa_model::store::AUTOSAVE_FILE).is_file()
+    };
+    if is_project(chosen) {
+        return Ok(chosen.to_path_buf());
+    }
+    let mut found: Vec<PathBuf> = std::fs::read_dir(chosen)
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|e| e == "woa") && is_project(p))
+                .collect()
+        })
+        .unwrap_or_default();
+    found.sort();
+    match found.len() {
+        1 => Ok(found.remove(0)),
+        0 => Err(format!(
+            "{} ist kein WOA-Projekt: bitte einen Projektordner mit der Endung .woa wählen",
+            chosen.display()
+        )),
+        n => Err(format!(
+            "{} enthält {n} Projekte: bitte einen davon wählen ({})",
+            chosen.display(),
+            found
+                .iter()
+                .filter_map(|p| p.file_name()?.to_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+}
+
 fn with_woa_extension(dir: &Path) -> PathBuf {
     if dir.extension().is_some_and(|e| e == "woa") {
         dir.to_path_buf()
@@ -1602,6 +1680,64 @@ mod tests {
     fn state(dir: &Path) -> (AppState, Instant) {
         let now = Instant::now();
         (AppState::new(dir.join("recovery"), now), now)
+    }
+
+    #[test]
+    fn save_as_never_nests_inside_a_project_package() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        assert_eq!(save_target(&root.join("A")), root.join("A.woa"));
+        assert_eq!(
+            save_target(&root.join("RB-07.woa/Neues Projekt.woa")),
+            root.join("Neues Projekt.woa")
+        );
+        assert_eq!(
+            save_target(&root.join("X.woa/sub/Y.woa/Neu")),
+            root.join("Neu.woa")
+        );
+        let (mut s, _) = state(root);
+        assert!(s.save_as(&root.join("Show.woa/Neu")));
+        assert!(root.join("Neu.woa/project.json").is_file());
+        assert!(!root.join("Show.woa/Neu.woa").exists());
+    }
+
+    #[test]
+    fn save_as_over_another_project_keeps_a_backup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut a, _) = state(tmp.path());
+        assert!(a.save_as(&tmp.path().join("Alt")));
+        let alt = tmp.path().join("Alt.woa");
+        let before = std::fs::read(alt.join("project.json")).unwrap();
+        let (mut b, _) = state(tmp.path());
+        assert!(b.overwrites_other_project(&alt));
+        assert!(b.save_as(&alt));
+        assert_eq!(std::fs::read(alt.join("project.json.bak")).unwrap(), before);
+        assert!(!b.overwrites_other_project(&alt), "eigenes Projekt");
+    }
+
+    #[test]
+    fn open_finds_the_project_in_a_plain_folder_or_explains() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let (mut s, _) = state(root);
+        assert!(s.save_as(&root.join("Robby/RB-07")));
+        assert_eq!(
+            open_target(&root.join("Robby")).unwrap(),
+            root.join("Robby/RB-07.woa")
+        );
+        let (mut t, _) = state(root);
+        assert!(t.open(&root.join("Robby")));
+        std::fs::create_dir_all(root.join("Leer")).unwrap();
+        let err = open_target(&root.join("Leer")).unwrap_err();
+        assert!(err.contains(".woa"), "{err}");
+        assert!(!t.open(&root.join("Leer")));
+        assert!(matches!(t.status, Status::Error(_)));
+        assert!(t.save_as(&root.join("Robby/RB-08")));
+        let err = open_target(&root.join("Robby")).unwrap_err();
+        assert!(
+            err.contains("RB-07.woa") && err.contains("RB-08.woa"),
+            "{err}"
+        );
     }
 
     #[test]

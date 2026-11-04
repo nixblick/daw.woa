@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.41.20 — 2026-11-04
+
+- **Neu und Öffnen fragen mit „Nicht speichern“ (#408):** Bei ungespeicherten Änderungen erscheint vor Neu, Öffnen und DAWproject öffnen dieselbe Frage wie beim Beenden: Speichern · Nicht speichern · Abbrechen (Esc = Abbrechen). Bisher wurde Speichern erzwungen. Ein zweiter Klick öffnet keine zweite Frage. Tests: `new_with_unsaved_changes_offers_discard_and_asks_once`, `open_with_unsaved_changes_cancel_keeps_project`, `new_project_asks_before_dropping_unsaved_changes`.
+- **Speichern nie mehr in einem fremden `.woa`-Paket (#409):** Wählt der Speichern-Dialog einen Ort innerhalb eines Projektordners, landet das Projekt daneben (`Projekte/X.woa` statt `Projekte/A.woa/X.woa`). Liegt am Ziel schon ein anderes Projekt, fragt WOA „Projekt überschreiben?“ und sichert das alte als `project.json.bak`. Tests: `save_as_never_nests_inside_a_project_package`, `save_as_over_another_project_keeps_a_backup`.
+- **Öffnen eines normalen Ordners (#405):** Wer statt eines `.woa`-Ordners einen Ordner wie `Projekte/Robby` wählt, bekommt das eine Projekt darin geöffnet; liegen mehrere darin, nennt die Statuszeile sie, sonst den Hinweis, einen `.woa`-Ordner zu wählen (bisher: „Das System kann die angegebene Datei nicht finden“). Test: `open_finds_the_project_in_a_plain_folder_or_explains`. Code mit `cargo fmt` formatiert.
+
 ## 0.41.19 — 2026-11-04
 
 - **Hörer = eindeutige Hörer statt Verbindungen:** Ein iPhone (Safari) öffnet zwei Verbindungen zugleich; `/7.html` meldete `2,1,2,50,1,…` und überall standen 2 Hörer, obwohl nur einer zuhörte. Jetzt zählt überall Feld 4 (`eindeutig`/`unique`), Rückfall auf `aktuell` nur, wenn es fehlt. Sammler: `/api/jetzt` (`hoerer`, `spitze`) und `/api/hoerer` (`jetzt.aktuell`, Verlauf, Sendungsspitze und -schnitt) aus den gespeicherten eindeutigen Werten; die Shoutcast-Spitze (zählt Verbindungen) fällt als Rückfall weg; neues Feld `jetzt.verbindungen`. Felder bleiben kompatibel, Hörer-Seite und Startseite brauchen keine Änderung. `woa-streamd` meldet `listeners` eindeutig; App-Chip und Fenster „Hörer-Statistik“ ebenso (Kachel „Verbindungen“ statt „Eindeutig“). Tests: Attrappen mit `2,1,2,50,1`. Code mit `cargo fmt` formatiert.
