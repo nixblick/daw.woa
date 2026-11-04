@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.32 — 2026-11-05
+
+- **Umstieg entfernt nur die alte Installation, nie die neue (#452):** Der Release-Lauf v0.41.30 zeigte: Der Uninstall-Zweig unter HKLM listet auch die neue Installation pro Benutzer. `legacy.rs` hätte beim ersten Start beide per `msiexec /x` entfernt, also auch sich selbst. Jetzt bleibt nur ein ProductCode, den Windows Installer für alle Benutzer führt (`HKLM\SOFTWARE\Classes\Installer\Products\<gepackte GUID>`, neu `per_machine_key`). `test-upgrade.ps1` filtert genauso und prüft, dass genau die alte Installation übrig bleibt. Der Lauf belegt außerdem: Das MSI pro Benutzer installiert, aktualisiert und deinstalliert ohne Fehler. Test `per_machine_key_packs_the_guid`. Workspace-Version 0.41.32.
+
 ## 0.41.31 — 2026-11-05
 
 - **Notfall ist sichtbar, leere Notfall-Playlist wird gemeldet (#400, Teil 2):** Sendet `woa-streamd` die Notfall-Playlist, steht neben der ON-AIR-Lampe der Kopfleiste und im Sendepult in Rot „NOTFALL: Stille vom Sendemix seit x s“ bzw. „NOTFALL: Oberfläche getrennt seit x s“ (neue Felder `emergency_reason`, `emergency_seconds`, `emergency_files` in `streamd-status.json`). Ist die Notfall-Playlist leer, steht das beim Gehen auf Sendung als Hinweis im Sendepult, und die NOTFALL-Zeile sagt, dass Stille gesendet wird. Offen: Knopf, der Titel aus der Bibliothek in die Notfall-Playlist legt. Tests: `emergency_is_named_with_reason`, `failover::emergency_takes_over_and_hands_back`. Workspace-Version 0.41.31.

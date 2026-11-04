@@ -45,6 +45,30 @@ pub fn product_codes(reg_output: &str) -> Vec<String> {
     codes
 }
 
+/// Schlüssel, unter dem Windows Installer ein Produkt **für alle Benutzer** führt:
+/// `HKLM\SOFTWARE\Classes\Installer\Products\<gepackte GUID>`. Der Uninstall-Zweig unter HKLM
+/// listet auch Installationen pro Benutzer (Release-Lauf v0.41.30: zwei Treffer, die alte und die
+/// neue); ohne diesen Filter entfernte die App sich selbst. Gepackt: die ersten drei Gruppen
+/// rückwärts, danach je zwei Zeichen getauscht.
+pub fn per_machine_key(code: &str) -> Option<String> {
+    if !is_guid(code) {
+        return None;
+    }
+    let hex: Vec<char> = code.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+    let mut packed = String::with_capacity(32);
+    for (start, len) in [(0, 8), (8, 4), (12, 4)] {
+        packed.extend(hex[start..start + len].iter().rev());
+    }
+    for pair in hex[16..].chunks(2) {
+        packed.push(pair[1]);
+        packed.push(pair[0]);
+    }
+    Some(format!(
+        r"HKLM\SOFTWARE\Classes\Installer\Products\{}",
+        packed.to_ascii_uppercase()
+    ))
+}
+
 fn is_guid(s: &str) -> bool {
     let Some(inner) = s.strip_prefix('{').and_then(|r| r.strip_suffix('}')) else {
         return false;
@@ -98,7 +122,17 @@ pub fn retire_per_machine(data_dir: &std::path::Path) {
             return;
         }
     };
-    let codes = product_codes(&String::from_utf8_lossy(&out.stdout));
+    let codes: Vec<String> = product_codes(&String::from_utf8_lossy(&out.stdout))
+        .into_iter()
+        .filter(|code| {
+            per_machine_key(code).is_some_and(|key| {
+                Command::new("reg")
+                    .args(["query", key.as_str(), "/reg:64"])
+                    .output()
+                    .is_ok_and(|o| o.status.success())
+            })
+        })
+        .collect();
     if codes.is_empty() {
         return;
     }
@@ -142,6 +176,16 @@ End of search: 3 match(es) found.
             vec!["{0A1B2C3D-1111-2222-3333-444455556666}".to_string()]
         );
         assert!(product_codes("End of search: 0 match(es) found.").is_empty());
+    }
+
+    #[test]
+    fn per_machine_key_packs_the_guid() {
+        // Beispiel aus dem Release-Lauf v0.41.30.
+        assert_eq!(
+            per_machine_key("{2D9A1243-C50F-4ACA-BF27-273DCC970AA7}").as_deref(),
+            Some(r"HKLM\SOFTWARE\Classes\Installer\Products\3421A9D2F05CACA4FB7272D3CC79A07A")
+        );
+        assert_eq!(per_machine_key("WOA-Fremd"), None);
     }
 
     #[test]

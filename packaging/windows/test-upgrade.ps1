@@ -93,7 +93,20 @@ Assert ((Get-Machine).Count -eq 1) 'MSI allein lässt die Installation für alle
 # Was die App beim ersten Start tut (crates/updater/src/legacy.rs): dieselbe reg-Abfrage, dann msiexec /x.
 $reg = & reg query 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' /s /f $name /d /e /reg:64 | Out-String
 $codes = @([regex]::Matches($reg, '\\(\{[0-9A-Fa-f-]{36}\})\s*\r?\n\s+DisplayName\s+REG_SZ\s+' + [regex]::Escape($name) + '\s*\r?\n') | ForEach-Object { $_.Groups[1].Value })
-Assert ($codes.Count -eq 1) "reg query findet genau einen ProductCode ($($codes -join ', '))"
+# Der Uninstall-Zweig listet auch die neue Installation pro Benutzer; legacy.rs behält nur Codes, die
+# Windows Installer für alle Benutzer führt (Classes\Installer\Products\<gepackte GUID>).
+Assert ($codes.Count -ge 1) "reg query findet die alte (und ggf. die neue) Installation ($($codes -join ', '))"
+function Get-Packed([string] $code) {
+  $h = $code -replace '[{}-]', ''
+  $r = { param($t) -join ($t.ToCharArray()[($t.Length - 1)..0]) }
+  $p = (& $r $h.Substring(0, 8)) + (& $r $h.Substring(8, 4)) + (& $r $h.Substring(12, 4))
+  for ($i = 16; $i -lt 32; $i += 2) { $p += "$($h[$i + 1])$($h[$i])" }
+  $p.ToUpper()
+}
+$codes = @($codes | Where-Object { & reg query "HKLM\SOFTWARE\Classes\Installer\Products\$(Get-Packed $_)" /reg:64 2>$null | Out-Null; $LASTEXITCODE -eq 0 })
+Assert ($codes.Count -eq 1) "davon genau einer für alle Benutzer ($($codes -join ', '))"
+Assert ($codes[0] -eq (Get-Machine)[0].ProductCode) 'das ist die alte Installation'
+$global:LASTEXITCODE = 0
 Run-Msi @('/x', $codes[0], '/qn', '/norestart')
 Assert ((Get-Machine).Count -eq 0) 'Installation für alle Benutzer entfernt'
 Assert (-not (Test-Path (Join-Path $machineDir 'woa.exe'))) 'Program Files\WOA leer'
