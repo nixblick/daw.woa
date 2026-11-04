@@ -76,8 +76,8 @@
       "ansicht": "Produzent",
       "titel": "Neue MIDI-Spur spielt Flügel",
       "tun": "Neues Projekt, MIDI-Spur anlegen, Keyboard scharf schalten und ein paar Töne spielen.",
-      "erwartet": "Im Spurkopf steht links „Flügel“, es klingt nach Flügel, nicht nach Synth.",
-      "version": "0.38.0",
+      "erwartet": "Der Instrument-Knopf links im Spurkopf zeigt das Flügel-Symbol (bei breitem Kopf auch den Namen); Maus darüber nennt „Instrument: Flügel“. Es klingt nach Flügel, nicht nach Synth.",
+      "version": "0.41.24",
       "ticket": 335
     },
     {
@@ -379,8 +379,8 @@
       "ansicht": "Radio",
       "titel": "Rechtsklick auf ein Deck",
       "tun": "Rechtsklick auf ein geladenes Deck.",
-      "erwartet": "„Mit Blende“, „Hart“ und rot „Leeren“ stehen im Menü und tun, was sie sagen.",
-      "version": "0.35.19"
+      "erwartet": "„Playlist ablösen, mit Blende (… s)“, „Playlist ablösen, sofort“ und rot „Leeren“ stehen im Menü und tun, was sie sagen (mit Blende: Playlist blendet aus, Deck ein; sofort: harter Schnitt). Einträge mit „…“ öffnen danach einen Dialog; die Regel ohne Punkte gilt nur für die Menüleiste.",
+      "version": "0.41.24"
     },
     {
       "id": "jingle-assistent",
@@ -788,6 +788,24 @@
       "tun": "WOA starten (maximiert) und im Radio auf START bei Deck A/B, den Kopfhörer, PARTY/RADIO oben rechts klicken. Mit echter Maus.",
       "erwartet": "Das Fenster füllt den Bildschirm, und alle Knöpfe, auch rechts, reagieren.",
       "version": "0.41.22"
+    },
+    {
+      "id": "esc-schliesst-fenster",
+      "ansicht": "Allgemein",
+      "titel": "Esc schließt das oberste Fenster (#441)",
+      "tun": "Nacheinander mit Esc schließen: Bibliothek (Party › Ansicht › Bibliothek), Analyse als Fenster, Einstellungen, Über WOA. Dann Bibliothek und Über WOA zugleich öffnen und einmal Esc. Zuletzt ins Suchfeld der Bibliothek klicken und Esc.",
+      "erwartet": "Jedes Fenster schließt mit Esc. Bei zwei offenen schließt ein Esc nur das obere. Im Suchfeld nimmt das erste Esc nur den Cursor weg, das zweite schließt die Bibliothek.",
+      "version": "0.41.24",
+      "ticket": 441
+    },
+    {
+      "id": "esc-frage-beenden",
+      "ansicht": "Allgemein",
+      "titel": "Esc in „Projekt speichern?“ beim Beenden (#441)",
+      "tun": "In jeder Ansicht etwas ändern, dann das Fenster schließen (Kreuz oder Datei › Beenden) und Esc drücken.",
+      "erwartet": "Die Frage verschwindet wie bei „Abbrechen“; WOA bleibt offen, ein offenes Fenster dahinter bleibt offen.",
+      "version": "0.41.24",
+      "ticket": 441
     }
   ]
 }

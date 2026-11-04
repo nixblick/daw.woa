@@ -526,6 +526,12 @@ impl LibraryWindow {
             .min_size([560.0, 320.0])
             .frame(theme::card_frame())
             .show(ctx, |ui| self.body(ui, pfl_available, &mut out));
+        // #441: Esc schließt die Bibliothek wie die übrigen Fenster.
+        if let Some(r) = &resp
+            && crate::esc::fenster(ctx, r.response.layer_id, "bibliothek")
+        {
+            open = false;
+        }
         self.open = open;
         // Loslassen im Fenster selbst legt nichts ab.
         if let (Some((_, pos)), Some(r)) = (&out.drop, &resp)

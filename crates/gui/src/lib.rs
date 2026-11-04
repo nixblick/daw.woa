@@ -17,6 +17,7 @@ pub mod controls;
 pub mod covers;
 pub mod cue_editor;
 pub mod elevenlabs_ui;
+pub(crate) mod esc;
 pub mod event_editor;
 pub mod exit;
 pub mod export_dialog;
