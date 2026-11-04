@@ -4431,6 +4431,14 @@ impl RadioDesk {
                         Some(k) => Some(k.clone()),
                         None => Some("–".to_string()),
                     };
+                    // Hover nach der Fläche des letzten Bildes: das Pad muss vor dem Zeichnen
+                    // wissen, ob oben rechts Symbole liegen (#388).
+                    let pfl_here = v.pfl_source == Some(PflSource::Cart(slot));
+                    let hovered = self
+                        .cart_rects
+                        .get(slot)
+                        .is_some_and(|r| ui.rect_contains_pointer(*r));
+                    let show_pfl = label.is_some() && (pfl_here || hovered);
                     let r = crate::widgets::CartPad {
                         number: slot + 1,
                         title: label.as_deref(),
@@ -4440,6 +4448,7 @@ impl RadioDesk {
                         color: theme::track_color(slot),
                         remaining: v.cart_remaining.get(slot).copied().filter(|r| *r > 0.0),
                         seconds: v.cart_seconds.get(slot).copied().flatten(),
+                        actions: usize::from(playing) + usize::from(show_pfl),
                     }
                     .ui(ui, egui::vec2(w, CART_PAD_HEIGHT));
                     if self.cart_rects.len() <= slot {
@@ -4473,8 +4482,7 @@ impl RadioDesk {
                     }
                     // Vorhören (#273) oben rechts, links neben dem Fade-Symbol: beim Hover über
                     // einem belegten Pad und solange es vorgehört wird.
-                    let pfl_here = v.pfl_source == Some(PflSource::Cart(slot));
-                    if label.is_some() && (pfl_here || ui.rect_contains_pointer(r.rect)) {
+                    if show_pfl {
                         let x = if playing { -54.0 } else { -28.0 };
                         let at = egui::Rect::from_min_size(
                             r.rect.right_top() + egui::vec2(x, 4.0),
@@ -6203,6 +6211,7 @@ mod tests {
                 color: eframe::egui::Color32::RED,
                 remaining: Some(12.0),
                 seconds: Some(15.0),
+                actions: 0,
             }
             .ui(ui, eframe::egui::vec2(200.0, 68.0));
         };
@@ -6225,6 +6234,7 @@ mod tests {
                 color: eframe::egui::Color32::RED,
                 remaining: None,
                 seconds: Some(90.0),
+                actions: 0,
             }
             .ui(ui, eframe::egui::vec2(200.0, 68.0));
         };

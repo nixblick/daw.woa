@@ -737,6 +737,22 @@
       "erwartet": "Mit Controller: „jetzt Regler bewegen oder Pad drücken“, Taste lernt. Ohne: Hinweis „kein Controller gewählt“.",
       "version": "0.41.9",
       "ticket": 371
+    },
+    {
+      "id": "studio-dock-hoehe",
+      "ansicht": "Produzent",
+      "titel": "Studio-Dock bleibt klein gezogen (#396)",
+      "tun": "Die Oberkante des Studio-Docks mit der Maus weit nach unten ziehen und loslassen, 10 s warten.",
+      "erwartet": "Das Dock bleibt so klein, wie gezogen; es wandert nicht wieder nach oben. Das Rack rollt bei Bedarf.",
+      "version": "0.41.20"
+    },
+    {
+      "id": "cart-vorhoeren-symbol",
+      "ansicht": "Radio",
+      "titel": "Vorhören-Symbol in der Cart-Wall (#388)",
+      "tun": "Mit der Maus über ein belegtes Cart-Pad fahren; dann ein Cart starten und darüber fahren.",
+      "erwartet": "Kopfhörer- und Fade-Symbol liegen sauber oben rechts; kein Tastenschild, keine LED und kein Titeltext darunter. Kein Nachbar-Pad verschiebt sich.",
+      "version": "0.41.20"
     }
   ]
 }

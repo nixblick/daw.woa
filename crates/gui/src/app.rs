@@ -7772,10 +7772,13 @@ impl WoaApp {
     /// Unteres Ableton-Style Studio-Dock: Umschaltbar zwischen Studio-Mixer-Konsole und
     /// angedockter Piano-Roll (oder eingeklappt für maximale Zeitleisten-Höhe).
     fn studio_dock_panel(&mut self, ui: &mut egui::Ui) {
+        // Vorgabehöhe: Rack samt „+ Effekt“ und Ausgang ohne Rollen. Bis #396 wuchs das Dock
+        // beim ersten Bild von selbst auf diese Höhe (und nach jedem Kleinerziehen wieder).
+        const DOCK_DEFAULT_H: f32 = 400.0;
         let is_open = self.studio_dock != StudioDockTab::Closed;
         let panel = egui::Panel::bottom("studio_dock")
             .resizable(is_open)
-            .default_size(if is_open { 330.0 } else { 32.0 })
+            .default_size(if is_open { DOCK_DEFAULT_H } else { 32.0 })
             .size_range(if is_open { 175.0..=440.0 } else { 32.0..=32.0 })
             .frame(
                 egui::Frame::new()
@@ -7879,6 +7882,28 @@ impl WoaApp {
                 return;
             }
             ui.add_space(4.0);
+            // #396: Der Inhalt bekommt genau die Fläche, die das Dock hat, und wird darüber
+            // hinaus beschnitten. Sonst meldet er seine Mindesthöhe an das Panel zurück, das
+            // daraufhin wächst: Das Dock wanderte nach dem Kleinerziehen wieder nach oben.
+            let body = ui.available_rect_before_wrap();
+            let mut inner = ui.new_child(
+                egui::UiBuilder::new()
+                    .id_salt("studio_dock_body")
+                    .max_rect(body)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            // Nur unten beschneiden; seitlich gilt weiter der Rahmen des Panels.
+            let mut clip = ui.clip_rect();
+            clip.max.y = clip.max.y.min(body.max.y);
+            inner.set_clip_rect(clip);
+            self.studio_dock_body(&mut inner);
+            ui.advance_cursor_after_rect(body);
+        });
+    }
+
+    /// Inhalt des offenen Studio-Docks (Reiter); Fläche fest, siehe `studio_dock_panel`.
+    fn studio_dock_body(&mut self, ui: &mut egui::Ui) {
+        {
             match self.studio_dock {
                 StudioDockTab::Closed => {}
                 StudioDockTab::Mixer => self.mixer_console(ui),
@@ -7899,7 +7924,7 @@ impl WoaApp {
                     }
                 }
             }
-        });
+        }
     }
 
     /// Vertikale Mischpult-Konsole im unteren Studio-Dock: schlanke Kanalzüge (nur Name,
@@ -7944,7 +7969,7 @@ impl WoaApp {
                     .unwrap_or(120.0);
                 let has_track = self.rack_track().is_some();
                 let body_h = if has_track {
-                    (ui.available_height() - footer_h - 4.0).max(48.0)
+                    (ui.available_height() - footer_h - 4.0 - ui.spacing().item_spacing.y).max(48.0)
                 } else {
                     ui.available_height()
                 };
@@ -10924,6 +10949,57 @@ mod nacharbeit_tests {
         let dev = x(&rig, "Entwickler").expect("Entwickler fehlt nach Freischaltung");
         let help = x(&rig, "Hilfe").expect("Hilfe");
         assert!(dev < help, "Entwickler steht nicht vor Hilfe");
+    }
+
+    /// #396: Das Studio-Dock bleibt so klein, wie man es zieht; ist der Inhalt höher, wird
+    /// er beschnitten statt das Dock wieder nach oben zu schieben.
+    #[test]
+    fn studio_dock_keeps_the_dragged_size() {
+        let mut rig = Rig::new(Mode::Produzent);
+        for _ in 0..3 {
+            rig.app.state_mut().add_midi_track().unwrap();
+        }
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        // Oberkante des Docks: Reiter „Studio-Mixer“ liegt 6 px Rand plus Rahmen darunter.
+        let edge = |rig: &Rig| {
+            rig.nodes
+                .iter()
+                .filter(|(l, _, r)| l == "Studio-Mixer" && r.width() > 0.0)
+                .map(|(_, _, r)| egui::pos2(r.center().x + 300.0, r.top() - 7.0))
+                .max_by(|a, b| a.y.total_cmp(&b.y))
+                .expect("Kante des Studio-Docks")
+        };
+        let from = edge(&rig);
+        let to = from + egui::vec2(0.0, 400.0);
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        rig.step(vec![egui::Event::PointerMoved(from)]);
+        rig.step(vec![button(from, true)]);
+        for i in 1..=8 {
+            let p = from + egui::vec2(0.0, 50.0 * i as f32);
+            rig.step(vec![egui::Event::PointerMoved(p)]);
+        }
+        rig.step(vec![button(to, false)]);
+        let dropped = edge(&rig).y;
+        for _ in 0..10 {
+            rig.step(Vec::new());
+        }
+        let later = edge(&rig).y;
+        // Kleinste Höhe 175: Die Kante liegt deutlich tiefer als vorher und bleibt dort.
+        assert!(
+            dropped > from.y + 100.0,
+            "Ziehen wirkt nicht: {} → {dropped}",
+            from.y
+        );
+        assert!(
+            (later - dropped).abs() < 2.0,
+            "Dock wandert wieder hoch: {dropped} → {later}"
+        );
     }
 }
 
