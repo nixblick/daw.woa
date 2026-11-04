@@ -379,7 +379,10 @@ fn inhalt(ui: &mut egui::Ui, a: &Auswertung) {
         kachel(
             ui,
             "Verbindungen",
-            &opt(a.jetzt.as_ref().map(|j| j.verbindungen.unwrap_or(j.aktuell))),
+            &opt(a
+                .jetzt
+                .as_ref()
+                .map(|j| j.verbindungen.unwrap_or(j.aktuell))),
         );
     });
     ui.add_space(theme::SPACE_3);
@@ -580,8 +583,14 @@ mod tests {
         assert_eq!(j.aktuell, 3);
         // 04.11.2026: Hörer = eindeutig, nicht Verbindungen.
         assert_eq!(j.hoerer(), 4);
-        assert_eq!(chip_zahlen(&parse(r#"{"jetzt":{"t":5,"aktuell":2,"eindeutig":1}}"#).unwrap()).0, Some(1));
-        assert_eq!(chip_zahlen(&parse(r#"{"jetzt":{"t":5,"aktuell":2}}"#).unwrap()).0, Some(2));
+        assert_eq!(
+            chip_zahlen(&parse(r#"{"jetzt":{"t":5,"aktuell":2,"eindeutig":1}}"#).unwrap()).0,
+            Some(1)
+        );
+        assert_eq!(
+            chip_zahlen(&parse(r#"{"jetzt":{"t":5,"aktuell":2}}"#).unwrap()).0,
+            Some(2)
+        );
         assert_eq!(a.verlauf, vec![(1, 1), (2, 5), (3, 3)]);
         assert_eq!(a.sendungen[0].spitze, 5);
     }

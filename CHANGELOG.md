@@ -2,7 +2,7 @@
 
 ## 0.41.19 — 2026-11-04
 
-- **Hörer = eindeutige Hörer statt Verbindungen:** Ein iPhone (Safari) öffnet zwei Verbindungen zugleich; `/7.html` meldete `2,1,2,50,1,…` und überall standen 2 Hörer, obwohl nur einer zuhörte. Jetzt zählt überall Feld 4 (`eindeutig`/`unique`), Rückfall auf `aktuell` nur, wenn es fehlt. Sammler: `/api/jetzt` (`hoerer`, `spitze`) und `/api/hoerer` (`jetzt.aktuell`, Verlauf, Sendungsspitze und -schnitt) aus den gespeicherten eindeutigen Werten; die Shoutcast-Spitze (zählt Verbindungen) fällt als Rückfall weg; neues Feld `jetzt.verbindungen`. Felder bleiben kompatibel, Hörer-Seite und Startseite brauchen keine Änderung. `woa-streamd` meldet `listeners` eindeutig; App-Chip und Fenster „Hörer-Statistik“ ebenso (Kachel „Verbindungen“ statt „Eindeutig“). Tests: Attrappen mit `2,1,2,50,1`.
+- **Hörer = eindeutige Hörer statt Verbindungen:** Ein iPhone (Safari) öffnet zwei Verbindungen zugleich; `/7.html` meldete `2,1,2,50,1,…` und überall standen 2 Hörer, obwohl nur einer zuhörte. Jetzt zählt überall Feld 4 (`eindeutig`/`unique`), Rückfall auf `aktuell` nur, wenn es fehlt. Sammler: `/api/jetzt` (`hoerer`, `spitze`) und `/api/hoerer` (`jetzt.aktuell`, Verlauf, Sendungsspitze und -schnitt) aus den gespeicherten eindeutigen Werten; die Shoutcast-Spitze (zählt Verbindungen) fällt als Rückfall weg; neues Feld `jetzt.verbindungen`. Felder bleiben kompatibel, Hörer-Seite und Startseite brauchen keine Änderung. `woa-streamd` meldet `listeners` eindeutig; App-Chip und Fenster „Hörer-Statistik“ ebenso (Kachel „Verbindungen“ statt „Eindeutig“). Tests: Attrappen mit `2,1,2,50,1`. Code mit `cargo fmt` formatiert.
 
 ## 0.41.18 — 2026-11-03
 

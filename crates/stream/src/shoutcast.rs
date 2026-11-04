@@ -481,7 +481,12 @@ mod tests {
         assert_eq!((s.current, s.peak, s.unique), (12, Some(18), Some(9)));
         assert_eq!(s.listeners(), 9);
         // 04.11.2026: ein iPhone, zwei Verbindungen = ein Hörer.
-        assert_eq!(parse_seven("<body>2,1,2,50,1,128,X</body>").unwrap().listeners(), 1);
+        assert_eq!(
+            parse_seven("<body>2,1,2,50,1,128,X</body>")
+                .unwrap()
+                .listeners(),
+            1
+        );
         assert_eq!(parse_seven("4").unwrap().listeners(), 4);
         assert_eq!(parse_seven("<html><body>kaputt</body></html>"), None);
         assert_eq!(
