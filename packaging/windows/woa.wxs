@@ -46,7 +46,7 @@
          ihre Ordner bei der Deinstallation weg. Nutzerdaten (%APPDATA%\woa, Music\WOA) gehören
          keiner Komponente und bleiben. -->
     <ComponentGroup Id="Programme" Directory="INSTALLFOLDER">
-      <Component Id="WoaExe">
+      <Component Id="WoaExe" Guid="804F5582-B4FB-4D8D-B025-7839CD211E05">
         <File Id="woa.exe" Source="$(var.Bin)\woa.exe" />
         <File Source="$(var.Bin)\woa-headless.exe" />
         <File Source="$(var.Bin)\woa-streamd.exe" />
@@ -65,7 +65,7 @@
     <!-- SoundFont für die MIDI-Klänge (#265): soundfont.rs sucht sounds\ neben woa.exe.
          Vorher: packaging/fetch-soundfont.sh dist/sounds (feste SHA-256). -->
     <ComponentGroup Id="Klaenge" Directory="SOUNDSFOLDER">
-      <Component Id="Sounds">
+      <Component Id="Sounds" Guid="55014719-06D9-4207-BCB7-1F21062631E9">
         <File Source="dist\sounds\GeneralUser-GS.sf2" />
         <File Source="dist\sounds\GeneralUser-GS-LICENSE.txt" />
         <RemoveFolder Id="RemoveSoundsFolder" On="uninstall" />

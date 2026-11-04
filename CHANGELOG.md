@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.27 — 2026-11-04
+
+- **Windows-MSI baut wieder (#452):** Der Release-Lauf v0.41.26 brach im WiX-Schritt ab (`WIX0230`): Komponenten mit Dateien und HKCU-KeyPath bekommen keine automatische GUID. `WoaExe` und `Sounds` haben jetzt feste GUIDs. Test `file_components_have_fixed_guid` (vorher rot). Workspace-Version 0.41.27.
+
 ## 0.41.26 — 2026-11-04
 
 - **Windows: Installation und Update pro Benutzer, ohne Admin-Abfrage (#452):** Das MSI (`packaging/windows/woa.wxs`) installierte für alle Benutzer (`C:\Program Files\WOA`, HKLM); jede Installation und jedes Update verlangte die Abfrage der Benutzerkontensteuerung, auch still. Jetzt `Scope="perUser"`, Ziel `%LOCALAPPDATA%\Programs\WOA`, Registry nur HKCU (KeyPath je Komponente ein HKCU-Wert, `RemoveFolder` für die Ordner, Startmenü-Verknüpfung nicht mehr angekündigt), UpgradeCode unverändert. `woa-streamd` und die Audio-Ausgabe (cpal/WASAPI, kein ASIO) brauchen keine Admin-Rechte. Umstieg: MajorUpgrade sieht die alte Installation nicht (anderer Kontext); die neue App entfernt sie beim ersten Start aus dem Benutzerordner einmal per `msiexec /x {ProductCode} /passive` (`crates/updater/src/legacy.rs`, einmalige Admin-Abfrage, Merker `altinstallation-entfernt.txt`). Nutzerdaten bleiben. `test-upgrade.ps1` prüft zusätzlich den Umstieg (alte Form per `-d Legacy=1`). Tests (vorher rot): `msi_installs_per_user`, `msi_writes_no_machine_wide_state`; dazu `finds_only_exact_msi_entries`, `per_user_only_from_local_app_data`. Prüfpunkt `msi-pro-benutzer`. Workspace-Version 0.41.26.

@@ -76,3 +76,31 @@ fn msi_writes_no_machine_wide_state() {
 fn upgrade_code_unchanged() {
     assert!(WXS.contains(r#"UpgradeCode="16647BDD-1E47-4AA9-AAED-B1D5D1D4A822""#));
 }
+
+/// WIX0230 (Release-Lauf v0.41.26): Eine Komponente mit Dateien und HKCU-KeyPath bekommt keine
+/// automatische GUID. Jede Komponente mit `<File` braucht eine feste `Guid="..."`.
+/// Rotprobe (04.11.2026, ohne Guid): panicked: Komponente WoaExe ohne feste Guid
+#[test]
+fn file_components_have_fixed_guid() {
+    let p = product();
+    for teil in p.split("<Component ").skip(1) {
+        let kopf = &teil[..teil.find('>').unwrap()];
+        let rumpf = &teil[..teil.find("</Component>").unwrap()];
+        if !rumpf.contains("<File") {
+            continue;
+        }
+        let id = kopf
+            .split("Id=\"")
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .unwrap_or("?");
+        let guid = kopf
+            .split("Guid=\"")
+            .nth(1)
+            .and_then(|s| s.split('"').next());
+        assert!(
+            matches!(guid, Some(g) if g.len() == 36 && g != "*"),
+            "Komponente {id} ohne feste Guid"
+        );
+    }
+}
