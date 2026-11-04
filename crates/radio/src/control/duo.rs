@@ -461,8 +461,10 @@ impl Controller {
             Some(i) => {
                 self.party_load(o, i, None);
             }
-            None if keep.is_none() && uid_o.is_some() => {
-                // Der Titel ist weg und nichts folgt: die Seite leeren.
+            None if uid_o.is_some() => {
+                // Nichts folgt (Ende der Playlist ohne Wiederholen, #434) oder der Titel ist
+                // weg: die Seite leeren. Sonst bliebe der vorletzte, schon gespielte Titel
+                // liegen, der Auto-Übergang startete ihn, und die letzten zwei liefen im Kreis.
                 self.send(Cmd::PartyEject(o));
                 if let Some(d) = self.duo.as_mut() {
                     d.uid[o] = None;
