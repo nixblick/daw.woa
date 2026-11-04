@@ -2,6 +2,7 @@
 
 ## 0.41.20 — 2026-11-04
 
+- **Version:** Cargo-Version auf 0.41.20 gesetzt (Testversion mit den Fixes unten).
 - **Pult-Modus schaltet live um (#399):** „Sendung kommt vom Pult“ während der Wiedergabe umgelegt, wirkt jetzt sofort im Mixer: aus = erst interne Mischung auf Stream und Mitschnitt, dann Eingang lösen; an = erst Eingang öffnen, dann umschalten (geht er nicht auf, bleibt die interne Mischung mit Meldung). Log: `pult mode on/off (live)`. Geänderte Ausgänge werden gemerkt, im Fenster „Audio-Geräte“ steht „gelten ab Ende der Wiedergabe“, und sie werden danach ohne Neustart angewendet. Vorher ging die Änderung bis zum Neustart verloren. Die Anzeige „PULT“ folgt dem wirklichen Zustand des Mixers.
 - **Stummer Sendeweg wird sichtbar (#400, Teil):** Auf Sendung mit hörbarem Ausgang (> −40 dBFS), aber stillem Stream (< −60 dBFS) steht nach 5 s im Sendepult „Stream bekommt keinen Ton (Quelle: Pult-Eingang/Sendemix)“, mit Logzeile. `woa-streamd` schreibt beim Wechsel auf und von der Notfall-Playlist `emergency on reason=silence|ui disconnected` und `emergency off`. Offen: Hinweis bei leerer Notfall-Playlist beim Gehen auf Sendung.
 - **Pult-Eingang: Aussetzer gezählt, Log gedrosselt (#401, Teil):** Unter-/Überläufe des Pult-Eingangs zählt WOA und zeigt sie neben dem PULT-Pegel; ins Log kommt höchstens eine Sammelzeile je Minute mit Anzahl statt einer je Ereignis. Puffergröße des Eingangs unverändert: ob der USB-Codec hörbar knackt, lässt sich nur an der echten Hardware messen.
