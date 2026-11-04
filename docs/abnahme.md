@@ -4,6 +4,16 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Abnahme-Nacharbeit 04.11. (0.41.24, offen)
+
+Unter Windows 11, einmal mit echter Maus.
+
+1. **Start maximiert (#444):** WOA beenden und neu starten. Das Fenster füllt den Bildschirm, Titelleiste zeigt „Wiederherstellen“; ein Klick stellt wieder her.
+2. **Klicks rechts im maximierten Fenster (#442):** Radio, Deck A/B START und Kopfhörer, oben rechts PARTY/RADIO, in „Fragen und To-dos“ das Zurückstellen-Symbol: alles reagiert.
+3. **Esc (#441):** Über WOA, Bibliothek, Analyse als Fenster, Einstellungen öffnen, je Esc: das oberste Fenster schließt, nur eins pro Druck. Beim Beenden in „Projekt speichern?“ Esc: Frage weg, WOA läuft weiter. In einem Textfeld schließt Esc nichts.
+4. **1280 px (#443):** Fenster etwa 1280 breit. Party DJ: Deck B mit Jogwheel ganz sichtbar. Produzent: Transport mit LED-Kette, nichts übereinander, auch mit Loop/Punch an. Rack/Klangauswahl endet vor dem Rand, Vorhören-Knopf ganz sichtbar. Audio-Geräte bleibt im Fenster.
+5. **Nachprüfen:** Mehrfachauswahl von Clips mit Strg/Umschalt+Klick; nach Strg+A und Enter im Fade-Feld bleibt die Spurkopf-Spalte.
+
 ## ON AIR leuchtet, Deck-BPM ohne Bibliothek (0.40.2, offen)
 
 1. **ON AIR oben rechts (#353):** Auf Sendung gehen (Stream verbinden oder im Radio das Mikro öffnen). Oben rechts
