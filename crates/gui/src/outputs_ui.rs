@@ -35,6 +35,12 @@ pub struct MicInput {
     pub pair: u8,
 }
 
+/// Höhe der Rollfläche im Fenster „Audio-Geräte“: höchstens 560 px, sonst Fensterhöhe minus
+/// Titelleiste, Ränder und Menü (#443), nie unter 200 px.
+pub(crate) fn window_scroll_height(screen_h: f32) -> f32 {
+    (screen_h - 120.0).clamp(200.0, 560.0)
+}
+
 fn is_zero(v: &u8) -> bool {
     *v == 0
 }
@@ -231,13 +237,21 @@ impl OutputsUi {
         let mut applied = None;
         let mut open = true;
         let mut refresh = false;
+        // #443: Das Fenster bleibt im Bild. Oben beginnen, auf die Fensterhöhe begrenzen, Rest rollt.
+        let screen = ctx.content_rect();
+        let scroll_h = window_scroll_height(screen.height());
         egui::Window::new(WINDOW)
             .open(&mut open)
             .collapsible(false)
-            .default_width(640.0)
+            .default_width(640.0_f32.min((screen.width() - 40.0).max(320.0)))
+            .default_pos(egui::pos2(
+                (screen.center().x - 320.0).max(screen.left() + 8.0),
+                screen.top() + 40.0,
+            ))
+            .constrain(true)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical()
-                    .max_height(560.0)
+                    .max_height(scroll_h)
                     .show(ui, |ui| {
                         hint(
                             ui,
@@ -498,6 +512,14 @@ mod tests {
 
     /// Nur dieses Fenster wählt Geräte (André 03.11.: „doppelt gemoppelt“). Ausnahme: die
     /// Aufnahmequelle je Spur (`sources.rs`), die zum Projekt gehört.
+    /// #443: Auch im 1280×720-Fenster passt die Rollfläche samt Titelleiste und Menü ins Bild.
+    #[test]
+    fn audio_device_window_fits_small_screens() {
+        assert!(window_scroll_height(720.0) + 120.0 <= 720.0);
+        assert_eq!(window_scroll_height(1440.0), 560.0);
+        assert!(window_scroll_height(100.0) >= 200.0);
+    }
+
     #[test]
     fn devices_are_listed_only_here() {
         for (name, src) in [

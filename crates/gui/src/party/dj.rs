@@ -18,6 +18,10 @@ use crate::theme;
 pub(super) const WAVES_H: f32 = 150.0;
 /// Breite des Mixers zwischen den Decks.
 const MIXER_W: f32 = 390.0;
+/// Unter dieser Deck-Innenbreite rutschen Restzeit, BPM und Tonart in eine zweite Kopfzeile (#443).
+/// Lücke zwischen den Auto-Loop-Zahlen und der LOOP-Taste.
+const LOOP_GAP: f32 = 6.0;
+const HEAD_WIDE_MIN: f32 = 560.0;
 /// Sichtbares Fenster der Wellen in Sekunden (Mausrad zoomt).
 const ZOOM_DEFAULT: f64 = 12.0;
 
@@ -91,6 +95,18 @@ fn hot_cue_click(primary: bool, secondary: bool, shift: bool, set: bool) -> Opti
         return set.then_some(true);
     }
     primary.then_some(shift)
+}
+
+/// Breite einer Auto-Loop-Zahl: n Tasten, Lücke, LOOP-Taste (`lw`) und n + 1 Abstände zu 2 px
+/// füllen `w` genau (#443; vorher ragte die Zeile 2 px, bei schmalem Deck 50 px hinaus).
+fn loop_key_width(w: f32, lw: f32, n: f32) -> f32 {
+    ((w - lw - LOOP_GAP - (n + 1.0) * 2.0) / n).max(12.0)
+}
+
+/// Grundbreite der Transporttasten: drei Tasten (Faktoren 0,85 + 1,3 + 0,85) plus Keylock (36 px)
+/// und drei Abstände zu 8 px füllen `w` genau (#443).
+fn transport_key_width(w: f32) -> f32 {
+    (w - 3.0 * 8.0 - 36.0) / 3.0
 }
 
 fn hot_color(slot: usize) -> Color32 {
@@ -709,7 +725,24 @@ impl PartyView {
                     top.top() + 1.0,
                     Stroke::new(3.0, col),
                 );
-                // Kopf.
+                // Kopf. Restzeit, BPM und Tonart rechts, bei schmalem Deck in einer zweiten Zeile.
+                let narrow_head = ui.available_width() < HEAD_WIDE_MIN;
+                let head_readouts = |ui: &mut egui::Ui| {
+                    let rest = if d.end > 0.0 {
+                        d.end - d.position
+                    } else {
+                        entry.and_then(|e| e.seconds).unwrap_or(0.0)
+                    };
+                    let urgent = d.playing && rest < 30.0;
+                    deck_readouts(
+                        ui,
+                        rest,
+                        urgent,
+                        d.bpm_now,
+                        d.camelot.as_deref(),
+                        d.key_match,
+                    );
+                };
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
                     use crate::widgets::{ChipTone, StateChip};
@@ -758,23 +791,19 @@ impl PartyView {
                         }
                         Analysis::Empty | Analysis::Done => {}
                     }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let rest = if d.end > 0.0 {
-                            d.end - d.position
-                        } else {
-                            entry.and_then(|e| e.seconds).unwrap_or(0.0)
-                        };
-                        let urgent = d.playing && rest < 30.0;
-                        deck_readouts(
-                            ui,
-                            rest,
-                            urgent,
-                            d.bpm_now,
-                            d.camelot.as_deref(),
-                            d.key_match,
-                        );
-                    });
+                    if !narrow_head {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            head_readouts(ui);
+                        });
+                    }
                 });
+                if narrow_head {
+                    // #443: Bei schmalem Deck (Fenster ~1280 px) eine zweite Zeile statt Überlappung.
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 10.0;
+                        head_readouts(ui);
+                    });
+                }
                 {
                     ui.add(
                         egui::Label::new(
@@ -1003,7 +1032,8 @@ impl PartyView {
         ui.horizontal(|ui| {
             let n = woa_radio::control::dj::LOOP_BEATS.len() as f32;
             let lw = 90.0;
-            let sw = ((w - lw - 8.0 - (n - 1.0) * 2.0) / n).max(24.0);
+            // #443: n Tasten + 6 px Lücke + LOOP-Taste, n + 1 Abstände zu 2 px: füllt w genau.
+            let sw = loop_key_width(w, lw, n);
             ui.spacing_mut().item_spacing.x = 2.0;
             for b in woa_radio::control::dj::LOOP_BEATS {
                 let on = d.loop_beats == Some(b);
@@ -1023,7 +1053,7 @@ impl PartyView {
                     });
                 }
             }
-            ui.add_space(6.0);
+            ui.add_space(LOOP_GAP);
             let on = d.looped.is_some();
             let r = crate::widgets::Key::new(
                 &format!("{} LOOP", theme::ic::REPEAT),
@@ -1054,7 +1084,8 @@ impl PartyView {
         });
         // Transport.
         ui.horizontal(|ui| {
-            let kw = (w - 3.0 * 8.0 - 40.0) / 3.0;
+            // #443: drei Tasten + Keylock (36 px) + 3 Abstände zu 8 px füllen w genau.
+            let kw = transport_key_width(w);
             // Cue: halten spielt ab Cue, loslassen springt zurück.
             let at_cue = !d.playing && d.cue_point.is_some_and(|c| (c - d.position).abs() < 0.05);
             let r = crate::widgets::Key::new("CUE", egui::vec2(kw * 0.85, key_h))
@@ -1783,6 +1814,24 @@ mod tests {
                 a.height() <= 500.5 && mix.height() <= 500.5,
                 "{width}: nicht höher"
             );
+        }
+    }
+
+    /// #443: Die Tastenzeilen im Deck sind nie breiter als die Mittelspalte; sonst schöbe sie das
+    /// Jogwheel von Deck B aus dem Fenster.
+    #[test]
+    fn deck_key_rows_never_exceed_their_width() {
+        let n = woa_radio::control::dj::LOOP_BEATS.len() as f32;
+        for w in [200.0_f32, 240.0, 300.0, 400.0, 600.0] {
+            let sw = loop_key_width(w, 90.0, n);
+            let loop_row = n * sw + LOOP_GAP + 90.0 + (n + 1.0) * 2.0;
+            assert!(
+                loop_row <= w + 0.01 || sw <= 12.0,
+                "{w}: Loop-Zeile {loop_row}"
+            );
+            let kw = transport_key_width(w);
+            let row = kw * (0.85 + 1.3 + 0.85) + 36.0 + 3.0 * 8.0;
+            assert!(row <= w + 0.01, "{w}: Transportzeile {row}");
         }
     }
 

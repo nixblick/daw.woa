@@ -518,6 +518,22 @@ impl Surface for AppSurface<'_> {
     }
 }
 
+/// Geschätzte Breiten der Transport-Gruppen (#443), großzügig gerundet.
+const TRANSPORT_LOOP_W: f32 = 340.0;
+const TRANSPORT_BARS_W: f32 = 120.0;
+const TRANSPORT_LCD_W: f32 = 360.0;
+const TRANSPORT_LEVEL_W: f32 = 300.0;
+const TRANSPORT_VOLUME_W: f32 = 120.0;
+const TRANSPORT_LATENCY_W: f32 = 140.0;
+const TRANSPORT_RIGHT_W: f32 = 480.0;
+
+/// Beginnt in einer umbrechenden Zeile eine neue, wenn `need` px nicht mehr passen.
+fn transport_fit(ui: &mut egui::Ui, need: f32) {
+    if ui.available_width() < need {
+        ui.end_row();
+    }
+}
+
 impl WoaApp {
     /// Builds the app; `recovery_dir` receives autosaves of unsaved projects.
     pub fn new(config: GuiConfig, recovery_dir: PathBuf) -> Self {
@@ -1733,7 +1749,9 @@ impl WoaApp {
     /// Transportleiste: Wiedergabe, große Zeitanzeige, Aufnahme mit Pegel, Latenz;
     /// rechts Zoom und Export-Lautheit.
     fn transport_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        // #443: Umbrechend statt überlappend. Vor jeder Gruppe prüft `fit`, ob sie noch in die
+        // Zeile passt (Breiten als Schätzung, lieber großzügig), sonst beginnt eine neue Zeile.
+        ui.horizontal_wrapped(|ui| {
             let playing = self.player.as_ref().is_some_and(Player::is_playing);
 
             // 1. Hardware-Transport-Gruppe
@@ -1803,6 +1821,12 @@ impl WoaApp {
                 });
 
             // 1b. Loop · Punch · Stopp am Ende (eine Gruppe, eingeschaltet = accent-soft)
+            transport_fit(
+                ui,
+                TRANSPORT_LOOP_W
+                    + if self.loop_enabled { TRANSPORT_BARS_W } else { 0.0 }
+                    + if self.punch_enabled { TRANSPORT_BARS_W } else { 0.0 },
+            );
             egui::Frame::new()
                 .fill(theme::well())
                 .stroke(egui::Stroke::new(1.0, theme::border()))
@@ -1892,6 +1916,7 @@ impl WoaApp {
                 .player
                 .as_ref()
                 .map_or(0.0, |p| p.position_beats(tempo));
+            transport_fit(ui, TRANSPORT_LCD_W);
             ui.add_space(4.0);
             theme::lcd_show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -1972,10 +1997,10 @@ impl WoaApp {
             // 3b. Pegel-LCD der Summe (Vorlage ScreenStudio, Gruppe „Pegel“): Beschriftung,
             // horizontale LED-Kette, Spitzenwert in dB. Das analoge VU steht nur in der
             // Pegelansicht des Analyse-Fensters (André 02.11.2026).
-            // Unter ~1000 px Restbreite (1366er Fenster) fehlt der Platz: die Pegel-LCD weicht,
-            // damit Latenz, Raster, Zoom und Export nicht überlappen.
-            let roomy = ui.available_width() > 1000.0;
-            if roomy {
+            // Fehlt in der Zeile der Platz, rutscht die Pegel-LCD in die nächste (#443),
+            // sie verschwindet nie.
+            {
+                transport_fit(ui, TRANSPORT_LEVEL_W);
                 let sum = self.sum_level();
                 theme::lcd_show(ui, |ui| {
                     ui.horizontal(|ui| {
@@ -1997,9 +2022,11 @@ impl WoaApp {
             }
 
             // 3c. Abhörlautstärke (#358): kleiner Regler, nur der Lautsprecher.
+            transport_fit(ui, TRANSPORT_VOLUME_W);
             self.monitor_volume_ui(ui);
 
             // 4. Latenz: Symbol-Schalter und Zusatz-Feld in ms.
+            transport_fit(ui, TRANSPORT_LATENCY_W);
             egui::Frame::new()
                 .fill(theme::well())
                 .stroke(egui::Stroke::new(1.0, theme::border()))
@@ -2039,6 +2066,8 @@ impl WoaApp {
                 });
 
             // 5. Rechtsbündig: Export · Zoom · Raster · Takte/Zeit (Reihenfolge von rechts).
+            // Reicht der Rest der Zeile nicht, steht die Gruppe rechtsbündig in einer eigenen Zeile.
+            transport_fit(ui, TRANSPORT_RIGHT_W);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let font = theme::panel_label_font();
                 let w = crate::widgets::key_width(ui, "EXPORT", &font, 72.0);
@@ -8815,11 +8844,21 @@ impl WoaApp {
                 let w = ((ui.available_width() - 3.0 * gap) / 4.0).floor();
                 for &r in row {
                     let (label, ic) = category_label(r);
+                    // #443: Passt „Symbol Name“ nicht in die Taste (Rack 340 px), steht nur der
+                    // Name, statt „Strei…“ abzuschneiden.
+                    let full = format!("{ic} {label}");
+                    let font = egui::TextStyle::Button.resolve(ui.style());
+                    let need = ui
+                        .painter()
+                        .layout_no_wrap(full.clone(), font, egui::Color32::WHITE)
+                        .size()
+                        .x
+                        + 2.0 * ui.spacing().button_padding.x;
+                    let text = if need <= w { full } else { label.to_string() };
                     if ui
                         .add_sized(
                             [w, 26.0],
-                            egui::Button::selectable(r == shown, format!("{ic} {label}"))
-                                .truncate(),
+                            egui::Button::selectable(r == shown, text).truncate(),
                         )
                         .on_hover_text(label)
                         .clicked()
@@ -8839,7 +8878,8 @@ impl WoaApp {
         let mut preview = None;
         for pair in presets.chunks(2) {
             ui.horizontal(|ui| {
-                let w = ((ui.available_width() - gap) / 2.0).floor();
+                // Zwei Pixel Luft: der Vorhören-Knopf darf nie am Rand kleben (#443).
+                let w = ((ui.available_width() - gap - 2.0) / 2.0).floor();
                 for p in pair {
                     let same = current
                         .is_some_and(|c| c.program == p.sound.program && c.drums == p.sound.drums);
