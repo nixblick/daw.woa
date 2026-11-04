@@ -223,3 +223,52 @@ fn entering_takes_over_the_running_playlist_and_leaving_hands_back() {
     assert!(v.iter().all(|x| x.abs() > 0.05), "keine Lücke zurück");
     assert!(!playing(&c, 0));
 }
+
+/// #434: Am Ende der Playlist (Wiederholen aus) läuft der letzte Titel aus, und dann ist
+/// Schluss; die letzten zwei Titel laufen nicht im Kreis.
+#[test]
+fn end_of_playlist_without_repeat_stops_instead_of_looping_the_last_two() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = setup(tmp.path());
+    c.party_enter();
+    c.party_toggle();
+    // Drei Titel zu 3 s mit 1 s Blende: nach rund 7 s ist alles gespielt.
+    run(&mut c, &mut m, 7.5);
+    let mut seen = Vec::new();
+    for _ in 0..200 {
+        run(&mut c, &mut m, 0.05);
+        for s in 0..2 {
+            if playing(&c, s) {
+                seen.push(index(&c, s));
+            }
+        }
+    }
+    assert!(
+        seen.is_empty(),
+        "nach dem letzten Titel spielt nichts mehr: {seen:?}"
+    );
+    assert!(!playing(&c, 0) && !playing(&c, 1));
+}
+
+/// Mit „Playlist wiederholen“ geht es nach dem letzten Titel mit dem ersten weiter.
+#[test]
+fn end_of_playlist_with_repeat_all_starts_over_at_the_first() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = setup(tmp.path());
+    c.cycle_repeat();
+    c.party_enter();
+    c.party_toggle();
+    let mut order = Vec::new();
+    for _ in 0..240 {
+        run(&mut c, &mut m, 0.05);
+        let live = c.party_view().unwrap().live;
+        if playing(&c, live) && order.last() != Some(&index(&c, live)) {
+            order.push(index(&c, live));
+        }
+    }
+    assert_eq!(
+        &order[..4],
+        &[Some(0), Some(1), Some(2), Some(0)],
+        "nach dem letzten der erste: {order:?}"
+    );
+}

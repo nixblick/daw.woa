@@ -92,6 +92,14 @@ use crate::timeline::{Clipboard, Snap, TimeUnit, ruler_ticks};
 use woa_io::controller::{Layout, Target};
 
 /// The desktop window.
+/// Was nach der Frage „Projekt speichern?“ vor Neu/Öffnen kommt (#408).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Replace {
+    New,
+    Open,
+    Dawproject,
+}
+
 pub struct WoaApp {
     /// Frames since `frames_since` (only with `WOA_REPAINT_DEBUG`).
     frames: (u32, Instant),
@@ -108,6 +116,10 @@ pub struct WoaApp {
     update: crate::update::UpdateState,
     /// Frage „Projekt speichern?“ vor Beenden, Fenster schließen und Update (#365, #362).
     exit: crate::exit::ExitGuard,
+    /// Frage „Projekt speichern?“ vor Neu und Öffnen (#408): was danach kommt.
+    replace_ask: Option<Replace>,
+    /// Frage „Projekt überschreiben?“ beim Speichern über ein anderes Projekt (#409).
+    overwrite_ask: Option<std::path::PathBuf>,
     /// Beim ersten Bild automatisch suchen (nur in der echten App, nicht in Tests).
     update_autostart: bool,
     /// Track being renamed and its edit buffer.
@@ -620,6 +632,8 @@ impl WoaApp {
             feedback_thumbs: Vec::new(),
             update: crate::update::UpdateState::default(),
             exit: crate::exit::ExitGuard::default(),
+            replace_ask: None,
+            overwrite_ask: None,
             update_autostart: open_audio,
             rename: None,
             gain_drag: None,
@@ -2124,7 +2138,56 @@ impl WoaApp {
             .set_file_name(format!("{}.woa", self.state.project().meta.name))
             .save_file_modal()
         {
-            self.state.save_as(&dir);
+            self.save_into(&dir);
+        }
+    }
+
+    /// Speichern unter `dir`: nie in einem anderen `.woa`-Paket; ein anderes bestehendes
+    /// Projekt wird erst nach Rückfrage ersetzt (#409).
+    fn save_into(&mut self, dir: &std::path::Path) {
+        let target = crate::state::save_target(dir);
+        if self.state.overwrites_other_project(&target) {
+            self.overwrite_ask = Some(target);
+        } else {
+            self.state.save_as(&target);
+        }
+    }
+
+    /// Frage „Projekt überschreiben?“ (#409); Überschreiben legt `project.json.bak` an.
+    fn overwrite_confirm_window(&mut self, ctx: &egui::Context) {
+        let Some(target) = self.overwrite_ask.clone() else {
+            return;
+        };
+        let mut choice = None;
+        egui::Window::new("Projekt überschreiben?")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.label(format!(
+                    "In {} liegt schon ein anderes Projekt. Ersetzen? Das alte bleibt als \
+                     project.json.bak erhalten.",
+                    target.display()
+                ));
+                ui.horizontal(|ui| {
+                    if ui.button("Überschreiben").clicked() {
+                        choice = Some(true);
+                    }
+                    if ui.button("Abbrechen").clicked() {
+                        choice = Some(false);
+                    }
+                });
+            });
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            choice = Some(false);
+        }
+        match choice {
+            Some(true) => {
+                self.overwrite_ask = None;
+                self.state.save_as(&target);
+            }
+            Some(false) => self.overwrite_ask = None,
+            None => {}
         }
     }
 
@@ -2165,9 +2228,12 @@ impl WoaApp {
     /// Liest eine `.dawproject`-Datei in einen neuen Projektordner `<name>.woa` neben der
     /// Datei und öffnet ihn.
     fn open_dawproject(&mut self) {
-        if !self.save_before_replace("DAWproject öffnen") {
-            return;
+        if self.ask_before_replace(Replace::Dawproject) {
+            self.open_dawproject_now();
         }
+    }
+
+    fn open_dawproject_now(&mut self) {
         let Some(file) = crate::ordner::dialog(crate::ordner::Art::Projekte)
             .set_title("DAWproject öffnen")
             .add_filter("DAWproject", &["dawproject"])
@@ -2209,7 +2275,79 @@ impl WoaApp {
         self.state.open(dir);
     }
 
-    /// Vor Neu/Öffnen: ungespeicherte Änderungen erst sichern (wie vor dem Update).
+    /// Vor Neu/Öffnen (#408): bei ungespeicherten Änderungen erst fragen — Speichern,
+    /// Nicht speichern, Abbrechen. `true`: sofort weiter. `false`: die Frage ist offen
+    /// (ein zweiter Klick öffnet keine zweite) und führt `what` nach der Antwort aus.
+    fn ask_before_replace(&mut self, what: Replace) -> bool {
+        if !self.state.session().is_dirty() {
+            return true;
+        }
+        if self.replace_ask.is_none() {
+            self.replace_ask = Some(what);
+        }
+        false
+    }
+
+    fn replace_now(&mut self, what: Replace) {
+        match what {
+            Replace::New => self.state.new_project(),
+            Replace::Open => self.open_now(),
+            Replace::Dawproject => self.open_dawproject_now(),
+        }
+    }
+
+    /// Frage „Projekt speichern?“ vor Neu und Öffnen (#408).
+    fn replace_confirm_window(&mut self, ctx: &egui::Context) {
+        use crate::exit::Choice;
+        let Some(what) = self.replace_ask else {
+            return;
+        };
+        // Erst die Überschreiben-Frage beantworten.
+        if self.overwrite_ask.is_some() {
+            return;
+        }
+        let mut choice = None;
+        egui::Window::new("Projekt speichern?")
+            .id(egui::Id::new("replace-confirm"))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.label("Das Projekt hat ungespeicherte Änderungen. Vorher speichern?");
+                ui.horizontal(|ui| {
+                    if ui.button("Speichern").clicked() {
+                        choice = Some(Choice::Save);
+                    }
+                    if ui.button("Nicht speichern").clicked() {
+                        choice = Some(Choice::Discard);
+                    }
+                    if ui.button("Abbrechen").clicked() {
+                        choice = Some(Choice::Cancel);
+                    }
+                });
+            });
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            choice = Some(Choice::Cancel);
+        }
+        match choice {
+            Some(Choice::Cancel) => self.replace_ask = None,
+            Some(Choice::Discard) => {
+                self.replace_ask = None;
+                self.replace_now(what);
+            }
+            Some(Choice::Save) => {
+                self.save();
+                // Speichern-Dialog abgebrochen oder Überschreiben-Frage offen: Frage bleibt.
+                if !self.state.session().is_dirty() {
+                    self.replace_ask = None;
+                    self.replace_now(what);
+                }
+            }
+            None => {}
+        }
+    }
+
+    /// Jingle-Assistent: ungespeicherte Änderungen erst sichern.
     /// `false` heißt: das Projekt blieb ungespeichert, der Aufrufer bricht ab.
     fn save_before_replace(&mut self, what: &str) -> bool {
         if self.state.session().is_dirty() {
@@ -2262,15 +2400,18 @@ impl WoaApp {
     }
 
     fn new_project(&mut self) {
-        if self.save_before_replace("Neues Projekt") {
+        if self.ask_before_replace(Replace::New) {
             self.state.new_project();
         }
     }
 
     fn open(&mut self) {
-        if !self.save_before_replace("Öffnen") {
-            return;
+        if self.ask_before_replace(Replace::Open) {
+            self.open_now();
         }
+    }
+
+    fn open_now(&mut self) {
         if let Some(dir) = crate::ordner::dialog(crate::ordner::Art::Projekte)
             .set_title("Projektordner (.woa) öffnen")
             .pick_folder_modal()
@@ -7366,6 +7507,8 @@ impl eframe::App for WoaApp {
             )
             .show(ui, |ui| self.menu(ui, &ctx));
         self.exit_confirm_window(&ctx);
+        self.replace_confirm_window(&ctx);
+        self.overwrite_confirm_window(&ctx);
         if self.config.mode == Mode::Party
             && let Some(radio) = self.radio.as_mut()
         {
@@ -10682,6 +10825,69 @@ mod nacharbeit_tests {
         rig.step(Vec::new());
         assert!(rig.any(|l| l == "Nicht speichern"), "Strg+Q fragt nicht");
         assert!(!rig.commands.contains(&egui::ViewportCommand::Close));
+    }
+
+    /// #408: Neu und Öffnen mit ungespeicherten Änderungen fragen Speichern · Nicht
+    /// speichern · Abbrechen; ein zweiter Klick öffnet keine zweite Frage, Verwerfen
+    /// macht weiter, ohne zu speichern.
+    #[test]
+    fn new_with_unsaved_changes_offers_discard_and_asks_once() {
+        let mut rig = Rig::new(Mode::Produzent);
+        rig.app.state_mut().add_midi_track().unwrap();
+        assert!(rig.app.state.session().is_dirty());
+        rig.app.new_project();
+        rig.app.new_project();
+        assert_eq!(rig.app.replace_ask, Some(Replace::New));
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        for b in ["Speichern", "Nicht speichern", "Abbrechen"] {
+            assert!(rig.any(|l| l == b), "Knopf „{b}“ fehlt");
+        }
+        let n = rig
+            .nodes
+            .iter()
+            .filter(|(l, _, r)| l == "Nicht speichern" && r.width() > 0.0)
+            .count();
+        assert_eq!(n, 1, "Frage doppelt");
+        let r = rig
+            .nodes
+            .iter()
+            .find(|(l, _, r)| l == "Nicht speichern" && r.width() > 0.0)
+            .map(|(_, _, r)| *r)
+            .unwrap();
+        let pos = r.center();
+        let ev = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        rig.step(vec![egui::Event::PointerMoved(pos)]);
+        rig.step(vec![ev(true)]);
+        rig.step(vec![ev(false)]);
+        rig.step(Vec::new());
+        assert!(rig.app.replace_ask.is_none(), "Frage nicht zu");
+        assert!(rig.app.state.project().tracks.is_empty(), "nicht verworfen");
+        assert!(rig.app.state.needs_save_as(), "doch gespeichert");
+    }
+
+    /// #408: Abbrechen lässt das Projekt, wie es ist.
+    #[test]
+    fn open_with_unsaved_changes_cancel_keeps_project() {
+        let mut rig = Rig::new(Mode::Produzent);
+        rig.app.state_mut().add_midi_track().unwrap();
+        rig.app.open();
+        rig.step(Vec::new());
+        rig.step(vec![egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]);
+        assert!(rig.app.replace_ask.is_none());
+        assert_eq!(rig.app.state.project().tracks.len(), 1);
+        assert!(rig.app.state.session().is_dirty());
     }
 
     #[test]
