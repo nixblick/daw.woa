@@ -8,6 +8,7 @@
 
 use std::process::ExitCode;
 
+use eframe::egui_wgpu::wgpu;
 use woa_gui::{GuiConfig, WoaApp};
 
 /// Fenstergröße beim Start: 900×600, mit `WOA_WINDOW=1366x768` eine andere (für Screenshots
@@ -97,15 +98,24 @@ fn main() -> ExitCode {
     let options = eframe::NativeOptions {
         viewport,
         event_loop_builder: event_loop_hook(),
+        wgpu_options: wgpu_configuration(
+            std::env::consts::OS,
+            std::env::var("WOA_WGPU_BACKEND").ok().as_deref(),
+        ),
         ..Default::default()
     };
     let recovery = data_dir.join("recovery.woa");
+    let t_run = std::time::Instant::now();
     match eframe::run_native(
         "WOA",
         options,
         Box::new(move |cc| {
+            // Fenster plus wgpu-Instanz, Adapter und Gerät sind hier fertig (#279).
+            let t_wgpu_ms = t_run.elapsed().as_millis();
             // Schriften vor dem ersten Bild setzen (kein leeres erstes Bild).
+            let t_fonts = std::time::Instant::now();
             let _ = woa_gui::theme::install_fonts(&cc.egui_ctx);
+            let t_fonts_ms = t_fonts.elapsed().as_millis();
             // Eine kurze Startzeile; die lange wgpu-Adapterliste steht nur auf DEBUG.
             let gpu = cc.wgpu_render_state.as_ref().map(|r| r.adapter.get_info());
             let line = start_line(
@@ -115,8 +125,14 @@ fn main() -> ExitCode {
                     .map(|i| format!("{} {}", i.driver, i.driver_info))
                     .as_deref(),
             );
-            tracing::info!(feedback, telemetry, "{line}");
+            tracing::info!(feedback, telemetry, t_wgpu_ms, t_fonts_ms, "{line}");
+            let t_app = std::time::Instant::now();
             let mut app = WoaApp::new(config, recovery);
+            tracing::info!(
+                t_app_ms = t_app.elapsed().as_millis(),
+                t_ready_ms = t_run.elapsed().as_millis(),
+                "woa app ready"
+            );
             if start == StartWindow::Maximized {
                 app.maximize_on_start();
             }
@@ -133,8 +149,39 @@ fn main() -> ExitCode {
         Err(e) => {
             tracing::error!(error = %e, "window failed");
             eprintln!("woa: {e}");
+            eprintln!(
+                "woa: kein passender Grafiktreiber? Mit WOA_WGPU_BACKEND=gl|vulkan|dx12|all erneut versuchen."
+            );
             ExitCode::FAILURE
         }
+    }
+}
+
+/// Grafik-Backends für den Start (#279). Ohne Vorgabe nur das, was auf dem System üblich ist:
+/// Linux Vulkan, Windows DX12 und Vulkan. Das spart die Suche über OpenGL/EGL und Software-Treiber.
+/// `WOA_WGPU_BACKEND=gl|vulkan|dx12|all` übersteuert; ein unbekannter Wert gilt wie keiner.
+fn wgpu_backends(os: &str, choice: Option<&str>) -> wgpu::Backends {
+    match choice.map(|c| c.trim().to_ascii_lowercase()).as_deref() {
+        Some("gl" | "opengl") => wgpu::Backends::GL,
+        Some("vulkan") => wgpu::Backends::VULKAN,
+        Some("dx12") => wgpu::Backends::DX12,
+        Some("all") => wgpu::Backends::all(),
+        _ if os == "windows" => wgpu::Backends::DX12 | wgpu::Backends::VULKAN,
+        _ if os == "linux" => wgpu::Backends::VULKAN,
+        _ => wgpu::Backends::PRIMARY | wgpu::Backends::GL,
+    }
+}
+
+/// wgpu-Einstellung: gewählte Backends und `LowPower`, damit auf Hybrid-Notebooks die
+/// schlafende Grafikkarte nicht erst geweckt wird. `WGPU_POWER_PREF` bleibt maßgebend.
+fn wgpu_configuration(os: &str, choice: Option<&str>) -> eframe::egui_wgpu::WgpuConfiguration {
+    let mut setup = eframe::egui_wgpu::WgpuSetupCreateNew::without_display_handle();
+    setup.instance_descriptor.backends = wgpu_backends(os, choice);
+    setup.power_preference =
+        wgpu::PowerPreference::from_env().unwrap_or(wgpu::PowerPreference::LowPower);
+    eframe::egui_wgpu::WgpuConfiguration {
+        wgpu_setup: eframe::egui_wgpu::WgpuSetup::CreateNew(setup),
+        ..Default::default()
     }
 }
 
@@ -244,6 +291,42 @@ mod tests {
         );
         assert!(!l.contains('\n'));
         assert!(super::start_line(None, None, None).contains("gpu=-"));
+    }
+
+    #[test]
+    fn backends_are_pinned_per_os_and_overridable() {
+        use super::{wgpu, wgpu_backends};
+        assert_eq!(wgpu_backends("linux", None), wgpu::Backends::VULKAN);
+        assert_eq!(
+            wgpu_backends("windows", None),
+            wgpu::Backends::DX12 | wgpu::Backends::VULKAN
+        );
+        assert_eq!(wgpu_backends("linux", Some("GL")), wgpu::Backends::GL);
+        assert_eq!(
+            wgpu_backends("windows", Some("vulkan")),
+            wgpu::Backends::VULKAN
+        );
+        assert_eq!(wgpu_backends("linux", Some("all")), wgpu::Backends::all());
+        assert_eq!(
+            wgpu_backends("linux", Some("quatsch")),
+            wgpu::Backends::VULKAN
+        );
+        assert!(!wgpu_backends("linux", None).contains(wgpu::Backends::GL));
+    }
+
+    #[test]
+    fn wgpu_configuration_prefers_low_power() {
+        let c = super::wgpu_configuration("linux", None);
+        let eframe::egui_wgpu::WgpuSetup::CreateNew(s) = c.wgpu_setup else {
+            panic!("expected CreateNew");
+        };
+        assert_eq!(
+            s.instance_descriptor.backends,
+            super::wgpu::Backends::VULKAN
+        );
+        if std::env::var_os("WGPU_POWER_PREF").is_none() {
+            assert_eq!(s.power_preference, super::wgpu::PowerPreference::LowPower);
+        }
     }
 
     #[test]

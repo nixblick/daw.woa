@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.29 — 2026-11-04
+
+- **Schnellerer Start: Grafik-Backend festgelegt (#279, Teil 1):** wgpu sucht nicht mehr über alle Backends, sondern unter Linux nur Vulkan, unter Windows DX12 und Vulkan (vorher auch OpenGL/EGL und Software-Treiber). Die Grafikkarte wird mit `LowPower` gewählt, damit auf Hybrid-Notebooks die schlafende Karte nicht geweckt wird. `WOA_WGPU_BACKEND=gl|vulkan|dx12|all` übersteuert, `WGPU_POWER_PREF` ebenso. Die Startzeile im Log nennt `t_wgpu_ms` und `t_fonts_ms`, eine zweite Zeile „woa app ready“ `t_app_ms` und `t_ready_ms`. Tests `backends_are_pinned_per_os_and_overridable`, `wgpu_configuration_prefers_low_power`. Noch offen: gestaffelter Start der Audio-/MIDI-/Plugin-/Bibliotheks-Init und die Messung am Gerät. Workspace-Version 0.41.29.
+
 ## 0.41.28 — 2026-11-04
 
 - **Upgrade-Probe baut die alte Form wieder (#452):** Der Release-Lauf v0.41.27 brach in `test-upgrade.ps1` ab: Das MSI pro Benutzer baute, die nachgebaute alte Form für alle Benutzer (`-d Legacy=1`) nicht (`WIX0094`, `RemoveFolder` verwies auf `PROGRAMSFOLDER`, den es nur pro Benutzer gibt). Die Zeile steht jetzt nur in der Form pro Benutzer. Test `directory_refs_defined_in_both_forms` (vorher rot). Workspace-Version 0.41.28.
