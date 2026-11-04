@@ -526,12 +526,20 @@ const TRANSPORT_LEVEL_W: f32 = 300.0;
 const TRANSPORT_VOLUME_W: f32 = 120.0;
 const TRANSPORT_LATENCY_W: f32 = 140.0;
 const TRANSPORT_RIGHT_W: f32 = 480.0;
+/// Höhe der rechten Transportgruppe (Tasten 32 px plus Luft).
+const TRANSPORT_ROW_H: f32 = 46.0;
 
 /// Beginnt in einer umbrechenden Zeile eine neue, wenn `need` px nicht mehr passen.
 fn transport_fit(ui: &mut egui::Ui, need: f32) {
-    if ui.available_width() < need {
+    if row_rest(ui) < need {
         ui.end_row();
     }
+}
+
+/// Restbreite der aktuellen Zeile einer umbrechenden Reihe. `available_width()` liefert dort
+/// die ganze Zeilenbreite, nicht den Rest (#443).
+fn row_rest(ui: &egui::Ui) -> f32 {
+    (ui.max_rect().right() - ui.cursor().min.x).max(0.0)
 }
 
 impl WoaApp {
@@ -2033,6 +2041,9 @@ impl WoaApp {
                 .corner_radius(5)
                 .inner_margin(egui::Margin::symmetric(4, 3))
                 .show(ui, |ui| {
+                    // #443: eine Zeile; in der umbrechenden Reihe rutschte das ms-Feld sonst
+                    // unter den Schalter und über die Zeile darunter.
+                    ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     let out_ms = woa_engine::device::output_latency().as_secs_f64() * 1000.0;
                     let on = self.latency_auto;
@@ -2063,12 +2074,16 @@ impl WoaApp {
                         "Zusätzlicher Ausgleich von Hand in ms, falls Aufnahmen noch zu spät \
                          liegen. Ziehen · Klick = eintippen",
                     );
+                    });
                 });
 
             // 5. Rechtsbündig: Export · Zoom · Raster · Takte/Zeit (Reihenfolge von rechts).
             // Reicht der Rest der Zeile nicht, steht die Gruppe rechtsbündig in einer eigenen Zeile.
             transport_fit(ui, TRANSPORT_RIGHT_W);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // #443: als eigenes Element über den Rest der Zeile, nicht per `with_layout`: das
+            // legte die Gruppe in der umbrechenden Reihe über die Pegel-LCD.
+            let rest = egui::vec2(row_rest(ui) - 1.0, TRANSPORT_ROW_H);
+            ui.allocate_ui_with_layout(rest, egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let font = theme::panel_label_font();
                 let w = crate::widgets::key_width(ui, "EXPORT", &font, 72.0);
                 if crate::widgets::Key::new("EXPORT", egui::vec2(w, 32.0))
@@ -2782,6 +2797,10 @@ impl WoaApp {
             {
                 self.jingle_assistent.foto_elevenlabs(parts);
             }
+        }
+        if first && std::env::var_os("WOA_AUDIO").is_some() {
+            // Fotomodus Fenster „Audio-Geräte“ (#443: passt es auf kleine Bildschirme?).
+            self.open_audio();
         }
         if first && std::env::var_os("WOA_KI").is_some() {
             // Fotomodus Fenster „Dienste und Konten“ (u. a. ElevenLabs-Schlüssel).
@@ -7985,7 +8004,10 @@ impl WoaApp {
             .map(|t| (t.id, t.name.clone(), t.gain_db, t.mute, t.solo))
             .collect();
         const RACK_W: f32 = 340.0;
-        let strips_w = (ui.available_width() - RACK_W - 12.0).max(160.0);
+        // #443: Trennstrich (6 px) und die Abstände links und rechts davon gehören mit in die
+        // Rechnung; mit pauschal 12 px stand das Rack 10 px über dem rechten Rand des Docks.
+        let sep_w = 6.0 + 2.0 * ui.spacing().item_spacing.x;
+        let strips_w = (ui.available_width() - RACK_W - sep_w).max(160.0);
         ui.horizontal_top(|ui| {
             egui::ScrollArea::horizontal()
                 .id_salt("studio_mixer_scroll")
@@ -8003,7 +8025,7 @@ impl WoaApp {
                         }
                     });
                 });
-            ui.separator();
+            ui.add(egui::Separator::default().spacing(6.0));
             ui.vertical(|ui| {
                 ui.set_width(RACK_W);
                 // „Ausgang / Pan“ steht fest unten im Rack und ist immer ganz sichtbar; wird der
@@ -8866,6 +8888,9 @@ impl WoaApp {
             ui.horizontal(|ui| {
                 // Zwei Pixel Luft: der Vorhören-Knopf darf nie am Rand kleben (#443).
                 let w = ((ui.available_width() - gap - 2.0) / 2.0).floor();
+                // #443: Mit der Grund-Polsterung war der 26-px-Vorhören-Knopf 40 px breit; die
+                // Zeile ragte 28 px über das Rack und schob alles darunter mit hinaus.
+                ui.spacing_mut().button_padding.x = 2.0;
                 for p in pair {
                     let same = current
                         .is_some_and(|c| c.program == p.sound.program && c.drums == p.sound.drums);
@@ -10474,6 +10499,8 @@ mod nacharbeit_tests {
         /// Beschriftung, Wert und Fläche jedes Knotens.
         nodes: Vec<(String, String, egui::Rect)>,
         commands: Vec<egui::ViewportCommand>,
+        /// Fenstergröße (Standard 1920 × 1030).
+        size: egui::Vec2,
         _tmp: tempfile::TempDir,
     }
 
@@ -10498,6 +10525,7 @@ mod nacharbeit_tests {
                 n: 0,
                 nodes: Vec::new(),
                 commands: Vec::new(),
+                size: egui::vec2(1920.0, 1030.0),
                 _tmp: tmp,
             };
             rig.step(Vec::new());
@@ -10508,10 +10536,7 @@ mod nacharbeit_tests {
         fn step(&mut self, events: Vec<egui::Event>) {
             self.n += 1;
             let mut input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1920.0, 1030.0),
-                )),
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, self.size)),
                 time: Some(f64::from(self.n) * 0.05),
                 events,
                 ..Default::default()
@@ -10655,6 +10680,82 @@ mod nacharbeit_tests {
                 pan.bottom() <= 1030.0 - 24.0,
                 "Pan unten abgeschnitten (midi={midi}, fx={effects}): {pan:?}"
             );
+        }
+    }
+
+    /// #443: Rack mit offener Klangauswahl bei 1280 × 720, 1366 × 768 und 1920 × 1030: nichts
+    /// ragt rechts aus dem Fenster („Strei…“, Vorhören-Knopf am Rand).
+    #[test]
+    fn sound_picker_fits_the_window() {
+        for size in [(1280.0, 720.0), (1366.0, 768.0), (1920.0, 1030.0)] {
+            let mut rig = Rig::new(Mode::Produzent);
+            rig.size = egui::vec2(size.0, size.1);
+            let t = rig.app.state_mut().add_midi_track().unwrap();
+            rig.app.open_sound_picker(t);
+            rig.app.studio_dock = StudioDockTab::Mixer;
+            for _ in 0..4 {
+                rig.step(Vec::new());
+            }
+            assert!(rig.any(|s| s.contains("Streicher")), "Klangauswahl offen");
+            let bad: Vec<_> = rig
+                .nodes
+                .iter()
+                .filter(|(_, _, r)| {
+                    r.is_positive() && r.width() < size.0 * 0.8 && r.max.x > size.0 + 0.5
+                })
+                .collect();
+            assert!(bad.is_empty(), "{size:?}: rechts abgeschnitten: {bad:?}");
+        }
+    }
+
+    /// #443: Transport bei 1280 × 720, 1366 × 768 und 1920 × 1030, auch mit Loop und Punch an:
+    /// keine zwei Bedienelemente liegen übereinander, die Pegel-LED-Kette ist da.
+    #[test]
+    fn transport_never_overlaps() {
+        for size in [(1280.0, 720.0), (1366.0, 768.0), (1920.0, 1030.0)] {
+            for extra in [false, true] {
+                let mut rig = Rig::new(Mode::Produzent);
+                rig.size = egui::vec2(size.0, size.1);
+                rig.app.loop_enabled = extra;
+                rig.app.punch_enabled = extra;
+                for _ in 0..4 {
+                    rig.step(Vec::new());
+                }
+                let dock = rig
+                    .nodes
+                    .iter()
+                    .find(|(l, v, _)| l == "STUDIO-DOCK" || v == "STUDIO-DOCK")
+                    .map(|n| n.2)
+                    .expect("Dock");
+                let pegel = rig
+                    .nodes
+                    .iter()
+                    .find(|(l, v, _)| l == "PEGEL" || v == "PEGEL")
+                    .map(|n| n.2)
+                    .expect("Pegel-LCD im Transport");
+                // Bedienelemente des Transports: zwischen Menüleiste und Arbeitsfläche.
+                let items: Vec<_> = rig
+                    .nodes
+                    .iter()
+                    .filter(|(l, v, r)| {
+                        r.is_positive()
+                            && r.top() > 44.0
+                            && r.bottom() < dock.top().min(160.0)
+                            && !(l.is_empty() && v.is_empty())
+                    })
+                    .collect();
+                for (i, a) in items.iter().enumerate() {
+                    for b in &items[i + 1..] {
+                        let x = a.2.intersect(b.2);
+                        let nested = a.2.contains_rect(b.2) || b.2.contains_rect(a.2);
+                        assert!(
+                            nested || !x.is_positive() || x.area() < 4.0,
+                            "{size:?} loop/punch={extra}: {a:?} überdeckt {b:?}"
+                        );
+                    }
+                }
+                assert!(pegel.right() <= size.0, "{size:?}: Pegel außerhalb");
+            }
         }
     }
 
