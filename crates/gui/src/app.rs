@@ -9507,6 +9507,11 @@ impl WoaApp {
         use crate::update::{Event, check_due, unix_now};
         if self.update_autostart {
             self.update_autostart = false;
+            // #452: Läuft WOA pro Benutzer, die alte Installation für alle Benutzer einmal ablösen.
+            #[cfg(windows)]
+            if self.photo.is_none() {
+                woa_updater::retire_per_machine(&woa_radio::data_dir());
+            }
             if self.config.auto_update
                 && self.photo.is_none()
                 && check_due(self.config.last_update_check, unix_now())

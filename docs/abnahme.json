@@ -2,6 +2,14 @@
   "stand": "2026-11-04",
   "punkte": [
     {
+      "id": "msi-pro-benutzer",
+      "ansicht": "Allgemein",
+      "titel": "Installation und Update ohne Admin-Abfrage (pro Benutzer)",
+      "tun": "Auf einem PC mit der alten Installation (C:\\Program Files\\WOA) das Update aus der App installieren und WOA starten. Danach ein weiteres Update aus der App.",
+      "erwartet": "Das Update auf diese Version kommt ohne Abfrage der Benutzerkontensteuerung. Beim ersten Start fragt Windows einmal nach Admin-Rechten, um die alte Installation zu entfernen. Danach: ein Eintrag „WOA - Wir on Air“ unter Apps, WOA liegt in %LOCALAPPDATA%\\Programs\\WOA, Program Files\\WOA ist weg, Projekte unter Musik\\WOA und Einstellungen in %APPDATA%\\woa sind unverändert, woa-headless mcp geht mit dem neuen Pfad. Jedes weitere Update läuft ohne Abfrage.",
+      "version": "0.41.26"
+    },
+    {
       "id": "hoerer-chip",
       "ansicht": "Radio",
       "titel": "Hörerzahl oben in der Kopfleiste",

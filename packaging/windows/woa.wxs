@@ -1,9 +1,23 @@
 <!-- MSI für Windows (WiX Toolset 5). Gebaut von .github/workflows/windows-build.yml:
      wix build packaging/windows/woa.wxs -arch x64 -d Version=<x.y.z> -d Bin=target\release -o woa.msi
-     UpgradeCode NIE ändern: daran erkennt Windows ältere Versionen und ersetzt sie. -->
+     UpgradeCode NIE ändern: daran erkennt Windows ältere Versionen und ersetzt sie.
+
+     Pro Benutzer (#452): %LOCALAPPDATA%\Programs\WOA, Registry nur HKCU, keine Admin-Abfrage bei
+     Installation und Update. Bis 0.41.25 installierte das MSI für alle Benutzer (Program Files, Registry für alle Benutzer);
+     MajorUpgrade löst das über die Kontextgrenze nicht ab. Das übernimmt die neue App beim ersten
+     Start (crates/updater/src/legacy.rs, einmalige Admin-Abfrage).
+     -d Legacy=1 baut nur für test-upgrade.ps1 die alte Form für alle Benutzer nach. -->
+<?ifndef Legacy ?>
+  <?define Legacy = "0" ?>
+<?endif ?>
+<?if $(var.Legacy) = "1" ?>
+  <?define Scope = "perMachine" ?>
+<?else?>
+  <?define Scope = "perUser" ?>
+<?endif ?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="WOA - Wir on Air" Manufacturer="creaVisions" Version="$(var.Version)"
-           UpgradeCode="16647BDD-1E47-4AA9-AAED-B1D5D1D4A822" Scope="perMachine" Language="1031" Codepage="65001">
+           UpgradeCode="16647BDD-1E47-4AA9-AAED-B1D5D1D4A822" Scope="$(var.Scope)" Language="1031" Codepage="65001">
     <MajorUpgrade DowngradeErrorMessage="Eine neuere Version von WOA ist bereits installiert." />
     <MediaTemplate EmbedCab="yes" />
 
@@ -11,39 +25,51 @@
     <Icon Id="woa.ico" SourceFile="packaging\windows\woa.ico" />
     <Property Id="ARPPRODUCTICON" Value="woa.ico" />
 
+<?if $(var.Legacy) = "1" ?>
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="WOA">
         <Directory Id="SOUNDSFOLDER" Name="sounds" />
       </Directory>
     </StandardDirectory>
+<?else?>
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="PROGRAMSFOLDER" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="WOA">
+          <Directory Id="SOUNDSFOLDER" Name="sounds" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+<?endif ?>
     <StandardDirectory Id="ProgramMenuFolder" />
 
+    <!-- ICE38/ICE64: Komponenten im Benutzerprofil haben einen HKCU-Wert als KeyPath und räumen
+         ihre Ordner bei der Deinstallation weg. Nutzerdaten (%APPDATA%\woa, Music\WOA) gehören
+         keiner Komponente und bleiben. -->
     <ComponentGroup Id="Programme" Directory="INSTALLFOLDER">
-      <Component>
-        <File Id="woa.exe" Source="$(var.Bin)\woa.exe" KeyPath="yes">
-          <Shortcut Id="StartMenuWoa" Directory="ProgramMenuFolder" Name="WOA - Wir on Air"
-                    WorkingDirectory="INSTALLFOLDER" Advertise="yes" Icon="woa.ico" />
-        </File>
+      <Component Id="WoaExe">
+        <File Id="woa.exe" Source="$(var.Bin)\woa.exe" />
+        <File Source="$(var.Bin)\woa-headless.exe" />
+        <File Source="$(var.Bin)\woa-streamd.exe" />
+        <File Source="LICENSE" Name="LICENSE.txt" />
+        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+        <RemoveFolder Id="RemoveProgramsFolder" Directory="PROGRAMSFOLDER" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\creaVisions\WOA" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
       </Component>
-      <Component>
-        <File Source="$(var.Bin)\woa-headless.exe" KeyPath="yes" />
-      </Component>
-      <Component>
-        <File Source="$(var.Bin)\woa-streamd.exe" KeyPath="yes" />
-      </Component>
-      <Component>
-        <File Source="LICENSE" Name="LICENSE.txt" KeyPath="yes" />
+      <Component Id="StartMenu" Directory="ProgramMenuFolder">
+        <Shortcut Id="StartMenuWoa" Name="WOA - Wir on Air" Target="[INSTALLFOLDER]woa.exe"
+                  WorkingDirectory="INSTALLFOLDER" Icon="woa.ico" />
+        <RegistryValue Root="HKCU" Key="Software\creaVisions\WOA" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </ComponentGroup>
 
     <!-- SoundFont für die MIDI-Klänge (#265): soundfont.rs sucht sounds\ neben woa.exe.
          Vorher: packaging/fetch-soundfont.sh dist/sounds (feste SHA-256). -->
     <ComponentGroup Id="Klaenge" Directory="SOUNDSFOLDER">
-      <Component>
-        <File Source="dist\sounds\GeneralUser-GS.sf2" KeyPath="yes" />
-      </Component>
-      <Component>
-        <File Source="dist\sounds\GeneralUser-GS-LICENSE.txt" KeyPath="yes" />
+      <Component Id="Sounds">
+        <File Source="dist\sounds\GeneralUser-GS.sf2" />
+        <File Source="dist\sounds\GeneralUser-GS-LICENSE.txt" />
+        <RemoveFolder Id="RemoveSoundsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\creaVisions\WOA" Name="Sounds" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </ComponentGroup>
 

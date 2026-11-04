@@ -72,7 +72,19 @@ Begründung:
 - Sie läuft im Benutzerkontext des Aufrufers, die neue App läuft also **nicht** mit
   Administratorrechten.
 
-Nachteil: Bricht der Nutzer die Installation ab (UAC abgelehnt), ist die App bereits beendet
+## Pro Benutzer, ohne Admin-Abfrage (#452)
+
+Seit #452 installiert das MSI pro Benutzer (`%LOCALAPPDATA%\Programs\WOA`, Registry nur HKCU).
+Installation und Update aus der App laufen ohne Abfrage der Benutzerkontensteuerung; `msiexec`
+startet unverändert ohne Erhöhung. Windows Installer löst die alte Installation für alle Benutzer
+(bis 0.41.25, `C:\Program Files\WOA`) nicht per MajorUpgrade ab, weil `FindRelatedProducts` nur im
+eigenen Kontext sucht. Darum entfernt die neue App beim ersten Start aus dem Benutzerordner die
+alte Installation einmal je Version per `msiexec /x {ProductCode} /passive /norestart`
+(`crates/updater/src/legacy.rs`). Das ist die einzige Admin-Abfrage beim Umstieg; lehnt der Nutzer
+sie ab, fragt WOA mit der nächsten Version wieder (Merker `altinstallation-entfernt.txt` im
+Datenordner). Nutzerdaten (`%APPDATA%\woa`, `Music\WOA`) gehören keiner MSI-Komponente.
+
+Nachteil: Bricht der Nutzer die Installation ab, ist die App bereits beendet
 und startet nicht von selbst neu. Dann einfach über das Startmenü starten; das Update wird beim
 nächsten Start wieder angeboten.
 

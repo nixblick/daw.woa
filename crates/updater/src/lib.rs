@@ -8,12 +8,15 @@
 
 mod error;
 mod hosts;
+pub mod legacy;
 pub mod manifest;
 mod net;
 mod verify;
 pub mod version;
 
 pub use error::{UpdateError, Veto};
+#[cfg(windows)]
+pub use legacy::retire_per_machine;
 pub use manifest::Available;
 #[cfg(windows)]
 pub use net::launch_installer;

@@ -114,6 +114,7 @@ pub fn download_and_verify(update: &Available, current: &str) -> Result<PathBuf,
 /// Startet den Windows Installer mit dem geprüften MSI und kehrt sofort zurück. Der Aufrufer
 /// beendet danach die App. `RESTARTWOA=1` lässt das MSI die neue Version nach der
 /// Installation starten (siehe `packaging/windows/woa.wxs`).
+/// Das MSI installiert pro Benutzer (#452): `msiexec` läuft ohne Erhöhung, keine Admin-Abfrage.
 #[cfg(windows)]
 pub fn launch_installer(msi: &std::path::Path) -> Result<(), UpdateError> {
     std::process::Command::new("msiexec")
