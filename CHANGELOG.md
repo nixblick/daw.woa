@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.41.23 — 2026-11-04
+
+- **Eine Esc-Regel für alle Fenster (#441):** Esc schließt das oberste offene Fenster; eine offene Frage („Projekt speichern?“, „Projekt überschreiben?“) geht vor und heißt Abbrechen. Hatte ein Textfeld den Fokus, nimmt das erste Esc nur den Fokus weg; bei offenem Menü schließt Esc nur das Menü. Neu dabei: Bibliothek und Analyse-Fenster. Einstellungen, Fragen und To-dos, Abnahme, Hörer-Statistik, Piano-Roll als Fenster und Über WOA laufen über dieselbe Regel (`crates/gui/src/esc.rs`); vorher schloss ein Esc alle offenen Fenster mit Kopfzeile zugleich, und die Textfokus-Sperre griff nie, weil egui den Fokus bei Esc schon vor dem Bild löscht. Tests: `escape_closes_library_in_party`, `escape_closes_analysis_window`, `escape_cancels_exit_question_in_every_view`, `escape_closes_settings_and_questions`, `escape_closes_only_the_top_window`, `escape_cancels_question_before_window`, `esc::tests::escape_in_text_field_only_drops_focus`, `escape_untouched_without_window`.
+- **Test für #442:** `click_hits_right_edge_when_scaled` klickt bei Skalierung 125 % und 150 % (1920 × 1030 Pixel) auf „Party“ oben rechts; der Klick kommt an. Den Windows-Fensterfehler selbst prüft nur das Gerät (Prüfpunkt `maximiert-klicks`).
+- **Prüfpunkte angeglichen:** `radio-deck-menue` nennt die echten Einträge „Playlist ablösen, mit Blende/sofort“; `klang-neue-midi-spur` erwartet seit dem neuen Spurkopf das Flügel-Symbol statt des Worts.
+
 ## 0.41.22 — 2026-11-04
 
 - **Maximiertes Fenster: Klicks rechts gehen wieder (#442):** WOA maximierte sich schon beim Anlegen des Fensters (`with_maximized`). Unter Windows 11 mit Skalierung füllte das Fenster dann nur etwa zwei Drittel, und die Eingabe rechts kam nicht an. Jetzt wird mit Rahmen angelegt und nach dem ersten Bild per Befehl maximiert (wie F11 schon). Test: `maximize_is_sent_once_by_command_on_first_frame`. Ob es unter Windows wirkt, zeigt nur die echte Maus am Gerät: Prüfpunkt `maximiert-klicks`.
