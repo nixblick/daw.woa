@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.23 — 2026-11-04
+
+- **Bei etwa 1280 px Fensterbreite überlappt nichts mehr (#443):** (1) Party DJ: Die Tasten-Zeilen der Decks (Auto-Loop, Cue/Play/Sync) waren breiter als ihre Spalte und schoben das Jogwheel von Deck B aus dem Fenster; sie füllen die Spalte jetzt genau. Restzeit, BPM und Tonart rutschen bei schmalem Deck in eine zweite Kopfzeile statt auf die Chips. (2) Produzent, Transport: umbricht in eine zweite Zeile, wenn Gruppen nicht mehr passen; die Pegel-LEDs verschwinden nicht mehr. (3) Rack, Klangauswahl: Kategorie-Tasten zeigen nur den Namen, wenn Symbol und Name nicht passen („Streicher“ statt „Strei…“); Vorhören-Knopf mit Abstand zum Rand. (4) Audio-Geräte: öffnet oben, bleibt im Bild, die Rollfläche passt sich der Fensterhöhe an. Tests: `deck_key_rows_never_exceed_their_width`, `audio_device_window_fits_small_screens`. Wie es am Gerät aussieht, zeigt nur das Fenster: Prüfpunkt `fenster-1280`.
+
 ## 0.41.22 — 2026-11-04
 
 - **Maximiertes Fenster: Klicks rechts gehen wieder (#442):** WOA maximierte sich schon beim Anlegen des Fensters (`with_maximized`). Unter Windows 11 mit Skalierung füllte das Fenster dann nur etwa zwei Drittel, und die Eingabe rechts kam nicht an. Jetzt wird mit Rahmen angelegt und nach dem ersten Bild per Befehl maximiert (wie F11 schon). Test: `maximize_is_sent_once_by_command_on_first_frame`. Ob es unter Windows wirkt, zeigt nur die echte Maus am Gerät: Prüfpunkt `maximiert-klicks`.

@@ -135,12 +135,21 @@
       "ticket": 334
     },
     {
+      "id": "fenster-1280",
+      "ansicht": "Produzent",
+      "titel": "Bedienelemente bei etwa 1280 px Fensterbreite",
+      "tun": "Fenster nicht maximieren, auf etwa 1280 px Breite ziehen. Im Produzenten Loop und Punch einschalten, eine MIDI-Spur wählen und im Rack „Klang wählen“ öffnen. Dann Einstellungen › Audio-Geräte öffnen.",
+      "erwartet": "Der Transport bricht in eine zweite Zeile um, nichts liegt übereinander, die Pegel-LEDs sind zu sehen. Im Rack steht „Streicher“ ganz und der Vorhören-Knopf sitzt nicht am Rand. Audio-Geräte öffnet oben im Bild; was nicht passt, rollt.",
+      "version": "0.41.23",
+      "ticket": 443
+    },
+    {
       "id": "fix-dj-breite",
       "ansicht": "Party DJ",
       "titel": "DJ im Vollbild füllt die Breite",
       "tun": "Party auf „DJ“, F11 drücken. Danach das Fenster verkleinern.",
-      "erwartet": "Deck A, Mixer und Deck B reichen von Rand zu Rand, rechts kein Rand, der Mixer steht in der Mitte; verkleinert genauso.",
-      "version": "0.37.1",
+      "erwartet": "Deck A, Mixer und Deck B reichen von Rand zu Rand, rechts kein Rand, der Mixer steht in der Mitte; verkleinert genauso. Bei etwa 1280 px Fensterbreite sind Jogwheel, Restzeit und BPM von Deck B sichtbar, Restzeit, BPM und Tonart stehen in einer zweiten Kopfzeile statt auf den Chips.",
+      "version": "0.41.23",
       "ticket": 332
     },
     {
