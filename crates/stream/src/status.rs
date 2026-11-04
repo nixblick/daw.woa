@@ -48,9 +48,38 @@ pub struct StreamStatus {
     pub live_underruns: u32,
     /// So oft lief der Sendemix-Puffer über und wurde hart gekürzt (Ton fehlt).
     pub live_trims: u32,
+    /// Warum die Notfall-Playlist sendet (leer, solange `emergency` falsch ist), #400.
+    pub emergency_reason: String,
+    /// Wie lange schon (Sekunden), #400.
+    pub emergency_seconds: u64,
+    /// So viele Dateien hat die Notfall-Playlist; 0 heißt: bei Ausfall wird Stille gesendet.
+    pub emergency_files: u32,
 }
 
 impl StreamStatus {
+    /// Rote Zeile „NOTFALL: Stille seit 12 s“, solange die Notfall-Playlist sendet (#400).
+    pub fn emergency_line(&self) -> Option<String> {
+        if !self.emergency {
+            return None;
+        }
+        let mut s = String::from("NOTFALL");
+        if !self.emergency_reason.is_empty() {
+            s.push_str(&format!(": {}", self.emergency_reason));
+        }
+        if self.emergency_files == 0 {
+            s.push_str(" · Notfall-Playlist leer, es wird Stille gesendet");
+        }
+        Some(s)
+    }
+
+    /// Hinweis, wenn bei einem Ausfall nichts zu spielen wäre (#400).
+    pub fn empty_emergency_hint(&self) -> Option<&'static str> {
+        (self.emergency_files == 0 && !self.emergency).then_some(
+            "Notfall-Playlist ist leer: fällt der Ton aus, wird Stille gesendet. \
+             Dateien oder Ordner unter Einstellungen › Sendung eintragen.",
+        )
+    }
+
     /// Frisch geschrieben und nicht beendet.
     pub fn is_running(&self, now_unix: u64) -> bool {
         self.connection != "beendet" && now_unix.saturating_sub(self.updated_unix) <= STALE_SECONDS
@@ -150,6 +179,30 @@ mod tests {
             "verbunden · Sendemix · 3 Hörer · 128 kbit/s · 1:02:05"
         );
         assert_eq!(r.problem(), None);
+    }
+
+    #[test]
+    fn emergency_is_named_with_reason() {
+        let mut s = StreamStatus {
+            emergency_files: 3,
+            ..StreamStatus::default()
+        };
+        assert_eq!(s.emergency_line(), None);
+        assert_eq!(s.empty_emergency_hint(), None);
+        s.emergency = true;
+        s.emergency_reason = "Stille seit 4 s".into();
+        assert_eq!(
+            s.emergency_line().as_deref(),
+            Some("NOTFALL: Stille seit 4 s")
+        );
+        s.emergency_files = 0;
+        assert!(
+            s.emergency_line()
+                .unwrap()
+                .ends_with("es wird Stille gesendet")
+        );
+        s.emergency = false;
+        assert!(s.empty_emergency_hint().is_some());
     }
 
     #[test]

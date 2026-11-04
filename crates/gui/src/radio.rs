@@ -3818,6 +3818,13 @@ impl RadioDesk {
                             theme::ok()
                         };
                         theme::status_pill(ui, &s.summary(), color, true);
+                        if let Some(line) = s.emergency_line() {
+                            ui.label(
+                                egui::RichText::new(line)
+                                    .strong()
+                                    .color(theme::danger_text()),
+                            );
+                        }
                     }
                     Some(s) if s.last_error.is_some() && on => {
                         ui.colored_label(
@@ -3845,6 +3852,14 @@ impl RadioDesk {
                 .and_then(StreamStatus::problem)
             {
                 ui.label(egui::RichText::new(p).small().color(theme::danger_text()));
+            }
+            if on
+                && let Some(h) = st
+                    .as_ref()
+                    .filter(|_| running)
+                    .and_then(StreamStatus::empty_emergency_hint)
+            {
+                ui.label(egui::RichText::new(h).small().color(theme::danger_text()));
             }
             if let Some(line) = link_line(
                 self.feeder

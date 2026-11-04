@@ -115,6 +115,18 @@ fn emergency_takes_over_and_hands_back() {
     let s = status_of(&data);
     assert_eq!(s.source, "Notfall-Playlist");
     assert!(s.connected, "server connection stays up");
+    // #400: Der Status nennt den Grund und die Zahl der Notfall-Dateien.
+    assert_eq!(s.emergency_files, 1);
+    assert!(
+        s.emergency_reason.starts_with("Oberfläche getrennt"),
+        "Grund: {:?}",
+        s.emergency_reason
+    );
+    assert!(
+        s.emergency_line()
+            .unwrap()
+            .starts_with("NOTFALL: Oberfläche")
+    );
     assert!(wait_for(Duration::from_secs(3), || {
         fake.seen
             .requests

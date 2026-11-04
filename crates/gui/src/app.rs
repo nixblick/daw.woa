@@ -3138,6 +3138,21 @@ impl WoaApp {
         {
             self.stream_ui.open(&self.config.stream, &self.data_dir);
         }
+        // #400: Notfall-Playlist sendet → deutlich sichtbar, mit Grund.
+        let now = woa_stream::unix_now();
+        if let Some(line) = self
+            .radio
+            .as_ref()
+            .and_then(RadioDesk::stream_status)
+            .filter(|s| s.is_running(now))
+            .and_then(woa_stream::StreamStatus::emergency_line)
+        {
+            ui.label(
+                egui::RichText::new(line)
+                    .strong()
+                    .color(theme::danger_text()),
+            );
+        }
     }
 
     fn menu_items(&mut self, ui: &mut egui::Ui) {

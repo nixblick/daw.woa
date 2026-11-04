@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.31 — 2026-11-05
+
+- **Notfall ist sichtbar, leere Notfall-Playlist wird gemeldet (#400, Teil 2):** Sendet `woa-streamd` die Notfall-Playlist, steht neben der ON-AIR-Lampe der Kopfleiste und im Sendepult in Rot „NOTFALL: Stille vom Sendemix seit x s“ bzw. „NOTFALL: Oberfläche getrennt seit x s“ (neue Felder `emergency_reason`, `emergency_seconds`, `emergency_files` in `streamd-status.json`). Ist die Notfall-Playlist leer, steht das beim Gehen auf Sendung als Hinweis im Sendepult, und die NOTFALL-Zeile sagt, dass Stille gesendet wird. Offen: Knopf, der Titel aus der Bibliothek in die Notfall-Playlist legt. Tests: `emergency_is_named_with_reason`, `failover::emergency_takes_over_and_hands_back`. Workspace-Version 0.41.31.
+
 ## 0.41.30 — 2026-11-05
 
 - **Upgrade-Probe findet die Installation pro Benutzer (#452):** Der Release-Lauf v0.41.28 brach in `test-upgrade.ps1` ab: Das MSI pro Benutzer installierte (msiexec 0), der Test fand aber keinen Eintrag, weil er unter `HKCU\…\Uninstall` suchte. Windows Installer führt Installationen pro Benutzer nicht dort. Der Test fragt jetzt Windows Installer selbst (`ProductsEx`, Kontext pro Benutzer bzw. für alle Benutzer). Die App selbst ist unverändert. Workspace-Version 0.41.30.

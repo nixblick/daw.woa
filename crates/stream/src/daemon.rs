@@ -257,6 +257,9 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
     let mut next_status = Instant::now();
     let mut live_now = false;
     let mut emergency_on = false;
+    let mut emergency_since = Instant::now();
+    let mut emergency_reason = "";
+    let emergency_files = emergency.len() as u32;
     let (mut live_underruns, mut live_trims) = (0u32, 0u32);
     let mut logged = (0u32, 0u32);
     let mut next_jitter_log = Instant::now();
@@ -289,6 +292,12 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
                             "silence"
                         } else {
                             "ui disconnected"
+                        };
+                        emergency_since = Instant::now();
+                        emergency_reason = if connected {
+                            "Stille vom Sendemix"
+                        } else {
+                            "Oberfläche getrennt"
                         };
                         tracing::warn!(reason, "emergency on");
                     } else {
@@ -352,6 +361,12 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
             let mut s = build_status(&cfg, &uplink, started, live_now, ui, &sent_title, "");
             s.live_underruns = live_underruns;
             s.live_trims = live_trims;
+            s.emergency_files = emergency_files;
+            if emergency_on {
+                let secs = emergency_since.elapsed().as_secs();
+                s.emergency_seconds = secs;
+                s.emergency_reason = format!("{emergency_reason} seit {secs} s");
+            }
             if let Err(e) = status::write(&status_path, &s) {
                 tracing::warn!(error = %e, "status not written");
             }
@@ -424,6 +439,9 @@ fn build_status(
         bytes_dropped: u.bytes_dropped,
         live_underruns: 0,
         live_trims: 0,
+        emergency_reason: String::new(),
+        emergency_seconds: 0,
+        emergency_files: 0,
     }
 }
 
