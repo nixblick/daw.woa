@@ -196,11 +196,13 @@ fn input_row(
 }
 
 impl OutputsUi {
-    /// Öffnet das Fenster mit der gespeicherten Wahl und liest die Geräte neu.
-    pub fn is_open(&self) -> bool {
+    /// Ist das Fenster offen? (Tests)
+    #[cfg(test)]
+    pub(crate) fn is_open(&self) -> bool {
         self.open
     }
 
+    /// Öffnet das Fenster mit der gespeicherten Wahl und liest die Geräte neu.
     pub fn open(&mut self, saved: AudioChoice) {
         self.open = true;
         self.draft = saved;
