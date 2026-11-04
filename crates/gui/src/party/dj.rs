@@ -27,13 +27,13 @@ const KEYS_MIN_W: f32 = 168.0;
 const JOG_MIN: f32 = 64.0;
 /// Wunschbreite der Tastenspalte (Cue, Play, Sync lesbar nebeneinander).
 const KEYS_WANT_W: f32 = 210.0;
-/// Unter dieser Deck-Innenbreite rutschen Restzeit, BPM und Tonart in eine zweite Kopfzeile (#443).
 /// Lücke zwischen den Auto-Loop-Zahlen und der LOOP-Taste.
 const LOOP_GAP: f32 = 6.0;
 /// Tempo-Spalte: Breite und die zwei Anschiebe-Tasten darunter (#443: 2 × 27 + 2 = 56).
 const TEMPO_W: f32 = 56.0;
 const NUDGE_GAP: f32 = 2.0;
 const NUDGE_W: f32 = (TEMPO_W - NUDGE_GAP) / 2.0;
+/// Unter dieser Deck-Innenbreite rutschen Restzeit, BPM und Tonart in eine zweite Kopfzeile (#443).
 const HEAD_WIDE_MIN: f32 = 560.0;
 /// Sichtbares Fenster der Wellen in Sekunden (Mausrad zoomt).
 const ZOOM_DEFAULT: f64 = 12.0;
@@ -822,7 +822,16 @@ impl PartyView {
                         d.key_match,
                     );
                 };
-                ui.horizontal(|ui| {
+                // #443: Im schmalen Deck brechen die Chips um („Analyse fehlgeschlagen“ samt
+                // Knopf ist breiter als ein Deck bei 1280 px und 125 %).
+                let chip_row = |ui: &mut egui::Ui, add: &mut dyn FnMut(&mut egui::Ui)| {
+                    if narrow_head {
+                        ui.horizontal_wrapped(|ui| add(ui));
+                    } else {
+                        ui.horizontal(|ui| add(ui));
+                    }
+                };
+                chip_row(ui, &mut |ui: &mut egui::Ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
                     use crate::widgets::{ChipTone, StateChip};
                     // Fassung 7: alle Chips 28 px auf einer Mittellinie.
@@ -851,11 +860,16 @@ impl PartyView {
                                 .on_hover_text("Tempo und Tonart werden gemessen");
                         }
                         Analysis::Failed => {
-                            StateChip::new("Analyse fehlgeschlagen", ChipTone::Warn)
+                            let text = if narrow_head {
+                                "Kein Tempo"
+                            } else {
+                                "Analyse fehlgeschlagen"
+                            };
+                            StateChip::new(text, ChipTone::Warn)
                                 .icon(theme::ic::WARNING)
                                 .dj()
                                 .show(ui)
-                                .on_hover_text("Kein Tempo gefunden");
+                                .on_hover_text("Analyse fehlgeschlagen: kein Tempo gefunden");
                             if crate::widgets::icon_button::IconButton::new(
                                 theme::ic::ARROW_CLOCKWISE,
                                 "Neu analysieren",

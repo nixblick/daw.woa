@@ -11373,9 +11373,22 @@ mod nacharbeit_tests {
                 }
                 std::thread::sleep(std::time::Duration::from_millis(20));
             }
+            // Auf das Ende der Analyse warten: „Analyse fehlgeschlagen“ samt Knopf ist der
+            // breiteste Deck-Kopf (unter Last kam er erst spät, der Test war dann zufällig rot).
+            let t1 = std::time::Instant::now();
+            while t1.elapsed() < std::time::Duration::from_secs(20)
+                && rig.any(|l| l.ends_with("Analyse"))
+            {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                rig.step(Vec::new());
+            }
             for _ in 0..4 {
                 rig.step(Vec::new());
             }
+            assert!(
+                !rig.any(|l| l.ends_with("Analyse")),
+                "{w}×{h} @{ppp}: Analyse läuft noch"
+            );
             let dj = rig.app.radio.as_ref().unwrap().view().dj.clone();
             assert!(
                 dj.as_ref()
