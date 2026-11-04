@@ -296,6 +296,8 @@ pub struct WoaApp {
     radio: Option<RadioDesk>,
     /// Neue Vorhören-Wahl, die erst greift, sobald nichts mehr läuft.
     pfl_switch: PflSwitch,
+    /// Ausgänge/Pult geändert, während etwas lief (#399): Neuaufbau, sobald nichts mehr läuft.
+    routing_switch: PflSwitch,
     /// MIDI-Eingang (Paket 11), spielt das Instrument der scharfen MIDI-Spur.
     midi: woa_io::midi::MidiIn,
     /// Letzter gesehener Event-Zähler und wann er sich zuletzt geändert hat (Lampe).
@@ -666,6 +668,7 @@ impl WoaApp {
             event_editor: crate::event_editor::EventEditor::new(woa_radio::data_dir()),
             radio: None,
             pfl_switch: PflSwitch::default(),
+            routing_switch: PflSwitch::default(),
             frames: (0, Instant::now()),
         }
     }
@@ -909,6 +912,13 @@ impl WoaApp {
             let mut lines = r.output_warnings().to_vec();
             lines.extend(r.output_links());
             lines.extend(r.phone_lines());
+            if self.routing_switch.pending {
+                lines.push(
+                    "Ausgänge: gelten ab Ende der Wiedergabe. Der Pult-Modus wurde sofort \
+                     umgeschaltet."
+                        .into(),
+                );
+            }
             if self.pfl_switch.pending {
                 lines.push("Vorhören: wirkt, sobald nichts mehr läuft.".into());
             } else if let Some(note) = r.pfl_note()
@@ -937,10 +947,20 @@ impl WoaApp {
         self.save_config();
         let running = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
         if routing && self.radio.is_some() && !running {
+            self.routing_switch.pending = false;
             self.radio = None;
             if self.config.mode.uses_desk() {
                 self.ensure_radio();
             }
+        } else if routing && self.radio.is_some() {
+            // #399: Pult-Modus sofort im Mixer umschalten; die Ausgänge folgen, sobald nichts
+            // mehr läuft (vorher ging die Änderung bis zum Neustart verloren).
+            if self.config.pult != before.pult
+                && let Some(r) = self.radio.as_mut()
+            {
+                r.set_pult_live(&self.config.outputs, &self.config.pult);
+            }
+            self.routing_switch.choose(true);
         } else if pfl && pfl_live_swap(&before.pfl, &self.config.pfl_output) {
             // #373/#374: eigenes Kopfhörer-Gerät sofort, auch wenn die Playlist läuft.
             self.pfl_switch.pending = false;
@@ -7119,7 +7139,11 @@ impl eframe::App for WoaApp {
             self.ensure_radio();
         }
         let running = self.radio.as_ref().is_some_and(RadioDesk::is_on_air);
-        if self.pfl_switch.poll(running) && self.radio.is_some() {
+        let routing_due = self.routing_switch.poll(running);
+        if (self.pfl_switch.poll(running) || routing_due) && self.radio.is_some() {
+            if routing_due {
+                tracing::info!("audio devices: applying deferred routing");
+            }
             self.reopen_radio_for_pfl();
         }
         // Im Radio-Modus spielt nur der Sendemixer; der Player-Strom ruht (#51).

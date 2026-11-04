@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.41.20 — 2026-11-04
+
+- **Pult-Modus schaltet live um (#399):** „Sendung kommt vom Pult“ während der Wiedergabe umgelegt, wirkt jetzt sofort im Mixer: aus = erst interne Mischung auf Stream und Mitschnitt, dann Eingang lösen; an = erst Eingang öffnen, dann umschalten (geht er nicht auf, bleibt die interne Mischung mit Meldung). Log: `pult mode on/off (live)`. Geänderte Ausgänge werden gemerkt, im Fenster „Audio-Geräte“ steht „gelten ab Ende der Wiedergabe“, und sie werden danach ohne Neustart angewendet. Vorher ging die Änderung bis zum Neustart verloren. Die Anzeige „PULT“ folgt dem wirklichen Zustand des Mixers.
+- **Stummer Sendeweg wird sichtbar (#400, Teil):** Auf Sendung mit hörbarem Ausgang (> −40 dBFS), aber stillem Stream (< −60 dBFS) steht nach 5 s im Sendepult „Stream bekommt keinen Ton (Quelle: Pult-Eingang/Sendemix)“, mit Logzeile. `woa-streamd` schreibt beim Wechsel auf und von der Notfall-Playlist `emergency on reason=silence|ui disconnected` und `emergency off`. Offen: Hinweis bei leerer Notfall-Playlist beim Gehen auf Sendung.
+- **Pult-Eingang: Aussetzer gezählt, Log gedrosselt (#401, Teil):** Unter-/Überläufe des Pult-Eingangs zählt WOA und zeigt sie neben dem PULT-Pegel; ins Log kommt höchstens eine Sammelzeile je Minute mit Anzahl statt einer je Ereignis. Puffergröße des Eingangs unverändert: ob der USB-Codec hörbar knackt, lässt sich nur an der echten Hardware messen.
+
 ## 0.41.19 — 2026-11-04
 
 - **Hörer = eindeutige Hörer statt Verbindungen:** Ein iPhone (Safari) öffnet zwei Verbindungen zugleich; `/7.html` meldete `2,1,2,50,1,…` und überall standen 2 Hörer, obwohl nur einer zuhörte. Jetzt zählt überall Feld 4 (`eindeutig`/`unique`), Rückfall auf `aktuell` nur, wenn es fehlt. Sammler: `/api/jetzt` (`hoerer`, `spitze`) und `/api/hoerer` (`jetzt.aktuell`, Verlauf, Sendungsspitze und -schnitt) aus den gespeicherten eindeutigen Werten; die Shoutcast-Spitze (zählt Verbindungen) fällt als Rückfall weg; neues Feld `jetzt.verbindungen`. Felder bleiben kompatibel, Hörer-Seite und Startseite brauchen keine Änderung. `woa-streamd` meldet `listeners` eindeutig; App-Chip und Fenster „Hörer-Statistik“ ebenso (Kachel „Verbindungen“ statt „Eindeutig“). Tests: Attrappen mit `2,1,2,50,1`. Code mit `cargo fmt` formatiert.

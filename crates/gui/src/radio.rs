@@ -468,6 +468,130 @@ pub(crate) const RESERVED_KEYS: [egui::Key; 6] = [
 /// Taste, die Deck `k` startet und stoppt (A, B, C wie der Deck-Name).
 const DECK_KEYS: [egui::Key; woa_radio::DECKS] = [egui::Key::A, egui::Key::B, egui::Key::C];
 
+/// Öffnet den Pult-Eingang (#301). Fehler des Eingangs zählt `faults`; ins Log kommt höchstens
+/// eine Sammelzeile je Minute (#401: 805 Einzelzeilen an einem Nachmittag).
+fn open_pult_input(
+    p: &woa_radio::routing::PultIn,
+    rate: u32,
+    faults: Arc<AtomicU64>,
+) -> Result<(Stream, woa_engine::pairs::LinkRx), String> {
+    let cfg = woa_engine::record::InputConfig {
+        device_id: Some(p.open_id.clone()),
+        pair: p.pair,
+    };
+    let mut burst = ErrorBurst::default();
+    match woa_engine::record::start_pair_input(&cfg, rate, move |e| {
+        faults.fetch_add(1, Ordering::Relaxed);
+        if let Some(n) = burst.note(Instant::now()) {
+            tracing::warn!(error = %e, count = n, "pult input errors (last minute)");
+        }
+    }) {
+        Ok((stream, rx, _stats, in_rate)) => {
+            tracing::info!(device = %p.name, rate = in_rate, "pult input open, pult mode on");
+            Ok((Box::new(stream), rx))
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, device = %p.name, "pult input failed");
+            Err(format!(
+                "Pult-Modus: Eingang {} lässt sich nicht öffnen ({e}). Die Sendung kommt weiter \
+                 aus WOA.",
+                p.name
+            ))
+        }
+    }
+}
+
+/// Drosselt wiederkehrende Fehlermeldungen: die erste sofort, danach höchstens eine
+/// Sammelzeile je [`ErrorBurst::EVERY`] mit der Anzahl seit der letzten Zeile.
+#[derive(Debug, Default)]
+struct ErrorBurst {
+    last: Option<Instant>,
+    count: u64,
+}
+
+impl ErrorBurst {
+    const EVERY: Duration = Duration::from_secs(60);
+
+    /// Ein Fehler. `Some(n)`: jetzt eine Zeile für `n` Fehler schreiben.
+    fn note(&mut self, now: Instant) -> Option<u64> {
+        self.count += 1;
+        if self
+            .last
+            .is_some_and(|t| now.duration_since(t) < Self::EVERY)
+        {
+            return None;
+        }
+        self.last = Some(now);
+        Some(std::mem::take(&mut self.count))
+    }
+}
+
+/// Plausibilität des Sendewegs (#400): Ist auf Sendung ein Ausgang deutlich hörbar
+/// (> −40 dBFS), der Stream aber still (< −60 dBFS), schlägt nach [`SilentStream::AFTER`]
+/// der Alarm an.
+#[derive(Debug, Default)]
+struct SilentStream {
+    since: Option<Instant>,
+    alarm: bool,
+}
+
+impl SilentStream {
+    const AFTER: Duration = Duration::from_secs(5);
+    /// −40 dBFS linear.
+    const AUDIBLE: f32 = 0.01;
+    /// −60 dBFS linear.
+    const SILENT: f32 = 0.001;
+
+    fn step(&mut self, on_air: bool, audible: f32, stream: f32, now: Instant) -> bool {
+        if on_air && audible > Self::AUDIBLE && stream < Self::SILENT {
+            let since = *self.since.get_or_insert(now);
+            self.alarm = now.duration_since(since) >= Self::AFTER;
+        } else {
+            self.since = None;
+            self.alarm = false;
+        }
+        self.alarm
+    }
+
+    fn alarm(&self) -> bool {
+        self.alarm
+    }
+}
+
+#[cfg(test)]
+mod pult_guard_tests {
+    use super::{ErrorBurst, SilentStream};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn error_burst_logs_once_per_minute_with_count() {
+        let t0 = Instant::now();
+        let mut b = ErrorBurst::default();
+        assert_eq!(b.note(t0), Some(1));
+        for i in 1..600 {
+            assert_eq!(b.note(t0 + Duration::from_millis(100 * i)), None);
+        }
+        assert_eq!(b.note(t0 + Duration::from_secs(61)), Some(600));
+    }
+
+    #[test]
+    fn silent_stream_alarms_after_five_seconds_only_on_air() {
+        let t0 = Instant::now();
+        let mut s = SilentStream::default();
+        assert!(!s.step(true, 0.2, 0.0001, t0));
+        assert!(!s.step(true, 0.2, 0.0001, t0 + Duration::from_secs(4)));
+        assert!(s.step(true, 0.2, 0.0001, t0 + Duration::from_secs(5)));
+        // Stream kommt zurück: Alarm weg.
+        assert!(!s.step(true, 0.2, 0.3, t0 + Duration::from_secs(6)));
+        // Nicht auf Sendung oder alles still: nie Alarm.
+        let mut s = SilentStream::default();
+        assert!(!s.step(false, 0.2, 0.0, t0));
+        assert!(!s.step(false, 0.2, 0.0, t0 + Duration::from_secs(10)));
+        assert!(!s.step(true, 0.0, 0.0, t0 + Duration::from_secs(20)));
+        assert!(!s.step(true, 0.0, 0.0, t0 + Duration::from_secs(30)));
+    }
+}
+
 /// Was `RadioDesk::open` geöffnet hat, bevor das Pult zusammengesetzt wird.
 struct Parts {
     radio_path: PathBuf,
@@ -511,6 +635,10 @@ pub struct RadioDesk {
     /// `None`: Die Sendung kommt aus WOAs interner Mischung.
     pult: Option<Stream>,
     pult_level: f32,
+    /// Fehler des Pult-Eingangs seit dem Öffnen (Unter-/Überläufe, #401), für die Anzeige.
+    pult_faults: Arc<AtomicU64>,
+    /// Stiller Sendeweg (#400): hörbare Ausgänge, aber stummer Stream.
+    silent_stream: SilentStream,
     /// Pegel des Vorhör-Ausgangs (PFL), fällt langsam ab; für das MCP-Werkzeug `output_levels`.
     pfl_level: f32,
     /// LED-Meter neben den Fadern und Master (#216).
@@ -1136,28 +1264,15 @@ impl RadioDesk {
         };
         // Pult-Eingang öffnen; geht er nicht, kommt die Sendung weiter aus WOA (mit Meldung).
         let mut pult_stream: Option<Stream> = None;
+        let pult_faults = Arc::new(AtomicU64::new(0));
         if let Some(p) = plan.pult.take() {
-            let cfg = woa_engine::record::InputConfig {
-                device_id: Some(p.open_id.clone()),
-                pair: p.pair,
-            };
-            match woa_engine::record::start_pair_input(&cfg, rate, |e| {
-                tracing::warn!(error = %e, "pult input");
-            }) {
-                Ok((stream, rx, _stats, in_rate)) => {
-                    tracing::info!(device = %p.name, rate = in_rate, "pult input open, pult mode on");
+            match open_pult_input(&p, rate, Arc::clone(&pult_faults)) {
+                Ok((stream, rx)) => {
                     controller.set_pult_input(Some(rx));
                     controller.set_pult_mode(true);
-                    pult_stream = Some(Box::new(stream));
+                    pult_stream = Some(stream);
                 }
-                Err(e) => {
-                    tracing::warn!(error = %e, device = %p.name, "pult input failed");
-                    plan.warnings.push(format!(
-                        "Pult-Modus: Eingang {} lässt sich nicht öffnen ({e}). Die Sendung kommt \
-                         weiter aus WOA.",
-                        p.name
-                    ));
-                }
+                Err(e) => plan.warnings.push(e),
             }
         }
         let opened = crate::outputs::open(
@@ -1200,13 +1315,71 @@ impl RadioDesk {
             pfl_output,
             pfl_note,
         })
-        .with_pult(pult_stream)
+        .with_pult(pult_stream, pult_faults)
         .reattach()
     }
 
-    fn with_pult(mut self, pult: Option<Stream>) -> Self {
+    fn with_pult(mut self, pult: Option<Stream>, faults: Arc<AtomicU64>) -> Self {
         self.pult = pult;
+        self.pult_faults = faults;
         self
+    }
+
+    /// Pult-Modus während des Betriebs umschalten (#399), ohne die Sendeausgänge neu zu
+    /// öffnen. Aus: erst den Mixer auf die interne Mischung, dann den Eingang lösen. An: erst
+    /// den Eingang öffnen, dann umschalten; geht er nicht auf, bleibt die interne Mischung.
+    /// Gibt `true` zurück, wenn der Mixer danach im gewünschten Zustand ist.
+    pub fn set_pult_live(
+        &mut self,
+        output_map: &woa_radio::routing::OutputMap,
+        pult_cfg: &woa_radio::routing::Pult,
+    ) -> bool {
+        if !pult_cfg.on {
+            self.with(|c| {
+                c.set_pult_mode(false);
+                c.set_pult_input(None);
+            });
+            self.pult = None;
+            tracing::info!("pult mode off (live)");
+            return true;
+        }
+        let plan = crate::outputs::plan(output_map, pult_cfg, &[]);
+        let Some(p) = plan.pult else {
+            self.error = Some(
+                "Pult-Modus: kein Pult-Eingang gewählt oder gefunden. Die Sendung kommt weiter \
+                 aus WOA."
+                    .into(),
+            );
+            return false;
+        };
+        // Alten Eingang erst lösen (dasselbe Gerät ginge sonst nicht ein zweites Mal auf).
+        self.with(|c| {
+            c.set_pult_mode(false);
+            c.set_pult_input(None);
+        });
+        self.pult = None;
+        let faults = Arc::new(AtomicU64::new(0));
+        match open_pult_input(&p, self.rate, Arc::clone(&faults)) {
+            Ok((stream, rx)) => {
+                self.with(move |c| {
+                    c.set_pult_input(Some(rx));
+                    c.set_pult_mode(true);
+                });
+                self.pult = Some(stream);
+                self.pult_faults = faults;
+                tracing::info!("pult mode on (live)");
+                true
+            }
+            Err(e) => {
+                self.error = Some(e);
+                false
+            }
+        }
+    }
+
+    /// Fehler des Pult-Eingangs seit dem Öffnen (#401).
+    pub fn pult_faults(&self) -> u64 {
+        self.pult_faults.load(Ordering::Relaxed)
     }
 
     /// Pult ohne Audiogerät für Oberflächen-Tests: Steuerung und Mixer laufen, nichts klingt
@@ -1277,6 +1450,8 @@ impl RadioDesk {
             phone_level: 0.0,
             pult: None,
             pult_level: 0.0,
+            pult_faults: Arc::new(AtomicU64::new(0)),
+            silent_stream: SilentStream::default(),
             pfl_level: 0.0,
             meters: Default::default(),
             out_meters: Default::default(),
@@ -1512,6 +1687,19 @@ impl RadioDesk {
         }
         for (m, v) in self.out_meters.iter_mut().zip(self.view.out_meters) {
             m.step(v, now_s());
+        }
+        let alarm_before = self.silent_stream.alarm();
+        let alarm = self.silent_stream.step(
+            self.feeder.is_some(),
+            self.out_meters[0].level.max(self.pfl_level),
+            self.out_meters[1].level,
+            Instant::now(),
+        );
+        if alarm && !alarm_before {
+            tracing::warn!(
+                pult = self.pult.is_some(),
+                "stream silent while outputs are audible"
+            );
         }
         // Einmal je Sitzung: Carts, deren alte Taste jetzt ein Deck startet.
         if !self.deck_keys_checked && !self.view.cart_keys.is_empty() {
@@ -2866,6 +3054,26 @@ impl RadioDesk {
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(70.0, 12.0), egui::Sense::hover());
                 theme::led_meter(ui.painter(), rect, self.pult_level);
+                let faults = self.pult_faults();
+                if faults > 0 {
+                    ui.label(
+                        egui::RichText::new(format!("{faults} Aussetzer"))
+                            .small()
+                            .color(theme::text_dim()),
+                    )
+                    .on_hover_text("Unter- oder Überläufe des Pult-Eingangs seit dem Öffnen");
+                }
+            }
+            if self.silent_stream.alarm() {
+                let source = if self.pult.is_some() {
+                    "Pult-Eingang"
+                } else {
+                    "Sendemix"
+                };
+                ui.colored_label(
+                    theme::on_air(),
+                    format!("Stream bekommt keinen Ton (Quelle: {source})"),
+                );
             }
             if let Some(e) = &self.phone_error {
                 ui.colored_label(theme::on_air(), e);
