@@ -79,14 +79,7 @@ impl Rig {
         rig.idle();
         rig.click_text("Ansicht");
         rig.click_text("Bibliothek");
-        // Menü zu: Escape, dann ein paar Bilder.
-        rig.step(vec![egui::Event::Key {
-            key: egui::Key::Escape,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::NONE,
-        }]);
+        // Das Menü schließt mit dem Klick; kein Esc mehr, das schlösse seit #441 die Bibliothek.
         // Eine Sekunde Ruhe: die Menüklicks zählen nicht mehr in die Klickfolge.
         rig.wait(1.0);
         rig
