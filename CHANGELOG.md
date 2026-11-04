@@ -2,6 +2,9 @@
 
 ## 0.41.20 — 2026-11-04
 
+- **Neu und Öffnen fragen mit „Nicht speichern“ (#408):** Bei ungespeicherten Änderungen erscheint vor Neu, Öffnen und DAWproject öffnen dieselbe Frage wie beim Beenden: Speichern · Nicht speichern · Abbrechen (Esc = Abbrechen). Bisher wurde Speichern erzwungen. Ein zweiter Klick öffnet keine zweite Frage. Tests: `new_with_unsaved_changes_offers_discard_and_asks_once`, `open_with_unsaved_changes_cancel_keeps_project`, `new_project_asks_before_dropping_unsaved_changes`.
+- **Speichern nie mehr in einem fremden `.woa`-Paket (#409):** Wählt der Speichern-Dialog einen Ort innerhalb eines Projektordners, landet das Projekt daneben (`Projekte/X.woa` statt `Projekte/A.woa/X.woa`). Liegt am Ziel schon ein anderes Projekt, fragt WOA „Projekt überschreiben?“ und sichert das alte als `project.json.bak`. Tests: `save_as_never_nests_inside_a_project_package`, `save_as_over_another_project_keeps_a_backup`.
+- **Öffnen eines normalen Ordners (#405):** Wer statt eines `.woa`-Ordners einen Ordner wie `Projekte/Robby` wählt, bekommt das eine Projekt darin geöffnet; liegen mehrere darin, nennt die Statuszeile sie, sonst den Hinweis, einen `.woa`-Ordner zu wählen (bisher: „Das System kann die angegebene Datei nicht finden“). Test: `open_finds_the_project_in_a_plain_folder_or_explains`. Code mit `cargo fmt` formatiert.
 - **Party: am Ende der Playlist keine Schleife der letzten zwei Titel (#434):** Mit zwei Decks blieb nach dem letzten Titel der vorletzte (schon gespielte) auf der freien Seite liegen, der Auto-Übergang startete ihn, danach wieder den letzten, im Kreis. Jetzt wird die freie Seite geleert, wenn nichts folgt: bei „Wiederholen aus“ endet die Party nach dem letzten Titel, bei „Playlist wiederholen“ (Taste R) geht es mit dem ersten weiter. Die Notfall-Schleife von `woa-streamd` ist davon nicht berührt. Tests: `party_duo` (Attrappen, kein Ton).
 
 ## 0.41.19 — 2026-11-04
