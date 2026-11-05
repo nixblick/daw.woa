@@ -320,15 +320,20 @@ fn number_field(
     name: &str,
     enabled: bool,
 ) -> egui::Response {
-    let r = ui.add_enabled(
+    // Auf einer Kopie im Bereich: egui meldet sonst schon das Einklemmen eines Werts außerhalb
+    // (etwa 0,0 vor dem ersten Stand) als Änderung, und der Mindestwert ginge an den Mixer.
+    let mut local = value.clamp(*range.start(), *range.end());
+    let mut r = ui.add_enabled(
         enabled,
-        egui::DragValue::new(value)
+        egui::DragValue::new(&mut local)
             .range(range)
             .speed(0.1)
             .fixed_decimals(1)
             .suffix(format!(" {unit}")),
     );
-    let mut r = r;
+    if r.changed() {
+        *value = local;
+    }
     if r.double_clicked() {
         *value = default;
         r.mark_changed();
@@ -882,7 +887,7 @@ const METER_W: f32 = 16.0;
 /// Titel der Speicher-Meldung (wegklickbar).
 const SAVE_NOTICE: &str = "Speichern fehlgeschlagen";
 /// Höhe der Wunschtitel-Zeile ohne Kartenrand.
-const WISH_ROW_H: f32 = 28.0;
+const WISH_ROW_H: f32 = 44.0;
 /// Unter dieser Innenhöhe nimmt die Pegel-Karte ihre Grundhöhe.
 const LEVELS_MIN_INNER_H: f32 = 200.0;
 const LEVELS_SIDE_BY_SIDE: f32 = 720.0;
@@ -3263,17 +3268,7 @@ impl RadioDesk {
             }
             self.learn_menu(&r, Target::Mic);
 
-            let ph = v.phone_on;
-            let r = console_key(ui, theme::icf::PHONE, "Telefon", theme::on_air(), ph, KEY_H)
-                .on_hover_text(if ph {
-                    "Telefon auf Sendung. Klick: Anrufer von der Sendung nehmen"
-                } else {
-                    "Anrufer auf die Sendung legen. Der Pegel rechts zeigt ihn auch vorher; \
-                     den Rückweg zum Anrufer wählst du unter Ausgänge."
-                });
-            if r.clicked() {
-                self.toggle_phone();
-            }
+            // Telefon schaltet die Gäste-Karte (Fassung 8); hier bleibt nur der Pegel.
             let (rect, _) = ui.allocate_exact_size(egui::vec2(70.0, 12.0), egui::Sense::hover());
             theme::led_meter(ui.painter(), rect, self.phone_level);
             if self.pult.is_some() {
@@ -7503,6 +7498,27 @@ mod design3_tests {
                 "{name} ist noch {roles:?}"
             );
         }
+    }
+
+    /// Zeichnen allein ändert keinen Rack-Wert (Zahlenfelder ohne Eingabe bleiben stehen).
+    #[test]
+    fn drawing_keeps_rack_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut d = RadioDesk::headless(dir.path());
+        // Vor dem ersten Stand vom Steuer-Thread stehen 0,0 s außerhalb der Bereiche
+        // (0,1–5 s, 0,5–10 s). Das Feld darf das nicht als Änderung melden: sonst gingen
+        // Minimalwerte an den Mixer und in radio.json (gefunden bei den Fotos zu 0.42.0).
+        d.view.duck_hold_seconds = 0.0;
+        d.view.duck_release_seconds = 0.0;
+        d.view.stop_fade_seconds = 0.0;
+        let mut h = harness(egui::vec2(1920.0, 990.0), d);
+        h.run_steps(10);
+        let v = &h.state().view;
+        assert_eq!(
+            (v.duck_hold_seconds, v.duck_release_seconds, v.stop_fade_seconds),
+            (0.0, 0.0, 0.0),
+            "Zeichnen hat Werte geändert"
+        );
     }
 
     /// Bei 1920 × 1030 liegt alles im Fenster, auch die Wunschtitel-Zeile, ohne Rollen.
