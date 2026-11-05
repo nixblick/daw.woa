@@ -72,6 +72,26 @@ impl MicInput {
     }
 }
 
+/// „Mikro einzeln, wie OBS“ (0.42.2, Robby): Pult-Modus aus, das Gerät des Pult-Eingangs
+/// wird das Mikrofon. WOA mischt dann selbst und duckt die Musik an der Stimme. Am Gerät muss
+/// Loopback aus sein, sonst hört WOA im Mikro die eigene Musik.
+pub fn mic_like_obs(c: &mut AudioChoice) {
+    c.pult.on = false;
+    if let Some(id) = c.pult.input.device_id.clone() {
+        c.mic = MicInput {
+            device_id: Some(id),
+            device_name: c.pult.input.device_name.clone(),
+            pair: c.pult.input.pair,
+        };
+    }
+}
+
+/// Pult-Modus an und Mikrofon = Pult-Eingang: dann steckt die Musik im Mikro, und das Ducking
+/// hält sie dauernd unten.
+pub fn mic_is_pult_input(c: &AudioChoice) -> bool {
+    c.pult.on && c.mic.device_id.is_some() && c.mic.device_id == c.pult.input.device_id
+}
+
 /// Alles, was das Fenster wählt. „Übernehmen“ gibt es zurück; der Aufrufer speichert und
 /// wendet nur an, was sich geändert hat.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -423,6 +443,31 @@ impl OutputsUi {
             "An: Playlist, Carts und Decks gehen auf die Ausgänge oben (Richtung Pult). Stream \
              und Mitschnitt bekommen nur den Eingang vom Pult. Vorhören braucht ein eigenes Gerät.",
         );
+        // 0.42.2: wie in OBS ist das Mikro eine eigene Quelle, WOA duckt selbst.
+        ui.horizontal(|ui| {
+            if ui
+                .button("Mikro einzeln, wie OBS")
+                .on_hover_text(
+                    "Pult-Modus aus; das Gerät vom Pult-Eingang (z. B. Maonocaster) wird das \
+                     Mikrofon. WOA mischt und duckt die Musik an deiner Stimme.",
+                )
+                .clicked()
+            {
+                mic_like_obs(&mut self.draft);
+            }
+            hint(
+                ui,
+                "Danach am Gerät Loopback ausschalten, dann „Übernehmen“. Die Musik hörst du \
+                 weiter im Kopfhörer.",
+            );
+        });
+        if mic_is_pult_input(&self.draft) {
+            ui.colored_label(
+                theme::warn(),
+                "Mikrofon und Pult-Eingang sind dasselbe Gerät: darin steckt auch die Musik, \
+                 das Ducking hält sie dauernd unten. Besser „Mikro einzeln, wie OBS“.",
+            );
+        }
         ui.add_enabled_ui(self.draft.pult.on, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Eingang vom Pult");
@@ -487,6 +532,21 @@ fn device_combo(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mic_like_obs_turns_pult_off_and_takes_its_device() {
+        let mut c = AudioChoice::default();
+        c.pult.on = true;
+        c.pult.input.device_id = Some("maono".into());
+        c.pult.input.device_name = "Maonocaster".into();
+        c.mic.device_id = Some("maono".into());
+        assert!(mic_is_pult_input(&c), "Warnung bei gleichem Gerät");
+        mic_like_obs(&mut c);
+        assert!(!c.pult.on);
+        assert_eq!(c.mic.device_id.as_deref(), Some("maono"));
+        assert_eq!(c.mic.device_name, "Maonocaster");
+        assert!(!mic_is_pult_input(&c));
+    }
 
     #[test]
     fn mic_default_is_system_default_and_not_saved() {

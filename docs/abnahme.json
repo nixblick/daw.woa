@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "r2-mikro-wie-obs",
+      "ansicht": "Radio",
+      "titel": "Mikro einzeln, wie OBS",
+      "tun": "Einstellungen › Audio-Geräte: „Mikro einzeln, wie OBS“ drücken, am Maonocaster Loopback aus, „Übernehmen“. Musik laufen lassen, Mikro an, sprechen.",
+      "erwartet": "„Sendung kommt vom Pult“ ist aus, Mikrofon ist der Maonocaster. Beim Sprechen geht die Musik runter, nach 0,5 s Stille wieder hoch. Im Stream sind Musik und Stimme.",
+      "version": "0.42.2"
+    },
+    {
       "id": "r1-fensterwechsel-knistern",
       "ansicht": "Radio",
       "titel": "Kein Knistern beim Fensterwechsel",

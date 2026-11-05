@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.2 — 2026-11-05
+
+- **Mikro einzeln, wie OBS:** Neuer Knopf in Audio-Geräte beim Pult-Modus. Er schaltet den Pult-Modus aus und macht das Gerät des Pult-Eingangs (etwa Maonocaster) zum Mikrofon. WOA mischt dann selbst und duckt die Musik an der Stimme, wie OBS mit dem Mikro als eigener Quelle. Am Gerät muss Loopback aus sein. Sind Mikrofon und Pult-Eingang im Pult-Modus dasselbe Gerät, warnt das Fenster: Dann steckt die Musik im Mikro, und das Ducking hält sie dauernd unten.
+
 ## 0.42.1 — 2026-11-05 (Rückmeldungen zu 0.42.0)
 
 - **Knistern beim Fensterwechsel (Windows):** Die Audio-Threads melden sich jetzt als Echtzeit an (cpal-Feature `realtime`, unter Windows MMCSS „Pro Audio“). Beim Start nimmt sich WOA außerdem von der Energiespar-Drosselung aus (`SetProcessInformation`, Ausführungstempo und Zeitgeber-Auflösung). Lehnt das System die Echtzeit ab (unter Linux ohne Rechte üblich), läuft der Strom normal weiter, und das zählt nicht als Fehler. Ursache (Vermutung, noch nicht am Gerät gemessen): Windows 11 drosselt WOA, sobald ein anderes Fenster vorn ist.
