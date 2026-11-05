@@ -4,6 +4,10 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Mikro wie OBS (0.42.2, offen)
+
+1. Audio-Geräte: „Mikro einzeln, wie OBS“, Loopback am Maono aus, Übernehmen. Sprechen: Musik duckt, im Stream sind Musik und Stimme.
+
 ## Rückmeldungen zu 0.42.0 (0.42.1, offen)
 
 1. Windows, Musik läuft mit Pult und Mikro: 50-mal zwischen WOA und Explorer wechseln. Kein Knistern.
