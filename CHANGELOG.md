@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.41.38 — 2026-11-05
+
+Gäste und Telefon nach den Abstimmungen des Moderators unter Entwickler › Fragen.
+
+- **Höchstens 4 Gäste gleichzeitig** (Frage `gaeste-anzahl`): `MAX_GUESTS` ist 4 statt 8. Die Tasten „Testgast“, „Datei als Gast“ und „Einladung“ sind ab dem vierten Gast aus; die Bank hat nur noch vier Kanäle.
 ## 0.41.36 — 2026-11-05
 
 - **Titel mit langem Vorspann werden gelesen (#347):** Dateien, bei denen mehr als 1 MiB Füllbytes oder Tag-Reste vor dem ersten Audio-Frame standen, scheiterten mit „reached probe limit“; das Laden ins Deck und die BPM-Analyse („Analyse fehlgeschlagen“) fielen aus. Scheitert die schnelle Formaterkennung, sucht ein zweiter Versuch bis 32 MiB tief (`decode.rs`, `wide_probe`). Test `mp3_with_more_than_one_mib_of_padding_before_first_frame_is_read`. Workspace-Version 0.41.36.
