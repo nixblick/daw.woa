@@ -857,6 +857,40 @@ mod tests {
         assert!(h.query_by_label("Nichts gefunden").is_some());
     }
 
+    /// Fassung 8, 0b: Ein einfacher Klick auf X (Zeiger steht schon dort, keine Bewegung) schließt.
+    #[test]
+    fn x_closes_on_plain_click() {
+        for max in [false, true] {
+            let mut w = AbnahmeWindow::default();
+            w.open = true;
+            w.maximized = max;
+            w.liste = Some((embedded(), false));
+            let mut h = harness(w);
+            let c = h.get_by_label(theme::ic::X).rect().center();
+            h.hover_at(c);
+            // Lange genug stehen, dass der Tooltip „Schließen“ erscheint.
+            for _ in 0..40 {
+                h.step();
+                std::thread::sleep(std::time::Duration::from_millis(15));
+            }
+            h.event(egui::Event::PointerButton {
+                pos: c,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.run_steps(1);
+            h.event(egui::Event::PointerButton {
+                pos: c,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.run_steps(2);
+            assert!(!h.state().open, "X closes (maximized: {max})");
+        }
+    }
+
     /// André 02.11.2026: Nach „Geht“ muss eine Anmerkung zum Punkt noch rausgehen.
     #[test]
     fn note_payload_is_marked_anmerkung() {

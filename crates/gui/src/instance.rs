@@ -11,6 +11,8 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 const LOCK_FILE: &str = "woa.lock";
@@ -25,29 +27,31 @@ pub enum Instance {
     Secondary { woken: bool },
 }
 
-/// Sperre und Zuhörer des ersten Starts.
+/// Sperre und Weckruf des ersten Starts. Der Port wird in einem eigenen Thread bedient,
+/// damit eine hängende Verbindung nie die Oberfläche blockiert.
 pub struct Primary {
     _lock: Option<File>,
-    listener: Option<TcpListener>,
+    woken: Arc<AtomicBool>,
 }
 
 impl Primary {
     /// `true`, wenn seit dem letzten Aufruf ein zweiter Start „show“ geschickt hat.
     /// Blockiert nie.
     pub fn poll_show(&self) -> bool {
-        let Some(l) = &self.listener else {
-            return false;
-        };
-        let mut woke = false;
-        while let Ok((mut s, _)) = l.accept() {
-            let _ = s.set_nonblocking(false);
-            let _ = s.set_read_timeout(Some(Duration::from_millis(200)));
-            let mut buf = [0u8; 8];
-            if let Ok(n) = s.read(&mut buf) {
-                woke |= buf.get(..n) == Some(SHOW);
-            }
+        self.woken.swap(false, Ordering::Relaxed)
+    }
+}
+
+fn serve(l: TcpListener, woken: Arc<AtomicBool>) {
+    for s in l.incoming() {
+        let Ok(mut s) = s else { continue };
+        let _ = s.set_read_timeout(Some(Duration::from_millis(500)));
+        let mut buf = [0u8; 8];
+        if let Ok(n) = s.read(&mut buf)
+            && buf.get(..n) == Some(SHOW)
+        {
+            woken.store(true, Ordering::Relaxed);
         }
-        woke
     }
 }
 
@@ -68,7 +72,7 @@ pub fn acquire(data_dir: &Path) -> Instance {
             tracing::warn!(error = %e, "single instance: lock file not opened");
             return Instance::Primary(Primary {
                 _lock: None,
-                listener: None,
+                woken: Arc::default(),
             });
         }
     };
@@ -85,16 +89,25 @@ pub fn acquire(data_dir: &Path) -> Instance {
     }
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .and_then(|l| {
-            l.set_nonblocking(true)?;
             let port = l.local_addr()?.port();
             std::fs::write(data_dir.join(PORT_FILE), port.to_string())?;
             Ok(l)
         })
         .map_err(|e| tracing::warn!(error = %e, "single instance: no wake port"))
         .ok();
+    let woken = Arc::<AtomicBool>::default();
+    if let Some(l) = listener {
+        let w = woken.clone();
+        if let Err(e) = std::thread::Builder::new()
+            .name("woa-instance".into())
+            .spawn(move || serve(l, w))
+        {
+            tracing::warn!(error = %e, "single instance: no wake thread");
+        }
+    }
     Instance::Primary(Primary {
         _lock: Some(lock),
-        listener,
+        woken,
     })
 }
 
@@ -144,7 +157,10 @@ mod tests {
         }
         assert!(seen, "first start gets the show request");
         drop(first);
-        assert!(matches!(acquire(&d), Instance::Primary(_)), "lock free after exit");
+        assert!(
+            matches!(acquire(&d), Instance::Primary(_)),
+            "lock free after exit"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 }

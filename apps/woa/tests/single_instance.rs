@@ -34,7 +34,14 @@ fn second_start_wakes_first_and_opens_nothing() {
         std::thread::sleep(Duration::from_millis(20));
     };
     assert!(status.success());
-    assert!(first.poll_show(), "first instance got the show request");
+    let t = Instant::now();
+    while !first.poll_show() {
+        assert!(
+            t.elapsed() < Duration::from_secs(30),
+            "first instance got the show request"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
     // Kein Log, keine Konfiguration: der zweite Start kam nicht bis Telemetrie, Audio, Stream.
     assert!(!data_dir.join("logs").exists(), "no logging set up");
     assert!(!data_dir.join("config.json").exists());

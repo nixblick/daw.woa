@@ -842,11 +842,13 @@ fn kopf_inhalt(
             ui.label(egui::RichText::new(sub).small().color(theme::text_dim()));
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-            if IconButton::new(theme::ic::X, "Schließen")
+            // Fassung 8, 0b: Loslassen über dem X schließt immer, auch wenn egui das Drücken
+            // einem anderen Ziel zugeordnet hat (Kopffläche, Fenster ziehen). Einfacher Klick
+            // ohne Mausbewegung schloss Fragen und Abnahme sonst nicht immer.
+            let x = IconButton::new(theme::ic::X, "Schließen")
                 .size(IconSize::Md)
-                .ui(ui)
-                .clicked()
-            {
+                .ui(ui);
+            if released_on(ui, x) {
                 *open = false;
             }
             let (icon, tip) = if *maximized {
@@ -854,15 +856,17 @@ fn kopf_inhalt(
             } else {
                 (theme::ic::CORNERS_OUT, "Maximieren")
             };
-            if IconButton::new(icon, tip)
-                .size(IconSize::Md)
-                .ui(ui)
-                .clicked()
-            {
+            let m = IconButton::new(icon, tip).size(IconSize::Md).ui(ui);
+            if released_on(ui, m) {
                 *maximized = !*maximized;
             }
         });
     }
+}
+
+/// Klick oder Loslassen der linken Taste über dem Knopf (genau einmal je Klick).
+fn released_on(ui: &egui::Ui, r: egui::Response) -> bool {
+    r.clicked() || (r.contains_pointer() && ui.input(|i| i.pointer.primary_released()))
 }
 
 /// Höhe des Suchfelds (QuestionsWindow Fassung 7).

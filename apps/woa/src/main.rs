@@ -57,7 +57,10 @@ fn main() -> ExitCode {
     let instance = match woa_gui::instance::acquire(&data_dir) {
         woa_gui::instance::Instance::Primary(p) => p,
         woa_gui::instance::Instance::Secondary { woken } => {
-            eprintln!("woa: läuft schon{}", if woken { ", nach vorn geholt" } else { "" });
+            eprintln!(
+                "woa: läuft schon{}",
+                if woken { ", nach vorn geholt" } else { "" }
+            );
             return ExitCode::SUCCESS;
         }
     };

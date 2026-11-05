@@ -2,7 +2,8 @@
 
 ## 0.42.0 — in Arbeit (Design-Fassung 8)
 
-- **Nur ein WOA gleichzeitig:** Ein zweiter Start holt das laufende Fenster nach vorn und endet, bevor Audio, MIDI, Stream oder auch nur das Log geöffnet sind (am 05.11.2026 störte ein Doppelstart die Sendung). Sperre `woa.lock` im Datenordner (Betriebssystem-Sperre, fällt bei Absturz weg), Weckruf über einen lokalen Port (`woa.port`, nur 127.0.0.1). Integrationstest mit dem echten Binary.
+- **Nur ein WOA gleichzeitig:** Ein zweiter Start holt das laufende Fenster nach vorn und endet, bevor Audio, MIDI, Stream oder auch nur das Log geöffnet sind (am 05.11.2026 störte ein Doppelstart die Sendung). Sperre `woa.lock` im Datenordner (Betriebssystem-Sperre, fällt bei Absturz weg), Weckruf über einen lokalen Port (`woa.port`, nur 127.0.0.1). Integrationstest mit dem echten Binary. Der Weckruf läuft in einem eigenen Thread; eine hängende Verbindung kann die Oberfläche nicht blockieren.
+- **X schließt Fragen und Abnahme mit einfachem Klick:** Alle Fensterköpfe (Einstellungen, Fragen, Abnahme, Hörer, Piano-Roll) teilen `fragen::kopf`; X und Maximieren reagieren jetzt auf jedes Loslassen über dem Knopf, auch wenn egui das Drücken der Kopffläche oder dem Fenster-Ziehen zugeordnet hatte. Im Test war der Fehler nicht nachzustellen (Zeiger steht still auf X, Tooltip sichtbar, einfacher Klick schließt dort schon); der Test `x_closes_on_plain_click` hält das Verhalten fest, normal und maximiert.
 
 ## 0.41.43 — 2026-11-05
 
