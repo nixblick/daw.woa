@@ -243,7 +243,6 @@ mod tests {
             ".save_file()",
         ];
         for (name, src) in [
-            ("app.rs", include_str!("app.rs")),
             ("event_editor.rs", include_str!("event_editor.rs")),
             ("ki_ui.rs", include_str!("ki_ui.rs")),
             ("library.rs", include_str!("library.rs")),
@@ -251,7 +250,10 @@ mod tests {
             ("party.rs", include_str!("party.rs")),
             ("radio.rs", include_str!("radio.rs")),
             ("tag_editor.rs", include_str!("tag_editor.rs")),
-        ] {
+        ]
+        .into_iter()
+        .chain(crate::app::APP_SOURCES.iter().copied())
+        {
             for f in raw {
                 assert!(
                     !src.contains(f),

@@ -533,11 +533,13 @@ mod tests {
     #[test]
     fn devices_are_listed_only_here() {
         for (name, src) in [
-            ("app.rs", include_str!("app.rs")),
             ("phone.rs", include_str!("phone.rs")),
             ("radio.rs", include_str!("radio.rs")),
             ("settings.rs", include_str!("settings.rs")),
-        ] {
+        ]
+        .into_iter()
+        .chain(crate::app::APP_SOURCES.iter().copied())
+        {
             for f in ["list_output_devices(", "list_input_devices("] {
                 assert!(!src.contains(f), "{name} listet Geräte selbst ({f})");
             }

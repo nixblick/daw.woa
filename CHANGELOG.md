@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.43 — 2026-11-05
+
+- **`crates/gui/src/app.rs` aufgeteilt** (11 656 → rund 4 100 Zeilen): Die `impl WoaApp`-Blöcke liegen unverändert in `app/transport.rs`, `project_io.rs`, `menu.rs`, `tracks.rs`, `timeline.rs`, `mixer.rs` und `updates.rs`; verschobene Methoden sind `pub(super)`. Kein Verhaltenswechsel. Bauregel-Tests, die den Quelltext lesen (`dialogs_pause_the_watch`, `devices_are_listed_only_here`, die Nacharbeit-Tests), prüfen alle Dateien über `APP_SOURCES`. Workspace-Version 0.41.43.
+
 ## 0.41.42 — 2026-11-05
 
 - **WOA startet auf frisch installiertem Windows:** `woa.exe` (MSI und ZIP) brach dort mit „VCRUNTIME140.dll nicht gefunden“ ab, weil die Visual-C++-Runtime fehlt (Rückmeldung eines Moderators nach Neuinstallation von Windows 11). Die C-Runtime wird jetzt statisch gelinkt (`.cargo/config.toml`, `+crt-static` für `x86_64-pc-windows-msvc`). Der Windows-Bau prüft, dass keine der drei exe `VCRUNTIME140.dll`, `MSVCP140.dll` oder `api-ms-win-crt-*` nachlädt; auf dem Runner ist die Runtime vorinstalliert, daher fiel es dort nie auf. Workspace-Version 0.41.42.
