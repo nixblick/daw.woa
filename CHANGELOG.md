@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.42 — 2026-11-05
+
+- **WOA startet auf frisch installiertem Windows:** `woa.exe` (MSI und ZIP) brach dort mit „VCRUNTIME140.dll nicht gefunden“ ab, weil die Visual-C++-Runtime fehlt (Rückmeldung eines Moderators nach Neuinstallation von Windows 11). Die C-Runtime wird jetzt statisch gelinkt (`.cargo/config.toml`, `+crt-static` für `x86_64-pc-windows-msvc`). Der Windows-Bau prüft, dass keine der drei exe `VCRUNTIME140.dll`, `MSVCP140.dll` oder `api-ms-win-crt-*` nachlädt; auf dem Runner ist die Runtime vorinstalliert, daher fiel es dort nie auf. Workspace-Version 0.41.42.
+
 ## 0.41.40 — 2026-11-05
 
 - **Regel 6 maschinell (kein `unwrap`/`expect` im Produktivcode):** Workspace-Lints `clippy::unwrap_used` und `clippy::expect_used` auf `deny`, jedes Crate erbt sie (`[lints] workspace = true`); `clippy.toml` erlaubt beides in Tests, Integrationstests (`tests/*.rs`) und im Test-Plugin per `#![allow]`. Vorher ergab ein Audit aller Audio-Callbacks (Ausgabe, Aufnahme, Player, Radio, Vorhören, Zweitgeräte) keinen Verstoß gegen die Echtzeit-Regeln; die Sperre hält das fest.

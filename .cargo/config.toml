@@ -1,0 +1,4 @@
+# Windows: C-Runtime fest in die exe linken. Ein frisches Windows hat keine VCRUNTIME140.dll,
+# woa.exe startete dort nicht (Systemfehler, Nutzer-Rückmeldung 05.11.2026).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

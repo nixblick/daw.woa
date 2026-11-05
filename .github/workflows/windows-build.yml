@@ -24,6 +24,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p woa -p woa-headless -p woa-streamd
+      # Ein frisches Windows hat keine Visual-C++-Runtime; der Runner schon. Daher prüfen, dass
+      # keine exe sie nachlädt (.cargo/config.toml linkt sie statisch).
+      - name: Keine VC-Runtime-DLL nötig
+        shell: pwsh
+        run: |
+          foreach ($exe in 'woa', 'woa-headless', 'woa-streamd') {
+            $p = "target/release/$exe.exe"
+            $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($p))
+            foreach ($dll in 'VCRUNTIME140.dll', 'MSVCP140.dll', 'api-ms-win-crt-') {
+              if ($text.IndexOf($dll, [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "$exe.exe braucht $dll" }
+            }
+            Write-Host "ok: $exe.exe ohne VC-Runtime-DLL"
+          }
       - name: Icon-Ressource in woa.exe prüfen
         shell: pwsh
         run: |
