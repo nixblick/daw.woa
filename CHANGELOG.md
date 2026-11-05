@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.41.36 — 2026-11-05
+## 0.41.37 — 2026-11-05
 
 Rückmeldungen des Moderators aus Entwickler › Fragen umgesetzt.
 
@@ -10,7 +10,11 @@ Rückmeldungen des Moderators aus Entwickler › Fragen umgesetzt.
 - **Sekunden bis Gesang (#299):** Ein laufendes Deck zeigt im Untertitel „Gesang in 12 s“ und zählt herunter; ein laufender Cart zeigt dasselbe links unten. Carts messen den Gesangseinsatz beim Laden auf dem Control-Thread. Die RAMP-Anzeige im Sende-Deck nimmt jetzt auch den geschätzten Einsatz, nicht nur die Ramp-Marke. Ohne erkannten Einsatz bleibt die Anzeige leer. Test `seconds_to_vocal_count_down_and_vanish`.
 - **Sende-Deck bedient keine Decks mehr (nimmt #325 zurück):** „Stopp“ und die Fade-Taste im Sende-Deck gelten nur der Playlist; Decks A–C stoppen und blenden nur an ihren eigenen Tasten. Das Sende-Deck-Display zeigt laufende Decks als reine Anzeigezeile „DECK A Titel Restzeit“. Carts laufen beim Sende-Deck-Fade weiter (eigene Fade-Taste). „Fade alles“ bleibt für den Agenten. Test `send_stop_and_fade_leave_a_manually_started_deck_alone`.
 - **Ducking nach Sprechpause (Moderator):** Offenes Mikro senkt die Musik nur, solange gesprochen wird (Pegel über etwa −45 dBFS). Nach 0,5 s Stille kommt die Musik zurück und blendet linear in 1 s ein; beide Zeiten als Felder im Rack („Ducking: Rückkehr nach“, „Ducking: Einblenden“, 0,1–5 s) und unter Einstellungen › Radio. Ducking wirkt jetzt auch auf Decks A–C und, bei Stimme oder Telefon, auf die Carts (ein Cart duckt sich nicht selbst). Die Einblendzeit gilt auch nach dem Cart-Ducking. Neue Felder `duck_hold_seconds`, `duck_release_seconds` in `radio.json`. Test `ducking_returns_after_half_a_second_of_silence_and_reaches_decks` unter `assert_no_alloc`.
-- **MIDI-Learn im DJ-Modus:** Play/Pause und Cue je DJ-Deck sowie der Crossfader lassen sich lernen (Rechtsklick auf die Taste bzw. den Crossfader, oder im Controller-Fenster die Zeile „DJ:“). Neue Ziele `dj_play`, `dj_cue`, `dj_crossfader`; sie wirken nur bei offener DJ-Ansicht. Cue vom Controller ist ein Antippen (setzen bzw. zurück), Halten kennt der MIDI-Weg nicht. Test `dj_targets_are_play_cue_and_crossfader`.- **Prüfpunkte:** sieben neue bzw. geänderte Punkte in `docs/abnahme.json` (Version 0.41.36), Klickliste in `docs/abnahme.md`; Workspace-Version 0.41.36.
+- **MIDI-Learn im DJ-Modus:** Play/Pause und Cue je DJ-Deck sowie der Crossfader lassen sich lernen (Rechtsklick auf die Taste bzw. den Crossfader, oder im Controller-Fenster die Zeile „DJ:“). Neue Ziele `dj_play`, `dj_cue`, `dj_crossfader`; sie wirken nur bei offener DJ-Ansicht. Cue vom Controller ist ein Antippen (setzen bzw. zurück), Halten kennt der MIDI-Weg nicht. Test `dj_targets_are_play_cue_and_crossfader`.- **Prüfpunkte:** sieben neue bzw. geänderte Punkte in `docs/abnahme.json` (Version 0.41.37), Klickliste in `docs/abnahme.md`; Workspace-Version 0.41.37.
+
+## 0.41.36 — 2026-11-05
+
+- **Titel mit langem Vorspann werden gelesen (#347):** Dateien, bei denen mehr als 1 MiB Füllbytes oder Tag-Reste vor dem ersten Audio-Frame standen, scheiterten mit „reached probe limit“; das Laden ins Deck und die BPM-Analyse („Analyse fehlgeschlagen“) fielen aus. Scheitert die schnelle Formaterkennung, sucht ein zweiter Versuch bis 32 MiB tief (`decode.rs`, `wide_probe`). Test `mp3_with_more_than_one_mib_of_padding_before_first_frame_is_read`. Workspace-Version 0.41.36.
 
 ## 0.41.35 — 2026-11-05
 

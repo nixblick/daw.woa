@@ -4,7 +4,7 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
-## Rückmeldung des Moderators 05.11. (0.41.36, offen)
+## Rückmeldung des Moderators 05.11. (0.41.37, offen)
 
 1. **Fade-Dauer:** Rack „Fade-Taste“ auf 6 s, Deck-Fade drücken: blendet in 6 s aus. Zurück auf 3 s.
 2. **Ducking:** Mikro offen, sprechen, schweigen: Musik, Deck und Cart kommen nach 0,5 s zurück und blenden in 1 s ein.

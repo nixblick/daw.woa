@@ -1,5 +1,5 @@
 {
-  "stand": "2026-11-04",
+  "stand": "2026-11-05",
   "punkte": [
     {
       "id": "msi-pro-benutzer",
@@ -253,7 +253,7 @@
       "titel": "Deck-Badges nie gefüllt",
       "tun": "Titel auf Deck A, nichts läuft. Einen Titel auf dem anderen Deck vorladen, dann abspielen.",
       "erwartet": "Außerhalb des DJ-Modus: „BEREIT“ neutral grau, „VORGELADEN“ nur mit Lime-Rahmen und -Schrift, „JETZT“ mit Rahmen in der Modusfarbe, nie gefüllt.",
-      "version": "0.41.36"
+      "version": "0.41.37"
     },
     {
       "id": "rack-ausgang-pan",
@@ -313,7 +313,7 @@
       "titel": "Laden, BPM und Tonart",
       "tun": "In der Playlist „A“ und „B“ an zwei Titeln drücken, auch an Titeln, die nicht in der Bibliothek sind (per „Ordner laden“).",
       "erwartet": "Die Titel sind in den Decks; nach wenigen Sekunden erscheinen BPM und Tonart, auch ohne Bibliotheksanalyse. Restzeit, BPM und Camelot-Chip sind gleich hoch; der Chip wird grün, wenn die Tonarten passen.",
-      "version": "0.40.2",
+      "version": "0.41.36",
       "ticket": 347
     },
     {
@@ -612,7 +612,7 @@
       "titel": "Sendedeck lässt Decks in Ruhe",
       "tun": "Playlist steht. Deck A von Hand starten, dann im Sendedeck „Stopp“ und „Fade“ drücken.",
       "erwartet": "Deck A spielt weiter; im Sendedeck-Display steht nur die Zeile „DECK A Titel Restzeit“. Deck A stoppt und blendet nur an seinen eigenen Tasten.",
-      "version": "0.41.36",
+      "version": "0.41.37",
       "ticket": 325
     },
     {
@@ -870,7 +870,7 @@
       "titel": "DJ-Deck-Badges gefüllt",
       "tun": "Party › DJ, Titel auf Deck A laden und abspielen, Deck B leer lassen.",
       "erwartet": "„DECK A“ und „LÄUFT“ sind voll in der Deckfarbe gefüllt, Schrift dunkel; Deck B zeigt „DECK B“ und „LEER“ ebenfalls gefüllt.",
-      "version": "0.41.36"
+      "version": "0.41.37"
     },
     {
       "id": "vorhoeren-immer",
@@ -878,7 +878,7 @@
       "titel": "Kopfhörer an jeder Zeile und jedem Cart",
       "tun": "Playlist mit Titeln, einige Carts belegt. Maus nicht über die Zeilen bewegen.",
       "erwartet": "Jede Playlist-Zeile und jedes belegte Cart zeigt das Kopfhörer-Symbol, ohne Mauszeiger darüber; Klick hört vor.",
-      "version": "0.41.36"
+      "version": "0.41.37"
     },
     {
       "id": "fade-dauer",
@@ -886,7 +886,7 @@
       "titel": "Fade-Dauer einstellbar",
       "tun": "Im Rack „Fade-Taste“ auf 6 s stellen, ein Deck abspielen und dessen Fade-Taste drücken; danach Einstellungen › Radio nach „Fade-Taste: Dauer“ suchen.",
       "erwartet": "Das Deck blendet in 6 s aus, die Taste zählt „6,0 s“ herunter, Tooltip „Fade (6 s)“. Vorgabe ist 3 s, wählbar 1 bis 10 s; die Suche findet den Eintrag.",
-      "version": "0.41.36"
+      "version": "0.41.37"
     },
     {
       "id": "ducking-sprechpause",
@@ -894,7 +894,7 @@
       "titel": "Ducking kommt nach Sprechpause zurück",
       "tun": "Musik und ein Deck laufen. Mikro öffnen, sprechen, dann schweigen, Mikro offen lassen. Danach einen Cart starten und ins Mikro sprechen.",
       "erwartet": "Beim Sprechen werden Musik, Deck und Cart leiser; 0,5 s nach dem letzten Wort kommen sie zurück und blenden in 1 s ein. Beide Zeiten stehen im Rack („Ducking: Rückkehr nach“, „Ducking: Einblenden“).",
-      "version": "0.41.36"
+      "version": "0.41.37"
     },
     {
       "id": "gesang-countdown",
@@ -902,7 +902,7 @@
       "titel": "Sekunden bis Gesang",
       "tun": "Einen Titel mit Instrumental-Intro auf Deck A laden (Gesangsmarke erkannt) und abspielen; denselben auf ein Cart legen und abspielen. Dann einen Titel ohne erkannten Einsatz spielen.",
       "erwartet": "Deck und Cart zeigen „Gesang in 12 s“ und zählen herunter, bis der Gesang einsetzt; danach verschwindet die Anzeige. Ohne erkannten Einsatz steht nichts da. Im Sende-Deck zählt „RAMP“ ebenso.",
-      "version": "0.41.36"
+      "version": "0.41.37"
     },
     {
       "id": "sendedeck-nur-anzeige",
@@ -910,7 +910,7 @@
       "titel": "Sende-Deck zeigt Decks nur an",
       "tun": "Deck A von Hand starten, Playlist steht. Im Sende-Deck „Fade Sende-Deck“ drücken.",
       "erwartet": "Im Sende-Deck-Display steht „DECK A Titel Restzeit“; die Fade-Taste ist gesperrt, solange die Playlist steht, und Deck A spielt weiter.",
-      "version": "0.41.36"
+      "version": "0.41.37"
     },
     {
       "id": "dj-midi-learn",
@@ -918,7 +918,7 @@
       "titel": "MIDI-Learn im DJ-Modus",
       "tun": "Controller wählen. Party › DJ, Rechtsklick auf PLAY von Deck A › „MIDI lernen“, Pad drücken; dasselbe für CUE und den Crossfader (Regler bewegen). Alternativ Controller-Fenster, Zeile „DJ:“.",
       "erwartet": "Das Pad startet und pausiert Deck A, das Cue-Pad setzt bzw. springt zum Cue-Punkt, der Regler bewegt den Crossfader. Außerhalb der DJ-Ansicht tun die Zuordnungen nichts.",
-      "version": "0.41.36"
+      "version": "0.41.37"
     }
   ]
 }
