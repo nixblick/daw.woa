@@ -834,12 +834,14 @@ impl PartyView {
                 chip_row(ui, &mut |ui: &mut egui::Ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
                     use crate::widgets::{ChipTone, StateChip};
-                    // Fassung 7: alle Chips 28 px auf einer Mittellinie.
+                    // Fassung 7: alle Chips 28 px auf einer Mittellinie. Im DJ-Modus gefüllt, damit
+                    // man sie im dunklen Club sieht (Moderator 05.11.2026); sonst nie gefüllt.
                     StateChip::new(
                         if side == 0 { "DECK A" } else { "DECK B" },
                         ChipTone::Color(col),
                     )
                     .dj()
+                    .filled()
                     .show(ui);
                     let badge = if d.playing {
                         StateChip::new("LÄUFT", ChipTone::Color(theme::accent()))
@@ -849,7 +851,7 @@ impl PartyView {
                     } else {
                         StateChip::new("LEER", ChipTone::Neutral)
                     };
-                    badge.dj().show(ui);
+                    badge.dj().filled().show(ui);
                     let result = self.waves[side].get().map(|i| i.bpm);
                     match analysis_state(d.index.is_some(), result) {
                         Analysis::Running => {

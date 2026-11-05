@@ -69,6 +69,9 @@ pub struct StateChip<'a> {
     /// Kleiner Vorsatz in Versalien (`<small>`), etwa „BPM“.
     pub small: Option<&'a str>,
     pub click: bool,
+    /// Gefüllt (nur DJ-Modus, Moderator-Wunsch 05.11.2026): Fläche in der Zustandsfarbe, Schrift
+    /// und Symbol in `lcd-bg`, damit die Badges im dunklen Club auffallen. Neutral bleibt neutral.
+    pub filled: bool,
 }
 
 impl<'a> StateChip<'a> {
@@ -80,6 +83,7 @@ impl<'a> StateChip<'a> {
             height: CHIP_H,
             small: None,
             click: false,
+            filled: false,
         }
     }
 
@@ -94,6 +98,12 @@ impl<'a> StateChip<'a> {
         self
     }
 
+    /// Gefüllte Fläche statt Rahmen (nur im DJ-Modus verwenden).
+    pub fn filled(mut self) -> Self {
+        self.filled = true;
+        self
+    }
+
     pub fn small(mut self, s: &'a str) -> Self {
         self.small = Some(s);
         self
@@ -102,6 +112,30 @@ impl<'a> StateChip<'a> {
     pub fn clickable(mut self) -> Self {
         self.click = true;
         self
+    }
+
+    /// Fläche, Rahmen, Symbol/LED und Schrift. `hovered`: anklickbarer Chip unter der Maus.
+    pub fn colors(&self, hovered: bool) -> (Color32, Color32, Color32, Color32) {
+        let c = self.tone.color();
+        match c {
+            Some(c) if self.filled => (c, c, theme::lcd_bg(), theme::lcd_bg()),
+            Some(c) => (
+                theme::mix(c, theme::panel(), 1.0 - self.tone.fill_share()),
+                c,
+                c,
+                theme::text(),
+            ),
+            None => (
+                theme::well(),
+                if hovered {
+                    theme::text_dim()
+                } else {
+                    theme::border_strong()
+                },
+                theme::text_dim(),
+                theme::text(),
+            ),
+        }
     }
 
     pub fn show(self, ui: &mut egui::Ui) -> Response {
@@ -139,20 +173,10 @@ impl<'a> StateChip<'a> {
             return r;
         }
         let p = ui.painter();
-        let c = self.tone.color();
-        let fill = match c {
-            Some(c) => theme::mix(c, theme::panel(), 1.0 - self.tone.fill_share()),
-            None => theme::well(),
-        };
-        let border = match c {
-            Some(c) => c,
-            None if self.click && r.hovered() => theme::text_dim(),
-            None => theme::border_strong(),
-        };
+        let (fill, border, ink, text_ink) = self.colors(self.click && r.hovered());
         let radius = CornerRadius::same(theme::RADIUS_SM);
         p.rect_filled(rect, radius, fill);
         p.rect_stroke(rect, radius, Stroke::new(1.0, border), StrokeKind::Inside);
-        let ink = c.unwrap_or_else(theme::text_dim);
         let mut x = rect.left() + CHIP_PAD_X;
         let cy = rect.center().y;
         match self.icon {
@@ -190,11 +214,16 @@ impl<'a> StateChip<'a> {
         }
         if let Some(g) = small_g {
             let gw = g.size().x;
-            p.galley(egui::pos2(x, cy - g.size().y / 2.0), g, theme::text_dim());
+            let small_ink = if text_ink == theme::text() {
+                theme::text_dim()
+            } else {
+                text_ink
+            };
+            p.galley_with_override_text_color(egui::pos2(x, cy - g.size().y / 2.0), g, small_ink);
             x += gw + 4.0;
         }
         let th = text_g.size().y;
-        p.galley(egui::pos2(x, cy - th / 2.0), text_g, theme::text());
+        p.galley_with_override_text_color(egui::pos2(x, cy - th / 2.0), text_g, text_ink);
         r
     }
 }
@@ -220,6 +249,22 @@ mod tests {
             out = chip.clone().show(ui).rect.size();
         });
         out
+    }
+
+    /// DJ-Modus (Moderator 05.11.2026): gefüllte Badges, Neutral bleibt neutral; ohne
+    /// `filled` bleibt jeder Chip umrandet.
+    #[test]
+    fn filled_chips_are_solid_only_when_asked() {
+        let _ctx = theme::test_context();
+        let on = StateChip::new("LÄUFT", ChipTone::Color(theme::accent())).filled();
+        let (fill, border, ink, text) = on.colors(false);
+        assert_eq!(fill, theme::accent());
+        assert_eq!(border, theme::accent());
+        assert_eq!((ink, text), (theme::lcd_bg(), theme::lcd_bg()));
+        let plain = StateChip::new("LÄUFT", ChipTone::Color(theme::accent()));
+        assert_ne!(plain.colors(false).0, theme::accent(), "ohne filled umrandet");
+        let neutral = StateChip::new("LEER", ChipTone::Neutral).filled();
+        assert_eq!(neutral.colors(false).0, theme::well());
     }
 
     #[test]
