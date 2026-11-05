@@ -1156,3 +1156,31 @@ mark{background:color-mix(in srgb,var(--accent-2) 35%,transparent);color:inherit
 .woa-set2__nav button[aria-current=true] svg.woa-i{color:var(--accent-2)}
 .woa-sel{min-width:170px}.woa-sel--s{min-width:96px}
 .woa-sr__c{flex-wrap:nowrap;min-width:0}
+
+/* =====================================================================
+   Fassung 8.1: Regler-Stil (Mini-Fader · Wertbalken · Zahlenfelder · Drehknöpfe)
+   ===================================================================== */
+.woa-ctl{display:flex;flex-direction:column;gap:6px;width:100%}
+.woa-ctl__l{display:flex;justify-content:space-between;font-family:var(--font-label);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim)}
+.woa-ctl__l b{font-family:var(--font-mono);font-weight:700;color:var(--text);letter-spacing:0}
+/* A: Wertbalken */
+.woa-vbar{position:relative;height:22px;border-radius:var(--radius-sm);background:var(--well);border:1px solid var(--border-strong);overflow:hidden;cursor:ew-resize}
+.woa-vbar i{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--dc) 55%,transparent)}
+.woa-vbar::after{content:"";position:absolute;top:3px;bottom:3px;left:50%;width:1px;background:var(--border-strong)}
+.woa-vbar.uni::after{display:none}
+.woa-vbar b{position:absolute;top:2px;bottom:2px;width:4px;margin-left:-2px;border-radius:2px;background:var(--text)}
+.woa-vrow{display:grid;grid-template-columns:minmax(0,1fr) 30px;gap:6px;align-items:end}
+.woa-kill{appearance:none;height:22px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);background:var(--surface);color:var(--text-dim);font-family:var(--font-label);font-size:9px;font-weight:800;letter-spacing:.06em;box-shadow:var(--shadow-key)}
+.woa-kill.on{background:var(--warn);border-color:var(--warn);color:var(--lcd-bg)}
+/* B: Mini-Fader */
+.woa-mf{display:flex;gap:8px;justify-content:center}
+.woa-mf>div{display:flex;flex-direction:column;align-items:center;gap:4px}
+.woa-mf .woa-fader{--fader-h:74px}
+.woa-mf span{font-family:var(--font-label);font-size:9px;font-weight:700;letter-spacing:.06em;color:var(--text-dim);text-transform:uppercase}
+.woa-mf .woa-kill{width:34px;height:18px}
+/* C: Zahlenfelder */
+.woa-nf{display:grid;grid-template-columns:44px minmax(0,1fr) 30px;gap:6px;align-items:center}
+.woa-nf>span{font-family:var(--font-label);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim)}
+.woa-nf .woa-num{width:100%}
+.woa-vtitle{font-family:var(--font-label);font-size:18px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;margin:0 0 4px}
+.woa-vsub{font-size:12px;color:var(--text-dim);margin:0 0 10px;max-width:420px}

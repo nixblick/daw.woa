@@ -19,3 +19,7 @@ DJ-Mixer zwischen den Decks: je Deck ein Kanal, in der Mitte Master und Kopfhör
 ## Fassung 7
 
 Unter dem Crossfader eine Zeile: `weich | hart` und **Weiter · Übergang** (36 px, Enter). Läuft: Balken unten in `accent`, Restzeit im Tooltip.
+
+## Fassung 8.1
+
+Standard-Stil ist **Mini-Fader**; Wertbalken, Zahlenfelder und Drehknöpfe sind wählbar (siehe `DjMixerStyles`). Unter dem Crossfader: `weich | hart` und „Weiter · Übergang“.
