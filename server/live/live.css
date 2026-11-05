@@ -1,4 +1,4 @@
-/* WOA Hörer-Seite. Farben aus docs/design/woa-design-system/tokens.css (Themen radio und
+/* WOA Hörer-Seite. Rot bleibt der ON-AIR-Marke vorbehalten (#451); Bedienung und Anzeigen in Logo-Orange. Farben sonst aus docs/design/woa-design-system/tokens.css (Themen radio und
    radio-hell), Schriften selbst gehostet (SIL OFL, siehe fonts/). Keine externen Quellen. */
 @font-face { font-family: "Barlow"; font-weight: 500; font-display: swap; src: url(fonts/Barlow-500.woff2) format("woff2"); }
 @font-face { font-family: "Barlow"; font-weight: 700; font-display: swap; src: url(fonts/Barlow-700.woff2) format("woff2"); }
@@ -10,7 +10,7 @@
   /* radio (dunkel, Standard) */
   --bg: #14171c; --panel: #1e232a; --panel-header: #262c34; --surface: #2f363f; --surface-hover: #3a424c;
   --border: #3e4652; --border-strong: #6e7886; --lcd-bg: #0b0d10; --text: #edf1f6; --text-dim: #8f99a8;
-  --lcd-text: #d8e0ec; --lcd-ink: #ff4650; --accent: #ff4650; --accent-strong: #ff747c; --on-accent: #1a0507;
+  --lcd-text: #d8e0ec; --lcd-ink: #ff9838; --lcd-ok: #38d070; --accent: #ff9838; --accent-strong: #ffb46a; --on-accent: #1f1000;
   --accent-2: #ffc83a; --on-air-fill: #c41d2a; --on-air: #ee3844; --ok: #38d070; --warn: #f5c630; --focus: #9fd8ff;
   --shadow-key: inset 0 1px 0 rgba(255,255,255,0.07), 0 2px 0 rgba(0,0,0,0.55), 0 3px 6px rgba(0,0,0,0.35);
   --shadow-key-pressed: inset 0 2px 4px rgba(0,0,0,0.6);
@@ -27,7 +27,7 @@
     /* radio-hell */
     --bg: #eef0f3; --panel: #ffffff; --panel-header: #e5e8ed; --surface: #f6f7f9; --surface-hover: #e9ecf0;
     --border: #c3c9d2; --border-strong: #7b8594; --text: #161a21; --text-dim: #535c6a;
-    --accent: #c41b2d; --accent-strong: #9c1221; --on-accent: #ffffff; --accent-2: #7d5900;
+    --accent: #b35900; --accent-strong: #8f4600; --on-accent: #ffffff; --accent-2: #7d5900;
     --on-air: #c8202e; --ok: #137a3c; --warn: #8a6100; --focus: #0b5d94;
     --shadow-key: inset 0 1px 0 rgba(255,255,255,0.9), 0 2px 0 rgba(0,0,0,0.15), 0 3px 6px rgba(0,0,0,0.12);
     --shadow-card: 0 1px 0 rgba(0,0,0,0.04), 0 4px 14px rgba(0,0,0,0.08);
@@ -100,6 +100,7 @@ a { color: inherit; text-underline-offset: 2px; }
 .zahlen div { background: var(--lcd-bg); box-shadow: var(--shadow-well); border-radius: 4px; padding: 10px 12px; }
 .zahlen dt { color: var(--lcd-text); opacity: .8; }
 .zahlen dd { margin: 4px 0 0; font: 500 28px/1.1 var(--font-mono); color: var(--lcd-ink); }
+.zahlen dd.an { color: var(--lcd-ok); }
 
 .naechste { margin: 8px 0 0; font-weight: 700; }
 .zuletzt { list-style: none; margin: 8px 0 0; padding: 0; }

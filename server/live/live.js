@@ -20,6 +20,7 @@
     $("seit").textContent = d.sendung_seit ? "Sendung seit " + uhr(d.sendung_seit) + " Uhr"
       : (st === "notfall" ? "Die Musik läuft weiter, bis die Sendung wieder beginnt." : "");
     $("hoerer").textContent = d.hoerer == null ? "–" : String(d.hoerer);
+    $("hoerer").classList.toggle("an", d.hoerer > 0);
     $("spitze").textContent = d.spitze == null ? "–" : String(d.spitze);
     var ol = $("zuletzt");
     ol.textContent = "";

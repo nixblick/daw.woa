@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.35 — 2026-11-05
+
+- **Hörer-Seite: Rot nur noch für ON AIR (#451):** Titel, „Hören“-Taste, Lautstärke-Regler und Zahlenanzeigen sind jetzt im Orange des Logos (`#ff9838` dunkel, `#b35900` hell); rot bleibt die ON-AIR-Marke oben rechts. „Hörer jetzt“ leuchtet grün, sobald mindestens ein Hörer da ist (`server/live/live.css`, `live.js`). Workspace-Version 0.41.35.
+
 ## 0.41.34 — 2026-11-05
 
 - **Sendezeile: Lampe, Taste und Status-Pille gleich hoch (#450):** Die kleine ON-AIR-Lampe war 24 px, die Taste „Sendung beenden“ 32 px und die Pille „verbunden · Sendemix“ 26 px hoch. Alle drei sind jetzt 32 px (`ON_AIR_ROW_H` in `radio.rs`). Test `on_air_row_widgets_share_one_height`. Workspace-Version 0.41.34.
