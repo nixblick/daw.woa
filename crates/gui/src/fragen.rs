@@ -444,12 +444,15 @@ impl FragenWindow {
                 Herkunft::Eingebettet => " (Fassung dieser Version)",
             }
         );
+        let beantwortet = self.sent.iter().map(|k| &k.0).collect::<HashSet<_>>().len();
+        let stand = format!("{beantwortet} von {} beantwortet", fragen.fragen.len());
         fenster(ctx, "woa-fragen", self.maximized).show(ctx, |ui| {
-            kopf(
+            kopf_stand(
                 ui,
                 theme::ic::CHAT_CIRCLE_TEXT,
                 "Fragen und To-dos",
                 &sub,
+                Some(&stand),
                 &mut self.open,
                 &mut self.maximized,
             );
@@ -799,6 +802,19 @@ pub(crate) fn kopf(
     open: &mut bool,
     maximized: &mut bool,
 ) {
+    kopf_stand(ui, icon, titel, sub, None, open, maximized);
+}
+
+/// Kopf mit Stand rechts als neutraler Chip (Fassung 8, Punkt 5), etwa „12 von 40 geprüft“.
+pub(crate) fn kopf_stand(
+    ui: &mut egui::Ui,
+    icon: &str,
+    titel: &str,
+    sub: &str,
+    stand: Option<&str>,
+    open: &mut bool,
+    maximized: &mut bool,
+) {
     // Fassung 7: eigener Kopf 44 px; Doppelklick maximiert, Esc schließt.
     // Erst die Kopffläche anmelden, dann die Knöpfe darüber: so gewinnen die Knöpfe den Klick.
     let rect = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), KOPF_H));
@@ -808,7 +824,7 @@ pub(crate) fn kopf(
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
             ui.set_min_height(KOPF_H);
-            kopf_inhalt(ui, icon, titel, sub, open, maximized)
+            kopf_inhalt(ui, icon, titel, sub, stand, open, maximized)
         },
     );
     if r.double_clicked() {
@@ -826,6 +842,7 @@ fn kopf_inhalt(
     icon: &str,
     titel: &str,
     sub: &str,
+    stand: Option<&str>,
     open: &mut bool,
     maximized: &mut bool,
 ) {
@@ -842,11 +859,13 @@ fn kopf_inhalt(
             ui.label(egui::RichText::new(sub).small().color(theme::text_dim()));
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-            if IconButton::new(theme::ic::X, "Schließen")
+            // Fassung 8, 0b: Loslassen über dem X schließt immer, auch wenn egui das Drücken
+            // einem anderen Ziel zugeordnet hat (Kopffläche, Fenster ziehen). Einfacher Klick
+            // ohne Mausbewegung schloss Fragen und Abnahme sonst nicht immer.
+            let x = IconButton::new(theme::ic::X, "Schließen")
                 .size(IconSize::Md)
-                .ui(ui)
-                .clicked()
-            {
+                .ui(ui);
+            if released_on(ui, x) {
                 *open = false;
             }
             let (icon, tip) = if *maximized {
@@ -854,15 +873,21 @@ fn kopf_inhalt(
             } else {
                 (theme::ic::CORNERS_OUT, "Maximieren")
             };
-            if IconButton::new(icon, tip)
-                .size(IconSize::Md)
-                .ui(ui)
-                .clicked()
-            {
+            let m = IconButton::new(icon, tip).size(IconSize::Md).ui(ui);
+            if released_on(ui, m) {
                 *maximized = !*maximized;
+            }
+            if let Some(t) = stand {
+                ui.add_space(theme::SPACE_2);
+                crate::widgets::StateChip::new(t, crate::widgets::ChipTone::Neutral).show(ui);
             }
         });
     }
+}
+
+/// Klick oder Loslassen der linken Taste über dem Knopf (genau einmal je Klick).
+fn released_on(ui: &egui::Ui, r: egui::Response) -> bool {
+    r.clicked() || (r.contains_pointer() && ui.input(|i| i.pointer.primary_released()))
 }
 
 /// Höhe des Suchfelds (QuestionsWindow Fassung 7).
@@ -968,10 +993,11 @@ pub(crate) fn ticket_pill(ui: &mut egui::Ui, n: u32) {
             egui::Button::new(
                 egui::RichText::new(text)
                     .font(theme::label_font(13.0))
-                    .color(theme::accent()),
+                    .color(theme::text()),
             )
             .fill(theme::well())
-            .stroke(egui::Stroke::new(1.0, theme::accent()))
+            // Neutral (Fassung 8): Tickets sind kein Zustand.
+            .stroke(egui::Stroke::new(1.0, theme::border_strong()))
             .corner_radius(egui::CornerRadius::same(theme::RADIUS_MD)),
         )
         .on_hover_text(format!("Ticket #{n} öffnen"));

@@ -16,7 +16,7 @@ use serde::Deserialize;
 use woa_telemetry::{DevKey, FeedbackError, FeedbackMeta, FeedbackType, submit_feedback};
 
 use crate::feedback::GuiConfig;
-use crate::fragen::{self, block_kopf, fenster, keine_treffer, kopf, passt, suchfeld};
+use crate::fragen::{self, block_kopf, fenster, keine_treffer, kopf_stand, passt, suchfeld};
 use crate::theme;
 
 /// Eingebettete Fassung (Rückfall).
@@ -444,37 +444,58 @@ impl AbnahmeWindow {
             },
             liste.punkte.len()
         );
+        let gesamt = liste.punkte.len();
+        let gruen = liste
+            .punkte
+            .iter()
+            .filter(|p| self.ist_erledigt(p) || self.sent.get(&p.id) == Some(&Urteil::Ok))
+            .count();
+        let gelb = liste
+            .punkte
+            .iter()
+            .filter(|p| {
+                !self.ist_erledigt(p)
+                    && matches!(
+                        self.sent.get(&p.id),
+                        Some(Urteil::Fehler | Urteil::Anmerkung)
+                    )
+            })
+            .count();
+        let fertig = gruen + gelb;
+        let stand = format!("{fertig} von {gesamt} geprüft");
         fenster(ctx, "woa-abnahme", self.maximized).show(ctx, |ui| {
-            kopf(
+            kopf_stand(
                 ui,
                 theme::ic::LIST_CHECKS,
                 "Abnahme",
                 &sub,
+                Some(&stand),
                 &mut self.open,
                 &mut self.maximized,
             );
             suchfeld(ui, &mut self.suche);
-            // Zähler mit Balken (Fassung 7) und „Erledigte zeigen“.
-            let gesamt = liste.punkte.len();
-            let fertig = liste
-                .punkte
-                .iter()
-                .filter(|p| self.ist_erledigt(p) || self.sent.contains_key(&p.id))
-                .count();
+            // Balken (Fassung 8): grün „Geht“, gelb „Geht nicht“ oder Anmerkung, Rest leer.
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(format!("{fertig} von {gesamt} geprüft"))
-                        .font(egui::FontId::monospace(12.0))
-                        .color(theme::text()),
-                );
-                let (r, _) = ui.allocate_exact_size(egui::vec2(220.0, 6.0), egui::Sense::hover());
+                let (r, _) = ui.allocate_exact_size(egui::vec2(260.0, 8.0), egui::Sense::hover());
                 let p = ui.painter();
-                p.rect_filled(r, egui::CornerRadius::same(3), theme::well());
-                let mut f = r;
-                f.set_width(r.width() * anteil(fertig, gesamt));
-                p.rect_filled(f, egui::CornerRadius::same(3), theme::ok());
+                p.rect_filled(r, egui::CornerRadius::same(4), theme::well());
+                let wg = r.width() * anteil(gruen, gesamt);
+                let wy = r.width() * anteil(gelb, gesamt);
+                let g = egui::Rect::from_min_size(r.min, egui::vec2(wg, r.height()));
+                let y = egui::Rect::from_min_size(
+                    r.min + egui::vec2(wg, 0.0),
+                    egui::vec2(wy, r.height()),
+                );
+                p.rect_filled(g, egui::CornerRadius::same(4), theme::ok());
+                p.rect_filled(y, egui::CornerRadius::same(4), theme::warn());
+                ui.label(
+                    egui::RichText::new(format!("{gruen} geht · {gelb} geht nicht"))
+                        .font(egui::FontId::monospace(12.0))
+                        .color(theme::text_dim()),
+                );
                 ui.add_space(theme::SPACE_3);
-                ui.checkbox(&mut self.zeige_erledigte, "Erledigte zeigen");
+                crate::radio::toggle(ui, &mut self.zeige_erledigte, "Erledigte zeigen");
+                ui.label("Erledigte zeigen");
                 ui.label(
                     egui::RichText::new("G = Geht · N = Geht nicht")
                         .small()
@@ -855,6 +876,40 @@ mod tests {
         h.run_steps(2);
         assert_eq!(h.query_all_by_label("Anmerkung").count(), 0);
         assert!(h.query_by_label("Nichts gefunden").is_some());
+    }
+
+    /// Fassung 8, 0b: Ein einfacher Klick auf X (Zeiger steht schon dort, keine Bewegung) schließt.
+    #[test]
+    fn x_closes_on_plain_click() {
+        for max in [false, true] {
+            let mut w = AbnahmeWindow::default();
+            w.open = true;
+            w.maximized = max;
+            w.liste = Some((embedded(), false));
+            let mut h = harness(w);
+            let c = h.get_by_label(theme::ic::X).rect().center();
+            h.hover_at(c);
+            // Lange genug stehen, dass der Tooltip „Schließen“ erscheint.
+            for _ in 0..40 {
+                h.step();
+                std::thread::sleep(std::time::Duration::from_millis(15));
+            }
+            h.event(egui::Event::PointerButton {
+                pos: c,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.run_steps(1);
+            h.event(egui::Event::PointerButton {
+                pos: c,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.run_steps(2);
+            assert!(!h.state().open, "X closes (maximized: {max})");
+        }
     }
 
     /// André 02.11.2026: Nach „Geht“ muss eine Anmerkung zum Punkt noch rausgehen.

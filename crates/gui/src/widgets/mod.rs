@@ -18,6 +18,7 @@ pub mod lamp;
 pub mod pad;
 pub mod piano_roll;
 pub mod segment;
+pub mod status_line;
 pub mod topbar;
 pub mod track_head;
 pub mod vu;

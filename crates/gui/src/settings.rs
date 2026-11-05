@@ -735,15 +735,87 @@ pub struct SettingsWindow {
     /// Größe des Fensters (nicht maximiert), vom Nutzer gezogen; die App merkt sie sich in
     /// `config.json` (#379). `None` = [`DEFAULT_SIZE`].
     pub size: Option<[f32; 2]>,
+    /// Zahl fehlender Geräte: gelber Chip am Bereich „Audio und Geräte“ (Fassung 8).
+    pub missing_devices: usize,
 }
 
 /// Größe beim ersten Öffnen (#379): so breit, dass Beschreibung und Knöpfe nebeneinander
 /// passen (vorher 780 px, dann lief der Text unter die Knöpfe).
-pub const DEFAULT_SIZE: [f32; 2] = [1100.0, 760.0];
+pub const DEFAULT_SIZE: [f32; 2] = [1400.0, 930.0];
 /// Kleinste Breite, bei der eine Zeile noch Text links und Knöpfe rechts zeigt.
 pub const MIN_WIDTH: f32 = 720.0;
 
 /// Gemerkte Größe auf den Bildschirm `screen` begrenzt (ein kleinerer Monitor schneidet sonst ab).
+/// Bereichsknopf links (Fassung 8): aktiv `surface` mit Kante `accent-2` links, nicht rot;
+/// `missing` > 0 zeigt rechts einen gelben Chip „n fehlt“.
+fn area_button(
+    ui: &mut egui::Ui,
+    on: bool,
+    enabled: bool,
+    text: &str,
+    missing: Option<usize>,
+) -> egui::Response {
+    let (rect, r) = ui.allocate_exact_size(
+        egui::vec2(200.0, 30.0),
+        if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    let p = ui.painter();
+    if on || (enabled && r.hovered()) {
+        p.rect_filled(
+            rect,
+            theme::RADIUS_SM,
+            if on {
+                theme::surface()
+            } else {
+                theme::mix(theme::surface(), theme::panel(), 0.5)
+            },
+        );
+    }
+    if on {
+        let edge = egui::Rect::from_min_size(rect.min, egui::vec2(3.0, rect.height()));
+        p.rect_filled(edge, 1.5, theme::accent_2());
+    }
+    let ink = match (enabled, on) {
+        (false, _) => theme::text_dim().gamma_multiply(0.5),
+        (true, true) => theme::text(),
+        (true, false) => theme::text_dim(),
+    };
+    p.text(
+        rect.left_center() + egui::vec2(12.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        text,
+        egui::FontId::proportional(13.0),
+        ink,
+    );
+    if let Some(n) = missing.filter(|n| *n > 0) {
+        let t = format!("{n} fehlt");
+        let g = p.layout_no_wrap(t, egui::FontId::proportional(11.0), theme::text());
+        let chip = egui::Rect::from_min_size(
+            egui::pos2(rect.right() - g.size().x - 18.0, rect.center().y - 9.0),
+            egui::vec2(g.size().x + 12.0, 18.0),
+        );
+        p.rect_filled(chip, 9.0, theme::mix(theme::warn(), theme::panel(), 0.84));
+        p.rect_stroke(
+            chip,
+            9.0,
+            egui::Stroke::new(1.0, theme::warn()),
+            egui::StrokeKind::Inside,
+        );
+        p.galley(
+            chip.min + egui::vec2(6.0, 9.0 - g.size().y / 2.0),
+            g,
+            theme::text(),
+        );
+    }
+    let label = text.to_string();
+    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, &label));
+    r
+}
+
 pub fn start_size(saved: Option<[f32; 2]>, screen: egui::Vec2) -> egui::Vec2 {
     let [w, h] = saved.unwrap_or(DEFAULT_SIZE);
     let max = (screen - egui::vec2(40.0, 40.0)).max(egui::vec2(MIN_WIDTH, 320.0));
@@ -760,6 +832,7 @@ impl Default for SettingsWindow {
             dev: false,
             marked: None,
             size: None,
+            missing_devices: 0,
         }
     }
 }
@@ -854,9 +927,10 @@ impl SettingsWindow {
                         } else {
                             format!("{} {}", a.icon(), a.name())
                         };
-                        let b = egui::Button::selectable(self.area == a, text)
-                            .min_size(egui::vec2(200.0, 30.0));
-                        if ui.add_enabled(!filtering || n > 0, b).clicked() {
+                        let missing = (a == Area::Audio).then_some(self.missing_devices);
+                        if area_button(ui, self.area == a, !filtering || n > 0, &text, missing)
+                            .clicked()
+                        {
                             self.area = a;
                         }
                     }
@@ -1273,7 +1347,7 @@ mod tests {
         }
         assert_eq!(
             start_size(None, egui::vec2(1366.0, 700.0)),
-            egui::vec2(1100.0, 660.0)
+            egui::vec2(1326.0, 660.0)
         );
         assert_eq!(
             start_size(Some([1500.0, 900.0]), egui::vec2(1920.0, 1009.0)),

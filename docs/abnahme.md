@@ -4,6 +4,20 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Design-Fassung 8 (0.42.0, offen)
+
+1. **Zweiter Start:** WOA läuft und spielt, WOA nochmal starten: kein zweites Fenster, kein Knacken, das laufende kommt nach vorn.
+2. **X:** Fragen und To-dos sowie Abnahme schließen mit einem Klick auf X.
+3. **Pegel:** Quellen · Summe · Ausgänge, alle Fader und LEDs gleich hoch, Schilder auf einer Linie, nur grün/gelb/rot.
+4. **Meldungszeile:** Stream ohne Server oder Gerät abziehen: eine Zeile unter dem Sende-Deck, bei mehreren „n Hinweise“ zum Aufklappen.
+5. **Radio ohne Scrollen:** maximiert auf Full HD passt alles, nur die Playlist scrollt; Telefon schaltet in der Gäste-Karte.
+6. **Einstellungen:** Werte direkt in der Zeile, Schalter statt Häkchen, Kante am aktiven Bereich, gelber Chip „fehlt“ bei fehlendem Gerät.
+7. **Ducking-Zeiten bleiben:** 0,5 / 1,0 / 3,0 s einstellen, Einstellungen öffnen, neu starten: Werte bleiben (Befund aus 0.41.x).
+8. **Fade-Tooltip:** „Ausblenden (6 s)“ bei 6 s.
+9. **Fragen und Abnahme:** Stand im Kopf, Ticket-Chips grau, Balken grün/gelb.
+
+Offen zur Entscheidung: Audio-Geräte in die Einstellungen einbetten? Cart-Wall 4 × 3 statt 4 × 4? (Frage im PR.)
+
 
 ## Feedback bei Tageslimit (0.41.39, offen)
 

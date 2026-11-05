@@ -2,6 +2,78 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "f8-einzelinstanz",
+      "ansicht": "Allgemein",
+      "titel": "Zweiter Start stört die Sendung nicht",
+      "tun": "WOA läuft und spielt. WOA ein zweites Mal starten (Startmenü bzw. Doppelklick).",
+      "erwartet": "Kein zweites Fenster, kein Knacken, Stream läuft weiter. Das laufende WOA kommt nach vorn.",
+      "version": "0.42.0"
+    },
+    {
+      "id": "f8-x-schliesst",
+      "ansicht": "Allgemein",
+      "titel": "X schließt Fragen und Abnahme",
+      "tun": "Entwickler › Fragen und To-dos öffnen, oben rechts X. Dasselbe mit Entwickler › Abnahme.",
+      "erwartet": "Beide Fenster gehen mit einem Klick zu.",
+      "version": "0.42.0"
+    },
+    {
+      "id": "f8-pegel-einheitlich",
+      "ansicht": "Radio",
+      "titel": "Pegel als einheitlicher Kanalbau",
+      "tun": "Radio, Karte PEGEL ansehen, Musik spielen.",
+      "erwartet": "Gruppen Quellen (Playlist, Carts, Decks, Mikro, Telefon), Summe (Master ohne Fader), Ausgänge (Notebook, Stream mit M), durch Linien getrennt. Alle Fader und LED-Ketten gleich hoch, Namensschilder auf einer Linie, LEDs nur grün/gelb/rot.",
+      "version": "0.42.0"
+    },
+    {
+      "id": "f8-meldungszeile",
+      "ansicht": "Radio",
+      "titel": "Meldungszeile statt roter Texte",
+      "tun": "Radio: Stream ohne Server starten oder ein Ausgabegerät abziehen.",
+      "erwartet": "Unter dem Sende-Deck steht eine Zeile mit Warnsymbol, fettem Kurztext und Detail. Bei mehreren Meldungen rechts „n Hinweise“; Klick klappt die Liste auf. Ohne Meldung: „Keine Meldungen“.",
+      "version": "0.42.0"
+    },
+    {
+      "id": "f8-radio-ohne-scrollen",
+      "ansicht": "Radio",
+      "titel": "Radio bei 1920 × 1030 ohne Scrollen",
+      "tun": "WOA maximiert auf einem Full-HD-Bildschirm, Radio-Ansicht.",
+      "erwartet": "Links Sende-Deck, Gäste-Karte (Gäste, Telefon, Browser-Gäste), Playlist; rechts Decks, Cart-Wall, Pegel neben Processing gleich hoch, Wunschtitel als eine Zeile. Nichts scrollt außer der Playlist; leere Carts ohne „-“-Kästchen; keine Telefon-Taste mehr in der Tastenreihe.",
+      "version": "0.42.0"
+    },
+    {
+      "id": "f8-einstellungen-werte",
+      "ansicht": "Einstellungen",
+      "titel": "Einstellungen mit Werten in der Zeile",
+      "tun": "Einstellungen öffnen, Bereich Radio und Allgemein ansehen, Crossfade und Stopp-Ausblenden ändern.",
+      "erwartet": "Werte stehen direkt in der Zeile (Zahlenfeld, Schalter, Segmente), kein „Im Radio zeigen“. Änderung wirkt sofort auch im Processing-Rack. Aktiver Bereich mit farbiger Kante links, bei fehlendem Gerät gelber Chip „1 fehlt“ an Audio und Geräte. Fenster öffnet groß (1400 × 930).",
+      "version": "0.42.0"
+    },
+    {
+      "id": "f8-rack-werte-bleiben",
+      "ansicht": "Radio",
+      "titel": "Ducking-Zeiten bleiben stehen",
+      "tun": "Ducking-Rückkehr 0,5 s, Einblenden 1,0 s, Stopp-Ausblenden 3,0 s einstellen, Einstellungen mehrmals öffnen, WOA neu starten.",
+      "erwartet": "Die Werte bleiben 0,5 / 1,0 / 3,0 s und fallen nicht auf 0,1 / 0,1 / 0,5 s.",
+      "version": "0.42.0"
+    },
+    {
+      "id": "f8-fade-tooltip",
+      "ansicht": "Radio",
+      "titel": "Fade-Taste zeigt die Dauer",
+      "tun": "Fade-Taste im Rack auf 6 s, Maus über eine Fade-Taste.",
+      "erwartet": "Tooltip „Ausblenden (6 s)“.",
+      "version": "0.42.0"
+    },
+    {
+      "id": "f8-fragen-abnahme-stand",
+      "ansicht": "Allgemein",
+      "titel": "Stand im Kopf von Fragen und Abnahme",
+      "tun": "Fragen und To-dos sowie Abnahme öffnen.",
+      "erwartet": "Im Kopf rechts „x von n beantwortet“ bzw. „x von n geprüft“; Ticket-Chips neutral grau; der Balken der Abnahme grün für geprüft, gelb für „geht nicht“.",
+      "version": "0.42.0"
+    },
+    {
       "id": "feedback-tageslimit",
       "ansicht": "Allgemein",
       "titel": "Feedback bei Tageslimit wird später gesendet",
@@ -925,7 +997,7 @@
       "ansicht": "Radio",
       "titel": "Fade-Dauer einstellbar",
       "tun": "Im Rack „Fade-Taste“ auf 6 s stellen, ein Deck abspielen und dessen Fade-Taste drücken; danach Einstellungen › Radio nach „Fade-Taste: Dauer“ suchen.",
-      "erwartet": "Das Deck blendet in 6 s aus, die Taste zählt „6,0 s“ herunter, Tooltip „Fade (6 s)“. Vorgabe ist 3 s, wählbar 1 bis 10 s; die Suche findet den Eintrag.",
+      "erwartet": "Das Deck blendet in 6 s aus, die Taste zählt „6,0 s“ herunter, Tooltip „Ausblenden (6 s)“. Vorgabe ist 3 s, wählbar 1 bis 10 s; die Suche findet den Eintrag.",
       "version": "0.41.37"
     },
     {

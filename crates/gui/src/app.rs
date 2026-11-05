@@ -309,6 +309,8 @@ pub struct WoaApp {
     party: crate::party::PartyView,
     /// Datenordner (radio.json, Mitschnitte).
     data_dir: PathBuf,
+    /// Sperre des ersten Starts; ein zweiter Start holt dieses Fenster nach vorn (Fassung 8).
+    instance: Option<crate::instance::Primary>,
     /// Fenster nach dem ersten Bild per Befehl maximieren (#442), nicht schon beim Anlegen.
     maximize_on_start: bool,
     /// Bibliotheks-Fenster (Paket 24).
@@ -726,6 +728,7 @@ impl WoaApp {
             analysis_buf: (Vec::new(), Vec::new()),
             last_title: String::new(),
             data_dir: woa_radio::data_dir(),
+            instance: None,
             maximize_on_start: false,
             library: crate::library::LibraryWindow::new(
                 woa_radio::data_dir().join(crate::library::DB_FILE),
@@ -841,6 +844,11 @@ impl WoaApp {
     /// left Windows with a window drawn at 2/3 size whose right part got no mouse input (#442).
     pub fn maximize_on_start(&mut self) {
         self.maximize_on_start = true;
+    }
+
+    /// Hält die Einzelinstanz-Sperre und weckt das Fenster, wenn ein zweiter Start klopft.
+    pub fn set_instance(&mut self, p: crate::instance::Primary) {
+        self.instance = Some(p);
     }
 
     /// Sets the data folder (radio.json, recordings). Default: the WOA data folder.
@@ -1862,6 +1870,17 @@ impl eframe::App for WoaApp {
         if std::mem::take(&mut self.maximize_on_start) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
         }
+        if let Some(i) = &self.instance {
+            if i.poll_show() {
+                tracing::info!("second start: window to front");
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
+                    egui::UserAttentionType::Informational,
+                ));
+            }
+            ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        }
         self.close_guard(ctx);
         self.repaint_debug(ctx);
         self.drain_midi_takes();
@@ -2068,6 +2087,7 @@ impl eframe::App for WoaApp {
         if settings.size.is_none() {
             settings.size = self.config.settings_size;
         }
+        settings.missing_devices = self.radio.as_ref().map_or(0, |r| r.output_warnings().len());
         settings.show(&ctx, |ui, id| self.setting_row(ui, id));
         self.settings = settings;
         self.remember_settings_size(&ctx);

@@ -1798,11 +1798,17 @@ impl WoaApp {
                 });
             }
             S::Theme => {
-                for t in [theme::Theme::Hell, theme::Theme::Dunkel] {
-                    if ui
-                        .selectable_value(&mut self.config.theme, t, t.label())
-                        .changed()
+                // Segmente statt Auswahl-Knöpfe (Fassung 8); rechtsbündig, daher umgekehrt.
+                for t in [theme::Theme::Dunkel, theme::Theme::Hell] {
+                    let on = self.config.theme == t;
+                    if crate::widgets::Segment::new("", t.label())
+                        .on(on)
+                        .height(28.0)
+                        .ui(ui)
+                        .clicked()
+                        && !on
                     {
+                        self.config.theme = t;
                         self.save_config();
                     }
                 }
@@ -1824,7 +1830,7 @@ impl WoaApp {
             }
             S::AutoUpdate => {
                 let mut on = self.config.auto_update;
-                if ui.checkbox(&mut on, "").changed() {
+                if crate::radio::toggle(ui, &mut on, "Automatisch nach Updates suchen").changed() {
                     self.config.auto_update = on;
                     self.save_config();
                 }
@@ -1839,8 +1845,7 @@ impl WoaApp {
             }
             S::Telemetry => {
                 let mut on = self.config.telemetry_enabled == Some(true);
-                if ui
-                    .checkbox(&mut on, "")
+                if crate::radio::toggle(ui, &mut on, "Telemetrie")
                     .on_hover_text(TELEMETRY_HINT)
                     .changed()
                 {
@@ -1878,6 +1883,7 @@ impl WoaApp {
                 };
                 StateChip::new(t, tone).show(ui);
             }
+            // Werte direkt in der Zeile (Fassung 8), dieselben Regler wie im Rack.
             S::Crossfade
             | S::Ducking
             | S::CartDuck
@@ -1885,13 +1891,31 @@ impl WoaApp {
             | S::FadeLength
             | S::DuckTimes
             | S::BusProcessing
-            | S::MicChain
-            | S::WishFolder => go = show_in(ui, Mode::Radio),
+            | S::MicChain => {
+                use crate::radio::Rack;
+                let key = match id {
+                    S::Crossfade => Rack::Crossfade,
+                    S::Ducking => Rack::Ducking,
+                    S::CartDuck => Rack::CartDuck,
+                    S::StopFade => Rack::StopFade,
+                    S::FadeLength => Rack::FadeLength,
+                    S::DuckTimes => Rack::DuckTimes,
+                    S::BusProcessing => Rack::BusProcessing,
+                    _ => Rack::MicChain,
+                };
+                match self.radio.as_mut() {
+                    Some(r) => r.rack_control(ui, key),
+                    None => go = show_in(ui, Mode::Radio),
+                }
+            }
+            S::WishFolder => go = show_in(ui, Mode::Radio),
             S::DjCurve => go = show_in(ui, Mode::Party),
             S::PartyPanels => {
                 let mut p = self.config.party_panels;
-                let a = ui.checkbox(&mut p.wishes, "Wunschliste").changed();
-                let b = ui.checkbox(&mut p.remote, "Fernbedienung").changed();
+                let b = crate::radio::toggle(ui, &mut p.remote, "Fernbedienung").changed();
+                ui.label("Fernbedienung");
+                let a = crate::radio::toggle(ui, &mut p.wishes, "Wunschliste").changed();
+                ui.label("Wunschliste");
                 if a || b {
                     self.config.party_panels = p;
                     self.party.panels = p;
@@ -1914,7 +1938,7 @@ impl WoaApp {
             S::SoundBanks => go = show_in(ui, Mode::Produzent),
             S::PianoRollWindow => {
                 let mut on = self.config.piano_roll_window;
-                if ui.checkbox(&mut on, "").changed() {
+                if crate::radio::toggle(ui, &mut on, "Piano-Roll als eigenes Fenster").changed() {
                     self.config.piano_roll_window = on;
                     self.piano_roll_floating = on;
                     self.save_config();
