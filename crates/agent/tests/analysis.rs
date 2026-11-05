@@ -1,6 +1,8 @@
 //! Paket 19: `analyze` mit Spektrum, True Peak und Stereo-Bild, und `spectrogram_png`.
 //! Gemessen wird gegen erzeugte Sinus-Signale, nichts davon wird abgespielt.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use rmcp::model::{CallToolRequestParams, CallToolResult, ClientConfig};
 use rmcp::service::RunningService;
 use rmcp::{ClientHandler, RoleClient, ServiceExt};

@@ -1,6 +1,8 @@
 //! Design-Runde 3, Abschnitt 6: echter Eingangs-Trim je Spur, getrennt vom Spur-Gain (Fader).
 //! Ein Command mit Undo, Bereichsprüfung, Projektformat ohne Trim unverändert.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_model::*;
 
 fn setup() -> (Session, TrackId) {

@@ -1,6 +1,8 @@
 //! Instrumente: jeder Process-Aufruf unter `assert_no_alloc`, Golden-Renders
 //! in `tests/golden/` (neu schreiben mit `WOA_BLESS=1`).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::PathBuf;
 use std::sync::Arc;
 

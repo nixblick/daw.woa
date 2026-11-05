@@ -1,5 +1,7 @@
 //! Paket 17: Effekt-Werkzeuge des Agenten (list_effects, Voreinstellungen, Vorlage Sprachkette).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use rmcp::model::{CallToolRequestParams, CallToolResult, ClientConfig};
 use rmcp::service::RunningService;
 use rmcp::{ClientHandler, RoleClient, ServiceExt};

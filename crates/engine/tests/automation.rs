@@ -1,6 +1,8 @@
 //! Paket 18: Automation und Sidechain im Graphen. Alles offline gerechnet, kein Gerät, kein
 //! Ton. Jeder Process-Aufruf der Echtzeit-Probe läuft unter `assert_no_alloc`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use woa_dsp::{Node, ProcessBuffers, SineOsc};
 use woa_engine::clip::take_peak;

@@ -2,6 +2,8 @@
 //! Testsignalen (Sinus, Rauschen, Impuls) gefüttert und seine Wirkung gemessen. Dazu Golden-File,
 //! bit-genauer Bypass und jeder Process-Aufruf unter `assert_no_alloc`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::PathBuf;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

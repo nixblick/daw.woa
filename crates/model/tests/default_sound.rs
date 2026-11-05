@@ -1,6 +1,8 @@
 //! Klangqualität (André 02.11.2026): neue MIDI-Spuren spielen den Flügel, alte Projekte
 //! behalten ihren Klang.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_model::{Command, Session, SoundCategory, TrackKind, TrackSound, store};
 
 #[test]

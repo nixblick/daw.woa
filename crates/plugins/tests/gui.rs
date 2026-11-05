@@ -3,6 +3,8 @@
 //! meldet auf Wunsch Reglerbewegungen als Ausgangs-Events und meldet einen Zeitgeber an. So
 //! läuft alles ohne Display und ohne Ton.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use woa_dsp::plugin::StereoProcessor;
 use woa_plugins::testplugin::{self, GAIN, LEVEL, SimEvent};

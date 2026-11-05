@@ -3,6 +3,8 @@
 //! Tonfrequenz: Beginn der Stimme gegen den Übergang, Tiefe der Absenkung, Rückkehr der Musik,
 //! keine Lücke. Dazu: Nachbar tauschen setzt „prüfen“, Speichern und Laden als Schnappschuss.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::{Path, PathBuf};
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

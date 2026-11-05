@@ -2,6 +2,8 @@
 //! konstanter Leistung, Auto-Übergang an und aus, die Hand gewinnt gegen die Automatik.
 //! Offline, ohne Ton, jeder Block unter `assert_no_alloc`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::Path;
 use std::sync::atomic::Ordering::Acquire;
 

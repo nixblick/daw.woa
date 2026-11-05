@@ -1,6 +1,8 @@
 //! Paket J7 (#271): Bank-Katalog, Prüfsummen-Test, Rückfall auf GeneralUser GS.
 //! Ohne Netz: Installiert wird aus einer Datei, die Bank ist eine winzige, im Test erzeugte SF2.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::sync::Arc;
 
 use sha2::{Digest, Sha256};

@@ -1,6 +1,8 @@
 //! Paket J8 (#283): `generate_fx` erzeugt Riser, Whoosh und Downlifter als Audio-Clip.
 //! Nur Offline-Render, kein Ton über Lautsprecher.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use rmcp::model::{CallToolRequestParams, CallToolResult, ClientConfig};
 use rmcp::service::RunningService;
 use rmcp::{ClientHandler, RoleClient, ServiceExt};

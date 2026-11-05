@@ -1,5 +1,7 @@
 //! Bedienaktionen erzeugen je eine Info-Zeile; Dateinamen stehen nur unter `LOCAL_TARGET`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::Path;
 use std::sync::OnceLock;
 

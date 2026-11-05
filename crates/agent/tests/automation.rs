@@ -1,5 +1,7 @@
 //! Paket 18: Agent-Werkzeuge add_automation, remove_automation und set_sidechain.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use rmcp::model::{CallToolRequestParams, CallToolResult, ClientConfig};
 use rmcp::service::RunningService;
 use rmcp::{ClientHandler, RoleClient, ServiceExt};

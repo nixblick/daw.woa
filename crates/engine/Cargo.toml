@@ -35,3 +35,6 @@ tempfile = "3.27.0"
 tracing-log = { version = "0.2.0", default-features = false, features = ["std"] }
 tracing-subscriber = "0.3.23"
 woa-plugins = { version = "0.41", path = "../plugins", features = ["test-plugin"] }
+
+[lints]
+workspace = true

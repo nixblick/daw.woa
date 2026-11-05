@@ -1,5 +1,7 @@
 //! Paket J3: Akkordfolge legt drei MIDI-Spuren mit Clips an, Tonartwechsel transponiert alle.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::time::Instant;
 
 use woa_gui::AppState;

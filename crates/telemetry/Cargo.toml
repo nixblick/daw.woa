@@ -20,3 +20,6 @@ ureq = { version = "3.5.0", default-features = false, features = ["rustls", "jso
 [dev-dependencies]
 log = "0.4.34"
 tempfile = "3.27.0"
+
+[lints]
+workspace = true

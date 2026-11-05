@@ -1,5 +1,7 @@
 //! Paket J2: Drum-Raster als Sicht auf normale MIDI-Noten.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_model::drums::{
     LOUD, SOFT, apply_preset, dice, set_step, step_velocity, steps, toggle_step,
 };

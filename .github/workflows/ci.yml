@@ -31,7 +31,7 @@ jobs:
       - run: cargo test --workspace
       # Geräteausgabe (cpal) nur kompilieren, nicht abspielen; Windows braucht keine ALSA-Header.
       - if: runner.os == 'Windows'
-        run: cargo clippy -p woa-engine --features device --all-targets -- -D warnings
+        run: cargo clippy -p woa-engine -p woa-headless --features woa-engine/device,woa-headless/device --all-targets -- -D warnings
 
   # Pflichtprüfung „deny“ (Branch-Schutz), läuft daher immer. Lizenzen, Bans und Quellen hängen
   # nur am eigenen Code und laufen immer. Advisories/yanked ändern sich von außen (ein Paket

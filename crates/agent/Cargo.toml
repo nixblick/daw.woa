@@ -38,3 +38,6 @@ png = "0.18.1"
 tempfile = "3.27.0"
 tokio = { version = "1.54.1", features = ["rt", "rt-multi-thread", "macros", "io-util"] }
 ureq = { version = "3.5.0", default-features = false }
+
+[lints]
+workspace = true

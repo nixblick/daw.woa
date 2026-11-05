@@ -1,5 +1,7 @@
 //! Peak-Sammlung für die Live-Wellenform (#43): nach dem Anlegen keine Allokation.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use woa_engine::clip::PEAK_BLOCK;
 use woa_engine::live_peaks::live_peaks;

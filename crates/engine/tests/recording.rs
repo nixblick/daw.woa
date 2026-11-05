@@ -5,6 +5,8 @@
 //! liefert ihn `LATENCY` Frames zu spät. Der Latenzausgleich muss ihn auf dem Sample genau
 //! dorthin zurücksetzen, wo gespielt wurde.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::collections::HashMap;
 use std::sync::Arc;
 

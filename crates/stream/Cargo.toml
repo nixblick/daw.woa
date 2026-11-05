@@ -21,3 +21,6 @@ woa-guests = { version = "0.41", path = "../guests" }
 [dev-dependencies]
 hound = "3.5.1"
 tempfile = "3.27.0"
+
+[lints]
+workspace = true

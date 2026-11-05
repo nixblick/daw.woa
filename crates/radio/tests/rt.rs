@@ -1,6 +1,8 @@
 //! Sendemixer: jeder Process-Aufruf unter `assert_no_alloc`, dazu Crossfade, Ducking,
 //! Carts, Mikro, Stopp, Mitschnitt und Offline-Render (Länge, Lautheit).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 

@@ -1576,8 +1576,7 @@ fn dj_mixer(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView) {
                     ),
                 );
             });
-            let r = r.expect("Zeile gezeichnet");
-            if r.clicked() {
+            if r.is_some_and(|r| r.clicked()) {
                 desk.dj(DjCommand::Transition);
             }
         });

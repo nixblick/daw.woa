@@ -1,6 +1,8 @@
 //! Pegel je Ausgang (Notebook, Stream) für die LED-Ketten der Pegelkarte. Ohne Audiogerät,
 //! ohne Ton: bekannter Pegel rein, gemessene Spitze raus.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::{Path, PathBuf};
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

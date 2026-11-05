@@ -6,6 +6,8 @@
 //!   thread 'msi_writes_no_machine_wide_state' panicked: ProgramFiles64Folder
 //!   test result: FAILED. 1 passed; 2 failed
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 const WXS: &str = include_str!("../../../packaging/windows/woa.wxs");
 
 /// Der Teil ohne `<?if $(var.Legacy) ...?>`-Zweig (nur test-upgrade.ps1 baut die alte Form).

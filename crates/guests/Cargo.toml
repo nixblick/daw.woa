@@ -21,3 +21,6 @@ woa-engine = { version = "0.41", path = "../engine" }
 
 [dev-dependencies]
 assert_no_alloc = "1.1.2"
+
+[lints]
+workspace = true

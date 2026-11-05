@@ -1,6 +1,8 @@
 //! Quellclient gegen den Mini-Shoutcast: Anmeldung, MP3, Titel, Wiederverbinden,
 //! abgelehnte Anmeldung.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 mod fake_server;
 
 use std::sync::atomic::Ordering;

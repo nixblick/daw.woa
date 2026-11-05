@@ -2,6 +2,8 @@
 //! Auswahlfarbe an drei Stellen, die vier Zustände des Clip-Inspektors und die Leer-Zustände
 //! des Insert-Racks. Alles über die echte Oberfläche, ohne Fenster und ohne Ton.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use eframe::egui;
 use woa_gui::{GuiConfig, WoaApp, theme};
 use woa_model::{ClipId, TrackId};

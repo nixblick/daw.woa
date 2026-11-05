@@ -1,5 +1,7 @@
 //! Paket 31: Plugins auf Spuren im Modell. Regeln, Undo, Projektdatei.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_model::store;
 use woa_model::*;
 

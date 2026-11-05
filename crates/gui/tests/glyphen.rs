@@ -2,6 +2,8 @@
 //! Dieser Test liest alle Quelltexte der Oberfläche und prüft jedes Nicht-ASCII-Zeichen außerhalb
 //! von Kommentaren gegen die eingebetteten Schriften. Ohne Fenster, ohne Ton.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::Path;
 
 use eframe::egui;

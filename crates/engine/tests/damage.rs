@@ -1,6 +1,8 @@
 //! Beschädigte und unlesbare Dateien: Zählung je Datei, Klartext im lokalen Protokoll.
 //! Testdateien entstehen im Tempordner (kein Ton) und verschwinden danach.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::SubscriberExt;
 use woa_engine::decode::{Damage, damage, decode_file};

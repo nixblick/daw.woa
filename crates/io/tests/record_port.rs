@@ -5,6 +5,8 @@
 //! Die Uhr läuft wie ein Audiogerät: Ein Thread meldet alle 256 Samples die Position
 //! (aus der echten Zeit, also ohne Drift), genau wie der Audio-Thread der Engine.
 //! Ohne ALSA-Sequencer (z. B. CI-Container) wird der Test übersprungen.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
 #![cfg(target_os = "linux")]
 
 use std::sync::Arc;

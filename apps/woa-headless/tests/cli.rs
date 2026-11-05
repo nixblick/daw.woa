@@ -1,5 +1,7 @@
 //! Integrationstests für `woa-headless` (assert_cmd + tempfile, Mock-HTTP über std::net).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::sync::mpsc;

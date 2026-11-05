@@ -1,6 +1,8 @@
 //! Paket J7 (#271): Bank je MIDI-Spur über MCP (`track_sound` mit `bank`). Ohne Netz: Die
 //! Bank liegt schon im Bank-Ordner (winzige, im Test erzeugte SF2 unter dem Katalog-Namen).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use rmcp::model::{CallToolRequestParams, CallToolResult, ClientConfig};
 use rmcp::service::RunningService;
 use rmcp::{ClientHandler, RoleClient, ServiceExt};

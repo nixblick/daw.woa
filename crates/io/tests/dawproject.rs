@@ -1,5 +1,7 @@
 //! Paket 27: DAWproject export, import and round trip.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 

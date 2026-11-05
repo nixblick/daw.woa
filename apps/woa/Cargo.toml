@@ -21,3 +21,6 @@ winit = { version = "0.30.13", default-features = false, features = ["x11"] }
 # Icon-Ressource in der woa.exe (Taskleiste, Explorer); nur beim Bau unter Windows.
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1.20"
+
+[lints]
+workspace = true

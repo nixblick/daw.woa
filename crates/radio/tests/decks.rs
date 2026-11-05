@@ -1,6 +1,8 @@
 //! Decks A, B, C offline und ohne Ton: Restzeit, Start und Stopp, Schnitt und eigener Ausgang.
 //! Jeder Block läuft unter `assert_no_alloc`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::Path;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

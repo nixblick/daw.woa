@@ -1,0 +1,3 @@
+# Regel 6: unwrap/expect nur in Tests.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

@@ -2,6 +2,8 @@
 //! und der Rückweg (Mix-Minus) trägt die Sendung ohne seine Stimme. Jeder Block läuft unter
 //! `assert_no_alloc`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::Path;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

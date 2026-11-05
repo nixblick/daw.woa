@@ -1,6 +1,8 @@
 //! DJ-Ansicht der Party (DJ-Paket 0.36.0): Kommandos ohne Ton geprüft, jeder Mixer-Block unter
 //! `assert_no_alloc`. Kein Ton geht hinaus, die Ausgabe landet nur in Puffern.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::Path;
 use std::sync::atomic::Ordering::Acquire;
 

@@ -2,6 +2,8 @@
 //! Bei 1280×720, 1366×768 und 1920×1030 liegt kein Bedienelement rechts außerhalb des
 //! Fensters (Party DJ; Produzent und Transport in `app.rs`). Ohne Fenster und ohne Ton (AccessKit-Rechtecke statt Pixelvergleich).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use eframe::egui;
 use woa_gui::{GuiConfig, WoaApp};
 

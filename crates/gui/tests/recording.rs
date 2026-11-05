@@ -1,6 +1,8 @@
 //! Paket 22 in der Oberflächenschicht, ohne Fenster, Mikrofon und Ton: Aufnahme mit
 //! Latenzausgleich und Punch als Clip, Loop-Takes als Take-Ordner, Comping und Undo.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::time::Instant;
 
 use woa_gui::AppState;

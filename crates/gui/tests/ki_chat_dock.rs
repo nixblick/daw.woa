@@ -2,6 +2,8 @@
 //! einen Reiter „KI-Chat“. Ohne eingerichtete KI steht dort ein Satz und der Weg zur
 //! Einstellungsseite. Echte Oberfläche, ohne Fenster, Ton und KI-Aufruf.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use eframe::egui;
 use woa_gui::{GuiConfig, WoaApp};
 

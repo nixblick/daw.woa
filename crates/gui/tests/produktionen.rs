@@ -2,6 +2,8 @@
 //! öffnet das Fenster, und ein MCP-Aufruf über die stdio-Weiterleitung legt im Projekt der
 //! App eine Spur an, die mit Undo wieder verschwindet. Ohne Fenster, ohne Ton.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};

@@ -2,6 +2,8 @@
 //! Ratenbegrenzung, Vollstand und Änderungen per WebSocket, 20 Handys, Port zu nach dem
 //! Ausschalten. Kein Ton, kein Audiogerät.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::time::{Duration, Instant};

@@ -1,6 +1,8 @@
 //! Paket 26: Export-Formate und Stems, gemessen im Offline-Render und beim Zurücklesen.
 //! Tests mit ffmpeg überspringen sich mit einer Zeile Log, wenn es fehlt (CI-Läufer).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::sync::Arc;
 
 use woa_engine::decode::decode_file;

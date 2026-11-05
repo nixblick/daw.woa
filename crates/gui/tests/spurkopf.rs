@@ -1,6 +1,8 @@
 //! #212: Der Spurkopf ragt nicht in die Zeitleiste, auch nicht mit langem Gerätenamen.
 //! Ohne Fenster, ohne Ton, Daten nur im Wegwerf-Ordner.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use eframe::egui;
 use woa_gui::{GuiConfig, WoaApp};
 

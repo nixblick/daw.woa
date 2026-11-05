@@ -2,6 +2,8 @@
 //! `assert_no_alloc`; die Sprachkette wird gemessen (Brummen fällt, Sprachband bleibt), das
 //! Tempo des Projekts steuert die synchrone Verzögerung, der Export rechnet ohne Arbeits-Thread.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use woa_dsp::{Node, SineOsc};
 use woa_engine::{AudioProcessor, Engine, build_project_graph, render_project};

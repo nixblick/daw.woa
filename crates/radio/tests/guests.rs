@@ -1,6 +1,8 @@
 //! Gäste im Sendemixer: Sendung enthält alle, der Abhörausgang trägt auf Wunsch den Rückweg
 //! eines Gastes (Mix-Minus). Offline, ohne Audiogerät.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use woa_guests::source::SineGen;
 use woa_radio::{Controller, RadioShow};

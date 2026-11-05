@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.41.40 — 2026-11-05
+
+- **Regel 6 maschinell (kein `unwrap`/`expect` im Produktivcode):** Workspace-Lints `clippy::unwrap_used` und `clippy::expect_used` auf `deny`, jedes Crate erbt sie (`[lints] workspace = true`); `clippy.toml` erlaubt beides in Tests, Integrationstests (`tests/*.rs`) und im Test-Plugin per `#![allow]`. Vorher ergab ein Audit aller Audio-Callbacks (Ausgabe, Aufnahme, Player, Radio, Vorhören, Zweitgeräte) keinen Verstoß gegen die Echtzeit-Regeln; die Sperre hält das fest.
+- **Fund:** `party/dj.rs` brach mit `expect` ab, falls die Übergangs-Taste nicht gezeichnet wurde; jetzt einfach kein Klick.
+- **Fund:** `woa-headless` mit Feature `device` baute nicht mehr (`InputConfig` hatte das neue Feld `pair`). Behoben; der Windows-Job der CI prüft `woa-headless --features device` jetzt mit.
+
 ## 0.41.39 — 2026-11-05
 
 - **Feedback bei Tageslimit wird später gesendet:** Antwortet der Feedback-Server mit 429 (`{"error":"daily limit reached"}`), zeigt der Dialog „Tageslimit erreicht, wird später gesendet“ statt „Senden fehlgeschlagen“. Der fertige Anfrage-Rumpf liegt als Datei im Datenordner (`feedback-ausstehend/`) und geht unverändert erneut, damit der Server Dubletten erkennt; auch nach einem Neustart. Geprüft wird jede Minute, gesendet erst nach Wartezeit (30 min, verdoppelt je Fehlversuch, höchstens 6 h), beim ersten 429 einer Runde hört sie auf; nach 40 Fehlversuchen wird die Meldung verworfen und geloggt. Neu im Telemetrie-Crate: `FeedbackError::DailyLimit`, `post_payload`. Tests `daily_limit_is_held_back_and_resent_unchanged` (Schein-Server 429, 429, 200), `outbox_backoff_doubles_and_is_capped`. Prüfpunkt `feedback-tageslimit`, Klickliste in `docs/abnahme.md`. Workspace-Version 0.41.39.

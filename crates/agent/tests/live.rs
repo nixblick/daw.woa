@@ -2,6 +2,8 @@
 //! (hier: eine Sitzung, die der Test wie der GUI-Thread herleiht), ist ein Rückgängig-Schritt
 //! „Agent: add_track“ und verschwindet mit Undo. Ohne Ton, ohne echte App.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};

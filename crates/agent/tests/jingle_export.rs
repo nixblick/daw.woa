@@ -1,6 +1,8 @@
 //! J6 acceptance (#261): `export_jingle` puts the finished jingle into the jingle folder,
 //! the library (kind jingle) and onto a cart, exactly like the app.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use rmcp::model::{CallToolRequestParams, CallToolResult, ClientConfig};
 use rmcp::service::RunningService;
 use rmcp::{ClientHandler, RoleClient, ServiceExt};

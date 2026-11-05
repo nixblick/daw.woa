@@ -1,6 +1,8 @@
 //! Der Modus (Produzent/Radio) steht in config.json; alte Dateien ohne Feld starten im
 //! Produzent-Modus.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_gui::{GuiConfig, Mode};
 
 #[test]

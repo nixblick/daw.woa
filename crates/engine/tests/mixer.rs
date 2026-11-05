@@ -1,6 +1,8 @@
 //! Paket 16: Busse, Sends und Inserts im Graphen. Jeder Process-Aufruf läuft unter
 //! `assert_no_alloc`; der Golden-Test hält den Klang eines Mixes mit Bus, Send und Effekten fest.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::PathBuf;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

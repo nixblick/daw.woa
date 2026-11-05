@@ -1,6 +1,8 @@
 //! Befunde aus dem Windows-Test des MCP-Servers: verwaiste Aufnahmen, undo/redo-Antwort,
 //! MIDI-Spur in der Analyse. Nichts davon wird abgespielt.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use rmcp::model::{CallToolRequestParams, CallToolResult, ClientConfig};
 use rmcp::service::RunningService;
 use rmcp::{ClientHandler, RoleClient, ServiceExt};
