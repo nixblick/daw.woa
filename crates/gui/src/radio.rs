@@ -631,6 +631,9 @@ pub struct RadioDesk {
     phone_stats: Option<Arc<woa_engine::pairs::LinkStats>>,
     phone_lost: Arc<std::sync::atomic::AtomicBool>,
     phone_level: f32,
+    /// Telefon-Kanal im Pult (Karte PEGEL): Fader in dB und LED-Kette.
+    phone_db: f32,
+    phone_meter: MeterHold,
     /// Pult-Modus (#301): Strom des Pult-Eingangs (lebt, solange das Feld lebt) und Pegel.
     /// `None`: Die Sendung kommt aus WOAs interner Mischung.
     pult: Option<Stream>,
@@ -1448,6 +1451,8 @@ impl RadioDesk {
             phone_stats: None,
             phone_lost: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             phone_level: 0.0,
+            phone_db: 0.0,
+            phone_meter: MeterHold::default(),
             pult: None,
             pult_level: 0.0,
             pult_faults: Arc::new(AtomicU64::new(0)),
@@ -1680,6 +1685,7 @@ impl RadioDesk {
         let Some(st) = &self.station else { return };
         self.view = st.view();
         self.phone_level = self.view.phone_peak.max(self.phone_level * 0.9);
+        self.phone_meter.step(self.view.phone_peak, now_s());
         self.pult_level = self.view.pult_peak.max(self.pult_level * 0.9);
         self.pfl_level = self.view.pfl_peak.max(self.pfl_level * 0.85);
         for (m, v) in self.meters.iter_mut().zip(self.view.meters) {
@@ -3560,10 +3566,53 @@ impl RadioDesk {
             }
         });
         ui.add_space(6.0);
+        self.guest_card_phone(ui);
+        ui.add_space(6.0);
         self.web_guests(ui);
     }
 
-    /// Browser-Gäste (Paket 38): Zugang an/aus, Einladungen mit QR-Code, Warteraum.
+    /// Telefon auf der Gäste-Karte, getrennt von den Gästen (Moderator 05.11.2026): Der Anrufer
+    /// kommt über die Soundkarte, nicht über den Link. Dieselbe Taste wie in der Tastenreihe.
+    fn guest_card_phone(&mut self, ui: &mut egui::Ui) {
+        let on = self.view.phone_on;
+        ui.label(theme::panel_label("TELEFON"));
+        ui.add_space(2.0);
+        theme::lcd_show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                let text = if on {
+                    format!("{} Auf Sendung", theme::ic::BROADCAST)
+                } else {
+                    format!("{} Anrufer auf Sendung", theme::ic::PHONE)
+                };
+                if ui
+                    .add(egui::Button::new(
+                        egui::RichText::new(text).strong().color(if on {
+                            theme::on_air()
+                        } else {
+                            theme::text()
+                        }),
+                    ))
+                    .on_hover_text(if on {
+                        "Telefon auf Sendung. Klick: Anrufer von der Sendung nehmen"
+                    } else {
+                        "Den Anrufer am Telefon-Eingang auf die Sendung legen; die Musik duckt."
+                    })
+                    .clicked()
+                {
+                    self.toggle_phone();
+                }
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(90.0, 12.0), egui::Sense::hover());
+                theme::led_meter(ui.painter(), rect, self.phone_level);
+            });
+            if let Some(e) = &self.phone_error {
+                ui.label(egui::RichText::new(e).small().color(theme::on_air()));
+            }
+        });
+    }
+
+    /// Browser-Gäste (Paket 38): Zugang an/aus, ein Link mit PIN für die Sendung, Warteraum.
     fn web_guests(&mut self, ui: &mut egui::Ui) {
         let web = self.view.web.clone();
         ui.horizontal(|ui| {
@@ -3579,10 +3628,18 @@ impl RadioDesk {
                     {
                         self.with(|c| c.guests_web_set(false, None));
                     }
-                    let full = self.view.guests.len() >= woa_guests::MAX_GUESTS;
+                    let label = if web.invites.is_empty() {
+                        format!("{} Link mit PIN", theme::ic::PLUS)
+                    } else {
+                        "Neuer Link".to_string()
+                    };
                     if ui
-                        .add_enabled(!full, egui::Button::new(format!("{} Einladung", theme::ic::PLUS)))
-                        .on_hover_text("Ein Link für ein Handy im selben WLAN, einmal benutzbar")
+                        .button(label)
+                        .on_hover_text(
+                            "Ein Link mit PIN für alle Gäste dieser Sendung (Handys im selben WLAN). \
+                             Ein neuer Link macht den alten samt PIN ungültig; verbundene Gäste \
+                             bleiben.",
+                        )
                         .clicked()
                     {
                         self.with(|c| {
@@ -3609,8 +3666,8 @@ impl RadioDesk {
             if !web.running {
                 ui.label(
                     egui::RichText::new(
-                        "Aus. Einschalten, Einladung erzeugen, Link ans Handy schicken: Der Gast \
-                         spricht über den Browser, ohne App.",
+                        "Aus. Einschalten, Link mit PIN erzeugen, Link an die Gäste schicken und \
+                         die PIN sagen: Die Gäste sprechen über den Browser, ohne App.",
                     )
                     .small()
                     .color(theme::text_dim()),
@@ -3628,6 +3685,10 @@ impl RadioDesk {
                     let ticket = w.ticket.clone();
                     if ui
                         .button(egui::RichText::new("Annehmen").color(theme::ok()))
+                        .on_hover_text(
+                            "Ins Vorgespräch: Der Gast hört die Sendung, ist aber erst nach \
+                             „Auf Sendung“ zu hören.",
+                        )
                         .clicked()
                     {
                         self.with(move |c| {
@@ -3653,12 +3714,25 @@ impl RadioDesk {
                         crate::remote::draw_qr(ui, m, 150.0);
                     }
                     ui.vertical(|ui| {
+                        let min = inv.left_s.div_ceil(60);
                         ui.label(
                             egui::RichText::new(format!(
-                                "Einladung, noch {} min gültig",
-                                inv.left_s.div_ceil(60)
+                                "Link für alle Gäste, noch {} h {:02} min gültig",
+                                min / 60,
+                                min % 60
                             ))
                             .strong(),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!("PIN {}", inv.pin))
+                                .size(22.0)
+                                .monospace()
+                                .strong()
+                                .color(theme::accent()),
+                        )
+                        .on_hover_text(
+                            "Die PIN steht nicht im Link. Sag sie den Gästen am Telefon oder im \
+                             Vorgespräch. Nach zu vielen falschen PINs ist der Link verbrannt.",
                         );
                         ui.add(
                             egui::Label::new(
@@ -3693,9 +3767,11 @@ impl RadioDesk {
             }
             if web.invites.is_empty() && web.waiting.is_empty() {
                 ui.label(
-                    egui::RichText::new("Bereit. „Einladung“ erzeugt einen Link mit QR-Code.")
-                        .small()
-                        .color(theme::text_dim()),
+                    egui::RichText::new(
+                        "Bereit. „Link mit PIN“ erzeugt einen Link mit QR-Code für alle Gäste.",
+                    )
+                    .small()
+                    .color(theme::text_dim()),
                 );
             }
         });
@@ -3714,19 +3790,19 @@ impl RadioDesk {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(&g.name).strong().color(theme::text()))
                 .on_hover_text(&g.source);
-            // Pegel vor dem Fader: zeigt auch im Warteraum und stumm, ob der Gast spricht.
+            // Pegel vor dem Fader: zeigt auch im Vorgespräch und stumm, ob der Gast spricht.
             let (rect, _) = ui.allocate_exact_size(egui::vec2(90.0, 12.0), egui::Sense::hover());
             theme::led_meter(ui.painter(), rect, g.input_peak);
-            // Auf Sendung / Warteraum.
+            // Auf Sendung / Vorgespräch.
             let (air_text, air_col, air_tip) = if g.on_air {
                 (
                     format!("{} Auf Sendung", theme::ic::BROADCAST),
                     theme::on_air(),
-                    "Der Gast ist zu hören. Klick: zurück in den Warteraum (hört weiter die Sendung).",
+                    "Der Gast ist zu hören. Klick: zurück ins Vorgespräch (hört weiter die Sendung).",
                 )
             } else {
                 (
-                    format!("{} Warteraum", theme::ic::PAUSE),
+                    format!("{} Vorgespräch", theme::ic::PAUSE),
                     theme::text_dim(),
                     "Der Gast hört die Sendung, ist aber nicht zu hören. Klick: auf Sendung holen.",
                 )
@@ -5343,6 +5419,10 @@ impl RadioDesk {
             }
             self.learn_menu(r, Target::Level(b));
         }
+        // Telefon direkt neben dem Master, ohne eigenen Trenner: Mit einem zweiten Trenner wird
+        // das Processing daneben so schmal, dass die Wunschzeile bei 1920 × 1030 unter den Rand
+        // rutscht.
+        self.phone_strip(ui);
         // Kein `separator()`: senkrecht in der rollenden Spalte nimmt er die ganze Höhe und
         // schob die Karten darunter (Cart-Wall) aus dem Bild (#303).
         group_sep(ui, FADER_HEIGHT + 40.0);
@@ -5358,6 +5438,56 @@ impl RadioDesk {
                 self.with(move |c| c.set_output(out, o));
             }
         }
+    }
+
+    /// Telefon als eigener Kanal im Pult (Moderator 05.11.2026): Fader und LED-Kette, der Name
+    /// leuchtet rot, solange das Telefon auf Sendung ist. Der Fader wirkt nur dann.
+    fn phone_strip(&mut self, ui: &mut egui::Ui) {
+        let on = self.view.phone_on;
+        ui.vertical(|ui| {
+            ui.set_width(STRIP_W);
+            ui.spacing_mut().item_spacing.y = 4.0;
+            let r = ui
+                .horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    let r = crate::widgets::fader(
+                        ui,
+                        &mut self.phone_db,
+                        woa_radio::mixer::LEVEL_MIN_DB as f32
+                            ..=woa_radio::mixer::LEVEL_MAX_DB as f32,
+                        0.0,
+                        egui::vec2(36.0, FADER_HEIGHT),
+                        crate::widgets::Orient::Vertical,
+                    );
+                    meter_strip(
+                        ui,
+                        self.phone_meter,
+                        "Telefon",
+                        egui::vec2(METER_W, FADER_HEIGHT),
+                    );
+                    r
+                })
+                .inner;
+            let value = f64::from(self.phone_db);
+            r.widget_info(|| egui::WidgetInfo::slider(true, value, "Pegel Telefon"));
+            if r.changed() {
+                let db = f64::from(self.phone_db);
+                self.with(move |c| c.set_phone_level(db));
+            }
+            r.on_hover_text(format!(
+                "Pegel Telefon: {}. Doppelklick: 0 dB. Wirkt, solange das Telefon auf Sendung ist.",
+                crate::widgets::vu::fmt_db(self.phone_db)
+            ));
+            // Gleiche Höhe wie die anderen Kanalzüge (sonst rutscht die Wunschzeile bei
+            // 1920 × 1030 unter den Rand): der Stand steht in der Farbe des Namens, geschaltet
+            // wird auf der Gäste-Karte oder in der Tastenreihe.
+            let col = if on {
+                theme::on_air()
+            } else {
+                theme::text_dim()
+            };
+            scribble(ui, "Telefon", col, STRIP_W);
+        });
     }
 
     fn deck_rows(&mut self, ui: &mut egui::Ui, v: &View) {

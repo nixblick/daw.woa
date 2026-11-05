@@ -75,3 +75,63 @@ fn monitor_output_is_the_return_of_the_chosen_guest() {
     let back = &back[24_000..];
     assert!(db(tone(back, 440.0)) > -12.0);
 }
+
+fn write_dc(path: &std::path::Path, seconds: f64, amp: f32) {
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: RATE,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut w = hound::WavWriter::create(path, spec).unwrap();
+    for _ in 0..(seconds * f64::from(RATE)) as usize * 2 {
+        w.write_sample(amp).unwrap();
+    }
+    w.finalize().unwrap();
+}
+
+#[test]
+fn guest_ducks_the_music_only_once_on_air() {
+    let dir = tempfile::tempdir().unwrap();
+    let music = dir.path().join("musik.wav");
+    write_dc(&music, 20.0, 0.4);
+    let show = RadioShow {
+        bus_processing: false,
+        mic_processing: false,
+        playlist: vec![woa_radio::PlaylistEntry::new(&music)],
+        ..RadioShow::default()
+    };
+    let (mut c, mut m) = Controller::new(show, RATE);
+    // Angenommen: Vorgespräch, hört die Sendung, ist nicht zu hören.
+    let g = c.guests().add_network("Browser", "Anna").unwrap();
+    let slot = g.slot;
+    c.start();
+    let (mut l, mut r) = (vec![0.0f32; BLOCK], vec![0.0f32; BLOCK]);
+    let mut before = 0.0;
+    let mut pre_talk = 0.0;
+    for b in 0..600 {
+        if b == 200 {
+            c.guests().set_on_air(slot, true);
+        }
+        c.pump();
+        assert_no_alloc(|| m.process(&mut l, &mut r));
+        if b == 99 {
+            before = l[BLOCK - 1];
+        }
+        if b == 199 {
+            pre_talk = l[BLOCK - 1];
+        }
+    }
+    assert!(before > 0.1, "vorher {before}");
+    assert!(
+        (pre_talk - before).abs() < before * 0.05,
+        "Vorgespräch duckt nicht: {pre_talk} gegen {before}"
+    );
+    assert!(
+        l[BLOCK - 1] < before * 0.5,
+        "auf Sendung abgesenkt: {} gegen {before}",
+        l[BLOCK - 1]
+    );
+    c.guests().remove(slot);
+    c.guests().return_network(g);
+}

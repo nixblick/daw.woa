@@ -410,6 +410,7 @@ fn invite_waiting_room_accept_talk_hangup() {
     assert!(hub.web_running());
     let link = hub.web_invite().expect("invite");
     let (addr, token) = link_parts(&link);
+    let pin = hub.web_view().invites[0].1.pin.clone();
 
     // Die Seite kommt über HTTPS, die Einladung gilt.
     let (st, v) = https(addr, "GET", &format!("/gast/check?i={token}"), "");
@@ -419,16 +420,18 @@ fn invite_waiting_room_accept_talk_hangup() {
 
     // Der Gast tritt bei und steht im Warteraum.
     let (mut client, offer, pending) = Client::new();
-    let body = json!({ "invite": token, "name": "Anna", "sdp": offer }).to_string();
+    let body = json!({ "invite": token, "pin": pin, "name": "Anna", "sdp": offer }).to_string();
     let (st, v) = https(addr, "POST", "/gast/join", &body);
     assert_eq!(st, 200, "join: {v}");
     let ticket = v["ticket"].as_str().expect("ticket").to_string();
-    let (_, v) = https(addr, "POST", "/gast/join", &body);
-    assert!(v["error"].is_string(), "Einladung nur einmal: {v}");
+    let wrong = if pin == "000000" { "111111" } else { "000000" };
+    let bad = json!({ "invite": token, "pin": wrong, "name": "Max", "sdp": "v=0\r\n" }).to_string();
+    let (_, v) = https(addr, "POST", "/gast/join", &bad);
+    assert!(v["error"].is_string(), "falsche PIN: {v}");
     let w = hub.web_view();
     assert_eq!(w.waiting.len(), 1);
     assert_eq!(w.waiting[0].name, "Anna");
-    assert!(w.invites.is_empty(), "Einladung ist verbraucht");
+    assert_eq!(w.invites.len(), 1, "der Link gilt weiter für alle Gäste");
     assert_eq!(hub.count(), 0, "noch kein Kanal vor dem Annehmen");
     let (_, v) = https(addr, "GET", &format!("/gast/state?t={ticket}"), "");
     assert_eq!(v["state"], "waiting");
@@ -498,7 +501,9 @@ fn invite_waiting_room_accept_talk_hangup() {
     // Ablehnen: der Gast erfährt es, es entsteht kein Kanal.
     let link = hub.web_invite().expect("invite");
     let (_, token) = link_parts(&link);
-    let body = json!({ "invite": token, "name": "Carla", "sdp": "v=0\r\n" }).to_string();
+    let pin = hub.web_view().invites[0].1.pin.clone();
+    let body =
+        json!({ "invite": token, "pin": pin, "name": "Carla", "sdp": "v=0\r\n" }).to_string();
     let (_, v) = https(addr, "POST", "/gast/join", &body);
     let t2 = v["ticket"].as_str().expect("ticket").to_string();
     hub.web_reject(&t2);
@@ -509,7 +514,9 @@ fn invite_waiting_room_accept_talk_hangup() {
     // Kaputtes Angebot: Annehmen scheitert sauber, der Kanal bleibt frei.
     let link = hub.web_invite().expect("invite");
     let (_, token) = link_parts(&link);
-    let body = json!({ "invite": token, "name": "Dirk", "sdp": "v=0\r\nmüll" }).to_string();
+    let pin = hub.web_view().invites[0].1.pin.clone();
+    let body =
+        json!({ "invite": token, "pin": pin, "name": "Dirk", "sdp": "v=0\r\nmüll" }).to_string();
     let (_, v) = https(addr, "POST", "/gast/join", &body);
     let t3 = v["ticket"].as_str().expect("ticket").to_string();
     assert!(hub.web_accept(&t3).is_err());

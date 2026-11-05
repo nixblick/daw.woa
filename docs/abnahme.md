@@ -4,6 +4,14 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+
+## Gäste und Telefon nach Rückmeldung des Moderators (0.41.38, offen)
+
+1. **Höchstens 4 Gäste:** Viermal „Testgast“; danach sind „Testgast“ und „Datei als Gast“ aus.
+2. **Link mit PIN:** Browser-Zugang an, „Link mit PIN“. Zwei Handys über denselben QR-Code mit der angezeigten PIN: beide im Warteraum. Falsche PIN auf einem dritten Gerät: „PIN falsch“. „Neuer Link“: neue PIN, Verbundene bleiben.
+3. **Vorgespräch und Ducking:** Musik an, Gast annehmen: steht im Vorgespräch, Musik bleibt laut. Auf Sendung holen: Musik duckt; zurück ins Vorgespräch: Musik kommt wieder.
+4. **Telefon:** Abschnitt TELEFON auf der Gäste-Karte schaltet den Anrufer auf Sendung; in PEGEL steht neben dem Master der Kanalzug „Telefon“ mit Fader und LED-Kette, sein Name leuchtet rot auf Sendung. Beide Telefon-Tasten zeigen denselben Stand.
+5. **Kein Rückgängig für Gäste:** Gast stumm, lauter, trennen, dann Strg+Z: an den Gästen ändert sich nichts.
 ## Rückmeldung des Moderators 05.11. (0.41.37, offen)
 
 1. **Fade-Dauer:** Rack „Fade-Taste“ auf 6 s, Deck-Fade drücken: blendet in 6 s aus. Zurück auf 3 s.

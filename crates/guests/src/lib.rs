@@ -34,4 +34,4 @@ pub use source::TestSignal;
 pub use web::{NetView, WebConfig, WebView};
 
 /// Höchstzahl gleichzeitiger Gäste.
-pub const MAX_GUESTS: usize = 8;
+pub const MAX_GUESTS: usize = 4;

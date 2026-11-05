@@ -146,6 +146,8 @@ pub enum Cmd {
     PhoneInput(Option<Owned<woa_engine::pairs::LinkRx>>),
     /// Telefon auf Sendung: Der Anrufer liegt auf der Sendung und die Musik wird abgesenkt.
     PhoneOn(bool),
+    /// Fader des Telefon-Kanals im Pult (linear, 0 = aus).
+    PhoneLevel(f32),
     /// Pult-Eingang (Summe des externen Mischpults) über eine Taktverbindung in Mixer-Rate,
     /// `None` = keiner (#301).
     PultInput(Option<Owned<woa_engine::pairs::LinkRx>>),
@@ -739,6 +741,8 @@ pub struct Mixer {
     phone: Option<Owned<woa_engine::pairs::LinkRx>>,
     phone_on: bool,
     phone_gain: Smoother,
+    /// Fader des Telefon-Kanals (linear); wirkt, solange das Telefon auf Sendung ist.
+    phone_level: f32,
     phone_l: [f32; PHONE_CHUNK],
     phone_r: [f32; PHONE_CHUNK],
     /// Pult-Modus (#301): Eingang vom Mischpult als Taktverbindung, an/aus, Zwischenblock.
@@ -751,6 +755,9 @@ pub struct Mixer {
     cart_duck: bool,
     /// Beim letzten Blockanfang spielte mindestens ein Cart.
     carts_on: bool,
+    /// Beim letzten Blockanfang war mindestens ein Gast auf Sendung (nicht im Vorgespräch):
+    /// die Musik duckt wie beim Telefon (Moderator 05.11.2026).
+    guests_on_air: bool,
     /// Absenkung von Musik und Decks (Stimme und Carts) und der Carts (nur Stimme).
     duck: DuckEnv,
     cart_duck_env: DuckEnv,
@@ -844,6 +851,7 @@ impl Mixer {
             phone: None,
             phone_on: false,
             phone_gain: Smoother::new(0.0, MIC_TAU, r),
+            phone_level: 1.0,
             phone_l: [0.0; PHONE_CHUNK],
             phone_r: [0.0; PHONE_CHUNK],
             pult: None,
@@ -853,6 +861,7 @@ impl Mixer {
             duck_lin: 0.25,
             cart_duck: true,
             carts_on: false,
+            guests_on_air: false,
             duck: DuckEnv::new(DUCK_TAU, r),
             cart_duck_env: DuckEnv::new(DUCK_TAU, r),
             voice_hold: (0.5 * r) as usize,
@@ -974,7 +983,14 @@ impl Mixer {
                 Cmd::PhoneInput(c) => self.phone = c,
                 Cmd::PhoneOn(on) => {
                     self.phone_on = on;
-                    self.phone_gain.set_target(if on { 1.0 } else { 0.0 });
+                    self.phone_gain
+                        .set_target(if on { self.phone_level } else { 0.0 });
+                }
+                Cmd::PhoneLevel(g) => {
+                    self.phone_level = g.clamp(0.0, 4.0);
+                    if self.phone_on {
+                        self.phone_gain.set_target(self.phone_level);
+                    }
                 }
                 Cmd::MicMonitor(on) => self.mic_monitor = on,
                 Cmd::PultInput(c) => self.pult = c,
@@ -1347,6 +1363,7 @@ impl Mixer {
             self.carts_on = carts_on;
         }
         self.guests.begin_block();
+        self.guests_on_air = self.guests.any_on_air();
         let mut peak = 0.0f32;
         let mut mic_peak = 0.0f32;
         let mut phone_peak = 0.0f32;
@@ -1595,7 +1612,8 @@ impl Mixer {
             } else if self.voice_left > 0 {
                 self.voice_left -= 1;
             }
-            let voice = self.phone_on || (self.mic_open && self.voice_left > 0);
+            let voice =
+                self.phone_on || self.guests_on_air || (self.mic_open && self.voice_left > 0);
             let carts = self.cart_duck && self.carts_on;
             let dg = self.duck.tick(voice || carts, self.duck_lin);
             let duck = dg * lm * vduck;
