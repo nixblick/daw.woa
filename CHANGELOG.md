@@ -3,6 +3,8 @@
 
 ## Unveröffentlicht
 
+- **Abnahme und Fragen: Tageslimit verliert nichts mehr** (#532): Antwortet der Server mit 429, liegt die Markierung im Ausgang (`feedback-ausstehend/`) und geht später genau einmal hinaus; die Karte zeigt „Tageslimit erreicht, wird später gesendet“, der Punkt zählt als abgenommen und steht in `abnahme-erledigt.json`. Das Entwickler-Kennwort wird beim Nachsenden neu aus dem Tresor gelesen, nie auf die Platte geschrieben. Noch nicht gebaut und getestet.
+
 - **Design Fassung 8.1 übernommen** (`docs/design/woa-design-system/`): Regler-Stil wählbar, Mini-Fader (Standard), Wertbalken, Zahlenfelder, Drehknöpfe. Neue Komponente `DjMixerStyles`, DjMixer-Vorschau im Stil Mini-Fader, Stile in `bundle.css`. Nur Doku, noch nicht in der App.
 ## 0.42.2 — 2026-11-05
 

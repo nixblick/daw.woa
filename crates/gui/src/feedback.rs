@@ -7,8 +7,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use woa_telemetry::feedback::{MAX_SCREENSHOT_BYTES, MAX_TEXT_CHARS};
 use woa_telemetry::{
-    DEFAULT_INGEST_URL, FeedbackError, FeedbackMeta, UploadConfig, build_payload, new_install_id,
-    post_payload,
+    DEFAULT_INGEST_URL, DevKey, FeedbackError, FeedbackMeta, UploadConfig, build_payload,
+    new_install_id, post_payload,
 };
 
 /// Message when the server's daily limit answered 429; the report waits in the outbox.
@@ -726,6 +726,28 @@ impl FeedbackDialog {
     }
 }
 
+/// Sends a developer answer (checklist, questions). On 429 the exact request is put into the
+/// outbox under `data_dir` and `Err(DailyLimit)` is returned: the answer is not lost and goes
+/// out later exactly once. The developer key is read here and never written to disk; the
+/// outbox entry only remembers that it needs one.
+pub fn submit_or_hold(
+    text: &str,
+    meta: &FeedbackMeta,
+    data_dir: &Path,
+) -> Result<Option<u64>, FeedbackError> {
+    let body = build_payload(text, &[], meta)?.to_string();
+    let r = post_payload(&body, meta);
+    if matches!(r, Err(FeedbackError::DailyLimit)) {
+        let dir = data_dir.join(OUTBOX_DIR);
+        if let Err(e) = outbox_store_dev(&dir, &meta.url, &body, now_secs(), meta.dev_key.is_some())
+        {
+            tracing::error!(error = %e, "feedback outbox write failed");
+            return Err(FeedbackError::Status(429));
+        }
+    }
+    r
+}
+
 /// Seconds since the Unix epoch (0 if the clock is before 1970).
 fn now_secs() -> u64 {
     SystemTime::now()
@@ -751,6 +773,9 @@ pub struct OutboxEntry {
     pub tries: u32,
     /// Unix seconds; not before this time.
     pub next_try: u64,
+    /// Developer answer: the key header is read from the vault again when sending.
+    #[serde(default)]
+    pub dev: bool,
 }
 
 /// Wait before the next try after `tries` failures.
@@ -770,6 +795,17 @@ fn write_entry(path: &Path, e: &OutboxEntry) -> std::io::Result<()> {
 
 /// Stores a refused report in `dir` (one file per report).
 pub fn outbox_store(dir: &Path, url: &str, body: &str, now: u64) -> std::io::Result<PathBuf> {
+    outbox_store_dev(dir, url, body, now, false)
+}
+
+/// Like [`outbox_store`]; `dev` marks a developer answer that needs the key header.
+pub fn outbox_store_dev(
+    dir: &Path,
+    url: &str,
+    body: &str,
+    now: u64,
+    dev: bool,
+) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -781,6 +817,7 @@ pub fn outbox_store(dir: &Path, url: &str, body: &str, now: u64) -> std::io::Res
         body: body.to_string(),
         tries: 1,
         next_try: now + outbox_wait(1),
+        dev,
     };
     write_entry(&path, &entry)?;
     tracing::info!(
@@ -818,8 +855,20 @@ pub fn outbox_flush(dir: &Path, now: u64) -> usize {
         if !may_send(&entry.url) {
             continue;
         }
+        let dev_key = if entry.dev {
+            dir.parent()
+                .and_then(|d| woa_secrets::reveal(d, crate::fragen::SECRET_ACCOUNT))
+                .map(DevKey)
+        } else {
+            None
+        };
+        if entry.dev && dev_key.is_none() {
+            // Without the key the server would take it as a normal report: keep waiting.
+            continue;
+        }
         let meta = FeedbackMeta {
             url: entry.url.clone(),
+            dev_key,
             ..FeedbackMeta::default()
         };
         let result = post_payload(&entry.body, &meta);
@@ -1507,6 +1556,33 @@ mod tests {
         assert!(bodies[0].contains("Knopf klemmt"), "{}", bodies[0]);
         assert_eq!(bodies[0], bodies[1], "same body for server dedup");
         assert_eq!(bodies[0], bodies[2]);
+    }
+
+    /// #532: A checklist/question answer hit by 429 is not lost: it lies in the outbox,
+    /// marked as developer answer, and is not sent without the key.
+    #[test]
+    fn developer_answer_is_held_back_on_daily_limit() {
+        let (url, server) = fake_server(vec![(429, r#"{"error":"daily limit reached"}"#)]);
+        let dir = tempfile::tempdir().unwrap();
+        let meta = FeedbackMeta {
+            url,
+            source: Some("entwickler-abnahme".into()),
+            dev_key: Some(DevKey("nicht-geheim-testwert".into())),
+            ..FeedbackMeta::default()
+        };
+        let r = submit_or_hold("Punkt ok", &meta, dir.path());
+        assert!(matches!(r, Err(FeedbackError::DailyLimit)), "{r:?}");
+        let outbox = dir.path().join(OUTBOX_DIR);
+        let due = outbox_due(&outbox, now_secs() + OUTBOX_FIRST_WAIT);
+        assert_eq!(due.len(), 1);
+        assert!(due[0].1.dev);
+        assert!(!due[0].1.body.contains("nicht-geheim-testwert"));
+        let file = std::fs::read_to_string(&due[0].0).unwrap();
+        assert!(!file.contains("nicht-geheim-testwert"), "key never on disk");
+        // No key in the vault: the entry waits, nothing is sent (the fake server is gone).
+        assert_eq!(outbox_flush(&outbox, now_secs() + OUTBOX_FIRST_WAIT), 0);
+        assert_eq!(std::fs::read_dir(&outbox).unwrap().count(), 1);
+        assert_eq!(server.join().unwrap().len(), 1);
     }
 
     #[test]
