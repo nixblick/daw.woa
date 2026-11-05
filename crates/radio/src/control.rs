@@ -180,6 +180,9 @@ pub struct Controller {
     cue: Option<u32>,
     running: bool,
     carts: Vec<Option<Shared<Stereo>>>,
+    /// Geschätzter Gesangseinsatz je Cart (Sekunden ab Dateianfang, #299), beim Laden aus
+    /// dem dekodierten Puffer gemessen (Control-Thread).
+    cart_vocal: Vec<Option<f64>>,
     /// Dekodierte Titel der Decks A bis C.
     decks: Vec<Option<Shared<Stereo>>>,
     recording: Option<Recording>,
@@ -260,6 +263,7 @@ impl Controller {
             cue: None,
             running: false,
             carts: vec![None; CARTS],
+            cart_vocal: vec![None; CARTS],
             decks: vec![None; crate::DECKS],
             recording: None,
             record_dropped_seen: 0,
@@ -348,6 +352,11 @@ impl Controller {
         self.send(Cmd::SetStopFade(stop));
         self.send(Cmd::SetDuck(db_to_gain(self.show.duck_db)));
         self.send(Cmd::SetCartDuck(self.show.cart_duck));
+        let r = f64::from(self.rate);
+        self.send(Cmd::SetDuckTimes {
+            hold: (self.show.duck_hold_seconds * r) as usize,
+            release: (self.show.duck_release_seconds * r) as usize,
+        });
         self.send(Cmd::SetTarget(self.show.target_lufs));
         self.send(Cmd::SetProcessing {
             bus: self.show.bus_processing,
@@ -645,6 +654,14 @@ impl Controller {
         self.apply_settings();
     }
 
+    /// Ducking-Zeiten (Sekunden): Stille bis zur Rückkehr der Musik und ihre Einblendung.
+    pub fn set_duck_times(&mut self, hold: f64, release: f64) {
+        self.show.duck_hold_seconds = hold;
+        self.show.duck_release_seconds = release;
+        self.show.sanitize();
+        self.apply_settings();
+    }
+
     pub fn set_duck(&mut self, db: f64) {
         self.show.duck_db = db;
         self.show.sanitize();
@@ -658,6 +675,14 @@ impl Controller {
         self.show.stop_fade_seconds = seconds;
         self.show.sanitize();
         self.apply_settings();
+    }
+
+    /// Dauer der Fade-Tasten in Sekunden (1–10), gespeichert in der Sendung; gilt ab dem
+    /// nächsten Druck.
+    pub fn set_fade_seconds(&mut self, seconds: f64) {
+        self.show.fade_seconds = seconds;
+        self.show.sanitize();
+        tracing::info!(seconds = self.show.fade_seconds, "fade length set");
     }
 
     /// Auto-Weiter in der Sende-Playlist an oder aus (#148), gespeichert in der Sendung.
@@ -925,13 +950,14 @@ impl Controller {
         self.send(Cmd::Stop);
     }
 
-    /// Frames der Fade-Taste ([`crate::FADE_SECONDS`]).
+    /// Frames der Fade-Taste ([`RadioShow::fade_seconds`]).
     fn fade_frames(&self) -> usize {
-        (crate::FADE_SECONDS * f64::from(self.rate)) as usize
+        (self.show.fade_seconds * f64::from(self.rate)) as usize
     }
 
-    /// Fade-Taste der Sende-Playlist (#320): blendet den laufenden Titel fest in 3 s aus und
-    /// stoppt wie [`Self::stop`]; ein zweiter Druck während der Blende stoppt sofort.
+    /// Fade-Taste der Sende-Playlist (#320): blendet den laufenden Titel in der eingestellten
+    /// Dauer aus und stoppt wie [`Self::stop`]; ein zweiter Druck während der Blende stoppt
+    /// sofort.
     pub fn fade_music(&mut self) {
         self.paused = None;
         self.resume_at = None;
@@ -945,21 +971,22 @@ impl Controller {
         self.send(Cmd::FadeMusic(f));
     }
 
-    /// Fade-Taste eines Decks A–C (#321): fest 3 s, zweiter Druck stoppt sofort.
+    /// Fade-Taste eines Decks A–C (#321): eingestellte Dauer, zweiter Druck stoppt sofort.
     pub fn fade_deck(&mut self, deck: usize) {
         tracing::info!(deck = %crate::show::deck_name(deck), "deck fade");
         let f = self.fade_frames();
         self.send(Cmd::DeckFade(deck, f));
     }
 
-    /// Fade-Taste eines Carts (#274): fest 3 s, zweiter Druck stoppt sofort.
+    /// Fade-Taste eines Carts (#274): eingestellte Dauer, zweiter Druck stoppt sofort.
     pub fn fade_cart(&mut self, slot: usize) {
         tracing::info!(slot = slot + 1, "cart fade");
         let f = self.fade_frames();
         self.send(Cmd::CartFade(slot, f));
     }
 
-    /// Fade-Taste im Sende-Deck: blendet alles Laufende (Playlist, Decks, Carts) in 3 s aus.
+    /// Fade alles: blendet alles Laufende (Playlist, Decks, Carts) in der eingestellten Dauer
+    /// aus (Agent; die Taste im Sende-Deck nimmt [`Self::fade_music`]).
     pub fn fade_all(&mut self) {
         self.paused = None;
         self.resume_at = None;
@@ -1013,15 +1040,8 @@ impl Controller {
     /// blendet aus“ über dessen Dauer), der zweite stoppt wie [`Self::stop`].
     pub fn stop_or_pause(&mut self) {
         if !self.running || self.status.current.load(Ordering::Acquire) == NONE {
+            // Decks stoppen nur an ihrer eigenen Taste (Moderator 05.11.2026, nimmt #325 zurück).
             self.stop();
-            // Läuft statt der Playlist ein von Hand gestartetes Deck, hält Stopp es an (#325).
-            for deck in 0..crate::DECKS {
-                if self.status.deck_state[deck].load(Ordering::Acquire)
-                    == crate::mixer::DECK_PLAYING
-                {
-                    self.deck_stop(deck);
-                }
-            }
             return;
         }
         let frames = if self.show.stop_fade {
@@ -1419,7 +1439,10 @@ impl Controller {
         };
         let path = c.path.clone();
         match load_stereo(&path, self.rate) {
-            Ok(s) => self.carts[slot] = Some(Shared::new(&self.collector.handle(), s)),
+            Ok(s) => {
+                self.cart_vocal[slot] = cart_vocal_start(&s, self.rate);
+                self.carts[slot] = Some(Shared::new(&self.collector.handle(), s));
+            }
             Err(e) => {
                 tracing::warn!(error = %e, "cart load failed");
                 self.message = Some(e);
@@ -1436,10 +1459,12 @@ impl Controller {
             None => {
                 self.show.carts[slot] = None;
                 self.carts[slot] = None;
+                self.cart_vocal[slot] = None;
                 Ok(())
             }
             Some(p) => {
                 let s = load_stereo(&p, self.rate)?;
+                self.cart_vocal[slot] = cart_vocal_start(&s, self.rate);
                 self.carts[slot] = Some(Shared::new(&self.collector.handle(), s));
                 self.show.carts[slot] = Some(CartEntry::new(p));
                 Ok(())
@@ -1483,6 +1508,22 @@ impl Controller {
         let cues = self.show.carts.get(slot)?.as_ref()?.cues;
         let f = cues.frames(self.rate, buf.frames());
         Some(f.end.saturating_sub(f.start) as f64 / f64::from(self.rate))
+    }
+
+    /// Sekunden bis zum Gesangseinsatz des laufenden Carts `slot` (#299): Ramp-Marke oder
+    /// Schätzung; `None`, wenn er steht, keinen erkannten Einsatz hat oder der Gesang schon läuft.
+    pub fn cart_vocal_in(&self, slot: usize) -> Option<f64> {
+        if self.status.carts.load(Ordering::Acquire) & (1 << slot) == 0 {
+            return None;
+        }
+        let buf = self.carts.get(slot)?.as_ref()?;
+        let cues = self.show.carts.get(slot)?.as_ref()?.cues;
+        let mark = crate::show::vocal_mark(&cues, *self.cart_vocal.get(slot)?)?;
+        let f = cues.frames(self.rate, buf.frames());
+        let rest = self.status.cart_rest.get(slot)?.load(Ordering::Acquire) as usize;
+        let pos = f.end.saturating_sub(rest) as f64 / f64::from(self.rate);
+        let left = mark.seconds - pos;
+        (left > 0.0).then_some(left)
     }
 
     /// Spielt Cart `slot` (überlagert die Musik); läuft er schon, hält er an.
@@ -1811,7 +1852,9 @@ impl Controller {
     /// gesetzt oder schon vorbei.
     pub fn ramp_remaining(&self) -> Option<f64> {
         let i = self.current_index()?;
-        let ramp = self.show.playlist.get(i)?.cues.ramp?;
+        let e = self.show.playlist.get(i)?;
+        // Ramp-Marke von Hand, sonst der geschätzte Gesangseinsatz (#299).
+        let ramp = crate::show::vocal_mark(&e.cues, e.vocal)?.seconds;
         let pos = self.status.position.load(Ordering::Acquire) as f64 / f64::from(self.rate);
         let left = ramp - pos;
         (left > 0.0).then_some(left)
@@ -2477,4 +2520,10 @@ impl Controller {
             .push(PflCmd::Play { buf, start: 0 })
             .map_err(|_| "Vorhören: Warteschlange voll".to_string())
     }
+}
+
+/// Gesangseinsatz eines Carts aus dem dekodierten Puffer (#299); kurze Jingles ohne Intro
+/// liefern `None`. Läuft auf dem Control-Thread beim Laden, nie im Audio-Thread.
+fn cart_vocal_start(s: &Stereo, rate: u32) -> Option<f64> {
+    woa_dsp::analysis::vocal::detect_vocal_start(&s.left, &s.right, rate)
 }

@@ -249,8 +249,29 @@ fn is_default_stop_fade(v: &f64) -> bool {
     *v == default_stop_fade()
 }
 
+fn default_duck_hold() -> f64 {
+    0.5
+}
+fn is_default_duck_hold(v: &f64) -> bool {
+    *v == default_duck_hold()
+}
+fn default_duck_release() -> f64 {
+    1.0
+}
+fn is_default_duck_release(v: &f64) -> bool {
+    *v == default_duck_release()
+}
+
 fn default_duck() -> f64 {
     -12.0
+}
+
+fn default_fade() -> f64 {
+    crate::FADE_SECONDS
+}
+
+fn is_default_fade(v: &f64) -> bool {
+    *v == default_fade()
 }
 
 fn yes() -> bool {
@@ -272,6 +293,18 @@ pub struct RadioShow {
     /// Musik auch absenken, solange ein Cart spielt (#149).
     #[serde(default = "yes")]
     pub cart_duck: bool,
+    /// So lange Stille im Mikro (Sekunden), bevor die Musik zurückkommt (Vorgabe 0,5 s).
+    #[serde(
+        default = "default_duck_hold",
+        skip_serializing_if = "is_default_duck_hold"
+    )]
+    pub duck_hold_seconds: f64,
+    /// So lange blendet die Musik danach wieder ein (Sekunden, Vorgabe 1 s).
+    #[serde(
+        default = "default_duck_release",
+        skip_serializing_if = "is_default_duck_release"
+    )]
+    pub duck_release_seconds: f64,
     #[serde(default = "default_target")]
     pub target_lufs: f64,
     /// Sendebus-Processing (Lautheitsregelung auf `target_lufs`, Kompressor, Limiter).
@@ -327,6 +360,9 @@ pub struct RadioShow {
         skip_serializing_if = "is_default_stop_fade"
     )]
     pub stop_fade_seconds: f64,
+    /// Dauer der Fade-Tasten (Sekunden, 1–10, Vorgabe 3): Sende-Deck, Decks, Carts, Playlist.
+    #[serde(default = "default_fade", skip_serializing_if = "is_default_fade")]
+    pub fade_seconds: f64,
     /// Auto-Weiter in der Sende-Playlist (#148). Aus: nach jedem Titel hält die Playlist an,
     /// der nächste steht als Cue bereit und startet mit „Play“. Vorgabe an.
     #[serde(default = "yes", skip_serializing_if = "is_true")]
@@ -346,6 +382,8 @@ impl Default for RadioShow {
             crossfade_seconds: default_crossfade(),
             duck_db: default_duck(),
             cart_duck: true,
+            duck_hold_seconds: default_duck_hold(),
+            duck_release_seconds: default_duck_release(),
             target_lufs: default_target(),
             bus_processing: true,
             mic_processing: true,
@@ -364,6 +402,7 @@ impl Default for RadioShow {
             hide_played: false,
             stop_fade: false,
             stop_fade_seconds: default_stop_fade(),
+            fade_seconds: default_fade(),
             auto_next: true,
             out_monitor: OutLevel::default(),
             out_stream: OutLevel::default(),
@@ -385,10 +424,24 @@ impl RadioShow {
             self.stop_fade_seconds = default_stop_fade();
         }
         self.stop_fade_seconds = self.stop_fade_seconds.clamp(0.1, MAX_CROSSFADE);
+        if !self.fade_seconds.is_finite() {
+            self.fade_seconds = default_fade();
+        }
+        self.fade_seconds = self
+            .fade_seconds
+            .clamp(crate::FADE_MIN_SECONDS, crate::FADE_MAX_SECONDS);
         if !self.duck_db.is_finite() {
             self.duck_db = default_duck();
         }
         self.duck_db = self.duck_db.clamp(-40.0, 0.0);
+        if !self.duck_hold_seconds.is_finite() {
+            self.duck_hold_seconds = default_duck_hold();
+        }
+        self.duck_hold_seconds = self.duck_hold_seconds.clamp(0.1, 5.0);
+        if !self.duck_release_seconds.is_finite() {
+            self.duck_release_seconds = default_duck_release();
+        }
+        self.duck_release_seconds = self.duck_release_seconds.clamp(0.1, 5.0);
         if !self.target_lufs.is_finite() {
             self.target_lufs = default_target();
         }

@@ -30,6 +30,8 @@ pub const DECK_PLAYING: u32 = 2;
 const STOP_SECONDS: f32 = 0.03;
 /// Glättung des Ducking (Sekunden, Zeitkonstante).
 const DUCK_TAU: f32 = 0.08;
+/// Ab diesem Pegel (linear, etwa −45 dBFS nach Mikro-Kette) gilt das Mikro als besprochen.
+const VOICE_GATE: f32 = 0.0056;
 /// Glättung von Mikro auf/zu.
 const MIC_TAU: f32 = 0.01;
 /// Mehr Mikro-Vorlauf als das (Sekunden) wird verworfen, damit die Latenz klein bleibt.
@@ -131,6 +133,9 @@ pub enum Cmd {
     SetDuck(f32),
     /// Musik auch absenken, solange ein Cart spielt (#149).
     SetCartDuck(bool),
+    /// Ducking-Zeiten in Frames: so lange Stille im Mikro, bevor die Musik zurückkommt, und
+    /// wie lange sie dann (linear) einblendet.
+    SetDuckTimes { hold: usize, release: usize },
     /// Mikro auf/zu.
     MicOpen(bool),
     /// Mikro im eigenen Ausgang hören (Sendung enthält es immer).
@@ -746,7 +751,12 @@ pub struct Mixer {
     cart_duck: bool,
     /// Beim letzten Blockanfang spielte mindestens ein Cart.
     carts_on: bool,
-    duck: Smoother,
+    /// Absenkung von Musik und Decks (Stimme und Carts) und der Carts (nur Stimme).
+    duck: DuckEnv,
+    cart_duck_env: DuckEnv,
+    /// Frames, die die Stimme nach dem letzten lauten Sample noch als „spricht“ gilt.
+    voice_hold: usize,
+    voice_left: usize,
     mic_backlog: usize,
     rec: Option<Owned<rtrb::Producer<f32>>>,
     stream: Option<Owned<rtrb::Producer<f32>>>,
@@ -843,7 +853,10 @@ impl Mixer {
             duck_lin: 0.25,
             cart_duck: true,
             carts_on: false,
-            duck: Smoother::new(1.0, DUCK_TAU, r),
+            duck: DuckEnv::new(DUCK_TAU, r),
+            cart_duck_env: DuckEnv::new(DUCK_TAU, r),
+            voice_hold: (0.5 * r) as usize,
+            voice_left: 0,
             mic_backlog: (MIC_BACKLOG * r) as usize * 2,
             rec: None,
             stream: None,
@@ -945,22 +958,23 @@ impl Mixer {
                 Cmd::SetStopFade(f) => self.stop_fade = f,
                 Cmd::SetDuck(g) => {
                     self.duck_lin = g.clamp(0.0, 1.0);
-                    self.retarget_duck();
                 }
                 Cmd::SetCartDuck(on) => {
                     self.cart_duck = on;
-                    self.retarget_duck();
+                }
+                Cmd::SetDuckTimes { hold, release } => {
+                    self.voice_hold = hold;
+                    self.duck.release = release.max(1);
+                    self.cart_duck_env.release = release.max(1);
                 }
                 Cmd::MicOpen(on) => {
                     self.mic_open = on;
                     self.mic_gain.set_target(if on { 1.0 } else { 0.0 });
-                    self.retarget_duck();
                 }
                 Cmd::PhoneInput(c) => self.phone = c,
                 Cmd::PhoneOn(on) => {
                     self.phone_on = on;
                     self.phone_gain.set_target(if on { 1.0 } else { 0.0 });
-                    self.retarget_duck();
                 }
                 Cmd::MicMonitor(on) => self.mic_monitor = on,
                 Cmd::PultInput(c) => self.pult = c,
@@ -1331,7 +1345,6 @@ impl Mixer {
         let carts_on = self.carts.iter().flatten().any(|c| c.pos < c.duck_end);
         if carts_on != self.carts_on {
             self.carts_on = carts_on;
-            self.retarget_duck();
         }
         self.guests.begin_block();
         let mut peak = 0.0f32;
@@ -1569,13 +1582,28 @@ impl Mixer {
             let (out_mon, out_stream) = (lo.tick(), ls.tick());
             let (lm, lc) = (lm.tick(), lc.tick());
             let mg = self.mic_gain.tick() * li.tick();
-            let duck = self.duck.tick() * lm * vduck;
             cl *= lc;
             let (cart_l, cart_r) = (cart_l * lc, cart_r * lc);
             cr *= lc;
             il *= mg;
             ir *= mg;
             mic_peak = mic_peak.max(il.abs()).max(ir.abs());
+            // Stimme erkannt: Haltezeit neu; danach Stille zählt sie herunter (Moderator
+            // 05.11.2026: Musik nach 0,5 s Stille zurück, in 1 s eingeblendet).
+            if self.mic_open && (il.abs() > VOICE_GATE || ir.abs() > VOICE_GATE) {
+                self.voice_left = self.voice_hold;
+            } else if self.voice_left > 0 {
+                self.voice_left -= 1;
+            }
+            let voice = self.phone_on || (self.mic_open && self.voice_left > 0);
+            let carts = self.cart_duck && self.carts_on;
+            let dg = self.duck.tick(voice || carts, self.duck_lin);
+            let duck = dg * lm * vduck;
+            let cduck = self.cart_duck_env.tick(voice, self.duck_lin);
+            cl *= cduck;
+            cr *= cduck;
+            let (cart_l, cart_r) = (cart_l * cduck, cart_r * cduck);
+            let (dl, dr) = (dl * dg, dr * dg);
             bus_peaks[0] = bus_peaks[0].max((ml * duck).abs()).max((mr * duck).abs());
             bus_peaks[1] = bus_peaks[1].max(cl.abs()).max(cr.abs());
             bus_peaks[2] = bus_peaks[2].max(dl.abs()).max(dr.abs());
@@ -1692,13 +1720,6 @@ impl Mixer {
         }
     }
 
-    /// Die Musik wird abgesenkt, solange das Mikro offen ist, das Telefon auf Sendung oder
-    /// (abschaltbar) ein Cart spielt.
-    fn retarget_duck(&mut self) {
-        let down = self.mic_open || self.phone_on || (self.cart_duck && self.carts_on);
-        self.duck.set_target(if down { self.duck_lin } else { 1.0 });
-    }
-
     /// Wirft zu viel Mikro-Vorlauf weg (etwa nach einem Hänger des Eingangs).
     fn trim_mic_backlog(&mut self) {
         if let Some(m) = self.mic.as_mut() {
@@ -1770,5 +1791,39 @@ impl Mixer {
             self.mic_chain_on && self.mic_chain.gate_open(),
             Ordering::Relaxed,
         );
+    }
+}
+
+/// Hüllkurve des Ducking: senkt mit Zeitkonstante ab, kommt linear in `release` Frames zurück.
+#[derive(Debug, Clone, Copy)]
+struct DuckEnv {
+    gain: f32,
+    attack: f32,
+    release: usize,
+}
+
+impl DuckEnv {
+    fn new(tau: f32, rate: f32) -> Self {
+        Self {
+            gain: 1.0,
+            attack: 1.0 - (-1.0 / (tau * rate).max(1.0)).exp(),
+            release: rate as usize,
+        }
+    }
+
+    /// Ein Sample weiter; `down`: absenken auf `depth` (linear).
+    #[inline]
+    fn tick(&mut self, down: bool, depth: f32) -> f32 {
+        let target = if down { depth } else { 1.0 };
+        if self.gain > target {
+            self.gain += (target - self.gain) * self.attack;
+            if self.gain - target < 1e-4 {
+                self.gain = target;
+            }
+        } else if self.gain < target {
+            let step = (1.0 - depth).max(1e-3) / self.release as f32;
+            self.gain = (self.gain + step).min(target);
+        }
+        self.gain
     }
 }

@@ -610,7 +610,7 @@ struct Parts {
 
 /// Die laufende Sendung samt Gerät.
 pub struct RadioDesk {
-    /// Laufende Fade-Blenden (FadeButton, fest 3 s) für die Anzeige.
+    /// Laufende Fade-Blenden (FadeButton, eingestellte Dauer) für die Anzeige.
     fades: crate::widgets::fade::Fades,
     /// Beginn des laufenden Mitschnitts (Dauer im REC-Tooltip).
     rec_since: Option<std::time::Instant>,
@@ -1984,7 +1984,45 @@ impl RadioDesk {
                     c.report(e);
                 }
             }),
+            // DJ-Modus (Moderator 05.11.2026): nur solange die DJ-Ansicht offen ist.
+            Target::DjPlay(side) => {
+                use woa_radio::control::DjCommand;
+                let Some(d) = self.dj_deck(side) else {
+                    return;
+                };
+                self.dj(if d.playing {
+                    DjCommand::Pause { side }
+                } else {
+                    DjCommand::Play { side }
+                });
+            }
+            Target::DjCue(side) if self.dj_deck(side).is_some() => {
+                // Ein MIDI-Taster meldet nur das Drücken: Cue antippen (setzen bzw. zurück).
+                use woa_radio::control::DjCommand;
+                self.dj(DjCommand::CueDown { side });
+                self.dj(DjCommand::CueUp { side });
+            }
             _ => {}
+        }
+    }
+
+    /// Deck `side` der DJ-Ansicht, wenn sie offen ist.
+    fn dj_deck(&self, side: usize) -> Option<&woa_radio::control::DjDeckView> {
+        self.view.dj.as_ref().filter(|d| d.dj)?.decks.get(side)
+    }
+
+    /// Crossfader der DJ-Ansicht (0..1), wenn sie offen ist.
+    pub fn dj_crossfader(&self) -> Option<f32> {
+        self.view.dj.as_ref().filter(|d| d.dj).map(|d| d.crossfader)
+    }
+
+    /// Crossfader vom Controller (0..1); wirkt nur in der DJ-Ansicht.
+    pub fn set_dj_crossfader(&mut self, value: f32) {
+        if self.dj_crossfader().is_some() {
+            if let Some(d) = self.view.dj.as_mut() {
+                d.crossfader = value;
+            }
+            self.dj(woa_radio::control::DjCommand::Crossfader { value });
         }
     }
 
@@ -2131,6 +2169,7 @@ impl RadioDesk {
             Target::Deck(k, DeckAction::Start) => {
                 self.view.decks.get(*k).is_some_and(|d| d.playing)
             }
+            Target::DjPlay(side) => self.dj_deck(*side).is_some_and(|d| d.playing),
             _ => false,
         }
     }
@@ -2596,6 +2635,7 @@ impl RadioDesk {
     /// Zeichnet das ganze Layout in `ui`.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let v = self.view.clone();
+        self.fades.set_seconds(v.fade_seconds);
         // Fade-Anzeige: abgelaufene Blenden abräumen, laufende neu zeichnen; steht ein Deck
         // schon (von Hand gestoppt), endet seine Anzeige.
         if std::env::var_os("WOA_FADE").is_some() {
@@ -2881,7 +2921,8 @@ impl RadioDesk {
                                     .color(theme::accent()),
                             )
                             .on_hover_text(
-                                "Sekunden bis zum Intro-Ende (Ramp): bis dahin sprechen",
+                                "Sekunden bis zum Gesang (Ramp-Marke oder geschätzter \
+                                 Gesangseinsatz): bis dahin sprechen",
                             );
                         }
 
@@ -2903,6 +2944,22 @@ impl RadioDesk {
                         });
                     });
 
+                    // Laufende Decks nur zur Anzeige (Moderator 05.11.2026): Stopp und Fade
+                    // sitzen am Deck selbst.
+                    for (k, d) in v.decks.iter().enumerate().filter(|(_, d)| d.playing) {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "DECK {}  {}  {}",
+                                woa_radio::show::deck_name(k),
+                                d.title.as_deref().unwrap_or(""),
+                                clock(d.remaining)
+                            ))
+                            .size(12.0)
+                            .monospace()
+                            .color(theme::text_dim()),
+                        )
+                        .on_hover_text("Läuft auf dem Deck; bedienen am Deck selbst");
+                    }
                     if let Some((name, secs, hard)) = &v.next_event {
                         let near = *hard && *secs < 30.0;
                         ui.label(
@@ -2988,14 +3045,22 @@ impl RadioDesk {
             }
             self.learn_menu(&r, Target::Stop);
 
-            // Fade (Design Fassung 7, #320): blendet alles Laufende fest in 3 s aus.
+            // Fade (Design Fassung 7, #320): blendet nur aus, was über das Sende-Deck läuft (die
+            // Playlist); Decks und Carts haben eigene Fade-Tasten (Moderator 05.11.2026).
             let now = ui.input(|i| i.time);
-            let any = v.running || v.carts_playing != 0 || v.decks.iter().any(|d| d.playing);
-            let pr = self.fades.progress(FadeKey::All, now);
-            let r = fade_button(ui, FadeShape::Big(KEY_H), "Fade alles", any, pr);
+            let any = v.running;
+            let pr = self.fades.progress(FadeKey::Playlist, now);
+            let r = fade_button(
+                ui,
+                FadeShape::Big(KEY_H),
+                "Fade Sende-Deck",
+                any,
+                pr,
+                self.fades.seconds(),
+            );
             if r.clicked() {
-                self.fades.press(FadeKey::All, now);
-                self.with(|c| c.fade_all());
+                self.fades.press(FadeKey::Playlist, now);
+                self.with(|c| c.fade_music());
             }
 
             let r = console_key(
@@ -3169,7 +3234,11 @@ impl RadioDesk {
         let mut xf = v.crossfade_seconds;
         let mut duck = v.duck_db;
         let mut cart_duck = v.cart_duck;
+        let (mut hold, mut release) = (v.duck_hold_seconds, v.duck_release_seconds);
+        let mut times_ch = false;
         let (mut stop_on, mut stop_secs) = (v.stop_fade, v.stop_fade_seconds);
+        let mut fade_secs = self.fades.seconds();
+        let mut fade_ch = false;
         let (mut bus, mut mic) = (v.bus_processing, v.mic_processing);
         let (mut xf_ch, mut duck_ch, mut cart_ch, mut stop_ch, mut proc_ch) =
             (false, false, false, false, false);
@@ -3207,7 +3276,11 @@ impl RadioDesk {
                     .changed();
                 });
                 ui.end_row();
-                row(ui, "Musik-Ducking", Some("wenn das Mikro offen ist"));
+                row(
+                    ui,
+                    "Musik-Ducking",
+                    Some("Rückkehr nach Stille · Einblenden · Tiefe"),
+                );
                 ui.with_layout(right, |ui| {
                     duck_ch = number_field(
                         ui,
@@ -3219,6 +3292,31 @@ impl RadioDesk {
                         true,
                     )
                     .on_hover_text("Absenkung der Musik bei offenem Mikro · Doppelklick: −12 dB")
+                    .changed();
+                    // Moderator 05.11.2026: Musik kommt nach kurzer Stille im Mikro zurück.
+                    times_ch |= number_field(
+                        ui,
+                        &mut release,
+                        0.1..=5.0,
+                        "s",
+                        1.0,
+                        "Ducking: Einblenden",
+                        true,
+                    )
+                    .on_hover_text("So lange blendet die Musik wieder ein · Doppelklick: 1 s")
+                    .changed();
+                    times_ch |= number_field(
+                        ui,
+                        &mut hold,
+                        0.1..=5.0,
+                        "s",
+                        0.5,
+                        "Ducking: Rückkehr nach",
+                        true,
+                    )
+                    .on_hover_text(
+                        "So lange Stille im Mikro, bis die Musik zurückkommt · Doppelklick: 0,5 s",
+                    )
                     .changed();
                 });
                 ui.end_row();
@@ -3255,6 +3353,22 @@ impl RadioDesk {
                         stop_secs = secs;
                         stop_ch = true;
                     }
+                });
+                ui.end_row();
+                // Dauer der Fade-Tasten (Moderator 05.11.2026): 1–10 s, Vorgabe 3 s.
+                row(ui, "Fade-Taste", Some("Sende-Deck, Decks, Carts"));
+                ui.with_layout(right, |ui| {
+                    fade_ch = number_field(
+                        ui,
+                        &mut fade_secs,
+                        woa_radio::FADE_MIN_SECONDS..=woa_radio::FADE_MAX_SECONDS,
+                        "s",
+                        woa_radio::FADE_SECONDS,
+                        "Fade-Taste",
+                        true,
+                    )
+                    .on_hover_text("Wie lange die Fade-Tasten ausblenden · Doppelklick: 3 s")
+                    .changed();
                 });
                 ui.end_row();
                 row(ui, "Sendebus-Processing", None);
@@ -3295,6 +3409,12 @@ impl RadioDesk {
             self.view.duck_db = duck;
             self.with(move |c| c.set_duck(duck));
         }
+        if times_ch {
+            let (h, r) = (hold.clamp(0.1, 5.0), release.clamp(0.1, 5.0));
+            self.view.duck_hold_seconds = h;
+            self.view.duck_release_seconds = r;
+            self.with(move |c| c.set_duck_times(h, r));
+        }
         if cart_ch {
             self.view.cart_duck = cart_duck;
             self.with(move |c| c.set_cart_duck(cart_duck));
@@ -3303,6 +3423,12 @@ impl RadioDesk {
             self.view.stop_fade = stop_on;
             self.view.stop_fade_seconds = stop_secs;
             self.with(move |c| c.set_stop_fade(stop_on, stop_secs));
+        }
+        if fade_ch {
+            let secs = fade_secs.clamp(woa_radio::FADE_MIN_SECONDS, woa_radio::FADE_MAX_SECONDS);
+            self.view.fade_seconds = secs;
+            self.fades.set_seconds(secs);
+            self.with(move |c| c.set_fade_seconds(secs));
         }
         if proc_ch {
             self.view.bus_processing = bus;
@@ -4153,12 +4279,9 @@ impl RadioDesk {
                                         |ui| {
                                             ui.set_min_width(ROW_TOOLS_W);
                                             let here = v.pfl_source == Some(PflSource::Title(i));
-                                            if !row_pfl_shown(tools, here) {
-                                                return;
-                                            }
                                             ui.spacing_mut().item_spacing.x = 2.0;
-                                            // Vorhören (#273) wie am Deck; bleibt sichtbar,
-                                            // solange dieser Titel im Kopfhörer läuft.
+                                            // Vorhören (#273) wie am Deck, an jeder Zeile
+                                            // (Moderator 05.11.2026), nicht erst beim Hover.
                                             let r = icon_key(
                                                 ui,
                                                 theme::ic::HEADPHONES,
@@ -4258,6 +4381,7 @@ impl RadioDesk {
                                             "Fade Playlist",
                                             v.running,
                                             pr,
+                                            self.fades.seconds(),
                                         )
                                         .clicked()
                                         {
@@ -4452,14 +4576,9 @@ impl RadioDesk {
                         Some(k) => Some(k.clone()),
                         None => Some("–".to_string()),
                     };
-                    // Hover nach der Fläche des letzten Bildes: das Pad muss vor dem Zeichnen
-                    // wissen, ob oben rechts Symbole liegen (#388).
+                    // Das Pad muss vor dem Zeichnen wissen, ob oben rechts Symbole liegen (#388).
                     let pfl_here = v.pfl_source == Some(PflSource::Cart(slot));
-                    let hovered = self
-                        .cart_rects
-                        .get(slot)
-                        .is_some_and(|r| ui.rect_contains_pointer(*r));
-                    let show_pfl = label.is_some() && (pfl_here || hovered);
+                    let show_pfl = pfl_key_shown(label.is_some());
                     let r = crate::widgets::CartPad {
                         number: slot + 1,
                         title: label.as_deref(),
@@ -4469,6 +4588,7 @@ impl RadioDesk {
                         color: theme::track_color(slot),
                         remaining: v.cart_remaining.get(slot).copied().filter(|r| *r > 0.0),
                         seconds: v.cart_seconds.get(slot).copied().flatten(),
+                        vocal_in: v.cart_vocal_in.get(slot).copied().flatten(),
                         actions: usize::from(playing) + usize::from(show_pfl),
                     }
                     .ui(ui, egui::vec2(w, CART_PAD_HEIGHT));
@@ -4495,14 +4615,15 @@ impl RadioDesk {
                             &format!("Fade Cart {}", slot + 1),
                             true,
                             pr,
+                            self.fades.seconds(),
                         );
                         if fr.clicked() {
                             self.fades.press(FadeKey::Cart(slot), now);
                             self.with(move |c| c.fade_cart(slot));
                         }
                     }
-                    // Vorhören (#273) oben rechts, links neben dem Fade-Symbol: beim Hover über
-                    // einem belegten Pad und solange es vorgehört wird.
+                    // Vorhören (#273) oben rechts, links neben dem Fade-Symbol: an jedem belegten
+                    // Pad (Moderator 05.11.2026).
                     if show_pfl {
                         let x = if playing { -54.0 } else { -28.0 };
                         let at = egui::Rect::from_min_size(
@@ -4563,7 +4684,11 @@ impl RadioDesk {
                         if let Some(t) = crate::controls::learn_menu(ui, Target::Cart(slot), None) {
                             self.learn = Some(t);
                         }
-                        if playing && ui.button("Ausblenden (3 s)").clicked() {
+                        let fade_word = format!(
+                            "Ausblenden ({})",
+                            crate::widgets::fade::secs_text(self.fades.seconds())
+                        );
+                        if playing && ui.button(fade_word).clicked() {
                             let now = ui.input(|i| i.time);
                             self.fades.press(FadeKey::Cart(slot), now);
                             self.with(move |c| c.fade_cart(slot));
@@ -5414,7 +5539,7 @@ impl RadioDesk {
                         if r.clicked() {
                             self.with(move |c| c.deck_cue(k));
                         }
-                        // Fade (FadeButton, #321): quadratisch neben Start/Stopp, fest 3 s.
+                        // Fade (FadeButton, #321): quadratisch neben Start/Stopp.
                         let now = ui.input(|i| i.time);
                         let pr = self
                             .fades
@@ -5426,6 +5551,7 @@ impl RadioDesk {
                             &format!("Fade Deck {name}"),
                             d.playing,
                             pr,
+                            self.fades.seconds(),
                         );
                         self.learn_menu(&r, Target::Deck(k, DeckAction::Fade));
                         if r.clicked() {
@@ -5496,13 +5622,25 @@ impl RadioDesk {
                                     } else {
                                         "Deck geladen"
                                     };
-                                    // Rampzeit (#299): wie lange das Intro bis zum Gesang läuft.
-                                    let sub = match &d.vocal {
-                                        Some(m) => format!(
+                                    // Rampzeit (#299): wie lange das Intro bis zum Gesang läuft;
+                                    // läuft das Deck, zählt sie herunter (Moderator 05.11.2026).
+                                    let pos = d.cues.start() + (d.length - d.remaining);
+                                    let left = d
+                                        .playing
+                                        .then(|| {
+                                            crate::vocal_ui::seconds_to_vocal(d.vocal.as_ref(), pos)
+                                        })
+                                        .flatten();
+                                    let sub = match (&d.vocal, left) {
+                                        (_, Some(l)) => format!(
+                                            "{state} · {}",
+                                            crate::vocal_ui::vocal_in_text(l)
+                                        ),
+                                        (Some(m), None) if !d.playing => format!(
                                             "{state} · Gesang ab {}",
                                             crate::vocal_ui::vocal_text(m, d.cues.start())
                                         ),
-                                        None => state.to_string(),
+                                        _ => state.to_string(),
                                     };
                                     (t, sub)
                                 } else {
@@ -6249,6 +6387,7 @@ mod tests {
                 color: eframe::egui::Color32::RED,
                 remaining: Some(12.0),
                 seconds: Some(15.0),
+                vocal_in: None,
                 actions: 0,
             }
             .ui(ui, eframe::egui::vec2(200.0, 68.0));
@@ -6272,6 +6411,7 @@ mod tests {
                 color: eframe::egui::Color32::RED,
                 remaining: None,
                 seconds: Some(90.0),
+                vocal_in: None,
                 actions: 0,
             }
             .ui(ui, eframe::egui::vec2(200.0, 68.0));
@@ -6338,10 +6478,11 @@ mod link_line_tests {
 }
 
 /// Tooltip-Text: der Grund, falls bekannt, sonst der allgemeine Hinweis.
-/// Vorhör-Knopf einer Playlist-Zeile (#273): beim Hover/Auswahl und solange der Titel vorgehört
-/// wird, damit man ihn dort auch wieder stoppen kann.
-fn row_pfl_shown(tools: bool, previewing: bool) -> bool {
-    tools || previewing
+/// Vorhör-Knopf an Playlist-Zeile und Cart (#273): seit dem Wunsch des Moderators (05.11.2026)
+/// an jeder belegten Zeile und Cart, nicht erst beim Hover. Rechtsklick › Vorhören bleibt
+/// zusätzlich. Playlist-Zeilen sind immer belegt.
+fn pfl_key_shown(occupied: bool) -> bool {
+    occupied
 }
 
 /// Öffnet das Kopfhörer-Gerät `id` als eigenen Strom fürs Vorhören (Mixer-Takt `rate`).
@@ -6390,10 +6531,9 @@ mod pfl_hint_tests {
     use super::*;
 
     #[test]
-    fn row_preview_key_stays_while_the_title_is_previewed() {
-        assert!(!row_pfl_shown(false, false));
-        assert!(row_pfl_shown(true, false));
-        assert!(row_pfl_shown(false, true), "zum Stoppen sichtbar");
+    fn preview_key_shows_on_every_occupied_row_and_cart() {
+        assert!(pfl_key_shown(true), "ohne Hover sichtbar");
+        assert!(!pfl_key_shown(false), "freie Cart ohne Knopf");
     }
 
     #[test]
@@ -7021,9 +7161,12 @@ mod design3_tests {
         for name in [
             "Crossfade-Blende",
             "Musik-Ducking",
+            "Ducking: Einblenden",
+            "Ducking: Rückkehr nach",
             "Ducking auch bei Carts",
             "Stopp blendet aus",
             "Ausblenddauer",
+            "Fade-Taste",
             "Sendebus-Processing",
             "Mikro-Kette",
         ] {

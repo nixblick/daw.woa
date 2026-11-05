@@ -66,6 +66,8 @@ impl Rig {
         let show = RadioShow {
             bus_processing: false,
             mic_processing: false,
+            // Seit 05.11.2026 senkt das Telefon auch Decks ab; hier geht es um den Rückweg.
+            duck_db: 0.0,
             ..RadioShow::default()
         };
         let (mut c, m) = Controller::new(show, SR);

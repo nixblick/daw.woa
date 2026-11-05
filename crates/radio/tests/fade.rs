@@ -151,28 +151,24 @@ fn fade_all_fades_playlist_decks_and_carts() {
     assert!(!c.anything_running());
 }
 
-/// #325: Ein von Hand gestartetes Deck lässt sich mit „Stopp“ im Sende-Deck anhalten (die
-/// Playlist läuft nicht); „Fade alles“ blendet es aus.
 #[test]
-fn send_stop_and_fade_reach_a_manually_started_deck() {
+fn send_stop_and_fade_leave_a_manually_started_deck_alone() {
+    // Moderator 05.11.2026 (nimmt #325 zurück): Stopp und Fade des Sende-Decks gelten nur
+    // der Playlist; ein Deck stoppt nur an seiner eigenen Taste.
     let tmp = tempfile::tempdir().unwrap();
     let (mut c, mut m, p) = setup(tmp.path());
     c.deck_load(0, p, Cues::default()).unwrap();
     c.deck_play(0);
     assert!(level_after(&mut c, &mut m, 0.5) > 0.2);
     c.stop_or_pause();
-    level_after(&mut c, &mut m, 0.1);
-    assert_eq!(
-        level_after(&mut c, &mut m, 0.1),
-        0.0,
-        "Stopp hält das Deck an"
+    assert!(
+        level_after(&mut c, &mut m, 0.5) > 0.2,
+        "Stopp lässt das Deck laufen"
     );
-    c.deck_play(0);
-    assert!(level_after(&mut c, &mut m, 0.5) > 0.2);
-    c.fade_all();
-    assert_eq!(
-        level_after(&mut c, &mut m, 3.2),
-        0.0,
-        "Fade alles blendet das Deck aus"
+    c.fade_music();
+    assert!(
+        level_after(&mut c, &mut m, 3.2) > 0.2,
+        "Fade Sende-Deck lässt das Deck laufen"
     );
+    c.deck_stop(0);
 }
