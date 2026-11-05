@@ -105,7 +105,14 @@ pub fn route(
                 return Response::error(400, "Ungültige Anfrage");
             };
             let text = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("");
-            match gate.join(text("invite"), text("name"), text("sdp"), peer, now) {
+            match gate.join(
+                text("invite"),
+                text("pin"),
+                text("name"),
+                text("sdp"),
+                peer,
+                now,
+            ) {
                 Ok(ticket) => Response::json(200, &json!({ "ticket": ticket })),
                 Err(e) => Response::error(403, e),
             }
@@ -396,7 +403,8 @@ mod tests {
         let g = Gate::new();
         let now = Instant::now();
         let tok = g.create_invite(now).expect("invite");
-        let ticket = g.join(&tok, "A", OFFER, "x", now).expect("join");
+        let pin = g.invites(now)[0].pin.clone();
+        let ticket = g.join(&tok, &pin, "A", OFFER, "x", now).expect("join");
         let mute = |t: &str, on: bool| {
             let b = serde_json::to_vec(&json!({ "t": t, "on": on })).unwrap();
             route(&g, "POST", "/gast/mute", "", &b, "x", now).status
@@ -445,12 +453,33 @@ mod tests {
         let g = Gate::new();
         let now = Instant::now();
         let tok = g.create_invite(now).expect("invite");
+        let pin = g.invites(now)[0].pin.clone();
         let q = format!("i={tok}");
         assert_eq!(
             body(&route(&g, "GET", "/gast/check", &q, b"", "x", now))["ok"],
             true
         );
-        let req = json!({ "invite": tok, "name": "Anna", "sdp": OFFER }).to_string();
+        // Ohne oder mit falscher PIN: abgewiesen.
+        let bad = json!({ "invite": tok, "pin": "", "name": "Anna", "sdp": OFFER }).to_string();
+        assert_eq!(
+            route(
+                &g,
+                "POST",
+                "/gast/join",
+                "",
+                bad.as_bytes(),
+                "10.0.0.9",
+                now
+            )
+            .status,
+            403
+        );
+        // Die Prüfung des Links verrät nichts über die PIN.
+        assert_eq!(
+            body(&route(&g, "GET", "/gast/check", &q, b"", "x", now))["ok"],
+            true
+        );
+        let req = json!({ "invite": tok, "pin": pin, "name": "Anna", "sdp": OFFER }).to_string();
         let r = route(
             &g,
             "POST",
@@ -462,21 +491,11 @@ mod tests {
         );
         assert_eq!(r.status, 200);
         let ticket = body(&r)["ticket"].as_str().expect("ticket").to_string();
-        // Einladung ist verbraucht.
+        // Der Link gilt weiter für die nächsten Gäste der Sendung.
         assert_eq!(
             body(&route(&g, "GET", "/gast/check", &q, b"", "x", now))["ok"],
-            false
+            true
         );
-        let r = route(
-            &g,
-            "POST",
-            "/gast/join",
-            "",
-            req.as_bytes(),
-            "10.0.0.5",
-            now,
-        );
-        assert_eq!(r.status, 403);
         let st = |now| {
             body(&route(
                 &g,

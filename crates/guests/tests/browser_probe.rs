@@ -106,7 +106,8 @@ fn headless_browser_with_fake_microphone_joins_and_hears_the_return() {
     let debug_port = free_port();
     let profile = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("woa-browser-probe");
     let _ = std::fs::remove_dir_all(&profile);
-    let url = format!("{link}&auto=1");
+    let pin = hub.web_view().invites[0].1.pin.clone();
+    let url = format!("{link}&auto=1#pin={pin}");
     let child = Command::new(&chromium)
         .args([
             "--headless=new",

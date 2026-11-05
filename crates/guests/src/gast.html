@@ -52,6 +52,8 @@
   <section class="card" id="form">
     <label for="name">Dein Name</label>
     <input type="text" id="name" maxlength="24" autocomplete="given-name" placeholder="z. B. Anna">
+    <label for="pin">PIN (sagt dir der Moderator)</label>
+    <input type="text" id="pin" maxlength="6" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" placeholder="6 Ziffern">
     <button id="join" type="button">Beitreten</button>
     <p class="dim">Dein Browser fragt gleich nach dem Mikrofon. Der Moderator muss dich noch hereinlassen.</p>
   </section>
@@ -79,7 +81,7 @@
     if (!live || over) return;
     var b = $('air'); b.hidden = false;
     var text, cls, msg;
-    if (air === 'wait') { text = '\u23F8 Warteraum'; cls = 'wait'; msg = 'Du hörst die Sendung. Der Moderator holt dich gleich auf Sendung.'; }
+    if (air === 'wait') { text = '\u23F8 Vorgespräch'; cls = 'wait'; msg = 'Du hörst die Sendung. Der Moderator holt dich gleich auf Sendung.'; }
     else if (air === 'muted') { text = '\u{1F507} Stumm'; cls = 'muted'; msg = 'Der Moderator hat dich stumm geschaltet. Du hörst die Sendung weiter.'; }
     else { text = '\u25CF Auf Sendung'; cls = 'air'; msg = 'Du bist zu hören. Sprich los.'; }
     if (selfMuted) msg = 'Dein Mikrofon ist aus. Niemand hört dich, bis du es wieder einschaltest.';
@@ -184,10 +186,12 @@
   function join() {
     var name = $('name').value.trim();
     if (!name) { $('name').focus(); return; }
+    var pin = $('pin').value.replace(/\D/g, '');
+    if (pin.length !== 6) { $('pin').focus(); return; }
     $('join').disabled = true;
     setTitle('start');
     get('/gast/check?i=' + encodeURIComponent(invite)).then(function (c) {
-      if (!c.ok) throw new Error('Dieser Link ist abgelaufen oder wurde schon benutzt.');
+      if (!c.ok) throw new Error('Dieser Link ist abgelaufen. Bitte frag den Moderator nach dem neuen.');
       return navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
         video: false
@@ -208,7 +212,7 @@
       };
       return pc.createOffer({ offerToReceiveAudio: true }).then(function (o) { return pc.setLocalDescription(o); }).then(gathered);
     }).then(function () {
-      return post('/gast/join', { invite: invite, name: name, sdp: pc.localDescription.sdp });
+      return post('/gast/join', { invite: invite, pin: pin, name: name, sdp: pc.localDescription.sdp });
     }).then(function (r) {
       ticket = r.ticket;
       show('Warte auf den Moderator …');
@@ -226,14 +230,19 @@
 
   $('join').addEventListener('click', join);
   $('name').addEventListener('keydown', function (e) { if (e.key === 'Enter') join(); });
+  $('pin').addEventListener('keydown', function (e) { if (e.key === 'Enter') join(); });
   $('leave').addEventListener('click', leave);
   $('selfmute').addEventListener('click', toggleSelfMute);
   window.addEventListener('pagehide', function () {
     if (ticket && !over) { try { navigator.sendBeacon('/gast/leave', new Blob([JSON.stringify({ t: ticket })], { type: 'application/json' })); } catch (e) {} }
   });
   setTitle('bereit');
-  // Für Testläufe: Name und Beitritt per Adresse, nur mit ?auto=1.
-  if (new URLSearchParams(location.search).get('auto') === '1') { $('name').value = 'Testgast'; join(); }
+  // Für Testläufe: Name und Beitritt per Adresse, nur mit ?auto=1 (PIN im Anker #pin=…).
+  if (new URLSearchParams(location.search).get('auto') === '1') {
+    $('name').value = 'Testgast';
+    $('pin').value = new URLSearchParams(location.hash.slice(1)).get('pin') || '';
+    join();
+  }
 })();
 </script>
 </body>
