@@ -25,7 +25,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
 pub use feedback::{
-    DEV_KEY_HEADER, DevKey, FeedbackError, FeedbackMeta, FeedbackType, build_payload,
+    DEV_KEY_HEADER, DevKey, FeedbackError, FeedbackMeta, FeedbackType, build_payload, post_payload,
     submit_feedback,
 };
 pub use journal::{

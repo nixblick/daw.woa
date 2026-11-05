@@ -104,6 +104,10 @@ pub enum FeedbackError {
     NotPng,
     #[error("too many images ({0})")]
     TooManyImages(usize),
+    /// HTTP 429: Tagesdeckel des Servers erreicht (`{"error":"daily limit reached"}`).
+    /// Die Meldung kann später unverändert erneut gehen; der Server dedupliziert.
+    #[error("daily limit reached")]
+    DailyLimit,
     #[error("server answered {0}")]
     Status(u16),
     #[error("transport: {0}")]
@@ -182,12 +186,20 @@ pub fn submit_feedback(
         return Err(FeedbackError::NoEndpoint);
     }
     let payload = build_payload(text, &images, meta)?;
+    post_payload(&payload.to_string(), meta)
+}
+
+/// Schickt eine fertige Nutzlast (aus [`build_payload`]) ab. Für das Nachsenden nach 429:
+/// derselbe Rumpf geht erneut, damit der Server Dubletten erkennt.
+pub fn post_payload(body: &str, meta: &FeedbackMeta) -> Result<Option<u64>, FeedbackError> {
+    if meta.url.trim().is_empty() {
+        return Err(FeedbackError::NoEndpoint);
+    }
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(meta.timeout))
         .http_status_as_error(false)
         .build()
         .into();
-    let body = payload.to_string();
     let mut req = agent
         .post(&meta.url)
         .header("Content-Type", "application/json");
@@ -195,9 +207,17 @@ pub fn submit_feedback(
         req = req.header(DEV_KEY_HEADER, k.0.as_str());
     }
     let mut resp = req
-        .send(body)
+        .send(body.to_string())
         .map_err(|e| FeedbackError::Transport(e.to_string()))?;
     let status = resp.status().as_u16();
+    if status == 429 {
+        tracing::warn!(
+            art = "feedback.http_error",
+            wert = 429_i64,
+            "feedback daily limit"
+        );
+        return Err(FeedbackError::DailyLimit);
+    }
     if !(200..300).contains(&status) {
         tracing::warn!(
             art = "feedback.http_error",
