@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "mcp-nach-neustart",
+      "ansicht": "Entwickler",
+      "titel": "MCP nach Neustart von WOA",
+      "tun": "Mit Claude verbunden `project_info` aufrufen, WOA beenden und neu starten, `project_info` erneut aufrufen.",
+      "erwartet": "Der Aufruf antwortet ohne neue Claude-Sitzung. Ist WOA beendet, lautet die Meldung „WOA läuft nicht“.",
+      "version": "0.42.4"
+    },
+    {
       "id": "r2-mikro-wie-obs",
       "ansicht": "Radio",
       "titel": "Mikro einzeln, wie OBS",

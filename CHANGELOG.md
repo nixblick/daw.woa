@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.4 — 2026-11-05
+
+- **MCP bleibt nach einem Neustart von WOA verbunden (#527):** `woa-headless mcp` hielt Port und Live-Schlüssel vom Start fest; nach einem Neustart der App (neuer Port, neuer Schlüssel) scheiterte jeder Aufruf mit „Verbindung verweigert“, bis Claude neu gestartet wurde. Jetzt liest die Weiterleitung bei einem Verbindungsfehler oder 401 `mcp-live.json` neu, meldet sich an der neuen App an und wiederholt den Aufruf einmal. Läuft keine WOA mehr, kommt „WOA läuft nicht: bitte die App starten …“ statt der Winsock-Meldung. Test `live_restart.rs`.
+
 ## 0.42.3 — 2026-11-05
 
 - **Claude-Anbindung nach dem Umstieg auf das MSI pro Benutzer (#497):** Zeigte der Eintrag `mcpServers.woa` in `~/.claude.json` oder `claude_desktop_config.json` noch auf `C:\Program Files\WOA\woa-headless.exe`, verband Claude nicht mehr („Connection closed“). WOA schreibt beim Start (läuft es pro Benutzer) nur diesen Eintrag auf die `woa-headless.exe` neben der App um, legt `<datei>.bak-woa` an, loggt `mcp registration updated` und zeigt einen Hinweis, dass Claude neu starten muss. Andere Einträge und die Formatierung bleiben. Tests in `legacy.rs`, `test-upgrade.ps1` prüft toten alten und lebenden neuen Pfad.

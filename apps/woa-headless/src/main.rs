@@ -474,7 +474,8 @@ fn cmd_mcp_stdio(path: &std::path::Path) -> Result<(), String> {
             "WOA MCP: die App läuft, Werkzeuge arbeiten live auf ihrem Projekt ({} gilt nicht)",
             path.display()
         );
-        return woa_agent::live::forward_stdio(app.port, &app.key).map_err(|e| e.to_string());
+        return woa_agent::live::forward_stdio(app.port, &app.key, &woa_radio::data_dir())
+            .map_err(|e| e.to_string());
     }
     woa_agent::run_stdio(path).map_err(|e| e.to_string())
 }
