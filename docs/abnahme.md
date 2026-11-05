@@ -4,6 +4,13 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Rückmeldungen zu 0.42.0 (0.42.1, offen)
+
+1. Windows, Musik läuft mit Pult und Mikro: 50-mal zwischen WOA und Explorer wechseln. Kein Knistern.
+2. Radio maximiert bei 125 % Skalierung: Playlist links unten sichtbar.
+3. „Processing & Übergänge“ auch im Vollbild: nichts übereinander, kein Schalter abgeschnitten.
+4. FEEDBACK: Vorschau sofort da, zwei Tasten „Mit Bild senden“ und „Ohne Bild senden“, beide senden.
+
 ## Design-Fassung 8 (0.42.0, offen)
 
 1. **Zweiter Start:** WOA läuft und spielt, WOA nochmal starten: kein zweites Fenster, kein Knacken, das laufende kommt nach vorn.

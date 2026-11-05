@@ -2,6 +2,38 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "r1-fensterwechsel-knistern",
+      "ansicht": "Radio",
+      "titel": "Kein Knistern beim Fensterwechsel",
+      "tun": "Unter Windows Musik laufen lassen (mit Pult und Mikro, wie in der Sendung) und 50-mal zwischen WOA und dem Explorer wechseln (Alt+Tab oder Klick in die Taskleiste).",
+      "erwartet": "Der Ton bleibt sauber, kein Knistern und keine Aussetzer.",
+      "version": "0.42.1"
+    },
+    {
+      "id": "r1-playlist-sichtbar",
+      "ansicht": "Radio",
+      "titel": "Playlist auch auf kleinem Schirm sichtbar",
+      "tun": "Radio bei Windows-Skalierung 125 % oder auf einem Notebook-Schirm öffnen, Fenster maximiert.",
+      "erwartet": "Links unten steht die Sende-Playlist mit Titeln; Sende-Deck und Gäste rollen darüber, wenn der Platz nicht reicht.",
+      "version": "0.42.1"
+    },
+    {
+      "id": "r1-rack-schmal",
+      "ansicht": "Radio",
+      "titel": "Processing-Rack schmal lesbar",
+      "tun": "Radio maximiert öffnen und die Karte „Processing & Übergänge“ ansehen, auch im Vollbild (F11).",
+      "erwartet": "Bezeichnungen und Felder liegen nicht übereinander, kein Schalter ist abgeschnitten; bei wenig Platz steht die Bezeichnung über dem Feld.",
+      "version": "0.42.1"
+    },
+    {
+      "id": "r1-feedback-zwei-tasten",
+      "ansicht": "Allgemein",
+      "titel": "Feedback mit zwei Tasten",
+      "tun": "Oben rechts FEEDBACK klicken, einen Satz schreiben, „Mit Bild senden“ drücken; danach noch einmal mit „Ohne Bild senden“.",
+      "erwartet": "Der Dialog zeigt sofort eine Vorschau des Bildschirms (ohne den Dialog selbst) und zwei gleiche Tasten. Beide senden; nur „Mit Bild senden“ hängt das Bild an.",
+      "version": "0.42.1"
+    },
+    {
       "id": "f8-einzelinstanz",
       "ansicht": "Allgemein",
       "titel": "Zweiter Start stört die Sendung nicht",

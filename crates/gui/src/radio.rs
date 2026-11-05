@@ -497,11 +497,11 @@ fn open_pult_input(
         device_id: Some(p.open_id.clone()),
         pair: p.pair,
     };
-    let mut burst = ErrorBurst::default();
+    // Der Rückruf läuft im Audio-Thread: nur zählen (Regel 1); geloggt wird im GUI-Takt
+    // höchstens einmal je Minute (`FaultLog`).
     match woa_engine::record::start_pair_input(&cfg, rate, move |e| {
-        faults.fetch_add(1, Ordering::Relaxed);
-        if let Some(n) = burst.note(Instant::now()) {
-            tracing::warn!(error = %e, count = n, "pult input errors (last minute)");
+        if !woa_engine::device::is_realtime_denied(&e) {
+            faults.fetch_add(1, Ordering::Relaxed);
         }
     }) {
         Ok((stream, rx, _stats, in_rate)) => {
@@ -519,28 +519,35 @@ fn open_pult_input(
     }
 }
 
-/// Drosselt wiederkehrende Fehlermeldungen: die erste sofort, danach höchstens eine
-/// Sammelzeile je [`ErrorBurst::EVERY`] mit der Anzahl seit der letzten Zeile.
+/// Drosselt wiederkehrende Fehler eines Eingangs: Der Audio-Thread zählt nur, der GUI-Takt
+/// meldet den ersten Fehler sofort und danach höchstens eine Sammelzeile je
+/// [`FaultLog::EVERY`] mit der Anzahl seit der letzten Zeile (#401, Mikro-Flut 05.11.2026).
 #[derive(Debug, Default)]
-struct ErrorBurst {
+struct FaultLog {
+    seen: u64,
     last: Option<Instant>,
-    count: u64,
 }
 
-impl ErrorBurst {
+impl FaultLog {
     const EVERY: Duration = Duration::from_secs(60);
 
-    /// Ein Fehler. `Some(n)`: jetzt eine Zeile für `n` Fehler schreiben.
-    fn note(&mut self, now: Instant) -> Option<u64> {
-        self.count += 1;
-        if self
-            .last
-            .is_some_and(|t| now.duration_since(t) < Self::EVERY)
+    /// Zählerstand `total` ansehen. `Some(n)`: jetzt eine Zeile für `n` neue Fehler schreiben.
+    fn poll(&mut self, total: u64, now: Instant) -> Option<u64> {
+        if total < self.seen {
+            // Neuer Strom, neuer Zähler.
+            self.seen = 0;
+        }
+        if total == self.seen
+            || self
+                .last
+                .is_some_and(|t| now.duration_since(t) < Self::EVERY)
         {
             return None;
         }
         self.last = Some(now);
-        Some(std::mem::take(&mut self.count))
+        let n = total - self.seen;
+        self.seen = total;
+        Some(n)
     }
 }
 
@@ -578,18 +585,21 @@ impl SilentStream {
 
 #[cfg(test)]
 mod pult_guard_tests {
-    use super::{ErrorBurst, SilentStream};
+    use super::{FaultLog, SilentStream};
     use std::time::{Duration, Instant};
 
     #[test]
-    fn error_burst_logs_once_per_minute_with_count() {
+    fn fault_log_reports_once_per_minute_with_count() {
         let t0 = Instant::now();
-        let mut b = ErrorBurst::default();
-        assert_eq!(b.note(t0), Some(1));
-        for i in 1..600 {
-            assert_eq!(b.note(t0 + Duration::from_millis(100 * i)), None);
+        let mut f = FaultLog::default();
+        assert_eq!(f.poll(0, t0), None, "ohne Fehler keine Zeile");
+        assert_eq!(f.poll(1, t0), Some(1));
+        for i in 1..600u64 {
+            assert_eq!(f.poll(1 + i, t0 + Duration::from_millis(100 * i)), None);
         }
-        assert_eq!(b.note(t0 + Duration::from_secs(61)), Some(600));
+        assert_eq!(f.poll(600, t0 + Duration::from_secs(61)), Some(599));
+        // Neuer Strom: der Zähler beginnt wieder bei 0.
+        assert_eq!(f.poll(3, t0 + Duration::from_secs(130)), Some(3));
     }
 
     #[test]
@@ -693,6 +703,10 @@ pub struct RadioDesk {
     known_mtime: Option<SystemTime>,
     checked_at: Instant,
     mic_dropped: Arc<AtomicU64>,
+    /// Fehler des Mikro-Stroms (vom Audio-Thread nur gezählt) und ihre gedrosselte Meldung.
+    mic_faults: Arc<AtomicU64>,
+    mic_fault_log: FaultLog,
+    pult_fault_log: FaultLog,
     covers: Option<crate::covers::Covers>,
     /// Sendung: Feeder zum woa-streamd (nur wenn „Auf Sendung“).
     feeder: Option<Feeder>,
@@ -887,6 +901,12 @@ const METER_W: f32 = 16.0;
 /// Titel der Speicher-Meldung (wegklickbar).
 const SAVE_NOTICE: &str = "Speichern fehlgeschlagen";
 /// Höhe der Wunschtitel-Zeile ohne Kartenrand.
+/// So hoch bleibt die Playlist links mindestens sichtbar (Kopf plus einige Titel).
+const PLAYLIST_MIN_H: f32 = 260.0;
+/// Unter dieser Breite steht im Processing-Rack die Bezeichnung über den Bedienelementen.
+const RACK_NARROW_W: f32 = 330.0;
+/// Zeilen mit mehreren Feldern (Ducking) brauchen nebeneinander so viel Breite.
+const RACK_WIDE_W: f32 = 430.0;
 const WISH_ROW_H: f32 = 44.0;
 /// Unter dieser Innenhöhe nimmt die Pegel-Karte ihre Grundhöhe.
 const LEVELS_MIN_INNER_H: f32 = 200.0;
@@ -1627,6 +1647,9 @@ impl RadioDesk {
             known_mtime,
             checked_at: Instant::now(),
             mic_dropped: Arc::new(AtomicU64::new(0)),
+            mic_faults: Arc::new(AtomicU64::new(0)),
+            mic_fault_log: FaultLog::default(),
+            pult_fault_log: FaultLog::default(),
             covers: None,
             feeder: None,
             air_toggled_at: None,
@@ -1781,6 +1804,19 @@ impl RadioDesk {
         self.underruns.load(Ordering::Relaxed)
     }
 
+    /// Aussetzer der Taktverbindungen (zweite Ausgänge, Telefon) seit dem Öffnen: leer
+    /// gelaufen, übersprungen, verworfen. Sie zählt `underruns` nicht mit (0.42.1: Knistern beim
+    /// Fensterwechsel, während `radio.underruns_total` bei 0 stand).
+    pub fn link_faults(&self) -> u64 {
+        let outs: u64 = self.outputs.links.iter().map(|(_, s)| s.faults()).sum();
+        outs + self.phone_stats.as_ref().map_or(0, |s| s.faults())
+    }
+
+    /// Fehler des Mikro-Stroms seit dem Start.
+    pub fn mic_faults(&self) -> u64 {
+        self.mic_faults.load(Ordering::Relaxed)
+    }
+
     pub(crate) fn with(&self, f: impl FnOnce(&mut Controller) + Send + 'static) {
         if let Some(s) = &self.station {
             s.with(f);
@@ -1880,6 +1916,16 @@ impl RadioDesk {
             ));
         }
         self.tick_stream();
+        let now = Instant::now();
+        if let Some(n) = self
+            .mic_fault_log
+            .poll(self.mic_faults.load(Ordering::Relaxed), now)
+        {
+            tracing::warn!(count = n, "mic input errors (last minute)");
+        }
+        if let Some(n) = self.pult_fault_log.poll(self.pult_faults(), now) {
+            tracing::warn!(count = n, "pult input errors (last minute)");
+        }
         for m in self.outputs.take_new_faults() {
             tracing::warn!(message = %m, "output lost");
             self.error = Some(match self.error.take() {
@@ -2370,7 +2416,15 @@ impl RadioDesk {
             &self.mic_cfg.input_config(),
             producer,
             Arc::clone(&self.mic_dropped),
-            |e| tracing::warn!(error = %e, "mic input"),
+            {
+                // Läuft im Audio-Thread: nur zählen, geloggt wird in `tick` (Regel 1).
+                let faults = Arc::clone(&self.mic_faults);
+                move |e| {
+                    if !woa_engine::device::is_realtime_denied(&e) {
+                        faults.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            },
         ) {
             Ok((stream, rate)) if rate == self.rate => {
                 tracing::info!(device = %self.mic_cfg.label(), "mic input open");
@@ -2888,14 +2942,26 @@ impl RadioDesk {
             cols[1].spacing_mut().item_spacing.y = 10.0;
             // Links (Fassung 8): Sende-Deck mit Meldungszeile, die Gäste-Karte, die Playlist
             // füllt den Rest und rollt als einzige.
-            theme::card_frame().show(&mut cols[0], |ui| {
-                self.clock_and_controls(ui, &v);
-            });
-            theme::card_frame().show(&mut cols[0], |ui| {
-                self.guests_card(ui);
-            });
+            // Kleine Schirme (0.42.1, Robby: „Playlist ist weg“): Sende-Deck und Gäste rollen
+            // in ihrem Bereich, die Playlist behält immer mindestens PLAYLIST_MIN_H.
+            let top_max = (cols[0].available_height() - PLAYLIST_MIN_H - 12.0).max(160.0);
+            egui::ScrollArea::vertical()
+                .id_salt("radio_left_top")
+                .max_height(top_max)
+                .auto_shrink([false, true])
+                .show(&mut cols[0], |ui| {
+                    ui.spacing_mut().item_spacing.y = 10.0;
+                    theme::card_frame().show(ui, |ui| {
+                        self.clock_and_controls(ui, &v);
+                    });
+                    theme::card_frame().show(ui, |ui| {
+                        self.guests_card(ui);
+                    });
+                });
             self.playlist_rect = theme::card_frame()
                 .show(&mut cols[0], |ui| {
+                    // Füllt den Rest der Spalte, auch bei leerer Playlist.
+                    ui.set_min_height((ui.available_height() - 2.0).max(0.0));
                     self.playlist(ui, &v);
                 })
                 .response
@@ -3581,64 +3647,86 @@ impl RadioDesk {
 
     fn processing_rack(&mut self, ui: &mut egui::Ui) {
         let v = self.view.clone();
-        ui.horizontal(|ui| {
+        // Schmal (Windows-Skalierung, kleine Schirme, 0.42.1 nach Robbys Foto): Chip unter die
+        // Überschrift, Bezeichnung über die Bedienelemente. Nichts wird abgeschnitten.
+        let narrow = ui.available_width() < RACK_NARROW_W;
+        let pill = |ui: &mut egui::Ui| {
+            theme::status_pill(
+                ui,
+                &format!("ZIEL {:.0} LUFS", v.target_lufs),
+                theme::ok(),
+                v.bus_processing,
+            );
+        };
+        if narrow {
             ui.label(theme::panel_label("PROCESSING & ÜBERGÄNGE"));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                theme::status_pill(
-                    ui,
-                    &format!("ZIEL {:.0} LUFS", v.target_lufs),
-                    theme::ok(),
-                    v.bus_processing,
-                );
+            ui.horizontal(pill);
+        } else {
+            ui.horizontal(|ui| {
+                ui.label(theme::panel_label("PROCESSING & ÜBERGÄNGE"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), pill);
             });
-        });
+        }
         ui.add_space(4.0);
 
         // Zeilen nach ScreenRadio (`woa-set`): links die Bezeichnung, rechts Zahlenfeld oder
-        // Schalter. Die Werte und Befehle sind dieselben wie vorher.
-        let label_w = (ui.available_width() - 170.0).max(100.0);
-        let row = |ui: &mut egui::Ui, name: &str, sub: Option<&str>| {
+        // Schalter. Die Bedienelemente werden zuerst von rechts gesetzt, die Bezeichnung
+        // bricht im Rest um; ist es zu schmal, steht sie darüber.
+        let label = |ui: &mut egui::Ui, name: &str, sub: Option<&str>| {
             ui.vertical(|ui| {
-                ui.set_min_width(label_w);
                 ui.spacing_mut().item_spacing.y = 0.0;
-                ui.label(egui::RichText::new(name).size(13.0).color(theme::text()));
+                ui.add(
+                    egui::Label::new(egui::RichText::new(name).size(13.0).color(theme::text()))
+                        .wrap(),
+                );
                 if let Some(sub) = sub {
-                    ui.label(egui::RichText::new(sub).size(11.0).color(theme::text_dim()));
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(sub).size(11.0).color(theme::text_dim()),
+                        )
+                        .wrap(),
+                    );
                 }
             });
         };
-        egui::Grid::new("processing_rows")
-            .num_columns(2)
-            .spacing(egui::vec2(12.0, 3.0))
-            .min_col_width(0.0)
-            .show(ui, |ui| {
-                let right = egui::Layout::right_to_left(egui::Align::Center);
-                for (name, sub, keys) in [
-                    ("Crossfade-Blende", None, &[Rack::Crossfade][..]),
-                    (
-                        "Musik-Ducking",
-                        Some("Rückkehr nach Stille · Einblenden · Tiefe"),
-                        &[Rack::Ducking, Rack::DuckTimes][..],
-                    ),
-                    ("Ducking auch bei Carts", None, &[Rack::CartDuck][..]),
-                    ("Stopp blendet aus", None, &[Rack::StopFade][..]),
-                    (
-                        "Fade-Taste",
-                        Some("Sende-Deck, Decks, Carts"),
-                        &[Rack::FadeLength][..],
-                    ),
-                    ("Sendebus-Processing", None, &[Rack::BusProcessing][..]),
-                    ("Mikro-Kette", None, &[Rack::MicChain][..]),
-                ] {
-                    row(ui, name, sub);
-                    ui.with_layout(right, |ui| {
-                        for &k in keys {
-                            self.rack_control(ui, k);
-                        }
+        let right = egui::Layout::right_to_left(egui::Align::Center);
+        ui.spacing_mut().item_spacing.y = 4.0;
+        for (name, sub, keys) in [
+            ("Crossfade-Blende", None, &[Rack::Crossfade][..]),
+            (
+                "Musik-Ducking",
+                Some("Rückkehr nach Stille · Einblenden · Tiefe"),
+                &[Rack::Ducking, Rack::DuckTimes][..],
+            ),
+            ("Ducking auch bei Carts", None, &[Rack::CartDuck][..]),
+            ("Stopp blendet aus", None, &[Rack::StopFade][..]),
+            (
+                "Fade-Taste",
+                Some("Sende-Deck, Decks, Carts"),
+                &[Rack::FadeLength][..],
+            ),
+            ("Sendebus-Processing", None, &[Rack::BusProcessing][..]),
+            ("Mikro-Kette", None, &[Rack::MicChain][..]),
+        ] {
+            let stacked = narrow || keys.len() > 1 && ui.available_width() < RACK_WIDE_W;
+            if stacked {
+                label(ui, name, sub);
+                ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 24.0), right, |ui| {
+                    for &k in keys {
+                        self.rack_control(ui, k);
+                    }
+                });
+            } else {
+                ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 24.0), right, |ui| {
+                    for &k in keys {
+                        self.rack_control(ui, k);
+                    }
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        label(ui, name, sub);
                     });
-                    ui.end_row();
-                }
-            });
+                });
+            }
+        }
         ui.add_space(6.0);
         // Messzeile als LCD in lcd-ink: Lautheit · Regelung · Begrenzer am Sendeausgang.
         let on = self.view.bus_processing;
@@ -3649,7 +3737,7 @@ impl RadioDesk {
         );
         theme::lcd_show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 let cell = |ui: &mut egui::Ui, cap: &str, val: String| {
                     ui.label(
                         egui::RichText::new(cap.to_uppercase())
@@ -3667,7 +3755,12 @@ impl RadioDesk {
                             }),
                     );
                 };
-                let w = ui.available_width() / 3.0;
+                // Drei Zellen nebeneinander, schmal untereinander (umbrechend).
+                let w = if narrow {
+                    ui.available_width()
+                } else {
+                    ui.available_width() / 3.0
+                };
                 for (cap, val) in [
                     (
                         "Lautheit",
@@ -7523,6 +7616,58 @@ mod design3_tests {
             (0.0, 0.0, 0.0),
             "Zeichnen hat Werte geändert"
         );
+    }
+
+    /// 0.42.1 (Robbys Foto, „Playlist ist weg“): Bei 1366 × 768, 1536 × 864 (1920 mit 125 %)
+    /// und 1920 × 1030 bleibt die Playlist sichtbar, und kein Rack-Feld ragt aus dem Fenster
+    /// oder liegt über seiner Bezeichnung.
+    #[test]
+    fn playlist_and_rack_fit_common_sizes() {
+        use egui_kittest::kittest::Queryable;
+        for (w, hgt) in [(1366.0, 768.0), (1536.0, 864.0), (1920.0, 1030.0)] {
+            let dir = tempfile::tempdir().unwrap();
+            let size = egui::vec2(w, hgt - 40.0);
+            let mut h = harness(size, RadioDesk::headless(dir.path()));
+            h.run_steps(4);
+            let p = h.state().playlist_rect;
+            assert!(
+                p.height() >= PLAYLIST_MIN_H - 1.0 && p.bottom() <= size.y + 1.0,
+                "{w}×{hgt}: Playlist {p:?}"
+            );
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            let rect_of = |label: &str| -> Vec<egui::Rect> {
+                h.query_all(egui_kittest::kittest::by().label(label))
+                    .map(|n| n.rect())
+                    .collect()
+            };
+            for name in [
+                "Crossfade-Blende",
+                "Musik-Ducking",
+                "Ducking auch bei Carts",
+                "Stopp blendet aus",
+                "Fade-Taste",
+                "Sendebus-Processing",
+                "Mikro-Kette",
+            ] {
+                let rects = rect_of(name);
+                assert!(!rects.is_empty(), "{w}×{hgt}: {name} fehlt");
+                for r in &rects {
+                    // Rollt die rechte Spalte, darf ein Feld unten fehlen; seitlich nie.
+                    assert!(
+                        r.left() >= screen.left() - 0.5 && r.right() <= screen.right() + 0.5,
+                        "{w}×{hgt}: {name} seitlich abgeschnitten {r:?}"
+                    );
+                }
+                if rects.len() > 1 {
+                    // Bezeichnung (Text) und Bedienelement gleichen Namens überlappen nicht.
+                    let (a, b) = (rects[0], rects[1]);
+                    assert!(
+                        a.intersect(b).area() < 1.0 || a.contains_rect(b) || b.contains_rect(a),
+                        "{w}×{hgt}: {name} überdeckt sich {a:?} {b:?}"
+                    );
+                }
+            }
+        }
     }
 
     /// Bei 1920 × 1030 liegt alles im Fenster, auch die Wunschtitel-Zeile, ohne Rollen.

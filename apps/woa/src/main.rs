@@ -6,6 +6,8 @@
 // Unter Windows ohne Konsolenfenster starten (blieb schwarz im Hintergrund offen, André 30.10.).
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod power;
+
 use std::process::ExitCode;
 
 use eframe::egui_wgpu::wgpu;
@@ -85,6 +87,8 @@ fn main() -> ExitCode {
     if let Some(e) = save_err {
         tracing::warn!(error = %e, "config not saved");
     }
+    // 0.42.1: Windows drosselt WOA im Hintergrund nicht (Knistern beim Fensterwechsel).
+    power::no_throttling();
     // WOA-Ordner (#258): fehlende Ordner still anlegen, Fehler nur im Log.
     woa_gui::ordner::apply(&config.ordner);
     let (feedback, telemetry) = (

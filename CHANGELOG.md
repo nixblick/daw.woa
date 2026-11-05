@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.42.1 — 2026-11-05 (Rückmeldungen zu 0.42.0)
+
+- **Knistern beim Fensterwechsel (Windows):** Die Audio-Threads melden sich jetzt als Echtzeit an (cpal-Feature `realtime`, unter Windows MMCSS „Pro Audio“). Beim Start nimmt sich WOA außerdem von der Energiespar-Drosselung aus (`SetProcessInformation`, Ausführungstempo und Zeitgeber-Auflösung). Lehnt das System die Echtzeit ab (unter Linux ohne Rechte üblich), läuft der Strom normal weiter, und das zählt nicht als Fehler. Ursache (Vermutung, noch nicht am Gerät gemessen): Windows 11 drosselt WOA, sobald ein anderes Fenster vorn ist.
+- **Aussetzer auf allen Wegen in der Telemetrie:** Zu `radio.underruns_total` kommen `radio.link_faults_total` (zweite Ausgänge und Telefon: leer gelaufen, übersprungen, verworfen), `radio.pult_faults_total` und `radio.mic_faults_total`. Mikro- und Pult-Fehler zählt der Audio-Thread nur, ins Log kommt höchstens eine Sammelzeile je Minute (vorher über 80 Einzelzeilen „mic input“ in fünf Minuten).
+- **Playlist immer sichtbar:** Auf kleinen Schirmen und bei Windows-Skalierung rollen Sende-Deck und Gäste in ihrem Bereich, die Playlist behält mindestens 260 px und füllt den Rest der Spalte (in 0.42.0 fiel sie unten heraus).
+- **Processing-Rack schmal-fest:** Unter 330 px steht der Ziel-Chip unter der Überschrift und die Bezeichnung über den Feldern; die Ducking-Zeile stapelt unter 430 px. Bezeichnungen brechen um, nichts liegt mehr übereinander oder wird abgeschnitten. Test `playlist_and_rack_fit_common_sizes` für 1366 × 768, 1536 × 864 und 1920 × 1030; Ist-Bilder in `docs/design/ist/`.
+- **Feedback wie bei fotobrett:** Der Klick auf FEEDBACK nimmt das Bildschirmfoto sofort auf, der Dialog zeigt die Vorschau und zwei gleichwertige Tasten „Mit Bild senden“ und „Ohne Bild senden“, statt eines Häkchens. Ein Satz erklärt, was das Bild zeigt. Esc und X schließen wie bisher; Strg+Enter sendet mit Bild.
+
 ## 0.42.0 — 2026-11-05 (Design-Fassung 8)
 
 - **Befund behoben:** Die Zahlenfelder für Ducking-Rückkehr, Einblenden und Stopp-Ausblenden meldeten schon beim Zeichnen eine Änderung, solange der Wert außerhalb des Bereichs lag (etwa 0 s vor dem ersten Stand). Dann gingen die Mindestwerte (0,1 s, 0,1 s, 0,5 s) an den Mixer und nach `radio.json`. Gefunden beim Fotografieren für 0.42.0; das Verhalten steckt schon in älteren Versionen. Test `drawing_keeps_rack_values`.

@@ -502,6 +502,20 @@ impl FeedbackDialog {
         };
     }
 
+    /// FEEDBACK clicked (0.42.1, like fotobrett): take the screenshot first, then show the
+    /// dialog with a preview and the two buttons „Mit Bild senden“ / „Ohne Bild senden“.
+    pub fn open_with_screenshot(&mut self) {
+        self.open();
+        self.request_screenshot();
+    }
+
+    /// Sends with or without the screenshot (the two buttons). Without a screenshot both
+    /// send the text only.
+    pub fn send_choice(&mut self, with_image: bool, config: &GuiConfig, log_lines: &[String]) {
+        self.attach = with_image && self.screenshot.is_some();
+        self.send(config, log_lines);
+    }
+
     /// Hides the dialog and asks for a screenshot (the UI sends the viewport command
     /// on the next frame, see `capture_requested`).
     pub fn request_screenshot(&mut self) {
@@ -552,9 +566,7 @@ impl FeedbackDialog {
     /// What gets a preview: the ticked screenshot and the own image, as (key, PNG).
     pub fn previews(&self) -> Vec<(&'static str, &[u8])> {
         let mut v = Vec::new();
-        if self.attach
-            && let Some(s) = &self.screenshot
-        {
+        if let Some(s) = &self.screenshot {
             v.push(("screenshot", s.as_slice()));
         }
         if let Some((_, png)) = &self.image {
@@ -596,8 +608,8 @@ impl FeedbackDialog {
     /// Short list of what goes out, for the line above the send button.
     pub fn outgoing(&self, log_lines: usize) -> Vec<String> {
         let mut v = vec!["dein Text".to_string()];
-        if self.attach && self.screenshot.is_some() {
-            v.push("Bildschirmfoto".into());
+        if self.screenshot.is_some() {
+            v.push("Bildschirmfoto (nur mit „Mit Bild senden“)".into());
         }
         if let Some((name, png)) = &self.image {
             v.push(format!("Bild {name} ({} KB)", png.len().div_ceil(1024)));
@@ -1166,6 +1178,31 @@ mod tests {
         assert_eq!(d.images()[0].0, "screenshot.png");
         d.remove_screenshot();
         assert!(d.images().is_empty());
+    }
+
+    /// 0.42.1 (wie fotobrett): FEEDBACK nimmt sofort auf; die Taste entscheidet, ob das Bild
+    /// mitgeht.
+    #[test]
+    fn two_buttons_decide_about_the_picture() {
+        let cfg = GuiConfig {
+            feedback_url: String::new(),
+            ..GuiConfig::default()
+        };
+        let mut d = FeedbackDialog::default();
+        d.open_with_screenshot();
+        assert_eq!(d.phase, Phase::Capturing, "Aufnahme vor dem Dialog");
+        d.set_screenshot(Some(encode_png(2, 1, &[255; 8]).unwrap()));
+        assert_eq!(d.phase, Phase::Editing);
+        assert_eq!(d.previews().len(), 1, "Vorschau zeigt das Bild");
+        d.text = "Test".into();
+        d.send_choice(false, &cfg, &[]);
+        assert!(d.images().is_empty(), "ohne Bild geht kein Bild mit");
+        let mut d = FeedbackDialog::default();
+        d.open_with_screenshot();
+        d.set_screenshot(Some(encode_png(2, 1, &[255; 8]).unwrap()));
+        d.text = "Test".into();
+        d.send_choice(true, &cfg, &[]);
+        assert_eq!(d.images()[0].0, "screenshot.png");
     }
 
     #[test]

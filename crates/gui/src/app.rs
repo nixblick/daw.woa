@@ -51,6 +51,9 @@ pub(crate) const APP_SOURCES: &[(&str, &str)] = &[
 ];
 
 pub const FEEDBACK_W: f32 = 600.0;
+/// Satz unter dem Text, wenn ein Bildschirmfoto bereitliegt (0.42.1).
+pub const FEEDBACK_PRIVACY: &str = "Das Bild zeigt nur das WOA-Fenster, so wie es beim Klick auf \
+     Feedback aussah (Vorschau unten). Es geht nur mit „Mit Bild senden“ an unseren eigenen Server.";
 /// Abstand zwischen den Elementen rechts in der Kopfleiste (André 31.10.: „bisl weiter auseinander“).
 use crate::widgets::topbar::{
     Chip, ChipLook, TOPBAR_COMPACT_BELOW, TOPBAR_GROUP_GAP, status_bar, status_sep, topbar_chip,
@@ -1859,6 +1862,9 @@ impl WoaApp {
         metric("player.open", u64::from(self.player.is_some()));
         if let Some(r) = &self.radio {
             metric("radio.underruns_total", r.underruns());
+            metric("radio.link_faults_total", r.link_faults());
+            metric("radio.pult_faults_total", r.pult_faults());
+            metric("radio.mic_faults_total", r.mic_faults());
         }
     }
 }
@@ -2975,7 +2981,7 @@ mod party_feedback_tests {
         rig.step(Vec::new());
         rig.step(Vec::new());
         assert_eq!(rig.app.config.mode, mode, "Ansicht bleibt");
-        rig.has("Abschicken")
+        rig.has("Mit Bild senden") && rig.has("Ohne Bild senden")
     }
 
     #[test]

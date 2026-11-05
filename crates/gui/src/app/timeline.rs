@@ -2381,22 +2381,14 @@ impl WoaApp {
                                 .hint_text("Schreib einfach los …"),
                         );
                         ui.add_space(8.0);
-                        // Bildschirmfoto erst auf Klick: Haken setzen blendet das Fenster
-                        // aus und nimmt auf; Haken weg wirft das Bild weg.
-                        let mut shot = self.feedback.attach;
-                        if ui
-                            .checkbox(
-                                &mut shot,
-                                "Bildschirmfoto mitsenden (zeigt uns, was du siehst)",
-                            )
-                            .on_hover_text("Das Fenster verschwindet kurz, dann wird aufgenommen.")
-                            .changed()
-                        {
-                            if shot {
-                                self.feedback.request_screenshot();
-                            } else {
-                                self.feedback.remove_screenshot();
-                            }
+                        // Das Bildschirmfoto entstand beim Klick auf FEEDBACK (0.42.1, wie
+                        // fotobrett); die Vorschau steht unten, die Taste entscheidet.
+                        if self.feedback.screenshot.is_some() {
+                            ui.label(
+                                egui::RichText::new(FEEDBACK_PRIVACY)
+                                    .size(theme::TYPE_SMALL)
+                                    .color(theme::text_dim()),
+                            );
                         }
                         ui.horizontal(|ui| {
                             match self.feedback.image.as_ref().map(|(n, _)| n.clone()) {
@@ -2467,17 +2459,34 @@ impl WoaApp {
                         );
                         ui.add_space(16.0);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let send = egui::Button::new(
-                                egui::RichText::new(format!(
-                                    "{} Abschicken",
-                                    theme::ic::PAPER_PLANE_RIGHT
-                                ))
-                                .strong()
-                                .color(theme::well()),
-                            )
-                            .fill(theme::ok())
-                            .min_size(egui::vec2(132.0, 34.0));
-                            if ui.add(send).on_hover_text("Strg+Enter").clicked() {
+                            // Zwei gleichwertige Tasten, wenn es ein Bild gibt (kein Haken mehr,
+                            // Robby war mit dem Kästchen überfordert, 05.11.2026).
+                            let big = |text: String| {
+                                egui::Button::new(
+                                    egui::RichText::new(text).strong().color(theme::well()),
+                                )
+                                .fill(theme::ok())
+                                .min_size(egui::vec2(150.0, 34.0))
+                            };
+                            if self.feedback.screenshot.is_some() {
+                                if ui
+                                    .add(big(format!("{} Ohne Bild senden", theme::ic::PAPER_PLANE_RIGHT)))
+                                    .clicked()
+                                {
+                                    self.feedback.send_choice(false, &self.config, &feedback_log_lines());
+                                }
+                                if ui
+                                    .add(big(format!("{} Mit Bild senden", theme::ic::PAPER_PLANE_RIGHT)))
+                                    .on_hover_text("Strg+Enter")
+                                    .clicked()
+                                {
+                                    self.feedback.send_choice(true, &self.config, &feedback_log_lines());
+                                }
+                            } else if ui
+                                .add(big(format!("{} Abschicken", theme::ic::PAPER_PLANE_RIGHT)))
+                                .on_hover_text("Strg+Enter")
+                                .clicked()
+                            {
                                 self.feedback.send(&self.config, &feedback_log_lines());
                             }
                             let cancel = egui::Button::new("Lieber später")
