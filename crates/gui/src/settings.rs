@@ -123,6 +123,7 @@ pub enum SettingId {
     Pult,
     Crossfade,
     Ducking,
+    DuckTimes,
     CartDuck,
     StopFade,
     FadeLength,
@@ -395,6 +396,14 @@ pub const REGISTRY: &[Entry] = &[
         "Musik-Ducking",
         "Absenkung der Musik, wenn das Mikro offen ist",
         "ducking mikro leiser absenken",
+    ),
+    row(
+        S::DuckTimes,
+        A::Radio,
+        "Ducking",
+        "Ducking: Rückkehr und Einblenden",
+        "Musik kommt nach so viel Stille im Mikro zurück (Vorgabe 0,5 s) und blendet so lange ein (1 s); Decks und Carts werden mit abgesenkt",
+        "ducking stille rückkehr einblenden release halten sprechpause",
     ),
     row(
         S::CartDuck,

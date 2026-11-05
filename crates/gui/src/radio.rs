@@ -3195,6 +3195,8 @@ impl RadioDesk {
         let mut xf = v.crossfade_seconds;
         let mut duck = v.duck_db;
         let mut cart_duck = v.cart_duck;
+        let (mut hold, mut release) = (v.duck_hold_seconds, v.duck_release_seconds);
+        let mut times_ch = false;
         let (mut stop_on, mut stop_secs) = (v.stop_fade, v.stop_fade_seconds);
         let mut fade_secs = self.fades.seconds();
         let mut fade_ch = false;
@@ -3247,6 +3249,39 @@ impl RadioDesk {
                         true,
                     )
                     .on_hover_text("Absenkung der Musik bei offenem Mikro · Doppelklick: −12 dB")
+                    .changed();
+                });
+                ui.end_row();
+                // Moderator 05.11.2026: Musik kommt nach kurzer Stille im Mikro zurück.
+                row(ui, "Ducking: Rückkehr nach", Some("Stille im Mikro"));
+                ui.with_layout(right, |ui| {
+                    times_ch |= number_field(
+                        ui,
+                        &mut hold,
+                        0.1..=5.0,
+                        "s",
+                        0.5,
+                        "Ducking: Rückkehr nach",
+                        true,
+                    )
+                    .on_hover_text(
+                        "So lange Stille im Mikro, bis die Musik zurückkommt · Doppelklick: 0,5 s",
+                    )
+                    .changed();
+                });
+                ui.end_row();
+                row(ui, "Ducking: Einblenden", None);
+                ui.with_layout(right, |ui| {
+                    times_ch |= number_field(
+                        ui,
+                        &mut release,
+                        0.1..=5.0,
+                        "s",
+                        1.0,
+                        "Ducking: Einblenden",
+                        true,
+                    )
+                    .on_hover_text("So lange blendet die Musik wieder ein · Doppelklick: 1 s")
                     .changed();
                 });
                 ui.end_row();
@@ -3338,6 +3373,12 @@ impl RadioDesk {
         if duck_ch {
             self.view.duck_db = duck;
             self.with(move |c| c.set_duck(duck));
+        }
+        if times_ch {
+            let (h, r) = (hold.clamp(0.1, 5.0), release.clamp(0.1, 5.0));
+            self.view.duck_hold_seconds = h;
+            self.view.duck_release_seconds = r;
+            self.with(move |c| c.set_duck_times(h, r));
         }
         if cart_ch {
             self.view.cart_duck = cart_duck;
@@ -7085,6 +7126,8 @@ mod design3_tests {
         for name in [
             "Crossfade-Blende",
             "Musik-Ducking",
+            "Ducking: Rückkehr nach",
+            "Ducking: Einblenden",
             "Ducking auch bei Carts",
             "Stopp blendet aus",
             "Ausblenddauer",

@@ -128,22 +128,24 @@ fn ducking_cart_mic_stop_and_recording() {
     assert!(with_cart > music * 1.1, "{with_cart} vs {music}");
     assert_ne!(c.status().carts.load(Ordering::Acquire) & (1 << 4), 0);
 
-    // Mic open: music glides down by 12 dB, no step larger than a small fraction.
+    // Mic open and spoken into (a quiet ±0.01 voice, above the gate): music glides down by
+    // 12 dB, no step larger than a small fraction. Averaging two samples cancels the voice.
     c.set_mic_open(true);
     let mut prev = l[BLOCK - 1];
     let mut max_step = 0.0f32;
     let mut last = 0.0;
     for _ in 0..(SR as usize / BLOCK) {
-        for _ in 0..BLOCK {
-            let _ = mic_tx.push(0.0);
-            let _ = mic_tx.push(0.0);
+        for k in 0..BLOCK {
+            let v = if k % 2 == 0 { 0.01 } else { -0.01 };
+            let _ = mic_tx.push(v);
+            let _ = mic_tx.push(v);
         }
         block(&mut c, &mut m, &mut l, &mut r);
         for &v in l.iter() {
             max_step = max_step.max((v - prev).abs());
             prev = v;
         }
-        last = l[BLOCK - 1];
+        last = (l[BLOCK - 1] + l[BLOCK - 2]) / 2.0;
     }
     // The cart (0.1 s) is over by now; only ducked music remains.
     assert_eq!(c.status().carts.load(Ordering::Acquire) & (1 << 4), 0);
@@ -152,9 +154,9 @@ fn ducking_cart_mic_stop_and_recording() {
     assert!(max_step < 0.12, "smooth: {max_step}");
     assert!(c.status().mic_open.load(Ordering::Acquire));
 
-    // Mic closed: back up.
+    // Mic closed: back up (linear in 1 s).
     c.set_mic_open(false);
-    for _ in 0..(SR as usize / BLOCK) {
+    for _ in 0..(SR as usize * 6 / 5 / BLOCK) {
         block(&mut c, &mut m, &mut l, &mut r);
     }
     assert!((l[BLOCK - 1] / music - 1.0).abs() < 0.01);
@@ -586,7 +588,7 @@ fn playlists_switch_and_delete_never_stop_the_running_title() {
 /// #149: Ein Cart senkt die Musik ab wie das Mikro, nach dem Cart geht sie zügig zurück;
 /// abschaltbar über `cart_duck`.
 #[test]
-fn cart_ducks_music_and_releases_fast() {
+fn cart_ducks_music_and_releases_in_the_set_time() {
     let tmp = tempfile::tempdir().unwrap();
     let a = tmp.path().join("musik.wav");
     let silent = tmp.path().join("stumm.wav");
@@ -619,8 +621,8 @@ fn cart_ducks_music_and_releases_fast() {
         } else {
             assert!((during - 1.0).abs() < 0.03, "not ducked: {during}");
         }
-        // Cart ends at 0.5 s; 0.4 s later the music is back.
-        for _ in 0..75 {
+        // Cart ends at 0.5 s; the music fades back in linearly in 1 s (05.11.2026).
+        for _ in 0..210 {
             block(&mut c, &mut m, &mut l, &mut r);
         }
         assert_eq!(c.status().carts.load(Ordering::Acquire), 0);
@@ -776,4 +778,49 @@ fn running_cart_survives_cart_set_switch() {
     assert!(c.show().carts[0].is_some());
     assert!(c.cart_seconds(0).is_some());
     assert!(c.select_cart_set(9).is_err());
+}
+
+/// Moderator 05.11.2026: offenes, aber stilles Mikro hält die Musik nur 0,5 s unten; danach
+/// blendet sie in 1 s wieder ein. Decks werden mit abgesenkt.
+#[test]
+fn ducking_returns_after_half_a_second_of_silence_and_reaches_decks() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("deck.wav");
+    write_tone(&a, 5.0, 0.0, 0.2);
+    let mut show = show_of(&[], 0.0);
+    show.duck_db = -12.0;
+    let (mut c, mut m) = Controller::new(show, SR);
+    c.deck_load(0, a, woa_radio::Cues::default()).unwrap();
+    c.deck_play(0);
+    let (mut mic_tx, mic_rx) = rtrb::RingBuffer::new(SR as usize);
+    c.set_mic_input(Some(mic_rx));
+    let mut l = vec![0.0f32; BLOCK];
+    let mut r = vec![0.0f32; BLOCK];
+    for _ in 0..20 {
+        block(&mut c, &mut m, &mut l, &mut r);
+    }
+    let full = l[BLOCK - 1];
+    assert!(full > 0.1);
+    c.set_mic_open(true);
+    let mut run = |secs: f64, voice: f32| {
+        let mut last = 0.0;
+        for _ in 0..((secs * f64::from(SR)) as usize / BLOCK) {
+            for k in 0..BLOCK {
+                let v = if k % 2 == 0 { voice } else { -voice };
+                let _ = mic_tx.push(v);
+                let _ = mic_tx.push(v);
+            }
+            block(&mut c, &mut m, &mut l, &mut r);
+            last = (l[BLOCK - 1] + l[BLOCK - 2]) / 2.0;
+        }
+        last
+    };
+    let ducked = run(0.5, 0.02);
+    assert!((20.0 * (ducked / full).log10() + 12.0).abs() < 0.5, "Deck abgesenkt");
+    let held = run(0.4, 0.0);
+    assert!((held / ducked - 1.0).abs() < 0.02, "0,4 s Stille: bleibt unten");
+    let mid = run(0.6, 0.0);
+    assert!(mid > ducked * 1.2 && mid < full * 0.9, "kommt zurück: {mid}");
+    let back = run(1.0, 0.0);
+    assert!((back / full - 1.0).abs() < 0.01, "nach 1 s Einblenden wieder voll");
 }

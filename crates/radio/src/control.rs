@@ -352,6 +352,11 @@ impl Controller {
         self.send(Cmd::SetStopFade(stop));
         self.send(Cmd::SetDuck(db_to_gain(self.show.duck_db)));
         self.send(Cmd::SetCartDuck(self.show.cart_duck));
+        let r = f64::from(self.rate);
+        self.send(Cmd::SetDuckTimes {
+            hold: (self.show.duck_hold_seconds * r) as usize,
+            release: (self.show.duck_release_seconds * r) as usize,
+        });
         self.send(Cmd::SetTarget(self.show.target_lufs));
         self.send(Cmd::SetProcessing {
             bus: self.show.bus_processing,
@@ -646,6 +651,14 @@ impl Controller {
     /// Carts senken die Musik ab (#149), gespeichert in der Sendung.
     pub fn set_cart_duck(&mut self, on: bool) {
         self.show.cart_duck = on;
+        self.apply_settings();
+    }
+
+    /// Ducking-Zeiten (Sekunden): Stille bis zur Rückkehr der Musik und ihre Einblendung.
+    pub fn set_duck_times(&mut self, hold: f64, release: f64) {
+        self.show.duck_hold_seconds = hold;
+        self.show.duck_release_seconds = release;
+        self.show.sanitize();
         self.apply_settings();
     }
 

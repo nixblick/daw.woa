@@ -6656,6 +6656,7 @@ impl WoaApp {
             | S::CartDuck
             | S::StopFade
             | S::FadeLength
+            | S::DuckTimes
             | S::BusProcessing
             | S::MicChain
             | S::WishFolder => go = show_in(ui, Mode::Radio),

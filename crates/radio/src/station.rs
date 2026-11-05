@@ -98,6 +98,9 @@ pub struct View {
     pub duck_db: f64,
     /// Carts senken die Musik ab (#149).
     pub cart_duck: bool,
+    /// Ducking-Zeiten (Sekunden): Stille bis zur Rückkehr, Einblendung.
+    pub duck_hold_seconds: f64,
+    pub duck_release_seconds: f64,
     /// Sendebus-Processing an.
     pub bus_processing: bool,
     /// Mikro-Kette an.
@@ -466,6 +469,8 @@ fn run(
             out_stream: c.show().out_stream,
             duck_db: c.show().duck_db,
             cart_duck: c.show().cart_duck,
+            duck_hold_seconds: c.show().duck_hold_seconds,
+            duck_release_seconds: c.show().duck_release_seconds,
             bus_processing: c.show().bus_processing,
             mic_processing: c.show().mic_processing,
             target_lufs: c.show().target_lufs,
