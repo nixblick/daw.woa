@@ -7515,7 +7515,11 @@ mod design3_tests {
         h.run_steps(10);
         let v = &h.state().view;
         assert_eq!(
-            (v.duck_hold_seconds, v.duck_release_seconds, v.stop_fade_seconds),
+            (
+                v.duck_hold_seconds,
+                v.duck_release_seconds,
+                v.stop_fade_seconds
+            ),
             (0.0, 0.0, 0.0),
             "Zeichnen hat Werte geändert"
         );

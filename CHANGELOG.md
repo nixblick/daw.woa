@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.42.0 — in Arbeit (Design-Fassung 8)
+## 0.42.0 — 2026-11-05 (Design-Fassung 8)
 
 - **Befund behoben:** Die Zahlenfelder für Ducking-Rückkehr, Einblenden und Stopp-Ausblenden meldeten schon beim Zeichnen eine Änderung, solange der Wert außerhalb des Bereichs lag (etwa 0 s vor dem ersten Stand). Dann gingen die Mindestwerte (0,1 s, 0,1 s, 0,5 s) an den Mixer und nach `radio.json`. Gefunden beim Fotografieren für 0.42.0; das Verhalten steckt schon in älteren Versionen. Test `drawing_keeps_rack_values`.
 - Radio: Die Telefon-Taste in der Tastenreihe entfällt (Auftrag Punkt 3). Geschaltet wird jetzt in der Gäste-Karte, der Pegel bleibt in der Reihe.

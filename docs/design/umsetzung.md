@@ -252,3 +252,26 @@ Audio-Geräte (Ausgänge, Vorhören, Mikrofon, Telefon, Pult-Eingang) haben gena
 - Das Einrichten-Fenster (vorher „KI“) heißt „Dienste und Konten“, Reiter „Einrichten“, „Steuerung von
   außen (MCP)“, „Anbieter und Werkzeuge“.
 
+
+
+## Fassung 8 (0.42.0, 05.11.2026)
+
+Maßstab `docs/auftrag-fassung-8.md`. Ist-Bilder `docs/design/ist/ist-f8-*-0.42.0.png` (dunkel, hell, 1920 × 1030).
+
+| Punkt | Stand | Ort |
+|---|---|---|
+| 0a Einzelinstanz | ✓ Sperre `woa.lock`, zweiter Start weckt den ersten und endet vor Audio/Log | `gui/src/instance.rs`, `apps/woa/tests/single_instance.rs` |
+| 0b X schließt Fragen/Abnahme | ✓ | `gui/src/fragen.rs` (`kopf`) |
+| 1 RadioLevels | ✓ Quellen · Summe · Ausgänge, ein Kanalbau | `gui/src/radio.rs` |
+| 2 StatusLine | ✓ 28 px, Zähler-Chip | `gui/src/widgets/status_line.rs` |
+| 3 Radio ohne Scrollen | ✓ bei 1920 × 1030; Telefon-Taste entfällt, Telefon in der Gäste-Karte | `gui/src/radio.rs` |
+| 4 Einstellungen | ✓ Werte in der Zeile, Toggle, Segmente, Kante accent-2, Chip „fehlt“, 1400 × 930 | `gui/src/settings.rs`, `gui/src/app/timeline.rs` |
+| 5 Fragen/Abnahme | ✓ neutrale Chips, Stand im Kopf, Balken grün/gelb | `gui/src/fragen.rs`, `gui/src/abnahme.rs` |
+
+Abweichungen:
+
+- Cart-Wall bleibt 4 × 4 je Satz (Auftrag: 4 × 3). **Offen: Frage an André.**
+- Audio-Geräte bleibt eigenes Fenster, Einbetten nur nach Andrés OK. **Offen: Frage an André.**
+- Auf kleinen Bildschirmen scrollt die rechte Spalte als Rückfall.
+- Kein Gäste-Fader in PEGEL: die Engine hat keinen eigenen Gäste-Bus.
+- Bleibt laut Andrés Ergänzung: Fade 1–10 s, Telefon-Kanal, Kopfhörer-Taste, Chip „Gesang in 12 s“, DJ-Badges gefüllt.
