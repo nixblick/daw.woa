@@ -4153,12 +4153,9 @@ impl RadioDesk {
                                         |ui| {
                                             ui.set_min_width(ROW_TOOLS_W);
                                             let here = v.pfl_source == Some(PflSource::Title(i));
-                                            if !row_pfl_shown(tools, here) {
-                                                return;
-                                            }
                                             ui.spacing_mut().item_spacing.x = 2.0;
-                                            // Vorhören (#273) wie am Deck; bleibt sichtbar,
-                                            // solange dieser Titel im Kopfhörer läuft.
+                                            // Vorhören (#273) wie am Deck, an jeder Zeile
+                                            // (Moderator 05.11.2026), nicht erst beim Hover.
                                             let r = icon_key(
                                                 ui,
                                                 theme::ic::HEADPHONES,
@@ -4452,14 +4449,9 @@ impl RadioDesk {
                         Some(k) => Some(k.clone()),
                         None => Some("–".to_string()),
                     };
-                    // Hover nach der Fläche des letzten Bildes: das Pad muss vor dem Zeichnen
-                    // wissen, ob oben rechts Symbole liegen (#388).
+                    // Das Pad muss vor dem Zeichnen wissen, ob oben rechts Symbole liegen (#388).
                     let pfl_here = v.pfl_source == Some(PflSource::Cart(slot));
-                    let hovered = self
-                        .cart_rects
-                        .get(slot)
-                        .is_some_and(|r| ui.rect_contains_pointer(*r));
-                    let show_pfl = label.is_some() && (pfl_here || hovered);
+                    let show_pfl = pfl_key_shown(label.is_some());
                     let r = crate::widgets::CartPad {
                         number: slot + 1,
                         title: label.as_deref(),
@@ -4501,8 +4493,8 @@ impl RadioDesk {
                             self.with(move |c| c.fade_cart(slot));
                         }
                     }
-                    // Vorhören (#273) oben rechts, links neben dem Fade-Symbol: beim Hover über
-                    // einem belegten Pad und solange es vorgehört wird.
+                    // Vorhören (#273) oben rechts, links neben dem Fade-Symbol: an jedem belegten
+                    // Pad (Moderator 05.11.2026).
                     if show_pfl {
                         let x = if playing { -54.0 } else { -28.0 };
                         let at = egui::Rect::from_min_size(
@@ -6338,10 +6330,11 @@ mod link_line_tests {
 }
 
 /// Tooltip-Text: der Grund, falls bekannt, sonst der allgemeine Hinweis.
-/// Vorhör-Knopf einer Playlist-Zeile (#273): beim Hover/Auswahl und solange der Titel vorgehört
-/// wird, damit man ihn dort auch wieder stoppen kann.
-fn row_pfl_shown(tools: bool, previewing: bool) -> bool {
-    tools || previewing
+/// Vorhör-Knopf an Playlist-Zeile und Cart (#273): seit dem Wunsch des Moderators (05.11.2026)
+/// an jeder belegten Zeile und Cart, nicht erst beim Hover. Rechtsklick › Vorhören bleibt
+/// zusätzlich. Playlist-Zeilen sind immer belegt.
+fn pfl_key_shown(occupied: bool) -> bool {
+    occupied
 }
 
 /// Öffnet das Kopfhörer-Gerät `id` als eigenen Strom fürs Vorhören (Mixer-Takt `rate`).
@@ -6390,10 +6383,9 @@ mod pfl_hint_tests {
     use super::*;
 
     #[test]
-    fn row_preview_key_stays_while_the_title_is_previewed() {
-        assert!(!row_pfl_shown(false, false));
-        assert!(row_pfl_shown(true, false));
-        assert!(row_pfl_shown(false, true), "zum Stoppen sichtbar");
+    fn preview_key_shows_on_every_occupied_row_and_cart() {
+        assert!(pfl_key_shown(true), "ohne Hover sichtbar");
+        assert!(!pfl_key_shown(false), "freie Cart ohne Knopf");
     }
 
     #[test]
