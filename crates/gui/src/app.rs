@@ -460,6 +460,7 @@ impl Surface for AppSurface<'_> {
                 Some(pan_to_norm(p))
             }
             Target::Level(b) => Some(level_to_norm(self.radio.as_ref()?.level_db(b))),
+            Target::DjCrossfader => self.radio.as_ref()?.dj_crossfader(),
             _ => None,
         }
     }
@@ -479,6 +480,11 @@ impl Surface for AppSurface<'_> {
             Target::Level(b) => {
                 if let Some(r) = self.radio.as_mut() {
                     r.set_level(b, level_from_norm(value));
+                }
+            }
+            Target::DjCrossfader => {
+                if let Some(r) = self.radio.as_mut() {
+                    r.set_dj_crossfader(value.clamp(0.0, 1.0));
                 }
             }
             _ => {}

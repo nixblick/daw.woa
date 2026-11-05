@@ -262,7 +262,11 @@ mod tests {
         assert_eq!(border, theme::accent());
         assert_eq!((ink, text), (theme::lcd_bg(), theme::lcd_bg()));
         let plain = StateChip::new("LÄUFT", ChipTone::Color(theme::accent()));
-        assert_ne!(plain.colors(false).0, theme::accent(), "ohne filled umrandet");
+        assert_ne!(
+            plain.colors(false).0,
+            theme::accent(),
+            "ohne filled umrandet"
+        );
         let neutral = StateChip::new("LEER", ChipTone::Neutral).filled();
         assert_eq!(neutral.colors(false).0, theme::well());
     }

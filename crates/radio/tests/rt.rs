@@ -816,11 +816,23 @@ fn ducking_returns_after_half_a_second_of_silence_and_reaches_decks() {
         last
     };
     let ducked = run(0.5, 0.02);
-    assert!((20.0 * (ducked / full).log10() + 12.0).abs() < 0.5, "Deck abgesenkt");
+    assert!(
+        (20.0 * (ducked / full).log10() + 12.0).abs() < 0.5,
+        "Deck abgesenkt"
+    );
     let held = run(0.4, 0.0);
-    assert!((held / ducked - 1.0).abs() < 0.02, "0,4 s Stille: bleibt unten");
+    assert!(
+        (held / ducked - 1.0).abs() < 0.02,
+        "0,4 s Stille: bleibt unten"
+    );
     let mid = run(0.6, 0.0);
-    assert!(mid > ducked * 1.2 && mid < full * 0.9, "kommt zurück: {mid}");
+    assert!(
+        mid > ducked * 1.2 && mid < full * 0.9,
+        "kommt zurück: {mid}"
+    );
     let back = run(1.0, 0.0);
-    assert!((back / full - 1.0).abs() < 0.01, "nach 1 s Einblenden wieder voll");
+    assert!(
+        (back / full - 1.0).abs() < 0.01,
+        "nach 1 s Einblenden wieder voll"
+    );
 }

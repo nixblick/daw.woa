@@ -103,9 +103,7 @@ impl Fades {
             .get(&key)
             .or_else(|| match key {
                 // Decks blenden nur an ihrer eigenen Taste (Moderator 05.11.2026).
-                FadeKey::Playlist | FadeKey::Cart(_) => {
-                    self.started.get(&FadeKey::All)
-                }
+                FadeKey::Playlist | FadeKey::Cart(_) => self.started.get(&FadeKey::All),
                 FadeKey::Deck(_) | FadeKey::All => None,
             })
             .copied()?;
@@ -313,7 +311,10 @@ mod tests {
         assert_eq!(run.total, 6.0);
         assert!((run.progress - 0.5).abs() < 1e-6);
         assert!(f.press(FadeKey::Deck(0), 10.0));
-        assert!(f.progress(FadeKey::Deck(0), 11.5).is_none(), "neue Blende 1 s");
+        assert!(
+            f.progress(FadeKey::Deck(0), 11.5).is_none(),
+            "neue Blende 1 s"
+        );
     }
 
     #[test]

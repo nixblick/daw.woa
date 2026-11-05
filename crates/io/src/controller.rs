@@ -163,7 +163,22 @@ pub enum Target {
     /// Taste an Deck 0..N-1 (A, B, C …). Weitere Deck-Ziele (etwa für die DJ-Ansicht)
     /// kommen als neue [`DeckAction`] dazu, ohne dass sich Dateiformat oder Aufrufer ändern.
     Deck(usize, DeckAction),
+    /// DJ-Modus (Moderator 05.11.2026): Play/Pause an Deck 0 (A) oder 1 (B).
+    DjPlay(usize),
+    /// DJ-Modus: Cue antippen an Deck 0 (A) oder 1 (B).
+    DjCue(usize),
+    /// DJ-Modus: Crossfader (0 = Deck A, 1 = Deck B).
+    DjCrossfader,
 }
+
+/// Lernbare Ziele des DJ-Modus, vorerst Play, Cue und Crossfader.
+pub const DJ_TARGETS: [Target; 5] = [
+    Target::DjPlay(0),
+    Target::DjCue(0),
+    Target::DjPlay(1),
+    Target::DjCue(1),
+    Target::DjCrossfader,
+];
 
 /// Was eine Deck-Taste auslöst. Gespeichert als `{"deck":[0,"start"]}`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -212,7 +227,7 @@ impl Target {
     pub fn is_continuous(&self) -> bool {
         matches!(
             self,
-            Target::TrackGain(_) | Target::TrackPan(_) | Target::Level(_)
+            Target::TrackGain(_) | Target::TrackPan(_) | Target::Level(_) | Target::DjCrossfader
         )
     }
 
@@ -232,6 +247,9 @@ impl Target {
             Target::Mode(Layout::Radio) => "Layout Radio".into(),
             Target::Mode(Layout::Toggle) => "Layout umschalten".into(),
             Target::Deck(k, a) => format!("Deck {} {}", deck_letter(*k), a.label()),
+            Target::DjPlay(k) => format!("DJ Deck {} Play/Pause", deck_letter(*k)),
+            Target::DjCue(k) => format!("DJ Deck {} Cue", deck_letter(*k)),
+            Target::DjCrossfader => "DJ Crossfader".into(),
         }
     }
 }
@@ -765,5 +783,28 @@ mod tests {
         )
         .unwrap();
         assert_eq!(old[0].target, Target::Cart(0));
+    }
+}
+
+#[cfg(test)]
+mod dj_learn_tests {
+    use super::*;
+
+    /// Moderator 05.11.2026: im DJ-Modus lernbar sind Play, Cue und der Crossfader; der
+    /// Crossfader ist ein Regler, Play und Cue sind Taster. Gespeichert bleibt es lesbar.
+    #[test]
+    fn dj_targets_are_play_cue_and_crossfader() {
+        assert!(Target::DjCrossfader.is_continuous());
+        assert!(!Target::DjPlay(0).is_continuous() && !Target::DjCue(1).is_continuous());
+        let labels: Vec<_> = DJ_TARGETS.iter().map(Target::label).collect();
+        assert!(labels.contains(&"DJ Deck B Cue".to_string()), "{labels:?}");
+        assert_eq!(
+            serde_json::to_string(&Target::DjPlay(1)).unwrap(),
+            r#"{"dj_play":1}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&Target::DjCrossfader).unwrap(),
+            r#""dj_crossfader""#
+        );
     }
 }

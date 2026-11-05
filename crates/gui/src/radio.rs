@@ -1984,7 +1984,45 @@ impl RadioDesk {
                     c.report(e);
                 }
             }),
+            // DJ-Modus (Moderator 05.11.2026): nur solange die DJ-Ansicht offen ist.
+            Target::DjPlay(side) => {
+                use woa_radio::control::DjCommand;
+                let Some(d) = self.dj_deck(side) else {
+                    return;
+                };
+                self.dj(if d.playing {
+                    DjCommand::Pause { side }
+                } else {
+                    DjCommand::Play { side }
+                });
+            }
+            Target::DjCue(side) if self.dj_deck(side).is_some() => {
+                // Ein MIDI-Taster meldet nur das Drücken: Cue antippen (setzen bzw. zurück).
+                use woa_radio::control::DjCommand;
+                self.dj(DjCommand::CueDown { side });
+                self.dj(DjCommand::CueUp { side });
+            }
             _ => {}
+        }
+    }
+
+    /// Deck `side` der DJ-Ansicht, wenn sie offen ist.
+    fn dj_deck(&self, side: usize) -> Option<&woa_radio::control::DjDeckView> {
+        self.view.dj.as_ref().filter(|d| d.dj)?.decks.get(side)
+    }
+
+    /// Crossfader der DJ-Ansicht (0..1), wenn sie offen ist.
+    pub fn dj_crossfader(&self) -> Option<f32> {
+        self.view.dj.as_ref().filter(|d| d.dj).map(|d| d.crossfader)
+    }
+
+    /// Crossfader vom Controller (0..1); wirkt nur in der DJ-Ansicht.
+    pub fn set_dj_crossfader(&mut self, value: f32) {
+        if self.dj_crossfader().is_some() {
+            if let Some(d) = self.view.dj.as_mut() {
+                d.crossfader = value;
+            }
+            self.dj(woa_radio::control::DjCommand::Crossfader { value });
         }
     }
 
@@ -2131,6 +2169,7 @@ impl RadioDesk {
             Target::Deck(k, DeckAction::Start) => {
                 self.view.decks.get(*k).is_some_and(|d| d.playing)
             }
+            Target::DjPlay(side) => self.dj_deck(*side).is_some_and(|d| d.playing),
             _ => false,
         }
     }
