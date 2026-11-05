@@ -1,0 +1,18 @@
+<!-- @dsCard group="Radio" height=420 width=820 subtitle="Meldungszeile im Sende-Deck: eine Zeile, Warnsymbol, Kurztext, Aktion; mehrere als Zähler mit Liste – das Layout springt nie" -->
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>WOA</title>
+<style>body{padding:16px}.cap{font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:0 0 6px}</style></head>
+<body>
+
+<div class="woa-col" style="gap:14px;max-width:760px" data-woa-mode="radio">
+ <div><p class="cap">Alles gut</p><div class="woa-card"><div class="woa-msgline is-ok"><span data-woa-icon="check-circle" style="display:contents"></span><span class="woa-msgline__t">Alles bereit · Telefon, Mikro, Stream ok</span></div></div></div>
+ <div><p class="cap">Ein Hinweis</p><div class="woa-card"><div class="woa-msgline" data-tip="Telefon-Eingang ausgefallen" data-hint="Bitte anstecken, dann „Geräte neu lesen“"><span data-woa-icon="warning" style="display:contents"></span><span class="woa-msgline__t"><b>Telefon-Eingang fehlt</b> · USB Audio CODEC abgezogen</span><button class="woa-key woa-key--sm" data-woa-icon="reload">Neu lesen</button><button class="woa-ib woa-ib--sm" data-woa-icon="x" data-tip="Ausblenden"></button></div></div></div>
+ <div><p class="cap">Mehrere – Klick öffnet die Liste</p><div class="woa-card"><div class="woa-msgline" data-tip="2 Hinweise" data-hint="Klick zeigt alle"><span data-woa-icon="warning" style="display:contents"></span><span class="woa-msgline__t"><b>Stream: neu verbunden</b> · 41 Lücken seit Start</span><span class="woa-chip is-warn">2 Hinweise</span><button class="woa-ib woa-ib--sm" data-woa-icon="down" data-tip="Alle Hinweise"></button></div></div><div style="margin-top:6px"><div class="woa-msglist">
+ <div class="woa-msglist__r"><span data-woa-icon="warning" style="display:contents"></span><div><b>Stream: Verbindung zu woa-streamd neu aufgebaut</b><small>Lücken im Sendestream: 41 · zuletzt 08:15:52</small></div><span class="woa-mono">08:15</span></div>
+ <div class="woa-msglist__r"><span data-woa-icon="warning" style="display:contents"></span><div><b>Telefon-Eingang fehlt</b><small>Mikrofon (USB Audio CODEC) abgezogen? Anstecken, dann Einstellungen › Audio › Geräte neu lesen</small></div><span class="woa-mono">08:12</span></div>
+</div></div></div>
+</div>
+<script>WOA.init();</script>
+</body>
+</html>

@@ -1,17 +1,9 @@
 # ScreenRadio
 
-Entwurf 1920 × 1030: Radio mit deiner Sendung.
+Radio 1920 × 1030, **ohne Scrollen** (Fassung 8).
 
-Seite, kein Baustein.
-
-- **Links:**
-  - Sende-Deck: Studio-Uhr, LCD mit Cue-Titel, Restzeit und Ende der Playlist.
-  - Eine Tastenreihe: Start · Stopp · Blende · Mikro · Telefon, dann Springen als Symbol-Tasten.
-  - Darunter die Stream-Zeile mit ON-AIR-Lampe und „Auf Sendung“.
-- **Sende-Playlist:**
-  - Spalten #, Titel, Lautheit, Dauer.
-  - Die Dauer ist neutral (nicht rot); Rot nur für ON AIR und Restzeit < 10 s.
-  - Verschieben und Entfernen erscheinen bei Hover.
-- **Rechts:**
-  - Decks A · B · C, Cart-Wall mit Satz 1–5 (Pads neutral mit Farbbalken, nicht grün gefüllt).
-  - Pegel und Processing nebeneinander, Wunschtitel als eine Zeile.
+- **Links:** Sende-Deck mit Meldungszeile (`StatusLine`) · Gäste-Karte (`GuestCard`) · Playlist (füllt den Rest).
+- **Rechts:** Decks A–C kompakt · Cart-Wall 4 × 3 (Sätze 1–5 über Segmente) · Pegel (`RadioLevels`) neben Processing, gleiche Höhe · Wunschtitel als eine Zeile.
+- Keine Telefon-Taste mehr. Fade nach Stopp.
+- **Playlist:** Spalten #, Titel, Lautheit, Dauer; Dauer neutral, Rot nur für ON AIR und Restzeit < 10 s; Verschieben/Entfernen bei Hover.
+- **Cart-Wall:** Pads neutral mit Farbbalken, nicht gefüllt.

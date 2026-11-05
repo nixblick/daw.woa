@@ -41,7 +41,7 @@ WOA – Wir on Air ist eine DAW mit eingebautem Sendestudio und Party-Player. Ei
 - Kanalzüge haben keine Drehregler: nur Kanaltasten, Fader, LED-Kette und Name. Regler leben im Insert-Rack.
 - Die Pegelansicht im Produzenten-Modus ist umschaltbar: Analog (VU), Modern (Balken) oder Aus.
 - Rote Flächen mit weißer Schrift (ON-AIR-Lampe, gedrückte REC-Taste) nutzen `on-air-fill`; Schrift ohne Schatten, die Lampe sitzt in einem schwarzen Rahmen.
-- Licht: Glows nur für Leuchtendes – `glow-accent` für aktive Tasten und Pads, `glow-on-air` für Lampe und REC. In der Kopfleiste kein Glow, außer ON AIR auf Sendung: der Eintrag leuchtet dann wie die ON-AIR-Lampe (`on-air-fill`, weiße Schrift, `glow-on-air`; André 02.11.2026, #353). Keine Verläufe als Dekoration.
+- Licht: Glows nur für Leuchtendes – `glow-accent` für aktive Tasten und Pads, `glow-on-air` für Lampe und REC. In der Kopfleiste kein Glow. Keine Verläufe als Dekoration.
 - Bewegung hat einen Grund: LED-Ketten folgen dem Pegel, Sekundenkranz der Zeit, Jogwheel dem Abspielen, Party-Play-Taste dem Beat. Blinken nur für Aufnahme, Restzeit < 10 s und ein laufendes Pad. Bei `prefers-reduced-motion` stehen alle Anzeigen still.
 
 ## Inhalt und Sprache
@@ -156,6 +156,16 @@ WOA – Wir on Air ist eine DAW mit eingebautem Sendestudio und Party-Player. Ei
 - **Spuren immer 64 px:** übernommen. Mit offener Piano-Roll scrollt die Zeitleiste; das Dock ist in der Höhe ziehbar.
 - **Phosphor-Daumen statt Emoji:** übernommen.
 - **Eigene Fenster-Kopfzeile statt Systemleiste:** übernommen für lösbare Fenster. Das Hauptfenster behält die Systemleiste (Andocken, Fensterwechsel, Wayland).
+
+## Ordnung und Ruhe (Fassung 8)
+
+- **Ein Kanalbau** in jeder Pegelgruppe: Stumm-Platz oben, Fader + Kette gleich hoch, Namensschild auf einer Linie. LED nur grün/gelb/rot, nie blau.
+- **Meldungen** stehen nie als Fließtext zwischen Bedienelementen: eine Meldungszeile pro Bereich, Kurztext + Aktion, mehrere als Zähler.
+- **1920 × 1030 ohne Scrollen** in Radio und Party. Was nicht passt, wird kompakter (Decks 56 px, Cart-Wall 4 × 3 je Satz), nicht scrollbar.
+- **Einstellungen:** Bereiche nach Register (`settings.rs`), Werte direkt in der Zeile statt Verweise, ein Schaltertyp, aktiv = `accent-2`-Kante, nie rot. Audio-Geräte bleiben an einem Ort; Vorschlag: eingebettet im Bereich „Audio und Geräte“ (nach OK von André).
+- **Nur eine Instanz:** Ein zweiter Start von WOA holt das vorhandene Fenster nach vorn und beendet sich. Er öffnet nie Audio-Geräte oder den Stream.
+- **Schließen-X** jedes lösbaren Fensters muss mit einem einfachen Klick schließen (auch bei synthetischen Klicks ohne Bewegung, wie von Fernsteuerung und Tests).
+- **Ticket-Chips** neutral (`woa-chip`), Filter als Segmente, nicht rot.
 
 ## Logo
 

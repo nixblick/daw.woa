@@ -1094,3 +1094,65 @@ mark{background:color-mix(in srgb,var(--accent-2) 35%,transparent);color:inherit
 [data-woa-mode=radio] .woa-tog[aria-pressed=true]{background:color-mix(in srgb,var(--accent-2) 22%,var(--well));border-color:var(--accent-2)}[data-woa-mode=radio] .woa-tog[aria-pressed=true]::after{background:var(--accent-2)}
 .woa-sr{grid-template-columns:minmax(200px,1fr) auto}
 .woa-set2__h h2{white-space:nowrap}
+
+/* =====================================================================
+   Fassung 8: Pegelgruppe einheitlich, Meldungszeile, Radio ohne Scrollen,
+   Einstellungen mit eingebetteten Geräten
+   ===================================================================== */
+/* --- Pegelgruppe: ein Kanalbau für alle --- */
+.woa-lv8{--h:150px;display:grid;grid-template-columns:28px auto 1px auto 1px auto;align-items:stretch;gap:0 10px}
+.woa-lv8__grp{display:flex;flex-direction:column;gap:6px;min-width:0}
+.woa-lv8__gl{font-family:var(--font-label);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);text-align:center;height:12px;line-height:12px}
+.woa-lv8__chs{display:flex;gap:6px}
+.woa-lv8__sep{background:var(--border);margin:18px 0 0}
+.woa-lv8__scale{display:flex;flex-direction:column;justify-content:space-between;height:var(--h);margin-top:18px;padding-top:30px;font-family:var(--font-mono);font-size:9px;color:var(--text-dim);text-align:right;box-sizing:content-box}
+.woa-lv8__scale span{line-height:9px}
+.woa-ch8{display:grid;grid-template-rows:24px var(--h) 22px;gap:6px;width:52px;justify-items:center}
+.woa-ch8__top{display:flex;align-items:center;justify-content:center;width:100%;height:24px}
+.woa-ch8__top .woa-key{width:40px}
+.woa-ch8__top i{display:block;width:40px;height:24px;border-radius:var(--radius-sm);border:1px dashed transparent}
+.woa-ch8__fm{display:flex;gap:4px;align-items:stretch;height:var(--h)}
+.woa-ch8__fm .woa-fader{--fader-h:var(--h)}
+.woa-ch8__fm .woa-meter{height:var(--h)}
+.woa-ch8 .woa-strip__name{width:52px;height:22px;font-size:10px;padding:0 2px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;white-space:nowrap;overflow:hidden}
+.woa-ch8--master{width:64px}
+.woa-ch8--master .woa-strip__name{width:64px}
+.woa-ch8.is-muted .woa-meter{opacity:.35}
+.woa-ch8.is-muted .woa-strip__name{text-decoration:line-through;color:var(--text-dim)}
+
+/* --- Meldungszeile im Sende-Deck: eine Zeile, springt nie --- */
+.woa-msgline{display:flex;align-items:center;gap:8px;height:28px;padding:0 6px 0 10px;border-top:1px solid var(--border);background:color-mix(in srgb,var(--panel-header) 60%,var(--panel));font-size:12px;min-width:0}
+.woa-msgline>svg.woa-i{width:16px;height:16px;color:var(--warn);flex:none}
+.woa-msgline__t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.woa-msgline__t b{font-weight:700}
+.woa-msgline .woa-chip{height:20px;padding:0 6px;font-size:11px}
+.woa-msgline.is-ok>svg.woa-i{color:var(--ok)}
+.woa-msgline.is-ok .woa-msgline__t{color:var(--text-dim)}
+.woa-msglist{display:flex;flex-direction:column;gap:2px;padding:6px;background:var(--panel);border:1px solid var(--border-strong);border-radius:var(--radius-md);box-shadow:0 12px 32px -8px rgba(0,0,0,.5);width:520px}
+.woa-msglist__r{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:8px;align-items:start;padding:8px;border-radius:var(--radius-sm);font-size:12px;line-height:17px}
+.woa-msglist__r:hover{background:var(--surface-hover)}
+.woa-msglist__r svg.woa-i{width:16px;height:16px;color:var(--warn);margin-top:1px}
+.woa-msglist__r small{display:block;color:var(--text-dim);font-size:11px}
+.woa-msglist__r .woa-mono{font-size:11px;color:var(--text-dim)}
+
+/* --- Cart-Wall 4 × 3 --- */
+.woa-cartwall--12 .woa-cart{min-height:52px}
+
+/* --- Einstellungen: Änderungen übernehmen --- */
+.woa-apply{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--border-strong);background:var(--panel-header);position:sticky;bottom:0}
+.woa-apply>svg.woa-i{width:18px;height:18px;color:var(--accent-2)}
+.woa-apply__t{flex:1;font-size:13px}
+.woa-apply__t small{display:block;font-size:11px;color:var(--warn)}
+.woa-sel{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 8px;min-width:220px;border-radius:var(--radius-md);background:var(--well);border:1px solid var(--border-strong);font-size:12px;color:var(--text)}
+.woa-sel svg.woa-i{width:14px;height:14px;color:var(--text-dim)}
+.woa-sel span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.woa-sel.is-follow span{color:var(--text-dim)}
+.woa-sel.is-missing{border-color:var(--warn)}
+.woa-sel.is-missing span{color:var(--warn)}
+.woa-sel--s{min-width:110px}
+.woa-sr .woa-meter--h{width:120px}
+.woa-set2__main{padding-bottom:0}
+.woa-set2__nav button[aria-current=true]{background:var(--surface);color:var(--text);box-shadow:inset 3px 0 0 var(--accent-2),var(--shadow-key)}
+.woa-set2__nav button[aria-current=true] svg.woa-i{color:var(--accent-2)}
+.woa-sel{min-width:170px}.woa-sel--s{min-width:96px}
+.woa-sr__c{flex-wrap:nowrap;min-width:0}

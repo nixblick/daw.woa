@@ -15,7 +15,6 @@ Kopfleiste aller Modi: links Logo und Menüs, rechts ein einziger Block mit Modu
   - Feedback: neutral, mit Symbol statt Punkt.
 - **Aus:** LED gedimmt, Text `text-dim`, keine Fläche.
 - **An:** Fläche `surface`, Rahmen und LED in der eigenen Farbe, Text `text`. Kein Glow, keine gefüllten Farbflächen – die Schrift läuft nie über Farbe. Ausnahme: die ON-AIR-Lampe.
-- **Ausnahme ON AIR auf Sendung** (André 02.11.2026, #353: „ein deutlich leuchtendes on air ist wichtig“): Der Eintrag leuchtet wie die `OnAirLamp`: Fläche `on-air-fill`, weiße Schrift und LED, Rahmen `on-air`, außen `glow-on-air`. Gleiche Höhe und Breite wie die anderen Einträge.
 - Status-Einträge sind zugleich Schalter: MIDI öffnet die Gerätewahl, On Air die Stream-Verbindung, Rec den Mitschnitt, KI die KI-Einstellungen. Es gibt keine zweiten Knöpfe dafür an anderer Stelle der Leiste.
 - Die Bildmarke nimmt die Modusfarbe an.
 
