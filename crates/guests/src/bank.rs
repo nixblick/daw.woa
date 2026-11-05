@@ -29,6 +29,12 @@ pub enum GuestCmd {
         slot: usize,
         on: bool,
     },
+    /// Der Gast ist auf Sendung (nicht im Vorgespräch, nicht vom Moderator stumm): die Musik
+    /// duckt. Selbst-Stumm zählt nicht, der Gast bleibt auf Sendung.
+    OnAir {
+        slot: usize,
+        on: bool,
+    },
     /// Rückweg dieses Gastes im Abhörausgang (Kopfhörer); `None`: normaler Abhörmix.
     Monitor(Option<usize>),
     /// Rückweg dieses Kanals ins Netz an oder aus (Mix-Minus für den Browser-Gast).
@@ -76,6 +82,7 @@ struct Slot {
     gate: Ramp,
     ret: ReturnTx,
     ret_on: bool,
+    on_air: bool,
 }
 
 impl Slot {
@@ -95,6 +102,7 @@ pub struct GuestBank {
     /// Spitzen vor dem Fader im aktuellen Block.
     block_in_peak: [f32; MAX_GUESTS],
     active_count: usize,
+    on_air_count: usize,
     monitor: Option<usize>,
 }
 
@@ -117,6 +125,7 @@ impl GuestBank {
                 gate: Ramp::new(0.0, GATE_TAU, r),
                 ret,
                 ret_on: false,
+                on_air: false,
             })
             .collect::<Vec<_>>()
             .try_into()
@@ -128,6 +137,7 @@ impl GuestBank {
             block_peak: [0.0; MAX_GUESTS],
             block_in_peak: [0.0; MAX_GUESTS],
             active_count: 0,
+            on_air_count: 0,
             monitor: None,
         })
     }
@@ -135,6 +145,11 @@ impl GuestBank {
     /// Mindestens ein Gast aktiv.
     pub fn any_active(&self) -> bool {
         self.active_count > 0
+    }
+
+    /// Mindestens ein Gast auf Sendung: Die Musik duckt wie beim offenen Mikro.
+    pub fn any_on_air(&self) -> bool {
+        self.on_air_count > 0
     }
 
     /// Kanal, dessen Rückweg gerade im Abhörausgang liegt.
@@ -155,6 +170,7 @@ impl GuestBank {
                             s.reader.flush();
                             s.active = false;
                             s.ret_on = false;
+                            s.on_air = false;
                             self.own[slot] = (0.0, 0.0);
                         }
                         s.stats
@@ -174,6 +190,11 @@ impl GuestBank {
                         s.update_fader();
                     }
                 }
+                GuestCmd::OnAir { slot, on } => {
+                    if let Some(s) = self.slots.get_mut(slot) {
+                        s.on_air = on;
+                    }
+                }
                 GuestCmd::Monitor(m) => self.monitor = m,
                 GuestCmd::Return { slot, on } => {
                     if let Some(s) = self.slots.get_mut(slot) {
@@ -183,6 +204,7 @@ impl GuestBank {
             }
         }
         self.active_count = self.slots.iter().filter(|s| s.active).count();
+        self.on_air_count = self.slots.iter().filter(|s| s.active && s.on_air).count();
     }
 
     /// Am Blockanfang: Befehle, Puffer kürzen, Füllstand melden.

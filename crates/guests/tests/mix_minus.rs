@@ -416,3 +416,30 @@ fn four_guests_each_hear_all_others_but_not_themselves() {
         }
     }
 }
+
+#[test]
+fn on_air_guest_is_reported_for_ducking_but_not_in_the_pre_talk() {
+    // Netz-Gäste kommen ins Vorgespräch: noch kein Ducking.
+    let mut r = rig_net(&[440.0]);
+    r.prefill();
+    r.run(2);
+    assert!(r.bank.any_active());
+    assert!(!r.bank.any_on_air(), "Vorgespräch duckt nicht");
+    r.hub.set_on_air(0, true);
+    r.run(1);
+    assert!(r.bank.any_on_air(), "auf Sendung duckt");
+    // Selbst-Stumm bleibt auf Sendung; Moderator-Stumm nimmt das Ducking weg.
+    r.hub.set_mute(0, true);
+    r.run(1);
+    assert!(!r.bank.any_on_air());
+    r.hub.set_mute(0, false);
+    r.run(1);
+    assert!(r.bank.any_on_air());
+    r.hub.set_on_air(0, false);
+    r.run(1);
+    assert!(!r.bank.any_on_air());
+    r.hub.set_on_air(0, true);
+    r.hub.remove(0);
+    r.run(1);
+    assert!(!r.bank.any_on_air(), "aufgelegt duckt nicht mehr");
+}

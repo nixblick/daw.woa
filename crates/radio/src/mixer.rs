@@ -751,6 +751,9 @@ pub struct Mixer {
     cart_duck: bool,
     /// Beim letzten Blockanfang spielte mindestens ein Cart.
     carts_on: bool,
+    /// Beim letzten Blockanfang war mindestens ein Gast auf Sendung (nicht im Vorgespräch):
+    /// die Musik duckt wie beim Telefon (Moderator 05.11.2026).
+    guests_on_air: bool,
     /// Absenkung von Musik und Decks (Stimme und Carts) und der Carts (nur Stimme).
     duck: DuckEnv,
     cart_duck_env: DuckEnv,
@@ -853,6 +856,7 @@ impl Mixer {
             duck_lin: 0.25,
             cart_duck: true,
             carts_on: false,
+            guests_on_air: false,
             duck: DuckEnv::new(DUCK_TAU, r),
             cart_duck_env: DuckEnv::new(DUCK_TAU, r),
             voice_hold: (0.5 * r) as usize,
@@ -1347,6 +1351,7 @@ impl Mixer {
             self.carts_on = carts_on;
         }
         self.guests.begin_block();
+        self.guests_on_air = self.guests.any_on_air();
         let mut peak = 0.0f32;
         let mut mic_peak = 0.0f32;
         let mut phone_peak = 0.0f32;
@@ -1595,7 +1600,8 @@ impl Mixer {
             } else if self.voice_left > 0 {
                 self.voice_left -= 1;
             }
-            let voice = self.phone_on || (self.mic_open && self.voice_left > 0);
+            let voice =
+                self.phone_on || self.guests_on_air || (self.mic_open && self.voice_left > 0);
             let carts = self.cart_duck && self.carts_on;
             let dg = self.duck.tick(voice || carts, self.duck_lin);
             let duck = dg * lm * vduck;

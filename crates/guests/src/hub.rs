@@ -141,6 +141,7 @@ impl GuestHub {
         self.send(GuestCmd::Activate { slot, on: true });
         self.send(GuestCmd::Gain { slot, gain: 1.0 });
         self.send(GuestCmd::Mute { slot, on: !on_air });
+        self.send(GuestCmd::OnAir { slot, on: on_air });
         Ok((slot, feed))
     }
 
@@ -331,7 +332,9 @@ impl GuestHub {
     fn push_mute(&mut self, slot: usize) {
         if let Some(Some(g)) = self.guests.get(slot) {
             let on = g.muted || !g.on_air || g.self_muted;
+            let air = g.on_air && !g.muted;
             self.send(GuestCmd::Mute { slot, on });
+            self.send(GuestCmd::OnAir { slot, on: air });
         }
     }
 
