@@ -2,6 +2,8 @@
 //! Mixer, ohne Ton ausgeben (nur Puffer). Gemessen wird am Ausgang: Zeit des Event-Beginns
 //! (Frequenz des Event-Tons) und Lücken (gefensterter Pegel).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::{Path, PathBuf};
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

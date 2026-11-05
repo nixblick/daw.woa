@@ -1,6 +1,8 @@
 //! Paket 20: Schnittbefehle gegen den Offline-Render. Ein Impuls in der Datei zeigt, ob ein
 //! Clip nach Verschieben und Kürzen auf dem Sample genau dort liegt, wo das Modell ihn setzt.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::sync::Arc;
 
 use woa_engine::clip::render_clips;

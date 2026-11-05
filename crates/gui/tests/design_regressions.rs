@@ -4,6 +4,8 @@
 //! Papierkorb je Spur, das Insert-Rack mit Effekten für jede Spur, das eine Auswahlmodell
 //! (Spurkopf und Kanalzug) und Entf für Clip und Spur.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use eframe::egui;
 use woa_gui::{GuiConfig, WoaApp};
 use woa_model::TrackId;

@@ -1,6 +1,8 @@
 //! Pause hält den Titel fest (#169, #95): Ausblenden, Stelle stehen lassen, Play macht ohne
 //! Neuladen dort weiter. Stopp nach Pause verwirft den Titel. Ohne Audiogerät.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering::Acquire;
 

@@ -2,6 +2,8 @@
 //! egal wo ich doppelt klicke“, „rechtsklick funktioniert auch nicht“): Doppelklick und
 //! Kontextmenü auf einen Bibliothekstitel öffnen das Fenster „Titelinfos“, sichtbar oben.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::time::{Duration, Instant};
 
 use eframe::egui;

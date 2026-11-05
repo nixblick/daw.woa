@@ -2,6 +2,8 @@
 //! Feedback gleich hoch, mit Abständen aus den Tokens, ohne Überlappen bei 1280 und 900 px.
 //! REC ist der eine Mitschnitt-Knopf für alle Modi. Ohne Fenster und ohne Ton (AccessKit).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use eframe::egui;
 use woa_gui::widgets::topbar::{TOPBAR_GAP, TOPBAR_ITEM_H, TOPBAR_SEGMENT_GAP};
 use woa_gui::{GuiConfig, WoaApp};

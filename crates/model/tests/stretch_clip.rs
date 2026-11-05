@@ -1,6 +1,8 @@
 //! Paket 23: Dehnung, Tonhöhe und Tempo-Folgen im Modell: Befehle mit Undo und Redo, Prüfung
 //! der Werte, Projektformat.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_model::{
     Clip, ClipId, Command, FOLLOW_TEMPO_RANGE, ModelError, PITCH_RANGE, STRETCH_RANGE, Session,
     TrackKind, store,

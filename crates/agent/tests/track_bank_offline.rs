@@ -1,6 +1,8 @@
 //! Paket J7 (#271): Ohne Bank-Ordner (und damit ohne Download) bleibt die Wahl erhalten,
 //! die Spur spielt GeneralUser GS und `track_sound` meldet den Zustand `failed`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use rmcp::model::{CallToolRequestParams, CallToolResult, ClientConfig};
 use rmcp::{ClientHandler, ServiceExt};
 use serde_json::json;

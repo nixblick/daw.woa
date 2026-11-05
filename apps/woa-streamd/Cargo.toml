@@ -11,3 +11,6 @@ tracing = "0.1.44"
 woa-radio = { version = "0.41", path = "../../crates/radio" }
 woa-stream = { version = "0.41", path = "../../crates/stream" }
 woa-telemetry = { version = "0.41", path = "../../crates/telemetry" }
+
+[lints]
+workspace = true

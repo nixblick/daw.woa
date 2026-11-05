@@ -2,6 +2,8 @@
 //! anders als der eingebaute Synth. Die SoundFont ist eine winzige, im Test erzeugte SF2,
 //! gefunden über `WOA_SOUNDFONT` wie in der App. Jeder Process-Aufruf unter `assert_no_alloc`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use woa_engine::clip::{clip_graph, project_end_seconds};
 use woa_engine::{AudioProcessor, Engine};

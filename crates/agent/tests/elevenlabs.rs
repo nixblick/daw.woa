@@ -2,6 +2,8 @@
 //! ElevenLabs (Konto, Stimmen, Sprache, Effekt, Musik, Fehlerfälle), der Schlüssel ist ein
 //! Platzhalter. Kein echter Aufruf, kein Ton.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::{Arc, Mutex};
 

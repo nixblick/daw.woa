@@ -6,6 +6,8 @@
 //! (kein Programm zum Erzeugen auf dem Prüfrechner); sie benutzt bewusst die
 //! Eigenheiten, die WOAs eigener Schreiber nicht erzeugt.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_io::smf::{WRITE_PPQ, read_smf, write_smf};
 use woa_model::{MidiCc, MidiData, MidiNote};
 

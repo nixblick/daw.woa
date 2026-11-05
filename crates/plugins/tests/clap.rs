@@ -1,6 +1,8 @@
 //! Selbstprüfung des CLAP-Hosts mit dem Test-Plugin (gebaut mit `clack-plugin`), ohne Ton:
 //! alles rechnet in Puffer.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use woa_dsp::instrument::NoteEvent;
 use woa_plugins::testplugin::{self, GAIN, LEVEL};

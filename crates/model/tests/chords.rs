@@ -1,5 +1,7 @@
 //! Paket J3: Akkordfolgen als Daten, daraus Akkord-, Bass- und Arpeggio-Clips.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_model::chords::{CHORD_PROGRESSIONS, KEYS, generate, key_shift, progression, transpose};
 
 fn pcs(m: &woa_model::MidiData) -> Vec<u8> {

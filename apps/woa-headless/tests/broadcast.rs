@@ -2,6 +2,8 @@
 //! wird einmal hart beendet, die Notfall-Playlist übernimmt binnen 2,5 s, danach wieder
 //! der Sendemix. Kein Audiogerät, nichts wird hörbar abgespielt.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;

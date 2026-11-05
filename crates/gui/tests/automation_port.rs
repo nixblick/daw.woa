@@ -2,6 +2,8 @@
 //! Oberfläche (Mapper, Aufnehmer, AppState) macht daraus eine Lautstärke-Kurve, und der
 //! Offline-Render zeigt, dass der Pegel der Fahrt folgt. Es wird nichts abgespielt.
 //! Ohne ALSA-Sequencer (z. B. CI-Container) wird der Test übersprungen.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
 #![cfg(target_os = "linux")]
 
 use std::time::{Duration, Instant};

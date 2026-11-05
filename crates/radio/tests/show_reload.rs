@@ -1,6 +1,8 @@
 //! Neuladen der Sendung (`replace_show`) und Meldung verlorener Mitschnitt-Samples, offline
 //! und ohne Ton.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::Path;
 use std::sync::atomic::Ordering;
 

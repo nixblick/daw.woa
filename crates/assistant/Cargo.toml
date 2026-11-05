@@ -16,3 +16,6 @@ woa-secrets = { version = "0.41", path = "../secrets" }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[lints]
+workspace = true

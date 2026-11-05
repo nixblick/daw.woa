@@ -1,6 +1,8 @@
 //! Paket 13, Agent-Weg der Piano-Roll: `edit_notes` und `quantize_notes` ändern einen
 //! MIDI-Clip über denselben Befehl (`SetNotes`) wie die Oberfläche, je ein Undo-Schritt.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use rmcp::model::{CallToolRequestParams, CallToolResult, ClientConfig};
 use rmcp::service::RunningService;
 use rmcp::{ClientHandler, RoleClient, ServiceExt};

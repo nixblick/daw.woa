@@ -3,6 +3,8 @@
 //! Offline, ohne Ton, jeder Block unter `assert_no_alloc`. Gemessen wird der Pegel am
 //! Ausgang: Playlist ist Gleichwert 0,5, das Deck 0,2, beide mit Auto-Gain (#297).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::Path;
 use std::sync::atomic::Ordering::Acquire;
 

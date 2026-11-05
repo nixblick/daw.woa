@@ -1,6 +1,8 @@
 //! `woa-headless mcp <path>`: plain JSON-RPC over the child's stdin/stdout pipes,
 //! exactly as Claude Code talks to it.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 

@@ -9,7 +9,9 @@ pub mod remote;
 pub mod safety;
 mod scan;
 pub mod shm;
+// Nur fuer Tests (Feature `test-plugin`), darf daher bei Fehlern abbrechen.
 #[cfg(any(test, feature = "test-plugin"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 pub mod testplugin;
 
 pub use feedback::{ChangeKind, Feedback, LOOSE_LIMIT, ParamChange, ParamEdit};

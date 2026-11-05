@@ -2,6 +2,8 @@
 //! MIDI-Badge im Spurkopf, Transport mit Export und Takte/Zeit, Dock-Reiter. Echte Oberfläche
 //! bei 1366 × 768, ohne Fenster und ohne Ton.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use eframe::egui;
 use woa_gui::{GuiConfig, WoaApp, theme};
 

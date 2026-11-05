@@ -5,6 +5,8 @@
 //! einen Neustart (config.json) und ein Wieder-Einstecken mit neuer ALSA-Nummer.
 //! Ohne ALSA-Sequencer (z. B. CI-Container) wird der Port-Teil übersprungen.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use assert_no_alloc::AllocDisabler;
 use woa_gui::GuiConfig;
 use woa_gui::controls::ControlDesk;

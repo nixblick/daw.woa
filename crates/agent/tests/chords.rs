@@ -1,5 +1,7 @@
 //! Paket J3: `generate_chords` legt dieselben drei Clips an wie die Oberfläche, `transpose_notes` wechselt die Tonart.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use rmcp::model::{CallToolRequestParams, CallToolResult, ClientConfig};
 use rmcp::service::RunningService;
 use rmcp::{ClientHandler, RoleClient, ServiceExt};

@@ -1,6 +1,8 @@
 //! `woa-headless radio-render`: Playlist mit Crossfades offline rendern.
 //! Länge = Summe der Titel − Überblendungen, Lautheit −16 LUFS ± 1 LU.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use assert_cmd::Command;
 use predicates::str::contains;
 

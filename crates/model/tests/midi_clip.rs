@@ -1,6 +1,8 @@
 //! Paket 12: MIDI clips survive save/load, notes are edited through `SetNotes`
 //! with undo, and broken note data is rejected on apply and on load.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_model::*;
 
 fn note(beat: f64, pitch: u8, velocity: u8) -> MidiNote {

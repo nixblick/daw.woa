@@ -1,6 +1,8 @@
 //! Paket 22: Take-Ordner und Comping im Modell: Befehl mit Undo und Redo, Prüfung,
 //! Projektformat.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_model::{Command, Session, TakeEntry, TrackId, TrackKind, store};
 
 fn takes(n: usize) -> Vec<TakeEntry> {

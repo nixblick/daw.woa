@@ -1,5 +1,7 @@
 //! Paket J2: Drum-Raster schreibt über `set_notes` normale MIDI-Noten, ein Undo je Klick.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::time::Instant;
 
 use woa_gui::AppState;

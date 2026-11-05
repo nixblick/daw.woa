@@ -1,6 +1,8 @@
 //! Offline-Probe ohne Audiogerät: zwei Sinus-Gäste und Musik, Rückwege prüfen, keine
 //! Allokation im Audio-Weg, Puffer-Über- und Unterlauf.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::sync::atomic::Ordering;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

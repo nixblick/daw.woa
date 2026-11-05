@@ -1,5 +1,7 @@
 //! MCP über HTTP: ohne gültiges Token kommt nichts durch, mit Token geht `initialize`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::net::SocketAddr;
 
 use tokio::net::TcpListener;

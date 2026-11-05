@@ -1,6 +1,8 @@
 //! Paket 21: Fade-Kurven und Clip-Gain im Modell: Kurventabellen, Befehle mit Undo und
 //! Redo, Prüfung der Werte, Projektformat.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_model::{
     Clip, ClipId, Command, FadeCurve, MAX_GAIN_DB, MIN_GAIN_DB, ModelError, Session, TrackKind,
     store,

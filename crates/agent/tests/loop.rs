@@ -1,6 +1,8 @@
 //! M2 acceptance: an agent builds an 8-bar loop only through MCP tools, exports it at
 //! -14 LUFS, and the file is measured again. Plus error cases of the new tools.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use rmcp::model::{CallToolRequestParams, CallToolResult, ClientConfig};
 use rmcp::service::RunningService;
 use rmcp::{ClientHandler, RoleClient, ServiceExt};

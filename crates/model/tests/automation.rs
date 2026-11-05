@@ -1,5 +1,7 @@
 //! Paket 18: Automation und Sidechain im Modell. Undo, Prüfungen, Zyklen, Projektformat 3.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_model::store;
 use woa_model::*;
 

@@ -15,3 +15,6 @@ thiserror = "2.0.21"
 tracing = "0.1.44"
 # Wie woa-telemetry: rustls, kein OpenSSL.
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
+
+[lints]
+workspace = true

@@ -1,5 +1,7 @@
 //! Tests gegen einen lokalen Mock-HTTP-Server (std::net, ohne Fremd-Crate).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};

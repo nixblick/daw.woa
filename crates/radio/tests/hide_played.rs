@@ -1,6 +1,8 @@
 //! Gespielte ausblenden (#215) und Pegel je Zweig für die LED-Meter (#216). Ohne Audiogerät,
 //! ohne Ton, nur in einem Wegwerf-Ordner.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::{Path, PathBuf};
 
 use woa_radio::{Controller, Mixer, PlaylistEntry, RadioShow};

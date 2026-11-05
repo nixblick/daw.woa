@@ -2,6 +2,8 @@
 //! der Queue ankommen, die Instrument-Node rendert sie offline (nicht still, Pegel folgt
 //! der Anschlagstärke), und Schließen des Ports wird erkannt und wieder verbunden.
 //! Ohne ALSA-Sequencer (z. B. CI-Container) wird der Test übersprungen.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
 #![cfg(target_os = "linux")]
 
 use std::time::{Duration, Instant};

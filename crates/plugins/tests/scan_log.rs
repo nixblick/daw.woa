@@ -1,5 +1,7 @@
 //! Eine Plugin-Datei, die nicht lädt: im Ticket steht kein Pfad, nur lokal.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::sync::OnceLock;
 
 use tracing_subscriber::Layer;

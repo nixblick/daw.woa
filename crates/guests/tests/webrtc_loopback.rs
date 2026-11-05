@@ -6,6 +6,8 @@
 //! Der erste Test spricht den Netz-Thread direkt an, der zweite geht den ganzen Weg: Einladung,
 //! HTTPS-Anmeldung, Warteraum, Annehmen, Sprechen, Auflegen.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::sync::Arc;

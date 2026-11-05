@@ -2,6 +2,8 @@
 //! Abschnitt „Instrument“ im Rack, MIDI-Eingang im Spurkopf. Über die echte Oberfläche,
 //! ohne Fenster und ohne Ton.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use eframe::egui;
 use woa_gui::{GuiConfig, WoaApp};
 

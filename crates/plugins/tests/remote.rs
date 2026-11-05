@@ -2,6 +2,8 @@
 //! (`woa-plugin-host`), stürzt absichtlich ab oder hängt; die Oberfläche läuft weiter. Alles
 //! rechnet in Puffer, es kommt kein Ton aus einem Gerät.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::time::{Duration, Instant};
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

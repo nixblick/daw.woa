@@ -10,6 +10,8 @@
 //! Gelesen wird der Seitentitel über den Debug-Port von Chromium; die Seite schreibt ihren Stand
 //! hinein (`WOA-GAST bereit/wartet/verbunden rx=N/ende`).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::io::{Read, Write};
 use std::net::{IpAddr, TcpStream, UdpSocket};
 use std::process::{Child, Command, Stdio};

@@ -2,6 +2,8 @@
 //! „Weiter“ blendet über, die Wunschliste reiht einen Titel hinter dem laufenden ein.
 //! Ohne Audiogerät.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::{Path, PathBuf};
 
 use woa_radio::party::{Effect, PartyCommand, PartyState, layout};

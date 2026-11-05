@@ -1,6 +1,8 @@
 //! Selbstprüfung für Paket 34: Sperrliste, Neu-Scan, Logs je Plugin und ein langer Offline-Render
 //! ohne Speicherzuwachs. Alles rechnet in Puffer; es gibt weder ein Audiogerät noch Ton.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::time::{Duration, Instant};
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

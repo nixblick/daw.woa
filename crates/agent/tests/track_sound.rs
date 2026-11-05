@@ -2,6 +2,8 @@
 //! und Laden; `generate_drums` mit `midi: true` schreibt GM-Drumnoten und setzt das Kit.
 //! Die SoundFont ist eine winzige, im Test erzeugte SF2 (über `WOA_SOUNDFONT`).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use rmcp::model::{CallToolRequestParams, CallToolResult, ClientConfig};
 use rmcp::service::RunningService;
 use rmcp::{ClientHandler, RoleClient, ServiceExt};

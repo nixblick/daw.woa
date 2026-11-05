@@ -2,6 +2,8 @@
 //! Rundlauf Speichern/Laden und die Oberfläche ohne Fenster und ohne Ton: Dateien ablegen,
 //! Clip ziehen, Rand ziehen, Tastenkürzel. Es läuft nie ein Audiogerät.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 

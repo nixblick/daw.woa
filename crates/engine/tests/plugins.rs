@@ -2,6 +2,8 @@
 //! Gespielt wird das Test-Plugin (gebaut mit `clack-plugin`), geladen über den Host-Weg.
 //! Jeder Process-Aufruf läuft unter `assert_no_alloc`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::sync::Arc;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

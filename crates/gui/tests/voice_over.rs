@@ -1,5 +1,7 @@
 //! Paket J5 (#285): „Stimme über Bett“ in der App geht denselben Weg wie `voice_over` über MCP.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::time::Instant;
 
 use woa_gui::AppState;

@@ -2,6 +2,8 @@
 //! MIDI, die grüne Feedback-Taste öffnet ein großes Fenster mittig, und der Über-Dialog
 //! öffnet Andrés echte Spendenlinks. Alles über die echte Oberfläche, ohne Fenster und Ton.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use eframe::egui;
 use woa_gui::{GuiConfig, WoaApp};
 

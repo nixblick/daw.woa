@@ -1,6 +1,8 @@
 //! Paket 32: Reglerbewegungen aus dem Plugin-Fenster im Zusammenspiel mit Projekt, Rückgängig und
 //! Rack. Wie in `gui.rs` ohne echtes Fenster und ohne Ton.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::sync::Arc;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

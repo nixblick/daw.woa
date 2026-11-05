@@ -1,6 +1,8 @@
 //! Der ganze Weg ohne Fenster: Handy wünscht, Party-Schicht nimmt den Befehl, die Wunschliste
 //! wächst, das Handy sieht sie; der DJ reiht sie ein und die Party-Schicht liefert den Effekt.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;

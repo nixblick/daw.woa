@@ -127,9 +127,16 @@ pub fn cmd_record(out: &std::path::Path, seconds: u64, device: Option<String>) -
     use woa_engine::record::{InputConfig, start_recording};
 
     let (err_tx, err_rx) = mpsc::channel::<String>();
-    let rec = start_recording(&InputConfig { device_id: device }, out, move |e| {
-        let _ = err_tx.send(e.to_string());
-    })
+    let rec = start_recording(
+        &InputConfig {
+            device_id: device,
+            ..InputConfig::default()
+        },
+        out,
+        move |e| {
+            let _ = err_tx.send(e.to_string());
+        },
+    )
     .map_err(|e| e.to_string())?;
     println!("nehme auf: {} ({seconds} s)", out.display());
     let ende = Duration::from_secs(seconds);

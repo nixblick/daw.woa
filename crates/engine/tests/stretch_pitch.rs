@@ -2,6 +2,8 @@
 //! nicht gehört: Länge und Frequenz eines Sinus nach dem Dehnen, FFT-Spitze nach der
 //! Tonhöhenänderung, Tempo 120 auf 100, Undo bitgleich, Echtzeit unter `assert_no_alloc`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::sync::Arc;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

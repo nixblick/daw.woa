@@ -1,5 +1,7 @@
 //! Paket J1: GM-Klang je MIDI-Spur. Regeln, Undo, Speichern und Laden.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_model::store;
 use woa_model::*;
 

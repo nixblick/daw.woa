@@ -2,6 +2,8 @@
 //! Party schaltete Ansicht → Bibliothek nur den Haken um, das Fenster kam nie. Ohne Fenster
 //! und ohne Ton (AccessKit).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use eframe::egui;
 use woa_gui::{GuiConfig, WoaApp};
 

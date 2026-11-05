@@ -1,5 +1,7 @@
 //! Paket J8 (#283): Fenster „Jingle-FX“ legt denselben Clip an wie `generate_fx` über MCP.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::time::Instant;
 
 use woa_agent::audio::AgentFxKind;

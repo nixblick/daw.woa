@@ -1,6 +1,8 @@
 //! #324: Ein Cart duckt die Musik nur, solange er hörbar ist. Stille am Ende einer Cart-Datei
 //! (typisch hinter Jingles) hielt die Musik bisher bis zum Dateiende unten. Ohne Audiogerät.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use std::path::Path;
 
 use woa_radio::{Controller, Mixer, PlaylistEntry, RadioShow};

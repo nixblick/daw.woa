@@ -1,5 +1,7 @@
 //! Paket 16: Busse, Sends, Inserts im Modell. Routing, Zyklen, Undo/Redo, Projektformat.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 use woa_model::store;
 use woa_model::*;
 

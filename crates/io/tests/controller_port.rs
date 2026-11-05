@@ -2,6 +2,8 @@
 //! über die Controller-Queue an, werden gelernt und lösen Aktionen aus; 1000 CC je Sekunde
 //! gehen ohne Verlust und ohne lange Bilder durch; die LEDs bekommen Note-Out.
 //! Ohne ALSA-Sequencer (z. B. CI-Container) wird der Test übersprungen.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
 #![cfg(target_os = "linux")]
 
 use std::sync::atomic::Ordering;

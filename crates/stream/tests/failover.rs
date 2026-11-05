@@ -1,6 +1,8 @@
 //! woa-streamd-Kern: Oberfläche weg → nach ≤ 2,5 s Notfall-Playlist, Oberfläche zurück →
 //! Sendemix, `Stop` beendet die Sendung.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)] // Tests duerfen abbrechen (Regel 6 gilt fuer Produktivcode).
+
 mod fake_server;
 
 use std::path::Path;
