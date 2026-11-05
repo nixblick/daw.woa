@@ -180,6 +180,9 @@ pub struct Controller {
     cue: Option<u32>,
     running: bool,
     carts: Vec<Option<Shared<Stereo>>>,
+    /// Geschätzter Gesangseinsatz je Cart (Sekunden ab Dateianfang, #299), beim Laden aus
+    /// dem dekodierten Puffer gemessen (Control-Thread).
+    cart_vocal: Vec<Option<f64>>,
     /// Dekodierte Titel der Decks A bis C.
     decks: Vec<Option<Shared<Stereo>>>,
     recording: Option<Recording>,
@@ -260,6 +263,7 @@ impl Controller {
             cue: None,
             running: false,
             carts: vec![None; CARTS],
+            cart_vocal: vec![None; CARTS],
             decks: vec![None; crate::DECKS],
             recording: None,
             record_dropped_seen: 0,
@@ -1429,7 +1433,10 @@ impl Controller {
         };
         let path = c.path.clone();
         match load_stereo(&path, self.rate) {
-            Ok(s) => self.carts[slot] = Some(Shared::new(&self.collector.handle(), s)),
+            Ok(s) => {
+                self.cart_vocal[slot] = cart_vocal_start(&s, self.rate);
+                self.carts[slot] = Some(Shared::new(&self.collector.handle(), s));
+            }
             Err(e) => {
                 tracing::warn!(error = %e, "cart load failed");
                 self.message = Some(e);
@@ -1446,10 +1453,12 @@ impl Controller {
             None => {
                 self.show.carts[slot] = None;
                 self.carts[slot] = None;
+                self.cart_vocal[slot] = None;
                 Ok(())
             }
             Some(p) => {
                 let s = load_stereo(&p, self.rate)?;
+                self.cart_vocal[slot] = cart_vocal_start(&s, self.rate);
                 self.carts[slot] = Some(Shared::new(&self.collector.handle(), s));
                 self.show.carts[slot] = Some(CartEntry::new(p));
                 Ok(())
@@ -1493,6 +1502,22 @@ impl Controller {
         let cues = self.show.carts.get(slot)?.as_ref()?.cues;
         let f = cues.frames(self.rate, buf.frames());
         Some(f.end.saturating_sub(f.start) as f64 / f64::from(self.rate))
+    }
+
+    /// Sekunden bis zum Gesangseinsatz des laufenden Carts `slot` (#299): Ramp-Marke oder
+    /// Schätzung; `None`, wenn er steht, keinen erkannten Einsatz hat oder der Gesang schon läuft.
+    pub fn cart_vocal_in(&self, slot: usize) -> Option<f64> {
+        if self.status.carts.load(Ordering::Acquire) & (1 << slot) == 0 {
+            return None;
+        }
+        let buf = self.carts.get(slot)?.as_ref()?;
+        let cues = self.show.carts.get(slot)?.as_ref()?.cues;
+        let mark = crate::show::vocal_mark(&cues, *self.cart_vocal.get(slot)?)?;
+        let f = cues.frames(self.rate, buf.frames());
+        let rest = self.status.cart_rest.get(slot)?.load(Ordering::Acquire) as usize;
+        let pos = f.end.saturating_sub(rest) as f64 / f64::from(self.rate);
+        let left = mark.seconds - pos;
+        (left > 0.0).then_some(left)
     }
 
     /// Spielt Cart `slot` (überlagert die Musik); läuft er schon, hält er an.
@@ -1821,7 +1846,9 @@ impl Controller {
     /// gesetzt oder schon vorbei.
     pub fn ramp_remaining(&self) -> Option<f64> {
         let i = self.current_index()?;
-        let ramp = self.show.playlist.get(i)?.cues.ramp?;
+        let e = self.show.playlist.get(i)?;
+        // Ramp-Marke von Hand, sonst der geschätzte Gesangseinsatz (#299).
+        let ramp = crate::show::vocal_mark(&e.cues, e.vocal)?.seconds;
         let pos = self.status.position.load(Ordering::Acquire) as f64 / f64::from(self.rate);
         let left = ramp - pos;
         (left > 0.0).then_some(left)
@@ -2487,4 +2514,10 @@ impl Controller {
             .push(PflCmd::Play { buf, start: 0 })
             .map_err(|_| "Vorhören: Warteschlange voll".to_string())
     }
+}
+
+/// Gesangseinsatz eines Carts aus dem dekodierten Puffer (#299); kurze Jingles ohne Intro
+/// liefern `None`. Läuft auf dem Control-Thread beim Laden, nie im Audio-Thread.
+fn cart_vocal_start(s: &Stereo, rate: u32) -> Option<f64> {
+    woa_dsp::analysis::vocal::detect_vocal_start(&s.left, &s.right, rate)
 }

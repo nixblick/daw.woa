@@ -2882,7 +2882,8 @@ impl RadioDesk {
                                     .color(theme::accent()),
                             )
                             .on_hover_text(
-                                "Sekunden bis zum Intro-Ende (Ramp): bis dahin sprechen",
+                                "Sekunden bis zum Gesang (Ramp-Marke oder geschätzter \
+                                 Gesangseinsatz): bis dahin sprechen",
                             );
                         }
 
@@ -4494,6 +4495,7 @@ impl RadioDesk {
                         color: theme::track_color(slot),
                         remaining: v.cart_remaining.get(slot).copied().filter(|r| *r > 0.0),
                         seconds: v.cart_seconds.get(slot).copied().flatten(),
+                        vocal_in: v.cart_vocal_in.get(slot).copied().flatten(),
                         actions: usize::from(playing) + usize::from(show_pfl),
                     }
                     .ui(ui, egui::vec2(w, CART_PAD_HEIGHT));
@@ -5527,13 +5529,25 @@ impl RadioDesk {
                                     } else {
                                         "Deck geladen"
                                     };
-                                    // Rampzeit (#299): wie lange das Intro bis zum Gesang läuft.
-                                    let sub = match &d.vocal {
-                                        Some(m) => format!(
+                                    // Rampzeit (#299): wie lange das Intro bis zum Gesang läuft;
+                                    // läuft das Deck, zählt sie herunter (Moderator 05.11.2026).
+                                    let pos = d.cues.start() + (d.length - d.remaining);
+                                    let left = d
+                                        .playing
+                                        .then(|| {
+                                            crate::vocal_ui::seconds_to_vocal(d.vocal.as_ref(), pos)
+                                        })
+                                        .flatten();
+                                    let sub = match (&d.vocal, left) {
+                                        (_, Some(l)) => format!(
+                                            "{state} · {}",
+                                            crate::vocal_ui::vocal_in_text(l)
+                                        ),
+                                        (Some(m), None) if !d.playing => format!(
                                             "{state} · Gesang ab {}",
                                             crate::vocal_ui::vocal_text(m, d.cues.start())
                                         ),
-                                        None => state.to_string(),
+                                        _ => state.to_string(),
                                     };
                                     (t, sub)
                                 } else {
@@ -6280,6 +6294,7 @@ mod tests {
                 color: eframe::egui::Color32::RED,
                 remaining: Some(12.0),
                 seconds: Some(15.0),
+                vocal_in: None,
                 actions: 0,
             }
             .ui(ui, eframe::egui::vec2(200.0, 68.0));
@@ -6303,6 +6318,7 @@ mod tests {
                 color: eframe::egui::Color32::RED,
                 remaining: None,
                 seconds: Some(90.0),
+                vocal_in: None,
                 actions: 0,
             }
             .ui(ui, eframe::egui::vec2(200.0, 68.0));

@@ -122,6 +122,9 @@ pub struct View {
     pub carts_playing: u32,
     /// Restzeit je Cart in Sekunden (0 = steht).
     pub cart_remaining: Vec<f64>,
+    /// Sekunden bis zum Gesangseinsatz je laufendem Cart (#299), `None` = keiner erkannt,
+    /// steht oder schon vorbei.
+    pub cart_vocal_in: Vec<Option<f64>>,
     /// Gesamtdauer je Cart in Sekunden (#292), `None` = frei oder nicht geladen.
     pub cart_seconds: Vec<Option<f64>>,
     /// Namen der Cart-Wall-Sätze und der aktive (#292).
@@ -505,6 +508,7 @@ fn run(
                 .map(|r| r.load(Ordering::Acquire) as f64 / f64::from(c.rate()))
                 .collect(),
             cart_seconds: (0..CARTS).map(|i| c.cart_seconds(i)).collect(),
+            cart_vocal_in: (0..CARTS).map(|i| c.cart_vocal_in(i)).collect(),
             cart_sets: c.show().cart_set_names(),
             cart_set: c.show().cart_set,
             decks: (0..crate::DECKS).map(|k| deck_view(&c, k)).collect(),
