@@ -3276,7 +3276,11 @@ impl RadioDesk {
                     .changed();
                 });
                 ui.end_row();
-                row(ui, "Musik-Ducking", Some("wenn das Mikro offen ist"));
+                row(
+                    ui,
+                    "Musik-Ducking",
+                    Some("Rückkehr nach Stille · Einblenden · Tiefe"),
+                );
                 ui.with_layout(right, |ui| {
                     duck_ch = number_field(
                         ui,
@@ -3289,11 +3293,18 @@ impl RadioDesk {
                     )
                     .on_hover_text("Absenkung der Musik bei offenem Mikro · Doppelklick: −12 dB")
                     .changed();
-                });
-                ui.end_row();
-                // Moderator 05.11.2026: Musik kommt nach kurzer Stille im Mikro zurück.
-                row(ui, "Ducking: Rückkehr nach", Some("Stille im Mikro"));
-                ui.with_layout(right, |ui| {
+                    // Moderator 05.11.2026: Musik kommt nach kurzer Stille im Mikro zurück.
+                    times_ch |= number_field(
+                        ui,
+                        &mut release,
+                        0.1..=5.0,
+                        "s",
+                        1.0,
+                        "Ducking: Einblenden",
+                        true,
+                    )
+                    .on_hover_text("So lange blendet die Musik wieder ein · Doppelklick: 1 s")
+                    .changed();
                     times_ch |= number_field(
                         ui,
                         &mut hold,
@@ -3306,21 +3317,6 @@ impl RadioDesk {
                     .on_hover_text(
                         "So lange Stille im Mikro, bis die Musik zurückkommt · Doppelklick: 0,5 s",
                     )
-                    .changed();
-                });
-                ui.end_row();
-                row(ui, "Ducking: Einblenden", None);
-                ui.with_layout(right, |ui| {
-                    times_ch |= number_field(
-                        ui,
-                        &mut release,
-                        0.1..=5.0,
-                        "s",
-                        1.0,
-                        "Ducking: Einblenden",
-                        true,
-                    )
-                    .on_hover_text("So lange blendet die Musik wieder ein · Doppelklick: 1 s")
                     .changed();
                 });
                 ui.end_row();
@@ -7165,8 +7161,8 @@ mod design3_tests {
         for name in [
             "Crossfade-Blende",
             "Musik-Ducking",
-            "Ducking: Rückkehr nach",
             "Ducking: Einblenden",
+            "Ducking: Rückkehr nach",
             "Ducking auch bei Carts",
             "Stopp blendet aus",
             "Ausblenddauer",
