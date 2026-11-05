@@ -88,6 +88,8 @@ pub struct View {
     /// Stopp mit Ausblenden an (#227) und seine Dauer (Sekunden).
     pub stop_fade: bool,
     pub stop_fade_seconds: f64,
+    /// Dauer der Fade-Tasten (Sekunden).
+    pub fade_seconds: f64,
     /// Auto-Weiter in der Sende-Playlist (#148).
     pub auto_next: bool,
     /// Regler „Wiedergabe Notebook“ und „Stream senden“ (#96).
@@ -455,6 +457,7 @@ fn run(
             crossfade_seconds: c.show().crossfade_seconds,
             stop_fade: c.show().stop_fade,
             stop_fade_seconds: c.show().stop_fade_seconds,
+            fade_seconds: c.show().fade_seconds,
             auto_next: c.show().auto_next,
             out_monitor: c.show().out_monitor,
             out_stream: c.show().out_stream,

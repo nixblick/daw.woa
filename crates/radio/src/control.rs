@@ -660,6 +660,14 @@ impl Controller {
         self.apply_settings();
     }
 
+    /// Dauer der Fade-Tasten in Sekunden (1–10), gespeichert in der Sendung; gilt ab dem
+    /// nächsten Druck.
+    pub fn set_fade_seconds(&mut self, seconds: f64) {
+        self.show.fade_seconds = seconds;
+        self.show.sanitize();
+        tracing::info!(seconds = self.show.fade_seconds, "fade length set");
+    }
+
     /// Auto-Weiter in der Sende-Playlist an oder aus (#148), gespeichert in der Sendung.
     /// Aus verwirft den schon bereitgelegten nächsten Titel; der laufende spielt zu Ende.
     pub fn set_auto_next(&mut self, on: bool) {
@@ -925,13 +933,14 @@ impl Controller {
         self.send(Cmd::Stop);
     }
 
-    /// Frames der Fade-Taste ([`crate::FADE_SECONDS`]).
+    /// Frames der Fade-Taste ([`RadioShow::fade_seconds`]).
     fn fade_frames(&self) -> usize {
-        (crate::FADE_SECONDS * f64::from(self.rate)) as usize
+        (self.show.fade_seconds * f64::from(self.rate)) as usize
     }
 
-    /// Fade-Taste der Sende-Playlist (#320): blendet den laufenden Titel fest in 3 s aus und
-    /// stoppt wie [`Self::stop`]; ein zweiter Druck während der Blende stoppt sofort.
+    /// Fade-Taste der Sende-Playlist (#320): blendet den laufenden Titel in der eingestellten
+    /// Dauer aus und stoppt wie [`Self::stop`]; ein zweiter Druck während der Blende stoppt
+    /// sofort.
     pub fn fade_music(&mut self) {
         self.paused = None;
         self.resume_at = None;
@@ -945,21 +954,22 @@ impl Controller {
         self.send(Cmd::FadeMusic(f));
     }
 
-    /// Fade-Taste eines Decks A–C (#321): fest 3 s, zweiter Druck stoppt sofort.
+    /// Fade-Taste eines Decks A–C (#321): eingestellte Dauer, zweiter Druck stoppt sofort.
     pub fn fade_deck(&mut self, deck: usize) {
         tracing::info!(deck = %crate::show::deck_name(deck), "deck fade");
         let f = self.fade_frames();
         self.send(Cmd::DeckFade(deck, f));
     }
 
-    /// Fade-Taste eines Carts (#274): fest 3 s, zweiter Druck stoppt sofort.
+    /// Fade-Taste eines Carts (#274): eingestellte Dauer, zweiter Druck stoppt sofort.
     pub fn fade_cart(&mut self, slot: usize) {
         tracing::info!(slot = slot + 1, "cart fade");
         let f = self.fade_frames();
         self.send(Cmd::CartFade(slot, f));
     }
 
-    /// Fade-Taste im Sende-Deck: blendet alles Laufende (Playlist, Decks, Carts) in 3 s aus.
+    /// Fade alles: blendet alles Laufende (Playlist, Decks, Carts) in der eingestellten Dauer
+    /// aus (Agent; die Taste im Sende-Deck nimmt [`Self::fade_music`]).
     pub fn fade_all(&mut self) {
         self.paused = None;
         self.resume_at = None;

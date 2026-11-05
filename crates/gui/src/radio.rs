@@ -610,7 +610,7 @@ struct Parts {
 
 /// Die laufende Sendung samt Gerät.
 pub struct RadioDesk {
-    /// Laufende Fade-Blenden (FadeButton, fest 3 s) für die Anzeige.
+    /// Laufende Fade-Blenden (FadeButton, eingestellte Dauer) für die Anzeige.
     fades: crate::widgets::fade::Fades,
     /// Beginn des laufenden Mitschnitts (Dauer im REC-Tooltip).
     rec_since: Option<std::time::Instant>,
@@ -2596,6 +2596,7 @@ impl RadioDesk {
     /// Zeichnet das ganze Layout in `ui`.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let v = self.view.clone();
+        self.fades.set_seconds(v.fade_seconds);
         // Fade-Anzeige: abgelaufene Blenden abräumen, laufende neu zeichnen; steht ein Deck
         // schon (von Hand gestoppt), endet seine Anzeige.
         if std::env::var_os("WOA_FADE").is_some() {
@@ -2992,7 +2993,14 @@ impl RadioDesk {
             let now = ui.input(|i| i.time);
             let any = v.running || v.carts_playing != 0 || v.decks.iter().any(|d| d.playing);
             let pr = self.fades.progress(FadeKey::All, now);
-            let r = fade_button(ui, FadeShape::Big(KEY_H), "Fade alles", any, pr);
+            let r = fade_button(
+                ui,
+                FadeShape::Big(KEY_H),
+                "Fade alles",
+                any,
+                pr,
+                self.fades.seconds(),
+            );
             if r.clicked() {
                 self.fades.press(FadeKey::All, now);
                 self.with(|c| c.fade_all());
@@ -3170,6 +3178,8 @@ impl RadioDesk {
         let mut duck = v.duck_db;
         let mut cart_duck = v.cart_duck;
         let (mut stop_on, mut stop_secs) = (v.stop_fade, v.stop_fade_seconds);
+        let mut fade_secs = self.fades.seconds();
+        let mut fade_ch = false;
         let (mut bus, mut mic) = (v.bus_processing, v.mic_processing);
         let (mut xf_ch, mut duck_ch, mut cart_ch, mut stop_ch, mut proc_ch) =
             (false, false, false, false, false);
@@ -3257,6 +3267,22 @@ impl RadioDesk {
                     }
                 });
                 ui.end_row();
+                // Dauer der Fade-Tasten (Moderator 05.11.2026): 1–10 s, Vorgabe 3 s.
+                row(ui, "Fade-Taste", Some("Sende-Deck, Decks, Carts"));
+                ui.with_layout(right, |ui| {
+                    fade_ch = number_field(
+                        ui,
+                        &mut fade_secs,
+                        woa_radio::FADE_MIN_SECONDS..=woa_radio::FADE_MAX_SECONDS,
+                        "s",
+                        woa_radio::FADE_SECONDS,
+                        "Fade-Taste",
+                        true,
+                    )
+                    .on_hover_text("Wie lange die Fade-Tasten ausblenden · Doppelklick: 3 s")
+                    .changed();
+                });
+                ui.end_row();
                 row(ui, "Sendebus-Processing", None);
                 ui.with_layout(right, |ui| {
                     proc_ch |= toggle(ui, &mut bus, "Sendebus-Processing")
@@ -3303,6 +3329,12 @@ impl RadioDesk {
             self.view.stop_fade = stop_on;
             self.view.stop_fade_seconds = stop_secs;
             self.with(move |c| c.set_stop_fade(stop_on, stop_secs));
+        }
+        if fade_ch {
+            let secs = fade_secs.clamp(woa_radio::FADE_MIN_SECONDS, woa_radio::FADE_MAX_SECONDS);
+            self.view.fade_seconds = secs;
+            self.fades.set_seconds(secs);
+            self.with(move |c| c.set_fade_seconds(secs));
         }
         if proc_ch {
             self.view.bus_processing = bus;
@@ -4255,6 +4287,7 @@ impl RadioDesk {
                                             "Fade Playlist",
                                             v.running,
                                             pr,
+                                            self.fades.seconds(),
                                         )
                                         .clicked()
                                         {
@@ -4487,6 +4520,7 @@ impl RadioDesk {
                             &format!("Fade Cart {}", slot + 1),
                             true,
                             pr,
+                            self.fades.seconds(),
                         );
                         if fr.clicked() {
                             self.fades.press(FadeKey::Cart(slot), now);
@@ -4555,7 +4589,11 @@ impl RadioDesk {
                         if let Some(t) = crate::controls::learn_menu(ui, Target::Cart(slot), None) {
                             self.learn = Some(t);
                         }
-                        if playing && ui.button("Ausblenden (3 s)").clicked() {
+                        let fade_word = format!(
+                            "Ausblenden ({})",
+                            crate::widgets::fade::secs_text(self.fades.seconds())
+                        );
+                        if playing && ui.button(fade_word).clicked() {
                             let now = ui.input(|i| i.time);
                             self.fades.press(FadeKey::Cart(slot), now);
                             self.with(move |c| c.fade_cart(slot));
@@ -5406,7 +5444,7 @@ impl RadioDesk {
                         if r.clicked() {
                             self.with(move |c| c.deck_cue(k));
                         }
-                        // Fade (FadeButton, #321): quadratisch neben Start/Stopp, fest 3 s.
+                        // Fade (FadeButton, #321): quadratisch neben Start/Stopp.
                         let now = ui.input(|i| i.time);
                         let pr = self
                             .fades
@@ -5418,6 +5456,7 @@ impl RadioDesk {
                             &format!("Fade Deck {name}"),
                             d.playing,
                             pr,
+                            self.fades.seconds(),
                         );
                         self.learn_menu(&r, Target::Deck(k, DeckAction::Fade));
                         if r.clicked() {
@@ -7016,6 +7055,7 @@ mod design3_tests {
             "Ducking auch bei Carts",
             "Stopp blendet aus",
             "Ausblenddauer",
+            "Fade-Taste",
             "Sendebus-Processing",
             "Mikro-Kette",
         ] {

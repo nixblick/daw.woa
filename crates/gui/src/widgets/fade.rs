@@ -1,5 +1,5 @@
-//! Fade-Taste (`FadeButton`, Design Fassung 7; #320, #321, #274): blendet fest in 3 s aus und
-//! stoppt. Drei Formen: große Taste „Fade“ im Sende-Deck, quadratische Taste an den Decks A–C,
+//! Fade-Taste (`FadeButton`, Design Fassung 7; #320, #321, #274): blendet in der eingestellten
+//! Dauer aus (Vorgabe 3 s, 1–10 s unter Einstellungen › Radio) und stoppt. Drei Formen: große Taste „Fade“ im Sende-Deck, quadratische Taste an den Decks A–C,
 //! Symbol an Cart und Playlist-Zeile. Beim Ausblenden (`is-fading`) Rahmen `cue`, eine
 //! `cue`-Füllung (28 %) wächst von links mit dem Fortschritt, rechts die Restzeit in Mono.
 //! Läuft nichts, ist die Taste gesperrt. Die Zeit führt [`Fades`] im Oberflächen-Thread; das
@@ -11,12 +11,31 @@ use eframe::egui::{self, Color32, CornerRadius, Sense, Stroke, StrokeKind};
 
 use crate::theme;
 
-/// Dauer der Blende in Sekunden (fest, an allen Stellen).
+/// Vorgabe der Blende in Sekunden; die eingestellte Dauer führt [`Fades`].
 pub const FADE_SECONDS: f64 = woa_radio::FADE_SECONDS;
 /// Symbol der Fade-Taste (Phosphor `trend-down`, im Design `fadeout`).
 pub const FADE_ICON: &str = egui_phosphor::regular::TREND_DOWN;
-/// Tooltip und Hinweis (FadeButton-README).
-pub const FADE_TIP: &str = "Fade (3 s): blendet in 3 Sekunden aus und stoppt";
+/// Tooltip und Hinweis (FadeButton-README) für die Dauer `secs`.
+pub fn fade_tip(secs: f64) -> String {
+    let s = secs_text(secs);
+    format!("Fade ({s}): blendet in {s} aus und stoppt")
+}
+
+/// „3 s“, „2,5 s“ (deutsches Komma, ganze Sekunden ohne Nachkomma).
+pub fn secs_text(secs: f64) -> String {
+    if (secs - secs.round()).abs() < 0.05 {
+        format!("{} s", secs.round() as i64)
+    } else {
+        format!("{secs:.1} s").replace('.', ",")
+    }
+}
+
+/// Eine laufende Blende: Fortschritt 0..1 und ihre Gesamtdauer in Sekunden.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Running {
+    pub progress: f32,
+    pub total: f64,
+}
 
 /// Was ausgeblendet wird.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -31,13 +50,36 @@ pub enum FadeKey {
     Cart(usize),
 }
 
-/// Laufende Blenden mit ihrer Startzeit (egui-Zeit in Sekunden).
-#[derive(Debug, Default)]
+/// Laufende Blenden mit Startzeit (egui-Zeit in Sekunden) und Dauer.
+#[derive(Debug)]
 pub struct Fades {
-    started: HashMap<FadeKey, f64>,
+    started: HashMap<FadeKey, (f64, f64)>,
+    /// Eingestellte Dauer für die nächste Blende.
+    seconds: f64,
+}
+
+impl Default for Fades {
+    fn default() -> Self {
+        Self {
+            started: HashMap::new(),
+            seconds: FADE_SECONDS,
+        }
+    }
 }
 
 impl Fades {
+    /// Übernimmt die eingestellte Dauer (gilt ab dem nächsten Druck, wie im Mixer).
+    pub fn set_seconds(&mut self, secs: f64) {
+        if secs.is_finite() && secs > 0.0 {
+            self.seconds = secs;
+        }
+    }
+
+    /// Eingestellte Dauer.
+    pub fn seconds(&self) -> f64 {
+        self.seconds
+    }
+
     /// Druck auf die Taste. `true`: die Blende beginnt; `false`: sie lief schon, der zweite
     /// Druck stoppt sofort (der Mixer macht das von selbst) und die Anzeige endet.
     pub fn press(&mut self, key: FadeKey, now: f64) -> bool {
@@ -45,7 +87,7 @@ impl Fades {
             self.started.remove(&key);
             false
         } else {
-            self.started.insert(key, now);
+            self.started.insert(key, (now, self.seconds));
             if key == FadeKey::All {
                 // Alles blendet gemeinsam aus: Einzelanzeigen gehen in dieser auf.
                 self.started.retain(|k, _| *k == FadeKey::All);
@@ -54,9 +96,9 @@ impl Fades {
         }
     }
 
-    /// Fortschritt 0..1, solange die Blende läuft; danach `None`.
-    pub fn progress(&self, key: FadeKey, now: f64) -> Option<f32> {
-        let t0 = self
+    /// Fortschritt und Dauer, solange die Blende läuft; danach `None`.
+    pub fn progress(&self, key: FadeKey, now: f64) -> Option<Running> {
+        let (t0, total) = self
             .started
             .get(&key)
             .or_else(|| match key {
@@ -66,13 +108,13 @@ impl Fades {
                 FadeKey::All => None,
             })
             .copied()?;
-        fade_progress(t0, now)
+        fade_progress(t0, now, total).map(|progress| Running { progress, total })
     }
 
     /// Räumt abgelaufene Blenden ab; `true`, solange noch eine läuft (für Neuzeichnen).
     pub fn tick(&mut self, now: f64) -> bool {
         self.started
-            .retain(|_, t0| fade_progress(*t0, now).is_some());
+            .retain(|_, (t0, total)| fade_progress(*t0, now, *total).is_some());
         !self.started.is_empty()
     }
 
@@ -82,15 +124,16 @@ impl Fades {
     }
 }
 
-/// Fortschritt einer Blende, die bei `t0` begann: 0..1 oder `None`, wenn sie vorbei ist.
-pub fn fade_progress(t0: f64, now: f64) -> Option<f32> {
-    let p = (now - t0) / FADE_SECONDS;
+/// Fortschritt einer Blende über `total` Sekunden, die bei `t0` begann: 0..1 oder `None`,
+/// wenn sie vorbei ist.
+pub fn fade_progress(t0: f64, now: f64, total: f64) -> Option<f32> {
+    let p = (now - t0) / total.max(0.01);
     (0.0..1.0).contains(&p).then_some(p as f32)
 }
 
 /// Restzeit als „1,1 s“ (deutsches Komma, eine Stelle).
-pub fn rest_text(progress: f32) -> String {
-    let rest = (1.0 - f64::from(progress.clamp(0.0, 1.0))) * FADE_SECONDS;
+pub fn rest_text(r: Running) -> String {
+    let rest = (1.0 - f64::from(r.progress.clamp(0.0, 1.0))) * r.total;
     format!("{rest:.1} s").replace('.', ",")
 }
 
@@ -105,14 +148,17 @@ pub enum FadeShape {
     Icon(f32),
 }
 
-/// Zeichnet die Fade-Taste. `progress`: läuft gerade eine Blende. `enabled`: läuft etwas.
+/// Zeichnet die Fade-Taste. `running`: läuft gerade eine Blende. `enabled`: läuft etwas.
+/// `secs`: eingestellte Dauer (für den Hinweis).
 pub fn fade_button(
     ui: &mut egui::Ui,
     shape: FadeShape,
     label: &str,
     enabled: bool,
-    progress: Option<f32>,
+    running: Option<Running>,
+    secs: f64,
 ) -> egui::Response {
+    let progress = running.map(|r| r.progress);
     let enabled = enabled || progress.is_some();
     let word = "FADE";
     let font = theme::label_font(13.0);
@@ -198,11 +244,11 @@ pub fn fade_button(
                         theme::text_dim()
                     },
                 );
-                if let Some(pr) = progress {
+                if let Some(run) = running {
                     p.text(
                         egui::pos2(t.right() + 10.0, rect.center().y),
                         egui::Align2::LEFT_CENTER,
-                        rest_text(pr),
+                        rest_text(run),
                         egui::FontId::monospace(12.0),
                         theme::cue(),
                     );
@@ -219,9 +265,9 @@ pub fn fade_button(
             }
         }
     }
-    let r = r.on_hover_text(match progress {
-        Some(pr) => format!("Blendet aus, noch {} (Klick: sofort Stopp)", rest_text(pr)),
-        None => FADE_TIP.to_string(),
+    let r = r.on_hover_text(match running {
+        Some(run) => format!("Blendet aus, noch {} (Klick: sofort Stopp)", rest_text(run)),
+        None => fade_tip(secs),
     });
     if progress.is_some() {
         ui.ctx().request_repaint();
@@ -234,20 +280,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fade_runs_exactly_three_seconds() {
+    fn fade_runs_exactly_the_set_length() {
         assert_eq!(FADE_SECONDS, 3.0);
-        assert_eq!(fade_progress(10.0, 10.0), Some(0.0));
-        assert_eq!(fade_progress(10.0, 11.5), Some(0.5));
-        assert!(fade_progress(10.0, 12.99).is_some());
-        assert_eq!(fade_progress(10.0, 13.0), None, "nach 3 s vorbei");
-        assert_eq!(fade_progress(10.0, 9.0), None);
+        assert_eq!(fade_progress(10.0, 10.0, 3.0), Some(0.0));
+        assert_eq!(fade_progress(10.0, 11.5, 3.0), Some(0.5));
+        assert!(fade_progress(10.0, 12.99, 3.0).is_some());
+        assert_eq!(fade_progress(10.0, 13.0, 3.0), None, "nach 3 s vorbei");
+        assert_eq!(fade_progress(10.0, 9.0, 3.0), None);
+        assert!(fade_progress(10.0, 16.0, 8.0).is_some(), "8 s eingestellt");
     }
 
     #[test]
     fn rest_shows_german_decimal_comma() {
-        assert_eq!(rest_text(0.0), "3,0 s");
-        assert_eq!(rest_text(0.62), "1,1 s");
-        assert_eq!(rest_text(1.0), "0,0 s");
+        let r = |progress, total| Running { progress, total };
+        assert_eq!(rest_text(r(0.0, 3.0)), "3,0 s");
+        assert_eq!(rest_text(r(0.62, 3.0)), "1,1 s");
+        assert_eq!(rest_text(r(1.0, 3.0)), "0,0 s");
+        assert_eq!(rest_text(r(0.5, 10.0)), "5,0 s");
+        assert_eq!(fade_tip(3.0), "Fade (3 s): blendet in 3 s aus und stoppt");
+        assert_eq!(secs_text(2.5), "2,5 s");
+    }
+
+    /// Moderator 05.11.2026: die Dauer ist einstellbar; eine laufende Blende behält ihre.
+    #[test]
+    fn a_running_fade_keeps_its_length_when_the_setting_changes() {
+        let mut f = Fades::default();
+        f.set_seconds(6.0);
+        assert!(f.press(FadeKey::Cart(0), 0.0));
+        f.set_seconds(1.0);
+        let run = f.progress(FadeKey::Cart(0), 3.0).expect("läuft noch");
+        assert_eq!(run.total, 6.0);
+        assert!((run.progress - 0.5).abs() < 1e-6);
+        assert!(f.press(FadeKey::Deck(0), 10.0));
+        assert!(f.progress(FadeKey::Deck(0), 11.5).is_none(), "neue Blende 1 s");
     }
 
     #[test]

@@ -253,6 +253,14 @@ fn default_duck() -> f64 {
     -12.0
 }
 
+fn default_fade() -> f64 {
+    crate::FADE_SECONDS
+}
+
+fn is_default_fade(v: &f64) -> bool {
+    *v == default_fade()
+}
+
 fn yes() -> bool {
     true
 }
@@ -327,6 +335,9 @@ pub struct RadioShow {
         skip_serializing_if = "is_default_stop_fade"
     )]
     pub stop_fade_seconds: f64,
+    /// Dauer der Fade-Tasten (Sekunden, 1–10, Vorgabe 3): Sende-Deck, Decks, Carts, Playlist.
+    #[serde(default = "default_fade", skip_serializing_if = "is_default_fade")]
+    pub fade_seconds: f64,
     /// Auto-Weiter in der Sende-Playlist (#148). Aus: nach jedem Titel hält die Playlist an,
     /// der nächste steht als Cue bereit und startet mit „Play“. Vorgabe an.
     #[serde(default = "yes", skip_serializing_if = "is_true")]
@@ -364,6 +375,7 @@ impl Default for RadioShow {
             hide_played: false,
             stop_fade: false,
             stop_fade_seconds: default_stop_fade(),
+            fade_seconds: default_fade(),
             auto_next: true,
             out_monitor: OutLevel::default(),
             out_stream: OutLevel::default(),
@@ -385,6 +397,12 @@ impl RadioShow {
             self.stop_fade_seconds = default_stop_fade();
         }
         self.stop_fade_seconds = self.stop_fade_seconds.clamp(0.1, MAX_CROSSFADE);
+        if !self.fade_seconds.is_finite() {
+            self.fade_seconds = default_fade();
+        }
+        self.fade_seconds = self
+            .fade_seconds
+            .clamp(crate::FADE_MIN_SECONDS, crate::FADE_MAX_SECONDS);
         if !self.duck_db.is_finite() {
             self.duck_db = default_duck();
         }

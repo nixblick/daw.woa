@@ -175,7 +175,7 @@ pub enum DeckAction {
     Cue,
     /// Vorhören (PFL) an/aus.
     Pfl,
-    /// Fade-Taste: in 3 s ausblenden und anhalten (Design Fassung 7).
+    /// Fade-Taste: in der eingestellten Dauer ausblenden und anhalten (Design Fassung 7).
     Fade,
 }
 

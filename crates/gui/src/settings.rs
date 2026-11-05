@@ -125,6 +125,7 @@ pub enum SettingId {
     Ducking,
     CartDuck,
     StopFade,
+    FadeLength,
     BusProcessing,
     MicChain,
     WishFolder,
@@ -378,6 +379,14 @@ pub const REGISTRY: &[Entry] = &[
         "Stopp blendet aus",
         "Stopp an Sende-Player und Decks blendet über die eingestellte Dauer aus",
         "stopp ausblenden fade decks",
+    ),
+    row(
+        S::FadeLength,
+        A::Radio,
+        "Übergänge (Rack im Radio)",
+        "Fade-Taste: Dauer",
+        "Wie lange die Fade-Tasten in Sende-Deck, Decks und Carts ausblenden (1 bis 10 s)",
+        "fade ausblenden dauer sekunden runterregeln leiser machen",
     ),
     row(
         S::Ducking,

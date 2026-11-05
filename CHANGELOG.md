@@ -6,6 +6,7 @@ Rückmeldungen des Moderators aus Entwickler › Fragen umgesetzt.
 
 - **DJ-Modus: Deck-Badges gefüllt:** „DECK A/B“ und „LÄUFT“ im Kopf der DJ-Decks haben eine volle Fläche in ihrer Farbe mit dunkler Schrift, damit man sie im dunklen Club sieht. Außerhalb des DJ-Modus bleiben Badges nur umrandet. Neu `StateChip::filled`, Test `filled_chips_are_solid_only_when_asked`.
 - **Vorhören-Knopf an jeder Playlist-Zeile und jeder Cart (#273):** Der Kopfhörer steht an jeder Zeile und jedem belegten Pad, nicht erst beim Überfahren mit der Maus; Rechtsklick › Vorhören bleibt. Test `preview_key_shows_on_every_occupied_row_and_cart`.
+- **Fade-Dauer einstellbar (#320):** Die Fade-Tasten (Sende-Deck, Decks A–C, laufende Carts, Playlist-Zeile) blenden in der eingestellten Dauer aus, Vorgabe 3 s, wählbar 1–10 s im Rack „Processing & Übergänge“ bzw. unter Einstellungen › Radio › „Fade-Taste: Dauer“. Neues Feld `fade_seconds` in `radio.json`, `Controller::set_fade_seconds`. Eine laufende Blende behält ihre Dauer. Tests `a_running_fade_keeps_its_length_when_the_setting_changes`, `fade_runs_exactly_the_set_length`.
 ## 0.41.35 — 2026-11-05
 
 - **Hörer-Seite: Rot nur noch für ON AIR (#451):** Titel, „Hören“-Taste, Lautstärke-Regler und Zahlenanzeigen sind jetzt im Orange des Logos (`#ff9838` dunkel, `#b35900` hell); rot bleibt die ON-AIR-Marke oben rechts. „Hörer jetzt“ leuchtet grün, sobald mindestens ein Hörer da ist (`server/live/live.css`, `live.js`). Workspace-Version 0.41.35.
