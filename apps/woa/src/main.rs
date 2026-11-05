@@ -52,6 +52,15 @@ fn main() -> ExitCode {
     }
     let config_dir = woa_radio::config_dir();
     let data_dir = woa_radio::data_dir();
+    // Fassung 8: ein zweiter Start holt den laufenden nach vorn und endet, bevor Audio, MIDI
+    // oder Stream offen sind (störte am 05.11.2026 eine Sendung).
+    let instance = match woa_gui::instance::acquire(&data_dir) {
+        woa_gui::instance::Instance::Primary(p) => p,
+        woa_gui::instance::Instance::Secondary { woken } => {
+            eprintln!("woa: läuft schon{}", if woken { ", nach vorn geholt" } else { "" });
+            return ExitCode::SUCCESS;
+        }
+    };
 
     // Config first: the upload (opt-in) depends on it. Warnings while loading go to stderr
     // only, the log is not set up yet.
@@ -138,6 +147,7 @@ fn main() -> ExitCode {
             }
             app.set_config_path(config_path);
             app.set_data_dir(data_dir);
+            app.set_instance(instance);
             // `woa <projektordner>` öffnet das Projekt gleich beim Start.
             if let Some(dir) = std::env::args_os().nth(1) {
                 app.open_project(std::path::Path::new(&dir));

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.0 — in Arbeit (Design-Fassung 8)
+
+- **Nur ein WOA gleichzeitig:** Ein zweiter Start holt das laufende Fenster nach vorn und endet, bevor Audio, MIDI, Stream oder auch nur das Log geöffnet sind (am 05.11.2026 störte ein Doppelstart die Sendung). Sperre `woa.lock` im Datenordner (Betriebssystem-Sperre, fällt bei Absturz weg), Weckruf über einen lokalen Port (`woa.port`, nur 127.0.0.1). Integrationstest mit dem echten Binary.
+
 ## 0.41.43 — 2026-11-05
 
 - **`crates/gui/src/app.rs` aufgeteilt** (11 656 → rund 4 100 Zeilen): Die `impl WoaApp`-Blöcke liegen unverändert in `app/transport.rs`, `project_io.rs`, `menu.rs`, `tracks.rs`, `timeline.rs`, `mixer.rs` und `updates.rs`; verschobene Methoden sind `pub(super)`. Kein Verhaltenswechsel. Bauregel-Tests, die den Quelltext lesen (`dialogs_pause_the_watch`, `devices_are_listed_only_here`, die Nacharbeit-Tests), prüfen alle Dateien über `APP_SOURCES`. Workspace-Version 0.41.43.
