@@ -17,8 +17,7 @@ pub const FADE_SECONDS: f64 = woa_radio::FADE_SECONDS;
 pub const FADE_ICON: &str = egui_phosphor::regular::TREND_DOWN;
 /// Tooltip und Hinweis (FadeButton-README) für die Dauer `secs`.
 pub fn fade_tip(secs: f64) -> String {
-    let s = secs_text(secs);
-    format!("Fade ({s}): blendet in {s} aus und stoppt")
+    format!("Ausblenden ({})", secs_text(secs))
 }
 
 /// „3 s“, „2,5 s“ (deutsches Komma, ganze Sekunden ohne Nachkomma).
@@ -296,7 +295,7 @@ mod tests {
         assert_eq!(rest_text(r(0.62, 3.0)), "1,1 s");
         assert_eq!(rest_text(r(1.0, 3.0)), "0,0 s");
         assert_eq!(rest_text(r(0.5, 10.0)), "5,0 s");
-        assert_eq!(fade_tip(3.0), "Fade (3 s): blendet in 3 s aus und stoppt");
+        assert_eq!(fade_tip(3.0), "Ausblenden (3 s)");
         assert_eq!(secs_text(2.5), "2,5 s");
     }
 

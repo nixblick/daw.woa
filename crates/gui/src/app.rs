@@ -2087,6 +2087,7 @@ impl eframe::App for WoaApp {
         if settings.size.is_none() {
             settings.size = self.config.settings_size;
         }
+        settings.missing_devices = self.radio.as_ref().map_or(0, |r| r.output_warnings().len());
         settings.show(&ctx, |ui, id| self.setting_row(ui, id));
         self.settings = settings;
         self.remember_settings_size(&ctx);

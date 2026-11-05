@@ -257,8 +257,21 @@ fn icon_key(
     r
 }
 
+/// Einstellungen des Processing-Racks, die auch das Fenster Einstellungen in der Zeile zeigt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rack {
+    Crossfade,
+    Ducking,
+    DuckTimes,
+    CartDuck,
+    StopFade,
+    FadeLength,
+    BusProcessing,
+    MicChain,
+}
+
 /// Schalter `woa-tog` (36 × 20): an = `accent-2`-Fläche mit Knopf rechts. Ersetzt Häkchen.
-fn toggle(ui: &mut egui::Ui, on: &mut bool, name: &str) -> egui::Response {
+pub(crate) fn toggle(ui: &mut egui::Ui, on: &mut bool, name: &str) -> egui::Response {
     let (rect, mut r) = ui.allocate_exact_size(egui::vec2(36.0, 20.0), egui::Sense::click());
     if r.clicked() {
         *on = !*on;
@@ -3416,6 +3429,161 @@ impl RadioDesk {
     }
 
     /// 19-Zoll-Broadcast-Processing- & Übergangs-Rack (rechts unter der Cart-Wall).
+    /// Bedienelement einer Processing-Einstellung, rechtsbündig: im Rack und als Wert direkt
+    /// in der Zeile des Fensters Einstellungen (Fassung 8). Wirkt sofort.
+    pub fn rack_control(&mut self, ui: &mut egui::Ui, key: Rack) {
+        let v = self.view.clone();
+        match key {
+            Rack::Crossfade => {
+                let mut xf = v.crossfade_seconds;
+                if number_field(ui, &mut xf, 0.0..=10.0, "s", 1.5, "Crossfade-Blende", true)
+                    .on_hover_text(
+                        "Länge der Überblendung · Ziehen · Doppelklick: 1,5 s · Klick: eintippen",
+                    )
+                    .changed()
+                {
+                    self.view.crossfade_seconds = xf;
+                    self.with(move |c| c.set_crossfade(xf));
+                }
+            }
+            Rack::Ducking => {
+                let mut duck = v.duck_db;
+                if number_field(
+                    ui,
+                    &mut duck,
+                    -30.0..=0.0,
+                    "dB",
+                    -12.0,
+                    "Musik-Ducking",
+                    true,
+                )
+                .on_hover_text("Absenkung der Musik bei offenem Mikro · Doppelklick: −12 dB")
+                .changed()
+                {
+                    self.view.duck_db = duck;
+                    self.with(move |c| c.set_duck(duck));
+                }
+            }
+            Rack::DuckTimes => {
+                // Moderator 05.11.2026: Musik kommt nach kurzer Stille im Mikro zurück.
+                let (mut hold, mut release) = (v.duck_hold_seconds, v.duck_release_seconds);
+                let mut ch = number_field(
+                    ui,
+                    &mut release,
+                    0.1..=5.0,
+                    "s",
+                    1.0,
+                    "Ducking: Einblenden",
+                    true,
+                )
+                .on_hover_text("So lange blendet die Musik wieder ein · Doppelklick: 1 s")
+                .changed();
+                ch |= number_field(
+                    ui,
+                    &mut hold,
+                    0.1..=5.0,
+                    "s",
+                    0.5,
+                    "Ducking: Rückkehr nach",
+                    true,
+                )
+                .on_hover_text(
+                    "So lange Stille im Mikro, bis die Musik zurückkommt · Doppelklick: 0,5 s",
+                )
+                .changed();
+                if ch {
+                    let (h, r) = (hold.clamp(0.1, 5.0), release.clamp(0.1, 5.0));
+                    self.view.duck_hold_seconds = h;
+                    self.view.duck_release_seconds = r;
+                    self.with(move |c| c.set_duck_times(h, r));
+                }
+            }
+            Rack::CartDuck => {
+                let mut on = v.cart_duck;
+                if toggle(ui, &mut on, "Ducking auch bei Carts")
+                    .on_hover_text("Musik leiser, solange ein Cart spielt")
+                    .changed()
+                {
+                    self.view.cart_duck = on;
+                    self.with(move |c| c.set_cart_duck(on));
+                }
+            }
+            Rack::StopFade => {
+                // Stopp mit Ausblenden (#227): kein eigener Knopf, die Stopp-Knöpfe bleiben.
+                let (mut on, mut secs) = (v.stop_fade, v.stop_fade_seconds);
+                let mut ch = toggle(ui, &mut on, "Stopp blendet aus")
+                    .on_hover_text(
+                        "An: Stopp am Sende-Player und an den Decks A/B/C blendet über die \
+                         eingestellte Dauer aus (etwa um mitten im Titel auszusteigen). \
+                         Aus: Stopp bricht sofort ab.",
+                    )
+                    .changed();
+                ch |= number_field(ui, &mut secs, 0.5..=10.0, "s", 3.0, "Ausblenddauer", on)
+                    .on_hover_text("Ausblenddauer beim Stopp")
+                    .changed();
+                if ch {
+                    self.view.stop_fade = on;
+                    self.view.stop_fade_seconds = secs;
+                    self.with(move |c| c.set_stop_fade(on, secs));
+                }
+            }
+            Rack::FadeLength => {
+                // Dauer der Fade-Tasten (Moderator 05.11.2026): 1–10 s, Vorgabe 3 s.
+                let mut secs = self.fades.seconds();
+                if number_field(
+                    ui,
+                    &mut secs,
+                    woa_radio::FADE_MIN_SECONDS..=woa_radio::FADE_MAX_SECONDS,
+                    "s",
+                    woa_radio::FADE_SECONDS,
+                    "Fade-Taste",
+                    true,
+                )
+                .on_hover_text("Wie lange die Fade-Tasten ausblenden · Doppelklick: 3 s")
+                .changed()
+                {
+                    let secs = secs.clamp(woa_radio::FADE_MIN_SECONDS, woa_radio::FADE_MAX_SECONDS);
+                    self.view.fade_seconds = secs;
+                    self.fades.set_seconds(secs);
+                    self.with(move |c| c.set_fade_seconds(secs));
+                }
+            }
+            Rack::BusProcessing | Rack::MicChain => {
+                let (mut bus, mut mic) = (v.bus_processing, v.mic_processing);
+                let ch = if key == Rack::BusProcessing {
+                    toggle(ui, &mut bus, "Sendebus-Processing")
+                        .on_hover_text(format!(
+                            "Lautheitsregelung auf {:.0} LUFS (±12 dB, langsam), Kompressor und \
+                             Limiter bei −1 dBFS. Wirkt auf Sendung, Mitschnitt und Abhören.",
+                            v.target_lufs
+                        ))
+                        .changed()
+                } else {
+                    let ch = toggle(ui, &mut mic, "Mikro-Kette")
+                        .on_hover_text(
+                            "Hochpass 80 Hz, Präsenz +3 dB bei 3 kHz, Gate ab −50 dBFS, \
+                             Kompressor 4:1 ab −24 dBFS mit +6 dB.",
+                        )
+                        .changed();
+                    if v.mic_processing && v.mic_open {
+                        let (t, c, active) = if v.mic_gate_open {
+                            ("Gate offen", theme::ok(), true)
+                        } else {
+                            ("Gate zu", theme::text_dim(), false)
+                        };
+                        theme::status_pill(ui, t, c, active);
+                    }
+                    ch
+                };
+                if ch {
+                    self.view.bus_processing = bus;
+                    self.view.mic_processing = mic;
+                    self.with(move |c| c.set_processing(bus, mic));
+                }
+            }
+        }
+    }
+
     fn processing_rack(&mut self, ui: &mut egui::Ui) {
         let v = self.view.clone();
         ui.horizontal(|ui| {
@@ -3433,17 +3601,6 @@ impl RadioDesk {
 
         // Zeilen nach ScreenRadio (`woa-set`): links die Bezeichnung, rechts Zahlenfeld oder
         // Schalter. Die Werte und Befehle sind dieselben wie vorher.
-        let mut xf = v.crossfade_seconds;
-        let mut duck = v.duck_db;
-        let mut cart_duck = v.cart_duck;
-        let (mut hold, mut release) = (v.duck_hold_seconds, v.duck_release_seconds);
-        let mut times_ch = false;
-        let (mut stop_on, mut stop_secs) = (v.stop_fade, v.stop_fade_seconds);
-        let mut fade_secs = self.fades.seconds();
-        let mut fade_ch = false;
-        let (mut bus, mut mic) = (v.bus_processing, v.mic_processing);
-        let (mut xf_ch, mut duck_ch, mut cart_ch, mut stop_ch, mut proc_ch) =
-            (false, false, false, false, false);
         let label_w = (ui.available_width() - 170.0).max(100.0);
         let row = |ui: &mut egui::Ui, name: &str, sub: Option<&str>| {
             ui.vertical(|ui| {
@@ -3461,182 +3618,32 @@ impl RadioDesk {
             .min_col_width(0.0)
             .show(ui, |ui| {
                 let right = egui::Layout::right_to_left(egui::Align::Center);
-                row(ui, "Crossfade-Blende", None);
-                ui.with_layout(right, |ui| {
-                    xf_ch = number_field(
-                        ui,
-                        &mut xf,
-                        0.0..=10.0,
-                        "s",
-                        1.5,
-                        "Crossfade-Blende",
-                        true,
-                    )
-                    .on_hover_text(
-                        "Länge der Überblendung · Ziehen · Doppelklick: 1,5 s · Klick: eintippen",
-                    )
-                    .changed();
-                });
-                ui.end_row();
-                row(
-                    ui,
-                    "Musik-Ducking",
-                    Some("Rückkehr nach Stille · Einblenden · Tiefe"),
-                );
-                ui.with_layout(right, |ui| {
-                    duck_ch = number_field(
-                        ui,
-                        &mut duck,
-                        -30.0..=0.0,
-                        "dB",
-                        -12.0,
+                for (name, sub, keys) in [
+                    ("Crossfade-Blende", None, &[Rack::Crossfade][..]),
+                    (
                         "Musik-Ducking",
-                        true,
-                    )
-                    .on_hover_text("Absenkung der Musik bei offenem Mikro · Doppelklick: −12 dB")
-                    .changed();
-                    // Moderator 05.11.2026: Musik kommt nach kurzer Stille im Mikro zurück.
-                    times_ch |= number_field(
-                        ui,
-                        &mut release,
-                        0.1..=5.0,
-                        "s",
-                        1.0,
-                        "Ducking: Einblenden",
-                        true,
-                    )
-                    .on_hover_text("So lange blendet die Musik wieder ein · Doppelklick: 1 s")
-                    .changed();
-                    times_ch |= number_field(
-                        ui,
-                        &mut hold,
-                        0.1..=5.0,
-                        "s",
-                        0.5,
-                        "Ducking: Rückkehr nach",
-                        true,
-                    )
-                    .on_hover_text(
-                        "So lange Stille im Mikro, bis die Musik zurückkommt · Doppelklick: 0,5 s",
-                    )
-                    .changed();
-                });
-                ui.end_row();
-                row(ui, "Ducking auch bei Carts", None);
-                ui.with_layout(right, |ui| {
-                    cart_ch = toggle(ui, &mut cart_duck, "Ducking auch bei Carts")
-                        .on_hover_text("Musik leiser, solange ein Cart spielt")
-                        .changed();
-                });
-                ui.end_row();
-                // Stopp mit Ausblenden (#227): kein eigener Knopf, die Stopp-Knöpfe bleiben.
-                row(ui, "Stopp blendet aus", None);
-                ui.with_layout(right, |ui| {
-                    stop_ch |= toggle(ui, &mut stop_on, "Stopp blendet aus")
-                        .on_hover_text(
-                            "An: Stopp am Sende-Player und an den Decks A/B/C blendet über die \
-                             eingestellte Dauer aus (etwa um mitten im Titel auszusteigen). \
-                             Aus: Stopp bricht sofort ab.",
-                        )
-                        .changed();
-                    let mut secs = stop_secs;
-                    if number_field(
-                        ui,
-                        &mut secs,
-                        0.5..=10.0,
-                        "s",
-                        3.0,
-                        "Ausblenddauer",
-                        stop_on,
-                    )
-                    .on_hover_text("Ausblenddauer beim Stopp")
-                    .changed()
-                    {
-                        stop_secs = secs;
-                        stop_ch = true;
-                    }
-                });
-                ui.end_row();
-                // Dauer der Fade-Tasten (Moderator 05.11.2026): 1–10 s, Vorgabe 3 s.
-                row(ui, "Fade-Taste", Some("Sende-Deck, Decks, Carts"));
-                ui.with_layout(right, |ui| {
-                    fade_ch = number_field(
-                        ui,
-                        &mut fade_secs,
-                        woa_radio::FADE_MIN_SECONDS..=woa_radio::FADE_MAX_SECONDS,
-                        "s",
-                        woa_radio::FADE_SECONDS,
+                        Some("Rückkehr nach Stille · Einblenden · Tiefe"),
+                        &[Rack::Ducking, Rack::DuckTimes][..],
+                    ),
+                    ("Ducking auch bei Carts", None, &[Rack::CartDuck][..]),
+                    ("Stopp blendet aus", None, &[Rack::StopFade][..]),
+                    (
                         "Fade-Taste",
-                        true,
-                    )
-                    .on_hover_text("Wie lange die Fade-Tasten ausblenden · Doppelklick: 3 s")
-                    .changed();
-                });
-                ui.end_row();
-                row(ui, "Sendebus-Processing", None);
-                ui.with_layout(right, |ui| {
-                    proc_ch |= toggle(ui, &mut bus, "Sendebus-Processing")
-                        .on_hover_text(format!(
-                            "Lautheitsregelung auf {:.0} LUFS (±12 dB, langsam), Kompressor und \
-                             Limiter bei −1 dBFS. Wirkt auf Sendung, Mitschnitt und Abhören.",
-                            v.target_lufs
-                        ))
-                        .changed();
-                });
-                ui.end_row();
-                row(ui, "Mikro-Kette", None);
-                ui.with_layout(right, |ui| {
-                    proc_ch |= toggle(ui, &mut mic, "Mikro-Kette")
-                        .on_hover_text(
-                            "Hochpass 80 Hz, Präsenz +3 dB bei 3 kHz, Gate ab −50 dBFS, \
-                             Kompressor 4:1 ab −24 dBFS mit +6 dB.",
-                        )
-                        .changed();
-                    if v.mic_processing && v.mic_open {
-                        let (t, c, active) = if v.mic_gate_open {
-                            ("Gate offen", theme::ok(), true)
-                        } else {
-                            ("Gate zu", theme::text_dim(), false)
-                        };
-                        theme::status_pill(ui, t, c, active);
-                    }
-                });
-                ui.end_row();
+                        Some("Sende-Deck, Decks, Carts"),
+                        &[Rack::FadeLength][..],
+                    ),
+                    ("Sendebus-Processing", None, &[Rack::BusProcessing][..]),
+                    ("Mikro-Kette", None, &[Rack::MicChain][..]),
+                ] {
+                    row(ui, name, sub);
+                    ui.with_layout(right, |ui| {
+                        for &k in keys {
+                            self.rack_control(ui, k);
+                        }
+                    });
+                    ui.end_row();
+                }
             });
-        if xf_ch {
-            self.view.crossfade_seconds = xf;
-            self.with(move |c| c.set_crossfade(xf));
-        }
-        if duck_ch {
-            self.view.duck_db = duck;
-            self.with(move |c| c.set_duck(duck));
-        }
-        if times_ch {
-            let (h, r) = (hold.clamp(0.1, 5.0), release.clamp(0.1, 5.0));
-            self.view.duck_hold_seconds = h;
-            self.view.duck_release_seconds = r;
-            self.with(move |c| c.set_duck_times(h, r));
-        }
-        if cart_ch {
-            self.view.cart_duck = cart_duck;
-            self.with(move |c| c.set_cart_duck(cart_duck));
-        }
-        if stop_ch {
-            self.view.stop_fade = stop_on;
-            self.view.stop_fade_seconds = stop_secs;
-            self.with(move |c| c.set_stop_fade(stop_on, stop_secs));
-        }
-        if fade_ch {
-            let secs = fade_secs.clamp(woa_radio::FADE_MIN_SECONDS, woa_radio::FADE_MAX_SECONDS);
-            self.view.fade_seconds = secs;
-            self.fades.set_seconds(secs);
-            self.with(move |c| c.set_fade_seconds(secs));
-        }
-        if proc_ch {
-            self.view.bus_processing = bus;
-            self.view.mic_processing = mic;
-            self.with(move |c| c.set_processing(bus, mic));
-        }
         ui.add_space(6.0);
         // Messzeile als LCD in lcd-ink: Lautheit · Regelung · Begrenzer am Sendeausgang.
         let on = self.view.bus_processing;
