@@ -2,7 +2,7 @@
 
 ## 0.41.38 — 2026-11-05
 
-Gäste und Telefon nach den Abstimmungen des Moderators unter Entwickler › Fragen.
+Gäste und Telefon nach den Abstimmungen des Moderators unter Entwickler › Fragen. Prüfpunkte in Entwickler › Abnahme, Klickliste in `docs/abnahme.md`. Workspace-Version 0.41.38.
 
 - **Höchstens 4 Gäste gleichzeitig** (Frage `gaeste-anzahl`): `MAX_GUESTS` ist 4 statt 8. Die Tasten „Testgast“ und „Datei als Gast“ sind ab dem vierten Gast aus, ein fünfter Browser-Gast wird abgewiesen; die Bank hat nur noch vier Kanäle.
 - **Ein Link mit PIN für alle Gäste einer Sendung** (Frage `gaeste-einladung`): Statt einer Einladung je Gast gibt es einen Link (6 Stunden gültig) und eine sechsstellige PIN, die nicht im Link steht und groß auf der Gäste-Karte erscheint. Die Gast-Seite fragt Name und PIN. „Neuer Link“ macht Link und PIN ungültig, verbundene Gäste bleiben. Schutz (`gate.rs`): PIN-Vergleich in konstanter Zeit; 5 falsche PINs sperren die Adresse für 10 Minuten; 20 falsche PINs über alle Adressen verbrennen den Link; ein Erfolg setzt keinen Zähler zurück (Lehre aus #116); ist die Sendung mit 4 Gästen (wartend oder angenommen) voll, wird ein neuer Gast abgewiesen, nie ein vorhandener verdrängt. `/gast/check` prüft nur den Link und verrät nichts über die PIN. Tests: `one_link_for_several_guests`, `new_link_burns_the_old_but_keeps_guests`, `wrong_pin_locks_the_address_and_success_does_not_reset`, `many_wrong_pins_from_many_addresses_burn_the_link`, `full_show_refuses_new_guests_and_never_evicts`, dazu `join_state_leave_roundtrip` und der Loopback-Test mit falscher PIN.

@@ -2,6 +2,38 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "gaeste-max-4",
+      "ansicht": "Radio",
+      "titel": "Höchstens 4 Gäste",
+      "tun": "Radio, Karte Gäste: viermal „Testgast“ klicken.",
+      "erwartet": "Vier Gäste stehen in der Liste; „Testgast“ und „Datei als Gast“ sind danach ausgegraut. Nach Trennen eines Gastes gehen sie wieder.",
+      "version": "0.41.38"
+    },
+    {
+      "id": "gaeste-link-pin",
+      "ansicht": "Radio",
+      "titel": "Ein Link mit PIN für alle Gäste",
+      "tun": "Browser-Zugang einschalten, „Link mit PIN“ klicken. Mit zwei Handys im selben WLAN den QR-Code öffnen, Name und die angezeigte PIN eingeben. Auf einem dritten Gerät eine falsche PIN eingeben.",
+      "erwartet": "Auf der Karte stehen QR-Code, Link und groß „PIN 123456“ (sechs Ziffern), die PIN steht nicht im Link. Beide Handys erscheinen im Warteraum. Die falsche PIN ergibt „PIN falsch“. „Neuer Link“ zeigt neuen QR-Code und neue PIN; schon verbundene Gäste bleiben.",
+      "version": "0.41.38"
+    },
+    {
+      "id": "gaeste-vorgespraech-ducking",
+      "ansicht": "Radio",
+      "titel": "Annehmen ins Vorgespräch, Ducking auf Sendung",
+      "tun": "Musik laufen lassen. Einen Browser-Gast annehmen, dann bei ihm „Vorgespräch“ klicken (holt ihn auf Sendung), danach wieder zurück.",
+      "erwartet": "Nach „Annehmen“ steht der Gast im Vorgespräch (Karte und Gast-Seite zeigen „Vorgespräch“), die Musik bleibt laut. Auf Sendung wird die Musik leiser wie beim Telefon; zurück im Vorgespräch kommt sie wieder hoch.",
+      "version": "0.41.38"
+    },
+    {
+      "id": "telefon-gaestekarte-pult",
+      "ansicht": "Radio",
+      "titel": "Telefon auf der Gäste-Karte und als Kanal im Pult",
+      "tun": "Telefon-Eingang unter Einstellungen › Audio-Geräte wählen. Auf der Gäste-Karte im Abschnitt TELEFON „Anrufer auf Sendung“ klicken. In der Karte PEGEL den Fader „Telefon“ bewegen.",
+      "erwartet": "Der Abschnitt TELEFON steht getrennt von den Gästen. Taste auf der Karte und Taste in der Tastenreihe zeigen denselben Stand, der Name „Telefon“ im Kanalzug leuchtet dann rot. Der Kanalzug hat Fader und LED-Kette; der Fader ändert die Lautstärke des Anrufers auf Sendung, ganz unten ist er stumm.",
+      "version": "0.41.38"
+    },
+    {
       "id": "msi-pro-benutzer",
       "ansicht": "Allgemein",
       "titel": "Installation und Update ohne Admin-Abfrage (pro Benutzer)",
