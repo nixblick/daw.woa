@@ -88,6 +88,8 @@ pub struct View {
     /// Stopp mit Ausblenden an (#227) und seine Dauer (Sekunden).
     pub stop_fade: bool,
     pub stop_fade_seconds: f64,
+    /// Dauer der Fade-Tasten (Sekunden).
+    pub fade_seconds: f64,
     /// Auto-Weiter in der Sende-Playlist (#148).
     pub auto_next: bool,
     /// Regler „Wiedergabe Notebook“ und „Stream senden“ (#96).
@@ -96,6 +98,9 @@ pub struct View {
     pub duck_db: f64,
     /// Carts senken die Musik ab (#149).
     pub cart_duck: bool,
+    /// Ducking-Zeiten (Sekunden): Stille bis zur Rückkehr, Einblendung.
+    pub duck_hold_seconds: f64,
+    pub duck_release_seconds: f64,
     /// Sendebus-Processing an.
     pub bus_processing: bool,
     /// Mikro-Kette an.
@@ -120,6 +125,9 @@ pub struct View {
     pub carts_playing: u32,
     /// Restzeit je Cart in Sekunden (0 = steht).
     pub cart_remaining: Vec<f64>,
+    /// Sekunden bis zum Gesangseinsatz je laufendem Cart (#299), `None` = keiner erkannt,
+    /// steht oder schon vorbei.
+    pub cart_vocal_in: Vec<Option<f64>>,
     /// Gesamtdauer je Cart in Sekunden (#292), `None` = frei oder nicht geladen.
     pub cart_seconds: Vec<Option<f64>>,
     /// Namen der Cart-Wall-Sätze und der aktive (#292).
@@ -455,11 +463,14 @@ fn run(
             crossfade_seconds: c.show().crossfade_seconds,
             stop_fade: c.show().stop_fade,
             stop_fade_seconds: c.show().stop_fade_seconds,
+            fade_seconds: c.show().fade_seconds,
             auto_next: c.show().auto_next,
             out_monitor: c.show().out_monitor,
             out_stream: c.show().out_stream,
             duck_db: c.show().duck_db,
             cart_duck: c.show().cart_duck,
+            duck_hold_seconds: c.show().duck_hold_seconds,
+            duck_release_seconds: c.show().duck_release_seconds,
             bus_processing: c.show().bus_processing,
             mic_processing: c.show().mic_processing,
             target_lufs: c.show().target_lufs,
@@ -502,6 +513,7 @@ fn run(
                 .map(|r| r.load(Ordering::Acquire) as f64 / f64::from(c.rate()))
                 .collect(),
             cart_seconds: (0..CARTS).map(|i| c.cart_seconds(i)).collect(),
+            cart_vocal_in: (0..CARTS).map(|i| c.cart_vocal_in(i)).collect(),
             cart_sets: c.show().cart_set_names(),
             cart_set: c.show().cart_set,
             decks: (0..crate::DECKS).map(|k| deck_view(&c, k)).collect(),

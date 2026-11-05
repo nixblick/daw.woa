@@ -302,6 +302,14 @@ impl PartyView {
         cmds: &mut Vec<woa_radio::party::PartyCommand>,
     ) {
         self.dj_keys(ui.ctx(), desk, dj);
+        // MIDI-Learn aus den Kontextmenüen der DJ-Tasten (die bekommen nur `&RadioDesk`).
+        if let Some(t) = ui
+            .ctx()
+            .data_mut(|d| d.remove_temp::<Option<woa_io::controller::Target>>(learn_id()))
+            .flatten()
+        {
+            desk.learn = Some(t);
+        }
         let v = desk.view().clone();
         self.ask_meta(&v, library.db_path());
         let full_h = ui.available_height();
@@ -834,12 +842,14 @@ impl PartyView {
                 chip_row(ui, &mut |ui: &mut egui::Ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
                     use crate::widgets::{ChipTone, StateChip};
-                    // Fassung 7: alle Chips 28 px auf einer Mittellinie.
+                    // Fassung 7: alle Chips 28 px auf einer Mittellinie. Im DJ-Modus gefüllt, damit
+                    // man sie im dunklen Club sieht (Moderator 05.11.2026); sonst nie gefüllt.
                     StateChip::new(
                         if side == 0 { "DECK A" } else { "DECK B" },
                         ChipTone::Color(col),
                     )
                     .dj()
+                    .filled()
                     .show(ui);
                     let badge = if d.playing {
                         StateChip::new("LÄUFT", ChipTone::Color(theme::accent()))
@@ -849,7 +859,7 @@ impl PartyView {
                     } else {
                         StateChip::new("LEER", ChipTone::Neutral)
                     };
-                    badge.dj().show(ui);
+                    badge.dj().filled().show(ui);
                     let result = self.waves[side].get().map(|i| i.bpm);
                     match analysis_state(d.index.is_some(), result) {
                         Analysis::Running => {
@@ -1189,6 +1199,7 @@ impl PartyView {
                     "Steht das Deck: Cue-Punkt hierher. Halten spielt ab Cue, Loslassen springt zurück{}",
                     key_hint(side, KeyAction::Cue)
                 ));
+            dj_learn_menu(&r, woa_io::controller::Target::DjCue(side));
             let down = r.is_pointer_button_down_on();
             if down && !self.dj.cue_held[side] {
                 self.dj.cue_held[side] = true;
@@ -1206,6 +1217,7 @@ impl PartyView {
                 .enabled(loaded)
                 .ui(ui)
                 .on_hover_text(format!("Play/Pause dieses Decks{}", key_hint(side, KeyAction::PlayPause)));
+            dj_learn_menu(&r, woa_io::controller::Target::DjPlay(side));
             if r.clicked() {
                 desk.dj(if d.playing { DjCommand::Pause { side } } else { DjCommand::Play { side } });
             }
@@ -1520,6 +1532,7 @@ fn dj_mixer(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView) {
                     crate::widgets::Orient::Horizontal,
                 )
                 .on_hover_text("Crossfader: links Deck A, rechts Deck B");
+                dj_learn_menu(&r, woa_io::controller::Target::DjCrossfader);
                 if r.changed() {
                     desk.dj(DjCommand::Crossfader { value: x });
                 }
@@ -1780,6 +1793,20 @@ fn deck_readouts(
         out.push(super::camelot_chip(ui, c, key_match, h).rect);
     }
     out
+}
+
+/// Ablage für ein gewähltes Lernziel bis zum nächsten Bild.
+fn learn_id() -> egui::Id {
+    egui::Id::new("dj-midi-learn")
+}
+
+/// Kontextmenü „MIDI lernen“ an einer DJ-Taste (Moderator 05.11.2026).
+fn dj_learn_menu(r: &egui::Response, t: woa_io::controller::Target) {
+    r.context_menu(|ui| {
+        if let Some(t) = crate::controls::learn_menu(ui, t, None) {
+            ui.ctx().data_mut(|d| d.insert_temp(learn_id(), Some(t)));
+        }
+    });
 }
 
 #[cfg(test)]

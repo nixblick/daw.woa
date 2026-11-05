@@ -79,6 +79,8 @@ pub struct CartPad<'a> {
     pub remaining: Option<f64>,
     /// Gesamtdauer in Sekunden (#292), rechts unten solange das Pad steht.
     pub seconds: Option<f64>,
+    /// Sekunden bis zum Gesang, solange das Pad läuft und der Gesang noch kommt (#299).
+    pub vocal_in: Option<f64>,
     /// Zahl der Symbole (je 24 px), die der Aufrufer oben rechts über das Pad legt
     /// (Fade, Vorhören). Die Ecke bleibt dann frei: keine Taste, keine LED, Titel kürzer (#388).
     pub actions: usize,
@@ -175,6 +177,17 @@ impl CartPad<'_> {
             text_right = text_right.min(at.x - 6.0);
             p.galley(at, g, c);
         }
+        // Zeit bis zum Gesang (#299) links unten über dem Balken, in `accent-2`.
+        let vocal = self
+            .vocal_in
+            .filter(|_| state == PadState::Playing)
+            .map(crate::vocal_ui::vocal_in_text);
+        if let Some(t) = &vocal {
+            let g = p.layout_no_wrap(t.clone(), egui::FontId::monospace(11.0), theme::accent_2());
+            let at = egui::pos2(text_left, rect.bottom() - BAR_H - 4.0 - g.size().y);
+            p.with_clip_rect(rect.shrink(2.0))
+                .galley(at, g, theme::accent_2());
+        }
         let shown = self.title.unwrap_or("leer");
         let upper = shown.to_uppercase();
         let title = p.layout_job(title_job(&upper, text_right - text_left, ink));
@@ -246,10 +259,13 @@ impl CartPad<'_> {
                 p.rect_filled(fill, br, self.color);
             }
         }
-        let label = match (&count, &total) {
+        let mut label = match (&count, &total) {
             (Some(t), _) | (None, Some(t)) => format!("Cart {}: {} {t}", self.number, shown),
             (None, None) => format!("Cart {}: {}", self.number, shown),
         };
+        if let Some(t) = &vocal {
+            label.push_str(&format!(" · {t}"));
+        }
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
         resp
     }
@@ -279,6 +295,7 @@ mod tests {
                         color: Color32::RED,
                         remaining: Some(10.0),
                         seconds: Some(15.0),
+                        vocal_in: None,
                         actions,
                     }
                     .ui(ui, size);

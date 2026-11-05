@@ -4,6 +4,16 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Rückmeldung des Moderators 05.11. (0.41.37, offen)
+
+1. **Fade-Dauer:** Rack „Fade-Taste“ auf 6 s, Deck-Fade drücken: blendet in 6 s aus. Zurück auf 3 s.
+2. **Ducking:** Mikro offen, sprechen, schweigen: Musik, Deck und Cart kommen nach 0,5 s zurück und blenden in 1 s ein.
+3. **Gesang:** Titel mit Intro auf Deck und Cart abspielen: „Gesang in … s“ zählt herunter; ohne erkannten Einsatz steht nichts.
+4. **Sende-Deck:** Deck A von Hand starten, im Sende-Deck Stopp und Fade: Deck A spielt weiter, das Display zeigt „DECK A …“.
+5. **Kopfhörer:** an jeder Playlist-Zeile und jedem belegten Cart sichtbar, ohne Maus darüber.
+6. **DJ-Badges:** Party › DJ: „DECK A“ und der Zustand gefüllt; in Party Einfach weiter nur gerahmt.
+7. **DJ-MIDI-Learn:** Rechtsklick auf PLAY, CUE, Crossfader › „MIDI lernen“, am Controller drücken bzw. schieben: wirkt in der DJ-Ansicht.
+
 ## Abnahme-Nacharbeit 04.11. (0.41.24, offen)
 
 Unter Windows 11, einmal mit echter Maus.

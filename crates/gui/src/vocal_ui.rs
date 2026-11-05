@@ -17,6 +17,18 @@ pub fn vocal_text(m: &VocalMark, start: f64) -> String {
     if m.estimated { format!("≈{t}") } else { t }
 }
 
+/// Sekunden bis zum Gesang, wenn `pos` (Sekunden ab Dateianfang) davor liegt; sonst `None`
+/// (auch ohne erkannten Einsatz: dann zeigt die Oberfläche nichts).
+pub fn seconds_to_vocal(m: Option<&VocalMark>, pos: f64) -> Option<f64> {
+    let left = m?.seconds - pos;
+    (left > 0.0).then_some(left)
+}
+
+/// Restzeit bis zum Gesang für Moderation über das Intro: „Gesang in 12 s“.
+pub fn vocal_in_text(left: f64) -> String {
+    format!("Gesang in {} s", left.max(0.0).ceil() as u64)
+}
+
 /// Hinweis zur Marke.
 pub fn vocal_hint(m: &VocalMark, start: f64) -> String {
     let t = vocal_text(m, start);
@@ -97,5 +109,19 @@ mod tests {
         assert_eq!(vocal_text(&hand, 0.0), "1:15");
         assert!(vocal_hint(&est, 0.0).contains("geschätzt"));
         assert!(!vocal_hint(&hand, 0.0).contains("geschätzt"));
+    }
+
+    /// Moderator 05.11.2026: im laufenden Deck und Cart zählt die Zeit bis zum Gesang
+    /// herunter; ohne Einsatz oder danach steht nichts da.
+    #[test]
+    fn seconds_to_vocal_count_down_and_vanish() {
+        let m = VocalMark {
+            seconds: 20.0,
+            estimated: true,
+        };
+        assert_eq!(seconds_to_vocal(Some(&m), 8.0), Some(12.0));
+        assert_eq!(seconds_to_vocal(Some(&m), 20.0), None, "Gesang läuft");
+        assert_eq!(seconds_to_vocal(None, 0.0), None, "kein Einsatz erkannt");
+        assert_eq!(vocal_in_text(11.2), "Gesang in 12 s");
     }
 }

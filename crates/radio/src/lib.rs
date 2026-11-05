@@ -45,8 +45,13 @@ pub use woa_engine::pairs::PairBuf;
 
 /// Felder der Cart-Wall (4×4).
 pub const CARTS: usize = 16;
-/// Fade-Taste (Design Fassung 7): blendet überall fest in so vielen Sekunden aus.
+/// Fade-Taste (Design Fassung 7): Vorgabe der Blende in Sekunden; einstellbar
+/// [`FADE_MIN_SECONDS`] bis [`FADE_MAX_SECONDS`] (`RadioShow::fade_seconds`).
 pub const FADE_SECONDS: f64 = 3.0;
+/// Kürzeste einstellbare Blende der Fade-Taste.
+pub const FADE_MIN_SECONDS: f64 = 1.0;
+/// Längste einstellbare Blende der Fade-Taste.
+pub const FADE_MAX_SECONDS: f64 = 10.0;
 /// Zahl der Decks (A, B, C).
 pub const DECKS: usize = 3;
 /// Seiten der Party (links, rechts): eigene Abspieler neben den Radio-Decks.

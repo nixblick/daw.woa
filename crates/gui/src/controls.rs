@@ -339,6 +339,15 @@ impl ControlDesk {
                 }
             }
         });
+        // DJ-Modus (Moderator 05.11.2026): Play, Cue und Crossfader.
+        ui.horizontal_wrapped(|ui| {
+            ui.label(egui::RichText::new("DJ:").small());
+            for t in woa_io::controller::DJ_TARGETS {
+                if ui.small_button(t.label()).clicked() {
+                    self.mapper.learn(t);
+                }
+            }
+        });
         changed
     }
 }
