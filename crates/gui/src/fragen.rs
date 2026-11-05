@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use eframe::egui;
 use serde::Deserialize;
-use woa_telemetry::{DevKey, FeedbackError, FeedbackMeta, FeedbackType, submit_feedback};
+use woa_telemetry::{DevKey, FeedbackError, FeedbackMeta, FeedbackType};
 
 use crate::feedback::GuiConfig;
 use crate::theme;
@@ -309,6 +309,7 @@ impl FragenWindow {
             self.nachtrag_pending.remove(&k);
             let note = match r {
                 Ok(_) => "Anmerkung gesendet, danke".to_string(),
+                Err(FeedbackError::DailyLimit) => crate::feedback::DAILY_LIMIT.to_string(),
                 Err(FeedbackError::NoEndpoint) => crate::feedback::NOT_CONFIGURED.to_string(),
                 Err(e) => {
                     tracing::warn!(error = %e, "question note failed");
@@ -329,6 +330,12 @@ impl FragenWindow {
                     self.sent.insert(k.clone());
                     self.sent_at.insert(k.clone(), now);
                     "Gesendet, danke".to_string()
+                }
+                // Held back in the outbox (submit_or_hold): counts as answered, goes out later.
+                Err(FeedbackError::DailyLimit) => {
+                    self.sent.insert(k.clone());
+                    self.sent_at.insert(k.clone(), now);
+                    crate::feedback::DAILY_LIMIT.to_string()
                 }
                 Err(FeedbackError::NoEndpoint) => crate::feedback::NOT_CONFIGURED.to_string(),
                 Err(e) => {
@@ -361,7 +368,7 @@ impl FragenWindow {
                 let _ = tx.send(if !crate::feedback::may_send(&config.feedback_url) {
                     Err(FeedbackError::NoEndpoint)
                 } else {
-                    submit_feedback(&text, Vec::new(), &meta(&config, key))
+                    crate::feedback::submit_or_hold(&text, &meta(&config, key), &data_dir)
                 });
             });
         match spawned {
@@ -406,7 +413,7 @@ impl FragenWindow {
                 let _ = tx.send(if !crate::feedback::may_send(&config.feedback_url) {
                     Err(FeedbackError::NoEndpoint)
                 } else {
-                    submit_feedback(&text, Vec::new(), &meta(&config, key))
+                    crate::feedback::submit_or_hold(&text, &meta(&config, key), &data_dir)
                 });
             });
         match spawned {

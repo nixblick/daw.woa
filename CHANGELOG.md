@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.27 — 2026-11-10
+
+- **Abnahme und Fragen: Tageslimit verliert nichts mehr** (#532): Antwortet der Server mit 429, liegt die Markierung im Ausgang (`feedback-ausstehend/`) und geht später genau einmal hinaus; die Karte zeigt „Tageslimit erreicht, wird später gesendet“, der Punkt zählt als abgenommen und steht in `abnahme-erledigt.json`. Das Entwickler-Kennwort wird beim Nachsenden neu aus dem Tresor gelesen, nie auf die Platte geschrieben.
+
 ## 0.42.26 — 2026-11-09
 
 - **Jeder MCP-Aufruf im Log (#584):** `mcp call` mit Werkzeug, Request-ID und den Namen der Argumente (keine Werte), danach `mcp done` mit Dauer und Ergebnis; ab 1 s als Warnung `mcp slow`. Bricht der KI-Client ab, steht das im Log, samt Hinweis, dass die Arbeit bis zum Ende lief (Abbrechen laufender Renders folgt).

@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "abnahme-tageslimit",
+      "ansicht": "Allgemein",
+      "titel": "Tageslimit: Abnahme-Markierung geht nicht verloren",
+      "tun": "Bei erreichtem Tageslimit des Servers in Entwickler › Abnahme einen Punkt mit „Geht“ abnehmen. WOA danach neu starten.",
+      "erwartet": "Die Karte zeigt „Tageslimit erreicht, wird später gesendet“, der Zähler zählt hoch, der Punkt bleibt abgenommen. Im Datenordner liegt ein Eintrag in feedback-ausstehend; nach dem Start geht er genau einmal hinaus.",
+      "version": "0.42.27"
+    },
+    {
       "id": "agent-analyze-ohne-einfrieren",
       "ansicht": "Produzent",
       "titel": "Agent: analyze lässt die App bedienbar",
