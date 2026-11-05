@@ -3,6 +3,7 @@
 ## 0.41.42 — 2026-11-05
 
 - **WOA startet auf frisch installiertem Windows:** `woa.exe` (MSI und ZIP) brach dort mit „VCRUNTIME140.dll nicht gefunden“ ab, weil die Visual-C++-Runtime fehlt (Rückmeldung eines Moderators nach Neuinstallation von Windows 11). Die C-Runtime wird jetzt statisch gelinkt (`.cargo/config.toml`, `+crt-static` für `x86_64-pc-windows-msvc`). Der Windows-Bau prüft, dass keine der drei exe `VCRUNTIME140.dll`, `MSVCP140.dll` oder `api-ms-win-crt-*` nachlädt; auf dem Runner ist die Runtime vorinstalliert, daher fiel es dort nie auf. Workspace-Version 0.41.42.
+- **Wackliger Test behoben:** `unreachable_server_is_a_connect_error` (woa-stream) nahm einen festen Port neben dem Schein-Server und traf unter Windows gelegentlich den Server eines parallelen Tests; jetzt ein freier Port vom System.
 
 ## 0.41.40 — 2026-11-05
 

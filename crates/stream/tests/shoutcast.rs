@@ -120,10 +120,13 @@ fn wrong_password_is_a_clear_error() {
 #[test]
 fn unreachable_server_is_a_connect_error() {
     let fake = start("x");
-    let c = StreamConfig {
-        port: fake.port.wrapping_add(10) - 1,
-        ..cfg(&fake)
-    };
+    // Freien Port vom System holen; ein fester Abstand traf unter Windows den Schein-Server
+    // eines parallel laufenden Tests (Verbindung gelang).
+    let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    // Der Client verbindet sich auf `port + 1` (Shoutcast-Quellport), siehe `cfg`.
+    let port = free.local_addr().unwrap().port() - 1;
+    drop(free);
+    let c = StreamConfig { port, ..cfg(&fake) };
     drop(fake);
     let e = Source::connect(&c, &Kennwort::from_value(KW)).unwrap_err();
     assert!(matches!(e, StreamError::Connect(_)), "{e:?}");
