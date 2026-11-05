@@ -1027,15 +1027,8 @@ impl Controller {
     /// blendet aus“ über dessen Dauer), der zweite stoppt wie [`Self::stop`].
     pub fn stop_or_pause(&mut self) {
         if !self.running || self.status.current.load(Ordering::Acquire) == NONE {
+            // Decks stoppen nur an ihrer eigenen Taste (Moderator 05.11.2026, nimmt #325 zurück).
             self.stop();
-            // Läuft statt der Playlist ein von Hand gestartetes Deck, hält Stopp es an (#325).
-            for deck in 0..crate::DECKS {
-                if self.status.deck_state[deck].load(Ordering::Acquire)
-                    == crate::mixer::DECK_PLAYING
-                {
-                    self.deck_stop(deck);
-                }
-            }
             return;
         }
         let frames = if self.show.stop_fade {

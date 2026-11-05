@@ -2905,6 +2905,22 @@ impl RadioDesk {
                         });
                     });
 
+                    // Laufende Decks nur zur Anzeige (Moderator 05.11.2026): Stopp und Fade
+                    // sitzen am Deck selbst.
+                    for (k, d) in v.decks.iter().enumerate().filter(|(_, d)| d.playing) {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "DECK {}  {}  {}",
+                                woa_radio::show::deck_name(k),
+                                d.title.as_deref().unwrap_or(""),
+                                clock(d.remaining)
+                            ))
+                            .size(12.0)
+                            .monospace()
+                            .color(theme::text_dim()),
+                        )
+                        .on_hover_text("Läuft auf dem Deck; bedienen am Deck selbst");
+                    }
                     if let Some((name, secs, hard)) = &v.next_event {
                         let near = *hard && *secs < 30.0;
                         ui.label(
@@ -2990,21 +3006,22 @@ impl RadioDesk {
             }
             self.learn_menu(&r, Target::Stop);
 
-            // Fade (Design Fassung 7, #320): blendet alles Laufende fest in 3 s aus.
+            // Fade (Design Fassung 7, #320): blendet nur aus, was über das Sende-Deck läuft (die
+            // Playlist); Decks und Carts haben eigene Fade-Tasten (Moderator 05.11.2026).
             let now = ui.input(|i| i.time);
-            let any = v.running || v.carts_playing != 0 || v.decks.iter().any(|d| d.playing);
-            let pr = self.fades.progress(FadeKey::All, now);
+            let any = v.running;
+            let pr = self.fades.progress(FadeKey::Playlist, now);
             let r = fade_button(
                 ui,
                 FadeShape::Big(KEY_H),
-                "Fade alles",
+                "Fade Sende-Deck",
                 any,
                 pr,
                 self.fades.seconds(),
             );
             if r.clicked() {
-                self.fades.press(FadeKey::All, now);
-                self.with(|c| c.fade_all());
+                self.fades.press(FadeKey::Playlist, now);
+                self.with(|c| c.fade_music());
             }
 
             let r = console_key(

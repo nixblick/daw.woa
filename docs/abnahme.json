@@ -610,12 +610,11 @@
     {
       "id": "deck-stopp",
       "ansicht": "Radio",
-      "titel": "Deck stoppt aus dem Sendedeck",
-      "tun": "Playlist steht. Deck A von Hand starten, dann im Sendedeck „Stopp“ drücken (oder „Fade“).",
-      "erwartet": "Deck A hält an (bei Fade nach 3 s Ausblenden).",
-      "version": "0.41.2",
-      "ticket": 325,
-      "geprueft": "abnahme-lauf 2026-11-04"
+      "titel": "Sendedeck lässt Decks in Ruhe",
+      "tun": "Playlist steht. Deck A von Hand starten, dann im Sendedeck „Stopp“ und „Fade“ drücken.",
+      "erwartet": "Deck A spielt weiter; im Sendedeck-Display steht nur die Zeile „DECK A Titel Restzeit“. Deck A stoppt und blendet nur an seinen eigenen Tasten.",
+      "version": "0.41.36",
+      "ticket": 325
     },
     {
       "id": "cart-ziehen",

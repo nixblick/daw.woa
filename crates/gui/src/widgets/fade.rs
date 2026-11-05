@@ -102,10 +102,11 @@ impl Fades {
             .started
             .get(&key)
             .or_else(|| match key {
-                FadeKey::Playlist | FadeKey::Deck(_) | FadeKey::Cart(_) => {
+                // Decks blenden nur an ihrer eigenen Taste (Moderator 05.11.2026).
+                FadeKey::Playlist | FadeKey::Cart(_) => {
                     self.started.get(&FadeKey::All)
                 }
-                FadeKey::All => None,
+                FadeKey::Deck(_) | FadeKey::All => None,
             })
             .copied()?;
         fade_progress(t0, now, total).map(|progress| Running { progress, total })
