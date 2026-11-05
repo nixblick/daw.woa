@@ -146,6 +146,8 @@ pub enum Cmd {
     PhoneInput(Option<Owned<woa_engine::pairs::LinkRx>>),
     /// Telefon auf Sendung: Der Anrufer liegt auf der Sendung und die Musik wird abgesenkt.
     PhoneOn(bool),
+    /// Fader des Telefon-Kanals im Pult (linear, 0 = aus).
+    PhoneLevel(f32),
     /// Pult-Eingang (Summe des externen Mischpults) über eine Taktverbindung in Mixer-Rate,
     /// `None` = keiner (#301).
     PultInput(Option<Owned<woa_engine::pairs::LinkRx>>),
@@ -739,6 +741,8 @@ pub struct Mixer {
     phone: Option<Owned<woa_engine::pairs::LinkRx>>,
     phone_on: bool,
     phone_gain: Smoother,
+    /// Fader des Telefon-Kanals (linear); wirkt, solange das Telefon auf Sendung ist.
+    phone_level: f32,
     phone_l: [f32; PHONE_CHUNK],
     phone_r: [f32; PHONE_CHUNK],
     /// Pult-Modus (#301): Eingang vom Mischpult als Taktverbindung, an/aus, Zwischenblock.
@@ -847,6 +851,7 @@ impl Mixer {
             phone: None,
             phone_on: false,
             phone_gain: Smoother::new(0.0, MIC_TAU, r),
+            phone_level: 1.0,
             phone_l: [0.0; PHONE_CHUNK],
             phone_r: [0.0; PHONE_CHUNK],
             pult: None,
@@ -978,7 +983,14 @@ impl Mixer {
                 Cmd::PhoneInput(c) => self.phone = c,
                 Cmd::PhoneOn(on) => {
                     self.phone_on = on;
-                    self.phone_gain.set_target(if on { 1.0 } else { 0.0 });
+                    self.phone_gain
+                        .set_target(if on { self.phone_level } else { 0.0 });
+                }
+                Cmd::PhoneLevel(g) => {
+                    self.phone_level = g.clamp(0.0, 4.0);
+                    if self.phone_on {
+                        self.phone_gain.set_target(self.phone_level);
+                    }
                 }
                 Cmd::MicMonitor(on) => self.mic_monitor = on,
                 Cmd::PultInput(c) => self.pult = c,

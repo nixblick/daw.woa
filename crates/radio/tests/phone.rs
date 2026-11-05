@@ -242,3 +242,26 @@ fn phone_on_air_ducks_the_music_like_the_microphone() {
         l[BLOCK - 1]
     );
 }
+
+#[test]
+fn phone_fader_sets_the_caller_level_on_air_and_off_is_silent() {
+    let mut rig = Rig::new(true, Some(CALLER), SR);
+    // −6 dB am Telefon-Fader, dann auf Sendung: der Anrufer kommt mit halbem Pegel.
+    rig.c.set_phone_level(-6.0206);
+    rig.c.set_phone_on(true);
+    let h = rig.run(200, SR);
+    assert!(
+        near(h.main, *PROGRAM_OUT + CALLER * 0.5),
+        "Hauptausgang {}",
+        h.main
+    );
+    assert!(near(h.ret, *PROGRAM_OUT), "Rückweg {}", h.ret);
+    // Fader ganz unten: kein Anrufer auf Sendung, auch wenn die Taste an ist.
+    rig.c.set_phone_level(woa_radio::mixer::LEVEL_MIN_DB);
+    let h = rig.run(200, SR);
+    assert!(near(h.main, *PROGRAM_OUT), "Hauptausgang {}", h.main);
+    // Zurück auf 0 dB.
+    rig.c.set_phone_level(0.0);
+    let h = rig.run(200, SR);
+    assert!(near(h.main, *PROGRAM_OUT + CALLER));
+}

@@ -1609,6 +1609,17 @@ impl Controller {
         self.send(Cmd::PhoneOn(on));
     }
 
+    /// Fader des Telefon-Kanals im Pult (dB, [`crate::mixer::LEVEL_MIN_DB`] = aus).
+    pub fn set_phone_level(&mut self, db: f64) {
+        let db = db.clamp(crate::mixer::LEVEL_MIN_DB, crate::mixer::LEVEL_MAX_DB);
+        let gain = if db <= crate::mixer::LEVEL_MIN_DB {
+            0.0
+        } else {
+            10f64.powf(db / 20.0) as f32
+        };
+        self.send(Cmd::PhoneLevel(gain));
+    }
+
     pub fn set_mic_monitor(&mut self, on: bool) {
         self.send(Cmd::MicMonitor(on));
     }
