@@ -1071,6 +1071,14 @@
       "tun": "Controller wählen. Party › DJ, Rechtsklick auf PLAY von Deck A › „MIDI lernen“, Pad drücken; dasselbe für CUE und den Crossfader (Regler bewegen). Alternativ Controller-Fenster, Zeile „DJ:“.",
       "erwartet": "Das Pad startet und pausiert Deck A, das Cue-Pad setzt bzw. springt zum Cue-Punkt, der Regler bewegt den Crossfader. Außerhalb der DJ-Ansicht tun die Zuordnungen nichts.",
       "version": "0.41.37"
+    },
+    {
+      "id": "mcp-pfad-nach-umstieg",
+      "ansicht": "Allgemein",
+      "titel": "Claude-Anbindung (MCP) zeigt nach dem Update auf den neuen Pfad",
+      "tun": "Auf einem PC, dessen Claude-Eintrag „woa“ noch auf C:\\Program Files\\WOA\\woa-headless.exe steht (.claude.json oder claude_desktop_config.json), das Update aus der App installieren und WOA starten. Danach Claude neu starten.",
+      "erwartet": "WOA meldet „Claude-Anbindung auf den neuen WOA-Pfad umgestellt“. Der Eintrag „woa“ zeigt auf %LOCALAPPDATA%\\Programs\\WOA\\woa-headless.exe (Sicherung .bak-woa daneben, andere Einträge unverändert), im Log steht „mcp registration updated“. Claude verbindet ohne Handarbeit, serverInfo.version ist die neue Version.",
+      "version": "0.42.3"
     }
   ]
 }

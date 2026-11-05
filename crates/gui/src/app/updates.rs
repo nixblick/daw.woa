@@ -17,6 +17,14 @@ impl WoaApp {
             #[cfg(windows)]
             if self.photo.is_none() {
                 woa_updater::retire_per_machine(&woa_radio::data_dir());
+                // #497: Claudes Registrierung zeigte nach dem Umstieg noch auf Program Files.
+                if woa_updater::repair_claude_registration() {
+                    self.state.status = Status::Info(
+                        "Claude-Anbindung auf den neuen WOA-Pfad umgestellt. \
+                         Claude einmal neu starten, dann verbindet es wieder."
+                            .into(),
+                    );
+                }
             }
             if self.config.auto_update
                 && self.photo.is_none()

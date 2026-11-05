@@ -115,6 +115,18 @@ Assert ($inst.Count -eq 1 -and $inst[0].DisplayVersion -eq $Version) 'pro Benutz
 Assert (Test-Path (Join-Path $dir 'woa.exe')) 'woa.exe pro Benutzer noch da'
 Assert ((Get-Content $probe) -eq 'nutzerdaten') 'Nutzerdaten in %APPDATA%\woa unverändert'
 
+# #497: Claudes Registrierung zeigte nach dem Umstieg noch auf Program Files. Die App schreibt sie beim
+# Start um (legacy.rs, repair_claude_registration; Logzeile "mcp registration updated", Umschreiben
+# selbst: Unit-Tests in legacy.rs). Hier die Voraussetzungen im echten MSI: der alte Pfad ist tot,
+# der neue existiert und antwortet auf initialize.
+$deadHeadless = Join-Path $machineDir 'woa-headless.exe'
+$newHeadless = Join-Path $dir 'woa-headless.exe'
+Assert (-not (Test-Path $deadHeadless)) 'Registrierung auf Program Files\WOA\woa-headless.exe zeigt ins Leere'
+Assert (Test-Path $newHeadless) 'woa-headless.exe liegt pro Benutzer (Ziel der Umschreibung)'
+$init = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}'
+$resp = $init | & $newHeadless mcp (Join-Path $env:TEMP 'test-upgrade-497.woa') 2>$null | Select-Object -First 1
+Assert ($resp -match '"serverInfo"' -and $resp -match [regex]::Escape($Version)) "woa-headless pro Benutzer antwortet mit serverInfo.version $Version"
+
 Run-Msi @('/x', "`"$newMsi`"", '/qn', '/norestart')
 Assert ((Get-Installed).Count -eq 0) 'Deinstallation pro Benutzer entfernt den Eintrag'
 Assert (Test-Path $probe) 'Nutzerdaten überstehen die Deinstallation'
