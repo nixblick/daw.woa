@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.34 — 2026-11-05
+
+- **Sendezeile: Lampe, Taste und Status-Pille gleich hoch (#450):** Die kleine ON-AIR-Lampe war 24 px, die Taste „Sendung beenden“ 32 px und die Pille „verbunden · Sendemix“ 26 px hoch. Alle drei sind jetzt 32 px (`ON_AIR_ROW_H` in `radio.rs`). Test `on_air_row_widgets_share_one_height`. Workspace-Version 0.41.34.
+
 ## 0.41.33 — 2026-11-05
 
 - **Upgrade-Probe: alte Form mit eigenen Komponenten-GUIDs (#452):** Der Release-Lauf v0.41.32 belegt den Filter aus 0.41.32: Von zwei Uninstall-Einträgen unter HKLM bleibt genau die alte Installation, sie wird entfernt. Rot war danach `Program Files\WOA leer`: Die nachgebaute alte Form (`-d Legacy=1`) nutzte dieselben festen Komponenten-GUIDs wie die neue. Windows Installer zählte die Komponente deshalb doppelt und ließ die Dateien liegen. Die echten MSI bis 0.41.25 hatten automatische GUIDs, betroffen war nur der Test. Die alte Form hat jetzt eigene GUIDs. Test `legacy_form_has_its_own_component_guids` (vorher rot). Workspace-Version 0.41.33.

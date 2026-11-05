@@ -3770,7 +3770,7 @@ impl RadioDesk {
                 // läuft (wie die Lampe der Kopfleiste).
                 crate::widgets::onair_lamp(
                     ui,
-                    egui::vec2(64.0, 24.0),
+                    on_air_lamp_size(),
                     onair_lamp_lit(running && on, false),
                 );
                 // Rot nur für live: in Ruhe ist die Taste neutral, auf Sendung rot gefüllt.
@@ -3799,7 +3799,7 @@ impl RadioDesk {
                             .fill(fill)
                             .stroke(egui::Stroke::new(1.0, border))
                             .corner_radius(theme::RADIUS_MD)
-                            .min_size(egui::vec2(148.0, 32.0)),
+                            .min_size(egui::vec2(148.0, ON_AIR_ROW_H)),
                     )
                     .on_hover_text("Sendung an den eigenen Shoutcast (woa-streamd)");
                 b.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
@@ -3817,7 +3817,13 @@ impl RadioDesk {
                         } else {
                             theme::ok()
                         };
-                        theme::status_pill(ui, &s.summary(), color, true);
+                        let summary = s.summary();
+                        let mut pill = crate::widgets::chip::StateChip::new(
+                            &summary,
+                            crate::widgets::chip::ChipTone::Color(color),
+                        );
+                        pill.height = ON_AIR_ROW_H;
+                        pill.show(ui);
                         if let Some(line) = s.emergency_line() {
                             ui.label(
                                 egui::RichText::new(line)
@@ -5604,6 +5610,14 @@ impl RadioDesk {
 }
 
 /// ON-AIR-Lampe: leuchtet nur, wenn die Sendung läuft. Mikro an ist eine eigene Anzeige (#225).
+/// Gemeinsame Höhe von Lampe, Taste und Status-Pille in der Sendezeile (#450).
+const ON_AIR_ROW_H: f32 = 32.0;
+
+/// Größe der kleinen ON-AIR-Lampe vorn: gleich hoch wie Taste und Pille.
+fn on_air_lamp_size() -> egui::Vec2 {
+    egui::vec2(64.0, ON_AIR_ROW_H)
+}
+
 fn onair_lamp_lit(on_air: bool, _mic_open: bool) -> bool {
     on_air
 }
@@ -5768,6 +5782,12 @@ mod tests {
         assert_eq!(super::typed_position("abc", 5), None);
         assert_eq!(super::typed_position("", 5), None);
         assert_eq!(super::typed_position("2", 0), None);
+    }
+
+    #[test]
+    fn on_air_row_widgets_share_one_height() {
+        // #450: Lampe, Taste und Status-Pille waren 24, 32 und 26 px hoch.
+        assert_eq!(super::on_air_lamp_size().y, super::ON_AIR_ROW_H);
     }
 
     #[test]
