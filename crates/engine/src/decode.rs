@@ -5,12 +5,13 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use symphonia::core::codecs::CodecParameters;
 use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::errors::Error as SymError;
 use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::probe::{Probe, ProbeOptions};
 use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
@@ -246,20 +247,52 @@ fn decode_wav(path: &Path) -> Result<Decoded, String> {
     })
 }
 
+/// Wie weit der zweite Probe nach dem ersten Frame sucht (der Standard von symphonia: 1 MiB).
+const WIDE_PROBE_BYTES: u32 = 32 * 1024 * 1024;
+
+/// Probe mit tieferer Suche, einmal gebaut.
+fn wide_probe() -> &'static Probe {
+    static P: OnceLock<Probe> = OnceLock::new();
+    P.get_or_init(|| {
+        let mut p = Probe::new_with_options(&ProbeOptions {
+            max_probe_depth: WIDE_PROBE_BYTES,
+            ..ProbeOptions::default()
+        });
+        symphonia::default::register_enabled_formats(&mut p);
+        p
+    })
+}
+
 fn decode_symphonia(path: &Path, ext: &str) -> Result<(Decoded, u64), String> {
     let e = |x: SymError| x.to_string();
-    let file = File::open(path).map_err(|x| x.to_string())?;
-    let mss = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
     let mut hint = Hint::new();
     hint.with_extension(ext);
-    let mut format = symphonia::default::get_probe()
-        .probe(
-            &hint,
-            mss,
-            FormatOptions::default(),
-            MetadataOptions::default(),
-        )
-        .map_err(e)?;
+    let open = || -> Result<MediaSourceStream<'static>, String> {
+        let file = File::open(path).map_err(|x| x.to_string())?;
+        Ok(MediaSourceStream::new(
+            Box::new(file),
+            MediaSourceStreamOptions::default(),
+        ))
+    };
+    let mut format = match symphonia::default::get_probe().probe(
+        &hint,
+        open()?,
+        FormatOptions::default(),
+        MetadataOptions::default(),
+    ) {
+        Ok(f) => f,
+        // Mehr als 1 MiB Füllbytes oder Tag-Reste vor dem ersten Frame (#347): zweiter
+        // Versuch mit tieferer Suche. Der Normalfall bleibt beim schnellen Probe.
+        Err(SymError::Unsupported(_)) => wide_probe()
+            .probe(
+                &hint,
+                open()?,
+                FormatOptions::default(),
+                MetadataOptions::default(),
+            )
+            .map_err(e)?,
+        Err(x) => return Err(e(x)),
+    };
     let track = format
         .default_track(TrackType::Audio)
         .ok_or("keine Tonspur")?;
@@ -533,6 +566,24 @@ mod tests {
         let (dl, _) = d.stereo();
         assert!(dl.len().abs_diff(l.len()) <= 2_400, "{}", dl.len());
         assert!((rms(&dl) - rms(&l)).abs() < 0.01);
+    }
+
+    /// Issue #347: Tag-Reste oder Füllbytes vor dem ersten Frame (mehr als 1 MiB) ließen den
+    /// Probe mit „reached probe limit“ scheitern; die Analyse (BPM) und das Laden schlugen fehl.
+    #[test]
+    fn mp3_with_more_than_one_mib_of_padding_before_first_frame_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = dir.path().join("raw.mp3");
+        let (l, r) = tone(44_100);
+        export_stereo(&raw, &l, &r, 44_100).unwrap();
+        let mut b = vec![0u8; 1_600_000];
+        b.extend_from_slice(&std::fs::read(&raw).unwrap());
+        let p = dir.path().join("padded.mp3");
+        std::fs::write(&p, &b).unwrap();
+        let d = decode_file(&p).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!((d.rate, d.channels), (44_100, 2));
+        let (dl, _) = d.stereo();
+        assert!(dl.len().abs_diff(l.len()) <= 2_400, "{}", dl.len());
     }
 
     #[test]
