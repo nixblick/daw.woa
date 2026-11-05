@@ -27,7 +27,10 @@ ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 pulseaudio = { version = "0.3.2", optional = true }
 
 [features]
-device = ["dep:cpal", "dep:pulseaudio"]
+# realtime: Audio-Threads als Echtzeit anmelden (Windows: MMCSS „Pro Audio“), damit Windows sie
+# im Hintergrund nicht drosselt (Knistern beim Fensterwechsel, 0.42.1). Abgelehnt = RealtimeDenied,
+# der Strom läuft weiter (`needs_reopen`).
+device = ["dep:cpal", "cpal/realtime", "dep:pulseaudio"]
 
 [dev-dependencies]
 assert_no_alloc = "1.1.2"

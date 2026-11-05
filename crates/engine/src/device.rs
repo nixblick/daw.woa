@@ -564,6 +564,12 @@ pub fn needs_reopen(err: &cpal::Error) -> bool {
     )
 }
 
+/// Abgelehnte Echtzeit-Priorität (Feature `realtime`, unter Linux ohne Rechte üblich): kein
+/// Aussetzer, der Strom läuft mit normaler Priorität. Zählt nicht als Eingangsfehler.
+pub fn is_realtime_denied(err: &cpal::Error) -> bool {
+    err.kind() == cpal::ErrorKind::RealtimeDenied
+}
+
 /// Vom Fehlerpfad gesetzt (darf im Audio-Thread laufen: nur Atomics), vom GUI-Takt gelesen.
 #[derive(Default)]
 struct Health {

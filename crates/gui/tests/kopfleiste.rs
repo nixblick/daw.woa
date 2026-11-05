@@ -167,10 +167,11 @@ fn feedback_opens_large_and_centred() {
         .find("Schön, dass du dich meldest")
         .first()
         .expect("friendly title");
-    let send = *rig.find("Abschicken").first().expect("send button");
+    // 0.42.1: zwei gleichwertige Tasten statt Häkchen; „Mit Bild senden“ steht ganz rechts.
+    let send = *rig.find("Mit Bild senden").first().expect("send button");
     assert!(
-        !rig.find("Bildschirmfoto mitsenden").is_empty(),
-        "attachment option kept"
+        !rig.find("Ohne Bild senden").is_empty(),
+        "send without picture"
     );
     assert!(!rig.find("Lieber später").is_empty(), "cancel kept");
     // Fensterbreite aus linker Titelkante (Symbol davor) und rechter Senden-Kante.

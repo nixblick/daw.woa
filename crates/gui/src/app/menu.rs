@@ -472,7 +472,8 @@ impl WoaApp {
                     m.surrender_focus(id);
                 }
             });
-            self.feedback.open();
+            // 0.42.1 (wie fotobrett): erst das Bild, dann der Dialog.
+            self.feedback.open_with_screenshot();
             self.image_error = None;
         }
     }
