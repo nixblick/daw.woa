@@ -252,9 +252,8 @@
       "ansicht": "Party Einfach",
       "titel": "Deck-Badges nie gefüllt",
       "tun": "Titel auf Deck A, nichts läuft. Einen Titel auf dem anderen Deck vorladen, dann abspielen.",
-      "erwartet": "„BEREIT“ neutral grau, „VORGELADEN“ nur mit Lime-Rahmen und -Schrift, „JETZT“ mit Rahmen in der Modusfarbe, nie gefüllt.",
-      "version": "0.36.1",
-      "geprueft": "abnahme-lauf 2026-11-04"
+      "erwartet": "Außerhalb des DJ-Modus: „BEREIT“ neutral grau, „VORGELADEN“ nur mit Lime-Rahmen und -Schrift, „JETZT“ mit Rahmen in der Modusfarbe, nie gefüllt.",
+      "version": "0.41.36"
     },
     {
       "id": "rack-ausgang-pan",
@@ -864,6 +863,62 @@
       "erwartet": "Deck A, Mischpult und Deck B stehen nebeneinander ganz im Fenster, nichts ragt rechts hinaus; Wunschliste und Fernbedienung sind rechts unten zu sehen. Bei 100 % passt alles ohne Rollen, bei 125 % lässt sich die Ansicht senkrecht rollen, statt abgeschnitten zu werden.",
       "version": "0.41.25",
       "ticket": 443
+    },
+    {
+      "id": "dj-badges-gefuellt",
+      "ansicht": "Party DJ",
+      "titel": "DJ-Deck-Badges gefüllt",
+      "tun": "Party › DJ, Titel auf Deck A laden und abspielen, Deck B leer lassen.",
+      "erwartet": "„DECK A“ und „LÄUFT“ sind voll in der Deckfarbe gefüllt, Schrift dunkel; Deck B zeigt „DECK B“ und „LEER“ ebenfalls gefüllt.",
+      "version": "0.41.36"
+    },
+    {
+      "id": "vorhoeren-immer",
+      "ansicht": "Radio",
+      "titel": "Kopfhörer an jeder Zeile und jedem Cart",
+      "tun": "Playlist mit Titeln, einige Carts belegt. Maus nicht über die Zeilen bewegen.",
+      "erwartet": "Jede Playlist-Zeile und jedes belegte Cart zeigt das Kopfhörer-Symbol, ohne Mauszeiger darüber; Klick hört vor.",
+      "version": "0.41.36"
+    },
+    {
+      "id": "fade-dauer",
+      "ansicht": "Radio",
+      "titel": "Fade-Dauer einstellbar",
+      "tun": "Im Rack „Fade-Taste“ auf 6 s stellen, ein Deck abspielen und dessen Fade-Taste drücken; danach Einstellungen › Radio nach „Fade-Taste: Dauer“ suchen.",
+      "erwartet": "Das Deck blendet in 6 s aus, die Taste zählt „6,0 s“ herunter, Tooltip „Fade (6 s)“. Vorgabe ist 3 s, wählbar 1 bis 10 s; die Suche findet den Eintrag.",
+      "version": "0.41.36"
+    },
+    {
+      "id": "ducking-sprechpause",
+      "ansicht": "Radio",
+      "titel": "Ducking kommt nach Sprechpause zurück",
+      "tun": "Musik und ein Deck laufen. Mikro öffnen, sprechen, dann schweigen, Mikro offen lassen. Danach einen Cart starten und ins Mikro sprechen.",
+      "erwartet": "Beim Sprechen werden Musik, Deck und Cart leiser; 0,5 s nach dem letzten Wort kommen sie zurück und blenden in 1 s ein. Beide Zeiten stehen im Rack („Ducking: Rückkehr nach“, „Ducking: Einblenden“).",
+      "version": "0.41.36"
+    },
+    {
+      "id": "gesang-countdown",
+      "ansicht": "Radio",
+      "titel": "Sekunden bis Gesang",
+      "tun": "Einen Titel mit Instrumental-Intro auf Deck A laden (Gesangsmarke erkannt) und abspielen; denselben auf ein Cart legen und abspielen. Dann einen Titel ohne erkannten Einsatz spielen.",
+      "erwartet": "Deck und Cart zeigen „Gesang in 12 s“ und zählen herunter, bis der Gesang einsetzt; danach verschwindet die Anzeige. Ohne erkannten Einsatz steht nichts da. Im Sende-Deck zählt „RAMP“ ebenso.",
+      "version": "0.41.36"
+    },
+    {
+      "id": "sendedeck-nur-anzeige",
+      "ansicht": "Radio",
+      "titel": "Sende-Deck zeigt Decks nur an",
+      "tun": "Deck A von Hand starten, Playlist steht. Im Sende-Deck „Fade Sende-Deck“ drücken.",
+      "erwartet": "Im Sende-Deck-Display steht „DECK A Titel Restzeit“; die Fade-Taste ist gesperrt, solange die Playlist steht, und Deck A spielt weiter.",
+      "version": "0.41.36"
+    },
+    {
+      "id": "dj-midi-learn",
+      "ansicht": "Party DJ",
+      "titel": "MIDI-Learn im DJ-Modus",
+      "tun": "Controller wählen. Party › DJ, Rechtsklick auf PLAY von Deck A › „MIDI lernen“, Pad drücken; dasselbe für CUE und den Crossfader (Regler bewegen). Alternativ Controller-Fenster, Zeile „DJ:“.",
+      "erwartet": "Das Pad startet und pausiert Deck A, das Cue-Pad setzt bzw. springt zum Cue-Punkt, der Regler bewegt den Crossfader. Außerhalb der DJ-Ansicht tun die Zuordnungen nichts.",
+      "version": "0.41.36"
     }
   ]
 }
