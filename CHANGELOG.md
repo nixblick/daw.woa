@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.39 — 2026-11-05
+
+- **Feedback bei Tageslimit wird später gesendet:** Antwortet der Feedback-Server mit 429 (`{"error":"daily limit reached"}`), zeigt der Dialog „Tageslimit erreicht, wird später gesendet“ statt „Senden fehlgeschlagen“. Der fertige Anfrage-Rumpf liegt als Datei im Datenordner (`feedback-ausstehend/`) und geht unverändert erneut, damit der Server Dubletten erkennt; auch nach einem Neustart. Geprüft wird jede Minute, gesendet erst nach Wartezeit (30 min, verdoppelt je Fehlversuch, höchstens 6 h), beim ersten 429 einer Runde hört sie auf; nach 40 Fehlversuchen wird die Meldung verworfen und geloggt. Neu im Telemetrie-Crate: `FeedbackError::DailyLimit`, `post_payload`. Tests `daily_limit_is_held_back_and_resent_unchanged` (Schein-Server 429, 429, 200), `outbox_backoff_doubles_and_is_capped`. Prüfpunkt `feedback-tageslimit`, Klickliste in `docs/abnahme.md`. Workspace-Version 0.41.39.
+
 ## 0.41.38 — 2026-11-05
 
 Gäste und Telefon nach den Abstimmungen des Moderators unter Entwickler › Fragen. Prüfpunkte in Entwickler › Abnahme, Klickliste in `docs/abnahme.md`. Workspace-Version 0.41.38.

@@ -108,6 +108,8 @@ pub struct WoaApp {
     /// Where `config.json` is saved when the user changes a setting (`None` = not saved).
     config_path: Option<PathBuf>,
     feedback: FeedbackDialog,
+    /// Reports held back after 429, sent again later (also after a restart).
+    feedback_outbox: crate::feedback::Outbox,
     /// Fehler beim Anhängen eines eigenen Bildes (Feedback).
     image_error: Option<String>,
     /// Vorschau-Texturen im Feedback-Fenster: (Art, Bytes), Textur (#211).
@@ -659,7 +661,12 @@ impl WoaApp {
             state,
             config,
             config_path: None,
-            feedback: FeedbackDialog::default(),
+            feedback: FeedbackDialog::with_outbox(
+                woa_radio::data_dir().join(crate::feedback::OUTBOX_DIR),
+            ),
+            feedback_outbox: crate::feedback::Outbox::new(
+                woa_radio::data_dir().join(crate::feedback::OUTBOX_DIR),
+            ),
             image_error: None,
             feedback_thumbs: Vec::new(),
             update: crate::update::UpdateState::default(),
@@ -7460,6 +7467,7 @@ impl eframe::App for WoaApp {
             self.drop_files(ctx);
         }
         self.feedback.poll();
+        self.feedback_outbox.tick(Instant::now());
         // KI-Werkzeugaufrufe zwischen zwei Bildern, vor dem Abgleich mit dem Player.
         if self.mcp_live.frame(ctx, &mut self.state) > 0 {
             self.produktionen.mark_stale();

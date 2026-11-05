@@ -5,6 +5,11 @@ Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. H
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
 
+## Feedback bei Tageslimit (0.41.39, offen)
+
+1. **429:** Hat der Feedback-Server sein Tageslimit erreicht, eine Rückmeldung senden: Dialog zeigt „Tageslimit erreicht, wird später gesendet“, kein „fehlgeschlagen“.
+2. **Später:** Am nächsten Tag WOA starten und laufen lassen: die Meldung kommt genau einmal als Ticket an, `feedback-ausstehend` im Datenordner ist leer.
+
 ## Gäste und Telefon nach Rückmeldung des Moderators (0.41.38, offen)
 
 1. **Höchstens 4 Gäste:** Viermal „Testgast“; danach sind „Testgast“ und „Datei als Gast“ aus.

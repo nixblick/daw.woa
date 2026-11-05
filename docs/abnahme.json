@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "feedback-tageslimit",
+      "ansicht": "Allgemein",
+      "titel": "Feedback bei Tageslimit wird später gesendet",
+      "tun": "Wenn der Feedback-Server sein Tageslimit erreicht hat: eine Rückmeldung über den Feedback-Knopf senden. Am nächsten Tag WOA wieder starten und eine Stunde laufen lassen.",
+      "erwartet": "Der Dialog zeigt „Tageslimit erreicht, wird später gesendet“ statt „Senden fehlgeschlagen“. Die Meldung liegt im Datenordner unter feedback-ausstehend und kommt später genau einmal als Ticket an; der Ordner ist danach leer.",
+      "version": "0.41.39"
+    },
+    {
       "id": "gaeste-max-4",
       "ansicht": "Radio",
       "titel": "Höchstens 4 Gäste",

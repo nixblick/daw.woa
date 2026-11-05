@@ -1,14 +1,21 @@
 //! Feedback dialog state and the background sender (window-independent, testable).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use woa_telemetry::feedback::{MAX_SCREENSHOT_BYTES, MAX_TEXT_CHARS};
 use woa_telemetry::{
-    DEFAULT_INGEST_URL, FeedbackError, FeedbackMeta, UploadConfig, new_install_id, submit_feedback,
+    DEFAULT_INGEST_URL, FeedbackError, FeedbackMeta, UploadConfig, build_payload, new_install_id,
+    post_payload,
 };
+
+/// Message when the server's daily limit answered 429; the report waits in the outbox.
+pub const DAILY_LIMIT: &str = "Tageslimit erreicht, wird später gesendet";
+
+/// Folder (in the data folder) for reports held back after 429.
+pub const OUTBOX_DIR: &str = "feedback-ausstehend";
 
 /// Message shown when no endpoint is configured.
 pub const NOT_CONFIGURED: &str = "Server noch nicht eingerichtet";
@@ -314,6 +321,8 @@ pub struct FeedbackDialog {
     /// Send the session log (Protokoll window). On by default, again on every open (#211).
     pub send_log: bool,
     pending: Option<Receiver<Result<Option<u64>, FeedbackError>>>,
+    /// Outbox folder for reports the server refused with 429 (survives [`Self::close`]).
+    pub outbox_dir: Option<PathBuf>,
     /// Set when the send succeeded; the dialog closes [`THANKS_VISIBLE`] later.
     thanks_since: Option<Instant>,
 }
@@ -329,6 +338,7 @@ impl Default for FeedbackDialog {
             image: None,
             send_log: true,
             pending: None,
+            outbox_dir: None,
             thanks_since: None,
         }
     }
@@ -475,10 +485,19 @@ fn fit_png(mut img: image::DynamicImage) -> Result<Vec<u8>, String> {
 }
 
 impl FeedbackDialog {
+    /// A closed dialog that keeps reports refused with 429 in `dir`.
+    pub fn with_outbox(dir: PathBuf) -> Self {
+        Self {
+            outbox_dir: Some(dir),
+            ..Self::default()
+        }
+    }
+
     /// Opens the dialog for editing. No screenshot yet: it is taken when the user ticks the box.
     pub fn open(&mut self) {
         *self = Self {
             phase: Phase::Editing,
+            outbox_dir: self.outbox_dir.take(),
             ..Self::default()
         };
     }
@@ -592,7 +611,9 @@ impl FeedbackDialog {
 
     /// Closes the dialog.
     pub fn close(&mut self) {
+        let outbox_dir = self.outbox_dir.take();
         *self = Self::default();
+        self.outbox_dir = outbox_dir;
     }
 
     /// Sends in a background thread. Empty URL: no request, message [`NOT_CONFIGURED`].
@@ -612,12 +633,29 @@ impl FeedbackDialog {
         };
         let text = self.body(log_lines, home_dir().as_deref());
         let images = self.images();
+        let outbox = self.outbox_dir.clone();
         let (tx, rx) = channel();
         let spawned = std::thread::Builder::new()
             .name("woa-feedback".into())
             .spawn(move || {
+                let result = build_payload(&text, &images, &meta).and_then(|p| {
+                    let body = p.to_string();
+                    let r = post_payload(&body, &meta);
+                    if matches!(r, Err(FeedbackError::DailyLimit)) {
+                        match &outbox {
+                            Some(dir) => {
+                                if let Err(e) = outbox_store(dir, &meta.url, &body, now_secs()) {
+                                    tracing::error!(error = %e, "feedback outbox write failed");
+                                    return Err(FeedbackError::Status(429));
+                                }
+                            }
+                            None => return Err(FeedbackError::Status(429)),
+                        }
+                    }
+                    r
+                });
                 // Receiver gone = dialog closed; nothing to do.
-                let _ = tx.send(submit_feedback(&text, images, &meta));
+                let _ = tx.send(result);
             });
         match spawned {
             Ok(_) => {
@@ -647,6 +685,7 @@ impl FeedbackDialog {
             Ok(Some(n)) => format!("Danke! Gemeldet als #{n}"),
             Ok(None) => "Danke! Gemeldet".into(),
             Err(FeedbackError::NoEndpoint) => NOT_CONFIGURED.into(),
+            Err(FeedbackError::DailyLimit) => DAILY_LIMIT.into(),
             Err(e) => {
                 tracing::warn!(error = %e, "feedback failed");
                 format!("Senden fehlgeschlagen: {e}")
@@ -671,6 +710,184 @@ impl FeedbackDialog {
     pub fn tick(&mut self, now: Instant) {
         if self.thanks_left(now) == Some(Duration::ZERO) {
             self.close();
+        }
+    }
+}
+
+/// Seconds since the Unix epoch (0 if the clock is before 1970).
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// First wait after a 429; doubles per try up to [`OUTBOX_MAX_WAIT`].
+pub const OUTBOX_FIRST_WAIT: u64 = 30 * 60;
+/// Longest wait between two tries (the daily limit resets once a day).
+pub const OUTBOX_MAX_WAIT: u64 = 6 * 60 * 60;
+/// After so many failed tries a report is given up (logged, file removed).
+pub const OUTBOX_MAX_TRIES: u32 = 40;
+/// How often the app looks into the outbox.
+pub const OUTBOX_CHECK_EVERY: Duration = Duration::from_secs(60);
+
+/// A report held back after 429: the exact request body, sent again unchanged.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OutboxEntry {
+    pub url: String,
+    pub body: String,
+    pub tries: u32,
+    /// Unix seconds; not before this time.
+    pub next_try: u64,
+}
+
+/// Wait before the next try after `tries` failures.
+pub fn outbox_wait(tries: u32) -> u64 {
+    let shift = tries.saturating_sub(1).min(16);
+    OUTBOX_FIRST_WAIT
+        .saturating_mul(1u64 << shift)
+        .min(OUTBOX_MAX_WAIT)
+}
+
+fn write_entry(path: &Path, e: &OutboxEntry) -> std::io::Result<()> {
+    let json = serde_json::to_string(e).map_err(std::io::Error::other)?;
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, json)?;
+    std::fs::rename(&tmp, path)
+}
+
+/// Stores a refused report in `dir` (one file per report).
+pub fn outbox_store(dir: &Path, url: &str, body: &str, now: u64) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    let path = dir.join(format!("{now}-{nanos:09}.json"));
+    let entry = OutboxEntry {
+        url: url.to_string(),
+        body: body.to_string(),
+        tries: 1,
+        next_try: now + outbox_wait(1),
+    };
+    write_entry(&path, &entry)?;
+    tracing::info!(
+        art = "feedback.outbox",
+        "feedback held back after daily limit"
+    );
+    Ok(path)
+}
+
+/// Reports in `dir` whose time has come, oldest first. Unreadable files are skipped.
+pub fn outbox_due(dir: &Path, now: u64) -> Vec<(PathBuf, OutboxEntry)> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut due: Vec<(PathBuf, OutboxEntry)> = rd
+        .flatten()
+        .map(|d| d.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .filter_map(|p| {
+            let e: OutboxEntry = serde_json::from_str(&std::fs::read_to_string(&p).ok()?).ok()?;
+            Some((p, e))
+        })
+        .filter(|(_, e)| e.next_try <= now)
+        .collect();
+    due.sort_by(|a, b| a.0.cmp(&b.0));
+    due
+}
+
+/// Tries the due reports in `dir` once, one after the other. Sent ones are removed; the
+/// others wait longer. Stops at the first 429 (the limit holds for all). Blocking.
+/// Returns how many were sent.
+pub fn outbox_flush(dir: &Path, now: u64) -> usize {
+    let mut sent = 0;
+    for (path, mut entry) in outbox_due(dir, now) {
+        if !may_send(&entry.url) {
+            continue;
+        }
+        let meta = FeedbackMeta {
+            url: entry.url.clone(),
+            ..FeedbackMeta::default()
+        };
+        let result = post_payload(&entry.body, &meta);
+        let limit = matches!(result, Err(FeedbackError::DailyLimit));
+        match result {
+            Ok(_) => {
+                sent += 1;
+                tracing::info!(art = "feedback.outbox_sent", "held-back feedback sent");
+                if let Err(e) = std::fs::remove_file(&path) {
+                    tracing::error!(error = %e, "feedback outbox remove failed");
+                }
+                continue;
+            }
+            Err(e) => {
+                entry.tries += 1;
+                if entry.tries > OUTBOX_MAX_TRIES {
+                    tracing::error!(error = %e, "held-back feedback given up");
+                    if let Err(e) = std::fs::remove_file(&path) {
+                        tracing::error!(error = %e, "feedback outbox remove failed");
+                    }
+                } else {
+                    tracing::warn!(error = %e, "held-back feedback still refused");
+                    entry.next_try = now + outbox_wait(entry.tries);
+                    if let Err(e) = write_entry(&path, &entry) {
+                        tracing::error!(error = %e, "feedback outbox write failed");
+                    }
+                }
+            }
+        }
+        if limit {
+            break;
+        }
+    }
+    sent
+}
+
+/// Sends held-back reports in the background, at most one run at a time, checked every
+/// [`OUTBOX_CHECK_EVERY`] (the first check right after start).
+pub struct Outbox {
+    dir: PathBuf,
+    last_check: Option<Instant>,
+    running: Option<Receiver<usize>>,
+}
+
+impl Outbox {
+    pub fn new(dir: PathBuf) -> Self {
+        Self {
+            dir,
+            last_check: None,
+            running: None,
+        }
+    }
+
+    /// Call every frame; cheap unless a check is due.
+    pub fn tick(&mut self, now: Instant) {
+        if let Some(rx) = &self.running {
+            match rx.try_recv() {
+                Err(TryRecvError::Empty) => return,
+                _ => self.running = None,
+            }
+        }
+        if self
+            .last_check
+            .is_some_and(|t| now.saturating_duration_since(t) < OUTBOX_CHECK_EVERY)
+        {
+            return;
+        }
+        self.last_check = Some(now);
+        if outbox_due(&self.dir, now_secs()).is_empty() {
+            return;
+        }
+        let dir = self.dir.clone();
+        let (tx, rx) = channel();
+        match std::thread::Builder::new()
+            .name("woa-feedback-outbox".into())
+            .spawn(move || {
+                let _ = tx.send(outbox_flush(&dir, now_secs()));
+            }) {
+            Ok(_) => self.running = Some(rx),
+            Err(e) => tracing::error!(error = %e, "feedback outbox thread failed"),
         }
     }
 }
@@ -1146,6 +1363,121 @@ mod tests {
             req.contains(LOG_HEADER) && req.contains("Zeile eins"),
             "{req}"
         );
+    }
+
+    /// Fake server: answers the given statuses in order, returns the request bodies.
+    fn fake_server(
+        answers: Vec<(u16, &'static str)>,
+    ) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        use std::io::{Read, Write};
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/api/feedback", server.local_addr().unwrap());
+        let h = std::thread::spawn(move || {
+            let mut bodies = Vec::new();
+            for (status, answer) in answers {
+                let (mut s, _) = server.accept().unwrap();
+                s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    let text = String::from_utf8_lossy(&buf).to_string();
+                    if let Some(i) = text.find("\r\n\r\n") {
+                        let len = text[..i]
+                            .lines()
+                            .find_map(|l| {
+                                let l = l.to_ascii_lowercase();
+                                l.strip_prefix("content-length:")
+                                    .map(|v| v.trim().parse::<usize>().unwrap())
+                            })
+                            .unwrap_or(0);
+                        if buf.len() >= i + 4 + len {
+                            bodies.push(
+                                String::from_utf8_lossy(&buf[i + 4..i + 4 + len]).to_string(),
+                            );
+                            break;
+                        }
+                    }
+                    match s.read(&mut chunk) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                    }
+                }
+                let resp = format!(
+                    "HTTP/1.1 {status} x\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{answer}",
+                    answer.len()
+                );
+                let _ = s.write_all(resp.as_bytes());
+            }
+            bodies
+        });
+        (url, h)
+    }
+
+    /// 429 (Tagesdeckel): kein „fehlgeschlagen“, die Meldung liegt im Ausgang und geht
+    /// später mit demselben Rumpf erneut; danach ist der Ausgang leer.
+    #[test]
+    fn daily_limit_is_held_back_and_resent_unchanged() {
+        let (url, server) = fake_server(vec![
+            (429, r#"{"error":"daily limit reached"}"#),
+            (429, r#"{"error":"daily limit reached"}"#),
+            (200, r#"{"issue":7}"#),
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = dir.path().join(OUTBOX_DIR);
+        let mut d = FeedbackDialog {
+            outbox_dir: Some(outbox.clone()),
+            ..FeedbackDialog::default()
+        };
+        d.open();
+        d.text = "Knopf klemmt".into();
+        let cfg = GuiConfig {
+            feedback_url: url,
+            ..GuiConfig::default()
+        };
+        d.send(&cfg, &[]);
+        for _ in 0..300 {
+            d.poll();
+            if d.phase != Phase::Sending {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(d.phase, Phase::Done(DAILY_LIMIT.into()));
+        assert!(!d.is_thanks());
+        d.close();
+        assert_eq!(d.outbox_dir.as_deref(), Some(outbox.as_path()));
+
+        // Not yet due: nothing goes out (no constant fire).
+        let now = now_secs();
+        assert!(outbox_due(&outbox, now).is_empty());
+        let later = now + OUTBOX_FIRST_WAIT;
+        let due = outbox_due(&outbox, later);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].1.tries, 1);
+
+        // Second 429: stays, waits twice as long.
+        assert_eq!(outbox_flush(&outbox, later), 0);
+        assert!(outbox_due(&outbox, later + OUTBOX_FIRST_WAIT).is_empty());
+        let again = outbox_due(&outbox, later + 2 * OUTBOX_FIRST_WAIT);
+        assert_eq!(again[0].1.tries, 2);
+
+        // Next day (fresh process reads the same folder): sent, folder empty.
+        assert_eq!(outbox_flush(&outbox, later + OUTBOX_MAX_WAIT), 1);
+        assert_eq!(std::fs::read_dir(&outbox).unwrap().count(), 0);
+
+        let bodies = server.join().unwrap();
+        assert_eq!(bodies.len(), 3);
+        assert!(bodies[0].contains("Knopf klemmt"), "{}", bodies[0]);
+        assert_eq!(bodies[0], bodies[1], "same body for server dedup");
+        assert_eq!(bodies[0], bodies[2]);
+    }
+
+    #[test]
+    fn outbox_backoff_doubles_and_is_capped() {
+        assert_eq!(outbox_wait(1), OUTBOX_FIRST_WAIT);
+        assert_eq!(outbox_wait(2), 2 * OUTBOX_FIRST_WAIT);
+        assert_eq!(outbox_wait(3), 4 * OUTBOX_FIRST_WAIT);
+        assert_eq!(outbox_wait(30), OUTBOX_MAX_WAIT);
     }
 
     /// 0.41.7: Eine Konfiguration von vorher (ohne `mic`) lädt unverändert; das Mikrofon
