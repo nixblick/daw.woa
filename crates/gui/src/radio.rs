@@ -702,6 +702,8 @@ pub struct RadioDesk {
     wish_rect: egui::Rect,
     /// Fehlerbanner aufgeklappt („Details“).
     error_details: bool,
+    /// Liste der Meldungszeile aufgeklappt.
+    notices_open: bool,
     /// Zeilen der Playlist im letzten Bild (Ziel beim Umsortieren per Ziehen, #166).
     row_rects: Vec<egui::Rect>,
     /// Gezogene Playlist-Zeile (Index), solange die Maus gedrückt ist (#166).
@@ -851,15 +853,11 @@ fn meter_strip(ui: &mut egui::Ui, m: MeterHold, name: &str, size: egui::Vec2) {
     let label = format!("Pegelanzeige {name}");
     r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ProgressIndicator, true, &label));
     r.on_hover_text(format!(
-        "{name}: Spitze {} dBFS. Grün bis -18, Gelb bis -6, Rot darüber, Blau = zu leise.",
+        "{name}: Spitze {} dBFS. Grün bis -18, Gelb bis -6, Rot darüber.",
         crate::widgets::vu::fmt_db(20.0 * m.hold.max(1e-6).log10())
     ));
 }
 
-/// Senkrechte Pegelregler (wie der Kanal-Gain der Spuren): Name oben, Fader mit dB-Skala und
-/// LED-Meter daneben, Wert darunter; als fünfte Spalte das Meter „Master“ (Sendemix, ohne
-/// Fader). `dbs` in der Reihenfolge von [`FADER_BUSES`], `meters` dazu plus Master. Liefert je
-/// Regler die Antwort (`changed()`, wenn der Wert sich geändert hat; Doppelklick = 0 dB).
 /// Fader-Weg der Kanalzüge (RadioLevels: 130 px). Die Pegel stehen seit Design-Runde 2 in einer
 /// eigenen Karte unter der Cart-Wall, die Cart-Wall bleibt dadurch ganz im Fenster (#303).
 const FADER_HEIGHT: f32 = 130.0;
@@ -868,6 +866,12 @@ const STRIP_W: f32 = 56.0;
 /// LED-Kette neben dem Fader, seit #287 kräftiger (vorher 10 px).
 const METER_W: f32 = 16.0;
 /// Breite, ab der Pegel und Processing nebeneinander stehen statt untereinander.
+/// Titel der Speicher-Meldung (wegklickbar).
+const SAVE_NOTICE: &str = "Speichern fehlgeschlagen";
+/// Höhe der Wunschtitel-Zeile ohne Kartenrand.
+const WISH_ROW_H: f32 = 28.0;
+/// Unter dieser Innenhöhe nimmt die Pegel-Karte ihre Grundhöhe.
+const LEVELS_MIN_INNER_H: f32 = 200.0;
 const LEVELS_SIDE_BY_SIDE: f32 = 720.0;
 
 /// Farbiges Namensschild über einem Kanalzug (Scribble-Strip, RadioLevels).
@@ -902,12 +906,172 @@ fn group_sep(ui: &mut egui::Ui, h: f32) {
     ui.painter().rect_filled(line, 0.0, theme::border());
 }
 /// Höhe eines Cart-Pads.
-const CART_PAD_HEIGHT: f32 = 52.0;
+const CART_PAD_HEIGHT: f32 = 46.0;
 
+/// Höhe des Stumm-Platzes über jedem Kanal (RadioLevels, Fassung 8): Taste oder leer.
+const MUTE_SLOT: f32 = 24.0;
+/// Breite des Master-Kanals (Summe, ohne Fader).
+const MASTER_W: f32 = 64.0;
+/// Höhe der Gruppenzeile (QUELLEN · SUMME · AUSGÄNGE) über den Kanälen.
+const GROUP_LABEL_H: f32 = 16.0;
+/// Fader-Weg: Mindest- und Höchstmaß, dazwischen füllt die Pegelkarte ihre Höhe.
+const FADER_MIN: f32 = 110.0;
+const FADER_MAX: f32 = 300.0;
+
+/// Fader-Höhe, mit der die Pegelkarte die Höhe `avail` füllt (Gruppenzeile, Stumm-Platz,
+/// Namensschild und Abstände abgezogen).
+pub(crate) fn fader_height_for(avail: f32) -> f32 {
+    (avail - GROUP_LABEL_H - MUTE_SLOT - 18.0 - 3.0 * 4.0).clamp(FADER_MIN, FADER_MAX)
+}
+
+/// Gesamthöhe eines Kanals bei Fader-Höhe `h`.
+fn channel_height(h: f32) -> f32 {
+    MUTE_SLOT + h + 18.0 + 2.0 * 4.0
+}
+
+/// Stumm-Taste als echte Taste (`woa-key--rec`): aus neutral, an rot mit Schein.
+fn rec_key(ui: &mut egui::Ui, on: bool, label: &str) -> egui::Response {
+    let red = theme::on_air();
+    let b = egui::Button::new(
+        egui::RichText::new("M")
+            .font(theme::label_font(12.0))
+            .color(if on {
+                egui::Color32::WHITE
+            } else {
+                theme::text()
+            }),
+    )
+    .fill(if on { red } else { theme::surface() })
+    .stroke(egui::Stroke::new(
+        1.0,
+        if on { red } else { theme::border_strong() },
+    ))
+    .corner_radius(theme::RADIUS_MD)
+    .min_size(egui::vec2(40.0, MUTE_SLOT));
+    let r = ui.add_sized(egui::vec2(40.0, MUTE_SLOT), b);
+    if on {
+        ui.painter().rect_stroke(
+            r.rect.expand(1.0),
+            theme::RADIUS_MD,
+            egui::Stroke::new(3.0, red.gamma_multiply(0.35)),
+            egui::StrokeKind::Outside,
+        );
+    }
+    let label = label.to_string();
+    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, on, &label));
+    r
+}
+
+/// Ein Kanal (`woa-ch8`): oben 24 px Stumm-Taste oder leer, in der Mitte Fader und LED-Kette
+/// gleich hoch (`h`), unten das Namensschild auf einer Linie. Ohne `db` nur die LED-Kette
+/// (Master). Liefert Fader- und Stumm-Antwort.
+#[allow(clippy::too_many_arguments)]
+fn channel(
+    ui: &mut egui::Ui,
+    name: &str,
+    color: egui::Color32,
+    meter: MeterHold,
+    db: Option<&mut f32>,
+    mute: Option<(bool, &str)>,
+    h: f32,
+    w: f32,
+) -> (Option<egui::Response>, Option<egui::Response>) {
+    ui.vertical(|ui| {
+        ui.set_width(w);
+        ui.spacing_mut().item_spacing.y = 4.0;
+        let m = match mute {
+            Some((on, label)) => Some(
+                ui.horizontal(|ui| {
+                    ui.add_space(((w - 40.0) / 2.0).max(0.0));
+                    rec_key(ui, on, label)
+                })
+                .inner,
+            ),
+            None => {
+                ui.allocate_exact_size(egui::vec2(w, MUTE_SLOT), egui::Sense::hover());
+                None
+            }
+        };
+        let f = ui
+            .horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                match db {
+                    Some(db) => {
+                        ui.add_space(((w - 36.0 - 2.0 - METER_W) / 2.0 - 2.0).max(0.0));
+                        let r = crate::widgets::fader(
+                            ui,
+                            db,
+                            woa_radio::mixer::LEVEL_MIN_DB as f32
+                                ..=woa_radio::mixer::LEVEL_MAX_DB as f32,
+                            0.0,
+                            egui::vec2(36.0, h),
+                            crate::widgets::Orient::Vertical,
+                        );
+                        meter_strip(ui, meter, name, egui::vec2(METER_W, h));
+                        Some(r)
+                    }
+                    None => {
+                        ui.add_space((w - 1.5 * METER_W) / 2.0 - 2.0);
+                        meter_strip(ui, meter, name, egui::vec2(1.5 * METER_W, h));
+                        None
+                    }
+                }
+            })
+            .inner;
+        scribble(ui, name, color, w);
+        (f, m)
+    })
+    .inner
+}
+
+/// Gruppe der Pegelkarte mit Überschrift (QUELLEN, SUMME, AUSGÄNGE) mittig über den Kanälen.
+fn level_group<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    ui.vertical(|ui| {
+        ui.add_space(GROUP_LABEL_H);
+        let r = ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            add(ui)
+        });
+        let rect = r.response.rect;
+        ui.painter().text(
+            egui::pos2(rect.center().x, rect.top() - GROUP_LABEL_H / 2.0 - 2.0),
+            egui::Align2::CENTER_CENTER,
+            title,
+            theme::label_font(11.0),
+            theme::text_dim(),
+        );
+        r.inner
+    })
+    .inner
+}
+
+/// dB-Skala links neben den Kanälen (Werte der LED-Kette, -60…0 dBFS).
+fn db_scale(ui: &mut egui::Ui, h: f32) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(24.0, GROUP_LABEL_H + channel_height(h)),
+        egui::Sense::hover(),
+    );
+    let top = rect.top() + GROUP_LABEL_H + MUTE_SLOT + 4.0;
+    for db in [0.0f32, -6.0, -12.0, -24.0, -48.0] {
+        let y = top + (-db / 60.0) * h;
+        ui.painter().text(
+            egui::pos2(rect.right() - 2.0, y),
+            egui::Align2::RIGHT_CENTER,
+            format!("{db:.0}"),
+            egui::FontId::monospace(10.0),
+            theme::text_dim(),
+        );
+    }
+}
+
+/// Senkrechte Pegelregler der Quellen Playlist, Carts, Decks, Mikro (Reihenfolge
+/// [`FADER_BUSES`]) im einheitlichen Kanalbau, Fader-Höhe `h`. Liefert je Regler die Antwort
+/// (`changed()`, wenn der Wert sich geändert hat; Doppelklick = 0 dB).
 pub(crate) fn level_faders(
     ui: &mut egui::Ui,
     dbs: &mut [f32; 4],
     meters: &[MeterHold; 5],
+    h: f32,
 ) -> Vec<egui::Response> {
     let mut out = Vec::with_capacity(4);
     ui.horizontal_top(|ui| {
@@ -918,53 +1082,41 @@ pub(crate) fn level_faders(
             .zip(meters)
             .enumerate()
         {
-            ui.vertical(|ui| {
-                ui.set_width(STRIP_W);
-                ui.spacing_mut().item_spacing.y = 4.0;
-                let r = ui
-                    .horizontal_top(|ui| {
-                        ui.spacing_mut().item_spacing.x = 2.0;
-                        let r = crate::widgets::fader(
-                            ui,
-                            db,
-                            woa_radio::mixer::LEVEL_MIN_DB as f32
-                                ..=woa_radio::mixer::LEVEL_MAX_DB as f32,
-                            0.0,
-                            egui::vec2(36.0, FADER_HEIGHT),
-                            crate::widgets::Orient::Vertical,
-                        );
-                        meter_strip(ui, *m, name, egui::vec2(METER_W, FADER_HEIGHT));
-                        r
-                    })
-                    .inner;
-                let label = format!("Pegel {name}");
-                let value = f64::from(*db);
-                r.widget_info(|| egui::WidgetInfo::slider(true, value, &label));
-                scribble(ui, name, theme::track_color(k), STRIP_W);
-                out.push(r.on_hover_text(format!(
-                    "Pegel {name}: {}. Doppelklick: 0 dB. Rechtsklick: MIDI lernen. Ganz unten = aus.",
-                    crate::widgets::vu::fmt_db(*db)
-                )));
-            });
+            let (r, _) = channel(
+                ui,
+                name,
+                theme::track_color(k),
+                *m,
+                Some(db),
+                None,
+                h,
+                STRIP_W,
+            );
+            let Some(r) = r else { continue };
+            let label = format!("Pegel {name}");
+            let value = f64::from(*db);
+            r.widget_info(|| egui::WidgetInfo::slider(true, value, &label));
+            out.push(r.on_hover_text(format!(
+                "Pegel {name}: {}. Doppelklick: 0 dB. Rechtsklick: MIDI lernen. Ganz unten = aus.",
+                crate::widgets::vu::fmt_db(*db)
+            )));
         }
-        group_sep(ui, FADER_HEIGHT + 44.0);
-        ui.vertical(|ui| {
-            ui.set_width(STRIP_W);
-            ui.spacing_mut().item_spacing.y = 4.0;
-            ui.horizontal(|ui| {
-                ui.add_space((STRIP_W - 1.5 * METER_W) / 2.0);
-                meter_strip(
-                    ui,
-                    meters[4],
-                    "Master",
-                    egui::vec2(1.5 * METER_W, FADER_HEIGHT),
-                );
-            });
-            ui.add_space(20.0);
-            scribble(ui, "Master", theme::track_color(5), STRIP_W);
-        });
     });
     out
+}
+
+/// Summe: das Master-Meter (Sendemix, ohne Fader), 64 px breit.
+pub(crate) fn master_strip(ui: &mut egui::Ui, meter: MeterHold, h: f32) {
+    let _ = channel(
+        ui,
+        "Master",
+        theme::track_color(5),
+        meter,
+        None,
+        None,
+        h,
+        MASTER_W,
+    );
 }
 
 /// Die zwei Ausgänge mit eigenem Regler (#96), Reihenfolge wie in [`output_faders`].
@@ -977,13 +1129,14 @@ const OUTPUTS: [(woa_radio::show::Output, &str, &str); 2] = [
     (woa_radio::show::Output::Stream, "Stream", "Stream senden"),
 ];
 
-/// Regler für die Ausgänge „Wiedergabe Notebook“ (Abhören) und „Stream senden“ (#96), im
-/// Stil der Pegelregler, darunter je ein roter Stumm-Knopf. Liefert je Ausgang, ob sich Pegel
-/// oder Stumm geändert hat.
+/// Regler für die Ausgänge „Wiedergabe Notebook“ (Abhören) und „Stream senden“ (#96) im
+/// Kanalbau der Quellen, oben je eine Stumm-Taste (`woa-key--rec`). Liefert je Ausgang, ob
+/// sich Pegel oder Stumm geändert hat.
 pub(crate) fn output_faders(
     ui: &mut egui::Ui,
     outs: &mut [woa_radio::show::OutLevel; 2],
     meters: &[MeterHold; 2],
+    h: f32,
 ) -> [bool; 2] {
     let mut changed = [false; 2];
     ui.horizontal_top(|ui| {
@@ -994,27 +1147,24 @@ pub(crate) fn output_faders(
             .zip(&mut changed)
             .zip(meters)
         {
-            ui.vertical(|ui| {
-                ui.set_width(STRIP_W);
-                ui.spacing_mut().item_spacing.y = 4.0;
-                let mut db = o.db as f32;
-                // Fader und LED-Kette des Ausgangs nebeneinander, wie bei den Quellen.
-                let r = ui
-                    .horizontal_top(|ui| {
-                        ui.spacing_mut().item_spacing.x = 2.0;
-                        let r = crate::widgets::fader(
-                            ui,
-                            &mut db,
-                            woa_radio::mixer::LEVEL_MIN_DB as f32
-                                ..=woa_radio::mixer::LEVEL_MAX_DB as f32,
-                            0.0,
-                            egui::vec2(36.0, FADER_HEIGHT),
-                            crate::widgets::Orient::Vertical,
-                        );
-                        meter_strip(ui, *m, short, egui::vec2(METER_W, FADER_HEIGHT));
-                        r
-                    })
-                    .inner;
+            let mut db = o.db as f32;
+            let mute_label = format!("Stumm {name}");
+            let color = if o.mute {
+                theme::text_dim()
+            } else {
+                theme::track_color(4)
+            };
+            let (r, b) = channel(
+                ui,
+                short,
+                color,
+                *m,
+                Some(&mut db),
+                Some((o.mute, &mute_label)),
+                h,
+                STRIP_W,
+            );
+            if let Some(r) = r {
                 let label = format!("Pegel {name}");
                 let value = f64::from(db);
                 r.widget_info(|| egui::WidgetInfo::slider(true, value, &label));
@@ -1026,31 +1176,13 @@ pub(crate) fn output_faders(
                     o.db = f64::from(db);
                     *ch = true;
                 }
-                let red = theme::on_air();
-                let m = egui::Button::new(egui::RichText::new("M").strong().color(if o.mute {
-                    theme::well()
-                } else {
-                    theme::text_dim()
-                }))
-                .fill(if o.mute { red } else { theme::surface() })
-                .stroke(egui::Stroke::new(
-                    1.0,
-                    if o.mute { red } else { theme::border_strong() },
-                ))
-                .corner_radius(theme::RADIUS_MD)
-                .min_size(egui::vec2(STRIP_W, 24.0));
-                let label = format!("Stumm {name}");
-                let mute = o.mute;
-                let b = ui.add(m);
-                b.widget_info(|| {
-                    egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, mute, &label)
-                });
-                if b.on_hover_text(format!("{name} stumm schalten")).clicked() {
-                    o.mute = !o.mute;
-                    *ch = true;
-                }
-                scribble(ui, short, theme::track_color(4), STRIP_W);
-            });
+            }
+            if let Some(b) = b
+                && b.on_hover_text(format!("{name} stumm schalten")).clicked()
+            {
+                o.mute = !o.mute;
+                *ch = true;
+            }
         }
     });
     changed
@@ -1496,6 +1628,7 @@ impl RadioDesk {
             error_rect: egui::Rect::NOTHING,
             wish_rect: egui::Rect::NOTHING,
             error_details: false,
+            notices_open: false,
             row_rects: Vec::new(),
             row_drag: None,
             row_hover: None,
@@ -2735,8 +2868,13 @@ impl RadioDesk {
         ui.columns(2, |cols| {
             cols[0].spacing_mut().item_spacing.y = 10.0;
             cols[1].spacing_mut().item_spacing.y = 10.0;
+            // Links (Fassung 8): Sende-Deck mit Meldungszeile, die Gäste-Karte, die Playlist
+            // füllt den Rest und rollt als einzige.
             theme::card_frame().show(&mut cols[0], |ui| {
                 self.clock_and_controls(ui, &v);
+            });
+            theme::card_frame().show(&mut cols[0], |ui| {
+                self.guests_card(ui);
             });
             self.playlist_rect = theme::card_frame()
                 .show(&mut cols[0], |ui| {
@@ -2744,8 +2882,9 @@ impl RadioDesk {
                 })
                 .response
                 .rect;
-            // Die rechte Spalte rollt: sonst liegen Rack (Crossfade, Ducking) und Gäste
-            // unter dem Fensterrand und sind nicht erreichbar (#168).
+            // Rechts: Decks, Cart-Wall, Pegel | Processing in gleicher Höhe, Wunschtitel als
+            // eine Zeile. Bei 1920 × 1030 passt alles; nur auf kleinen Schirmen rollt die
+            // Spalte noch (#168, #303).
             egui::ScrollArea::vertical()
                 .id_salt("radio_right_column")
                 .auto_shrink([false, false])
@@ -2754,33 +2893,44 @@ impl RadioDesk {
                     theme::card_frame().show(ui, |ui| {
                         self.deck_card(ui, &v);
                     });
-                    // Zweites oben: die Cart-Wall, ganz sichtbar auch bei 1366×768 (#303).
                     theme::card_frame().show(ui, |ui| {
                         self.cart_wall(ui, &v);
                     });
-                    // Pegel und Processing nebeneinander (ScreenRadio), schmal untereinander.
+                    // Platz für Pegel und Processing: Rest der Spalte ohne Wunschtitel-Zeile.
+                    let card_v = 2.0 * 10.0 + 2.0;
+                    let rest = ui.available_height() - WISH_ROW_H - card_v - 2.0 * 10.0;
+                    let inner_h = if rest >= LEVELS_MIN_INNER_H {
+                        rest
+                    } else {
+                        0.0
+                    };
                     if ui.available_width() >= LEVELS_SIDE_BY_SIDE {
                         ui.horizontal_top(|ui| {
                             let w = ui.available_width();
                             let left = theme::card_frame()
-                                .show(ui, |ui| ui.vertical(|ui| self.levels_card(ui)))
+                                .show(ui, |ui| {
+                                    ui.vertical(|ui| {
+                                        ui.set_min_height(inner_h);
+                                        self.levels_card(ui, inner_h);
+                                    })
+                                })
                                 .response
-                                .rect
-                                .width();
-                            let rest = w - left - ui.spacing().item_spacing.x;
+                                .rect;
+                            let rest = w - left.width() - ui.spacing().item_spacing.x;
                             ui.allocate_ui_with_layout(
                                 egui::vec2(rest, 0.0),
                                 egui::Layout::top_down(egui::Align::Min),
                                 |ui| {
                                     theme::card_frame().show(ui, |ui| {
                                         ui.set_width(ui.available_width());
+                                        ui.set_min_height(left.height() - card_v);
                                         self.processing_rack(ui);
                                     });
                                 },
                             );
                         });
                     } else {
-                        theme::card_frame().show(ui, |ui| self.levels_card(ui));
+                        theme::card_frame().show(ui, |ui| self.levels_card(ui, 0.0));
                         theme::card_frame().show(ui, |ui| self.processing_rack(ui));
                     }
                     self.wish_rect = theme::card_frame()
@@ -2789,9 +2939,6 @@ impl RadioDesk {
                         })
                         .response
                         .rect;
-                    theme::card_frame().show(ui, |ui| {
-                        self.guests_card(ui);
-                    });
                 });
         });
     }
@@ -3135,20 +3282,7 @@ impl RadioDesk {
                     .on_hover_text("Unter- oder Überläufe des Pult-Eingangs seit dem Öffnen");
                 }
             }
-            if self.silent_stream.alarm() {
-                let source = if self.pult.is_some() {
-                    "Pult-Eingang"
-                } else {
-                    "Sendemix"
-                };
-                ui.colored_label(
-                    theme::on_air(),
-                    format!("Stream bekommt keinen Ton (Quelle: {source})"),
-                );
-            }
-            if let Some(e) = &self.phone_error {
-                ui.colored_label(theme::on_air(), e);
-            }
+            // Stille im Stream und Telefon-Fehler stehen in der Meldungszeile (Fassung 8).
             // Mitschnitt: seit 0.34.56 als REC-Pille in der Kopfleiste, in jedem Modus.
         });
         ui.add_space(4.0);
@@ -3217,6 +3351,68 @@ impl RadioDesk {
 
         ui.add_space(4.0);
         self.on_air_row(ui);
+        // Meldungszeile am Fuß (StatusLine, Fassung 8) statt roter Fließtexte.
+        let notices = self.notices();
+        let act = crate::widgets::status_line::status_line(ui, &notices, &mut self.notices_open);
+        if let Some(i) = act.dismissed
+            && notices.get(i).is_some_and(|n| n.title == SAVE_NOTICE)
+        {
+            self.save_error = None;
+        }
+    }
+
+    /// Alle Meldungen für die Meldungszeile: Stream, Telefon, Ausgänge, Speichern.
+    fn notices(&self) -> Vec<crate::widgets::status_line::Notice> {
+        use crate::widgets::status_line::Notice;
+        let mut n = Vec::new();
+        let now = woa_stream::unix_now();
+        let st = self.stream_status.as_ref();
+        let running = st.is_some_and(|s| s.is_running(now));
+        let on = self.feeder.is_some();
+        if self.silent_stream.alarm() {
+            let source = if self.pult.is_some() {
+                "Pult-Eingang"
+            } else {
+                "Sendemix"
+            };
+            n.push(Notice::error(
+                "Stream ohne Ton",
+                format!("Quelle: {source}"),
+            ));
+        }
+        if let Some(s) = st.filter(|_| running) {
+            if let Some(line) = s.emergency_line() {
+                n.push(Notice::error("Notfall-Playlist", line));
+            }
+            if let Some(p) = s.problem() {
+                n.push(Notice::error("Stream", p));
+            }
+            if on && let Some(h) = s.empty_emergency_hint() {
+                n.push(Notice::warn("Notfall-Playlist", h));
+            }
+        } else if on && let Some(e) = st.and_then(|s| s.last_error.clone()) {
+            n.push(Notice::error("Stream", e));
+        }
+        if let Some(line) = link_line(
+            self.feeder
+                .as_ref()
+                .map(|f| (f.is_connected(), f.reconnects())),
+            st.filter(|_| running),
+        ) {
+            n.push(Notice::warn("Sendestream", line));
+        }
+        if let Some(e) = &self.phone_error {
+            n.push(Notice::error("Telefon", e.clone()));
+        }
+        for w in &self.output_warnings {
+            n.push(Notice::warn("Ausgang", w.clone()));
+        }
+        if let Some(e) = &self.save_error {
+            let mut s = Notice::error(SAVE_NOTICE, e.clone());
+            s.dismiss = true;
+            n.push(s);
+        }
+        n
     }
 
     /// 19-Zoll-Broadcast-Processing- & Übergangs-Rack (rechts unter der Cart-Wall).
@@ -4026,19 +4222,6 @@ impl RadioDesk {
                         );
                         pill.height = ON_AIR_ROW_H;
                         pill.show(ui);
-                        if let Some(line) = s.emergency_line() {
-                            ui.label(
-                                egui::RichText::new(line)
-                                    .strong()
-                                    .color(theme::danger_text()),
-                            );
-                        }
-                    }
-                    Some(s) if s.last_error.is_some() && on => {
-                        ui.colored_label(
-                            ui.visuals().error_fg_color,
-                            s.last_error.clone().unwrap_or_default(),
-                        );
                     }
                     _ if on => {
                         ui.label(
@@ -4054,33 +4237,6 @@ impl RadioDesk {
                     }
                 }
             });
-            if let Some(p) = st
-                .as_ref()
-                .filter(|_| running)
-                .and_then(StreamStatus::problem)
-            {
-                ui.label(egui::RichText::new(p).small().color(theme::danger_text()));
-            }
-            if on
-                && let Some(h) = st
-                    .as_ref()
-                    .filter(|_| running)
-                    .and_then(StreamStatus::empty_emergency_hint)
-            {
-                ui.label(egui::RichText::new(h).small().color(theme::danger_text()));
-            }
-            if let Some(line) = link_line(
-                self.feeder
-                    .as_ref()
-                    .map(|f| (f.is_connected(), f.reconnects())),
-                st.as_ref().filter(|_| running),
-            ) {
-                ui.label(
-                    egui::RichText::new(line)
-                        .small()
-                        .color(theme::danger_text()),
-                );
-            }
         });
     }
 
@@ -4650,7 +4806,8 @@ impl RadioDesk {
                         // Alte Belegung auf einem Deck-Buchstaben: wirkt nicht mehr.
                         Some(k) if cart_key_of(k).is_none() => Some("–".to_string()),
                         Some(k) => Some(k.clone()),
-                        None => Some("–".to_string()),
+                        // Ohne Taste kein Kasten (Fassung 8: leere Pads ohne „–“).
+                        None => None,
                     };
                     // Das Pad muss vor dem Zeichnen wissen, ob oben rechts Symbole liegen (#388).
                     let pfl_here = v.pfl_source == Some(PflSource::Cart(slot));
@@ -5395,39 +5552,54 @@ impl RadioDesk {
         self.deck_rows(ui, v);
     }
 
-    /// Karte PEGEL (RadioLevels): vier Kanalzüge, Master-Meter, Notebook und Stream.
-    fn levels_card(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label(theme::panel_label("PEGEL"));
-            ui.label(
-                egui::RichText::new("Quellen · Master · Ausgänge")
-                    .size(12.0)
-                    .color(theme::text_dim()),
-            );
-        });
+    /// Karte PEGEL (RadioLevels, Fassung 8): Quellen · Summe · Ausgänge im einheitlichen
+    /// Kanalbau. `inner_h` ist die Höhe, die die Karte füllen soll (0 = Vorgabe).
+    fn levels_card(&mut self, ui: &mut egui::Ui, inner_h: f32) {
+        let head = ui
+            .horizontal(|ui| {
+                ui.label(theme::panel_label("PEGEL"));
+            })
+            .response
+            .rect
+            .height();
         ui.add_space(4.0);
-        ui.horizontal_top(|ui| self.level_fader_group(ui));
+        let h = if inner_h > 0.0 {
+            fader_height_for(inner_h - head - 4.0)
+        } else {
+            FADER_HEIGHT
+        };
+        ui.horizontal_top(|ui| self.level_fader_group(ui, h));
     }
 
-    /// Pegel Playlist, Carts, Decks, Mikro als senkrechte Fader (Werte wie bisher).
-    fn level_fader_group(&mut self, ui: &mut egui::Ui) {
-        let mut dbs = FADER_BUSES.map(|(b, _)| self.level_db(b) as f32);
-        let rs = level_faders(ui, &mut dbs, &self.meters);
+    /// Quellen (Playlist, Carts, Decks, Mikro, Telefon), Summe (Master), Ausgänge (Notebook,
+    /// Stream), getrennt durch 1-px-Linien; links die gemeinsame dB-Skala.
+    fn level_fader_group(&mut self, ui: &mut egui::Ui, h: f32) {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        db_scale(ui, h);
+        let sep_h = GROUP_LABEL_H + channel_height(h);
+        let rs = level_group(ui, "QUELLEN", |ui| {
+            let mut dbs = FADER_BUSES.map(|(b, _)| self.level_db(b) as f32);
+            let rs = level_faders(ui, &mut dbs, &self.meters, h);
+            // Telefon als eigener Kanal zwischen Mikro und Gästen (Moderator 05.11.2026).
+            self.phone_strip(ui, h);
+            (rs, dbs)
+        });
+        let (rs, dbs) = rs;
         for ((r, (b, _)), db) in rs.iter().zip(FADER_BUSES).zip(dbs) {
             if r.changed() {
                 self.set_level(b, f64::from(db));
             }
             self.learn_menu(r, Target::Level(b));
         }
-        // Telefon direkt neben dem Master, ohne eigenen Trenner: Mit einem zweiten Trenner wird
-        // das Processing daneben so schmal, dass die Wunschzeile bei 1920 × 1030 unter den Rand
-        // rutscht.
-        self.phone_strip(ui);
-        // Kein `separator()`: senkrecht in der rollenden Spalte nimmt er die ganze Höhe und
-        // schob die Karten darunter (Cart-Wall) aus dem Bild (#303).
-        group_sep(ui, FADER_HEIGHT + 40.0);
+        group_sep(ui, sep_h);
+        let master = self.meters[4];
+        level_group(ui, "SUMME", |ui| master_strip(ui, master, h));
+        group_sep(ui, sep_h);
         let mut outs = [self.view.out_monitor, self.view.out_stream];
-        let ch = output_faders(ui, &mut outs, &self.out_meters);
+        let meters = self.out_meters;
+        let ch = level_group(ui, "AUSGÄNGE", |ui| {
+            output_faders(ui, &mut outs, &meters, h)
+        });
         for ((out, _, _), (o, c)) in OUTPUTS.iter().zip(outs.into_iter().zip(ch)) {
             if c {
                 match out {
@@ -5440,54 +5612,36 @@ impl RadioDesk {
         }
     }
 
-    /// Telefon als eigener Kanal im Pult (Moderator 05.11.2026): Fader und LED-Kette, der Name
+    /// Telefon als eigener Kanal im Pult (Moderator 05.11.2026): Fader und LED-Kette, das Schild
     /// leuchtet rot, solange das Telefon auf Sendung ist. Der Fader wirkt nur dann.
-    fn phone_strip(&mut self, ui: &mut egui::Ui) {
+    fn phone_strip(&mut self, ui: &mut egui::Ui, h: f32) {
         let on = self.view.phone_on;
-        ui.vertical(|ui| {
-            ui.set_width(STRIP_W);
-            ui.spacing_mut().item_spacing.y = 4.0;
-            let r = ui
-                .horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing.x = 2.0;
-                    let r = crate::widgets::fader(
-                        ui,
-                        &mut self.phone_db,
-                        woa_radio::mixer::LEVEL_MIN_DB as f32
-                            ..=woa_radio::mixer::LEVEL_MAX_DB as f32,
-                        0.0,
-                        egui::vec2(36.0, FADER_HEIGHT),
-                        crate::widgets::Orient::Vertical,
-                    );
-                    meter_strip(
-                        ui,
-                        self.phone_meter,
-                        "Telefon",
-                        egui::vec2(METER_W, FADER_HEIGHT),
-                    );
-                    r
-                })
-                .inner;
-            let value = f64::from(self.phone_db);
-            r.widget_info(|| egui::WidgetInfo::slider(true, value, "Pegel Telefon"));
-            if r.changed() {
-                let db = f64::from(self.phone_db);
-                self.with(move |c| c.set_phone_level(db));
-            }
-            r.on_hover_text(format!(
-                "Pegel Telefon: {}. Doppelklick: 0 dB. Wirkt, solange das Telefon auf Sendung ist.",
-                crate::widgets::vu::fmt_db(self.phone_db)
-            ));
-            // Gleiche Höhe wie die anderen Kanalzüge (sonst rutscht die Wunschzeile bei
-            // 1920 × 1030 unter den Rand): der Stand steht in der Farbe des Namens, geschaltet
-            // wird auf der Gäste-Karte oder in der Tastenreihe.
-            let col = if on {
-                theme::on_air()
-            } else {
-                theme::text_dim()
-            };
-            scribble(ui, "Telefon", col, STRIP_W);
-        });
+        let col = if on {
+            theme::on_air()
+        } else {
+            theme::text_dim()
+        };
+        let (r, _) = channel(
+            ui,
+            "Telefon",
+            col,
+            self.phone_meter,
+            Some(&mut self.phone_db),
+            None,
+            h,
+            STRIP_W,
+        );
+        let Some(r) = r else { return };
+        let value = f64::from(self.phone_db);
+        r.widget_info(|| egui::WidgetInfo::slider(true, value, "Pegel Telefon"));
+        if r.changed() {
+            let db = f64::from(self.phone_db);
+            self.with(move |c| c.set_phone_level(db));
+        }
+        r.on_hover_text(format!(
+            "Pegel Telefon: {}. Doppelklick: 0 dB. Wirkt, solange das Telefon auf Sendung ist.",
+            crate::widgets::vu::fmt_db(self.phone_db)
+        ));
     }
 
     fn deck_rows(&mut self, ui: &mut egui::Ui, v: &View) {
@@ -6373,9 +6527,14 @@ mod tests {
         let dbs = std::cell::RefCell::new([0.0f32; 4]);
         let changed = std::cell::RefCell::new(Vec::new());
         let mut ui = |ui: &mut eframe::egui::Ui| {
-            for (k, r) in super::level_faders(ui, &mut dbs.borrow_mut(), &Default::default())
-                .iter()
-                .enumerate()
+            for (k, r) in super::level_faders(
+                ui,
+                &mut dbs.borrow_mut(),
+                &Default::default(),
+                super::FADER_HEIGHT,
+            )
+            .iter()
+            .enumerate()
             {
                 if r.changed() {
                     changed.borrow_mut().push(k);
@@ -6418,7 +6577,12 @@ mod tests {
         let outs = std::cell::RefCell::new([woa_radio::show::OutLevel::default(); 2]);
         let changed = std::cell::RefCell::new(Vec::new());
         let mut ui = |ui: &mut eframe::egui::Ui| {
-            let ch = super::output_faders(ui, &mut outs.borrow_mut(), &Default::default());
+            let ch = super::output_faders(
+                ui,
+                &mut outs.borrow_mut(),
+                &Default::default(),
+                super::FADER_HEIGHT,
+            );
             changed.borrow_mut().push(ch);
         };
         frame(&ctx, 0, vec![], &mut ui);
@@ -6448,21 +6612,35 @@ mod tests {
     }
 
     #[test]
-    fn five_led_meters_stand_next_to_the_faders() {
+    fn all_channels_share_one_build() {
         let ctx = eframe::egui::Context::default();
         ctx.enable_accesskit();
         let mut dbs = [0.0f32; 4];
         let meters: [super::MeterHold; 5] = Default::default();
         let mut ui = |ui: &mut eframe::egui::Ui| {
-            let _ = super::level_faders(ui, &mut dbs, &meters);
+            ui.horizontal_top(|ui| {
+                let _ = super::level_faders(ui, &mut dbs, &meters, super::FADER_HEIGHT);
+                super::master_strip(ui, meters[4], super::FADER_HEIGHT);
+                let mut outs = [woa_radio::show::OutLevel::default(); 2];
+                let _ = super::output_faders(ui, &mut outs, &[meters[0]; 2], super::FADER_HEIGHT);
+            });
         };
         frame(&ctx, 0, vec![], &mut ui);
         let nodes = frame(&ctx, 1, vec![], &mut ui);
-        for name in ["Playlist", "Carts", "Decks", "Mikro", "Master"] {
+        // Fassung 8: ein Kanalbau – alle LED-Ketten gleich hoch und auf einer Linie, auch
+        // Master (ohne Fader) und die Ausgänge (mit Stumm-Taste oben).
+        let first = find(&nodes, "Pegelanzeige Playlist").1;
+        for name in [
+            "Playlist", "Carts", "Decks", "Mikro", "Master", "Notebook", "Stream",
+        ] {
             let r = find(&nodes, &format!("Pegelanzeige {name}")).1;
             assert!(
                 r.height() > 5.0 * r.width(),
                 "{name} senkrecht und schmal: {r:?}"
+            );
+            assert!(
+                (r.top() - first.top()).abs() < 0.5 && (r.bottom() - first.bottom()).abs() < 0.5,
+                "{name} auf einer Linie mit Playlist: {r:?} / {first:?}"
             );
         }
     }
@@ -6486,7 +6664,11 @@ mod tests {
         assert_eq!(bus_zone(-12.0), BusZone::Yellow);
         assert_eq!(bus_zone(-18.0), BusZone::Green);
         assert_eq!(bus_zone(-30.0), BusZone::Green);
-        assert_eq!(bus_zone(-50.0), BusZone::Blue, "zu leise");
+        assert_eq!(
+            bus_zone(-50.0),
+            BusZone::Green,
+            "kein Blau mehr (Fassung 8)"
+        );
     }
 
     #[test]
@@ -6732,7 +6914,7 @@ mod deck_drop_tests {
         n: &mut u32,
         ok: impl Fn(&View) -> bool,
     ) -> bool {
-        for _ in 0..100 {
+        for _ in 0..500 {
             *n += 1;
             run(ctx, desk, *n, egui::RawInput::default());
             if ok(desk.view()) {

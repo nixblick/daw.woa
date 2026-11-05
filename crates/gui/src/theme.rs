@@ -801,34 +801,27 @@ pub fn led_meter_vertical(painter: &egui::Painter, rect: Rect, level: f32) {
     }
 }
 
-/// Farbstufe eines Sende-Meters (#216): Rot über -6 dBFS, Gelb bis -6, Grün bis -18,
-/// Blau darunter („zu leise“, unter [`BUS_METER_QUIET_DB`]).
+/// Farbstufe eines Sende-Meters (#216): Rot über -6 dBFS, Gelb bis -6, Grün darunter.
+/// Fassung 8: nur grün, gelb, rot; das frühere Blau („zu leise“) ist entfallen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BusZone {
-    Blue,
     Green,
     Yellow,
     Red,
 }
-
-/// Unter diesem Pegel (dBFS) zeigt das Sende-Meter Blau: Signal zu leise.
-pub const BUS_METER_QUIET_DB: f32 = -40.0;
 
 pub fn bus_zone(db: f32) -> BusZone {
     if db > -6.0 {
         BusZone::Red
     } else if db > -18.0 {
         BusZone::Yellow
-    } else if db > BUS_METER_QUIET_DB {
-        BusZone::Green
     } else {
-        BusZone::Blue
+        BusZone::Green
     }
 }
 
 fn bus_color(z: BusZone) -> Color32 {
     match z {
-        BusZone::Blue => Color32::from_rgb(70, 140, 235),
         BusZone::Green => led_green(),
         BusZone::Yellow => led_yellow(),
         BusZone::Red => led_red(),
