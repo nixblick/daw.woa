@@ -1,6 +1,9 @@
 //! Windows: woa.ico als Icon-Ressource in die woa.exe einbetten. Die Taskleiste und der
 //! Explorer zeigen das Exe-Icon; ohne Ressource steht dort ein Platzhalter. Linux: nichts.
 
+// Ein Build-Skript meldet Fehler per Abbruch; Regel 6 gilt fuer die App selbst.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 fn main() {
     println!("cargo:rerun-if-changed=../../packaging/windows/woa.ico");
     #[cfg(windows)]
