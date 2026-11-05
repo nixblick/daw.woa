@@ -444,12 +444,15 @@ impl FragenWindow {
                 Herkunft::Eingebettet => " (Fassung dieser Version)",
             }
         );
+        let beantwortet = self.sent.iter().map(|k| &k.0).collect::<HashSet<_>>().len();
+        let stand = format!("{beantwortet} von {} beantwortet", fragen.fragen.len());
         fenster(ctx, "woa-fragen", self.maximized).show(ctx, |ui| {
-            kopf(
+            kopf_stand(
                 ui,
                 theme::ic::CHAT_CIRCLE_TEXT,
                 "Fragen und To-dos",
                 &sub,
+                Some(&stand),
                 &mut self.open,
                 &mut self.maximized,
             );
@@ -799,6 +802,19 @@ pub(crate) fn kopf(
     open: &mut bool,
     maximized: &mut bool,
 ) {
+    kopf_stand(ui, icon, titel, sub, None, open, maximized);
+}
+
+/// Kopf mit Stand rechts als neutraler Chip (Fassung 8, Punkt 5), etwa „12 von 40 geprüft“.
+pub(crate) fn kopf_stand(
+    ui: &mut egui::Ui,
+    icon: &str,
+    titel: &str,
+    sub: &str,
+    stand: Option<&str>,
+    open: &mut bool,
+    maximized: &mut bool,
+) {
     // Fassung 7: eigener Kopf 44 px; Doppelklick maximiert, Esc schließt.
     // Erst die Kopffläche anmelden, dann die Knöpfe darüber: so gewinnen die Knöpfe den Klick.
     let rect = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), KOPF_H));
@@ -808,7 +824,7 @@ pub(crate) fn kopf(
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
             ui.set_min_height(KOPF_H);
-            kopf_inhalt(ui, icon, titel, sub, open, maximized)
+            kopf_inhalt(ui, icon, titel, sub, stand, open, maximized)
         },
     );
     if r.double_clicked() {
@@ -826,6 +842,7 @@ fn kopf_inhalt(
     icon: &str,
     titel: &str,
     sub: &str,
+    stand: Option<&str>,
     open: &mut bool,
     maximized: &mut bool,
 ) {
@@ -859,6 +876,10 @@ fn kopf_inhalt(
             let m = IconButton::new(icon, tip).size(IconSize::Md).ui(ui);
             if released_on(ui, m) {
                 *maximized = !*maximized;
+            }
+            if let Some(t) = stand {
+                ui.add_space(theme::SPACE_2);
+                crate::widgets::StateChip::new(t, crate::widgets::ChipTone::Neutral).show(ui);
             }
         });
     }
@@ -972,10 +993,11 @@ pub(crate) fn ticket_pill(ui: &mut egui::Ui, n: u32) {
             egui::Button::new(
                 egui::RichText::new(text)
                     .font(theme::label_font(13.0))
-                    .color(theme::accent()),
+                    .color(theme::text()),
             )
             .fill(theme::well())
-            .stroke(egui::Stroke::new(1.0, theme::accent()))
+            // Neutral (Fassung 8): Tickets sind kein Zustand.
+            .stroke(egui::Stroke::new(1.0, theme::border_strong()))
             .corner_radius(egui::CornerRadius::same(theme::RADIUS_MD)),
         )
         .on_hover_text(format!("Ticket #{n} öffnen"));

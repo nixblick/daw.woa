@@ -9,6 +9,7 @@
 - **Radio ohne Rollen bei 1920 × 1030:** Links Sende-Deck, Gäste-Karte (Gäste, Telefon, Browser-Gäste), Playlist; rechts Decks, Cart-Wall, Pegel und Processing in gleicher Höhe, Wunschtitel als eine Zeile. Leere Cart-Pads ohne „–“-Kasten, Pads 46 px hoch. Die Cart-Wall bleibt 4 × 4 (16 Carts je Satz im Projektformat); auf kleinen Schirmen rollt die rechte Spalte weiter (#168). Wartezeit der Ziehen-Tests ereignisbasiert länger.
 - **Einstellungen mit Werten in der Zeile:** Crossfade, Ducking samt Zeiten, Ducking bei Carts, Stopp blendet aus, Fade-Taste, Sendebus-Processing und Mikro-Kette sind dieselben Regler wie im Processing-Rack (`RadioDesk::rack_control`), statt „Im Radio zeigen“. Schalter sind überall `woa-tog` (Updates, Telemetrie, Piano-Roll-Fenster, Party-Felder), das Thema ist ein Segmentschalter. Der aktive Bereich links hat `surface` mit Kante `accent-2` statt Rot; „Audio und Geräte“ trägt einen gelben Chip „n fehlt“, wenn Ausgänge nicht offen sind. Startgröße 1400 × 930 (passt sich kleineren Schirmen an).
 - **Fade-Tooltip** heißt jetzt „Ausblenden (3 s)“ mit der eingestellten Dauer.
+- **Fragen und Abnahme:** Stand rechts im Fensterkopf als neutraler Chip („12 von 40 geprüft“, „3 von 9 beantwortet“); Ticket-Pillen neutral statt orange; der Abnahme-Balken zeigt Grün für „Geht“ und Gelb für „Geht nicht“/Anmerkung; „Erledigte zeigen“ als Schalter.
 
 ## 0.41.43 — 2026-11-05
 
