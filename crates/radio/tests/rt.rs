@@ -838,3 +838,33 @@ fn ducking_returns_after_half_a_second_of_silence_and_reaches_decks() {
         "nach 1 s Einblenden wieder voll"
     );
 }
+
+/// #537: Die eigene Stimme kommt ab Werk nicht auf den Abhörausgang (Kopfhörer), sonst hört
+/// der Moderator sich um die Pufferlänge verzögert doppelt. Nur `set_mic_monitor(true)` legt
+/// sie dazu.
+#[test]
+fn own_voice_is_not_in_the_headphones_unless_asked() {
+    let (mut c, mut m) = Controller::new(show_of(&[], 3.0), SR);
+    let (mut mic_tx, mic_rx) = rtrb::RingBuffer::new(SR as usize);
+    c.set_mic_input(Some(mic_rx));
+    c.set_mic_open(true);
+    let mut l = vec![0.0f32; BLOCK];
+    let mut r = vec![0.0f32; BLOCK];
+    let mut speak = |c: &mut Controller, m: &mut Mixer, l: &mut [f32], r: &mut [f32]| {
+        let mut peak = 0.0f32;
+        for _ in 0..20 {
+            for _ in 0..BLOCK {
+                let _ = mic_tx.push(0.3);
+                let _ = mic_tx.push(0.3);
+            }
+            block(c, m, l, r);
+            peak = l.iter().chain(r.iter()).fold(peak, |p, v| p.max(v.abs()));
+        }
+        peak
+    };
+    let off = speak(&mut c, &mut m, &mut l, &mut r);
+    assert!(off < 1e-6, "Stimme im Kopfhörer: {off}");
+    c.set_mic_monitor(true);
+    let on = speak(&mut c, &mut m, &mut l, &mut r);
+    assert!(on > 0.1, "Mithören an, aber still: {on}");
+}
