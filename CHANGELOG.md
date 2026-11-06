@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.10 — 2026-11-06
+
+- **Strg+1/2/3 wechseln die Ansicht (#544):** Die Hinweise an PRODUZENT, RADIO und PARTY versprachen die Kürzel, geschrieben waren sie nie. Jetzt rufen sie `set_mode` auf (Protokoll: `mode` mit `from`/`to`). Nicht, solange ein Textfeld den Fokus hat; die Hot Cues auf 1–4 ohne Strg bleiben unberührt. Tests `ctrl_digits_switch_the_view`, `digits_without_ctrl_stay_hot_cues`.
+
 ## 0.42.9 — 2026-11-06
 
 - **Taskleisten-Logo bleibt nach Updates (#543):** Die Startmenü-Verknüpfung bezog ihr Symbol aus dem MSI-Zwischenspeicher (`%APPDATA%\Microsoft\Installer\{ProductCode}\woa.ico`), der mit jedem Release wechselt. Eine in die Taskleiste angeheftete Kopie zeigte danach ein leeres Blatt. Jetzt nimmt die Verknüpfung das Symbol aus der `woa.exe` im festen Installordner. Wer schon mit einer älteren Version angeheftet hat: einmal lösen und neu anheften. Test `shortcuts_take_the_icon_from_the_exe`.
