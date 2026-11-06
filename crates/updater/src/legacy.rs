@@ -218,7 +218,15 @@ pub fn repair_mcp_registrations(
             tracing::warn!(error = %e, file = %file.display(), "mcp registration backup failed");
             continue;
         }
-        match std::fs::write(file, fixed) {
+        // Erst daneben schreiben, dann umbenennen: Claude schreibt dieselbe Datei laufend, ein
+        // halb geschriebenes JSON würde seine ganze Konfiguration zerstören.
+        let mut tmp = file.as_os_str().to_owned();
+        tmp.push(".woa-tmp");
+        let written = std::fs::write(&tmp, fixed).and_then(|()| std::fs::rename(&tmp, file));
+        if written.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        match written {
             Ok(()) => {
                 tracing::info!(file = %file.display(), command = %new_exe, "mcp registration updated");
                 changed.push(file.clone());
@@ -318,6 +326,10 @@ mod tests {
         let changed = repair_mcp_registrations(&[missing, f.clone()], Path::new(NEW_EXE));
         assert_eq!(changed, vec![f.clone()]);
         assert!(std::fs::read_to_string(&f).unwrap().contains("AppData"));
+        assert!(
+            !dir.join(".claude.json.woa-tmp").exists(),
+            "keine Zwischendatei übrig"
+        );
         assert_eq!(
             std::fs::read_to_string(dir.join(".claude.json.bak-woa")).unwrap(),
             OLD_CFG
