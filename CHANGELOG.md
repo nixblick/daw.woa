@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.42.10 — 2026-11-06
+
+Durchsicht der Änderungen seit 0.42.2 (Leistung, Stabilität):
+
+- **Claude-Registrierung sicher umschreiben:** `.claude.json` und `claude_desktop_config.json` werden erst daneben geschrieben und dann umbenannt. Claude schreibt dieselbe Datei laufend; ein Abbruch mitten im Schreiben hätte seine ganze Konfiguration zerstört.
+- **Mausrad am DJ-Regler:** Dreht das Rad einen Regler, rollt die Fläche darunter nicht mehr mit.
+
 ## 0.42.9 — 2026-11-06
 
 - **Taskleisten-Logo bleibt nach Updates (#543):** Die Startmenü-Verknüpfung bezog ihr Symbol aus dem MSI-Zwischenspeicher (`%APPDATA%\Microsoft\Installer\{ProductCode}\woa.ico`), der mit jedem Release wechselt. Eine in die Taskleiste angeheftete Kopie zeigte danach ein leeres Blatt. Jetzt nimmt die Verknüpfung das Symbol aus der `woa.exe` im festen Installordner. Wer schon mit einer älteren Version angeheftet hat: einmal lösen und neu anheften. Test `shortcuts_take_the_icon_from_the_exe`.

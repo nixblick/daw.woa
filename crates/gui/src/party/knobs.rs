@@ -199,6 +199,8 @@ pub fn control(
         // Eine Rasterstufe (etwa 50 px) = 2 % des Bereichs.
         let d = ui.input(|i| i.smooth_scroll_delta.y);
         if d != 0.0 {
+            // Das Rad gehört dem Regler: sonst rollt die Fläche darunter mit.
+            ui.input_mut(|i| i.smooth_scroll_delta.y = 0.0);
             v = (v + d / 50.0 * span / 50.0 * fine).clamp(lo, hi);
             out = Some(v);
         }
