@@ -596,7 +596,7 @@ impl PartyView {
                         .on_hover_text("Der Plattenteller dreht sich, solange dieses Deck spielt");
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-                        let (badge, col) = deck_badge(live, s.playing, l);
+                        let (badge, col) = deck_badge(live, s.playing, entry.is_some(), l);
                         ui.horizontal(|ui| {
                             ui.label(
                                 theme::panel_label(if side == Side::Left {
@@ -1654,7 +1654,13 @@ fn level_display(ui: &mut egui::Ui, db: f64, size: egui::Vec2) {
 /// Anzeige oben am Deck: hörbar (JETZT, PAUSE, BEREIT) oder nicht (LÄUFT MIT, VORGELADEN).
 /// Nie gefüllt (Lime heißt nur „eingeschaltet“, André 02.11.2026): BEREIT neutral, VORGELADEN
 /// mit `accent-2`-Rahmen und -Schrift, Laufen mit `accent`-Rahmen, Pause mit `warn`-Rahmen.
-fn deck_badge(live: bool, playing: bool, l: &PartyLayout) -> (&'static str, theme::Badge) {
+/// Ein Deck ohne Titel zeigt LEER, nie VORGELADEN (#540).
+fn deck_badge(
+    live: bool,
+    playing: bool,
+    loaded: bool,
+    l: &PartyLayout,
+) -> (&'static str, theme::Badge) {
     use theme::Badge;
     if live {
         match &l.now {
@@ -1664,6 +1670,8 @@ fn deck_badge(live: bool, playing: bool, l: &PartyLayout) -> (&'static str, them
         }
     } else if playing {
         ("LÄUFT MIT", Badge::Outline(theme::accent()))
+    } else if !loaded {
+        ("LEER", Badge::Neutral)
     } else {
         ("VORGELADEN", Badge::Outline(theme::accent_2()))
     }
@@ -1964,15 +1972,20 @@ mod tests {
             fullscreen: false,
         };
         assert_eq!(
-            deck_badge(true, false, &l),
+            deck_badge(true, false, true, &l),
             ("BEREIT", theme::Badge::Neutral)
         );
         assert_eq!(
-            deck_badge(false, false, &l),
+            deck_badge(false, false, true, &l),
             ("VORGELADEN", theme::Badge::Outline(theme::accent_2()))
         );
         assert_eq!(
-            deck_badge(false, true, &l),
+            deck_badge(false, false, false, &l),
+            ("LEER", theme::Badge::Neutral),
+            "#540: leeres Deck nie VORGELADEN"
+        );
+        assert_eq!(
+            deck_badge(false, true, true, &l),
             ("LÄUFT MIT", theme::Badge::Outline(theme::accent()))
         );
         for b in [

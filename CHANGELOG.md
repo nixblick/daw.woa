@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.42.8 — 2026-11-06
+
+- **Fade-Taste an den Decks zählt herunter (#539):** Die quadratische Taste an Deck A–C zeigt beim Ausblenden die Restzeit („2,4“) statt des Symbols; der Tooltip nennt „noch 2,4 s“.
+- **Leeres Deck zeigt LEER statt VORGELADEN (#540):** In der Party (Einfach) bekommt ein Deck ohne Titel das neutrale Badge LEER.
+
 ## 0.42.7 — 2026-11-06
 
 - **Party › DJ: „LEER“ gefüllt** (#538). Das Badge eines leeren Decks war nur dunkel mit Rahmen, weil ein neutraler Chip auch mit `filled()` neutral blieb. Es ist jetzt voll in der Deckfarbe mit dunkler Schrift; „BEREIT · CUE“ ebenso (Farbe Cue). Test `empty_deck_badge_is_filled_in_deck_color`.
