@@ -132,6 +132,7 @@ pub enum SettingId {
     WishFolder,
     // Party
     DjCurve,
+    DjKnobStyle,
     PartyPanels,
     // Produzent
     MonitorVolume,
@@ -447,6 +448,17 @@ pub const REGISTRY: &[Entry] = &[
         "Kurve des Crossfaders im DJ-Mixer (unter dem Crossfader)",
         "dj crossfader kurve weich hart übergang crossfade",
     ),
+    row(
+        S::DjKnobStyle,
+        A::Party,
+        "DJ",
+        "Regler-Stil",
+        "Wie die Regler im DJ-Mixer aussehen: Mini-Fader, Wertbalken, Zahlenfelder oder \
+         Drehknöpfe. Ändert keine Werte",
+        "regler stil knopf knöpfe drehknopf drehregler fader balken zahl zahlenfeld mixer eq \
+         dj bedienen maus",
+    )
+    .fields(&["knob_style"]),
     row(
         S::PartyPanels,
         A::Party,

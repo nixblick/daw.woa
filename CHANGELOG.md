@@ -1,9 +1,9 @@
 # Changelog
 
+## 0.42.5 — 2026-11-06
 
-## Unveröffentlicht
-
-- **Design Fassung 8.1 übernommen** (`docs/design/woa-design-system/`): Regler-Stil wählbar, Mini-Fader (Standard), Wertbalken, Zahlenfelder, Drehknöpfe. Neue Komponente `DjMixerStyles`, DjMixer-Vorschau im Stil Mini-Fader, Stile in `bundle.css`. Nur Doku, noch nicht in der App.
+- **Regler-Stil im DJ-Mixer wählbar** (Design-Fassung 8.1): Mini-Fader (Standard), Wertbalken, Zahlenfelder oder Drehknöpfe, für Trim, EQ, Filter, Master und Kopfhörer. Gewählt wird unter Einstellungen › Party › DJ › „Regler-Stil“ oder im Menü Ansicht › Regler-Stil (in der Party). Der Wechsel ändert keine Werte und wird pro Nutzer gespeichert. Für alle Stile gilt: Doppelklick setzt den Standardwert, Umschalt regelt fein, das Mausrad ändert, der Tooltip zeigt den Wert. Zahlenfelder nehmen per Klick auch getippte Werte („-3“, „kill“, „TP 40“). Neu sind KILL-Tasten je EQ-Band: Der erste Klick macht das Band stumm, der zweite stellt den Wert davor wieder her. Die Design-Vorlage liegt in `docs/design/woa-design-system/components/DjMixerStyles`.
+- Versionsnummer 0.42.5, weil 0.42.3 und 0.42.4 auf einem eigenen Zweig liegen.
 ## 0.42.2 — 2026-11-05
 
 - **Mikro einzeln, wie OBS:** Neuer Knopf in Audio-Geräte beim Pult-Modus. Er schaltet den Pult-Modus aus und macht das Gerät des Pult-Eingangs (etwa Maonocaster) zum Mikrofon. WOA mischt dann selbst und duckt die Musik an der Stimme, wie OBS mit dem Mikro als eigener Quelle. Am Gerät muss Loopback aus sein. Sind Mikrofon und Pult-Eingang im Pult-Modus dasselbe Gerät, warnt das Fenster: Dann steckt die Musik im Mikro, und das Ducking hält sie dauernd unten.

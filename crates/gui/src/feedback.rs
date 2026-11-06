@@ -101,6 +101,9 @@ pub struct GuiConfig {
     /// Party: Wunschliste und Fernbedienung ein- oder ausgeblendet (#361). Vorgabe: beide da.
     #[serde(skip_serializing_if = "crate::party::PartyPanels::is_default")]
     pub party_panels: crate::party::PartyPanels,
+    /// Regler-Stil im DJ-Mixer (Design 8.1). Vorgabe: Mini-Fader.
+    #[serde(skip_serializing_if = "crate::party::KnobStyle::is_default")]
+    pub knob_style: crate::party::KnobStyle,
     /// Abhörlautstärke im Produzenten (#358), 0..=1 linear auf den Lautsprecher; Mix, Export
     /// und Pegel bleiben unberührt. Vorgabe: 1 (voll).
     #[serde(skip_serializing_if = "is_full_volume")]
@@ -201,6 +204,7 @@ impl Default for GuiConfig {
             piano_roll_window: false,
             entwickler: false,
             party_panels: crate::party::PartyPanels::default(),
+            knob_style: crate::party::KnobStyle::default(),
             monitor_volume: 1.0,
             settings_size: None,
         }

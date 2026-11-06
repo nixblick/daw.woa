@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "r3-regler-stil",
+      "ansicht": "Party DJ",
+      "titel": "Regler-Stil im DJ-Mixer",
+      "tun": "Party, DJ-Ansicht. Menü Ansicht › Regler-Stil nacheinander auf Mini-Fader, Wertbalken, Zahlenfelder und Drehknöpfe stellen. Je Stil einen EQ ziehen, mit dem Mausrad drehen, doppelklicken und KILL zweimal drücken.",
+      "erwartet": "Alle Regler passen in den Mixer, nichts liegt übereinander. Beim Stilwechsel bleiben die Werte gleich. Doppelklick setzt den EQ auf die Mitte, KILL macht das Band stumm und stellt den Wert beim zweiten Klick wieder her. Nach einem Neustart ist der gewählte Stil noch da.",
+      "version": "0.42.5"
+    },
+    {
       "id": "r2-mikro-wie-obs",
       "ansicht": "Radio",
       "titel": "Mikro einzeln, wie OBS",

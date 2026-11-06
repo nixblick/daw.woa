@@ -4,6 +4,10 @@ André nimmt fertige Pakete ab, nicht einzelne Funktionen (29.10.2026). Claude b
 Stück, prüft selbst (Tests, Offline-Render, Probelauf am Gerät) und merged. Hier steht je Paket
 eine kurze Klickliste. Ein „passt“ von André schließt das Paket; was hakt, wird ein Issue.
 
+## Regler-Stil (0.42.5, offen)
+
+1. Party › DJ, Menü Ansicht › Regler-Stil: alle vier Stile durchschalten. Regler passen, Werte bleiben. Doppelklick = Mitte, KILL zweimal = stumm und zurück.
+
 ## Mikro wie OBS (0.42.2, offen)
 
 1. Audio-Geräte: „Mikro einzeln, wie OBS“, Loopback am Maono aus, Übernehmen. Sprechen: Musik duckt, im Stream sind Musik und Stimme.
