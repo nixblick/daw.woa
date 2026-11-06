@@ -1910,6 +1910,16 @@ impl WoaApp {
             }
             S::WishFolder => go = show_in(ui, Mode::Radio),
             S::DjCurve => go = show_in(ui, Mode::Party),
+            S::DjKnobStyle => {
+                for st in crate::party::KnobStyle::ALL {
+                    let on = self.config.knob_style == st;
+                    if ui.selectable_label(on, st.label()).clicked() && !on {
+                        self.config.knob_style = st;
+                        self.party.knob_style = st;
+                        self.save_config();
+                    }
+                }
+            }
             S::PartyPanels => {
                 let mut p = self.config.party_panels;
                 let b = crate::radio::toggle(ui, &mut p.remote, "Fernbedienung").changed();

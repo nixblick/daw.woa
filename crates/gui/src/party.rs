@@ -13,6 +13,8 @@ use crate::radio::RadioDesk;
 use crate::theme;
 
 mod dj;
+pub mod knobs;
+pub use knobs::KnobStyle;
 
 /// Der Party-Modus.
 #[derive(Default)]
@@ -42,6 +44,8 @@ pub struct PartyView {
     /// Wunschliste und Fernbedienung ein- oder ausgeblendet (#361); die App gleicht das mit
     /// der Einstellung ab und merkt es sich.
     pub panels: PartyPanels,
+    /// Regler-Stil im DJ-Mixer (Design 8.1); die App gleicht ihn mit der Einstellung ab.
+    pub knob_style: KnobStyle,
 }
 
 /// Welche Karten rechts in der Party stehen (#361). Ausblenden ändert nur die Anzeige: eine
@@ -407,6 +411,11 @@ impl PartyView {
     }
 
     /// Neue Party-Ansicht mit gemerkten Karten (#361).
+    pub fn with_knob_style(mut self, style: KnobStyle) -> Self {
+        self.knob_style = style;
+        self
+    }
+
     pub fn with_panels(panels: PartyPanels) -> Self {
         Self {
             panels,

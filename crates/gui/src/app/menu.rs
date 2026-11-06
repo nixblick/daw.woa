@@ -751,6 +751,19 @@ impl WoaApp {
             {
                 ui.close();
             }
+            if party {
+                ui.menu_button("Regler-Stil", |ui| {
+                    for st in crate::party::KnobStyle::ALL {
+                        let on = self.party.knob_style == st;
+                        if ui.radio(on, st.label()).clicked() {
+                            self.party.knob_style = st;
+                            ui.close();
+                        }
+                    }
+                })
+                .response
+                .on_hover_text("Regler im DJ-Mixer: Mini-Fader, Wertbalken, Zahlenfelder, Drehknöpfe");
+            }
             let mut clock = self.clock_editor.open;
             if ui
                 .checkbox(&mut clock, "Stundenuhr")
