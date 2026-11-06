@@ -167,6 +167,11 @@ WOA – Wir on Air ist eine DAW mit eingebautem Sendestudio und Party-Player. Ei
 - **Schließen-X** jedes lösbaren Fensters muss mit einem einfachen Klick schließen (auch bei synthetischen Klicks ohne Bewegung, wie von Fernsteuerung und Tests).
 - **Ticket-Chips** neutral (`woa-chip`), Filter als Segmente, nicht rot.
 
+## Regler-Stil (Fassung 8.1)
+
+- Drehknöpfe sind mit der Maus umständlich. Der Regler-Stil ist deshalb wählbar: **Mini-Fader (Standard)** · Wertbalken · Zahlenfelder · Drehknöpfe (Einstellungen › Party › DJ-Mixer, Menü Ansicht › Regler-Stil).
+- Für alle Stile gleich: Doppelklick = Standard, Umschalt = fein, Mausrad ändert, Wert im Tooltip, MIDI-Learn am Parameter. KILL-Tasten in jedem Stil.
+
 ## Logo
 
 - Fünf LED-Säulen, deren Oberkanten ein W zeichnen, darüber die rote ON-AIR-Lampe; in der Wortmarke ist das O selbst die Lampe. „WIR ON AIR“ steht darunter und läuft exakt von der linken Kante des W bis zur rechten Kante des A.

@@ -79,10 +79,10 @@
     "Logos"
   ],
   "lastChange": {
-    "at": "2026-11-05T07:25:25Z",
+    "at": "2026-11-05T20:41:34Z",
     "by": "André",
     "via": "Cowork",
-    "note": "Fassung 8: Pegelgruppe einheitlich, Meldungszeile, Radio 1920 ohne Scrollen, Einstellungen mit fünf Bereichen und eingebetteten Geräten, Einzelinstanz"
+    "note": "Fassung 8.1: Regler-Stil wählbar – Mini-Fader (Standard), Wertbalken, Zahlenfelder, Drehknöpfe"
   },
   "layout": "files",
   "libraries": [],

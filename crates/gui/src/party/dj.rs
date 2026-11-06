@@ -7,9 +7,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke};
+use eframe::egui::{self, Color32, Rect, Sense, Stroke};
 use woa_radio::control::{Band, DjCommand, DjDeckView, DjView};
 
+use super::knobs::{self, Ctl, Fmt, KnobStyle};
 use super::{GAP, PartyView, seg_lcd, wave_columns};
 use crate::radio::RadioDesk;
 use crate::theme;
@@ -369,7 +370,7 @@ impl PartyView {
         let deck_h = (rest - bottom_min - GAP).clamp(deck_min, 560.0);
         three_columns(ui, deck_h, |ui, part| match part {
             0 => self.dj_deck(ui, desk, dj, v, 0),
-            1 => dj_mixer(ui, desk, dj),
+            1 => dj_mixer(ui, desk, dj, self.knob_style),
             _ => self.dj_deck(ui, desk, dj, v, 1),
         });
         let h = (full_h - used(ui)).max(0.0);
@@ -1430,76 +1431,8 @@ fn tempo_column(
     });
 }
 
-/// Drehregler des DJ-Mixers. `range` ist der Wertebereich, `default` das Ziel des
-/// Doppelklicks; bipolare Regler zeichnen den Bogen ab der Mitte.
-#[allow(clippy::too_many_arguments)]
-fn knob(
-    ui: &mut egui::Ui,
-    id: egui::Id,
-    value: f32,
-    range: (f32, f32),
-    default: f32,
-    size: f32,
-    color: Color32,
-    label: &str,
-) -> (egui::Response, Option<f32>) {
-    let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(size + 16.0, size + 14.0),
-        Sense::click_and_drag(),
-    );
-    let (lo, hi) = range;
-    let held: Option<f32> = ui.data(|m| m.get_temp(id));
-    let mut v = held.unwrap_or(value);
-    let mut out = None;
-    if resp.dragged() {
-        let dy = resp.drag_delta().y;
-        let fine = if ui.input(|i| i.modifiers.shift) {
-            0.2
-        } else {
-            1.0
-        };
-        v = (v - dy / 150.0 * (hi - lo) * fine).clamp(lo, hi);
-        ui.data_mut(|m| m.insert_temp(id, v));
-        out = Some(v);
-    } else if held.is_some() {
-        ui.data_mut(|m| m.remove::<f32>(id));
-    }
-    if resp.double_clicked() {
-        v = default;
-        out = Some(v);
-    }
-    let c = egui::pos2(rect.center().x, rect.top() + size / 2.0);
-    let r = size / 2.0;
-    let p = ui.painter();
-    p.circle_filled(c, r, theme::surface());
-    p.circle_stroke(c, r, Stroke::new(1.0, theme::border_strong()));
-    let frac = |x: f32| ((x - lo) / (hi - lo)).clamp(0.0, 1.0);
-    let ang = |f: f32| std::f32::consts::PI * (0.75 + 1.5 * f);
-    let pt = |a: f32, rr: f32| egui::pos2(c.x + a.cos() * rr, c.y + a.sin() * rr);
-    let (a0, a1) = (ang(frac(default)), ang(frac(v)));
-    let n = 24;
-    let pts: Vec<Pos2> = (0..=n)
-        .map(|i| pt(a0 + (a1 - a0) * i as f32 / n as f32, r + 3.0))
-        .collect();
-    if (a1 - a0).abs() > 0.01 {
-        p.add(egui::Shape::line(pts, Stroke::new(2.5, color)));
-    }
-    p.line_segment(
-        [pt(a1, r * 0.25), pt(a1, r * 0.85)],
-        Stroke::new(2.5, color),
-    );
-    p.text(
-        egui::pos2(rect.center().x, rect.bottom() - 5.0),
-        egui::Align2::CENTER_CENTER,
-        label,
-        theme::panel_label_font(),
-        theme::text_dim(),
-    );
-    (resp, out)
-}
-
 /// DJ-Mixer: Kanal A, Mitte (Master, Kopfhörer), Kanal B, unten Crossfader mit Kurve.
-fn dj_mixer(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView) {
+fn dj_mixer(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView, style: KnobStyle) {
     let h = ui.available_height();
     egui::Frame::new()
         .fill(theme::panel())
@@ -1515,9 +1448,9 @@ fn dj_mixer(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView) {
             let cw = (w - 2.0 * 8.0) / 3.0;
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                channel(ui, desk, dj, 0, egui::vec2(cw, strip_h));
-                master(ui, desk, dj, egui::vec2(cw, strip_h));
-                channel(ui, desk, dj, 1, egui::vec2(cw, strip_h));
+                channel(ui, desk, dj, 0, egui::vec2(cw, strip_h), style);
+                master(ui, desk, dj, egui::vec2(cw, strip_h), style);
+                channel(ui, desk, dj, 1, egui::vec2(cw, strip_h), style);
             });
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -1582,7 +1515,14 @@ fn dj_mixer(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView) {
         });
 }
 
-fn channel(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView, side: usize, size: egui::Vec2) {
+fn channel(
+    ui: &mut egui::Ui,
+    desk: &RadioDesk,
+    dj: &DjView,
+    side: usize,
+    size: egui::Vec2,
+    style: KnobStyle,
+) {
     let d = &dj.decks[side];
     let col = deck_color(side);
     let (outer, _) = ui.allocate_exact_size(size, Sense::hover());
@@ -1601,45 +1541,127 @@ fn channel(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView, side: usize, size: 
     let ui = &mut child;
     ui.spacing_mut().item_spacing.y = 2.0;
     ui.label(theme::panel_label(if side == 0 { "A" } else { "B" }).color(col));
-    let fader_min = 90.0;
-    let k = ((size.y - fader_min - 70.0) / 5.0 - 16.0).clamp(18.0, 34.0);
     let id = |s: &str| egui::Id::new(("dj-knob", side, s.to_string()));
     let tm = woa_radio::control::dj::TRIM_DB;
-    if let (r, Some(v)) = knob(ui, id("trim"), d.trim_db, (-tm, tm), 0.0, k, col, "TRIM") {
-        desk.dj(DjCommand::Trim { side, db: v });
-        r.on_hover_text(format!("Trim {v:+.1} dB"));
-    }
-    for (band, val, word) in [
+    let trim = Ctl {
+        id: id("trim"),
+        value: d.trim_db,
+        range: (-tm, tm),
+        default: 0.0,
+        color: col,
+        label: "TRIM",
+        fmt: Fmt::Db,
+        tip: "Eingangspegel des Decks",
+    };
+    let filter = Ctl {
+        id: id("filter"),
+        value: d.filter,
+        range: (-1.0, 1.0),
+        default: 0.0,
+        color: col,
+        label: "FILTER",
+        fmt: Fmt::Filter,
+        tip: "Filter: links Tiefpass, rechts Hochpass, Mitte aus",
+    };
+    let bands = [
         (Band::Hi, d.eq_hi, "HI"),
         (Band::Mid, d.eq_mid, "MID"),
         (Band::Lo, d.eq_lo, "LO"),
-    ] {
-        let (r, nv) = knob(ui, id(word), val, (-1.0, 1.0), 0.0, k, col, word);
-        if let Some(v) = nv {
-            desk.dj(DjCommand::Eq {
-                side,
-                band,
-                value: v,
+    ];
+    let eq = |word: &'static str, val: f32| Ctl {
+        id: id(word),
+        value: val,
+        range: (-1.0, 1.0),
+        default: 0.0,
+        color: col,
+        label: word,
+        fmt: Fmt::Eq,
+        tip: "EQ: Mitte 0 dB, ganz links Kill, rechts bis +6 dB",
+    };
+    let send_trim = |v: f32| desk.dj(DjCommand::Trim { side, db: v });
+    let send_filter = |v: f32| desk.dj(DjCommand::Filter { side, value: v });
+    let send_eq = |band: Band, v: f32| {
+        desk.dj(DjCommand::Eq {
+            side,
+            band,
+            value: v,
+        })
+    };
+    let fader_min = 90.0;
+    let w = ui.available_width();
+    match style {
+        KnobStyle::MiniFader => {
+            let fh = ((size.y - fader_min - 70.0 - knobs::KILL_H) / 2.0).clamp(46.0, 110.0);
+            ui.horizontal(|ui| {
+                ui.add_space(((w - 2.0 * knobs::MINI_W - 8.0) / 2.0).max(0.0));
+                ui.spacing_mut().item_spacing.x = 8.0;
+                if let (_, Some(v)) = knobs::control(ui, style, &trim, fh) {
+                    send_trim(v);
+                }
+                if let (_, Some(v)) = knobs::control(ui, style, &filter, fh) {
+                    send_filter(v);
+                }
+            });
+            ui.horizontal(|ui| {
+                let col = ((w - 8.0) / 3.0).clamp(18.0, knobs::KILL_W);
+                ui.add_space(((w - 3.0 * col - 8.0) / 2.0).max(0.0));
+                ui.spacing_mut().item_spacing.x = 4.0;
+                for (band, val, word) in bands {
+                    ui.vertical(|ui| {
+                        ui.set_width(col);
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        if let (_, Some(v)) = knobs::control(ui, style, &eq(word, val), fh) {
+                            send_eq(band, v);
+                        }
+                        if let Some(v) = knobs::kill(ui, id(word), val) {
+                            send_eq(band, v);
+                        }
+                    });
+                }
             });
         }
-        r.on_hover_text(format!(
-            "EQ {word}: Mitte 0 dB, ganz links Kill, rechts bis +6 dB. Doppelklick = Mitte"
-        ));
+        KnobStyle::Bar | KnobStyle::Number => {
+            if let (_, Some(v)) = knobs::control(ui, style, &trim, w) {
+                send_trim(v);
+            }
+            for (band, val, word) in bands {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    let bw = (w - knobs::KILL_W - 4.0).max(40.0);
+                    if let (_, Some(v)) = knobs::control(ui, style, &eq(word, val), bw) {
+                        send_eq(band, v);
+                    }
+                    ui.vertical(|ui| {
+                        ui.add_space(knobs::ROW_H - knobs::KILL_H);
+                        if let Some(v) = knobs::kill(ui, id(word), val) {
+                            send_eq(band, v);
+                        }
+                    });
+                });
+            }
+            if let (_, Some(v)) = knobs::control(ui, style, &filter, w) {
+                send_filter(v);
+            }
+        }
+        KnobStyle::Knob => {
+            let k =
+                ((size.y - fader_min - 70.0 - 3.0 * knobs::KILL_H) / 5.0 - 16.0).clamp(18.0, 34.0);
+            if let (_, Some(v)) = knobs::control(ui, style, &trim, k) {
+                send_trim(v);
+            }
+            for (band, val, word) in bands {
+                if let (_, Some(v)) = knobs::control(ui, style, &eq(word, val), k) {
+                    send_eq(band, v);
+                }
+                if let Some(v) = knobs::kill(ui, id(word), val) {
+                    send_eq(band, v);
+                }
+            }
+            if let (_, Some(v)) = knobs::control(ui, style, &filter, k) {
+                send_filter(v);
+            }
+        }
     }
-    let (r, nv) = knob(
-        ui,
-        id("filter"),
-        d.filter,
-        (-1.0, 1.0),
-        0.0,
-        k,
-        col,
-        "FILTER",
-    );
-    if let Some(v) = nv {
-        desk.dj(DjCommand::Filter { side, value: v });
-    }
-    r.on_hover_text("Filter: links Tiefpass, rechts Hochpass, Mitte aus");
     let avail = dj.cue_available;
     let r = crate::widgets::Key::new(theme::ic::HEADPHONES, egui::vec2(32.0, 28.0))
         .font(theme::label_font(15.0))
@@ -1678,7 +1700,7 @@ fn channel(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView, side: usize, size: 
     });
 }
 
-fn master(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView, size: egui::Vec2) {
+fn master(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView, size: egui::Vec2, style: KnobStyle) {
     let (outer, _) = ui.allocate_exact_size(size, Sense::hover());
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -1688,61 +1710,84 @@ fn master(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView, size: egui::Vec2) {
     let ui = &mut child;
     ui.spacing_mut().item_spacing.y = 4.0;
     ui.label(theme::panel_label("MASTER"));
+    let w = ui.available_width();
+    // Höhe der drei Regler je Stil, der Rest gehört der Master-LED-Kette.
     let k = 30.0;
-    let mh = (size.y - 3.0 * (k + 14.0) - 60.0).max(60.0);
+    let ctl_h = match style {
+        KnobStyle::MiniFader => ((size.y - 80.0) / 4.0).clamp(46.0, 90.0),
+        KnobStyle::Bar | KnobStyle::Number => knobs::ROW_H,
+        KnobStyle::Knob => k + 14.0,
+    };
+    let rows = match style {
+        KnobStyle::MiniFader => 2.0,
+        _ => 3.0,
+    };
+    let mh = (size.y - rows * (ctl_h + 4.0) - 60.0).max(60.0);
     let level = dj.decks[0].level.max(dj.decks[1].level);
     let (m, _) = ui.allocate_exact_size(egui::vec2(14.0, mh), Sense::hover());
     theme::led_meter_vertical(ui.painter(), m, level);
-    let acc = theme::accent();
-    let (r, nv) = knob(
-        ui,
-        egui::Id::new("dj-master"),
-        dj.master,
-        (0.0, 1.0),
-        0.8,
-        k,
-        acc,
-        "MASTER",
-    );
-    if let Some(v) = nv {
+    let master = Ctl {
+        id: egui::Id::new("dj-master"),
+        value: dj.master,
+        range: (0.0, 1.0),
+        default: 0.8,
+        color: theme::accent(),
+        label: "MASTER",
+        fmt: Fmt::Pct,
+        tip: "Master-Pegel der Party",
+    };
+    let mix = Ctl {
+        id: egui::Id::new("dj-phones-mix"),
+        value: dj.phones_mix,
+        range: (0.0, 1.0),
+        default: 0.5,
+        color: theme::cue(),
+        label: "MIX",
+        fmt: Fmt::Pct,
+        tip: "Kopfhörer-Mix: links nur Cue, rechts nur Master",
+    };
+    let lvl = Ctl {
+        id: egui::Id::new("dj-phones-level"),
+        value: dj.phones_level,
+        range: (0.0, 1.0),
+        default: 0.8,
+        color: theme::cue(),
+        label: "PEGEL",
+        fmt: Fmt::Pct,
+        tip: "Kopfhörer-Pegel",
+    };
+    let extent = match style {
+        KnobStyle::MiniFader => ctl_h,
+        KnobStyle::Bar | KnobStyle::Number => w.min(110.0),
+        KnobStyle::Knob => k,
+    };
+    if let (_, Some(v)) = knobs::control(ui, style, &master, extent) {
         desk.dj(DjCommand::Master { value: v });
     }
-    r.on_hover_text("Master-Pegel der Party");
     ui.label(theme::panel_label("KOPFHÖRER"));
-    let (r, nv) = knob(
-        ui,
-        egui::Id::new("dj-phones-mix"),
-        dj.phones_mix,
-        (0.0, 1.0),
-        0.5,
-        k,
-        theme::cue(),
-        "MIX",
-    );
-    if let Some(v) = nv {
-        desk.dj(DjCommand::Phones {
-            mix: v,
-            level: dj.phones_level,
+    let phones = |ui: &mut egui::Ui| {
+        if let (_, Some(v)) = knobs::control(ui, style, &mix, extent) {
+            desk.dj(DjCommand::Phones {
+                mix: v,
+                level: dj.phones_level,
+            });
+        }
+        if let (_, Some(v)) = knobs::control(ui, style, &lvl, extent) {
+            desk.dj(DjCommand::Phones {
+                mix: dj.phones_mix,
+                level: v,
+            });
+        }
+    };
+    if style == KnobStyle::MiniFader {
+        ui.horizontal(|ui| {
+            ui.add_space(((w - 2.0 * knobs::MINI_W - 8.0) / 2.0).max(0.0));
+            ui.spacing_mut().item_spacing.x = 8.0;
+            phones(ui);
         });
+    } else {
+        phones(ui);
     }
-    r.on_hover_text("Kopfhörer-Mix: links nur Cue, rechts nur Master");
-    let (r, nv) = knob(
-        ui,
-        egui::Id::new("dj-phones-level"),
-        dj.phones_level,
-        (0.0, 1.0),
-        0.8,
-        k,
-        theme::cue(),
-        "PEGEL",
-    );
-    if let Some(v) = nv {
-        desk.dj(DjCommand::Phones {
-            mix: dj.phones_mix,
-            level: v,
-        });
-    }
-    r.on_hover_text("Kopfhörer-Pegel");
 }
 
 /// Stand der Tempo-/Tonart-Analyse eines Decks (DjHead Fassung 7).
@@ -1811,6 +1856,65 @@ fn dj_learn_menu(r: &egui::Response, t: woa_io::controller::Target) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Design 8.1: In jedem Regler-Stil stehen alle Regler des Mixers (je Deck Trim, Hi, Mid,
+    /// Lo, Filter; Mitte Master, Mix, Pegel) und die drei KILL-Tasten je Deck im Mixer, ohne
+    /// sich zu überdecken (Mixerhöhe wie bei 1366 × 768).
+    #[test]
+    fn every_knob_style_fits_the_mixer() {
+        use egui_kittest::kittest::{NodeT, Queryable};
+        let dir = tempfile::tempdir().expect("tempdir");
+        for style in KnobStyle::ALL {
+            let desk = RadioDesk::headless(dir.path());
+            let dj = DjView::default();
+            let mut h = egui_kittest::Harness::builder()
+                .with_size(egui::vec2(MIXER_MIN_W, 400.0))
+                .build_ui(move |ui| {
+                    let ctx = ui.ctx().clone();
+                    let id = egui::Id::new("test_fonts");
+                    if ctx.data_mut(|m| m.get_temp::<bool>(id)).is_none() {
+                        ctx.data_mut(|m| m.insert_temp(id, true));
+                        theme::install_fonts(&ctx);
+                        return;
+                    }
+                    dj_mixer(ui, &desk, &dj, style);
+                });
+            h.run_steps(3);
+            let area = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(MIXER_MIN_W, 400.0));
+            let mut rects = Vec::new();
+            for (label, n) in [
+                ("TRIM", 2),
+                ("HI", 2),
+                ("MID", 2),
+                ("LO", 2),
+                ("FILTER", 2),
+                ("MASTER", 1),
+                ("MIX", 1),
+                ("PEGEL", 1),
+                ("KILL", 6),
+            ] {
+                let found: Vec<Rect> = h
+                    .get_all_by_label(label)
+                    .filter(|n| n.accesskit_node().role() != egui::accesskit::Role::Label)
+                    .map(|n| n.rect())
+                    .collect();
+                assert_eq!(found.len(), n, "{style:?}: {label}");
+                for r in &found {
+                    assert!(area.contains_rect(*r), "{style:?}: {label} {r:?} außerhalb");
+                }
+                rects.extend(found.into_iter().map(|r| (label, r)));
+            }
+            for (i, (la, a)) in rects.iter().enumerate() {
+                for (lb, b) in &rects[i + 1..] {
+                    let o = a.intersect(*b);
+                    assert!(
+                        !o.is_positive() || o.area() < 1.0,
+                        "{style:?}: {la} {a:?} überdeckt {lb} {b:?}"
+                    );
+                }
+            }
+        }
+    }
 
     /// #347: Restzeit-LCD, BPM-LCD und Camelot-Chip im Deck-Kopf sind gleich hoch.
     #[test]
@@ -1892,7 +1996,10 @@ mod tests {
             let mut got = [Rect::NOTHING; 3];
             let mut avail = Rect::NOTHING;
             let input = egui::RawInput {
-                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(width, 1000.0))),
+                screen_rect: Some(Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(width, 1000.0),
+                )),
                 ..Default::default()
             };
             let _ = ctx.run_ui(input, |ui| {

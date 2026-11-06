@@ -665,7 +665,8 @@ impl WoaApp {
             hoerer: Default::default(),
             hoerer_peak: Default::default(),
             hoerer_chip: Default::default(),
-            party: crate::party::PartyView::with_panels(config.party_panels),
+            party: crate::party::PartyView::with_panels(config.party_panels)
+                .with_knob_style(config.knob_style),
             photo: std::env::var_os("WOA_SCREENSHOT").map(|p| (PathBuf::from(p), 0)),
             selected_clips: Vec::new(),
             export_lufs: Some(-16.0),
@@ -2144,6 +2145,10 @@ impl eframe::App for WoaApp {
                 self.config.party_panels = self.party.panels;
                 self.save_config();
             }
+            if self.party.knob_style != self.config.knob_style {
+                self.config.knob_style = self.party.knob_style;
+                self.save_config();
+            }
             self.app_windows(&ctx);
             return;
         }
@@ -2395,6 +2400,7 @@ pub(crate) const MENU_GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Browser", "\"Browser\""),
             ("Fernbedienung", "\"Fernbedienung\""),
             ("Hörer-Statistik", "\"Hörer-Statistik\""),
+            ("Regler-Stil", "\"Regler-Stil\""),
             ("Stundenuhr", "\"Stundenuhr\""),
             ("Wunschliste", "\"Wunschliste\""),
             ("Zeit-Events", "\"Zeit-Events\""),

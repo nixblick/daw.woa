@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.42.6 — 2026-11-06
+
+- Fasst 0.42.3 und 0.42.4 (Claude-/MCP-Anbindung) mit 0.42.5 (Regler-Stil) in einem Release zusammen.
+
+## 0.42.5 — 2026-11-06
+
+- **Regler-Stil im DJ-Mixer wählbar** (Design-Fassung 8.1): Mini-Fader (Standard), Wertbalken, Zahlenfelder oder Drehknöpfe, für Trim, EQ, Filter, Master und Kopfhörer. Gewählt wird unter Einstellungen › Party › DJ › „Regler-Stil“ oder im Menü Ansicht › Regler-Stil (in der Party). Der Wechsel ändert keine Werte und wird pro Nutzer gespeichert. Für alle Stile gilt: Doppelklick setzt den Standardwert, Umschalt regelt fein, das Mausrad ändert, der Tooltip zeigt den Wert. Zahlenfelder nehmen per Klick auch getippte Werte („-3“, „kill“, „TP 40“). Neu sind KILL-Tasten je EQ-Band: Der erste Klick macht das Band stumm, der zweite stellt den Wert davor wieder her. Die Design-Vorlage liegt in `docs/design/woa-design-system/components/DjMixerStyles`.
+- Versionsnummer 0.42.5, weil 0.42.3 und 0.42.4 auf einem eigenen Zweig liegen.
+
 ## 0.42.4 — 2026-11-05
 
 - **MCP bleibt nach einem Neustart von WOA verbunden (#527):** `woa-headless mcp` hielt Port und Live-Schlüssel vom Start fest; nach einem Neustart der App (neuer Port, neuer Schlüssel) scheiterte jeder Aufruf mit „Verbindung verweigert“, bis Claude neu gestartet wurde. Jetzt liest die Weiterleitung bei einem Verbindungsfehler oder 401 `mcp-live.json` neu, meldet sich an der neuen App an und wiederholt den Aufruf einmal. Läuft keine WOA mehr, kommt „WOA läuft nicht: bitte die App starten …“ statt der Winsock-Meldung. Test `live_restart.rs`.
