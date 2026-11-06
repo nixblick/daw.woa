@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.8 — 2026-11-06
+
+- **Radio: Fade-Taste am Deck zählt herunter** (#539). Die quadratische Taste an den Decks A–C zeichnete nur das Symbol, die Restzeit gab es nur an der großen „Fade“-Taste. Sie wird jetzt während der Blende breiter und zeigt „3,0 s“ herunterzählend. Test `deck_key_shows_the_countdown_while_fading`; Prüfpunkt `fade-dauer` neu (0.42.8).
+
 ## 0.42.7 — 2026-11-06
 
 - **Party › DJ: „LEER“ gefüllt** (#538). Das Badge eines leeren Decks war nur dunkel mit Rahmen, weil ein neutraler Chip auch mit `filled()` neutral blieb. Es ist jetzt voll in der Deckfarbe mit dunkler Schrift; „BEREIT · CUE“ ebenso (Farbe Cue). Test `empty_deck_badge_is_filled_in_deck_color`.

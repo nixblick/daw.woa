@@ -146,6 +146,19 @@ pub enum FadeShape {
     Icon(f32),
 }
 
+/// Restzeit im Inneren der quadratischen Deck-Taste (#539); nur dort, nicht an Icon-Tasten.
+fn countdown_text(shape: FadeShape, running: Option<Running>) -> Option<String> {
+    match (shape, running) {
+        (FadeShape::Square(_), Some(run)) => Some(rest_text(run)),
+        _ => None,
+    }
+}
+
+/// Breite der quadratischen Taste: während der Blende breiter, damit „3,0 s“ passt.
+fn square_width(s: f32, fading: bool) -> f32 {
+    if fading { s + 24.0 } else { s }
+}
+
 /// Zeichnet die Fade-Taste. `running`: läuft gerade eine Blende. `enabled`: läuft etwas.
 /// `secs`: eingestellte Dauer (für den Hinweis).
 pub fn fade_button(
@@ -170,7 +183,8 @@ pub fn fade_button(
             let extra = if progress.is_some() { 44.0 } else { 0.0 };
             egui::vec2(16.0 + 8.0 + w + 28.0 + extra, h)
         }
-        FadeShape::Square(s) | FadeShape::Icon(s) => egui::vec2(s, s),
+        FadeShape::Square(s) => egui::vec2(square_width(s, progress.is_some()), s),
+        FadeShape::Icon(s) => egui::vec2(s, s),
     };
     let sense = if enabled {
         Sense::click()
@@ -253,13 +267,23 @@ pub fn fade_button(
                 }
             }
             FadeShape::Square(_) | FadeShape::Icon(_) => {
-                p.text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    FADE_ICON,
-                    icon_font,
-                    ink,
-                );
+                if let Some(text) = countdown_text(shape, running) {
+                    p.text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        text,
+                        egui::FontId::monospace(12.0),
+                        theme::cue(),
+                    );
+                } else {
+                    p.text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        FADE_ICON,
+                        icon_font,
+                        ink,
+                    );
+                }
             }
         }
     }
@@ -286,6 +310,22 @@ mod tests {
         assert_eq!(fade_progress(10.0, 13.0, 3.0), None, "nach 3 s vorbei");
         assert_eq!(fade_progress(10.0, 9.0, 3.0), None);
         assert!(fade_progress(10.0, 16.0, 8.0).is_some(), "8 s eingestellt");
+    }
+
+    /// #539: die quadratische Deck-Taste zählt herunter, Icon-Taste (Cart, Zeile) bleibt stumm.
+    #[test]
+    fn deck_key_shows_the_countdown_while_fading() {
+        let run = Running {
+            progress: 0.0,
+            total: 3.0,
+        };
+        assert_eq!(
+            countdown_text(FadeShape::Square(32.0), Some(run)).as_deref(),
+            Some("3,0 s")
+        );
+        assert_eq!(countdown_text(FadeShape::Square(32.0), None), None);
+        assert_eq!(countdown_text(FadeShape::Icon(24.0), Some(run)), None);
+        assert!(square_width(32.0, true) > square_width(32.0, false));
     }
 
     #[test]

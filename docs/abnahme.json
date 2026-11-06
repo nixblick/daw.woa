@@ -1055,7 +1055,7 @@
       "titel": "Fade-Dauer einstellbar",
       "tun": "Im Rack „Fade-Taste“ auf 6 s stellen, ein Deck abspielen und dessen Fade-Taste drücken; danach Einstellungen › Radio nach „Fade-Taste: Dauer“ suchen.",
       "erwartet": "Das Deck blendet in 6 s aus, die Taste zählt „6,0 s“ herunter, Tooltip „Ausblenden (6 s)“. Vorgabe ist 3 s, wählbar 1 bis 10 s; die Suche findet den Eintrag.",
-      "version": "0.41.37"
+      "version": "0.42.8"
     },
     {
       "id": "ducking-sprechpause",
