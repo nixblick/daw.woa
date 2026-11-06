@@ -852,14 +852,7 @@ impl PartyView {
                     .dj()
                     .filled()
                     .show(ui);
-                    let badge = if d.playing {
-                        StateChip::new("LÄUFT", ChipTone::Color(theme::accent()))
-                            .icon(theme::ic::PLAY)
-                    } else if d.index.is_some() {
-                        StateChip::new("BEREIT · CUE", ChipTone::Neutral)
-                    } else {
-                        StateChip::new("LEER", ChipTone::Neutral)
-                    };
+                    let badge = deck_state_badge(d.playing, d.index.is_some(), col);
                     badge.dj().filled().show(ui);
                     let result = self.waves[side].get().map(|i| i.bpm);
                     match analysis_state(d.index.is_some(), result) {
@@ -1853,9 +1846,42 @@ fn dj_learn_menu(r: &egui::Response, t: woa_io::controller::Target) {
     });
 }
 
+/// Zustands-Badge im DJ-Deckkopf. Im DJ-Modus ist jedes Badge gefüllt; ein neutrales bliebe
+/// trotz `filled()` dunkel mit Rahmen (#538), darum bekommt „LEER“ die Deckfarbe.
+fn deck_state_badge(
+    playing: bool,
+    loaded: bool,
+    deck_color: Color32,
+) -> crate::widgets::StateChip<'static> {
+    use crate::widgets::{ChipTone, StateChip};
+    if playing {
+        StateChip::new("LÄUFT", ChipTone::Color(theme::accent())).icon(theme::ic::PLAY)
+    } else if loaded {
+        StateChip::new("BEREIT · CUE", ChipTone::Cue)
+    } else {
+        StateChip::new("LEER", ChipTone::Color(deck_color))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #538: Der leere Deck-Zustand ist wie die anderen Badges gefüllt (Deckfarbe, dunkle Schrift).
+    #[test]
+    fn empty_deck_badge_is_filled_in_deck_color() {
+        let _ctx = theme::test_context();
+        let col = Color32::from_rgb(200, 40, 120);
+        for (playing, loaded) in [(false, false), (false, true), (true, true)] {
+            let (fill, _, _, text) = deck_state_badge(playing, loaded, col)
+                .filled()
+                .colors(false);
+            assert_ne!(fill, theme::well(), "playing={playing} loaded={loaded}");
+            assert_eq!(text, theme::lcd_bg());
+        }
+        let (fill, _, _, _) = deck_state_badge(false, false, col).filled().colors(false);
+        assert_eq!(fill, col);
+    }
 
     /// Design 8.1: In jedem Regler-Stil stehen alle Regler des Mixers (je Deck Trim, Hi, Mid,
     /// Lo, Filter; Mitte Master, Mix, Pegel) und die drei KILL-Tasten je Deck im Mixer, ohne

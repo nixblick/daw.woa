@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.7 — 2026-11-06
+
+- **Party › DJ: „LEER“ gefüllt** (#538). Das Badge eines leeren Decks war nur dunkel mit Rahmen, weil ein neutraler Chip auch mit `filled()` neutral blieb. Es ist jetzt voll in der Deckfarbe mit dunkler Schrift; „BEREIT · CUE“ ebenso (Farbe Cue). Test `empty_deck_badge_is_filled_in_deck_color`.
+
 ## 0.42.6 — 2026-11-06
 
 - Fasst 0.42.3 und 0.42.4 (Claude-/MCP-Anbindung) mit 0.42.5 (Regler-Stil) in einem Release zusammen.

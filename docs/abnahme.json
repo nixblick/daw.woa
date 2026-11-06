@@ -1038,7 +1038,8 @@
       "titel": "DJ-Deck-Badges gefüllt",
       "tun": "Party › DJ, Titel auf Deck A laden und abspielen, Deck B leer lassen.",
       "erwartet": "„DECK A“ und „LÄUFT“ sind voll in der Deckfarbe gefüllt, Schrift dunkel; Deck B zeigt „DECK B“ und „LEER“ ebenfalls gefüllt.",
-      "version": "0.41.37"
+      "version": "0.42.7",
+      "ticket": 538
     },
     {
       "id": "vorhoeren-immer",
