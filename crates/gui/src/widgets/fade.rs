@@ -252,6 +252,19 @@ pub fn fade_button(
                     );
                 }
             }
+            // Quadratische Taste zählt herunter (#539): Restzeit statt Symbol, ohne „ s“,
+            // damit sie in 32 px passt; der Tooltip nennt die volle Angabe.
+            FadeShape::Square(_) if running.is_some() => {
+                if let Some(run) = running {
+                    p.text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        rest_text(run).trim_end_matches(" s"),
+                        egui::FontId::monospace(11.0),
+                        theme::cue(),
+                    );
+                }
+            }
             FadeShape::Square(_) | FadeShape::Icon(_) => {
                 p.text(
                     rect.center(),
