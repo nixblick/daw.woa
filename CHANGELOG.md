@@ -1,5 +1,9 @@
 # Changelog
 
+
+## Unveröffentlicht
+
+- **Design Fassung 8.1 übernommen** (`docs/design/woa-design-system/`): Regler-Stil wählbar, Mini-Fader (Standard), Wertbalken, Zahlenfelder, Drehknöpfe. Neue Komponente `DjMixerStyles`, DjMixer-Vorschau im Stil Mini-Fader, Stile in `bundle.css`. Nur Doku, noch nicht in der App.
 ## 0.42.2 — 2026-11-05
 
 - **Mikro einzeln, wie OBS:** Neuer Knopf in Audio-Geräte beim Pult-Modus. Er schaltet den Pult-Modus aus und macht das Gerät des Pult-Eingangs (etwa Maonocaster) zum Mikrofon. WOA mischt dann selbst und duckt die Musik an der Stimme, wie OBS mit dem Mikro als eigener Quelle. Am Gerät muss Loopback aus sein. Sind Mikrofon und Pult-Eingang im Pult-Modus dasselbe Gerät, warnt das Fenster: Dann steckt die Musik im Mikro, und das Ducking hält sie dauernd unten.
