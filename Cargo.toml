@@ -8,7 +8,7 @@ unwrap_used = "deny"
 expect_used = "deny"
 
 [workspace.package]
-version = "0.42.5"
+version = "0.42.6"
 edition = "2024"
 license = "GPL-3.0-only"
 repository = "https://github.com/nixblick/daw.woa"

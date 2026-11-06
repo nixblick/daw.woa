@@ -1,9 +1,23 @@
 # Changelog
 
+## 0.42.6 — 2026-11-06
+
+- Fasst 0.42.3 und 0.42.4 (Claude-/MCP-Anbindung) mit 0.42.5 (Regler-Stil) in einem Release zusammen.
+
 ## 0.42.5 — 2026-11-06
 
 - **Regler-Stil im DJ-Mixer wählbar** (Design-Fassung 8.1): Mini-Fader (Standard), Wertbalken, Zahlenfelder oder Drehknöpfe, für Trim, EQ, Filter, Master und Kopfhörer. Gewählt wird unter Einstellungen › Party › DJ › „Regler-Stil“ oder im Menü Ansicht › Regler-Stil (in der Party). Der Wechsel ändert keine Werte und wird pro Nutzer gespeichert. Für alle Stile gilt: Doppelklick setzt den Standardwert, Umschalt regelt fein, das Mausrad ändert, der Tooltip zeigt den Wert. Zahlenfelder nehmen per Klick auch getippte Werte („-3“, „kill“, „TP 40“). Neu sind KILL-Tasten je EQ-Band: Der erste Klick macht das Band stumm, der zweite stellt den Wert davor wieder her. Die Design-Vorlage liegt in `docs/design/woa-design-system/components/DjMixerStyles`.
 - Versionsnummer 0.42.5, weil 0.42.3 und 0.42.4 auf einem eigenen Zweig liegen.
+
+## 0.42.4 — 2026-11-05
+
+- **MCP bleibt nach einem Neustart von WOA verbunden (#527):** `woa-headless mcp` hielt Port und Live-Schlüssel vom Start fest; nach einem Neustart der App (neuer Port, neuer Schlüssel) scheiterte jeder Aufruf mit „Verbindung verweigert“, bis Claude neu gestartet wurde. Jetzt liest die Weiterleitung bei einem Verbindungsfehler oder 401 `mcp-live.json` neu, meldet sich an der neuen App an und wiederholt den Aufruf einmal. Läuft keine WOA mehr, kommt „WOA läuft nicht: bitte die App starten …“ statt der Winsock-Meldung. Test `live_restart.rs`.
+
+## 0.42.3 — 2026-11-05
+
+- **Claude-Anbindung nach dem Umstieg auf das MSI pro Benutzer (#497):** Zeigte der Eintrag `mcpServers.woa` in `~/.claude.json` oder `claude_desktop_config.json` noch auf `C:\Program Files\WOA\woa-headless.exe`, verband Claude nicht mehr („Connection closed“). WOA schreibt beim Start (läuft es pro Benutzer) nur diesen Eintrag auf die `woa-headless.exe` neben der App um, legt `<datei>.bak-woa` an, loggt `mcp registration updated` und zeigt einen Hinweis, dass Claude neu starten muss. Andere Einträge und die Formatierung bleiben. Tests in `legacy.rs`, `test-upgrade.ps1` prüft toten alten und lebenden neuen Pfad.
+- **Hinweis zu `ki.mcp_server.enabled = false` (gewollt):** Das ist der optionale HTTP-Server und startet seit #243 nur auf Wunsch; `app_started` nimmt den Haken beim Start zurück. Der stdio-MCP für Claude (`woa-headless mcp`) hängt nicht daran.
+
 ## 0.42.2 — 2026-11-05
 
 - **Mikro einzeln, wie OBS:** Neuer Knopf in Audio-Geräte beim Pult-Modus. Er schaltet den Pult-Modus aus und macht das Gerät des Pult-Eingangs (etwa Maonocaster) zum Mikrofon. WOA mischt dann selbst und duckt die Musik an der Stimme, wie OBS mit dem Mikro als eigener Quelle. Am Gerät muss Loopback aus sein. Sind Mikrofon und Pult-Eingang im Pult-Modus dasselbe Gerät, warnt das Fenster: Dann steckt die Musik im Mikro, und das Ducking hält sie dauernd unten.

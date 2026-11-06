@@ -16,7 +16,8 @@ pub mod version;
 
 pub use error::{UpdateError, Veto};
 #[cfg(windows)]
-pub use legacy::retire_per_machine;
+pub use legacy::{repair_claude_registration, retire_per_machine};
+pub use legacy::{repair_mcp_registrations, repoint_mcp_command};
 pub use manifest::Available;
 #[cfg(windows)]
 pub use net::launch_installer;

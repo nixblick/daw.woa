@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "mcp-nach-neustart",
+      "ansicht": "Allgemein",
+      "titel": "MCP nach Neustart von WOA",
+      "tun": "Mit dem KI-Agenten (MCP) verbunden `project_info` aufrufen, WOA beenden und neu starten, `project_info` erneut aufrufen.",
+      "erwartet": "Der Aufruf antwortet ohne neue Agenten-Sitzung. Ist WOA beendet, lautet die Meldung „WOA läuft nicht“.",
+      "version": "0.42.4"
+    },
+    {
       "id": "r3-regler-stil",
       "ansicht": "Party DJ",
       "titel": "Regler-Stil im DJ-Mixer",
@@ -1079,6 +1087,14 @@
       "tun": "Controller wählen. Party › DJ, Rechtsklick auf PLAY von Deck A › „MIDI lernen“, Pad drücken; dasselbe für CUE und den Crossfader (Regler bewegen). Alternativ Controller-Fenster, Zeile „DJ:“.",
       "erwartet": "Das Pad startet und pausiert Deck A, das Cue-Pad setzt bzw. springt zum Cue-Punkt, der Regler bewegt den Crossfader. Außerhalb der DJ-Ansicht tun die Zuordnungen nichts.",
       "version": "0.41.37"
+    },
+    {
+      "id": "mcp-pfad-nach-umstieg",
+      "ansicht": "Allgemein",
+      "titel": "KI-Anbindung (MCP) zeigt nach dem Update auf den neuen Pfad",
+      "tun": "Auf einem PC, dessen MCP-Eintrag „woa“ im KI-Client noch auf C:\\Program Files\\WOA\\woa-headless.exe steht, das Update aus der App installieren und WOA starten. Danach den KI-Client neu starten.",
+      "erwartet": "WOA meldet, dass die Anbindung auf den neuen WOA-Pfad umgestellt ist. Der Eintrag „woa“ zeigt auf %LOCALAPPDATA%\\Programs\\WOA\\woa-headless.exe (Sicherung .bak-woa daneben, andere Einträge unverändert), im Log steht „mcp registration updated“. Der KI-Client verbindet ohne Handarbeit, serverInfo.version ist die neue Version.",
+      "version": "0.42.3"
     }
   ]
 }

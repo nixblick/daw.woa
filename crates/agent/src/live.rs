@@ -613,6 +613,19 @@ pub fn forward(
     port: u16,
     token: &str,
     input: impl BufRead,
+    output: impl Write,
+) -> Result<(), AgentError> {
+    forward_resolving(port, token, None, input, output)
+}
+
+/// Wie [`forward`], liest aber bei einem Verbindungsfehler (oder 401) `resolve` neu: Die App
+/// wurde neu gestartet, Port und Live-Geheimnis sind andere (#527). Der Aufruf wird dann mit
+/// neuer Sitzung einmal wiederholt. Ist keine App mehr da, kommt „WOA läuft nicht“.
+pub fn forward_resolving(
+    port: u16,
+    token: &str,
+    resolve: Option<&dyn Fn() -> Option<RunningApp>>,
+    input: impl BufRead,
     mut output: impl Write,
 ) -> Result<(), AgentError> {
     let io = |e: std::io::Error| AgentError::Transport(e.to_string());
@@ -625,20 +638,24 @@ pub fn forward(
         .max_idle_connections_per_host(0)
         .build()
         .into();
-    let url = format!("http://127.0.0.1:{port}{MCP_PATH}");
-    let auth = format!("Bearer {token}");
+    let mut url = format!("http://127.0.0.1:{port}{MCP_PATH}");
+    let mut auth = format!("Bearer {token}");
     let mut session_id: Option<String> = None;
     let mut protocol: Option<String> = None;
     // Die Anmeldung des Clients, um sie nach einem Verlust der Sitzung zu wiederholen.
     let mut init: Option<String> = None;
     let mut initialized: Option<String> = None;
-    let post = |line: &str, session_id: &mut Option<String>, protocol: &Option<String>| {
+    let post = |url: &str,
+                auth: &str,
+                line: &str,
+                session_id: &mut Option<String>,
+                protocol: &Option<String>| {
         let id = serde_json::from_str::<serde_json::Value>(line)
             .ok()
             .and_then(|v| v.get("id").cloned());
         let mut req = http
-            .post(&url)
-            .header("Authorization", &auth)
+            .post(url)
+            .header("Authorization", auth)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream");
         if let Some(s) = session_id.as_deref() {
@@ -702,7 +719,34 @@ pub fn forward(
             Some("notifications/initialized") => initialized = Some(line.to_string()),
             _ => {}
         }
-        let mut replies = post(line, &mut session_id, &protocol);
+        let mut replies = post(&url, &auth, line, &mut session_id, &protocol);
+        // Verbindung verweigert oder Schlüssel abgelehnt: Die App ist neu gestartet. Lock-Datei
+        // neu lesen, neu anmelden, den Aufruf einmal wiederholen (#527).
+        if let (Err((0 | 401, _)), Some(resolve)) = (&replies, resolve) {
+            match resolve() {
+                Some(app) => {
+                    url = format!("http://127.0.0.1:{}{MCP_PATH}", app.port);
+                    auth = format!("Bearer {}", app.key);
+                    session_id = None;
+                    if let Some(init) = init.as_deref()
+                        && init != line
+                        && post(&url, &auth, init, &mut session_id, &None).is_ok()
+                        && let Some(n) = initialized.as_deref()
+                    {
+                        let _ = post(&url, &auth, n, &mut session_id, &protocol);
+                    }
+                    replies = post(&url, &auth, line, &mut session_id, &protocol);
+                }
+                None if matches!(replies, Err((0, _))) => {
+                    replies = Err((
+                        0,
+                        "WOA läuft nicht: bitte die App starten, dann den Aufruf wiederholen"
+                            .into(),
+                    ));
+                }
+                None => {}
+            }
+        }
         // 404 auf eine bekannte Sitzung: Die App hat sie verworfen (Leerlauf, Neustart).
         // Still neu anmelden und den Aufruf einmal wiederholen.
         if matches!(replies, Err((404, _)))
@@ -711,11 +755,11 @@ pub fn forward(
             && init != line
         {
             session_id = None;
-            if post(init, &mut session_id, &None).is_ok() && session_id.is_some() {
+            if post(&url, &auth, init, &mut session_id, &None).is_ok() && session_id.is_some() {
                 if let Some(n) = initialized.as_deref() {
-                    let _ = post(n, &mut session_id, &protocol);
+                    let _ = post(&url, &auth, n, &mut session_id, &protocol);
                 }
-                replies = post(line, &mut session_id, &protocol);
+                replies = post(&url, &auth, line, &mut session_id, &protocol);
             }
         }
         let replies = replies.map_err(|(_, m)| m);
@@ -808,10 +852,11 @@ fn json_messages(body: &str, sse: bool) -> Vec<String> {
 }
 
 /// [`forward`] über stdin/stdout. Blockiert, bis der Client stdin schließt.
-pub fn forward_stdio(port: u16, token: &str) -> Result<(), AgentError> {
-    forward(
+pub fn forward_stdio(port: u16, token: &str, data_dir: &Path) -> Result<(), AgentError> {
+    forward_resolving(
         port,
         token,
+        Some(&|| running_app(data_dir)),
         std::io::stdin().lock(),
         std::io::stdout().lock(),
     )

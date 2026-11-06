@@ -151,10 +151,179 @@ pub fn retire_per_machine(data_dir: &std::path::Path) {
     }
 }
 
+/// Ob `command` die `woa-headless.exe` der alten Installation für alle Benutzer ist.
+fn is_legacy_headless(command: &str) -> bool {
+    let norm = command.replace('\\', "/").to_ascii_lowercase();
+    norm.contains("/program files/woa/woa-headless")
+        || norm.contains("/program files (x86)/woa/woa-headless")
+}
+
+fn collect_legacy_commands(v: &serde_json::Value, out: &mut Vec<String>) {
+    match v {
+        serde_json::Value::Object(map) => {
+            if let Some(cmd) = map
+                .get("mcpServers")
+                .and_then(|s| s.get("woa"))
+                .and_then(|w| w.get("command"))
+                .and_then(|c| c.as_str())
+                && is_legacy_headless(cmd)
+                && !out.iter().any(|o| o == cmd)
+            {
+                out.push(cmd.to_owned());
+            }
+            map.values().for_each(|c| collect_legacy_commands(c, out));
+        }
+        serde_json::Value::Array(a) => a.iter().for_each(|c| collect_legacy_commands(c, out)),
+        _ => {}
+    }
+}
+
+/// Setzt in `text` (`.claude.json` bzw. `claude_desktop_config.json`) den `command` des Eintrags
+/// `mcpServers.woa`, der noch auf `Program Files\WOA\woa-headless.exe` zeigt, auf `new_exe`.
+/// Andere Einträge und die Formatierung bleiben unberührt (nur der Textwert wird ersetzt).
+/// `None`: nichts zu tun oder kein gültiges JSON.
+pub fn repoint_mcp_command(text: &str, new_exe: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(text).ok()?;
+    let mut old = Vec::new();
+    collect_legacy_commands(&v, &mut old);
+    if old.is_empty() {
+        return None;
+    }
+    let new = serde_json::to_string(new_exe).ok()?;
+    let mut out = text.to_owned();
+    for o in old {
+        out = out.replace(&serde_json::to_string(&o).ok()?, &new);
+    }
+    (out != text).then_some(out)
+}
+
+/// Schreibt in den genannten Dateien die veraltete Registrierung um (Sicherung daneben:
+/// `<datei>.bak-woa`). Gibt die geänderten Dateien zurück; fehlende Dateien sind kein Fehler.
+pub fn repair_mcp_registrations(
+    files: &[std::path::PathBuf],
+    headless: &std::path::Path,
+) -> Vec<std::path::PathBuf> {
+    let new_exe = headless.to_string_lossy();
+    let mut changed = Vec::new();
+    for file in files {
+        let Ok(text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        let Some(fixed) = repoint_mcp_command(&text, &new_exe) else {
+            continue;
+        };
+        let mut bak = file.as_os_str().to_owned();
+        bak.push(".bak-woa");
+        if let Err(e) = std::fs::write(&bak, &text) {
+            tracing::warn!(error = %e, file = %file.display(), "mcp registration backup failed");
+            continue;
+        }
+        match std::fs::write(file, fixed) {
+            Ok(()) => {
+                tracing::info!(file = %file.display(), command = %new_exe, "mcp registration updated");
+                changed.push(file.clone());
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, file = %file.display(), "mcp registration not written");
+            }
+        }
+    }
+    changed
+}
+
+/// Beim Start (nur Windows): läuft WOA pro Benutzer, zeigt eine noch vorhandene Registrierung von
+/// Claude (`~/.claude.json`, `claude_desktop_config.json`) aber auf `Program Files`, wird sie auf die
+/// `woa-headless.exe` neben der laufenden App umgeschrieben. Gibt `true` zurück, wenn etwas geändert
+/// wurde (Claude muss dann neu verbinden).
+#[cfg(windows)]
+pub fn repair_claude_registration() -> bool {
+    use std::path::PathBuf;
+    let (Ok(exe), Some(lad)) = (std::env::current_exe(), std::env::var_os("LOCALAPPDATA")) else {
+        return false;
+    };
+    if !runs_per_user(&exe, std::path::Path::new(&lad)) {
+        return false;
+    }
+    let Some(headless) = exe.parent().map(|d| d.join("woa-headless.exe")) else {
+        return false;
+    };
+    if !headless.is_file() {
+        return false;
+    }
+    let mut files = Vec::new();
+    if let Some(p) = std::env::var_os("USERPROFILE") {
+        files.push(PathBuf::from(p).join(".claude.json"));
+    }
+    if let Some(a) = std::env::var_os("APPDATA") {
+        files.push(
+            PathBuf::from(a)
+                .join("Claude")
+                .join("claude_desktop_config.json"),
+        );
+    }
+    !repair_mcp_registrations(&files, &headless).is_empty()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::Path;
+
+    const OLD_CFG: &str = r#"{
+  "numStartups": 3,
+  "mcpServers": {
+    "woa": { "type": "stdio", "command": "C:\\Program Files\\WOA\\woa-headless.exe", "args": ["mcp", "C:\\Users\\a\\Music\\Claude.woa"] },
+    "other": { "command": "C:\\Program Files\\WOA\\woa-headless.exe" }
+  }
+}"#;
+    const NEW_EXE: &str = r"C:\Users\a\AppData\Local\Programs\WOA\woa-headless.exe";
+
+    #[test]
+    fn registration_on_program_files_is_repointed() {
+        let fixed = repoint_mcp_command(OLD_CFG, NEW_EXE).expect("must change");
+        let v: serde_json::Value = serde_json::from_str(&fixed).unwrap();
+        assert_eq!(v["mcpServers"]["woa"]["command"], NEW_EXE);
+        assert_eq!(v["mcpServers"]["woa"]["args"][0], "mcp");
+        assert_eq!(v["numStartups"], 3);
+        // Wieder aufgerufen: nichts mehr zu tun.
+        assert!(repoint_mcp_command(&fixed, NEW_EXE).is_none());
+    }
+
+    #[test]
+    fn current_or_foreign_registrations_stay() {
+        let cur = format!(
+            r#"{{"mcpServers":{{"woa":{{"command":{}}}}}}}"#,
+            serde_json::to_string(NEW_EXE).unwrap()
+        );
+        assert!(repoint_mcp_command(&cur, NEW_EXE).is_none());
+        let foreign =
+            r#"{"mcpServers":{"x":{"command":"C:\\Program Files\\WOA\\woa-headless.exe"}}}"#;
+        assert!(repoint_mcp_command(foreign, NEW_EXE).is_none());
+        assert!(repoint_mcp_command("kein json", NEW_EXE).is_none());
+    }
+
+    #[test]
+    fn project_scoped_entries_are_found_too() {
+        let t = r#"{"projects":{"C:/p":{"mcpServers":{"woa":{"command":"C:\\Program Files\\WOA\\woa-headless.exe"}}}}}"#;
+        assert!(repoint_mcp_command(t, NEW_EXE).is_some());
+    }
+
+    #[test]
+    fn files_are_rewritten_with_backup() {
+        let dir = std::env::temp_dir().join(format!("woa-mcp-reg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join(".claude.json");
+        std::fs::write(&f, OLD_CFG).unwrap();
+        let missing = dir.join("fehlt.json");
+        let changed = repair_mcp_registrations(&[missing, f.clone()], Path::new(NEW_EXE));
+        assert_eq!(changed, vec![f.clone()]);
+        assert!(std::fs::read_to_string(&f).unwrap().contains("AppData"));
+        assert_eq!(
+            std::fs::read_to_string(dir.join(".claude.json.bak-woa")).unwrap(),
+            OLD_CFG
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     const REG: &str = r"
 HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{0A1B2C3D-1111-2222-3333-444455556666}
