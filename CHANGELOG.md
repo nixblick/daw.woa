@@ -3,6 +3,7 @@
 ## 0.42.8 — 2026-11-06
 
 - **Fade-Taste an den Decks zählt herunter (#539):** Die quadratische Taste an Deck A–C zeigt beim Ausblenden die Restzeit („2,4“) statt des Symbols; der Tooltip nennt „noch 2,4 s“.
+- **Test: eigene Stimme nicht im Kopfhörer (#537):** `own_voice_is_not_in_the_headphones_unless_asked` belegt, dass WOA das Mikro ab Werk nicht auf den Abhörausgang legt (nur mit Mithören an). Der Hall bei #537 kommt damit nicht aus WOA.
 - **Leeres Deck zeigt LEER statt VORGELADEN (#540):** In der Party (Einfach) bekommt ein Deck ohne Titel das neutrale Badge LEER.
 
 ## 0.42.7 — 2026-11-06
