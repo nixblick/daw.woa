@@ -567,6 +567,24 @@ const TRANSPORT_RIGHT_W: f32 = 480.0;
 const TRANSPORT_ROW_H: f32 = 46.0;
 
 /// Beginnt in einer umbrechenden Zeile eine neue, wenn `need` px nicht mehr passen.
+/// Strg+1/2/3 wechseln die Ansicht (Produzent, Radio, Party). Nicht, solange ein Textfeld
+/// den Fokus hat. Strg ohne weitere Modifikatoren, damit die Hot Cues (Ziffern ohne Strg)
+/// unberührt bleiben.
+fn mode_shortcut(ctx: &egui::Context) -> Option<Mode> {
+    if ctx.egui_wants_keyboard_input() {
+        return None;
+    }
+    ctx.input_mut(|i| {
+        [
+            (egui::Key::Num1, Mode::Produzent),
+            (egui::Key::Num2, Mode::Radio),
+            (egui::Key::Num3, Mode::Party),
+        ]
+        .into_iter()
+        .find_map(|(key, mode)| i.consume_key(egui::Modifiers::COMMAND, key).then_some(mode))
+    })
+}
+
 fn transport_fit(ui: &mut egui::Ui, need: f32) {
     if row_rest(ui) < need {
         ui.end_row();
@@ -2087,6 +2105,9 @@ impl eframe::App for WoaApp {
             } else {
                 self.settings.open_area(self.mode_area());
             }
+        }
+        if let Some(mode) = mode_shortcut(&ctx) {
+            self.set_mode(mode);
         }
         if self.settings.open && !self.settings_was_open {
             // Schlüssel-Status frisch nachsehen (im Hintergrund, nie im UI-Thread).
@@ -4140,5 +4161,42 @@ mod sound_search_tests {
             "über Kategorien, ohne Groß/Klein"
         );
         assert!(sound_matches("zzzz-nichts", SoundCategory::Bass).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod mode_shortcut_tests {
+    use super::*;
+
+    fn press(ctx: &egui::Context, key: egui::Key, modifiers: egui::Modifiers) -> Option<Mode> {
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed: true,
+            repeat: false,
+            modifiers,
+        });
+        raw.modifiers = modifiers;
+        let mut out = None;
+        let _ = ctx.run_ui(raw, |ui| {
+            out = mode_shortcut(ui.ctx());
+        });
+        out
+    }
+
+    #[test]
+    fn ctrl_digits_switch_the_view() {
+        let ctx = egui::Context::default();
+        let c = egui::Modifiers::COMMAND;
+        assert_eq!(press(&ctx, egui::Key::Num1, c), Some(Mode::Produzent));
+        assert_eq!(press(&ctx, egui::Key::Num2, c), Some(Mode::Radio));
+        assert_eq!(press(&ctx, egui::Key::Num3, c), Some(Mode::Party));
+    }
+
+    #[test]
+    fn digits_without_ctrl_stay_hot_cues() {
+        let ctx = egui::Context::default();
+        assert_eq!(press(&ctx, egui::Key::Num3, egui::Modifiers::NONE), None);
     }
 }
