@@ -175,3 +175,22 @@ fn legacy_form_has_its_own_component_guids() {
         assert_ne!(neu, alt, "{var} gleich in beiden Formen");
     }
 }
+
+/// #543: Eine Verknüpfung mit `Icon="…"` zeigt in den MSI-Zwischenspeicher
+/// (`%APPDATA%\Microsoft\Installer\{ProductCode}\woa.ico`), der mit jedem Update wechselt;
+/// angeheftete Kopien in der Taskleiste zeigen danach ein leeres Blatt. Ohne `Icon` nimmt
+/// Windows das Symbol aus der `woa.exe` am festen Installordner.
+#[test]
+fn shortcuts_take_the_icon_from_the_exe() {
+    for (i, part) in product().split("<Shortcut").enumerate().skip(1) {
+        let tag = &part[..part.find("/>").or(part.find('>')).unwrap()];
+        assert!(
+            !tag.contains("Icon="),
+            "Verknüpfung {i} bezieht ihr Symbol aus dem MSI-Cache"
+        );
+        assert!(
+            tag.contains("woa.exe"),
+            "Verknüpfung {i} zeigt nicht auf woa.exe"
+        );
+    }
+}
