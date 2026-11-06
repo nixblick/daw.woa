@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.9 — 2026-11-06
+
+- **Taskleisten-Logo bleibt nach Updates (#543):** Die Startmenü-Verknüpfung bezog ihr Symbol aus dem MSI-Zwischenspeicher (`%APPDATA%\Microsoft\Installer\{ProductCode}\woa.ico`), der mit jedem Release wechselt. Eine in die Taskleiste angeheftete Kopie zeigte danach ein leeres Blatt. Jetzt nimmt die Verknüpfung das Symbol aus der `woa.exe` im festen Installordner. Wer schon mit einer älteren Version angeheftet hat: einmal lösen und neu anheften. Test `shortcuts_take_the_icon_from_the_exe`.
+
 ## 0.42.8 — 2026-11-06
 
 - **Fade-Taste an den Decks zählt herunter (#539):** Die quadratische Taste an Deck A–C zeigt beim Ausblenden die Restzeit („2,4“) statt des Symbols; der Tooltip nennt „noch 2,4 s“.
