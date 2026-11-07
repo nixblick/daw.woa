@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.19 — 2026-11-07
+
+- **Tempo auch bei dicht gemischter Musik:** Gemasterte Songs mit vollem Mix bekamen im DJ-Deck „Analyse fehlgeschlagen“, weil die Tempo-Erkennung nur harte Einsätze zählte (Pegel verdoppelt sich in 5 ms). Ein zweiter Weg zählt jetzt Einsätze relativ zur eigenen Einsatzkurve, sofern der Pegel nicht periodisch tief einbricht; Schwebungen und Tremolo täuschen weiter kein Tempo vor. Tests `dense_mix_has_a_tempo`, `beating_and_tremolo_have_no_tempo`.
+
 ## 0.42.18 — 2026-11-07
 
 - **Sende-Deck: Tasten in einer Reihe, ohne LED (#563):** Pause, Stopp, Fade, Blende, Mikro und die Sprung- und Spieltasten stehen jetzt in einer Reihe; ist das Fenster zu schmal, bricht sie um. Die LED neben MIKRO war der Telefon-Pegel und wirkte wie ein toter Mikro-Pegel; sie ist weg, der Telefon-Pegel steht weiter in der Gäste-Karte.

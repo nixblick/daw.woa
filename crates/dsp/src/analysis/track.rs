@@ -275,6 +275,44 @@ fn outro_start(left: &[f32], right: &[f32], rate: u32, start: f64, end: f64) -> 
     Some(round2(t.max(end - MAX_FADE_SECONDS)))
 }
 
+/// Zweiter Weg für dicht gemischte, gemasterte Musik: Dort verdoppelt sich der Pegel bei einem
+/// Schlag kaum je, die Einsätze ragen aber deutlich aus der eigenen Einsatzkurve heraus.
+/// Schwebungen und Tremolo fallen periodisch tief unter den mittleren Pegel; Musik mit dichtem
+/// Mix tut das selten. Nur dann zählen relative Einsätze, und Einsätze direkt nach einem
+/// Einbruch (Wiederauftauchen aus einer Nullstelle) werden aus der Kurve genommen.
+/// Liefert `true`, wenn die (bereinigte) Kurve genug Einsätze hat.
+fn dense_mix_onsets(level: &[f64], onset: &mut [f64], needed: usize) -> bool {
+    const DIP_DEPTH: f64 = 1.5;
+    const MAX_DIP_SHARE: f64 = 0.04;
+    const DIP_BACK: usize = 10;
+    const DIP_DROP: f64 = 0.5;
+    const REL_FACTOR: f64 = 6.0;
+    const REL_FLOOR: f64 = 0.12;
+    let median = |v: &mut Vec<f64>| -> f64 {
+        v.sort_by(f64::total_cmp);
+        v[v.len() / 2]
+    };
+    if level.len() < 8 {
+        return false;
+    }
+    let mid = median(&mut level.to_vec());
+    let deep = level.iter().filter(|l| **l < mid - DIP_DEPTH).count();
+    if deep as f64 > MAX_DIP_SHARE * level.len() as f64 {
+        return false;
+    }
+    for f in DIP_BACK + 1..onset.len().min(level.len()) {
+        if level[f - DIP_BACK] - level[f - 1] > DIP_DROP {
+            onset[f] = 0.0;
+        }
+    }
+    let mut pos: Vec<f64> = onset.iter().copied().filter(|o| *o > 1e-6).collect();
+    if pos.len() < 8 {
+        return false;
+    }
+    let threshold = (REL_FACTOR * median(&mut pos)).max(REL_FLOOR);
+    onset.iter().filter(|o| **o > threshold).count() >= needed
+}
+
 /// Tempo in BPM aus der Autokorrelation der Einsatzkurve (70 bis 180 BPM).
 pub fn detect_bpm(mono: &[f32], rate: u32) -> Option<Tempo> {
     let rate_f = f64::from(rate.max(1));
@@ -287,19 +325,20 @@ pub fn detect_bpm(mono: &[f32], rate: u32) -> Option<Tempo> {
     // Pegel je Schritt über ein Fenster von vier Schritten (etwa 20 ms): so schwankt ein
     // gleichmäßiger Klang nicht mit der Phase, ein Einsatz bleibt aber scharf.
     let frames = (mono.len() / hop).saturating_sub(3);
-    let mut prev = 0.0f64;
-    let mut onset = Vec::with_capacity(frames);
+    let mut level = Vec::with_capacity(frames);
     for f in 0..frames {
         let s = &mono[f * hop..(f + 4) * hop];
         let rms = (s.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>() / s.len() as f64).sqrt();
-        let level = (1.0 + 1000.0 * rms).ln();
-        onset.push((level - prev).max(0.0));
-        prev = level;
+        level.push((1.0 + 1000.0 * rms).ln());
     }
+    let mut onset: Vec<f64> = (0..frames)
+        .map(|f| (level[f] - if f > 0 { level[f - 1] } else { 0.0 }).max(0.0))
+        .collect();
     // Ohne deutliche Einsätze (Lautstärkesprung auf mehr als das Doppelte in 5 ms) gibt es keinen
     // Schlag: Schwebungen und gleichmäßige Klänge sollen kein Tempo vortäuschen.
+    let needed = (frames / 400).max(4);
     let strong = onset.iter().filter(|o| **o > 0.7).count();
-    if strong < (frames / 400).max(4) {
+    if strong < needed && !dense_mix_onsets(&level, &mut onset, needed) {
         return None;
     }
     let mean = onset.iter().sum::<f64>() / onset.len() as f64;
@@ -614,6 +653,67 @@ mod tests {
             detect_bpm(&click_track(120.0, 2.0, RATE), RATE).is_none(),
             "too short"
         );
+    }
+
+    /// Dichter Mix wie ein gemasterter Song: lauter Flächen-Akkord, darüber weiche Bassdrum
+    /// (5 ms Anstieg) – der Pegel verdoppelt sich beim Schlag nie.
+    fn dense_mix(bpm: f64, secs: f64, rate: u32) -> Vec<f32> {
+        let r = rate as f32;
+        // Fläche als gleichmäßiges Rauschen (reine Sinus-Akkorde schweben in sich).
+        let mut seed = 0x2545_f491_u32;
+        let mut x: Vec<f32> = (0..(secs * f64::from(rate)) as usize)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                0.25 * (seed as f32 / u32::MAX as f32 * 2.0 - 1.0)
+            })
+            .collect();
+        let period = 60.0 / bpm * f64::from(rate);
+        let mut t = 0.0;
+        while (t as usize) < x.len() {
+            let s = t as usize;
+            for i in 0..(0.2 * r) as usize {
+                if s + i < x.len() {
+                    let ti = i as f32 / r;
+                    let env = (ti / 0.005).min(1.0) * (-ti / 0.06).exp();
+                    x[s + i] += 0.35 * env * (ti * 70.0 * std::f32::consts::TAU).sin();
+                }
+            }
+            t += period;
+        }
+        x
+    }
+
+    #[test]
+    fn dense_mix_has_a_tempo() {
+        // Bisher fiel so ein Titel durch die feste Einsatz-Sperre („Analyse fehlgeschlagen“).
+        let x = dense_mix(124.0, 20.0, RATE);
+        let t = detect_bpm(&x, RATE).expect("tempo");
+        assert!((t.bpm - 124.0).abs() <= 1.5, "{}", t.bpm);
+    }
+
+    #[test]
+    fn beating_and_tremolo_have_no_tempo() {
+        let r = RATE as f32;
+        for (a, b) in [(440.0f32, 442.0f32), (440.0, 441.0), (440.0, 440.5)] {
+            let x: Vec<f32> = (0..10 * RATE as usize)
+                .map(|i| {
+                    let t = i as f32 / r;
+                    0.2 * ((t * a * std::f32::consts::TAU).sin()
+                        + (t * b * std::f32::consts::TAU).sin())
+                })
+                .collect();
+            assert!(detect_bpm(&x, RATE).is_none(), "beating {a}/{b}");
+        }
+        let trem: Vec<f32> = (0..10 * RATE as usize)
+            .map(|i| {
+                let t = i as f32 / r;
+                0.3 * (1.0 + 0.9 * (t * 4.0 * std::f32::consts::TAU).sin())
+                    * (t * 300.0 * std::f32::consts::TAU).sin()
+            })
+            .collect();
+        assert!(detect_bpm(&trem, RATE).is_none(), "tremolo");
     }
 
     #[test]
