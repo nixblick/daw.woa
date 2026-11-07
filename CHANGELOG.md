@@ -2,6 +2,7 @@
 
 ## 0.42.17 — 2026-11-07
 
+- **„bis Playlist-Ende“ rechtsbündig (#563):** Die Anzeige im Sende-Deck springt nicht mehr zur Seite, wenn die RAMP-Anzeige erscheint oder verschwindet.
 - **„Neuerungen“ zeigen alle übersprungenen Versionen (#561):** Wer mehrere Versionen auf einmal aktualisiert, sah im Update-Hinweis nur den Eintrag der neuesten. Das Manifest trägt jetzt die letzten 15 Changelog-Abschnitte, WOA zeigt davon alle, die neuer sind als die installierte, mit Überschrift je Version. Test `notes_cover_all_skipped_versions`.
 
 ## 0.42.16 — 2026-11-07
