@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.18 — 2026-11-07
+
+- **Sende-Deck: Tasten in einer Reihe, ohne LED (#563):** Pause, Stopp, Fade, Blende, Mikro und die Sprung- und Spieltasten stehen jetzt in einer Reihe; ist das Fenster zu schmal, bricht sie um. Die LED neben MIKRO war der Telefon-Pegel und wirkte wie ein toter Mikro-Pegel; sie ist weg, der Telefon-Pegel steht weiter in der Gäste-Karte.
+
 ## 0.42.17 — 2026-11-07
 
 - **„bis Playlist-Ende“ rechtsbündig (#563):** Die Anzeige im Sende-Deck springt nicht mehr zur Seite, wenn die RAMP-Anzeige erscheint oder verschwindet.
