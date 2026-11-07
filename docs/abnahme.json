@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "tempo-dichter-mix",
+      "ansicht": "Party DJ",
+      "titel": "DJ: Tempo bei vollem Mix",
+      "tun": "Party › DJ, einen gemasterten Song mit durchgehendem Beat in Deck A laden (einer, der bisher „Analyse fehlgeschlagen“ zeigte).",
+      "erwartet": "Nach der Analyse steht eine BPM-Zahl im Deck, die zum Song passt (oder ihr Doppeltes/Halbes), kein „Analyse fehlgeschlagen“.",
+      "version": "0.42.19"
+    },
+    {
       "id": "sende-tasten-eine-reihe",
       "ansicht": "Radio",
       "titel": "Sende-Deck: Tasten in einer Reihe",
