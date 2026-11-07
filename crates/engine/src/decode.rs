@@ -251,7 +251,7 @@ fn decode_wav(path: &Path) -> Result<Decoded, String> {
 const WIDE_PROBE_BYTES: u32 = 32 * 1024 * 1024;
 
 /// Probe mit tieferer Suche, einmal gebaut.
-fn wide_probe() -> &'static Probe {
+pub(crate) fn wide_probe() -> &'static Probe {
     static P: OnceLock<Probe> = OnceLock::new();
     P.get_or_init(|| {
         let mut p = Probe::new_with_options(&ProbeOptions {

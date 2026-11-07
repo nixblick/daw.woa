@@ -873,7 +873,7 @@ impl PartyView {
                                 .icon(theme::ic::WARNING)
                                 .dj()
                                 .show(ui)
-                                .on_hover_text("Analyse fehlgeschlagen: kein Tempo gefunden");
+                                .on_hover_text("Kein Tempo gefunden: kein klarer Taktschlag erkennbar. Tonart und Wellenform sind davon unberührt. Einzelheiten im Protokoll (\"deck analysis\").");
                             if crate::widgets::icon_button::IconButton::new(
                                 theme::ic::ARROW_CLOCKWISE,
                                 "Neu analysieren",

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.42.13 — 2026-11-07
+
+- **Strg+1/2/3 wechseln die Ansicht (#544):** Die Hinweise an PRODUZENT, RADIO und PARTY versprachen die Kürzel, geschrieben waren sie nie. Jetzt rufen sie `set_mode` auf (Protokoll: `mode` mit `from`/`to`). Nicht, solange ein Textfeld den Fokus hat; die Hot Cues auf 1–4 ohne Strg bleiben unberührt. Tests `ctrl_digits_switch_the_view`, `digits_without_ctrl_stay_hot_cues`.
+- **Deck „Analyse fehlgeschlagen“ (#550):** Die Fremdmeldung „reached probe limit of 1048576 bytes“ im Protokoll kam vom Cover-Lesen: Titel mit viel Vorspann (großes Titelbild, lange Kennzeichnung) sprengten die 1-MiB-Suchgrenze, das Cover fehlte still. Das Cover-Lesen sucht jetzt wie das Dekodieren tiefer (bis 32 MiB) und schreibt bei Misserfolg eine eigene WARN-Zeile („cover probe failed“). Findet die Analyse kein Tempo, steht jetzt „deck analysis: no tempo found“ mit Dateiname im Protokoll, und der Hinweis am Chip sagt, dass kein klarer Taktschlag erkennbar war (Tonart und Wellenform bleiben gültig). Test `cover_survives_probe_limit_padding`.
+
 ## 0.42.12 — 2026-11-07
 
 - **Notfall-Playlist bewusst an/aus, mit Zeitlimit:** Die Notfall-Playlist lief über Nacht, obwohl keine Sendung sein sollte: WOA war geschlossen worden, ohne die Sendung zu beenden, und woa-streamd sendete wie vorgesehen weiter. Neu unter Radio › Sendung › Erweitert: Schalter „Notfall-Playlist“ (Vorgabe an) und „höchstens … min“ (Vorgabe 30). Ist die Oberfläche länger weg, meldet sich woa-streamd selbst ab. Aus: Die Sendung endet sofort, wenn WOA geht. Stille bei laufender Oberfläche beendet nichts. Test `notfall_ends_after_limit_or_at_once_when_off`.
