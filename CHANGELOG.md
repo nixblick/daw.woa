@@ -2,7 +2,7 @@
 
 ## 0.42.19 — 2026-11-07
 
-- **Tempo auch bei dicht gemischter Musik:** Gemasterte Songs mit vollem Mix bekamen im DJ-Deck „Analyse fehlgeschlagen“, weil die Tempo-Erkennung nur harte Einsätze zählte (Pegel verdoppelt sich in 5 ms). Ein zweiter Weg zählt jetzt Einsätze relativ zur eigenen Einsatzkurve, sofern der Pegel nicht periodisch tief einbricht; Schwebungen und Tremolo täuschen weiter kein Tempo vor. Tests `dense_mix_has_a_tempo`, `beating_and_tremolo_have_no_tempo`.
+- **Tempo auch bei dicht gemischter Musik:** Gemasterte Songs mit vollem Mix bekamen im DJ-Deck „Analyse fehlgeschlagen“, weil die Tempo-Erkennung nur harte Einsätze zählte (Pegel verdoppelt sich in 5 ms). Ein zweiter Weg zählt jetzt Einsätze relativ zur eigenen Einsatzkurve, sofern der Pegel nicht periodisch tief einbricht; Schwebungen und Tremolo täuschen weiter kein Tempo vor. Tests `dense_mix_has_a_tempo`, `beating_and_tremolo_have_no_tempo`; Prüfpunkt `tempo-dichter-mix` (Party DJ).
 
 ## 0.42.18 — 2026-11-07
 
