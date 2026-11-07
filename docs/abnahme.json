@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "sende-tasten-eine-reihe",
+      "ansicht": "Radio",
+      "titel": "Sende-Deck: Tasten in einer Reihe",
+      "tun": "Radio-Ansicht im großen Fenster ansehen, dann das Fenster schmaler ziehen.",
+      "erwartet": "Pause bis Mikro und die Sprung-, Wiederhol- und Zufallstasten stehen in einer Reihe, ohne LED neben MIKRO. Im schmalen Fenster bricht die Reihe um, nichts überlappt.",
+      "version": "0.42.18"
+    },
+    {
       "id": "neuerungen-alle-versionen",
       "ansicht": "Allgemein",
       "titel": "Neuerungen über mehrere Versionen",

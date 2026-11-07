@@ -3252,8 +3252,8 @@ impl RadioDesk {
 
         ui.add_space(6.0);
 
-        // Tastenreihe (Design-Runde 2, ScreenRadio): Start · Stopp · Blende · Mikro · Telefon als
-        // 44-px-Tasten, darunter Sprung- und Spieltasten als 32-px-Symboltasten und die Decks.
+        // Tastenreihe (Design-Runde 2, ScreenRadio): Start · Stopp · Fade · Blende · Mikro als
+        // 44-px-Tasten, daneben Sprung- und Spieltasten als 32-px-Symboltasten (#563: eine Reihe).
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
             let (go_icon, go_text) = if v.running {
@@ -3336,9 +3336,7 @@ impl RadioDesk {
             }
             self.learn_menu(&r, Target::Mic);
 
-            // Telefon schaltet die Gäste-Karte (Fassung 8); hier bleibt nur der Pegel.
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(70.0, 12.0), egui::Sense::hover());
-            theme::led_meter(ui.painter(), rect, self.phone_level);
+            // Telefon: Pegel nur in der Gäste-Karte (#563, die LED hier wirkte wie ein Mikro-Pegel).
             if self.pult.is_some() {
                 ui.label(egui::RichText::new("PULT").small().strong())
                     .on_hover_text(
@@ -3360,10 +3358,9 @@ impl RadioDesk {
             }
             // Stille im Stream und Telefon-Fehler stehen in der Meldungszeile (Fassung 8).
             // Mitschnitt: seit 0.34.56 als REC-Pille in der Kopfleiste, in jedem Modus.
-        });
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+            // Sprung- und Spieltasten in derselben Reihe (#563); reicht der Platz nicht,
+            // bricht sie um.
+            ui.add_space(6.0);
             // Sprungtasten: derselbe Weg wie im Party-Modus und am Handy
             // (`PartyState::apply` und die Effekte in `party_effect`).
             let mut state = woa_radio::party::PartyState::default();
