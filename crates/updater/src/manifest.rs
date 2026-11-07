@@ -6,7 +6,7 @@ use crate::error::{UpdateError, Veto};
 use crate::version;
 
 /// Längere Notizen werden gekürzt (Anzeige, kein Schutzziel).
-const MAX_NOTES_CHARS: usize = 4000;
+const MAX_NOTES_CHARS: usize = 12_000;
 
 /// Ein verfügbares Update, wie es das Manifest beschreibt. Noch **nicht** vertrauenswürdig:
 /// erst [`crate::verify_download`] macht aus den Bytes etwas Installierbares.
@@ -46,15 +46,54 @@ pub fn evaluate(json: &[u8], current: &str) -> Result<Option<Available>, UpdateE
     if !m.msi_sha256.is_empty() && !crate::verify::is_sha256_hex(&m.msi_sha256) {
         return Err(UpdateError::Manifest("sha256 ungültig".into()));
     }
+    m.notes = notes_since(&m.notes, current);
     if m.notes.chars().count() > MAX_NOTES_CHARS {
         m.notes = m.notes.chars().take(MAX_NOTES_CHARS).collect::<String>() + " …";
     }
     Ok(Some(m))
 }
 
+/// Neuerungen seit `current` (#561): Das Manifest trägt mehrere Changelog-Abschnitte
+/// (`## 0.42.16 — Datum`); behalten werden nur die neueren als die installierte Version.
+/// Ohne solche Überschriften (altes Manifest) bleibt der Text, wie er ist.
+pub fn notes_since(notes: &str, current: &str) -> String {
+    let Some(cur) = version::parse(current) else {
+        return notes.to_string();
+    };
+    let mut out = String::new();
+    let mut keep = true;
+    let mut any_heading = false;
+    for line in notes.lines() {
+        if let Some(rest) = line.strip_prefix("## ") {
+            let v = rest.split_whitespace().next().unwrap_or("");
+            if let Some(v) = version::parse(v) {
+                any_heading = true;
+                keep = v > cur;
+            }
+        }
+        if keep {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    if !any_heading {
+        return notes.to_string();
+    }
+    out.trim().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notes_cover_all_skipped_versions() {
+        let n = "## 0.42.16 — x\n\n- c\n\n## 0.42.15 — x\n\n- b\n\n## 0.42.13 — x\n\n- a\n";
+        let got = notes_since(n, "0.42.13");
+        assert!(got.contains("- c") && got.contains("- b") && got.contains("## 0.42.15"));
+        assert!(!got.contains("- a"));
+        assert_eq!(notes_since("Neu: Dinge", "0.42.13"), "Neu: Dinge");
+    }
 
     const BASE: &str = "https://github.com/nixblick/daw.woa/releases/download/v9/";
     const HASH: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -162,9 +201,9 @@ mod tests {
             ),
             ("", "", "")
         );
-        let long = "x".repeat(10_000);
+        let long = "x".repeat(20_000);
         let j = format!(r#"{{"version":"1.0.0","notes":"{long}","msi_url":"{BASE}a.msi"}}"#);
         let n = evaluate(j.as_bytes(), "0.1.0").unwrap().unwrap().notes;
-        assert!(n.chars().count() < 4100);
+        assert!(n.chars().count() < 12_100);
     }
 }

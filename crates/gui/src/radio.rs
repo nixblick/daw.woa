@@ -3163,21 +3163,23 @@ impl RadioDesk {
                             );
                         }
 
-                        ui.add_space(10.0);
-                        ui.vertical(|ui| {
-                            ui.add_space(10.0);
-                            ui.label(
-                                egui::RichText::new("bis Playlist-Ende")
-                                    .size(11.0)
-                                    .color(theme::text_dim()),
-                            );
-                            ui.label(
-                                egui::RichText::new(clock(v.remaining_total))
-                                    .size(24.0)
-                                    .strong()
-                                    .monospace()
-                                    .color(theme::text()),
-                            );
+                        // Rechtsbündig (#563): springt nicht, wenn RAMP kommt und geht.
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                            ui.vertical(|ui| {
+                                ui.add_space(10.0);
+                                ui.label(
+                                    egui::RichText::new("bis Playlist-Ende")
+                                        .size(11.0)
+                                        .color(theme::text_dim()),
+                                );
+                                ui.label(
+                                    egui::RichText::new(clock(v.remaining_total))
+                                        .size(24.0)
+                                        .strong()
+                                        .monospace()
+                                        .color(theme::text()),
+                                );
+                            });
                         });
                     });
 
