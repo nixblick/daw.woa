@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "mikro-anzeige-zu",
+      "ansicht": "Radio",
+      "titel": "Mikro-Anzeige bei geschlossenem Mikro",
+      "tun": "WOA neu starten, MIKRO OFFEN nicht drücken, ins Mikro sprechen. Dann MIKRO OFFEN drücken und Musik laufen lassen.",
+      "erwartet": "Die Mikro-Anzeige schlägt schon bei geschlossenem Mikro aus, auf Sendung ist nichts zu hören. Mit MIKRO OFFEN geht die Stimme auf Sendung und die Musik wird leiser (Ducking).",
+      "version": "0.42.15"
+    },
+    {
       "id": "update-stuendlich",
       "ansicht": "Allgemein",
       "titel": "Update-Suche stündlich",
