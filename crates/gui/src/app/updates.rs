@@ -13,17 +13,23 @@ impl WoaApp {
         use crate::update::{Event, check_due, unix_now};
         if self.update_autostart {
             self.update_autostart = false;
-            // #452: Läuft WOA pro Benutzer, die alte Installation für alle Benutzer einmal ablösen.
+            // #452/#497: alte Installation für alle Benutzer ablösen und Claudes Registrierung
+            // umstellen. Beides liest Registry und Dateien (`.claude.json` kann groß sein), daher
+            // im Hintergrund, damit das erste Bild nicht stockt.
             #[cfg(windows)]
             if self.photo.is_none() {
-                woa_updater::retire_per_machine(&woa_radio::data_dir());
-                // #497: Claudes Registrierung zeigte nach dem Umstieg noch auf Program Files.
-                if woa_updater::repair_claude_registration() {
-                    self.state.status = Status::Info(
-                        "Claude-Anbindung auf den neuen WOA-Pfad umgestellt. \
-                         Claude einmal neu starten, dann verbindet es wieder."
-                            .into(),
-                    );
+                let (tx, rx) = std::sync::mpsc::channel();
+                let wake = Self::update_wake(ctx);
+                let spawned = std::thread::Builder::new()
+                    .name("woa-startup-repair".into())
+                    .spawn(move || {
+                        woa_updater::retire_per_machine(&woa_radio::data_dir());
+                        let _ = tx.send(woa_updater::repair_claude_registration());
+                        wake();
+                    });
+                match spawned {
+                    Ok(_) => self.startup_repair = Some(rx),
+                    Err(e) => tracing::warn!(error = %e, "startup repair thread not started"),
                 }
             }
             if self.config.auto_update
@@ -31,6 +37,18 @@ impl WoaApp {
                 && check_due(self.config.last_update_check, unix_now())
             {
                 self.update.start_check(false, Self::update_wake(ctx));
+            }
+        }
+        if let Some(rx) = &self.startup_repair
+            && let Ok(changed) = rx.try_recv()
+        {
+            self.startup_repair = None;
+            if changed {
+                self.state.status = Status::Info(
+                    "Claude-Anbindung auf den neuen WOA-Pfad umgestellt. \
+                     Claude einmal neu starten, dann verbindet es wieder."
+                        .into(),
+                );
             }
         }
         // Update-Download gescheitert: das Beenden fand nicht statt, beim nächsten Mal fragen.

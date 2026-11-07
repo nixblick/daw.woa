@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.11 — 2026-11-07
+
+- **Start ohne Stocken (Windows):** Das Ablösen der alten Installation für alle Benutzer und das Umstellen von Claudes MCP-Registrierung (`.claude.json` kann mehrere MB groß sein) laufen jetzt in einem Hintergrund-Thread statt im ersten Bild. Der Hinweis „Claude-Anbindung umgestellt“ erscheint, sobald der Thread fertig ist.
+
 ## 0.42.10 — 2026-11-06
 
 Durchsicht der Änderungen seit 0.42.2 (Leistung, Stabilität):
