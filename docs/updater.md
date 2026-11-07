@@ -1,6 +1,6 @@
 # Auto-Update per MSI
 
-WOA prüft beim Start (höchstens einmal am Tag), ob GitHub ein neueres, **veröffentlichtes**
+WOA prüft beim Start und danach stündlich, ob GitHub ein neueres, **veröffentlichtes**
 Release hat. Gibt es eines, zeigt ein Streifen unter dem Menü „Update x.y.z verfügbar – Jetzt
 installieren“ mit den Neuerungen. Unter Windows lädt ein Klick das MSI, prüft es, startet den
 Installer und beendet die App; das MSI startet die neue Version nach der Installation. Unter

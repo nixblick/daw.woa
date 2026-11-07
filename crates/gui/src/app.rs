@@ -148,6 +148,11 @@ pub struct WoaApp {
     overwrite_ask: Option<std::path::PathBuf>,
     /// Beim ersten Bild automatisch suchen (nur in der echten App, nicht in Tests).
     update_autostart: bool,
+    /// Letzter automatischer Suchversuch in diesem Lauf, auch wenn er scheiterte (offline):
+    /// verhindert, dass die stündliche Suche jedes Bild neu startet.
+    update_tried: Option<std::time::Instant>,
+    /// Automatische Suche aktiv (erst nach dem Start-Bild; Tests bleiben ohne Netz).
+    update_periodic: bool,
     /// Ergebnis der Start-Aufräumarbeiten unter Windows (Hintergrund-Thread): `true`, wenn
     /// Claudes Registrierung umgeschrieben wurde.
     startup_repair: Option<std::sync::mpsc::Receiver<bool>>,
@@ -722,6 +727,8 @@ impl WoaApp {
             replace_ask: None,
             overwrite_ask: None,
             update_autostart: open_audio,
+            update_tried: None,
+            update_periodic: false,
             startup_repair: None,
             rename: None,
             gain_drag: None,
@@ -2444,7 +2451,7 @@ pub(crate) const MENU_GROUPS: &[(&str, &[(&str, &str)])] = &[
         "Hilfe",
         &[
             (
-                "Beim Start nach Updates suchen (einmal am Tag)",
+                "Automatisch nach Updates suchen (stündlich)",
                 "self.update_menu(ui)",
             ),
             ("Jetzt nach Updates suchen", "self.update_menu(ui)"),

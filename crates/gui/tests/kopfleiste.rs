@@ -274,7 +274,7 @@ fn every_former_menu_entry_is_still_reachable() {
         (
             "Hilfe",
             &[
-                "Beim Start nach Updates suchen",
+                "Automatisch nach Updates suchen",
                 "Jetzt nach Updates suchen",
                 "Über WOA",
             ],
