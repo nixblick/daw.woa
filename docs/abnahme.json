@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "neuerungen-alle-versionen",
+      "ansicht": "Allgemein",
+      "titel": "Neuerungen über mehrere Versionen",
+      "tun": "Mit einer Version laufen, die mindestens eine Version zurückliegt, Hilfe › Jetzt nach Updates suchen, dann auf Neuerungen klicken.",
+      "erwartet": "Der Text zeigt alle Versionen seit der installierten, jede mit eigener Überschrift, die installierte selbst nicht.",
+      "version": "0.42.17"
+    },
+    {
       "id": "mikro-anzeige-zu",
       "ansicht": "Radio",
       "titel": "Mikro-Anzeige bei geschlossenem Mikro",

@@ -116,9 +116,13 @@ jobs:
           # Abschnitt dieser Version aus dem CHANGELOG (bis zur nächsten "## ").
           awk -v v="## $VERSION " 'index($0, v) == 1 {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
           [ -s notes.md ] || echo "Version $VERSION" > notes.md
+          # #561: Fuer die App die letzten 15 Abschnitte mit Ueberschrift; sie zeigt nur die
+          # Versionen, die neuer sind als die installierte.
+          awk -v v="## $VERSION " 'index($0, v) == 1 {on=1} on && /^## / {n++} n > 15 {exit} on' CHANGELOG.md > app-notes.md
+          [ -s app-notes.md ] || cp notes.md app-notes.md
           sig=""
           if [ "$SIGNED" = yes ]; then sig="$base/$file.minisig"; fi
-          jq -n --arg v "$VERSION" --rawfile n notes.md --arg u "$base/$file" --arg s "$sig" --arg h "$sha" \
+          jq -n --arg v "$VERSION" --rawfile n app-notes.md --arg u "$base/$file" --arg s "$sig" --arg h "$sha" \
             '{version: $v, notes: $n, msi_url: $u, msi_sha256: $h} + (if $s != "" then {msi_sig_url: $s} else {} end)' \
             > dist/latest.json
           cat dist/latest.json

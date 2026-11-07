@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.17 — 2026-11-07
+
+- **„Neuerungen“ zeigen alle übersprungenen Versionen (#561):** Wer mehrere Versionen auf einmal aktualisiert, sah im Update-Hinweis nur den Eintrag der neuesten. Das Manifest trägt jetzt die letzten 15 Changelog-Abschnitte, WOA zeigt davon alle, die neuer sind als die installierte, mit Überschrift je Version. Test `notes_cover_all_skipped_versions`.
+
 ## 0.42.16 — 2026-11-07
 
 - **Keine „cover probe failed“-Warnung mehr bei WAV-Jingles (#559):** Das Cover-Lesen probte auch WAV und AIFF. Bei WAVE_FORMAT_EXTENSIBLE (Float32, so schreibt WOA und so liefert ElevenLabs) findet der Probe keinen Reader, und jeder Jingle brachte eine WARN- und zwei ERROR-Zeilen ins Protokoll, obwohl nichts schiefging. WAV und AIFF werden jetzt gar nicht erst geprobt; für MP3, FLAC, M4A und OGG bleibt die Warnung. Test `wav_and_aiff_are_not_probed`.
