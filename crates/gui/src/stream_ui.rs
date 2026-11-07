@@ -376,6 +376,27 @@ impl StreamUi {
     }
 
     fn advanced(&mut self, ui: &mut egui::Ui) {
+        // Notfall-Playlist bewusst an/aus (André 07.11.2026: lief über Nacht ohne Sendung).
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.draft.emergency_enabled, "Notfall-Playlist")
+                .on_hover_text(
+                    "An: Stürzt WOA ab oder wird während der Sendung geschlossen, sendet \
+                     woa-streamd weiter die Notfall-Playlist, damit die Hörer keine Stille \
+                     hören. Aus: Die Sendung endet dann sofort.",
+                );
+            if self.draft.emergency_enabled {
+                ui.label("höchstens");
+                ui.add(
+                    egui::DragValue::new(&mut self.draft.emergency_max_minutes)
+                        .range(0..=1440)
+                        .suffix(" min"),
+                )
+                .on_hover_text(
+                    "Danach meldet sich die Sendung selbst ab. 0 = ohne Grenze, läuft, bis \
+                     WOA zurück ist oder die Sendung beendet wird.",
+                );
+            }
+        });
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.admin_on, "Admin-Port").on_hover_text(
                 "Für die Hörerzahl in der Sendeanzeige. Ohne Admin-Port sendet WOA trotzdem.",

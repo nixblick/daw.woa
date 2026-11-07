@@ -166,6 +166,12 @@ pub struct StreamConfig {
     pub emergency: Vec<PathBuf>,
     /// Nach so vielen Sekunden ohne Ton von der Oberfläche übernimmt die Notfall-Playlist.
     pub silence_seconds: f64,
+    /// Notfall-Playlist an (Vorgabe). Aus: Ist die Oberfläche weg, meldet sich woa-streamd
+    /// sofort ab, statt die Notfall-Playlist zu senden.
+    pub emergency_enabled: bool,
+    /// So viele Minuten ohne Oberfläche sendet die Notfall-Playlist höchstens, dann meldet sich
+    /// woa-streamd ab (André 07.11.2026: lief über Nacht ohne Sendung). 0 = ohne Grenze.
+    pub emergency_max_minutes: u32,
 }
 
 impl Default for StreamConfig {
@@ -187,6 +193,8 @@ impl Default for StreamConfig {
             name: "WOA – Wir on Air".to_string(),
             emergency: Vec::new(),
             silence_seconds: 2.0,
+            emergency_enabled: true,
+            emergency_max_minutes: 30,
         }
     }
 }

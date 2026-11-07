@@ -263,6 +263,8 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
     let (mut live_underruns, mut live_trims) = (0u32, 0u32);
     let mut logged = (0u32, 0u32);
     let mut next_jitter_log = Instant::now();
+    // Seit wann die Oberfläche fehlt (für Abmelden ohne Notfall-Playlist bzw. nach dem Zeitlimit).
+    let mut ui_gone_since: Option<Instant> = None;
 
     while !stop.load(Ordering::Relaxed) {
         let due = (started.elapsed().as_secs_f64() * f64::from(rate)) as u64;
@@ -282,6 +284,11 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
                     .last_sound
                     .map_or(started.elapsed() < silence, |t| t.elapsed() < silence);
                 let connected = ib.ui_connected;
+                match (connected, ui_gone_since) {
+                    (true, _) => ui_gone_since = None,
+                    (false, None) => ui_gone_since = Some(Instant::now()),
+                    (false, Some(_)) => {}
+                }
                 ib.live.pull(&mut ll, &mut lr, connected);
                 live_underruns = ib.live.underruns;
                 live_trims = ib.live.trims;
@@ -343,6 +350,19 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
             }
         }
 
+        if sign_off_without_ui(
+            cfg.emergency_enabled,
+            cfg.emergency_max_minutes,
+            ui_gone_since.map(|t| t.elapsed()),
+            silence,
+        ) {
+            tracing::warn!(
+                enabled = cfg.emergency_enabled,
+                max_minutes = cfg.emergency_max_minutes,
+                "no ui, notfall-playlist ends, signing off"
+            );
+            break;
+        }
         if (live_underruns, live_trims) != logged && Instant::now() >= next_jitter_log {
             next_jitter_log = Instant::now() + JITTER_LOG_EVERY;
             let level_ms = lock(&inbox).live.millis(rate);
@@ -392,6 +412,24 @@ pub fn run(cfg: StreamConfig, data_dir: &Path, stop: Arc<AtomicBool>) -> Result<
     let _ = status::write(&status_path, &s);
     tracing::info!("woa-streamd off air");
     Ok(())
+}
+
+/// Ob woa-streamd sich abmeldet, weil die Oberfläche seit `gone` fehlt: sofort (nach der
+/// Stille-Frist `grace`), wenn die Notfall-Playlist aus ist; sonst nach `max_minutes`
+/// (0 = nie). Stille bei verbundener Oberfläche (`gone == None`) beendet nichts.
+pub fn sign_off_without_ui(
+    enabled: bool,
+    max_minutes: u32,
+    gone: Option<Duration>,
+    grace: Duration,
+) -> bool {
+    let Some(gone) = gone else {
+        return false;
+    };
+    if !enabled {
+        return gone >= grace;
+    }
+    max_minutes > 0 && gone >= Duration::from_secs(u64::from(max_minutes) * 60)
 }
 
 fn build_status(
@@ -622,6 +660,28 @@ fn catch_up(produced: u64, due: u64, max_behind: u64, block: u64) -> (u64, u64) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notfall_ends_after_limit_or_at_once_when_off() {
+        let g = Duration::from_secs(2);
+        let m = |x: u64| Some(Duration::from_secs(x * 60));
+        // Oberfläche da (nur Stille): nie abmelden.
+        assert!(!sign_off_without_ui(true, 30, None, g));
+        assert!(!sign_off_without_ui(false, 30, None, g));
+        // An, 30 min: bis dahin Notfall-Playlist, dann abmelden.
+        assert!(!sign_off_without_ui(true, 30, m(29), g));
+        assert!(sign_off_without_ui(true, 30, m(30), g));
+        // 0 = ohne Grenze (bisheriges Verhalten).
+        assert!(!sign_off_without_ui(true, 0, m(600), g));
+        // Aus: nach der Stille-Frist sofort.
+        assert!(!sign_off_without_ui(
+            false,
+            30,
+            Some(Duration::from_secs(1)),
+            g
+        ));
+        assert!(sign_off_without_ui(false, 30, Some(g), g));
+    }
 
     #[test]
     fn catch_up_caps_backlog() {
