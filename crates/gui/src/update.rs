@@ -8,8 +8,9 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use woa_updater::{Available, UpdateError, Veto};
 
-/// Höchstens einmal am Tag automatisch suchen.
-pub const CHECK_INTERVAL_SECS: u64 = 24 * 60 * 60;
+/// Höchstens einmal je Stunde automatisch suchen, beim Start und während WOA läuft
+/// (André 07.11.2026: vorher täglich, nur beim Start).
+pub const CHECK_INTERVAL_SECS: u64 = 60 * 60;
 
 /// Ist die automatische Suche fällig? Eine Uhr, die rückwärts ging, zählt als fällig.
 pub fn check_due(last: Option<u64>, now: u64) -> bool {

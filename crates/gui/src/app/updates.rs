@@ -8,11 +8,12 @@ impl WoaApp {
         move || ctx.request_repaint()
     }
 
-    /// Jedes Bild: einmal beim Start (höchstens täglich) suchen, Ergebnisse abholen.
+    /// Jedes Bild: beim Start und dann stündlich suchen, Ergebnisse abholen.
     pub(super) fn update_frame(&mut self, ctx: &egui::Context) {
         use crate::update::{Event, check_due, unix_now};
         if self.update_autostart {
             self.update_autostart = false;
+            self.update_periodic = true;
             // #452/#497: alte Installation für alle Benutzer ablösen und Claudes Registrierung
             // umstellen. Beides liest Registry und Dateien (`.claude.json` kann groß sein), daher
             // im Hintergrund, damit das erste Bild nicht stockt.
@@ -32,12 +33,22 @@ impl WoaApp {
                     Err(e) => tracing::warn!(error = %e, "startup repair thread not started"),
                 }
             }
-            if self.config.auto_update
-                && self.photo.is_none()
-                && check_due(self.config.last_update_check, unix_now())
-            {
-                self.update.start_check(false, Self::update_wake(ctx));
-            }
+        }
+        // Beim Start und danach stündlich, solange WOA läuft. Ein gescheiterter Versuch
+        // wartet ebenfalls eine Stunde (`update_tried`).
+        let interval = std::time::Duration::from_secs(crate::update::CHECK_INTERVAL_SECS);
+        if self.config.auto_update
+            && self.photo.is_none()
+            && matches!(self.update.phase, crate::update::Phase::Idle)
+            && self.update_periodic
+            && self.update_tried.is_none_or(|t| t.elapsed() >= interval)
+            && check_due(self.config.last_update_check, unix_now())
+        {
+            self.update_tried = Some(std::time::Instant::now());
+            self.update.start_check(false, Self::update_wake(ctx));
+        }
+        if self.config.auto_update {
+            ctx.request_repaint_after(std::time::Duration::from_secs(300));
         }
         if let Some(rx) = &self.startup_repair
             && let Ok(changed) = rx.try_recv()
@@ -291,7 +302,7 @@ impl WoaApp {
     pub(super) fn update_menu(&mut self, ui: &mut egui::Ui) {
         let mut on = self.config.auto_update;
         if ui
-            .checkbox(&mut on, "Beim Start nach Updates suchen (einmal am Tag)")
+            .checkbox(&mut on, "Automatisch nach Updates suchen (stündlich)")
             .changed()
         {
             self.config.auto_update = on;

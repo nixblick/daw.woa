@@ -245,8 +245,8 @@ pub const REGISTRY: &[Entry] = &[
         S::AutoUpdate,
         A::Allgemein,
         "Updates",
-        "Beim Start nach Updates suchen (einmal am Tag)",
-        "Sucht beim Start höchstens einmal am Tag nach einer neuen Version",
+        "Automatisch nach Updates suchen (stündlich)",
+        "Sucht beim Start und dann stündlich nach einer neuen Version",
         "update aktualisieren neue version start",
     )
     .fields(&["auto_update"]),
