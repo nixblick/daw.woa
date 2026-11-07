@@ -148,6 +148,9 @@ pub struct WoaApp {
     overwrite_ask: Option<std::path::PathBuf>,
     /// Beim ersten Bild automatisch suchen (nur in der echten App, nicht in Tests).
     update_autostart: bool,
+    /// Ergebnis der Start-Aufräumarbeiten unter Windows (Hintergrund-Thread): `true`, wenn
+    /// Claudes Registrierung umgeschrieben wurde.
+    startup_repair: Option<std::sync::mpsc::Receiver<bool>>,
     /// Track being renamed and its edit buffer.
     /// Spur, Eingabe, und ob der Fokus schon gesetzt wurde (nur einmal, sonst kommt man
     /// aus dem Feld nicht mehr heraus, André 30.10.).
@@ -701,6 +704,7 @@ impl WoaApp {
             replace_ask: None,
             overwrite_ask: None,
             update_autostart: open_audio,
+            startup_repair: None,
             rename: None,
             gain_drag: None,
             fx_drag: None,
