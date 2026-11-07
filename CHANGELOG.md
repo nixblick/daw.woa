@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.13 — 2026-11-07
+
+- **Strg+1/2/3 wechseln die Ansicht (#544):** Die Hinweise an den Chips PRODUZENT, RADIO und PARTY versprachen die Kürzel, eine Tastenabfrage gab es nicht (der Fix aus 0.42.10 lag auf einem schon gemergten Zweig und ist nie in main gelandet). Jetzt schaltet Strg+1/2/3 um und schreibt den `mode`-Eintrag; steht der Cursor in einem Textfeld, passiert nichts. Hot Cues (Ziffern ohne Strg) bleiben unberührt.
+
 ## 0.42.12 — 2026-11-07
 
 - **Notfall-Playlist bewusst an/aus, mit Zeitlimit:** Die Notfall-Playlist lief über Nacht, obwohl keine Sendung sein sollte: WOA war geschlossen worden, ohne die Sendung zu beenden, und woa-streamd sendete wie vorgesehen weiter. Neu unter Radio › Sendung › Erweitert: Schalter „Notfall-Playlist“ (Vorgabe an) und „höchstens … min“ (Vorgabe 30). Ist die Oberfläche länger weg, meldet sich woa-streamd selbst ab. Aus: Die Sendung endet sofort, wenn WOA geht. Stille bei laufender Oberfläche beendet nichts. Test `notfall_ends_after_limit_or_at_once_when_off`.
