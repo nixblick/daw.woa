@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.12 — 2026-11-07
+
+- **Notfall-Playlist bewusst an/aus, mit Zeitlimit:** Die Notfall-Playlist lief über Nacht, obwohl keine Sendung sein sollte: WOA war geschlossen worden, ohne die Sendung zu beenden, und woa-streamd sendete wie vorgesehen weiter. Neu unter Radio › Sendung › Erweitert: Schalter „Notfall-Playlist“ (Vorgabe an) und „höchstens … min“ (Vorgabe 30). Ist die Oberfläche länger weg, meldet sich woa-streamd selbst ab. Aus: Die Sendung endet sofort, wenn WOA geht. Stille bei laufender Oberfläche beendet nichts. Test `notfall_ends_after_limit_or_at_once_when_off`.
+
 ## 0.42.10 — 2026-11-06
 
 Durchsicht der Änderungen seit 0.42.2 (Leistung, Stabilität):

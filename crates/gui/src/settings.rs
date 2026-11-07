@@ -352,8 +352,8 @@ pub const REGISTRY: &[Entry] = &[
         A::Radio,
         "Sendung",
         "Sendung: Stream-Server und Kennwort",
-        "Shoutcast oder Icecast: Adresse, Port, Kennwort, Verbindung testen",
-        "stream shoutcast icecast server port senden streaming",
+        "Shoutcast oder Icecast: Adresse, Port, Kennwort, Verbindung testen, Notfall-Playlist",
+        "stream shoutcast icecast server port senden streaming notfall notfallschleife notfall-playlist ausfall",
     )
     .menu()
     .fields(&["stream"]),

@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "notfall-schalter",
+      "ansicht": "Radio",
+      "titel": "Notfall-Playlist an/aus und Zeitlimit",
+      "tun": "Radio › Sendung › Erweitert: „Notfall-Playlist“ an, „höchstens 1 min“. Sendung starten, WOA schließen ohne „Sendung beenden“. Zwei Minuten warten. Danach dasselbe mit „Notfall-Playlist“ aus.",
+      "erwartet": "Mit an: Die Notfall-Playlist läuft etwa eine Minute, dann ist der Stream vom Server abgemeldet. Mit aus: Der Stream endet wenige Sekunden nach dem Schließen. Wird WOA vorher wieder geöffnet, geht die Sendung normal weiter.",
+      "version": "0.42.12"
+    },
+    {
       "id": "mcp-nach-neustart",
       "ansicht": "Allgemein",
       "titel": "MCP nach Neustart von WOA",
