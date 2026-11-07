@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.16 — 2026-11-07
+
+- **Keine „cover probe failed“-Warnung mehr bei WAV-Jingles (#559):** Das Cover-Lesen probte auch WAV und AIFF. Bei WAVE_FORMAT_EXTENSIBLE (Float32, so schreibt WOA und so liefert ElevenLabs) findet der Probe keinen Reader, und jeder Jingle brachte eine WARN- und zwei ERROR-Zeilen ins Protokoll, obwohl nichts schiefging. WAV und AIFF werden jetzt gar nicht erst geprobt; für MP3, FLAC, M4A und OGG bleibt die Warnung. Test `wav_and_aiff_are_not_probed`.
+
 ## 0.42.15 — 2026-11-07
 
 - **Mikro-Anzeige auch bei geschlossenem Mikro (#556):** Die Pegelanzeige maß hinter MIKRO OFFEN. War das Mikro zu (nach jedem Neustart), stand sie still, und es sah aus, als käme kein Signal an. Jetzt misst sie vor dem Schalter: Man sieht sofort, ob das richtige Mikro gewählt ist. Auf Sendung und ins Ducking geht die Stimme weiter nur mit MIKRO OFFEN. Test `mic_meter_shows_signal_while_closed`.

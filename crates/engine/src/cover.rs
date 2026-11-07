@@ -21,6 +21,12 @@ pub struct Cover {
     pub data: Vec<u8>,
 }
 
+/// #559: WAV/AIFF tragen kein Cover, das wir lesen könnten; der Probe scheitert dort bei
+/// WAVE_FORMAT_EXTENSIBLE (Float32) ohnehin und würde nur WARN/ERROR ins Protokoll schreiben.
+fn ext_can_carry_cover(ext: &str) -> bool {
+    !matches!(ext, "wav" | "wave" | "aif" | "aiff" | "aifc")
+}
+
 /// Liest das Cover der Datei, bevorzugt „Cover vorne“, sonst das erste Bild.
 /// `None`: kein Bild, zu groß, oder die Datei ist nicht lesbar.
 pub fn read_cover(path: &Path) -> Option<Cover> {
@@ -31,6 +37,9 @@ pub fn read_cover(path: &Path) -> Option<Cover> {
         .extension()
         .and_then(|e| e.to_str())?
         .to_ascii_lowercase();
+    if !ext_can_carry_cover(&ext) {
+        return None;
+    }
     let mut hint = Hint::new();
     hint.with_extension(&ext);
     let open = || {
@@ -169,6 +178,17 @@ mod tests {
         assert!(read_cover(&tone_file(dir.path(), "x.mp3")).is_none());
         assert!(read_cover(&tone_file(dir.path(), "x.wav")).is_none());
         assert!(read_cover(&dir.path().join("fehlt.mp3")).is_none());
+    }
+
+    /// #559: WAV/AIFF werden gar nicht erst geprobt (keine Warnung für Jingles).
+    #[test]
+    fn wav_and_aiff_are_not_probed() {
+        for e in ["wav", "wave", "aif", "aiff", "aifc"] {
+            assert!(!ext_can_carry_cover(e), "{e}");
+        }
+        for e in ["mp3", "flac", "m4a", "ogg"] {
+            assert!(ext_can_carry_cover(e), "{e}");
+        }
     }
 
     #[test]
