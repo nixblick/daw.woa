@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.15 — 2026-11-07
+
+- **Mikro-Anzeige auch bei geschlossenem Mikro (#556):** Die Pegelanzeige maß hinter MIKRO OFFEN. War das Mikro zu (nach jedem Neustart), stand sie still, und es sah aus, als käme kein Signal an. Jetzt misst sie vor dem Schalter: Man sieht sofort, ob das richtige Mikro gewählt ist. Auf Sendung und ins Ducking geht die Stimme weiter nur mit MIKRO OFFEN. Test `mic_meter_shows_signal_while_closed`.
+
 ## 0.42.13 — 2026-11-07
 
 - **Strg+1/2/3 wechseln die Ansicht (#544):** Die Hinweise an PRODUZENT, RADIO und PARTY versprachen die Kürzel, geschrieben waren sie nie. Jetzt rufen sie `set_mode` auf (Protokoll: `mode` mit `from`/`to`). Nicht, solange ein Textfeld den Fokus hat; die Hot Cues auf 1–4 ohne Strg bleiben unberührt. Tests `ctrl_digits_switch_the_view`, `digits_without_ctrl_stay_hot_cues`.

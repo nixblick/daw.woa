@@ -1598,13 +1598,16 @@ impl Mixer {
             let [lm, lc, li, _, lo, ls] = &mut self.levels;
             let (out_mon, out_stream) = (lo.tick(), ls.tick());
             let (lm, lc) = (lm.tick(), lc.tick());
-            let mg = self.mic_gain.tick() * li.tick();
+            let trim = li.tick();
+            let mg = self.mic_gain.tick() * trim;
             cl *= lc;
             let (cart_l, cart_r) = (cart_l * lc, cart_r * lc);
             cr *= lc;
+            // Anzeige vor MIKRO OFFEN (#556): Auch bei geschlossenem Mikro sieht man, dass
+            // Signal ankommt. Auf Sendung und ins Ducking geht es weiter nur offen.
+            mic_peak = mic_peak.max((il * trim).abs()).max((ir * trim).abs());
             il *= mg;
             ir *= mg;
-            mic_peak = mic_peak.max(il.abs()).max(ir.abs());
             // Stimme erkannt: Haltezeit neu; danach Stille zählt sie herunter (Moderator
             // 05.11.2026: Musik nach 0,5 s Stille zurück, in 1 s eingeblendet).
             if self.mic_open && (il.abs() > VOICE_GATE || ir.abs() > VOICE_GATE) {

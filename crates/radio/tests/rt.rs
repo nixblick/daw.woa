@@ -868,3 +868,30 @@ fn own_voice_is_not_in_the_headphones_unless_asked() {
     let on = speak(&mut c, &mut m, &mut l, &mut r);
     assert!(on > 0.1, "Mithören an, aber still: {on}");
 }
+
+/// #556: Die Mikro-Anzeige zeigt das Signal auch bei geschlossenem Mikro; auf Sendung geht
+/// es erst mit MIKRO OFFEN.
+#[test]
+fn mic_meter_shows_signal_while_closed() {
+    let (mut c, mut m) = Controller::new(show_of(&[], 3.0), SR);
+    let (mut mic_tx, mic_rx) = rtrb::RingBuffer::new(SR as usize);
+    c.set_mic_input(Some(mic_rx));
+    let mut l = vec![0.0f32; BLOCK];
+    let mut r = vec![0.0f32; BLOCK];
+    let mut out = 0.0f32;
+    let mut meter = 0.0f32;
+    for _ in 0..20 {
+        for _ in 0..BLOCK {
+            let _ = mic_tx.push(0.3);
+            let _ = mic_tx.push(0.3);
+        }
+        block(&mut c, &mut m, &mut l, &mut r);
+        out = l.iter().chain(r.iter()).fold(out, |p, v| p.max(v.abs()));
+        meter = meter.max(c.status().take_mic_peak());
+    }
+    assert!(
+        meter > 0.1,
+        "Anzeige bei geschlossenem Mikro still: {meter}"
+    );
+    assert!(out < 1e-6, "geschlossenes Mikro hörbar: {out}");
+}
