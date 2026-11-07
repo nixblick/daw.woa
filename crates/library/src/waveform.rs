@@ -81,6 +81,12 @@ pub fn deck_info(lib: &Library, path: &Path) -> std::result::Result<DeckInfo, St
             }
         },
     };
+    // #550: „Analyse fehlgeschlagen“ im Deck braucht eine Spur im Protokoll.
+    if let Some(a) = &analysis
+        && a.bpm.is_none()
+    {
+        tracing::warn!(file = %path.display(), "deck analysis: no tempo found (no clear beat)");
+    }
     let hash = match &track {
         Some(t) => t.hash.clone(),
         None => crate::file_hash(path).map_err(|e| e.to_string())?,

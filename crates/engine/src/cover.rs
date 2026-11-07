@@ -31,14 +31,32 @@ pub fn read_cover(path: &Path) -> Option<Cover> {
         .extension()
         .and_then(|e| e.to_str())?
         .to_ascii_lowercase();
-    let file = File::open(path).ok()?;
-    let mss = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
     let mut hint = Hint::new();
     hint.with_extension(&ext);
-    let meta = MetadataOptions::default().limit_visual_bytes(Limit::Maximum(MAX_COVER_BYTES));
-    let mut format = symphonia::default::get_probe()
-        .probe(&hint, mss, FormatOptions::default(), meta)
-        .ok()?;
+    let open = || {
+        File::open(path)
+            .ok()
+            .map(|file| MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default()))
+    };
+    let meta = || MetadataOptions::default().limit_visual_bytes(Limit::Maximum(MAX_COVER_BYTES));
+    // #550: Viel Vorspann vor dem ersten Frame sprengt die 1-MiB-Grenze des schnellen Probes;
+    // dann tiefer suchen (wie beim Dekodieren) statt still ohne Cover aufzugeben.
+    let mut format = match symphonia::default::get_probe().probe(
+        &hint,
+        open()?,
+        FormatOptions::default(),
+        meta(),
+    ) {
+        Ok(f) => f,
+        Err(symphonia::core::errors::Error::Unsupported(_)) => crate::decode::wide_probe()
+            .probe(&hint, open()?, FormatOptions::default(), meta())
+            .map_err(|e| tracing::warn!(error = %e, file = %path.display(), "cover probe failed"))
+            .ok()?,
+        Err(e) => {
+            tracing::warn!(error = %e, file = %path.display(), "cover probe failed");
+            return None;
+        }
+    };
     let mut visuals: Vec<Visual> = Vec::new();
     let mut take = |rev: &MetadataRevision| {
         visuals.extend(rev.media.visuals.iter().cloned());
@@ -129,6 +147,20 @@ mod tests {
         let c = read_cover(&p).expect("Cover");
         assert_eq!(c.data, PNG);
         assert_eq!(c.media_type.as_deref(), Some("image/png"));
+    }
+
+    /// #550: Mehr als 1 MiB Füllbytes zwischen Tag und erstem Frame: Cover kommt trotzdem.
+    #[test]
+    fn cover_survives_probe_limit_padding() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = tone_file(dir.path(), "raw.mp3");
+        let mut b = id3v23_apic("image/png", PNG);
+        b.extend(std::iter::repeat_n(0u8, 1_500_000));
+        b.extend_from_slice(&std::fs::read(&raw).unwrap());
+        let p = dir.path().join("pad.mp3");
+        std::fs::write(&p, &b).unwrap();
+        let c = read_cover(&p).expect("Cover trotz Vorspann");
+        assert_eq!(c.data, PNG);
     }
 
     #[test]

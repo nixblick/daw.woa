@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "deck-kein-tempo-hinweis",
+      "ansicht": "Party DJ",
+      "titel": "Deck ohne Tempo: Hinweis und Protokoll",
+      "tun": "Party › DJ: Einen Titel ohne klaren Taktschlag (z. B. Sprache oder Ambient) ins Deck laden. Mauszeiger auf den gelben Chip. Danach im Protokoll nach „deck analysis“ suchen.",
+      "erwartet": "Der Hinweis nennt „kein klarer Taktschlag erkennbar“; im Protokoll steht eine WARN-Zeile „deck analysis: no tempo found“ mit dem Dateinamen. Titel mit großem Titelbild zeigen ihr Cover ohne „probe limit“-Fehler im Protokoll.",
+      "version": "0.42.13"
+    },
+    {
       "id": "notfall-schalter",
       "ansicht": "Radio",
       "titel": "Notfall-Playlist an/aus und Zeitlimit",
