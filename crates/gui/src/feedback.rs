@@ -85,7 +85,7 @@ pub struct GuiConfig {
     /// WOA-Ordner (#258): Basisordner und eigene Ordner je Art. Vorgabe: `<Musik>/WOA/…`.
     #[serde(skip_serializing_if = "crate::ordner::Ordner::is_default")]
     pub ordner: crate::ordner::Ordner,
-    /// Beim Start höchstens einmal am Tag nach einem neuen Release suchen. Vorgabe: an.
+    /// Beim Start und dann stündlich nach einem neuen Release suchen. Vorgabe: an.
     pub auto_update: bool,
     /// Piano-Roll als eigenes Fenster statt im Studio-Dock. Vorgabe: Dock; die Wahl am
     /// Lösen-Symbol wird gemerkt.

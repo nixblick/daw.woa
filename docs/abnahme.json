@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "update-stuendlich",
+      "ansicht": "Allgemein",
+      "titel": "Update-Suche stündlich",
+      "tun": "WOA offen lassen, während eine neue Version erscheint.",
+      "erwartet": "Spätestens eine Stunde danach zeigt WOA den Update-Hinweis, ohne Neustart.",
+      "version": "0.42.14"
+    },
+    {
       "id": "deck-kein-tempo-hinweis",
       "ansicht": "Party DJ",
       "titel": "Deck ohne Tempo: Hinweis und Protokoll",
