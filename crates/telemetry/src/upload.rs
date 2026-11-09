@@ -7,7 +7,10 @@
 //!  "ereignisse":[{"zeit_ms":1690000000000,"stufe":"warn","modul":"woa_engine","art":"xrun","wert":1}]}
 //! ```
 //!
-//! - Opt-in: ohne `enabled` oder mit leerer URL startet nichts.
+//! - Opt-in: ohne `enabled` oder mit leerer URL startet nichts. Ausnahme
+//!   [`Uploader::start_switchable`] (die App): Der Thread läuft, sobald eine URL da ist, und
+//!   [`Uploader::set_enabled`] schaltet das Senden sofort an und aus. Aus heißt: nichts wird
+//!   gepuffert, ein vorhandener Puffer wird verworfen, kein Netz.
 //! - Nur Code/Stufe/Zahl; `modul` und `art` laufen durch [`crate::scrub`].
 //! - HTTP (`ureq`, blockierend) nur im eigenen Thread. Erfassen ist ein `try_send` auf eine
 //!   begrenzte Queue; ist sie voll, wird das Ereignis verworfen statt zu blockieren.
@@ -15,8 +18,9 @@
 //!   später erneut versuchen (der Server antwortet 503, wenn er nicht speichern konnte).
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -206,22 +210,37 @@ const SHUTDOWN_WAIT: Duration = Duration::from_secs(3);
 pub struct Uploader {
     tx: Option<SyncSender<Msg>>,
     handle: Option<JoinHandle<()>>,
+    /// Schalter des Nutzers; Layer und Worker lesen ihn bei jedem Ereignis bzw. Senden.
+    on: Arc<AtomicBool>,
 }
 
 impl Uploader {
     /// Startet den Upload-Thread; `None` ohne Opt-in oder ohne URL.
     pub fn start(cfg: UploadConfig) -> Option<Self> {
-        if !cfg.enabled || cfg.url.trim().is_empty() {
+        if !cfg.enabled {
             return None;
         }
+        Self::start_switchable(cfg)
+    }
+
+    /// Startet den Upload-Thread, sobald eine URL gesetzt ist, auch ohne Opt-in. `enabled`
+    /// ist nur der Anfangszustand des Schalters; [`Self::set_enabled`] wirkt sofort, ohne
+    /// Neustart der App. `None` ohne URL.
+    pub fn start_switchable(cfg: UploadConfig) -> Option<Self> {
+        if cfg.url.trim().is_empty() {
+            return None;
+        }
+        let on = Arc::new(AtomicBool::new(cfg.enabled));
         let (tx, rx) = mpsc::sync_channel(cfg.queue_capacity.max(1));
+        let worker_on = Arc::clone(&on);
         let handle = std::thread::Builder::new()
             .name("woa-telemetry-upload".into())
-            .spawn(move || worker(cfg, rx));
+            .spawn(move || worker(cfg, rx, worker_on));
         match handle {
             Ok(h) => Some(Self {
                 tx: Some(tx),
                 handle: Some(h),
+                on,
             }),
             Err(e) => {
                 eprintln!("woa-telemetry: upload thread not started: {e}");
@@ -239,7 +258,25 @@ impl Uploader {
         }
     }
 
+    /// Senden an- oder ausschalten, wirkt ab dem nächsten Ereignis.
+    pub fn set_enabled(&self, on: bool) {
+        self.on.store(on, Ordering::Relaxed);
+    }
+
+    /// Der Schalter selbst, für [`crate::set_upload_enabled`].
+    pub(crate) fn switch(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.on)
+    }
+
+    /// Steht der Schalter auf an?
+    pub fn is_enabled(&self) -> bool {
+        self.on.load(Ordering::Relaxed)
+    }
+
     fn send(&self, e: Event) -> bool {
+        if !self.is_enabled() {
+            return false;
+        }
         match &self.tx {
             Some(tx) => match tx.try_send(Msg::Event(e)) {
                 Ok(()) => true,
@@ -265,6 +302,7 @@ impl Uploader {
     pub fn layer(&self) -> UploadLayer {
         UploadLayer {
             tx: self.tx.clone(),
+            on: Arc::clone(&self.on),
             throttle: Mutex::new(Throttle::default()),
         }
     }
@@ -288,7 +326,7 @@ impl Drop for Uploader {
     }
 }
 
-fn worker(cfg: UploadConfig, rx: Receiver<Msg>) {
+fn worker(cfg: UploadConfig, rx: Receiver<Msg>, on: Arc<AtomicBool>) {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(cfg.timeout))
         .http_status_as_error(false)
@@ -303,28 +341,47 @@ fn worker(cfg: UploadConfig, rx: Receiver<Msg>) {
         let wait = cfg.interval.saturating_sub(last.elapsed());
         match rx.recv_timeout(wait) {
             Ok(Msg::Event(e)) => {
+                if !on.load(Ordering::Relaxed) {
+                    buf.clear();
+                    continue;
+                }
                 push_bounded(&mut buf, e, cfg.max_buffer);
                 if wants_batch_send(buf.len(), cfg.batch_size, failed) {
-                    failed = !send_batch(&agent, &cfg, &mut buf);
+                    failed = !send_if_on(&agent, &cfg, &mut buf, &on);
                     last = Instant::now();
                 }
             }
             Ok(Msg::Flush(reply)) => {
-                let ok = send_batch(&agent, &cfg, &mut buf);
+                let ok = send_if_on(&agent, &cfg, &mut buf, &on);
                 failed = !ok;
                 last = Instant::now();
                 let _ = reply.send(ok);
             }
             Err(RecvTimeoutError::Timeout) => {
-                failed = !send_batch(&agent, &cfg, &mut buf);
+                failed = !send_if_on(&agent, &cfg, &mut buf, &on);
                 last = Instant::now();
             }
             Ok(Msg::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
-                send_batch(&agent, &cfg, &mut buf);
+                send_if_on(&agent, &cfg, &mut buf, &on);
                 return;
             }
         }
     }
+}
+
+/// Wie [`send_batch`], aber bei ausgeschaltetem Schalter wird der Puffer verworfen statt
+/// gesendet (Ereignisse aus der Zeit vor dem Ausschalten gehen nie mehr raus).
+fn send_if_on(
+    agent: &ureq::Agent,
+    cfg: &UploadConfig,
+    buf: &mut VecDeque<Event>,
+    on: &AtomicBool,
+) -> bool {
+    if !on.load(Ordering::Relaxed) {
+        buf.clear();
+        return true;
+    }
+    send_batch(agent, cfg, buf)
 }
 
 /// Hängt an und verwirft bei vollem Puffer das älteste Ereignis (O(1)).
@@ -375,6 +432,7 @@ fn send_batch(agent: &ureq::Agent, cfg: &UploadConfig, buf: &mut VecDeque<Event>
 /// Siehe [`Uploader::layer`].
 pub struct UploadLayer {
     tx: Option<SyncSender<Msg>>,
+    on: Arc<AtomicBool>,
     throttle: Mutex<Throttle>,
 }
 
@@ -503,6 +561,9 @@ where
 
     fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
         let Some(tx) = &self.tx else { return };
+        if !self.on.load(Ordering::Relaxed) {
+            return;
+        }
         // Meldungen über das `log`-Crate (Abhängigkeiten wie symphonia) tragen als Ziel nur
         // `log`; das echte Ziel, Datei und Zeile stehen in den normalisierten Metadaten.
         let normalized = event.normalized_metadata();

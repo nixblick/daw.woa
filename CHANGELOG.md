@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.42.23 — 2026-11-09
+
+- **Telemetrie-Schalter wirkt sofort:** Bisher startete das Hochladen der Fehlercodes nur beim Programmstart; wer den Schalter einschaltete, sah „an“, gesendet wurde aber erst nach einem Neustart. Die Senke läuft jetzt, sobald eine Server-Adresse eingetragen ist, und folgt dem Schalter ohne Neustart. Aus heißt weiter: nichts puffern, nichts senden.
+- **Vorflug findet cargo-deny auch ohne `~/.cargo/bin` im PATH.**
+- **Klarer benannt:** „Fehlercodes laufend im Hintergrund senden“; der Hinweis erklärt, dass das Protokoll im Feedback davon unabhängig ist (nur mit Haken im Feedback-Fenster).
+
 ## 0.42.22 — 2026-11-09
 
 - **rmcp 3.9.0 (RUSTSEC-2026-0462):** Die wöchentliche deny-Prüfung war rot, weil die HTTP-Clients in rmcp 3.8.0 Antworten ohne Größengrenze lesen. WOA nutzt diese Clients nicht, das Update macht die Prüfung wieder grün.

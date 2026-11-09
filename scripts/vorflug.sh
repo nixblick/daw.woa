@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 echo "vorflug: cargo fmt --check"
 cargo fmt --all --check
 [ "${1:-}" = "--fmt" ] && exit 0
-if command -v cargo-deny >/dev/null 2>&1; then
+if cargo deny --version >/dev/null 2>&1; then
   echo "vorflug: cargo deny check"
   cargo deny check
 else

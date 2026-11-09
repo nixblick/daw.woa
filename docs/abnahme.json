@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "telemetrie-schalter-sofort",
+      "ansicht": "Einstellungen",
+      "titel": "Telemetrie-Schalter wirkt ohne Neustart",
+      "tun": "Einstellungen › Allgemein › Datenschutz: „Fehlercodes laufend im Hintergrund senden“ einschalten, WOA nicht neu starten, ein paar Minuten weiterarbeiten.",
+      "erwartet": "Der Hinweistext sagt „wirkt sofort“ und erklärt, dass das Protokoll im Feedback davon unabhängig ist. Spätestens nach einer Stunde meldet der Log-Abruf wieder Zeilen von dieser Installation.",
+      "version": "0.42.23"
+    },
+    {
       "id": "dj-master-led",
       "ansicht": "Party DJ",
       "titel": "DJ: Master-LED folgt dem Regler",

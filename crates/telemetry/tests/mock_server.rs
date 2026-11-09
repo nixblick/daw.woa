@@ -98,6 +98,38 @@ fn upload_is_off_without_opt_in_or_url() {
     assert!(Uploader::start(UploadConfig::default()).is_none());
 }
 
+/// Die App startet die Senke umschaltbar: Aus heißt kein Netz, An wirkt ohne Neustart,
+/// und was vor dem Ausschalten im Puffer lag, geht nie mehr raus.
+#[test]
+fn switchable_upload_follows_the_switch_without_restart() {
+    let m = mock(vec![(200, r#"{"accepted":1}"#), (200, r#"{"accepted":1}"#)]);
+    let mut cfg = upload_cfg(format!("{}/ingest", m.url));
+    cfg.enabled = false;
+    let up = Uploader::start_switchable(cfg).expect("url set, thread runs");
+    assert!(!up.is_enabled());
+    assert!(
+        !up.record(Level::Warn, "woa_engine", "xrun", 1),
+        "off: not queued"
+    );
+    assert!(up.flush());
+    assert!(m.bodies.lock().unwrap().is_empty(), "off: nothing sent");
+
+    up.set_enabled(true);
+    assert!(up.record(Level::Warn, "woa_engine", "xrun", 2));
+    assert!(up.flush());
+    assert_eq!(m.bodies.lock().unwrap().len(), 1, "on: sent at once");
+
+    assert!(up.record(Level::Warn, "woa_engine", "xrun", 3));
+    up.set_enabled(false);
+    assert!(up.flush());
+    assert_eq!(
+        m.bodies.lock().unwrap().len(),
+        1,
+        "switched off: buffer dropped"
+    );
+    assert!(Uploader::start_switchable(upload_cfg(String::new())).is_none());
+}
+
 #[test]
 fn upload_batch_matches_ingest_contract() {
     let m = mock(vec![(200, r#"{"accepted":2}"#)]);
