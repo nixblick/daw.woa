@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.42.21 — 2026-11-09
+
+- **Tempo auch bei Musikvideos mit leisem Intro (#571):** Disco Pogo und L'Amour Toujours bekamen auch mit 0.42.19 „Analyse fehlgeschlagen“. Die Sperre gegen Schwebung und Tremolo zählte tiefe Stellen über den ganzen Titel; Intro, Pausen und gesprochene Stellen kamen auf 5,7 und 9,9 %, Grenze 4 %. Gezählt wird jetzt je Fenster von 2 s, entscheidend ist der Median über alle Fenster: Schwebung und Tremolo liegen in jedem Fenster über 9 %, beide Lieder bei 0 %. Ergebnis 131,9 und 139,2 BPM, gegengeprüft mit einer unabhängigen Spektralfluss-Messung (2 × 66,3 und 2 × 69,8). Test `dense_mix_with_quiet_intro_and_break_has_a_tempo`.
+- **Alte „kein Tempo“-Ergebnisse werden neu gemessen:** Die Bibliothek speichert Analysen; ohne Neumessung bliebe ein Titel nach dem Update bei „Analyse fehlgeschlagen“. Schema 8 setzt Titel ohne Tempo einmal zurück in die Analyse, Titel mit Tempo bleiben unberührt. Test `migration_to_v8_reanalyses_only_tracks_without_tempo`.
+
 ## 0.42.20 — 2026-11-09
 
 - **Master-LED folgt dem Regler (#569):** Die LED-Ketten der DJ-Decks hoben ihre Spitze nur an und setzten sie nie zurück, sie blieben auf dem lautesten Wert stehen; die Master-Kette zeigte dazu nur den lauteren Deck-Pegel vor dem Master-Regler. Jeder Schnappschuss holt die Spitze jetzt ab, die Master-Kette zeigt den Master nach dem Regler. Test `levels_follow_the_sound_and_the_master_control`.

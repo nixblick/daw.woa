@@ -406,6 +406,37 @@ mod tests {
         assert_eq!(got.vocal_start, Some(12.4));
     }
 
+    /// #571: Nach dem Update misst WOA Titel ohne Tempo neu, die mit Tempo nicht.
+    #[test]
+    fn migration_to_v8_reanalyses_only_tracks_without_tempo() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("l.sqlite3");
+        {
+            let c = rusqlite::Connection::open(&db).unwrap();
+            for v in &crate::MIGRATIONS[..7] {
+                c.execute_batch(v).unwrap();
+            }
+            c.execute_batch(
+                "INSERT INTO tracks(path, hash, title, analyzed_hash, bpm) VALUES \
+                 ('/ohne.wav','h1','Ohne','h1',NULL), ('/mit.wav','h2','Mit','h2',128.0)",
+            )
+            .unwrap();
+            c.pragma_update(None, "user_version", 7).unwrap();
+        }
+        let lib = Library::open(&db).unwrap();
+        assert_eq!(lib.schema_version().unwrap(), crate::SCHEMA_VERSION);
+        assert!(
+            lib.by_path("/ohne.wav")
+                .unwrap()
+                .unwrap()
+                .analysis
+                .is_none()
+        );
+        let mit = lib.by_path("/mit.wav").unwrap().unwrap().analysis.unwrap();
+        assert_eq!(mit.bpm, Some(128.0));
+        assert_eq!(lib.pending_analysis_count().unwrap(), 1);
+    }
+
     #[test]
     fn migration_from_v2_keeps_tracks() {
         let dir = tempfile::tempdir().unwrap();

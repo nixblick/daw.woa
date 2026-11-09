@@ -26,7 +26,7 @@ pub use hash::file_hash;
 pub const DB_FILE: &str = "bibliothek.sqlite3";
 
 /// Aktuelle Schemaversion.
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 /// Längste Tag-Bezeichnung (Zeichen).
 pub const MAX_TAG_CHARS: usize = 40;
 /// Mehr Tags je Titel nimmt die Bibliothek nicht an.
@@ -120,7 +120,13 @@ const V7: &str = "
 ALTER TABLE tracks ADD COLUMN vocal_start REAL;
 ";
 
-const MIGRATIONS: [&str; 7] = [V1, V2, V3, V4, V5, V6, V7];
+/// 0.42.20 (#571): Die Tempo-Erkennung fand bei Musikvideos mit leisem Intro kein Tempo.
+/// Titel ohne Tempo werden einmal neu analysiert; Titel mit Tempo bleiben unberührt.
+const V8: &str = "
+UPDATE tracks SET analyzed_hash = NULL WHERE analyzed_hash IS NOT NULL AND bpm IS NULL;
+";
+
+const MIGRATIONS: [&str; 8] = [V1, V2, V3, V4, V5, V6, V7, V8];
 
 /// Fehler der Bibliothek, Text ohne Pfade.
 #[derive(Debug)]
