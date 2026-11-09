@@ -19,6 +19,7 @@ use crate::mixer::{Cmd, Mixer, NONE, Status};
 
 pub mod dj;
 mod duo;
+mod vorrat;
 use crate::pfl::{PflCmd, PflHandle};
 use crate::show::{CartEntry, PlaylistEntry, RadioShow};
 use crate::{CARTS, RECORDINGS_DIR};
@@ -193,6 +194,8 @@ pub struct Controller {
     failed: Vec<u32>,
     /// Zuletzt geladener Titel und wie lange das Dekodieren dauerte (für das Log, #51).
     last_load: Option<(PathBuf, std::time::Duration)>,
+    /// Vordekodierte nächste Titel (#568/#570/#572, gefüllt vom Dekodier-Thread der Station).
+    vorrat: vorrat::Vorrat,
     /// Undo/Redo der Cue-Punkte (Paket 15).
     cue_history: CueHistory,
     /// Vorhören (PFL), falls ein Kopfhörer-Ausgang eingehängt ist.
@@ -270,6 +273,7 @@ impl Controller {
             message: None,
             failed: Vec::new(),
             last_load: None,
+            vorrat: Default::default(),
             cue_history: CueHistory::default(),
             pfl: None,
             pfl_source: None,
@@ -625,6 +629,58 @@ impl Controller {
                 e.set_measured(m);
             }
         }
+    }
+
+    /// Titel, die der Dekodier-Thread jetzt vorbereiten soll (#568/#570/#572): die nächsten
+    /// Musiktitel nach dem laufenden (Party: nach der hörbaren Seite). Jeder Pfad kommt nur
+    /// einmal, bis sein Ergebnis da ist. Bei Zufall trifft die Vorhersage selten; dann
+    /// dekodiert das Laden wie bisher selbst.
+    pub fn predecode_wanted(&mut self) -> Vec<PathBuf> {
+        let from = if self.duo.is_some() {
+            self.party_live_index()
+        } else {
+            self.current_index()
+        };
+        let start = from.map_or_else(|| self.cue_index(), |i| i + 1);
+        let mut wanted: Vec<PathBuf> = Vec::new();
+        for e in self.show.playlist.iter().skip(start) {
+            if wanted.len() >= vorrat::KEEP {
+                break;
+            }
+            if e.voice.is_none() && !wanted.contains(&e.path) {
+                wanted.push(e.path.clone());
+            }
+        }
+        self.vorrat.ask(&wanted)
+    }
+
+    /// Ergebnis des Dekodier-Threads für `path`: Puffer (in Mixer-Rate) und Messung.
+    pub fn predecoded(
+        &mut self,
+        path: PathBuf,
+        r: Result<(Stereo, crate::audio::Measured), String>,
+    ) {
+        match r {
+            Ok((s, m)) => {
+                let buf = Shared::new(&self.collector.handle(), s);
+                self.vorrat.put(path, buf, m);
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "predecode failed");
+                self.vorrat.fail(path);
+            }
+        }
+    }
+
+    /// Vordekodierter Puffer für Eintrag `index` (übernimmt dessen Messung, falls er keine hat).
+    fn take_predecoded(&mut self, path: &Path, index: usize) -> Option<Shared<Stereo>> {
+        let (buf, m) = self.vorrat.get(path)?;
+        if let Some(e) = self.show.playlist.get_mut(index)
+            && !e.is_measured()
+        {
+            e.set_measured(m);
+        }
+        Some(buf)
     }
 
     /// Misst alle Titel ohne gültige Messung sofort (blockiert; für Offline und Agent).
@@ -1123,16 +1179,19 @@ impl Controller {
             match event.as_ref().and_then(|r| self.event_files.get(&r.id)) {
                 // Zeit-Event: schon geladen und gemessen.
                 Some(buf) => Ok(buf.clone()),
-                None => load_stereo(&path, self.rate).map(|s| {
-                    // Nur messen, was noch keine Messung hat: das läuft im Control-Thread
-                    // direkt vor dem Abspielen (#120).
-                    if let Some(e) = self.show.playlist.get_mut(index)
-                        && !e.is_measured()
-                    {
-                        e.set_measured(measure(&s, self.rate));
-                    }
-                    Shared::new(&self.collector.handle(), s)
-                }),
+                None => match self.take_predecoded(&path, index) {
+                    Some(buf) => Ok(buf),
+                    None => load_stereo(&path, self.rate).map(|s| {
+                        // Nur messen, was noch keine Messung hat: das läuft im Control-Thread
+                        // direkt vor dem Abspielen (#120).
+                        if let Some(e) = self.show.playlist.get_mut(index)
+                            && !e.is_measured()
+                        {
+                            e.set_measured(measure(&s, self.rate));
+                        }
+                        Shared::new(&self.collector.handle(), s)
+                    }),
+                },
             };
         let took = t0.elapsed();
         tracing::debug!(file = %path.display(), ms = took.as_millis() as u64, "track decoded");

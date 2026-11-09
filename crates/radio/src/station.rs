@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use crate::audio::{Measured, measure_file};
+use crate::audio::{Measured, Stereo, load_stereo, measure, measure_file};
 use crate::control::Controller;
 use crate::show::RadioShow;
 use crate::{CARTS, mixer::NONE};
@@ -22,6 +22,8 @@ type Job = Box<dyn FnOnce(&mut Controller) + Send>;
 enum Msg {
     Job(Job),
     Measured(PathBuf, Result<Measured, String>),
+    /// Vordekodierter Titel aus dem Dekodier-Thread (#568/#570/#572).
+    Decoded(PathBuf, Result<(Stereo, Measured), String>),
     Quit,
 }
 
@@ -215,9 +217,10 @@ impl Station {
         let rate = controller.rate();
         let measuring = Arc::new(AtomicUsize::new(0));
         let (v, s, m) = (Arc::clone(&view), Arc::clone(&show), Arc::clone(&measuring));
+        let decoder = spawn_decoder(tx.clone(), rate);
         let thread = std::thread::Builder::new()
             .name("woa-radio-control".into())
-            .spawn(move || run(controller, rx, v, s, m))
+            .spawn(move || run(controller, rx, v, s, m, decoder))
             .map_err(|e| e.to_string())?;
         Ok(Self {
             tx,
@@ -361,12 +364,40 @@ fn deck_view(c: &Controller, k: usize) -> DeckView {
     }
 }
 
+/// Dekodier-Thread: dekodiert und misst angefragte Titel, das Ergebnis geht als
+/// [`Msg::Decoded`] an den Control-Thread. `None`, wenn der Thread nicht startet (dann
+/// dekodiert das Laden wie früher selbst).
+fn spawn_decoder(tx: Sender<Msg>, rate: u32) -> Option<Sender<PathBuf>> {
+    let (dtx, drx) = channel::<PathBuf>();
+    let spawned = std::thread::Builder::new()
+        .name("woa-radio-decode".into())
+        .spawn(move || {
+            for p in drx {
+                let r = load_stereo(&p, rate).map(|s| {
+                    let m = measure(&s, rate);
+                    (s, m)
+                });
+                if tx.send(Msg::Decoded(p, r)).is_err() {
+                    return;
+                }
+            }
+        });
+    match spawned {
+        Ok(_) => Some(dtx),
+        Err(e) => {
+            tracing::warn!(error = %e, "predecode thread not started");
+            None
+        }
+    }
+}
+
 fn run(
     mut c: Controller,
     rx: Receiver<Msg>,
     view: Arc<Mutex<View>>,
     show_out: Arc<Mutex<RadioShow>>,
     measuring: Arc<AtomicUsize>,
+    decoder: Option<Sender<PathBuf>>,
 ) {
     let mut revision = 0u64;
     let mut last_show = c.show().clone();
@@ -382,6 +413,7 @@ fn run(
                         Err(e) => messages.push(e),
                     }
                 }
+                Ok(Msg::Decoded(p, r)) => c.predecoded(p, r),
                 Ok(Msg::Quit) | Err(TryRecvError::Disconnected) => {
                     if c.is_recording() {
                         c.stop_recording();
@@ -392,6 +424,13 @@ fn run(
             }
         }
         c.pump();
+        if let Some(d) = &decoder {
+            for p in c.predecode_wanted() {
+                if d.send(p).is_err() {
+                    tracing::warn!("predecode thread gone");
+                }
+            }
+        }
         if let Some(m) = c.take_message() {
             messages.push(m);
         }

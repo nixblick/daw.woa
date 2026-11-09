@@ -537,3 +537,31 @@ fn loading_a_title_held_by_the_other_deck_does_not_decode_again() {
         "B spielt den geteilten Puffer"
     );
 }
+
+#[test]
+fn a_predecoded_title_loads_without_decoding() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = dj_party(tmp.path());
+    let wanted = c.predecode_wanted();
+    assert!(!wanted.is_empty(), "der nächste Titel wird angefragt");
+    assert!(c.predecode_wanted().is_empty(), "nicht doppelt anfragen");
+    // Rolle des Dekodier-Threads.
+    for p in &wanted {
+        let s = woa_radio::audio::load_stereo(p, c.rate()).unwrap();
+        let mm = woa_radio::audio::measure(&s, c.rate());
+        c.predecoded(p.clone(), Ok((s, mm)));
+    }
+    let p = wanted[0].clone();
+    let index = c.show().playlist.iter().position(|e| e.path == p).unwrap();
+    std::fs::remove_file(&p).unwrap();
+    c.dj(DjCommand::Load { side: 1, index }).unwrap();
+    run(&mut c, &mut m, 0.02);
+    assert_eq!(c.dj_view().unwrap().decks[1].index, Some(index));
+    c.dj(DjCommand::Crossfader { value: 1.0 }).unwrap();
+    c.dj(DjCommand::Play { side: 1 }).unwrap();
+    let v = run(&mut c, &mut m, 0.3);
+    assert!(
+        v.last().unwrap().abs() > 0.05,
+        "B spielt den vordekodierten Puffer"
+    );
+}

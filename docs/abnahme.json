@@ -13,9 +13,9 @@
       "id": "party-befehle-ohne-stau",
       "ansicht": "Party Einfach",
       "titel": "Party: Tasten reagieren sofort",
-      "tun": "Party mit zwei Liedern (gern Video-Dateien vom Netzlaufwerk) im Wechsel, mehrmals WEITER bzw. Übergang drücken, dann aus der Bibliothek „→ Playlist“ klicken; in DJ „hart“/„weich“ umschalten.",
+      "tun": "Party mit einer Playlist aus 10 verschiedenen Liedern (gern Video-Dateien vom Netzlaufwerk), mehrmals WEITER bzw. Übergang drücken, dann aus der Bibliothek „→ Playlist“ klicken; in DJ „hart“/„weich“ umschalten.",
       "erwartet": "Jeder Klick wirkt binnen eines Augenblicks: der Titel steht sofort in der Playlist, hart/weich leuchtet sofort um, WOA zeigt nie „Keine Rückmeldung“.",
-      "version": "0.42.20"
+      "version": "0.42.22"
     },
     {
       "id": "analyse-fehlgeschlagen-grund",

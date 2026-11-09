@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.22 — 2026-11-09
+
+- **Nächste Titel liegen fertig bereit (#568, #570, #572):** Ein eigener Hintergrund-Thread dekodiert und misst die nächsten zwei Musiktitel der Playlist (Party: nach der hörbaren Seite), solange der laufende spielt. Übergang, WEITER und Radio-Weiterschalten nehmen den fertigen Puffer, statt im Control-Thread zu dekodieren; so halten auch Playlists mit vielen verschiedenen Titeln keine Klicks mehr auf. Höchstens zwei Titel liegen bereit (etwa 180 MB). Nur ein Titel außerhalb der Reihe (z. B. aus der Bibliothek direkt ins Deck) wird noch beim Laden dekodiert. Tests `a_predecoded_title_loads_without_decoding`, `keeps_two_drops_the_oldest_and_asks_each_path_once`.
+
 ## 0.42.20 — 2026-11-09
 
 - **Master-LED folgt dem Regler (#569):** Die LED-Ketten der DJ-Decks hoben ihre Spitze nur an und setzten sie nie zurück, sie blieben auf dem lautesten Wert stehen; die Master-Kette zeigte dazu nur den lauteren Deck-Pegel vor dem Master-Regler. Jeder Schnappschuss holt die Spitze jetzt ab, die Master-Kette zeigt den Master nach dem Regler. Test `levels_follow_the_sound_and_the_master_control`.

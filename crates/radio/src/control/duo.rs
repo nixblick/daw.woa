@@ -412,7 +412,10 @@ impl Controller {
         // Liegt derselbe Titel schon auf einem Deck, gilt dessen Puffer: Dekodieren läuft im
         // Control-Thread und hält so lange jeden Befehl auf (#570/#572, Video-Dateien auf einem
         // Netzlaufwerk brauchten Sekunden je Übergang).
-        let loaded = match self.party_buffer_of(&path) {
+        let loaded = match self
+            .party_buffer_of(&path)
+            .or_else(|| self.take_predecoded(&path, index))
+        {
             Some(buf) => Ok(buf),
             None => load_stereo(&path, self.rate).map(|s| {
                 if let Some(e) = self.show.playlist.get_mut(index)
