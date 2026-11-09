@@ -171,14 +171,22 @@ fn loader(
     rate: u32,
     errors: &mut Vec<String>,
 ) -> impl FnMut(&str) -> Option<std::sync::Arc<[f32]>> {
+    // Jede Datei nur einmal dekodieren, auch wenn viele Clips sie nutzen (#579).
+    let mut files: std::collections::HashMap<String, std::sync::Arc<[f32]>> =
+        std::collections::HashMap::new();
     move |rel: &str| {
         if !woa_model::is_safe_audio_path(rel) {
             errors.push(format!("{rel}: Pfad verlässt den Projektordner"));
             return None;
         }
-        woa_engine::clip::load_wav_mono(&dir.join(rel), rate)
+        if let Some(f) = files.get(rel) {
+            return Some(std::sync::Arc::clone(f));
+        }
+        let f = woa_engine::clip::load_wav_mono(&dir.join(rel), rate)
             .map_err(|e| errors.push(format!("{rel}: {e}")))
-            .ok()
+            .ok()?;
+        files.insert(rel.to_string(), std::sync::Arc::clone(&f));
+        Some(f)
     }
 }
 

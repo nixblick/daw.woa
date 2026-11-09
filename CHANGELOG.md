@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.24 — 2026-11-09
+
+- **`analyze` dekodiert jede Datei nur einmal (#579):** Offline-Renders des Agenten (MCP) und von `woa-headless` dekodierten die Audiodatei für jeden Clip neu. `analyze` rendert den Mix und jede Spur einzeln; bei 180 Clips aus wenigen Dateien waren das rund 1600 Dekodier-Läufe, auf einem schwachen Notebook viele Minuten Volllast. Jetzt einmal je Datei und Aufruf.
+
 ## 0.42.23 — 2026-11-09
 
 - **Telemetrie-Schalter wirkt sofort:** Bisher startete das Hochladen der Fehlercodes nur beim Programmstart; wer den Schalter einschaltete, sah „an“, gesendet wurde aber erst nach einem Neustart. Die Senke läuft jetzt, sobald eine Server-Adresse eingetragen ist, und folgt dem Schalter ohne Neustart. Aus heißt weiter: nichts puffern, nichts senden.
