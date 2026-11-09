@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.42.20 — 2026-11-09
+
+- **Master-LED folgt dem Regler (#569):** Die LED-Ketten der DJ-Decks hoben ihre Spitze nur an und setzten sie nie zurück, sie blieben auf dem lautesten Wert stehen; die Master-Kette zeigte dazu nur den lauteren Deck-Pegel vor dem Master-Regler. Jeder Schnappschuss holt die Spitze jetzt ab, die Master-Kette zeigt den Master nach dem Regler. Test `levels_follow_the_sound_and_the_master_control`.
+- **Party-Tasten stauen nicht mehr (#568, #570, #572):** Jeder Übergang lud das freie Deck neu und dekodierte den ganzen Titel im Control-Thread; bei Video-Dateien vom Netzlaufwerk standen „→ Playlist“, hart/weich, Sync und Blende so lange still, wiederholte Klicks stauten sich. Liegt der Titel schon auf dem anderen Deck, wird dessen Puffer geteilt statt neu dekodiert. Test `loading_a_title_held_by_the_other_deck_does_not_decode_again`.
+- **„Analyse fehlgeschlagen“ nennt den Grund (#571):** Ein Klick auf den Hinweis erklärt, warum kein Tempo gefunden wurde, was trotzdem geht, und bietet „Neu analysieren“. Das gesperrte SYNC sagt, dass es ein Tempo braucht (#572).
+
 ## 0.42.19 — 2026-11-07
 
 - **Tempo auch bei dicht gemischter Musik:** Gemasterte Songs mit vollem Mix bekamen im DJ-Deck „Analyse fehlgeschlagen“, weil die Tempo-Erkennung nur harte Einsätze zählte (Pegel verdoppelt sich in 5 ms). Ein zweiter Weg zählt jetzt Einsätze relativ zur eigenen Einsatzkurve, sofern der Pegel nicht periodisch tief einbricht; Schwebungen und Tremolo täuschen weiter kein Tempo vor. Tests `dense_mix_has_a_tempo`, `beating_and_tremolo_have_no_tempo`; Prüfpunkt `tempo-dichter-mix` (Party DJ).

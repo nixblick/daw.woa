@@ -302,10 +302,18 @@ pub struct DjView {
     pub crossfader: f32,
     pub curve_hard: bool,
     pub master: f32,
+    /// Spitze des Masters nach dem Master-Regler seit dem letzten Schnappschuss (#569).
+    pub master_level: f32,
     pub phones_mix: f32,
     pub phones_level: f32,
     /// Ein Vorhör-Ausgang ist da (sonst sind die Cue-Tasten gesperrt).
     pub cue_available: bool,
+}
+
+/// Spitze seit dem letzten Abholen; setzt sie zurück. Der Mixer hebt nur an (`store_max`),
+/// ohne Abholen blieb die LED-Kette auf dem höchsten Wert stehen (#569).
+fn take_peak(a: &std::sync::atomic::AtomicU32) -> f32 {
+    f32::from_bits(a.swap(0, Ordering::AcqRel))
 }
 
 fn side_ok(side: usize) -> Result<(), String> {
@@ -595,7 +603,7 @@ impl Controller {
                 filter: d.filter,
                 fader: d.fader,
                 cue: d.cue,
-                level: f32::from_bits(self.status.dj_peak[s].load(Ordering::Acquire)),
+                level: take_peak(&self.status.dj_peak[s]),
             }
         });
         Some(DjView {
@@ -604,6 +612,7 @@ impl Controller {
             crossfader: pv.fader,
             curve_hard: self.dj.curve_hard,
             master: self.dj.master,
+            master_level: take_peak(&self.status.dj_master_peak),
             phones_mix: self.dj.phones_mix,
             phones_level: self.dj.phones_level,
             cue_available: self.dj_cue_available(),
