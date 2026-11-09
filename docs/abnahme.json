@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "agent-analyze-ohne-einfrieren",
+      "ansicht": "Produzent",
+      "titel": "Agent: analyze lässt die App bedienbar",
+      "tun": "Großes Projekt offen (viele Clips, mehrere MIDI-Spuren), den KI-Agenten per MCP „analyze“ aufrufen lassen und währenddessen in WOA scrollen, Fenster öffnen, abspielen.",
+      "erwartet": "WOA bleibt bedienbar, während der Agent misst; die Messung kommt nach einer Weile zurück. Kein Einfrieren.",
+      "version": "0.42.25"
+    },
+    {
       "id": "telemetrie-schalter-sofort",
       "ansicht": "Einstellungen",
       "titel": "Telemetrie-Schalter wirkt ohne Neustart",

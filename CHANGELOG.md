@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.25 — 2026-11-09
+
+- **App friert bei `analyze` nicht mehr ein (#579):** Im Live-Betrieb leiht sich jeder MCP-Aufruf die Projektsitzung der App, und der Oberflächen-Thread wartet, bis der Aufruf fertig ist. Bei `analyze`, `spectrogram_png` und `export` hieß das: Oberfläche steht für die ganze Renderzeit, bei großen Projekten minutenlang. Diese drei Werkzeuge lesen nur; sie arbeiten jetzt mit einer Kopie des Projekts, die App bekommt ihre Sitzung sofort zurück.
+
 ## 0.42.24 — 2026-11-09
 
 - **`analyze` dekodiert jede Datei nur einmal (#579):** Offline-Renders des Agenten (MCP) und von `woa-headless` dekodierten die Audiodatei für jeden Clip neu. `analyze` rendert den Mix und jede Spur einzeln; bei 180 Clips aus wenigen Dateien waren das rund 1600 Dekodier-Läufe, auf einem schwachen Notebook viele Minuten Volllast. Jetzt einmal je Datei und Aufruf.
