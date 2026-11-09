@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.26 — 2026-11-09
+
+- **Jeder MCP-Aufruf im Log (#584):** `mcp call` mit Werkzeug, Request-ID und den Namen der Argumente (keine Werte), danach `mcp done` mit Dauer und Ergebnis; ab 1 s als Warnung `mcp slow`. Bricht der KI-Client ab, steht das im Log, samt Hinweis, dass die Arbeit bis zum Ende lief (Abbrechen laufender Renders folgt).
+
 ## 0.42.25 — 2026-11-09
 
 - **App friert bei `analyze` nicht mehr ein (#579):** Im Live-Betrieb leiht sich jeder MCP-Aufruf die Projektsitzung der App, und der Oberflächen-Thread wartet, bis der Aufruf fertig ist. Bei `analyze`, `spectrogram_png` und `export` hieß das: Oberfläche steht für die ganze Renderzeit, bei großen Projekten minutenlang. Diese drei Werkzeuge lesen nur; sie arbeiten jetzt mit einer Kopie des Projekts, die App bekommt ihre Sitzung sofort zurück.
