@@ -299,6 +299,12 @@ impl Drop for Lent {
     }
 }
 
+/// Werkzeuge, die das Projekt nur lesen und lange rendern: Sie arbeiten mit einer Kopie,
+/// damit die App nicht für die ganze Renderzeit ohne Sitzung dasteht (#579).
+pub fn reads_only(name: &str) -> bool {
+    matches!(name, "analyze" | "spectrogram_png" | "export")
+}
+
 fn text_result(ok: bool, text: String) -> CallToolResponse {
     let content = vec![ContentBlock::text(text)];
     if ok {
@@ -354,6 +360,19 @@ impl ServerHandler for LiveAgent {
             Err(e) => return Ok(text_result(false, e)),
         };
         let dir = loan.dir.clone();
+        if reads_only(&request.name) {
+            // #579: Die App wartet, solange ihre Sitzung verliehen ist (der UI-Thread steht).
+            // Rendern dauert Sekunden bis Minuten, also mit einer Kopie arbeiten und die
+            // Sitzung sofort zurückgeben.
+            let copy = loan.session.clone();
+            drop(loan);
+            let Some(copy) = copy else {
+                return Ok(text_result(false, "Sitzung fehlt".into()));
+            };
+            return WoaAgent::with_session(copy, dir)
+                .call_tool(request, context)
+                .await;
+        }
         let lent = Lent::new(loan, self.agent_for(&dir));
         let name = request.name.to_string();
         if name == "save" {

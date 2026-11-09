@@ -224,3 +224,75 @@ fn output_levels_are_read_only_and_listed() {
     assert_eq!(server.serve_pending(&mut session, tmp.path()), 0);
     assert!(session.history().undo_label().is_none());
 }
+
+/// #579: `analyze` rendert mit einer Kopie; die App bekommt ihre Sitzung sofort zurück und
+/// behält keinen Rückgängig-Schritt.
+#[test]
+fn analyze_works_on_a_copy_and_leaves_the_app_session_alone() {
+    use woa_model::{Clip, ClipId, Command, Track, TrackId, TrackKind};
+    assert!(live::reads_only("analyze") && live::reads_only("export"));
+    assert!(!live::reads_only("add_track"));
+
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("daten");
+    let server = LiveServer::start(&data, TOKEN.into(), 0, Arc::new(|| {})).unwrap();
+    let app = live::running_app(&data).expect("App erkannt");
+
+    let dir = tmp.path().join("projekt");
+    std::fs::create_dir_all(&dir).unwrap();
+    let tone: Vec<f32> = (0..48_000).map(|i| (i as f32 * 0.05).sin() * 0.3).collect();
+    woa_engine::write_wav(&dir.join("a.wav"), &tone, 48_000).unwrap();
+    let mut session = Session::new("App-Projekt");
+    session
+        .apply(Command::AddTrack {
+            track: Track::new(TrackId(1), "t", TrackKind::Audio),
+            index: None,
+        })
+        .unwrap();
+    session
+        .apply(Command::AddClip {
+            track: TrackId(1),
+            clip: Clip::new(ClipId(2), "c", 0.0, 2.0, Some("a.wav".into())),
+            index: None,
+        })
+        .unwrap();
+    let undo_before = session.history().undo_label().map(str::to_string);
+
+    let lines = concat!(
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#,
+        "\n",
+        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+        "\n",
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"analyze","arguments":{}}}"#,
+        "\n",
+    );
+    let (port, key) = (server.port(), app.key.clone());
+    let done = Arc::new(AtomicBool::new(false));
+    let client = {
+        let done = done.clone();
+        std::thread::spawn(move || {
+            let mut out = Vec::new();
+            let r = live::forward(port, &key, lines.as_bytes(), &mut out);
+            done.store(true, Ordering::SeqCst);
+            r.map(|()| String::from_utf8(out).unwrap())
+        })
+    };
+    let start = Instant::now();
+    while !done.load(Ordering::SeqCst) {
+        server.serve_pending(&mut session, &dir);
+        assert!(
+            start.elapsed() < Duration::from_secs(60),
+            "Zeitüberschreitung"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let out = client.join().unwrap().unwrap();
+    assert!(out.contains("lufs"), "{out}");
+    assert_eq!(session.project().meta.name, "App-Projekt");
+    assert_eq!(session.project().tracks.len(), 1);
+    assert_eq!(
+        session.history().undo_label().map(str::to_string),
+        undo_before,
+        "kein Agent-Schritt"
+    );
+}
