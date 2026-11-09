@@ -1523,7 +1523,7 @@ dependencies = [
  "hkdf",
  "num",
  "once_cell",
- "sha2",
+ "sha2 0.10.9",
  "zeroize",
 ]
 
@@ -4802,9 +4802,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "3.8.0"
+version = "3.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8be15815186873ea063bf005011d16c356804973489e40c39116ae3a2878d1f"
+checksum = "d24a7e92f4bcaa36b97fa93c4fa7ca8f3e669eced949345b3462dba333c7f909"
 dependencies = [
  "async-trait",
  "base64",
@@ -4823,6 +4823,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "sse-stream",
  "thiserror 2.0.21",
  "tokio",
@@ -4835,9 +4836,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp-macros"
-version = "3.8.0"
+version = "3.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b0748e054a5f5598b3213cf72099ae6b2745ba4d996c59ccf455150a7dbb839"
+checksum = "b3140f24a766f80f9ec1607bde85680959a69b83d46fa9ce87dadab7e67ab029"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -5120,7 +5121,7 @@ dependencies = [
  "once_cell",
  "rand 0.8.8",
  "serde",
- "sha2",
+ "sha2 0.10.9",
  "zbus 4.4.0",
 ]
 
@@ -5283,6 +5284,17 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
  "digest 0.10.7",
+]
+
+[[package]]
+name = "sha2"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.1",
+ "digest 0.11.3",
 ]
 
 [[package]]
@@ -7293,7 +7305,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "woa"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "eframe",
  "tracing",
@@ -7307,7 +7319,7 @@ dependencies = [
 
 [[package]]
 name = "woa-agent"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "bytes",
  "getrandom 0.3.4",
@@ -7338,7 +7350,7 @@ dependencies = [
 
 [[package]]
 name = "woa-assistant"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "getrandom 0.3.4",
  "serde",
@@ -7351,7 +7363,7 @@ dependencies = [
 
 [[package]]
 name = "woa-dsp"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "assert_no_alloc",
  "hound",
@@ -7364,7 +7376,7 @@ dependencies = [
 
 [[package]]
 name = "woa-engine"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "arc-swap",
  "assert_no_alloc",
@@ -7375,7 +7387,7 @@ dependencies = [
  "mp3lame-encoder",
  "pulseaudio",
  "rtrb",
- "sha2",
+ "sha2 0.10.9",
  "symphonia",
  "tempfile",
  "tracing",
@@ -7390,7 +7402,7 @@ dependencies = [
 
 [[package]]
 name = "woa-guests"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "assert_no_alloc",
  "getrandom 0.4.3",
@@ -7407,7 +7419,7 @@ dependencies = [
 
 [[package]]
 name = "woa-gui"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "assert_no_alloc",
  "eframe",
@@ -7443,7 +7455,7 @@ dependencies = [
 
 [[package]]
 name = "woa-headless"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -7465,7 +7477,7 @@ dependencies = [
 
 [[package]]
 name = "woa-io"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "assert_no_alloc",
  "hound",
@@ -7484,7 +7496,7 @@ dependencies = [
 
 [[package]]
 name = "woa-library"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "hound",
  "lofty",
@@ -7500,7 +7512,7 @@ dependencies = [
 
 [[package]]
 name = "woa-model"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "base64",
  "insta",
@@ -7513,7 +7525,7 @@ dependencies = [
 
 [[package]]
 name = "woa-plugins"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "assert_no_alloc",
  "clack-extensions",
@@ -7533,7 +7545,7 @@ dependencies = [
 
 [[package]]
 name = "woa-radio"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "assert_no_alloc",
  "basedrop",
@@ -7553,7 +7565,7 @@ dependencies = [
 
 [[package]]
 name = "woa-remote"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "getrandom 0.4.3",
  "httparse",
@@ -7567,7 +7579,7 @@ dependencies = [
 
 [[package]]
 name = "woa-secrets"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "keyring",
  "tempfile",
@@ -7576,7 +7588,7 @@ dependencies = [
 
 [[package]]
 name = "woa-stream"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "hound",
  "mp3lame-encoder",
@@ -7593,7 +7605,7 @@ dependencies = [
 
 [[package]]
 name = "woa-streamd"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "tracing",
  "woa-radio",
@@ -7603,7 +7615,7 @@ dependencies = [
 
 [[package]]
 name = "woa-telemetry"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "base64",
  "log",
@@ -7620,12 +7632,12 @@ dependencies = [
 
 [[package]]
 name = "woa-updater"
-version = "0.42.21"
+version = "0.42.22"
 dependencies = [
  "minisign-verify",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
  "thiserror 2.0.21",
  "tracing",
  "ureq",
