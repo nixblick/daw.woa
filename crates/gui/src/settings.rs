@@ -262,9 +262,9 @@ pub const REGISTRY: &[Entry] = &[
         S::Telemetry,
         A::Allgemein,
         "Datenschutz",
-        "Fehlercodes anonym senden (ab nächstem Start)",
-        "Nur Fehlercodes, keine Inhalte; ab dem nächsten Start",
-        "telemetrie fehler anonym datenschutz privatsphäre tracking",
+        "Fehlercodes laufend im Hintergrund senden",
+        "Nur Fehlercodes, keine Inhalte; wirkt sofort. Das Protokoll im Feedback ist davon unabhängig",
+        "telemetrie fehler fehlercodes anonym datenschutz privatsphäre tracking logs protokoll",
     )
     .menu()
     .fields(&["telemetry_enabled"]),
@@ -1208,7 +1208,7 @@ mod tests {
             "Umlaute egal"
         );
         assert!(names("midi").contains(&"Controller und MIDI-Learn"));
-        assert!(names("datenschutz").contains(&"Fehlercodes anonym senden (ab nächstem Start)"));
+        assert!(names("datenschutz").contains(&"Fehlercodes laufend im Hintergrund senden"));
         assert!(filter("xyzzy", false).is_empty());
     }
 

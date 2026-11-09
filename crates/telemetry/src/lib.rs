@@ -67,6 +67,22 @@ impl Telemetry {
     }
 }
 
+/// Schalter der Upload-Senke aus [`init`], damit die Einstellung ohne Neustart wirkt.
+static UPLOAD_SWITCH: std::sync::OnceLock<std::sync::Arc<std::sync::atomic::AtomicBool>> =
+    std::sync::OnceLock::new();
+
+/// Telemetrie-Upload sofort an- oder ausschalten. `false`, wenn keine Senke läuft (kein
+/// `init` oder keine URL); dann greift die Einstellung erst beim nächsten Start.
+pub fn set_upload_enabled(on: bool) -> bool {
+    match UPLOAD_SWITCH.get() {
+        Some(s) => {
+            s.store(on, std::sync::atomic::Ordering::Relaxed);
+            true
+        }
+        None => false,
+    }
+}
+
 /// Baut den täglich rotierenden Datei-Appender mit 30 Tagen Aufbewahrung.
 pub fn file_appender(log_dir: &Path) -> Result<RollingFileAppender, InitError> {
     std::fs::create_dir_all(log_dir).map_err(|e| InitError::Dir(log_dir.to_path_buf(), e))?;
@@ -91,7 +107,11 @@ pub fn init(log_dir: &Path, upload: Option<UploadConfig>) -> Result<Telemetry, I
         .with_filter(noise_filter())
         .with_filter(filter);
 
-    let uploader = upload.and_then(Uploader::start);
+    let uploader = upload.and_then(Uploader::start_switchable);
+    if let Some(u) = &uploader {
+        // Nur der erste init zählt (es gibt ohnehin nur einen globalen Subscriber).
+        let _ = UPLOAD_SWITCH.set(u.switch());
+    }
     let upload_layer = uploader
         .as_ref()
         .map(|u| u.layer().with_filter(upload_filter()));

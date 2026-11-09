@@ -2297,10 +2297,11 @@ impl WoaApp {
 }
 
 /// Text of the opt-in question and the settings hint.
-const TELEMETRY_HINT: &str = "Fehlercodes anonym an den WOA-Server senden? Gesendet werden nur \
-     Code, Stufe und Zahl (z. B. „Aussetzer: 1“), mit einer zufälligen Installations-ID. \
-     Keine Texte, keine Dateinamen, keine Aufnahmen. Gilt ab dem nächsten Start, \
-     jederzeit unter „Einstellungen“ abschaltbar.";
+const TELEMETRY_HINT: &str = "Fehlercodes laufend im Hintergrund an den WOA-Server senden? \
+     Gesendet werden nur Code, Stufe und Zahl (z. B. „Aussetzer: 1“), mit einer zufälligen \
+     Installations-ID. Keine Texte, keine Dateinamen, keine Aufnahmen. Wirkt sofort, jederzeit \
+     unter „Einstellungen“ abschaltbar. Unabhängig davon: Das Protokoll im Feedback geht nur \
+     mit, wenn dort der Haken gesetzt ist.";
 
 /// Fade-Hüllkurve eines Clips an Stelle `local` (Beats ab Clip-Anfang), 0..1.
 fn fade_gain(c: &woa_model::Clip, local: f64) -> f64 {

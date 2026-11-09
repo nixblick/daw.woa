@@ -268,7 +268,7 @@ fn every_former_menu_entry_is_still_reachable() {
                 "Ausgabe neu verbinden",
                 "MIDI-Eingang",
                 "Controller und MIDI-Learn",
-                "Fehlercodes anonym senden",
+                "Fehlercodes laufend im Hintergrund senden",
             ],
         ),
         (

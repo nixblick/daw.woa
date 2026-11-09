@@ -2087,6 +2087,10 @@ impl WoaApp {
 
     pub(super) fn set_telemetry(&mut self, on: bool) {
         self.config.telemetry_enabled = Some(on);
+        // Wirkt sofort; ohne laufende Senke (keine URL) erst beim nächsten Start.
+        if !woa_telemetry::set_upload_enabled(on) {
+            tracing::info!(on, "telemetry switch applies at next start");
+        }
         if let Some(p) = &self.config_path
             && let Err(e) = self.config.save(p)
         {
