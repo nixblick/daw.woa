@@ -1652,13 +1652,22 @@ impl WoaAgent {
         project: &woa_model::Project,
         track: Option<u64>,
     ) -> Result<audio::Mix, String> {
+        self.render_for_cached(project, track, &mut audio::ClipFiles::default())
+    }
+
+    fn render_for_cached(
+        &self,
+        project: &woa_model::Project,
+        track: Option<u64>,
+        files: &mut audio::ClipFiles,
+    ) -> Result<audio::Mix, String> {
         match track {
-            None => audio::render(project, &self.dir),
+            None => audio::render_cached(project, &self.dir, files),
             Some(id) => {
                 if !project.tracks.iter().any(|t| t.id.0 == id) {
                     return Err(format!("Spur {id} gibt es nicht"));
                 }
-                audio::render_track(project, &self.dir, TrackId(id))
+                audio::render_track_cached(project, &self.dir, TrackId(id), files)
             }
         }
     }
@@ -3616,7 +3625,9 @@ impl WoaAgent {
 
     fn analyze_blocking(&self, p: AnalyzeParams) -> Result<CallToolResult, McpError> {
         let project = self.lock()?.project().clone();
-        let mix = match self.render_for(&project, p.track) {
+        // Ein Datei-Speicher für Mix und alle Einzelspuren (#579).
+        let mut files = audio::ClipFiles::default();
+        let mix = match self.render_for_cached(&project, p.track, &mut files) {
             Ok(m) => m,
             Err(e) => return Ok(fail(e)),
         };
@@ -3634,7 +3645,7 @@ impl WoaAgent {
         }
         let mut tracks = Vec::new();
         for t in project.tracks.iter().filter(|t| t.kind != TrackKind::Bus) {
-            let peak = audio::render_track(&project, &self.dir, t.id)
+            let peak = audio::render_track_cached(&project, &self.dir, t.id, &mut files)
                 .ok()
                 .and_then(|m| audio::peak_db(&m.left, &m.right))
                 .map(|v| audio::round(v, 2));

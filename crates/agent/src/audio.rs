@@ -2,6 +2,7 @@
 //! das Projekt rendern, messen und exportieren. Alles im Control-Bereich, nie im
 //! Audio-Thread.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -318,22 +319,50 @@ pub struct Mix {
     pub seconds: f64,
 }
 
+/// Dekodierte Clip-Dateien je Pfad, über mehrere Renders hinweg (#579): Ohne sie dekodierte
+/// jeder Clip seine Datei neu; bei 180 Clips aus wenigen Dateien und neun Renders je
+/// `analyze` (Mix und jede Spur) rund 1600 Dekodier-Läufe statt einer Handvoll.
+#[derive(Default)]
+pub struct ClipFiles(HashMap<String, Result<Arc<[f32]>, String>>);
+
+impl ClipFiles {
+    fn get(&mut self, dir: &Path, rel: &str) -> Result<Arc<[f32]>, String> {
+        if let Some(r) = self.0.get(rel) {
+            return r.clone();
+        }
+        let r = if woa_model::is_safe_audio_path(rel) {
+            load_wav_mono(&dir.join(rel), RATE).map_err(|e| format!("{rel}: {e}"))
+        } else {
+            Err(format!("{rel}: Pfad verlässt den Projektordner"))
+        };
+        self.0.insert(rel.to_string(), r.clone());
+        r
+    }
+
+    /// Anzahl verschiedener Dateien im Speicher.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// Rendert `project` mit den Clip-Dateien aus `dir` bis zum Ende des letzten Clips.
 pub fn render(project: &Project, dir: &Path) -> Result<Mix, String> {
+    render_cached(project, dir, &mut ClipFiles::default())
+}
+
+/// Wie [`render`], dekodiert jede Datei aber nur einmal je `files`.
+pub fn render_cached(project: &Project, dir: &Path, files: &mut ClipFiles) -> Result<Mix, String> {
     let seconds = project_end_seconds(project);
     if seconds <= 0.0 {
         return Err("keine Clips zum Rendern".into());
     }
     let mut errors = Vec::new();
-    let mut load = |rel: &str| -> Option<Arc<[f32]>> {
-        if !woa_model::is_safe_audio_path(rel) {
-            errors.push(format!("{rel}: Pfad verlässt den Projektordner"));
-            return None;
-        }
-        load_wav_mono(&dir.join(rel), RATE)
-            .map_err(|e| errors.push(format!("{rel}: {e}")))
-            .ok()
-    };
+    let mut load =
+        |rel: &str| -> Option<Arc<[f32]>> { files.get(dir, rel).map_err(|e| errors.push(e)).ok() };
     let (left, right) =
         render_clips(project, RATE, seconds, &mut load).map_err(|e| e.to_string())?;
     if let Some(e) = errors.first() {
@@ -384,6 +413,16 @@ pub fn render_track(
     dir: &Path,
     track: woa_model::TrackId,
 ) -> Result<Mix, String> {
+    render_track_cached(project, dir, track, &mut ClipFiles::default())
+}
+
+/// Wie [`render_track`], mit gemeinsamem Datei-Speicher.
+pub fn render_track_cached(
+    project: &Project,
+    dir: &Path,
+    track: woa_model::TrackId,
+    files: &mut ClipFiles,
+) -> Result<Mix, String> {
     let mut alone = project.clone();
     for o in &mut alone.tracks {
         o.solo = o.id == track;
@@ -391,7 +430,7 @@ pub fn render_track(
             o.mute = false;
         }
     }
-    render(&alone, dir)
+    render_cached(&alone, dir, files)
 }
 
 /// Fenstergröße und Schritt des Spektrums für Agent und Bild.
@@ -503,4 +542,35 @@ fn encode_png(file: &std::fs::File, rgb: &[u8], width: u32, height: u32) -> Resu
 pub fn round(v: f64, digits: i32) -> f64 {
     let f = 10f64.powi(digits);
     (v * f).round() / f
+}
+
+#[cfg(test)]
+mod clip_files_tests {
+    use super::*;
+    use woa_model::{Clip, ClipId, Track, TrackId, TrackKind};
+
+    /// #579: Viele Clips aus einer Datei dekodieren sie einmal, auch über mehrere Renders.
+    #[test]
+    fn many_clips_of_one_file_decode_it_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let tone: Vec<f32> = (0..RATE).map(|i| (i as f32 * 0.05).sin() * 0.3).collect();
+        woa_engine::write_wav(&dir.path().join("a.wav"), &tone, RATE).unwrap();
+        let mut project = Project::new("cache");
+        let mut t = Track::new(TrackId(1), "t", TrackKind::Audio);
+        for i in 0..40u64 {
+            t.clips.push(Clip::new(
+                ClipId(i + 1),
+                "c",
+                i as f64,
+                1.0,
+                Some("a.wav".into()),
+            ));
+        }
+        project.tracks.push(t);
+        let mut files = ClipFiles::default();
+        let mix = render_cached(&project, dir.path(), &mut files).unwrap();
+        assert!(peak_db(&mix.left, &mix.right).is_some());
+        render_track_cached(&project, dir.path(), TrackId(1), &mut files).unwrap();
+        assert_eq!(files.len(), 1);
+    }
 }
