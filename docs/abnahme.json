@@ -29,9 +29,9 @@
       "id": "tempo-dichter-mix",
       "ansicht": "Party DJ",
       "titel": "DJ: Tempo bei vollem Mix",
-      "tun": "Party › DJ, einen gemasterten Song mit durchgehendem Beat in Deck A laden (einer, der bisher „Analyse fehlgeschlagen“ zeigte).",
-      "erwartet": "Nach der Analyse steht eine BPM-Zahl im Deck, die zum Song passt (oder ihr Doppeltes/Halbes), kein „Analyse fehlgeschlagen“.",
-      "version": "0.42.19"
+      "tun": "Party › DJ, „Disco Pogo“ und „L'Amour Toujours“ in die Decks laden; vorher einmal WOA 0.42.21 starten, damit die Bibliothek die alten Ergebnisse neu misst.",
+      "erwartet": "Nach der Analyse steht eine BPM-Zahl im Deck: Disco Pogo etwa 132, L'Amour Toujours etwa 139 (oder das Doppelte/Halbe); kein „Analyse fehlgeschlagen“, SYNC ist frei.",
+      "version": "0.42.21"
     },
     {
       "id": "sende-tasten-eine-reihe",

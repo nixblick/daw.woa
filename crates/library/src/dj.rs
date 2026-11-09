@@ -132,14 +132,15 @@ mod tests {
         }
         let lib = Library::open(&p).unwrap();
         assert_eq!(lib.schema_version().unwrap(), crate::SCHEMA_VERSION);
-        // Titel mit Tempo kommen für das Beatgrid noch einmal in die Analyse, die ohne nicht.
+        // Titel mit Tempo kommen für das Beatgrid noch einmal in die Analyse (Schema 6), die
+        // ohne Tempo seit Schema 8 auch (#571, bessere Tempo-Erkennung).
         let pending: Vec<i64> = lib
             .pending_analysis(10)
             .unwrap()
             .into_iter()
             .map(|(id, _, _)| id)
             .collect();
-        assert_eq!(pending, vec![1]);
+        assert_eq!(pending, vec![1, 2]);
         lib.set_dj_marks("ha", &DjMarks::default()).unwrap();
         let a = crate::Analysis {
             bpm: Some(124.0),

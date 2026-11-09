@@ -285,6 +285,8 @@ fn dense_mix_onsets(level: &[f64], onset: &mut [f64], needed: usize) -> bool {
     const DIP_DEPTH: f64 = 1.5;
     const MAX_DIP_SHARE: f64 = 0.04;
     const DIP_BACK: usize = 10;
+    // Etwa 2 s bei 200 Werten je Sekunde.
+    const DIP_WINDOW: usize = 400;
     const DIP_DROP: f64 = 0.5;
     const REL_FACTOR: f64 = 6.0;
     const REL_FLOOR: f64 = 0.12;
@@ -295,9 +297,20 @@ fn dense_mix_onsets(level: &[f64], onset: &mut [f64], needed: usize) -> bool {
     if level.len() < 8 {
         return false;
     }
-    let mid = median(&mut level.to_vec());
-    let deep = level.iter().filter(|l| **l < mid - DIP_DEPTH).count();
-    if deep as f64 > MAX_DIP_SHARE * level.len() as f64 {
+    // Tiefe Stellen je Fenster von etwa 2 s gegen dessen eigenen Median, davon der Median
+    // über alle Fenster: Schwebung und Tremolo tauchen überall gleichmäßig ein (≥ 9 % in jedem
+    // Fenster), Musik nur im Intro, in Pausen und gesprochenen Stellen (#571, vorher über den
+    // ganzen Titel gezählt und echte Tanzmusik abgewiesen).
+    let win = DIP_WINDOW.min(level.len());
+    let mut shares: Vec<f64> = (0..=level.len() - win)
+        .step_by((win / 2).max(1))
+        .map(|start| {
+            let w = &level[start..start + win];
+            let mid = median(&mut w.to_vec());
+            w.iter().filter(|l| **l < mid - DIP_DEPTH).count() as f64 / win as f64
+        })
+        .collect();
+    if median(&mut shares) > MAX_DIP_SHARE {
         return false;
     }
     for f in DIP_BACK + 1..onset.len().min(level.len()) {
@@ -691,6 +704,28 @@ mod tests {
         let x = dense_mix(124.0, 20.0, RATE);
         let t = detect_bpm(&x, RATE).expect("tempo");
         assert!((t.bpm - 124.0).abs() <= 1.5, "{}", t.bpm);
+    }
+
+    #[test]
+    fn dense_mix_with_quiet_intro_and_break_has_a_tempo() {
+        // #571: Musikvideos haben ein leises Intro und Pausen. Die Tiefen dort zählten bisher
+        // gegen den ganzen Titel, und echte Tanzmusik galt als Schwebung (Disco Pogo,
+        // L'Amour Toujours: 5,7 % und 9,9 % tiefe Stellen, Grenze 4 %).
+        let n = RATE as usize;
+        let mut x = vec![0.0f32; 3 * n];
+        x.extend(dense_mix(128.0, 12.0, RATE));
+        x.extend(std::iter::repeat_n(0.0f32, n));
+        x.extend(dense_mix(128.0, 12.0, RATE));
+        // Leises Rauschen statt digitaler Stille, wie in einem echten Intro.
+        let mut s = 0x1234_5678u32;
+        for v in &mut x {
+            s ^= s << 13;
+            s ^= s >> 17;
+            s ^= s << 5;
+            *v += (s as f32 / u32::MAX as f32 - 0.5) * 0.0004;
+        }
+        let t = detect_bpm(&x, RATE).expect("tempo");
+        assert!((t.bpm - 128.0).abs() <= 1.5, "{}", t.bpm);
     }
 
     #[test]
