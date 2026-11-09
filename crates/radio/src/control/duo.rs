@@ -13,6 +13,7 @@
 //! Läuft beim Betreten die Playlist, übernimmt die linke Seite an derselben Stelle; beim
 //! Verlassen übernimmt die Playlist die hörbare Seite an ihrer Stelle.
 
+use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use basedrop::Shared;
@@ -392,19 +393,38 @@ impl Controller {
 
     /// Legt Playlist-Titel `index` auf Seite `side` (ab `from` Frames, sonst ab Cue-In).
     /// `false`, wenn er sich nicht laden ließ (er wird dann übersprungen).
+    /// Schon dekodierter Puffer für `path`, wenn ein Deck diesen Titel hält.
+    fn party_buffer_of(&self, path: &Path) -> Option<Shared<Stereo>> {
+        let d = self.duo.as_ref()?;
+        (0..PARTY_SIDES).find_map(|s| {
+            let i = self.index_of(d.uid[s]?)?;
+            (self.show.playlist.get(i)?.path == path)
+                .then(|| d.bufs[s].clone())
+                .flatten()
+        })
+    }
+
     fn party_load(&mut self, side: usize, index: usize, from: Option<u64>) -> bool {
         let Some(e) = self.show.playlist.get(index) else {
             return false;
         };
         let (uid, path) = (e.uid, e.path.clone());
-        match load_stereo(&path, self.rate) {
-            Ok(s) => {
+        // Liegt derselbe Titel schon auf einem Deck, gilt dessen Puffer: Dekodieren läuft im
+        // Control-Thread und hält so lange jeden Befehl auf (#570/#572, Video-Dateien auf einem
+        // Netzlaufwerk brauchten Sekunden je Übergang).
+        let loaded = match self.party_buffer_of(&path) {
+            Some(buf) => Ok(buf),
+            None => load_stereo(&path, self.rate).map(|s| {
                 if let Some(e) = self.show.playlist.get_mut(index)
                     && !e.is_measured()
                 {
                     e.set_measured(measure(&s, self.rate));
                 }
-                let buf = Shared::new(&self.collector.handle(), s);
+                Shared::new(&self.collector.handle(), s)
+            }),
+        };
+        match loaded {
+            Ok(buf) => {
                 let e = &self.show.playlist[index];
                 let gain = db_to_gain(e.gain_db(self.show.target_lufs));
                 let CueFrames { start, end, .. } = e.cues.frames(self.rate, buf.frames());

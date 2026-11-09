@@ -869,17 +869,31 @@ impl PartyView {
                             } else {
                                 "Analyse fehlgeschlagen"
                             };
-                            StateChip::new(text, ChipTone::Warn)
+                            let chip = StateChip::new(text, ChipTone::Warn)
                                 .icon(theme::ic::WARNING)
                                 .dj()
+                                .clickable()
                                 .show(ui)
-                                .on_hover_text("Kein Tempo gefunden: kein klarer Taktschlag erkennbar. Tonart und Wellenform sind davon unberührt. Einzelheiten im Protokoll (\"deck analysis\").");
-                            if crate::widgets::icon_button::IconButton::new(
-                                theme::ic::ARROW_CLOCKWISE,
-                                "Neu analysieren",
-                            )
-                            .ui(ui)
-                            .clicked()
+                                .on_hover_text("Klicken: warum, und was jetzt hilft");
+                            // #571: Ein Klick nennt den Grund, statt den Nutzer ratlos zu lassen.
+                            let mut again = false;
+                            egui::Popup::menu(&chip).show(|ui| {
+                                ui.set_max_width(320.0);
+                                ui.label(
+                                    egui::RichText::new(ANALYSIS_FAILED_WHY).color(theme::text()),
+                                );
+                                ui.add_space(6.0);
+                                if ui.button("Neu analysieren").clicked() {
+                                    again = true;
+                                }
+                            });
+                            if again
+                                || crate::widgets::icon_button::IconButton::new(
+                                    theme::ic::ARROW_CLOCKWISE,
+                                    "Neu analysieren",
+                                )
+                                .ui(ui)
+                                .clicked()
                             {
                                 // Nächstes Bild lädt neu (WaveSlot folgt dem Pfad).
                                 self.waves[side] = Default::default();
@@ -1226,7 +1240,13 @@ impl PartyView {
                 .on_hover_text(format!(
                     "Tempo und Takt ans andere Deck (auch Doppel-/Halbtempo, höchstens ±8 %){}",
                     key_hint(side, KeyAction::Sync)
-                ));
+                ))
+                // #572: Gesperrt sagt die Taste, warum (vorher stumm).
+                .on_disabled_hover_text(if loaded {
+                    "SYNC braucht ein Tempo: Für diesen Titel fand die Analyse keins (Hinweis oben am Deck anklicken)"
+                } else {
+                    "SYNC braucht einen geladenen Titel"
+                });
             if r.clicked() {
                 desk.dj(DjCommand::Sync { side, on: !d.sync });
             }
@@ -1716,7 +1736,7 @@ fn master(ui: &mut egui::Ui, desk: &RadioDesk, dj: &DjView, size: egui::Vec2, st
         _ => 3.0,
     };
     let mh = (size.y - rows * (ctl_h + 4.0) - 60.0).max(60.0);
-    let level = dj.decks[0].level.max(dj.decks[1].level);
+    let level = dj.master_level;
     let (m, _) = ui.allocate_exact_size(egui::vec2(14.0, mh), Sense::hover());
     theme::led_meter_vertical(ui.painter(), m, level);
     let master = Ctl {
@@ -1797,6 +1817,9 @@ pub(crate) enum Analysis {
 }
 
 /// Stand aus „Titel liegt“, „Ergebnis da“ und dessen Tempo.
+/// Erklärung zu „Analyse fehlgeschlagen“ (#571).
+pub(crate) const ANALYSIS_FAILED_WHY: &str = "Kein Tempo gefunden: WOA hört in diesem Titel keinen klaren, gleichmäßigen Taktschlag. Typisch bei sehr dichten Mischungen, ruhigen Stücken ohne Schlagzeug oder Videos mit leisem Ton. Abspielen, Tonart, Wellenform und Übergänge gehen trotzdem; nur SYNC und die Taktanzeige brauchen ein Tempo. Einzelheiten stehen im Protokoll unter \"deck analysis\".";
+
 pub(crate) fn analysis_state(loaded: bool, result: Option<Option<f64>>) -> Analysis {
     match (loaded, result) {
         (false, _) => Analysis::Empty,

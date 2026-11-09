@@ -2,6 +2,30 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "dj-master-led",
+      "ansicht": "Party DJ",
+      "titel": "DJ: Master-LED folgt dem Regler",
+      "tun": "Party › DJ, ein Deck spielen lassen und den MASTER-Regler langsam herunter- und wieder hochziehen; danach Pause.",
+      "erwartet": "Die LED-Kette unter MASTER wird mit dem Regler kleiner und größer; bei Pause fallen Master- und Deck-LEDs auf null.",
+      "version": "0.42.20"
+    },
+    {
+      "id": "party-befehle-ohne-stau",
+      "ansicht": "Party Einfach",
+      "titel": "Party: Tasten reagieren sofort",
+      "tun": "Party mit zwei Liedern (gern Video-Dateien vom Netzlaufwerk) im Wechsel, mehrmals WEITER bzw. Übergang drücken, dann aus der Bibliothek „→ Playlist“ klicken; in DJ „hart“/„weich“ umschalten.",
+      "erwartet": "Jeder Klick wirkt binnen eines Augenblicks: der Titel steht sofort in der Playlist, hart/weich leuchtet sofort um, WOA zeigt nie „Keine Rückmeldung“.",
+      "version": "0.42.20"
+    },
+    {
+      "id": "analyse-fehlgeschlagen-grund",
+      "ansicht": "Party DJ",
+      "titel": "DJ: Grund bei „Analyse fehlgeschlagen“",
+      "tun": "Einen Titel ohne erkanntes Tempo laden, auf den gelben Hinweis „Analyse fehlgeschlagen“ klicken; mit der Maus über das gesperrte SYNC fahren.",
+      "erwartet": "Ein Fenster nennt den Grund, was trotzdem geht, und bietet „Neu analysieren“; SYNC erklärt, dass es ein Tempo braucht.",
+      "version": "0.42.20"
+    },
+    {
       "id": "tempo-dichter-mix",
       "ansicht": "Party DJ",
       "titel": "DJ: Tempo bei vollem Mix",

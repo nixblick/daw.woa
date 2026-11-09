@@ -470,3 +470,70 @@ fn transition_fades_to_the_other_deck_and_reloads_the_old_one() {
     run(&mut c, &mut m, 1.5);
     assert!(playing(&c, 0) && playing(&c, 1), "Hand schlägt Automatik");
 }
+
+/// #569: Die LED-Ketten folgen dem Ton. Die Spitzen gelten je Schnappschuss (vorher stiegen sie
+/// nur und blieben stehen), und die Master-Kette zeigt den Master nach dem Master-Regler.
+#[test]
+fn levels_follow_the_sound_and_the_master_control() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = dj_party(tmp.path());
+    c.dj(DjCommand::Play { side: 0 }).unwrap();
+    run(&mut c, &mut m, 0.5);
+    let _ = c.dj_view();
+    run(&mut c, &mut m, 0.05);
+    let loud = c.dj_view().unwrap();
+    assert!(
+        loud.decks[0].level > 0.1,
+        "Deck A spielt: {}",
+        loud.decks[0].level
+    );
+    assert!(loud.master_level > 0.1, "Master: {}", loud.master_level);
+    c.dj(DjCommand::Master { value: 0.25 }).unwrap();
+    run(&mut c, &mut m, 0.5);
+    let _ = c.dj_view();
+    run(&mut c, &mut m, 0.05);
+    let quiet = c.dj_view().unwrap();
+    assert!(
+        quiet.master_level < loud.master_level * 0.5,
+        "Master-Regler zieht die Kette mit: {} -> {}",
+        loud.master_level,
+        quiet.master_level
+    );
+    c.dj(DjCommand::Pause { side: 0 }).unwrap();
+    run(&mut c, &mut m, 0.5);
+    let _ = c.dj_view();
+    run(&mut c, &mut m, 0.05);
+    let still = c.dj_view().unwrap();
+    assert!(
+        still.decks[0].level < 0.01,
+        "steht still: {}",
+        still.decks[0].level
+    );
+    assert!(
+        still.master_level < 0.01,
+        "Master still: {}",
+        still.master_level
+    );
+}
+
+/// #570/#572: Derselbe Titel auf dem anderen Deck wird nicht noch einmal dekodiert (das hielt
+/// im Control-Thread jeden Befehl auf). Beleg: Die Datei ist weg, das Laden gelingt trotzdem.
+#[test]
+fn loading_a_title_held_by_the_other_deck_does_not_decode_again() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut c, mut m) = dj_party(tmp.path());
+    c.dj(DjCommand::Load { side: 0, index: 2 }).unwrap();
+    run(&mut c, &mut m, 0.02);
+    assert_eq!(c.dj_view().unwrap().decks[0].index, Some(2));
+    std::fs::remove_file(tmp.path().join("t2.wav")).unwrap();
+    c.dj(DjCommand::Load { side: 1, index: 2 }).unwrap();
+    run(&mut c, &mut m, 0.02);
+    assert_eq!(c.dj_view().unwrap().decks[1].index, Some(2));
+    c.dj(DjCommand::Crossfader { value: 1.0 }).unwrap();
+    c.dj(DjCommand::Play { side: 1 }).unwrap();
+    let v = run(&mut c, &mut m, 0.3);
+    assert!(
+        v.last().unwrap().abs() > 0.05,
+        "B spielt den geteilten Puffer"
+    );
+}
