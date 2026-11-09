@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.42.22 — 2026-11-09
+
+- **rmcp 3.9.0 (RUSTSEC-2026-0462):** Die wöchentliche deny-Prüfung war rot, weil die HTTP-Clients in rmcp 3.8.0 Antworten ohne Größengrenze lesen. WOA nutzt diese Clients nicht, das Update macht die Prüfung wieder grün.
+- **Vorflug prüft Abhängigkeiten:** `scripts/vorflug.sh` ruft `cargo deny check` auf, wenn cargo-deny installiert ist.
+
 ## 0.42.21 — 2026-11-09
 
 - **Denoise-Test ohne Wandzeit-Grenze (#575):** Der Test gab dem Arbeits-Thread je Block 10 ms und scheiterte auf einem langsamen Windows-Runner. Er wartet jetzt je Block auf den Arbeits-Thread (`wait_for_worker`).
