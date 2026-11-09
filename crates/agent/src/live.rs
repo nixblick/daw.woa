@@ -346,6 +346,48 @@ impl ServerHandler for LiveAgent {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
+        // #584: jeder Aufruf mit Dauer und Ergebnis ins Log, damit ein Hänger einem
+        // Werkzeug zugeordnet werden kann. Nur Name und Schlüssel der Argumente, keine Werte.
+        let tool = request.name.to_string();
+        let args: Vec<String> = request
+            .arguments
+            .as_ref()
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default();
+        let id = format!("{:?}", context.id);
+        let ct = context.ct.clone();
+        tracing::info!(tool = %tool, id = %id, args = %args.join(","), "mcp call");
+        let start = std::time::Instant::now();
+        let r = self.call_tool_logged(request, context).await;
+        let ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let ok = matches!(&r, Ok(resp) if !is_error(resp));
+        let cancelled = ct.is_cancelled();
+        if ms >= SLOW_CALL_MS {
+            tracing::warn!(tool = %tool, id = %id, ms, ok, cancelled, art = "mcp.slow", wert = ms, "mcp slow");
+        } else {
+            tracing::info!(tool = %tool, id = %id, ms, ok, cancelled, "mcp done");
+        }
+        if cancelled {
+            // Die Werkzeuge prüfen den Abbruch nicht; die Arbeit lief bis zum Ende.
+            tracing::info!(tool = %tool, id = %id, ms, "mcp cancelled by client, work ran to end");
+        }
+        r
+    }
+}
+
+/// Ab dieser Dauer gilt ein MCP-Aufruf als langsam (#584).
+const SLOW_CALL_MS: u64 = 1000;
+
+fn is_error(resp: &CallToolResponse) -> bool {
+    matches!(resp, CallToolResponse::Complete(r) if r.is_error == Some(true))
+}
+
+impl LiveAgent {
+    async fn call_tool_logged(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, McpError> {
         self.touch();
         if request.name == OUTPUT_LEVELS_TOOL {
             // Nur lesen: keine Leihe der Sitzung, kein Rückgängig-Schritt.
