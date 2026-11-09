@@ -226,6 +226,20 @@ impl Denoiser {
         self.underruns.load(Ordering::Relaxed)
     }
 
+    /// Wartet auf Ereignisse statt auf eine Uhrzeit, bis der Arbeits-Thread alle abgegebenen
+    /// Blöcke geliefert hat. Nur für Tests und Offline-Vergleiche; im Inline-Betrieb ohne Wirkung.
+    /// Stirbt der Arbeits-Thread, kehrt es nach einer großzügigen Schutzfrist zurück.
+    pub fn wait_for_worker(&self) {
+        let Some(Engine::Worker { from_worker, .. }) = &self.engine else {
+            return;
+        };
+        let need = self.in_flight * FRAME_SIZE * self.channels;
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        while from_worker.slots() < need && std::time::Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+    }
+
     /// Ob die Rauschunterdrückung rechnet (Rate 48 kHz und vorbereitet).
     pub fn is_active(&self) -> bool {
         self.engine.is_some()

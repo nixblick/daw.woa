@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.21 — 2026-11-09
+
+- **Denoise-Test ohne Wandzeit-Grenze (#575):** Der Test gab dem Arbeits-Thread je Block 10 ms und scheiterte auf einem langsamen Windows-Runner. Er wartet jetzt je Block auf den Arbeits-Thread (`wait_for_worker`).
+
 ## 0.42.20 — 2026-11-09
 
 - **Master-LED folgt dem Regler (#569):** Die LED-Ketten der DJ-Decks hoben ihre Spitze nur an und setzten sie nie zurück, sie blieben auf dem lautesten Wert stehen; die Master-Kette zeigte dazu nur den lauteren Deck-Pegel vor dem Master-Regler. Jeder Schnappschuss holt die Spitze jetzt ab, die Master-Kette zeigt den Master nach dem Regler. Test `levels_follow_the_sound_and_the_master_control`.

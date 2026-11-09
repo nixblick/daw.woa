@@ -367,6 +367,14 @@ impl Fx {
         }
     }
 
+    /// Wartet, bis der Arbeits-Thread der Rauschunterdrückung alle abgegebenen Blöcke geliefert
+    /// hat (für Tests; ohne Arbeits-Thread kehrt es sofort zurück).
+    pub fn wait_for_worker(&self) {
+        if let Extra::Denoise(d) = &self.extra {
+            d.wait_for_worker();
+        }
+    }
+
     /// Verzögerung des Effekts in Samples (für einen Latenzausgleich).
     pub fn latency_samples(&self) -> usize {
         match &self.extra {
@@ -541,6 +549,11 @@ impl FxNode {
     /// Blöcke, die der Arbeits-Thread der Rauschunterdrückung nicht rechtzeitig lieferte.
     pub fn underruns(&self) -> u32 {
         self.0.underruns()
+    }
+
+    /// Wartet, bis der Arbeits-Thread der Rauschunterdrückung alle Blöcke geliefert hat (Tests).
+    pub fn wait_for_worker(&self) {
+        self.0.wait_for_worker();
     }
 
     pub fn new(kind: FxKind, params: &[f64], bypass: bool) -> Self {

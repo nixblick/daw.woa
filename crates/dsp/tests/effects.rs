@@ -667,7 +667,7 @@ fn denoise_lowers_steady_noise_and_runs_identically_live_and_offline() {
     }
 
     // Live (Arbeits-Thread) gegen Export (Aufrufer-Thread): derselbe Klang, solange der
-    // Arbeits-Thread rechtzeitig fertig wird. Wir geben ihm Echtzeit.
+    // Arbeits-Thread fertig wird. Wir warten je Block auf ihn, keine Wandzeit-Grenze.
     let short = &mixed[..9600];
     let mut live = FxNode::new(FxKind::Denoise, &DENOISE, false);
     live.prepare(SR);
@@ -677,7 +677,7 @@ fn denoise_lowers_steady_noise_and_runs_identically_live_and_offline() {
             input: i,
             output: o,
         });
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        live.wait_for_worker();
     }
     assert_eq!(live.underruns(), 0, "worker thread was too slow");
     let inline = run_mono_ctx(FxKind::Denoise, &DENOISE, short, ctx);
