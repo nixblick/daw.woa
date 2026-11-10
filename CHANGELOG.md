@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.28 — 2026-11-10
+
+- **Kaltstart: Audiogerät und MIDI nach dem ersten Bild (#279, Teil 2):** `WoaApp` öffnet Wiedergabegerät und MIDI-Eingang nicht mehr im Konstruktor, sondern im zweiten Bild (`finish_start`, Logzeile `late start done` mit `t_audio_ms`). Wie viel das bringt, zeigt erst die nächste Messung (vorher `t_app_ms` 0,45 bis 0,9 s, Abnahme 10.11.); der Hauptanteil bleibt `t_wgpu_ms` (1,7 bis 3,9 s). `MidiIn::set_sink` tauscht die Senke nach dem Öffnen des Players.
+
 ## 0.42.27 — 2026-11-10
 
 - **Abnahme und Fragen: Tageslimit verliert nichts mehr** (#532): Antwortet der Server mit 429, liegt die Markierung im Ausgang (`feedback-ausstehend/`) und geht später genau einmal hinaus; die Karte zeigt „Tageslimit erreicht, wird später gesendet“, der Punkt zählt als abgenommen und steht in `abnahme-erledigt.json`. Das Entwickler-Kennwort wird beim Nachsenden neu aus dem Tresor gelesen, nie auf die Platte geschrieben.

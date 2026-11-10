@@ -252,6 +252,13 @@ impl MidiIn {
         }
     }
 
+    /// Tauscht die Senke (Wiedergabegerät erst nach dem ersten Bild geöffnet, #279); eine
+    /// offene Verbindung wird getrennt und bei `select` bzw. beim nächsten Abfragen mit der neuen Senke aufgebaut.
+    pub fn set_sink(&mut self, sink: EventSink) {
+        self.disconnect("sink replaced");
+        self.sink = sink;
+    }
+
     /// Wählt ein Gerät (`None` = aus) und verbindet sofort.
     pub fn select(&mut self, name: Option<String>) {
         if self.wanted == name {

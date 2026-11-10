@@ -2,6 +2,14 @@
   "stand": "2026-11-05",
   "punkte": [
     {
+      "id": "kaltstart-audio-nachgeholt",
+      "ansicht": "Allgemein",
+      "titel": "Kaltstart: Fenster steht vor dem Audiogerät",
+      "tun": "WOA ganz schließen, neu starten. Danach im Log (Entwickler › Protokoll) die Zeilen „woa app ready“ und „late start done“ lesen; ein MIDI-Gerät eingesteckt lassen und eine Taste spielen.",
+      "erwartet": "Das Fenster erscheint, bevor das Audiogerät geöffnet ist. „woa app ready“ trägt ein kleineres t_app_ms als bisher (0,4 bis 0,9 s), „late start done“ nennt t_audio_ms. Wiedergabe und gewähltes MIDI-Gerät funktionieren wie gewohnt.",
+      "version": "0.42.28"
+    },
+    {
       "id": "abnahme-tageslimit",
       "ansicht": "Allgemein",
       "titel": "Tageslimit: Abnahme-Markierung geht nicht verloren",

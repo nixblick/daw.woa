@@ -243,6 +243,8 @@ pub struct WoaApp {
     stop_at_end: bool,
     /// Playback engine at the default output (`None` if the device failed).
     player: Option<Player>,
+    /// Nachgeholter Start (Audiogerät, MIDI): gezählte Bilder bis `finish_start`; `None` = erledigt.
+    late_start: Option<u8>,
     /// Die eine gewählte Spur (Klick auf Spurkopf oder Kanalzug); Insert-Rack und Hervorhebung
     /// folgen ihr.
     selected_track: Option<TrackId>,
@@ -615,27 +617,13 @@ impl WoaApp {
     }
 
     fn build(config: GuiConfig, recovery_dir: PathBuf, open_audio: bool) -> Self {
-        let mut state = AppState::new(recovery_dir, Instant::now());
-        let player = if open_audio {
-            match Player::open() {
-                Ok(p) => {
-                    p.set_monitor_volume(config.monitor_volume);
-                    Some(p)
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "no playback device");
-                    state.status = Status::Error(format!("Keine Wiedergabe: {e}"));
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        let sink = player
-            .as_ref()
-            .map_or_else(woa_io::midi::event_sink, Player::midi_sink);
-        let mut midi = woa_io::midi::MidiIn::new(sink);
-        if config.midi_input.is_some() {
+        let state = AppState::new(recovery_dir, Instant::now());
+        // Audiogerät und MIDI-Anschluss öffnen erst nach dem ersten Bild (`finish_start`, #279):
+        // Gerätesuche kostet 0,3 bis 0,5 s, das Fenster soll vorher stehen. Ohne Ton (Tests)
+        // gibt es nichts nachzuholen.
+        let player: Option<Player> = None;
+        let mut midi = woa_io::midi::MidiIn::new(woa_io::midi::event_sink());
+        if !open_audio && config.midi_input.is_some() {
             midi.select(config.midi_input.clone());
         }
         let controls = ControlDesk::new(&config);
@@ -781,7 +769,47 @@ impl WoaApp {
             pfl_switch: PflSwitch::default(),
             routing_switch: PflSwitch::default(),
             frames: (0, Instant::now()),
+            late_start: if open_audio { Some(0) } else { None },
         }
+    }
+
+    /// Zählt Bilder; nach dem ersten gezeichneten Bild folgt `finish_start` (#279).
+    fn late_start_tick(&mut self, ctx: &egui::Context) {
+        let Some(n) = self.late_start else {
+            return;
+        };
+        if n == 0 {
+            self.late_start = Some(1);
+            ctx.request_repaint();
+            return;
+        }
+        self.late_start = None;
+        self.finish_start();
+    }
+
+    /// Öffnet Wiedergabegerät und MIDI-Eingang, nachdem das erste Bild steht.
+    fn finish_start(&mut self) {
+        let t = Instant::now();
+        match Player::open() {
+            Ok(p) => {
+                p.set_monitor_volume(self.config.monitor_volume);
+                self.midi.set_sink(p.midi_sink());
+                self.player = Some(p);
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "no playback device");
+                self.state.status = Status::Error(format!("Keine Wiedergabe: {e}"));
+            }
+        }
+        let t_audio_ms = t.elapsed().as_millis();
+        if self.config.midi_input.is_some() {
+            self.midi.select(self.config.midi_input.clone());
+        }
+        tracing::info!(
+            t_audio_ms,
+            t_late_ms = t.elapsed().as_millis(),
+            "late start done"
+        );
     }
 
     /// Projektzustand (für Tests und Werkzeuge).
@@ -1901,6 +1929,7 @@ impl WoaApp {
 
 impl eframe::App for WoaApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.late_start_tick(ctx);
         // #441: Esc gehört zuerst dem obersten Fenster bzw. der offenen Frage.
         crate::esc::beginn(ctx);
         if std::mem::take(&mut self.maximize_on_start) {
@@ -2705,6 +2734,32 @@ mod tests {
 
     use super::*;
     use woa_model::{AutoMode, AutoTarget};
+
+    /// #279: Das Audiogerät öffnet erst nach dem ersten Bild, nicht im Konstruktor.
+    #[test]
+    fn audio_device_opens_after_first_frame() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut app = WoaApp::build(GuiConfig::default(), tmp.path().join("rec"), true);
+        assert!(app.player.is_none(), "Konstruktor öffnet kein Gerät");
+        assert_eq!(app.late_start, Some(0));
+        let ctx = egui::Context::default();
+        app.late_start_tick(&ctx);
+        assert!(app.player.is_none(), "erstes Bild: noch nichts geöffnet");
+        app.late_start_tick(&ctx);
+        assert_eq!(app.late_start, None, "zweites Bild holt den Start nach");
+        assert!(
+            app.player.is_some() || matches!(app.state.status, Status::Error(_)),
+            "Gerät offen oder Fehler gemeldet"
+        );
+    }
+
+    /// Ohne Ton (Tests) gibt es nichts nachzuholen.
+    #[test]
+    fn without_audio_has_no_late_start() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app = WoaApp::without_audio(GuiConfig::default(), tmp.path().join("rec"));
+        assert_eq!(app.late_start, None);
+    }
 
     fn setup(mode: AutoMode) -> (AppState, TrackId, tempfile::TempDir) {
         let tmp = tempfile::tempdir().unwrap();
