@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use eframe::egui;
 use serde::Deserialize;
-use woa_telemetry::{DevKey, FeedbackError, FeedbackMeta, FeedbackType, submit_feedback};
+use woa_telemetry::{DevKey, FeedbackError, FeedbackMeta, FeedbackType};
 
 use crate::feedback::GuiConfig;
 use crate::fragen::{self, block_kopf, fenster, keine_treffer, kopf_stand, passt, suchfeld};
@@ -327,6 +327,9 @@ impl AbnahmeWindow {
         }
         for (k, u, r) in done {
             self.pending.remove(&k);
+            // 429: the answer waits in the outbox (submit_or_hold) and counts as given.
+            let gehalten = matches!(r, Err(FeedbackError::DailyLimit));
+            let r = if gehalten { Ok(None) } else { r };
             let note = match r {
                 Ok(n) => {
                     if u != Urteil::Anmerkung {
@@ -348,6 +351,9 @@ impl AbnahmeWindow {
                         Urteil::Anmerkung => "Anmerkung gesendet",
                     };
                     match n {
+                        None if gehalten => {
+                            format!("{was}, {}", crate::feedback::DAILY_LIMIT)
+                        }
                         Some(n) => format!("{was}, danke (#{n})"),
                         None => format!("{was}, danke"),
                     }
@@ -398,7 +404,11 @@ impl AbnahmeWindow {
                         let _ = tx.send(if !crate::feedback::may_send(&config.feedback_url) {
                             Err(FeedbackError::NoEndpoint)
                         } else {
-                            submit_feedback(&text, Vec::new(), &meta(&config, u, key))
+                            crate::feedback::submit_or_hold(
+                                &text,
+                                &meta(&config, u, key),
+                                &data_dir,
+                            )
                         });
                     });
                 match spawned {
