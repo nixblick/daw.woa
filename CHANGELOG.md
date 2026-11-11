@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.29 — 2026-11-11
+
+- **Player-Ausgabe: Puffergröße dem Treiber überlassen (#51):** Der Player forderte fest 128 Frames an. Die Logzeile `output underruns (last minute)` zeigt dafür 1 bis 27 Aussetzer je Minute, auch ohne Wiedergabe (`playing: false`); die Radio-Ausgabe mit Treiber-Puffer lag in denselben Sitzungen meist bei 0. Jetzt öffnet der Player mit `buffer_frames: None`. Grundlage sind nur Logs vom 29. bis 31.10. (0.3.3); Sitzungen mit Mitschnitt unter 0.42.x fehlen, die Minutenzeile bleibt zur Gegenprobe.
+
 ## 0.42.28 — 2026-11-10
 
 - **Kaltstart: Audiogerät und MIDI nach dem ersten Bild (#279, Teil 2):** `WoaApp` öffnet Wiedergabegerät und MIDI-Eingang nicht mehr im Konstruktor, sondern im zweiten Bild (`finish_start`, Logzeile `late start done` mit `t_audio_ms`). Wie viel das bringt, zeigt erst die nächste Messung (vorher `t_app_ms` 0,45 bis 0,9 s, Abnahme 10.11.); der Hauptanteil bleibt `t_wgpu_ms` (1,7 bis 3,9 s). `MidiIn::set_sink` tauscht die Senke nach dem Öffnen des Players.
