@@ -155,6 +155,14 @@ fn load_cached(
     }
 }
 
+/// Ausgabe-Einstellung des Players.
+fn player_output_config() -> OutputConfig {
+    OutputConfig {
+        buffer_frames: None,
+        ..OutputConfig::default()
+    }
+}
+
 impl Player {
     /// Abhörlautstärke 0..=1 (#358), nur am Lautsprecher.
     pub fn set_monitor_volume(&self, v: f32) {
@@ -163,7 +171,7 @@ impl Player {
 
     /// Öffnet den Standard-Ausgang.
     pub fn open() -> Result<Self, String> {
-        let config = OutputConfig::default();
+        let config = player_output_config();
         let rate = output_sample_rate(&config).map_err(|e| e.to_string())?;
         let (engine, processor): (Engine, AudioProcessor) = Engine::new(2048);
         let transport = engine.transport();
@@ -949,5 +957,17 @@ fn scan_plugins(
             woa_plugins::Catalog::scan_default_guarded(cfg, blocklist)
         }
         woa_plugins::Isolation::InProcess => woa_plugins::Catalog::scan_default_filtered(blocklist),
+    }
+}
+
+#[cfg(test)]
+mod buffer_tests {
+    use super::*;
+
+    /// #51: 128 Frames am Desktop-Gerät erzeugten Hunderte Aussetzer am Tag, auch im Leerlauf
+    /// (Logs 29.–30.10.); die Radio-Ausgabe mit Treiber-Puffer blieb meist bei 0.
+    #[test]
+    fn player_leaves_buffer_size_to_the_driver() {
+        assert_eq!(player_output_config().buffer_frames, None);
     }
 }
