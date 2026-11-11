@@ -7684,6 +7684,41 @@ mod design3_tests {
             "Wunschtitel bei {w:?} unter dem Fensterrand"
         );
     }
+
+    /// #496: Mit vier Gästen bleibt die Playlist im Fenster (mindestens PLAYLIST_MIN_H hoch);
+    /// die linke Spalte oben rollt statt die Playlist aus dem Fenster zu schieben.
+    #[test]
+    fn playlist_stays_with_four_guests_1920x1030() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut d = RadioDesk::headless(dir.path());
+        d.view.guests = (0..4)
+            .map(|slot| woa_guests::GuestView {
+                slot,
+                name: format!("Testgast {}", slot + 1),
+                source: "Sinus".to_string(),
+                gain_db: 0.0,
+                muted: false,
+                on_air: true,
+                self_muted: false,
+                peak: 0.0,
+                input_peak: 0.0,
+                buffered_ms: 0.0,
+                prebuffering: false,
+                underruns: 0,
+                overflows: 0,
+                monitored: false,
+                net: None,
+            })
+            .collect();
+        let size = egui::vec2(1920.0, 1030.0 - 40.0);
+        let mut h = harness(size, d);
+        h.run_steps(4);
+        let p = h.state().playlist_rect;
+        assert!(
+            p.height() >= PLAYLIST_MIN_H - 1.0 && p.bottom() <= size.y + 1.0,
+            "Playlist mit vier Gästen {p:?} im Fenster {size:?}"
+        );
+    }
 }
 
 /// #380: Einstellungen des Sendepults überleben Schließen und Neu-Öffnen.

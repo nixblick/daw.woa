@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.30 — 2026-11-11
+
+- **Radio: Test für vier Gäste (#496):** Der Befund vom 5.11. (Playlist und Browser-Gäste unter dem Fensterrand, linke Spalte rollt nicht) stammt von 0.42.0. Seit 0.42.1 rollen Sende-Deck und Gäste in einer eigenen Fläche, die Playlist behält mindestens `PLAYLIST_MIN_H`. Neu ist nur der Test `playlist_stays_with_four_guests_1920x1030` bei 1920 × 1030: ohne die Rollfläche rot (Playlist bei y = 980 bis 1122), mit ihr grün.
+
 ## 0.42.29 — 2026-11-11
 
 - **Player-Ausgabe: Puffergröße dem Treiber überlassen (#51):** Der Player forderte fest 128 Frames an. Die Logzeile `output underruns (last minute)` zeigt dafür 1 bis 27 Aussetzer je Minute, auch ohne Wiedergabe (`playing: false`); die Radio-Ausgabe mit Treiber-Puffer lag in denselben Sitzungen meist bei 0. Jetzt öffnet der Player mit `buffer_frames: None`. Grundlage sind nur Logs vom 29. bis 31.10. (0.3.3); Sitzungen mit Mitschnitt unter 0.42.x fehlen, die Minutenzeile bleibt zur Gegenprobe.
