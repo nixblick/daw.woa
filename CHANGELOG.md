@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.31 — 2026-11-13
+
+- **Notfall-Playlist füllen (#400):** Unter Radio › Sendung › Erweitert steht der Knopf „Ordner wählen …“. Er setzt den gewählten Ordner als Notfall-Playlist (`stream.emergency`); daneben stehen Ordner und Zahl der Titel, bei leerer Liste der Hinweis auf Stille. Prüfpunkt `notfall-ordner-waehlen` in `docs/abnahme.json`.
+
 ## 0.42.30 — 2026-11-11
 
 - **Radio: Test für vier Gäste (#496):** Der Befund vom 5.11. (Playlist und Browser-Gäste unter dem Fensterrand, linke Spalte rollt nicht) stammt von 0.42.0. Seit 0.42.1 rollen Sende-Deck und Gäste in einer eigenen Fläche, die Playlist behält mindestens `PLAYLIST_MIN_H`. Neu ist nur der Test `playlist_stays_with_four_guests_1920x1030` bei 1920 × 1030: ohne die Rollfläche rot (Playlist bei y = 980 bis 1122), mit ihr grün.

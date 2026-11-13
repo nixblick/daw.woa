@@ -1216,6 +1216,14 @@
       "tun": "Strg+1, Strg+2, Strg+3 drücken, auch aus der Party-DJ-Ansicht. Danach in ein Textfeld klicken und Strg+2 drücken.",
       "erwartet": "Die Ansicht wechselt zu Produzent, Radio, Party; im Protokoll steht je ein „mode“-Eintrag mit from und to. Im Textfeld wechselt nichts. Die Ziffern 1–4 ohne Strg lösen weiter die Hot Cues aus.",
       "version": "0.42.10"
+    },
+    {
+      "id": "notfall-ordner-waehlen",
+      "ansicht": "Radio",
+      "titel": "Notfall-Playlist: Ordner wählen (#400)",
+      "tun": "Radio › Sendung › Erweitert: „Ordner wählen …“ klicken, einen Ordner mit Musik wählen, Einstellungen speichern. Danach (mit leerer Notfall-Playlist, vorher) auf Sendung gehen und auf einen Hinweis „Notfall-Playlist leer“ achten.",
+      "erwartet": "Neben dem Knopf stehen Ordner und Zahl der Titel; nach dem Speichern bleibt der Ordner erhalten. Bei leerer Notfall-Playlist erscheint beim Gehen auf Sendung der Hinweis, dass bei Ausfall Stille gesendet wird.",
+      "version": "0.42.31"
     }
   ]
 }

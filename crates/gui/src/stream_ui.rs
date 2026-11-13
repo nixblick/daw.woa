@@ -2,7 +2,7 @@
 //! „Verbindung testen“. Das Kennwort kommt in den Schlüsselbund des Systems, nie in die
 //! `config.json` ([`woa_stream::kennwort`]).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use eframe::egui;
@@ -10,6 +10,7 @@ use woa_stream::kennwort::{self, Ort};
 use woa_stream::probe::{self, Ausgang, Befund};
 use woa_stream::{Kennwort, Protocol, StreamConfig};
 
+use crate::ordner::Modal;
 use crate::theme;
 
 const BITRATES: [u32; 7] = [64, 96, 128, 160, 192, 256, 320];
@@ -398,6 +399,23 @@ impl StreamUi {
             }
         });
         ui.horizontal(|ui| {
+            if ui
+                .button("Ordner wählen …")
+                .on_hover_text(
+                    "Ordner mit Titeln für die Notfall-Playlist (ersetzt die bisherige).",
+                )
+                .clicked()
+                && let Some(dir) = crate::ordner::dialog_musik().pick_folder_modal()
+            {
+                set_emergency_folder(&mut self.draft, dir);
+            }
+            ui.label(
+                egui::RichText::new(emergency_summary(&self.draft.emergency))
+                    .small()
+                    .color(theme::text_dim()),
+            );
+        });
+        ui.horizontal(|ui| {
             ui.checkbox(&mut self.admin_on, "Admin-Port").on_hover_text(
                 "Für die Hörerzahl in der Sendeanzeige. Ohne Admin-Port sendet WOA trotzdem.",
             );
@@ -415,9 +433,42 @@ impl StreamUi {
     }
 }
 
+/// Gewählter Ordner ersetzt die Notfall-Playlist (#400).
+fn set_emergency_folder(cfg: &mut StreamConfig, dir: PathBuf) {
+    cfg.emergency = vec![dir];
+}
+
+/// Zeile neben dem Knopf: Ordner und Zahl der Titel.
+fn emergency_summary(entries: &[PathBuf]) -> String {
+    let n = woa_stream::daemon::expand(entries).len();
+    match entries {
+        [] => "Notfall-Playlist leer: bei Ausfall wird Stille gesendet".to_string(),
+        [one] => format!("{} · {n} Titel", one.display()),
+        many => format!("{} Einträge · {n} Titel", many.len()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn emergency_folder_replaces_the_list_and_counts_titles() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("a.wav"), b"x").unwrap();
+        std::fs::write(tmp.path().join("b.mp3"), b"x").unwrap();
+        std::fs::write(tmp.path().join("notiz.txt"), b"x").unwrap();
+        let mut cfg = StreamConfig {
+            emergency: vec![PathBuf::from("/alt.wav")],
+            ..StreamConfig::default()
+        };
+        set_emergency_folder(&mut cfg, tmp.path().to_path_buf());
+        assert_eq!(cfg.emergency, vec![tmp.path().to_path_buf()]);
+        let line = emergency_summary(&cfg.emergency);
+        assert!(line.contains("2 Titel"), "{line}");
+        assert!(line.contains(&tmp.path().display().to_string()), "{line}");
+        assert!(emergency_summary(&[]).contains("leer"));
+    }
 
     #[test]
     fn window_draws_for_every_server_type_without_a_display() {
