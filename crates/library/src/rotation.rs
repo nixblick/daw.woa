@@ -777,8 +777,8 @@ mod tests {
         s.auto_dst = false;
         s.seed = seed;
         s.clocks[0].slots[0].fallback = "neu".into();
-        for h in 0..WEEK_HOURS {
-            s.week[h] = "Standard".into();
+        for hour in s.week.iter_mut().take(WEEK_HOURS) {
+            *hour = "Standard".into();
         }
         s.sanitize().unwrap();
         s
