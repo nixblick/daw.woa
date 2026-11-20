@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.32 — 2026-11-20
+
+- **CI wieder grün:** Das neuere clippy der CI (1.100) meldete viermal `needless_range_loop` (Party-DJ: Wellenbahnen, Hot Cues, Laden in Deck A/B; Test im Uhren-Editor). Die Schleifen laufen jetzt über Iteratoren, das Verhalten bleibt gleich (Decks 2, Hot Cues 4).
+
 ## 0.42.31 — 2026-11-13
 
 - **Notfall-Playlist füllen (#400):** Unter Radio › Sendung › Erweitert steht der Knopf „Ordner wählen …“. Er setzt den gewählten Ordner als Notfall-Playlist (`stream.emergency`); daneben stehen Ordner und Zahl der Titel, bei leerer Liste der Hinweis auf Stille. Prüfpunkt `notfall-ordner-waehlen` in `docs/abnahme.json`.

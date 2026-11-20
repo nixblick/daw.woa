@@ -906,8 +906,8 @@ mod tests {
         e.schedule.track_lockout_min = 0;
         e.schedule.artist_lockout_min = 0;
         e.schedule.clocks[0].slots = vec![Slot::new("hit"), Slot::new("neu"), Slot::new("jingle")];
-        for h in 0..WEEK_HOURS {
-            e.schedule.week[h] = "Standard".into();
+        for hour in e.schedule.week.iter_mut().take(WEEK_HOURS) {
+            *hour = "Standard".into();
         }
         e.set_autodj(true);
         // Von Hand gesetzt, nicht in der Bibliothek: bleibt, zählt als belegte Zeit.

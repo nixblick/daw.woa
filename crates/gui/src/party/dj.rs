@@ -638,13 +638,13 @@ impl PartyView {
         );
         let phase_h = 18.0;
         let lane_h = (rect.height() - phase_h) / 2.0;
-        for k in 0..2 {
+        for (k, deck) in dj.decks.iter().enumerate() {
             let top = rect.top() + if k == 0 { 0.0 } else { lane_h + phase_h };
             let lane = Rect::from_min_size(
                 egui::pos2(rect.left(), top),
                 egui::vec2(rect.width(), lane_h),
             );
-            self.wave_lane(&p, lane, &dj.decks[k], k, window);
+            self.wave_lane(&p, lane, deck, k, window);
         }
         // Phase.
         let mid_y = rect.top() + lane_h + phase_h / 2.0;
@@ -1106,8 +1106,8 @@ impl PartyView {
         // Hot Cues.
         ui.horizontal(|ui| {
             let pw = (w - 3.0 * 8.0) / 4.0;
-            for slot in 0..4 {
-                let set = d.hot[slot].is_some();
+            for (slot, hot) in d.hot.iter().enumerate() {
+                let set = hot.is_some();
                 let label = format!("{}", slot + 1);
                 let r = crate::widgets::Key::new(&label, egui::vec2(pw, key_h * 0.8))
                     .font(theme::label_font(15.0))
@@ -1358,9 +1358,9 @@ impl PartyView {
                         x += cols[2];
                         txt(p, x, cols[3], e.seconds.map_or_else(|| "–".into(), mmss), theme::text());
                         x += cols[3];
-                        for side in 0..2 {
+                        for (side, deck) in dj.decks.iter().enumerate() {
                             let r = Rect::from_min_size(egui::pos2(x + 8.0 + side as f32 * 40.0, rect.top() + 2.0), egui::vec2(34.0, row_h - 4.0));
-                            let busy = dj.decks[side].playing;
+                            let busy = deck.playing;
                             let resp = ui.interact(r, egui::Id::new(("dj-load", i, side)), if busy { Sense::hover() } else { Sense::click() });
                             let c = if busy { theme::text_dim() } else { deck_color(side) };
                             let p = ui.painter();
