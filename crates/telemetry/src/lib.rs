@@ -32,8 +32,8 @@ pub use journal::{
     Entry, FaultCounter, Journal, JournalLayer, LOCAL_TARGET, Stufe, journal, take_decoder_faults,
 };
 pub use upload::{
-    DEFAULT_INGEST_URL, Event, LOG_BURST, LOG_WINDOW, Level, UploadConfig, UploadLayer, Uploader,
-    new_install_id,
+    DEFAULT_INGEST_URL, Event, LOG_BURST, LOG_WINDOW, Level, SendResult, UploadConfig, UploadLayer,
+    UploadStatus, Uploader, new_install_id,
 };
 pub use watch::{FrameWatch, METRIC_TARGET, PauseGuard, metric, pause};
 
@@ -70,6 +70,16 @@ impl Telemetry {
 /// Schalter der Upload-Senke aus [`init`], damit die Einstellung ohne Neustart wirkt.
 static UPLOAD_SWITCH: std::sync::OnceLock<std::sync::Arc<std::sync::atomic::AtomicBool>> =
     std::sync::OnceLock::new();
+
+static UPLOAD_STATUS: std::sync::OnceLock<std::sync::Arc<std::sync::Mutex<UploadStatus>>> =
+    std::sync::OnceLock::new();
+
+/// Stand des letzten Sendeversuchs der laufenden Senke; `None` ohne Senke.
+pub fn upload_status() -> Option<UploadStatus> {
+    UPLOAD_STATUS
+        .get()
+        .map(|s| *s.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
+}
 
 /// Telemetrie-Upload sofort an- oder ausschalten. `false`, wenn keine Senke läuft (kein
 /// `init` oder keine URL); dann greift die Einstellung erst beim nächsten Start.
@@ -111,6 +121,7 @@ pub fn init(log_dir: &Path, upload: Option<UploadConfig>) -> Result<Telemetry, I
     if let Some(u) = &uploader {
         // Nur der erste init zählt (es gibt ohnehin nur einen globalen Subscriber).
         let _ = UPLOAD_SWITCH.set(u.switch());
+        let _ = UPLOAD_STATUS.set(u.status_handle());
     }
     let upload_layer = uploader
         .as_ref()

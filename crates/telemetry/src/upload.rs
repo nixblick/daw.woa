@@ -212,6 +212,7 @@ pub struct Uploader {
     handle: Option<JoinHandle<()>>,
     /// Schalter des Nutzers; Layer und Worker lesen ihn bei jedem Ereignis bzw. Senden.
     on: Arc<AtomicBool>,
+    status: Arc<Mutex<UploadStatus>>,
 }
 
 impl Uploader {
@@ -233,14 +234,17 @@ impl Uploader {
         let on = Arc::new(AtomicBool::new(cfg.enabled));
         let (tx, rx) = mpsc::sync_channel(cfg.queue_capacity.max(1));
         let worker_on = Arc::clone(&on);
+        let status = Arc::new(Mutex::new(UploadStatus::default()));
+        let worker_status = Arc::clone(&status);
         let handle = std::thread::Builder::new()
             .name("woa-telemetry-upload".into())
-            .spawn(move || worker(cfg, rx, worker_on));
+            .spawn(move || worker(cfg, rx, worker_on, worker_status));
         match handle {
             Ok(h) => Some(Self {
                 tx: Some(tx),
                 handle: Some(h),
                 on,
+                status,
             }),
             Err(e) => {
                 eprintln!("woa-telemetry: upload thread not started: {e}");
@@ -266,6 +270,15 @@ impl Uploader {
     /// Der Schalter selbst, für [`crate::set_upload_enabled`].
     pub(crate) fn switch(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.on)
+    }
+
+    /// Stand des letzten Sendeversuchs.
+    pub fn status(&self) -> UploadStatus {
+        *lock_status(&self.status)
+    }
+
+    pub(crate) fn status_handle(&self) -> Arc<Mutex<UploadStatus>> {
+        Arc::clone(&self.status)
     }
 
     /// Steht der Schalter auf an?
@@ -326,7 +339,12 @@ impl Drop for Uploader {
     }
 }
 
-fn worker(cfg: UploadConfig, rx: Receiver<Msg>, on: Arc<AtomicBool>) {
+fn worker(
+    cfg: UploadConfig,
+    rx: Receiver<Msg>,
+    on: Arc<AtomicBool>,
+    status: Arc<Mutex<UploadStatus>>,
+) {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(cfg.timeout))
         .http_status_as_error(false)
@@ -347,22 +365,22 @@ fn worker(cfg: UploadConfig, rx: Receiver<Msg>, on: Arc<AtomicBool>) {
                 }
                 push_bounded(&mut buf, e, cfg.max_buffer);
                 if wants_batch_send(buf.len(), cfg.batch_size, failed) {
-                    failed = !send_if_on(&agent, &cfg, &mut buf, &on);
+                    failed = !send_if_on(&agent, &cfg, &mut buf, &on, &status);
                     last = Instant::now();
                 }
             }
             Ok(Msg::Flush(reply)) => {
-                let ok = send_if_on(&agent, &cfg, &mut buf, &on);
+                let ok = send_if_on(&agent, &cfg, &mut buf, &on, &status);
                 failed = !ok;
                 last = Instant::now();
                 let _ = reply.send(ok);
             }
             Err(RecvTimeoutError::Timeout) => {
-                failed = !send_if_on(&agent, &cfg, &mut buf, &on);
+                failed = !send_if_on(&agent, &cfg, &mut buf, &on, &status);
                 last = Instant::now();
             }
             Ok(Msg::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
-                send_if_on(&agent, &cfg, &mut buf, &on);
+                send_if_on(&agent, &cfg, &mut buf, &on, &status);
                 return;
             }
         }
@@ -376,12 +394,13 @@ fn send_if_on(
     cfg: &UploadConfig,
     buf: &mut VecDeque<Event>,
     on: &AtomicBool,
+    status: &Mutex<UploadStatus>,
 ) -> bool {
     if !on.load(Ordering::Relaxed) {
         buf.clear();
         return true;
     }
-    send_batch(agent, cfg, buf)
+    send_batch(agent, cfg, buf, status)
 }
 
 /// Hängt an und verwirft bei vollem Puffer das älteste Ereignis (O(1)).
@@ -398,7 +417,12 @@ fn wants_batch_send(len: usize, batch_size: usize, failed: bool) -> bool {
 }
 
 /// Sendet den Puffer; leert ihn nur bei 2xx. Liefert `true` bei Erfolg oder leerem Puffer.
-fn send_batch(agent: &ureq::Agent, cfg: &UploadConfig, buf: &mut VecDeque<Event>) -> bool {
+fn send_batch(
+    agent: &ureq::Agent,
+    cfg: &UploadConfig,
+    buf: &mut VecDeque<Event>,
+    status: &Mutex<UploadStatus>,
+) -> bool {
     if buf.is_empty() {
         return true;
     }
@@ -415,18 +439,115 @@ fn send_batch(agent: &ureq::Agent, cfg: &UploadConfig, buf: &mut VecDeque<Event>
             return false;
         }
     };
-    match agent
+    let result = match agent
         .post(&cfg.url)
         .header("Content-Type", "application/json")
         .send(body)
     {
-        Ok(resp) if resp.status().is_success() => {
-            buf.clear();
-            true
-        }
-        // Kein tracing hier: das liefe in die eigene Senke zurück.
-        Ok(_) | Err(_) => false,
+        Ok(resp) if resp.status().is_success() => SendResult::Ok,
+        Ok(resp) => SendResult::Http(resp.status().as_u16()),
+        Err(ureq::Error::Timeout(_)) => SendResult::Timeout,
+        Err(_) => SendResult::Network,
+    };
+    let ok = result == SendResult::Ok;
+    if ok {
+        buf.clear();
     }
+    // Ins Log nur mit Ziel LOCAL_TARGET: der Upload-Filter lässt es draußen, sonst liefe
+    // es in die eigene Senke zurück.
+    let pending = buf.len();
+    let change = lock_status(status).record(result, pending, now_ms());
+    match change {
+        Some(true) => tracing::warn!(
+            target: crate::journal::LOCAL_TARGET,
+            pending,
+            "telemetry upload failed: {}",
+            result.label()
+        ),
+        Some(false) => tracing::info!(
+            target: crate::journal::LOCAL_TARGET,
+            "telemetry upload works again"
+        ),
+        None => {}
+    }
+    ok
+}
+
+/// Ausgang eines Sendeversuchs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendResult {
+    Ok,
+    /// Antwort ohne 2xx.
+    Http(u16),
+    Timeout,
+    /// Kein Netz, DNS, Zertifikat oder sonstiger Transportfehler.
+    Network,
+}
+
+impl SendResult {
+    /// Kurzer Text für Einstellungen und Protokoll.
+    pub fn label(self) -> String {
+        match self {
+            Self::Ok => "ok".into(),
+            Self::Http(c) => format!("Server antwortet {c}"),
+            Self::Timeout => "Zeitüberschreitung".into(),
+            Self::Network => "keine Verbindung".into(),
+        }
+    }
+}
+
+/// Stand des letzten Sendeversuchs, für Einstellungen und Feedback-Protokoll.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct UploadStatus {
+    /// Unix-Zeit des letzten Versuchs in ms; `None` = noch keiner.
+    pub last_attempt_ms: Option<u64>,
+    pub result: Option<SendResult>,
+    /// Zeilen, die noch auf das Senden warten.
+    pub pending: usize,
+    /// Beginn der aktuellen Fehlerserie; `None` = zuletzt ok.
+    pub failing_since_ms: Option<u64>,
+}
+
+impl UploadStatus {
+    /// Hält einen Versuch fest. `Some(true)` = Wechsel ok→gescheitert, `Some(false)` =
+    /// gescheitert→ok, sonst `None` (kein Dauerfeuer im Log).
+    pub fn record(&mut self, result: SendResult, pending: usize, now_ms: u64) -> Option<bool> {
+        self.last_attempt_ms = Some(now_ms);
+        self.result = Some(result);
+        self.pending = pending;
+        if result == SendResult::Ok {
+            self.failing_since_ms.take().map(|_| false)
+        } else if self.failing_since_ms.is_none() {
+            self.failing_since_ms = Some(now_ms);
+            Some(true)
+        } else {
+            None
+        }
+    }
+
+    /// Ein Satz für die Einstellungen. `fmt_time` formt die Unix-Zeit (ms) in Text.
+    pub fn summary(&self, fmt_time: impl Fn(u64) -> String) -> String {
+        let (Some(at), Some(r)) = (self.last_attempt_ms, self.result) else {
+            return "noch nichts gesendet".into();
+        };
+        match self.failing_since_ms {
+            Some(since) => format!(
+                "gescheitert seit {} ({}), {} Zeilen warten",
+                fmt_time(since),
+                r.label(),
+                self.pending
+            ),
+            None => format!(
+                "ok, zuletzt {}, {} Zeilen warten",
+                fmt_time(at),
+                self.pending
+            ),
+        }
+    }
+}
+
+fn lock_status(s: &Mutex<UploadStatus>) -> std::sync::MutexGuard<'_, UploadStatus> {
+    s.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Siehe [`Uploader::layer`].
@@ -638,6 +759,18 @@ fn source_art(prefix: &str, file: Option<&str>, line: Option<u32>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_logs_only_on_transitions() {
+        let mut s = UploadStatus::default();
+        assert_eq!(s.record(SendResult::Ok, 0, 1), None, "ok stays quiet");
+        assert_eq!(s.record(SendResult::Http(404), 5, 2), Some(true));
+        assert_eq!(s.record(SendResult::Http(404), 6, 3), None, "no repeat");
+        assert_eq!(s.failing_since_ms, Some(2));
+        assert_eq!(s.record(SendResult::Ok, 0, 4), Some(false));
+        assert_eq!(s.failing_since_ms, None);
+        assert!(s.summary(|t| t.to_string()).starts_with("ok"));
+    }
 
     #[test]
     fn push_bounded_drops_oldest() {

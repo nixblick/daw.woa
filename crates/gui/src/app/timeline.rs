@@ -1851,6 +1851,9 @@ impl WoaApp {
                 {
                     self.set_telemetry(on);
                 }
+                if on && let Some(l) = crate::feedback::upload_status_line() {
+                    ui.small(l);
+                }
             }
             S::Developer => {
                 if self.config.entwickler {

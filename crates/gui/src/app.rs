@@ -1870,11 +1870,16 @@ impl WoaApp {
 
 /// Zeilen des Protokoll-Fensters (älteste zuerst), wie „Kopieren“ sie liefert.
 fn feedback_log_lines() -> Vec<String> {
-    woa_telemetry::journal()
+    let mut lines: Vec<String> = woa_telemetry::journal()
         .snapshot()
         .iter()
         .filter_map(crate::feedback::ticket_line)
-        .collect()
+        .collect();
+    // Sendestand der Telemetrie als letzte Zeile, damit ein stilles Scheitern im Ticket steht.
+    if let Some(l) = crate::feedback::upload_status_line() {
+        lines.push(format!("Telemetrie: {l}"));
+    }
+    lines
 }
 
 impl WoaApp {

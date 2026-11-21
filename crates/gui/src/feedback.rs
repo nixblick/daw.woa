@@ -420,6 +420,21 @@ pub fn ticket_line(e: &woa_telemetry::Entry) -> Option<String> {
         .zeit
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64);
+    let mut s = format!("{} {:<7} {}", stamp(unix), e.stufe.label(), e.text);
+    if e.anzahl > 1 {
+        s.push_str(&format!(" ×{}", e.anzahl));
+    }
+    Some(s)
+}
+
+/// Telemetrie-Sendestand als Zeile fürs Ticket-Protokoll und für die Einstellungen.
+pub fn upload_status_line() -> Option<String> {
+    woa_telemetry::upload_status()
+        .map(|s| s.summary(|ms| stamp(i64::try_from(ms / 1000).unwrap_or(0))))
+}
+
+/// `JJJJ-MM-TT HH:MM:SS +HH:MM` in mitteleuropäischer Zeit.
+fn stamp(unix: i64) -> String {
     let zone = woa_engine::localtime::Zone::CENTRAL_EUROPE;
     let l = zone.local(unix);
     let off = zone.offset_min(unix);
@@ -433,21 +448,15 @@ pub fn ticket_line(e: &woa_telemetry::Entry) -> Option<String> {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + i64::from(m <= 2);
-    let mut s = format!(
-        "{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02} {}{:02}:{:02} {:<7} {}",
+    format!(
+        "{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02} {}{:02}:{:02}",
         l.hour,
         l.minute,
         l.second,
         if off < 0 { '-' } else { '+' },
         off.abs() / 60,
         off.abs() % 60,
-        e.stufe.label(),
-        e.text
-    );
-    if e.anzahl > 1 {
-        s.push_str(&format!(" ×{}", e.anzahl));
-    }
-    Some(s)
+    )
 }
 
 /// Log lines (oldest first) as text, home folder shortened, newest lines kept so that

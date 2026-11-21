@@ -130,6 +130,33 @@ fn switchable_upload_follows_the_switch_without_restart() {
     assert!(Uploader::start_switchable(upload_cfg(String::new())).is_none());
 }
 
+/// Ein 404 ist auf dem Gerät sichtbar („gescheitert seit …“), ein späteres 200 stellt es zurück.
+#[test]
+fn failed_upload_shows_in_status_and_recovers() {
+    use woa_telemetry::SendResult;
+    let m = mock(vec![(404, "{}"), (404, "{}"), (200, r#"{"accepted":1}"#)]);
+    let up = Uploader::start(upload_cfg(format!("{}/ingest", m.url))).unwrap();
+    assert_eq!(up.status().result, None, "nothing tried yet");
+    assert!(up.record(Level::Warn, "woa_engine", "xrun", 1));
+    assert!(!up.flush());
+    let s = up.status();
+    assert_eq!(s.result, Some(SendResult::Http(404)));
+    assert_eq!(s.pending, 1, "buffer is kept");
+    let since = s.failing_since_ms.expect("failing");
+    assert!(s.summary(|t| t.to_string()).starts_with("gescheitert seit"));
+
+    // Zweiter Fehlschlag: Beginn der Serie bleibt.
+    assert!(!up.flush());
+    assert_eq!(up.status().failing_since_ms, Some(since));
+
+    assert!(up.flush());
+    let s = up.status();
+    assert_eq!(s.result, Some(SendResult::Ok));
+    assert_eq!(s.failing_since_ms, None);
+    assert_eq!(s.pending, 0);
+    assert!(s.summary(|t| t.to_string()).starts_with("ok"));
+}
+
 #[test]
 fn upload_batch_matches_ingest_contract() {
     let m = mock(vec![(200, r#"{"accepted":2}"#)]);
