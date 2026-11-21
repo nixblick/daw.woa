@@ -82,7 +82,7 @@ jobs:
           if (-not (Test-Path "$env:RUNNER_TEMP/zip/sounds/GeneralUser-GS.sf2")) { throw 'ZIP: sounds/GeneralUser-GS.sf2 fehlt' }
           if (-not (Test-Path "$env:RUNNER_TEMP/zip/sounds/GeneralUser-GS-LICENSE.txt")) { throw 'ZIP: Lizenz fehlt' }
           Write-Host 'ok: ZIP enthält sounds/GeneralUser-GS.sf2 und Lizenz (MSI prüft test-upgrade.ps1 nach der Installation)'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: woa-${{ env.WOA_VERSION }}-windows-x64
           path: |

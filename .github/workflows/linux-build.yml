@@ -52,7 +52,7 @@ jobs:
           test -s squashfs-root/usr/share/woa/sounds/GeneralUser-GS-LICENSE.txt
           echo "ok: AppImage enthält share/woa/sounds/GeneralUser-GS.sf2"
           appstreamcli validate --no-net squashfs-root/usr/share/metainfo/de.wironair.woa.appdata.xml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: woa-appimage
           path: dist/WOA-*-x86_64.AppImage
@@ -102,7 +102,7 @@ jobs:
           desktop-file-validate "$d/applications/de.wironair.woa.desktop"
           appstreamcli validate --no-net "$d/metainfo/de.wironair.woa.metainfo.xml"
           flatpak build-bundle repo "woa-$version.flatpak" de.wironair.woa
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: woa-flatpak
           path: woa-*.flatpak
