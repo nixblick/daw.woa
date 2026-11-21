@@ -1834,7 +1834,10 @@ impl Mixer {
             right[i] = or;
             // Getrennte Quellen: vor dem Sendebus auf das eigene Ziel; im Hauptausgang fehlt das
             // Stück, das der Hauptausgang mit demselben Faktor geführt hätte.
-            let srcs = [(cart_l, cart_r), deck_out[0], deck_out[1], deck_out[2]];
+            // Decks geduckt wie im Hauptausgang (#596: im Pult-Modus liegen sie oft auf eigenen
+            // Pult-Kanälen; vorher kamen sie dort ungeduckt an, und im Hauptausgang blieb ein Rest).
+            let dk = |k: usize| (deck_out[k].0 * dg, deck_out[k].1 * dg);
+            let srcs = [(cart_l, cart_r), dk(0), dk(1), dk(2)];
             for (dest, (xl, xr)) in dests.iter().zip(srcs) {
                 if let Some(d) = *dest {
                     extra[d].l[i] += xl;

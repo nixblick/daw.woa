@@ -335,6 +335,7 @@ fn auto_music_alone_survives_fader_moves_at_the_pult() {
     let t = run(&mut r, 30.0, 50.0, &g, &silent, &silent);
     let n = t.blocks_with(DUCK_AUTO, 0.0, 30.0);
     eprintln!("Reglerwechsel: {n} Blöcke geduckt");
+
     assert_eq!(n, 0, "Musik allein duckt nach Reglerwechsel");
 }
 
@@ -446,4 +447,78 @@ fn auto_sensitivity_is_reported_and_voice_10_db_over_music_is_caught() {
     // Ehrliche Grenze (Vorgabe Spanne 6 dB): Die Stimme muss im Pult deutlich lauter sein als
     // die zurückkommende Musik. Leiser fängt nur der eigene Auslöser-Eingang sicher.
     assert_eq!(caught_at_10, PHRASES.len());
+}
+
+/// Decks auf eigenem Pult-Kanal (#596): Auch sie werden geduckt, und im Hauptausgang bleibt
+/// kein Rest (vorher: Deck ungeduckt auf seinem Kanal, −(1−Ducking)·Deck im Hauptausgang).
+#[test]
+fn routed_deck_is_ducked_on_its_own_pair_without_residue_in_main() {
+    use woa_engine::pairs::PairBuf;
+    use woa_radio::routing::{Router, Routes};
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("deck.wav");
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: SR,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut w = hound::WavWriter::create(&file, spec).unwrap();
+    for _ in 0..SR as usize * 6 * 2 {
+        w.write_sample(0.4f32).unwrap();
+    }
+    w.finalize().unwrap();
+    let show = RadioShow {
+        bus_processing: false,
+        mic_processing: false,
+        ..RadioShow::default()
+    };
+    let (mut c, m) = Controller::new(show, SR);
+    c.set_routes(Routes {
+        dest: [0, 0, 0, 1, 0, 0],
+    });
+    let (mut trig, rx, _s) = link(SR, SR);
+    let z = vec![0.0f32; PRE];
+    trig.push(&z, &z);
+    c.set_trigger_input(Some(rx));
+    c.set_pult_mode(true);
+    c.set_trigger(cfg(TriggerMode::Input));
+    let mut router = Router::new(m, 2, vec![(0, 0), (1, 1)], vec![]);
+    c.deck_load(1, file, woa_radio::Cues::default()).unwrap();
+    c.deck_play(1);
+    let mut pairs = vec![PairBuf::new(4096), PairBuf::new(4096)];
+    let (mut main, mut deck) = (Vec::new(), Vec::new());
+    let talk = vec![0.3f32; BLOCK];
+    let quiet = vec![0.0f32; BLOCK];
+    let mut before = 0.0f32;
+    for b in 0..(4.0 / block_s()) as usize {
+        let t = b as f32 * block_s();
+        if t < 1.0 {
+            trig.push(&quiet, &quiet);
+        } else {
+            trig.push(&talk, &talk);
+        }
+        if (0.9..1.0).contains(&t) {
+            before = deck.last().copied().unwrap_or(0.0);
+        }
+        c.pump();
+        assert_no_alloc(|| router.render(&mut pairs, BLOCK));
+        main.extend_from_slice(&pairs[0].l[..BLOCK]);
+        deck.extend_from_slice(&pairs[1].l[..BLOCK]);
+    }
+    assert_ne!(
+        c.status().duck_cause() & DUCK_TRIGGER,
+        0,
+        "Auslöser erkannt"
+    );
+    let tail = main.len() - 4800;
+    let rest = main[tail..].iter().fold(0.0f32, |a, v| a.max(v.abs()));
+    assert!(rest < 1e-4, "Deck-Rest im Hauptausgang: {rest}");
+    let d = deck[deck.len() - 1];
+    assert!(before > 0.1, "Deck spielt nicht: {before}");
+    // −12 dB Vorgabe: etwa ein Viertel.
+    assert!(
+        (d / before - 0.251).abs() < 0.02,
+        "Deck auf eigenem Kanal nicht geduckt: {before} → {d}"
+    );
 }

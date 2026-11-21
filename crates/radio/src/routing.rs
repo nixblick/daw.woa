@@ -169,7 +169,7 @@ pub struct Pult {
     /// Eingang vom Pult: Gerät und Kanalpaar (`device_id: None` = keiner gewählt).
     #[serde(skip_serializing_if = "Route::is_unset")]
     pub input: Route,
-    /// Ducking im Pult-Modus (#596). Fehlt der Eintrag (alte `config.json`): automatisch.
+    /// Ducking im Pult-Modus (#596). Fehlt der Eintrag (alte `config.json`): aus.
     #[serde(skip_serializing_if = "PultDuck::is_default")]
     pub duck: PultDuck,
 }
@@ -189,12 +189,13 @@ impl Pult {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PultTrigger {
-    /// Kein Ducking im Pult-Modus.
+    /// Kein Ducking im Pult-Modus. Vorgabe: „Automatisch“ verpasst in den Tests leise
+    /// Stimme bei lauter Musik und ist darum ein Versuch (#596).
+    #[default]
     Aus,
     /// Eigener Eingang, nur gemessen (Mikro-Kanal des Pults oder zweites Gerät).
     Eingang,
     /// Stimme im Pult-Eingang erkennen, WOAs eigene Musik herausgerechnet.
-    #[default]
     Automatisch,
 }
 
@@ -210,7 +211,7 @@ impl PultTrigger {
         match self {
             PultTrigger::Aus => "Aus",
             PultTrigger::Eingang => "Eigener Eingang (Mikro-Kanal)",
-            PultTrigger::Automatisch => "Automatisch aus dem Pult-Eingang",
+            PultTrigger::Automatisch => "Automatisch aus dem Pult-Eingang (Versuch)",
         }
     }
 }
@@ -249,7 +250,7 @@ impl PultDuck {
         *self == PultDuck::default()
     }
 
-    /// Was der Mixer braucht. `has_input`: der Auslöser-Eingang ist offen.
+    /// Was der Mixer braucht.
     pub fn cfg(&self) -> crate::duckdetect::TriggerCfg {
         use crate::duckdetect::TriggerMode;
         crate::duckdetect::TriggerCfg {
@@ -853,15 +854,16 @@ mod pult_tests {
         }
     }
 
-    /// #596: Alte `config.json` ohne Ducking-Felder lädt mit „Automatisch“ und den Vorgaben.
+    /// #596: Alte `config.json` ohne Ducking-Felder lädt mit „Aus“ und den Vorgaben
+    /// („Automatisch“ ist ein Versuch, siehe `PultTrigger`).
     #[test]
-    fn old_pult_config_loads_with_automatic_ducking() {
+    fn old_pult_config_loads_with_ducking_off() {
         let p: Pult =
             serde_json::from_str(r#"{"on":true,"input":{"device_id":"pult","pair":0}}"#).unwrap();
         assert!(p.on);
-        assert_eq!(p.duck.trigger, PultTrigger::Automatisch);
+        assert_eq!(p.duck.trigger, PultTrigger::Aus);
         assert_eq!(p.duck, PultDuck::default());
-        assert_eq!(p.duck.cfg().mode, crate::duckdetect::TriggerMode::Auto);
+        assert_eq!(p.duck.cfg().mode, crate::duckdetect::TriggerMode::Off);
         // Vorgaben werden nicht geschrieben, eigene Werte schon und kommen zurück.
         assert!(!serde_json::to_string(&p).unwrap().contains("duck"));
         let mut q = p.clone();

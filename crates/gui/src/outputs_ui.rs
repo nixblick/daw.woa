@@ -115,8 +115,9 @@ pub const DUCK_TRIGGER_HINT: &str = "Im Pult-Modus senkt WOA die Musik ab, die e
     schickt, sobald du sprichst. Am sichersten: „Eigener Eingang“, der einzelne Mikro-Kanal \
     deines Pults (bei mehrkanaligem USB, z. B. RØDECaster mit Mehrspur oder virtuellen Geräten) \
     oder ein zweites Gerät. Dieser Eingang wird nur gemessen und geht nie auf Sendung. \
-    „Automatisch“ erkennt Stimme im Pult-Eingang, obwohl dort WOAs Musik mitläuft; die Stimme \
-    muss dafür deutlich lauter sein als die Musik. Auch Telefon oder Pads am Pult lösen dann aus.";
+    „Automatisch (Versuch)“ erkennt Stimme im Pult-Eingang, obwohl dort WOAs Musik mitläuft; \
+    die Stimme muss dafür deutlich lauter sein als die Musik (in Tests 6 bis 10 dB), leisere \
+    Moderation geht durch. Auch Telefon oder Pads am Pult lösen dann aus.";
 
 #[derive(Default)]
 pub struct OutputsUi {
@@ -558,8 +559,10 @@ impl OutputsUi {
                 });
                 hint(
                     ui,
-                    "Wie viel lauter als die zurückkommende Musik der Pult-Eingang sein muss, \
-                     damit WOA Stimme erkennt. Kleiner: empfindlicher, aber eher Fehlalarm.",
+                    "Wie viel lauter als die lauteste zurückkommende Musik der letzten halben \
+                     Sekunde der Pult-Eingang sein muss, damit WOA Stimme erkennt. Kleiner \
+                     (3 dB): erkennt auch gleich laute Stimme, aber ruckartiges Hochziehen des \
+                     Musik-Reglers am Pult duckt dann ein paar Sekunden.",
                 );
             }
         }
