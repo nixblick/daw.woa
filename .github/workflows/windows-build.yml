@@ -22,8 +22,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo build --release -p woa -p woa-headless -p woa-streamd
       # Ein frisches Windows hat keine Visual-C++-Runtime; der Runner schon. Daher prüfen, dass
       # keine exe sie nachlädt (.cargo/config.toml linkt sie statisch).

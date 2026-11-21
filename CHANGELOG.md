@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.42.45 — 2026-11-21
+
+- **Sicherheit: Fremd-Actions im Bau auf Commit-SHA gepinnt (#608):** `rust-toolchain`, `rust-cache` und `install-action` hingen nur an einem Tag; ein umgehängter Tag hätte das MSI vor der Signatur verändern können. Jetzt feste Commits (Tag als Kommentar), Dependabot hebt sie wöchentlich an.
+- **KI-Server „Netzwerk“ warnt deutlich (#608):** Der Hinweis sagt jetzt, dass die Verbindung unverschlüsselt ist und das Token mitlesbar, und empfiehlt „nur dieser Rechner“ mit SSH-Tunnel. Offen: `import_audio` auf erlaubte Ordner begrenzen.
+
 ## 0.42.44 — 2026-11-21
 
 - **Sicherheit: `https://` im Feld „Server“ wird nicht mehr still zu Klartext (#607):** Aus `https://ice.example:8443/…` machte WOA eine unverschlüsselte Verbindung, und das Quell-Kennwort ging im Klartext über das Netz. Adressen mit TLS-Schema (`https`, `ssl`, `tls`, `…+tls`) werden jetzt abgelehnt; das Fenster „Sendung“ nennt den Grund und rät zu Tunnel oder TLS-Proxy, die Einstellung bleibt unverändert. Weiter offen: echtes TLS beim Verbinden (rustls) und ein TLS-Proxy vor dem Shoutcast-Server (Server-Seite).

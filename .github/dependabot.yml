@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # Fremd-Actions sind auf Commit-SHAs gepinnt (Tag als Kommentar); Dependabot hebt sie an.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

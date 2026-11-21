@@ -290,9 +290,11 @@ impl KiUi {
         if self.draft.mcp_server.reach == Reach::Network {
             ui.label(
                 egui::RichText::new(
-                    "Achtung: Jeder Rechner im Netz kann sich mit dem Token verbinden. Wer das \
-                     Token hat, darf Dateien des Projekts schreiben und lesen. Nur in einem \
-                     Netz, dem du traust, und nie unverschlüsselt über das Internet.",
+                    "Achtung: Diese Verbindung ist NICHT verschlüsselt. Jeder im selben WLAN oder \
+                     Netz kann das Token mitlesen und damit Dateien des Projekts schreiben und \
+                     lesen. Sicherer: „nur dieser Rechner“ wählen und von außen einen \
+                     SSH-Tunnel nutzen (ssh -L Port:127.0.0.1:Port). Netzwerk nur in einem Netz, \
+                     dem du traust, und nie über das Internet.",
                 )
                 .small()
                 .color(theme::warn()),
