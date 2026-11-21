@@ -2,6 +2,9 @@
 
 ## 0.42.39 — 2026-11-21
 
+- **Pult-Eingang kommt nach einem Ausfall von selbst zurück (#605):** Fiel das USB-Pult länger als eine knappe Minute aus, gab WOA bisher auf: Stream und Mitschnitt blieben still, bis man den Pult-Modus aus- und wieder einschaltete, und „Übernehmen“ ohne Änderung tat nichts. Jetzt versucht WOA es 47 Sekunden lang in kurzen Abständen und danach alle 30 Sekunden weiter, bis das Pult wieder da ist. Sofort geht es mit Einstellungen › Audio-Geräte › „Übernehmen“ (auch ohne Änderung) oder mit „Neu verbinden“. Solange der Pult-Eingang fehlt, steht unten rot „Pult-Eingang ausgefallen: Die Sendung ist still“. Dasselbe gilt für den Ducking-Auslöser und das Mikrofon.
+- **Beim Wiederöffnen wird das Kanalpaar geprüft (#605):** Kommt das Pult mit weniger Kanälen zurück (zum Beispiel noch beim Hochfahren), nahm WOA bisher still Kanal 1/2. Beim Ducking-Auslöser hieß das: Er maß die Summe samt Musik, und die Musik blieb dauernd unten. Jetzt öffnet WOA den Eingang dann nicht, sagt, welcher Kanal fehlt, und versucht es weiter; der Auslöser duckt solange nicht.
+- **Fremde Meldungen bleiben stehen:** Öffnete WOA einen Eingang wieder, löschte es dabei jede Meldung oben, auch eine ganz andere. Jetzt verschwindet nur die eigene Meldung zum Ausfall.
 - **Ducking „Automatisch“ hängt nicht mehr fest (#605):** Kam vom Pult einmal ein ungültiger Wert (NaN), duckte die automatische Erkennung danach dauerhaft oder gar nicht mehr, bis WOA neu startete. Jetzt vergisst sie in dem Moment nur den Signalverlauf und arbeitet ab dem nächsten sauberen Block normal weiter. Die Erkennung selbst bleibt ein Versuch, Vorgabe „Aus“.
 
 ## 0.42.38 — 2026-11-21

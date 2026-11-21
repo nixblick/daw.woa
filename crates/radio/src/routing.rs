@@ -179,6 +179,35 @@ impl Pult {
         *self == Pult::default()
     }
 
+    /// Prüft den Pult-Eingang gegen die vorhandenen Geräte: gewählt, vorhanden, Kanalpaar da.
+    /// Dieselbe Prüfung beim ersten Öffnen ([`Plan::build_with_pult`]) und beim Wiederöffnen
+    /// nach einem Geräteausfall (#605). Die Meldung sagt nur, was fehlt.
+    pub fn resolve_input(
+        &self,
+        probe_in: &dyn Fn(Option<&str>) -> Result<DeviceInfo, String>,
+    ) -> Result<PultIn, String> {
+        let r = &self.input;
+        let Some(id) = r.device_id.as_deref() else {
+            return Err("Pult-Modus: kein Eingang vom Pult gewählt.".into());
+        };
+        let info = probe_in(Some(id))
+            .map_err(|e| format!("Pult-Modus: Eingang {} fehlt ({e}).", r.device_label()))?;
+        let pair = usize::from(r.pair);
+        if !pair_fits(pair, info.channels) {
+            return Err(format!(
+                "Pult-Modus: {} hat keinen Eingang {}/{}.",
+                info.name,
+                2 * pair + 1,
+                2 * pair + 2
+            ));
+        }
+        Ok(PultIn {
+            open_id: id.to_string(),
+            name: info.name,
+            pair: r.pair,
+        })
+    }
+
     /// Gleich bis auf die Ducking-Einstellungen? Dann muss nichts neu geöffnet werden.
     pub fn same_routing(&self, other: &Pult) -> bool {
         self.on == other.on && self.input == other.input
@@ -556,34 +585,14 @@ impl Plan {
         if !pult.on {
             return plan;
         }
-        let r = &pult.input;
-        let Some(id) = r.device_id.as_deref() else {
-            plan.warnings.push(
-                "Pult-Modus: kein Eingang vom Pult gewählt. Die Sendung kommt weiter aus WOA."
-                    .into(),
-            );
-            return plan;
-        };
-        let info = match probe_in(Some(id)) {
-            Ok(i) => i,
+        let pult_in = match pult.resolve_input(probe_in) {
+            Ok(p) => p,
             Err(e) => {
-                plan.warnings.push(format!(
-                    "Pult-Modus: Eingang {} fehlt ({e}). Die Sendung kommt weiter aus WOA.",
-                    r.device_label()
-                ));
+                plan.warnings
+                    .push(format!("{e} Die Sendung kommt weiter aus WOA."));
                 return plan;
             }
         };
-        let pair = usize::from(r.pair);
-        if !pair_fits(pair, info.channels) {
-            plan.warnings.push(format!(
-                "Pult-Modus: {} hat keinen Eingang {}/{}. Die Sendung kommt weiter aus WOA.",
-                info.name,
-                2 * pair + 1,
-                2 * pair + 2
-            ));
-            return plan;
-        }
         for s in Source::ALL {
             if s == Source::Playlist || s == Source::PhoneReturn {
                 continue;
@@ -604,11 +613,7 @@ impl Plan {
                 ));
             }
         }
-        plan.pult = Some(PultIn {
-            open_id: id.to_string(),
-            name: info.name,
-            pair: r.pair,
-        });
+        plan.pult = Some(pult_in);
         plan
     }
 }
