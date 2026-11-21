@@ -522,3 +522,29 @@ fn routed_deck_is_ducked_on_its_own_pair_without_residue_in_main() {
         "Deck auf eigenem Kanal nicht geduckt: {before} → {d}"
     );
 }
+
+/// #605: Ein NaN im Pult-Eingang legte die automatische Erkennung fest. Nach dem nächsten
+/// sauberen Block arbeitet sie wieder: Musik allein duckt nicht, Stimme wird erkannt.
+/// Jeder Block unter `assert_no_alloc` (`run`).
+#[test]
+fn auto_recovers_from_nan_in_the_pult_input() {
+    let mut r = rig(16.0, cfg(TriggerMode::Auto), true);
+    let v = |k: usize| {
+        let t = k as f32 / SR as f32;
+        if (4.0..4.01).contains(&t) {
+            f32::NAN
+        } else {
+            voice(k, 0.15, &[(10.0, 13.0)])
+        }
+    };
+    let t = run(&mut r, 14.0, 50.0, &|_| 0.5, &v, &silent);
+    assert_eq!(
+        t.blocks_with(DUCK_AUTO, 4.5, 9.5),
+        0,
+        "Musik allein nach dem NaN"
+    );
+    assert!(
+        t.blocks_with(DUCK_AUTO, 10.0, 11.0) > 0,
+        "Stimme nach dem NaN erkannt"
+    );
+}

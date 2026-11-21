@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.39 — 2026-11-21
+
+- **Ducking „Automatisch“ hängt nicht mehr fest (#605):** Kam vom Pult einmal ein ungültiger Wert (NaN), duckte die automatische Erkennung danach dauerhaft oder gar nicht mehr, bis WOA neu startete. Jetzt vergisst sie in dem Moment nur den Signalverlauf und arbeitet ab dem nächsten sauberen Block normal weiter. Die Erkennung selbst bleibt ein Versuch, Vorgabe „Aus“.
+
 ## 0.42.38 — 2026-11-21
 
 - **CI wieder grün:** Ein ungenutzter Import in `crates/engine/src/device.rs` (Rest aus #595) ließ clippy unter Linux scheitern. Für Nutzer ändert sich nichts.
