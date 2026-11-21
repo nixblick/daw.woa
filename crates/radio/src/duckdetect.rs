@@ -165,6 +165,21 @@ impl EchoGate {
         };
     }
 
+    /// Vergisst den Signalverlauf (Hüllkurven, Laufzeitfenster, Stimme), behält die gelernte
+    /// Verstärkung. Nach einem ungültigen Abschnitt (NaN/Inf, #605). Ohne Allokation.
+    fn drop_signal(&mut self) {
+        self.env_in = 0.0;
+        self.env_ref = 0.0;
+        self.hist = [-120.0; WINDOW_HOPS];
+        self.pos = 0;
+        self.voice = false;
+        self.voice_hops = 0;
+        self.mean = 0.0;
+        self.mean_sq = 0.0;
+        self.last_in_db = -120.0;
+        self.last_expected_db = -120.0;
+    }
+
     /// Ist die Schätzung schon eingelernt?
     pub fn learned(&self) -> bool {
         self.learned >= LEARN_HOPS
@@ -194,6 +209,12 @@ impl EchoGate {
     }
 
     fn step(&mut self, p_in: f32, p_ref: f32, cfg: &TriggerCfg) {
+        // NaN/Inf (#605): einmal je Abschnitt geprüft, nicht je Sample. Hüllkurven und
+        // Historie zurück, die gelernte Verstärkung bleibt; nichts bleibt NaN hängen.
+        if !(p_in.is_finite() && p_ref.is_finite()) {
+            self.drop_signal();
+            return;
+        }
         self.env_in += (p_in - self.env_in) * self.a_env;
         self.env_ref += (p_ref - self.env_ref) * self.a_env;
         let in_db = db(self.env_in);
@@ -263,4 +284,82 @@ pub fn lin_to_db(v: f32) -> f32 {
 /// dBFS zu linear.
 pub fn db_to_lin(db: f32) -> f32 {
     10f32.powf(db / 20.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SR: u32 = 48_000;
+
+    /// Rauschen als „Musik“, Spitze 0,3.
+    struct Noise(u32);
+
+    impl Noise {
+        fn next(&mut self) -> f32 {
+            self.0 = self.0.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            0.3 * ((self.0 >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0)
+        }
+    }
+
+    fn auto() -> TriggerCfg {
+        TriggerCfg {
+            mode: TriggerMode::Auto,
+            ..TriggerCfg::default()
+        }
+    }
+
+    /// `seconds` lang; `f(k)` liefert (Eingang, Referenz). Zählt die Frames mit Stimme.
+    fn feed(g: &mut EchoGate, seconds: f32, f: &mut dyn FnMut(usize) -> (f32, f32)) -> usize {
+        let n = (seconds * SR as f32) as usize;
+        let cfg = auto();
+        (0..n)
+            .filter(|&k| {
+                let (i, r) = f(k);
+                g.tick((i, i), (r, r), &cfg)
+            })
+            .count()
+    }
+
+    /// #605: Ein NaN im Pult-Eingang machte die Hüllkurve für immer NaN: taub.
+    #[test]
+    fn nan_in_the_input_does_not_leave_the_gate_deaf() {
+        let mut g = EchoGate::new(SR);
+        feed(&mut g, 0.1, &mut |_| (f32::NAN, 0.0));
+        feed(&mut g, 0.1, &mut |_| (f32::INFINITY, 0.0));
+        assert_eq!(feed(&mut g, 0.3, &mut |_| (0.0, 0.0)), 0, "Stille");
+        assert!(g.last_in_db.is_finite(), "{}", g.last_in_db);
+        let mut s = Noise(7);
+        let voiced = feed(&mut g, 0.3, &mut |_| (s.next(), 0.0));
+        assert!(voiced > 0, "Stimme ohne Musik wird wieder erkannt");
+    }
+
+    /// #605: Ein NaN in der Referenz ließ `loud_ref` für immer falsch: Musik allein galt
+    /// als Stimme (Dauer-Ducking).
+    #[test]
+    fn nan_in_the_reference_does_not_duck_for_ever() {
+        let mut g = EchoGate::new(SR);
+        let mut m = Noise(3);
+        let mut music = move |_| {
+            let r = m.next();
+            (0.5 * r, r)
+        };
+        // Einlernen mit Musik, die halb so laut zurückkommt.
+        feed(&mut g, 3.0, &mut music);
+        assert!(g.learned());
+        assert_eq!(feed(&mut g, 1.0, &mut music), 0, "Musik allein vorher");
+        feed(&mut g, 0.01, &mut |_| (0.0, f32::NAN));
+        feed(&mut g, 0.01, &mut |_| (0.0, f32::NEG_INFINITY));
+        assert_eq!(feed(&mut g, 3.0, &mut music), 0, "Musik allein danach");
+        assert!(g.last_expected_db.is_finite(), "{}", g.last_expected_db);
+        assert!(g.gain_db().is_finite());
+        // Stimme deutlich über der Musik wird weiter erkannt.
+        let mut v = Noise(11);
+        let mut m2 = Noise(5);
+        let voiced = feed(&mut g, 1.0, &mut |_| {
+            let r = 0.1 * m2.next();
+            (0.5 * r + 3.0 * v.next(), r)
+        });
+        assert!(voiced > 0, "Stimme nach dem NaN");
+    }
 }

@@ -1088,6 +1088,10 @@ impl WoaApp {
             return;
         };
         let before = self.audio_choice();
+        // Übernehmen öffnet ausgefallene Eingänge sofort neu, auch ohne Änderung (#605).
+        if let Some(r) = self.radio.as_mut() {
+            r.retry_inputs();
+        }
         if choice == before {
             return;
         }
