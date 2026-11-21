@@ -123,6 +123,12 @@ impl Probeton {
         self.tap(VOICE_TRACK, pitches, velocity, now, VOICE_LEAD);
     }
 
+    /// Vorhören eines Klangs in der Klangauswahl (#577): spielt `sound` auf der Vorhör-Stimme,
+    /// der Klang der gewählten Spur bleibt unberührt.
+    pub fn preview_sound(&mut self, sound: woa_model::TrackSound, now: Instant) {
+        self.voice_tap(sound, &[pitch_for(Some(sound))], 100, now);
+    }
+
     /// Klang der Vorhör-Stimme, solange sie im Graphen gebraucht wird.
     pub fn voice(&mut self, now: Instant) -> Option<woa_model::TrackSound> {
         match self.voice {
@@ -217,6 +223,25 @@ mod tests {
         assert!(on.iter().all(|c| c.track() == VOICE_TRACK));
         assert_eq!(p.take(now + VOICE_LEAD + TAP).len(), 3, "Note aus");
         assert_eq!(p.voice(now + VOICE_LEAD + TAP + VOICE_TAIL), None);
+    }
+
+    #[test]
+    fn preview_sound_uses_voice_not_the_track() {
+        let mut p = Probeton::default();
+        let now = Instant::now();
+        let flute = woa_model::TrackSound {
+            program: 73,
+            drums: false,
+            bank: None,
+        };
+        p.preview_sound(flute, now);
+        assert_eq!(p.voice(now), Some(flute), "Vorhör-Stimme trägt den Klang");
+        let on = p.take(now + VOICE_LEAD);
+        assert_eq!(on.len(), 1);
+        assert!(
+            on.iter().all(|c| c.track() == VOICE_TRACK),
+            "kein Ton auf einer Spur"
+        );
     }
 
     #[test]

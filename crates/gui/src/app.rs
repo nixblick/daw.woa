@@ -1931,12 +1931,15 @@ impl WoaApp {
     /// App-Kennzahlen zur Telemetrie-Zusammenfassung (alle 120 s, nur Zahlen).
     fn report_metrics(&mut self) {
         use woa_telemetry::metric;
-        let p = self.state.project();
-        metric("project.tracks", p.tracks.len() as u64);
-        metric(
-            "project.clips",
-            p.tracks.iter().map(|t| t.clips.len() as u64).sum(),
-        );
+        let p = woa_model::ProjectStats::of(self.state.project());
+        metric("project.tracks", p.tracks);
+        metric("project.clips", p.clips);
+        metric("project.midi_notes", p.midi_notes);
+        metric("project.inserts", p.inserts);
+        metric("project.automation_points", p.automation_points);
+        let banks = woa_engine::soundfont::loaded_banks();
+        metric("soundfont.banks", banks.len() as u64);
+        metric("soundfont.mb", banks.iter().map(|b| b.1).sum());
         metric("project.dirty", u64::from(self.state.session().is_dirty()));
         metric("ui.zoom_pct", (self.zoom * 100.0) as u64);
         metric("player.open", u64::from(self.player.is_some()));
@@ -2148,7 +2151,7 @@ impl eframe::App for WoaApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let _frame_time = self.frame_watch.frame();
-        if self.frame_watch.summary_due() {
+        if self.frame_watch.summary_due(|| self.state.stats_line()) {
             self.report_metrics();
         }
         let ctx = ui.ctx().clone();

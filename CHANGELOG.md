@@ -1,12 +1,24 @@
 # Changelog
 
-## 0.42.39 — 2026-11-21
+## 0.42.42 — 2026-11-21
 
 - **Pult-Eingang kommt nach einem Ausfall von selbst zurück (#605):** Fiel das USB-Pult länger als eine knappe Minute aus, gab WOA bisher auf: Stream und Mitschnitt blieben still, bis man den Pult-Modus aus- und wieder einschaltete, und „Übernehmen“ ohne Änderung tat nichts. Jetzt versucht WOA es 47 Sekunden lang in kurzen Abständen und danach alle 30 Sekunden weiter, bis das Pult wieder da ist. Sofort geht es mit Einstellungen › Audio-Geräte › „Übernehmen“ (auch ohne Änderung) oder mit „Neu verbinden“. Solange der Pult-Eingang fehlt, steht unten rot „Pult-Eingang ausgefallen: Die Sendung ist still“. Dasselbe gilt für den Ducking-Auslöser und das Mikrofon.
 - **Beim Wiederöffnen wird das Kanalpaar geprüft (#605):** Kommt das Pult mit weniger Kanälen zurück (zum Beispiel noch beim Hochfahren), nahm WOA bisher still Kanal 1/2. Beim Ducking-Auslöser hieß das: Er maß die Summe samt Musik, und die Musik blieb dauernd unten. Jetzt öffnet WOA den Eingang dann nicht, sagt, welcher Kanal fehlt, und versucht es weiter; der Auslöser duckt solange nicht.
 - **Fremde Meldungen bleiben stehen:** Öffnete WOA einen Eingang wieder, löschte es dabei jede Meldung oben, auch eine ganz andere. Jetzt verschwindet nur die eigene Meldung zum Ausfall.
 - **Ducking „Automatisch“ hängt nicht mehr fest (#605):** Kam vom Pult einmal ein ungültiger Wert (NaN), duckte die automatische Erkennung danach dauerhaft oder gar nicht mehr, bis WOA neu startete. Jetzt vergisst sie in dem Moment nur den Signalverlauf und arbeitet ab dem nächsten sauberen Block normal weiter. Die Erkennung selbst bleibt ein Versuch, Vorgabe „Aus“.
-- **Abnahme:** Prüfpunkt `mikro-geraet-weg` neu (Version 0.42.39), neuer Punkt `pult-eingang-weg`. Tests: `crates/gui/src/input_watch.rs`, `radio.rs` (Modul `input_watch_605`, mit Geräte-Attrappen, ohne Ton; prüft auch die rote Zeile „Pult-Eingang ausgefallen“), `crates/radio/src/duckdetect.rs`, `crates/radio/tests/pult_duck.rs` (`auto_recovers_from_nan_in_the_pult_input`, unter `assert_no_alloc`).
+- **Abnahme:** Prüfpunkt `mikro-geraet-weg` neu (Version 0.42.42), neuer Punkt `pult-eingang-weg`. Tests: `crates/gui/src/input_watch.rs`, `radio.rs` (Modul `input_watch_605`, mit Geräte-Attrappen, ohne Ton; prüft auch die rote Zeile „Pult-Eingang ausgefallen“), `crates/radio/src/duckdetect.rs`, `crates/radio/tests/pult_duck.rs` (`auto_recovers_from_nan_in_the_pult_input`, unter `assert_no_alloc`).
+
+## 0.42.41 — 2026-11-21
+
+- **Vorhören in der Klangauswahl spielt den richtigen Klang (#577):** Der Play-Knopf neben Trompete, Flöte usw. spielte bisher den Klang, den die Spur gerade hatte, nicht den daneben stehenden. Er nutzt jetzt die Vorhör-Stimme mit dem gewählten Klang; der Klang der Spur bleibt unverändert.
+
+## 0.42.40 — 2026-11-21
+
+- **Log: Speicher, Threads und Projektgröße im `ui summary` (#585):** Unter Windows standen `rss_mb` und `threads` bisher auf `None`. Jetzt liest WOA dort das Working Set (`K32GetProcessMemoryInfo`) und zählt die eigenen Threads über einen Toolhelp-Schnappschuss (`CreateToolhelp32Snapshot`, `Thread32First/Next`); keine neue Abhängigkeit, Aufrufe in kernel32 wie in `power.rs`. Dieselbe Zeile `ui summary` trägt jetzt die Projektgröße (`project=tracks=… clips=… midi_notes=… inserts=… plugins=… automation_points=… banks=default:30MB,…`); die SoundFont-Bänke zählen mit dem Speicher ihrer Samples. Beim Öffnen und Speichern steht einmal `INFO project stats` mit denselben Zahlen im Log. Neue Kennzahlen im Upload: `project.midi_notes`, `project.inserts`, `project.automation_points`, `soundfont.banks`, `soundfont.mb`. Tests: `counts_tracks_clips_notes_inserts_and_points`, unter Windows `windows_reports_memory_and_threads`.
+
+## 0.42.39 — 2026-11-21
+
+- **Kein Wiederverbinden im Kreis mehr zum Stream-Prozess (#484):** Brach woa-streamd jede neue Verbindung sofort wieder ab, verband WOA alle 20 ms neu (im Log über 600× „streamd link lost“ / „restored“). Die Wartezeit (1 s, verdoppelt bis 10 s) wird jetzt erst zurückgesetzt, wenn die Verbindung 5 s gehalten hat. Warum woa-streamd abbrach, ist weiter offen.
 
 ## 0.42.38 — 2026-11-21
 
