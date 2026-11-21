@@ -6,7 +6,7 @@
 //! [`TransportHandle`], bevor er den Fehler an `on_error` weitergibt.
 
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
