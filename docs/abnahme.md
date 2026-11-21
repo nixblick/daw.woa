@@ -324,7 +324,7 @@ Selbst geprüft von Claude: Layout-Test im egui-Harness (16 Pads im Fenster bei 
 6. 30 min Stream ohne Aussetzer.
 7. Schalter aus, Übernehmen: alles wie vorher.
 
-### Ducking im Pult-Modus (0.42.34, #596/#594)
+### Ducking im Pult-Modus (0.42.35, #596/#594)
 
 Im Pult-Modus ist die Sendung der Pult-Eingang; er trägt immer auch die Musik, die WOA ans Pult schickt. Eine Pegelschwelle am Pult-Eingang würde sich deshalb selbst auslösen. Zwei Wege, gewählt unter Audio-Geräte › Pult › „Ducking-Auslöser“:
 

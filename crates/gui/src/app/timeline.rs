@@ -1186,7 +1186,13 @@ impl WoaApp {
         if files.is_empty() {
             return;
         }
-        self.place_audio(&files, ctx.pointer_latest_pos());
+        let pos = crate::os_drop::drop_position(ctx);
+        tracing::info!(
+            files = files.len(),
+            position_known = pos.is_some(),
+            "files dropped on the timeline"
+        );
+        self.place_audio(&files, pos);
     }
 
     /// Das Bibliotheks-Fenster zeichnen und seine Wünsche ausführen: Vorhören im Kopfhörer
@@ -1331,7 +1337,14 @@ impl WoaApp {
             r.preview_stop();
         }
         if let Some((path, pos)) = out.drop {
-            if self.config.mode.uses_desk() {
+            if out.drop_over_window {
+                // Über dem Bibliotheksfenster: nur ein Pad oder Deck darunter nimmt an (#593).
+                if self.config.mode.uses_desk()
+                    && let Some(r) = self.radio.as_mut()
+                {
+                    r.drop_on_pad(&path, pos);
+                }
+            } else if self.config.mode.uses_desk() {
                 let done = self
                     .radio
                     .as_mut()

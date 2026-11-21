@@ -35,6 +35,7 @@ pub mod library;
 pub mod manage;
 pub mod mcp_live;
 pub mod ordner;
+mod os_drop;
 mod outputs;
 mod outputs_ui;
 pub mod party;
