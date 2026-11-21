@@ -247,7 +247,7 @@ mod win {
         // SAFETY: Pseudo-Handle des eigenen Prozesses (kein Schließen nötig); die Struktur
         // lebt bis zum Ende des Aufrufs, hat das SDK-Layout und `cb` nennt ihre Größe.
         let ok = unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &raw mut pmc, size) };
-        (ok != 0).then(|| pmc.working_set_size as u64 / (1024 * 1024))
+        (ok != 0).then_some(pmc.working_set_size as u64 / (1024 * 1024))
     }
 
     /// Anzahl Threads des Prozesses aus einem Toolhelp-Schnappschuss aller Threads.
