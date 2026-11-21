@@ -423,7 +423,11 @@ mod tests {
     fn windows_reports_memory_and_threads() {
         assert!(rss_mb().is_some_and(|mb| mb > 0), "rss {:?}", rss_mb());
         let _other = std::thread::spawn(|| std::thread::sleep(Duration::from_millis(200)));
-        assert!(thread_count().is_some_and(|n| n >= 2), "threads {:?}", thread_count());
+        assert!(
+            thread_count().is_some_and(|n| n >= 2),
+            "threads {:?}",
+            thread_count()
+        );
     }
 
     #[test]
