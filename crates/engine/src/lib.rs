@@ -23,6 +23,7 @@ pub mod cover;
 pub mod decode;
 #[cfg(feature = "device")]
 pub mod device;
+pub mod latency;
 
 /// Puffergröße für den Sendebetrieb: 0 = Vorgabe des Treibers. Im Radio zählt Stabilität,
 /// nicht Latenz. Kurze Proben am Desktop (PipeWire, #51) mit `radio-play`: 128 Frames

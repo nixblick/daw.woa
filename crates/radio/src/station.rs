@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::audio::{Measured, measure_file};
 use crate::control::Controller;
@@ -20,7 +20,8 @@ const TICK: Duration = Duration::from_millis(10);
 type Job = Box<dyn FnOnce(&mut Controller) + Send>;
 
 enum Msg {
-    Job(Job),
+    /// Befehl samt Zeitpunkt des Absendens (Wartezeit fürs Log, #595).
+    Job(Job, Instant),
     Measured(PathBuf, Result<Measured, String>),
     Quit,
 }
@@ -147,6 +148,14 @@ pub struct View {
     pub phone_peak: f32,
     /// Spitze des Pult-Eingangs seit der letzten Ansicht (0..1, #301).
     pub pult_peak: f32,
+    /// Spitze des Ducking-Auslösers seit der letzten Ansicht (0..1, #596).
+    pub trigger_peak: f32,
+    /// Spitze des Mikro-Eingangs vor Kette und Regler seit der letzten Ansicht (#594).
+    pub mic_raw_peak: f32,
+    /// Absenkung der Musik gerade (linear, 1 = nicht geduckt, #594).
+    pub duck_gain: f32,
+    /// Warum gerade geduckt wird (Bits `mixer::DUCK_*`).
+    pub duck_cause: u32,
     /// Spitzen seit der letzten Ansicht (linear) für die LED-Meter: Playlist, Carts, Decks,
     /// Mikro nach ihrem Fader und der Sendemix (Master), #216.
     pub meters: [f32; 5],
@@ -232,7 +241,7 @@ impl Station {
 
     /// Führt `f` im Control-Thread aus.
     pub fn with(&self, f: impl FnOnce(&mut Controller) + Send + 'static) {
-        if self.tx.send(Msg::Job(Box::new(f))).is_err() {
+        if self.tx.send(Msg::Job(Box::new(f), Instant::now())).is_err() {
             tracing::warn!("radio control thread gone");
         }
     }
@@ -374,7 +383,10 @@ fn run(
     loop {
         loop {
             match rx.try_recv() {
-                Ok(Msg::Job(f)) => f(&mut c),
+                Ok(Msg::Job(f, sent)) => {
+                    c.note_queue_wait(sent.elapsed());
+                    f(&mut c);
+                }
                 Ok(Msg::Measured(p, r)) => {
                     measuring.fetch_sub(1, Ordering::Relaxed);
                     match r {
@@ -523,6 +535,10 @@ fn run(
             phone_on: st.phone_on.load(Ordering::Acquire),
             phone_peak: st.take_phone_peak(),
             pult_peak: st.take_pult_peak(),
+            trigger_peak: st.take_trigger_peak(),
+            mic_raw_peak: st.take_mic_raw_peak(),
+            duck_gain: st.duck_gain(),
+            duck_cause: st.duck_cause(),
             meters: {
                 let [m, c, d] = st.take_bus_peaks();
                 [m, c, d, st.take_mic_peak(), st.take_peak()]

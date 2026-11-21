@@ -72,8 +72,10 @@ impl FrameWatch {
     }
 
     /// Schickt die Zusammenfassung, wenn [`SUMMARY_EVERY`] um ist; `true` heißt, die App
-    /// soll jetzt ihre eigenen Kennzahlen dazulegen (siehe [`metric`]).
-    pub fn summary_due(&self) -> bool {
+    /// soll jetzt ihre eigenen Kennzahlen dazulegen (siehe [`metric`]). `project` liefert
+    /// die Projektgröße als kurzen Text (nur Zahlen) für dieselbe Zeile; gerufen wird es nur,
+    /// wenn die Zusammenfassung fällig ist (#585).
+    pub fn summary_due(&self, project: impl FnOnce() -> String) -> bool {
         let Ok(mut st) = self.0.stats.lock() else {
             return false;
         };
@@ -92,6 +94,7 @@ impl FrameWatch {
             uptime_s: self.0.started.elapsed().as_secs(),
             rss_mb: rss_mb(),
             threads: thread_count(),
+            project: project(),
         };
         m.emit();
         true
@@ -117,6 +120,8 @@ struct Summary {
     uptime_s: u64,
     rss_mb: Option<u64>,
     threads: Option<u64>,
+    /// Projektgröße von der App (z. B. `tracks=3 clips=12 …`), leer = keine Angabe.
+    project: String,
 }
 
 impl Summary {
@@ -130,6 +135,7 @@ impl Summary {
             uptime_s = self.uptime_s,
             rss_mb = ?self.rss_mb,
             threads = ?self.threads,
+            project = %self.project,
             "ui summary"
         );
         metric("ui.frames", self.frames);
@@ -148,6 +154,7 @@ impl Summary {
 }
 
 /// Erste Zahl hinter `key` in einem `/proc/self/status`-Text (z. B. `VmRSS:  1234 kB`).
+#[cfg(any(not(windows), test))]
 fn status_field(status: &str, key: &str) -> Option<u64> {
     status
         .lines()
@@ -157,21 +164,118 @@ fn status_field(status: &str, key: &str) -> Option<u64> {
 }
 
 /// Belegter Arbeitsspeicher in MB aus `VmRSS` (kB, unabhängig von der Seitengröße).
+#[cfg(any(not(windows), test))]
 fn rss_mb_from(status: &str) -> Option<u64> {
     status_field(status, "VmRSS:").map(|kb| kb / 1024)
 }
 
 /// Belegter Arbeitsspeicher in MB (Linux über `/proc`, sonst `None`).
+#[cfg(not(windows))]
 fn rss_mb() -> Option<u64> {
     rss_mb_from(&std::fs::read_to_string("/proc/self/status").ok()?)
 }
 
 /// Anzahl Threads des Prozesses (Linux über `/proc`, sonst `None`).
+#[cfg(not(windows))]
 fn thread_count() -> Option<u64> {
     status_field(
         &std::fs::read_to_string("/proc/self/status").ok()?,
         "Threads:",
     )
+}
+
+#[cfg(windows)]
+use win::{rss_mb, thread_count};
+
+/// Speicher und Threads unter Windows (#585), ohne neue Abhängigkeit (wie
+/// `apps/woa/src/power.rs`): Funktionen aus kernel32, Strukturen im Layout der Windows-SDK.
+#[cfg(windows)]
+mod win {
+    use std::ffi::c_void;
+
+    /// `PROCESS_MEMORY_COUNTERS` (psapi.h).
+    #[repr(C)]
+    #[derive(Default)]
+    struct MemoryCounters {
+        cb: u32,
+        page_fault_count: u32,
+        peak_working_set_size: usize,
+        working_set_size: usize,
+        quota_peak_paged_pool_usage: usize,
+        quota_paged_pool_usage: usize,
+        quota_peak_non_paged_pool_usage: usize,
+        quota_non_paged_pool_usage: usize,
+        pagefile_usage: usize,
+        peak_pagefile_usage: usize,
+    }
+
+    /// `THREADENTRY32` (tlhelp32.h).
+    #[repr(C)]
+    #[derive(Default)]
+    struct ThreadEntry {
+        size: u32,
+        usage: u32,
+        thread_id: u32,
+        owner_process_id: u32,
+        base_pri: i32,
+        delta_pri: i32,
+        flags: u32,
+    }
+
+    const TH32CS_SNAPTHREAD: u32 = 0x4;
+    /// `INVALID_HANDLE_VALUE`: -1 als Zeiger.
+    const INVALID_HANDLE: isize = -1;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentProcess() -> *mut c_void;
+        fn GetCurrentProcessId() -> u32;
+        fn K32GetProcessMemoryInfo(process: *mut c_void, pmc: *mut MemoryCounters, cb: u32) -> i32;
+        fn CreateToolhelp32Snapshot(flags: u32, pid: u32) -> *mut c_void;
+        fn Thread32First(snapshot: *mut c_void, entry: *mut ThreadEntry) -> i32;
+        fn Thread32Next(snapshot: *mut c_void, entry: *mut ThreadEntry) -> i32;
+        fn CloseHandle(handle: *mut c_void) -> i32;
+    }
+
+    /// Belegter Arbeitsspeicher in MB: Working Set des Prozesses.
+    pub(super) fn rss_mb() -> Option<u64> {
+        let size = std::mem::size_of::<MemoryCounters>() as u32;
+        let mut pmc = MemoryCounters {
+            cb: size,
+            ..MemoryCounters::default()
+        };
+        // SAFETY: Pseudo-Handle des eigenen Prozesses (kein Schließen nötig); die Struktur
+        // lebt bis zum Ende des Aufrufs, hat das SDK-Layout und `cb` nennt ihre Größe.
+        let ok = unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &raw mut pmc, size) };
+        (ok != 0).then_some(pmc.working_set_size as u64 / (1024 * 1024))
+    }
+
+    /// Anzahl Threads des Prozesses aus einem Toolhelp-Schnappschuss aller Threads.
+    pub(super) fn thread_count() -> Option<u64> {
+        // SAFETY: ohne Argumente, liefert nur die eigene Prozess-Id.
+        let pid = unsafe { GetCurrentProcessId() };
+        // SAFETY: ohne Zeiger; der Schnappschuss wird unten mit CloseHandle freigegeben.
+        let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+        if snap.is_null() || snap as isize == INVALID_HANDLE {
+            return None;
+        }
+        let mut entry = ThreadEntry {
+            size: std::mem::size_of::<ThreadEntry>() as u32,
+            ..ThreadEntry::default()
+        };
+        let mut n = 0u64;
+        // SAFETY: `snap` ist ein gültiger Schnappschuss, `entry` lebt über alle Aufrufe, hat
+        // das SDK-Layout und trägt seine Größe in `size`. Das Handle wird genau einmal geschlossen.
+        unsafe {
+            let mut more = Thread32First(snap, &raw mut entry) != 0;
+            while more {
+                n += u64::from(entry.owner_process_id == pid);
+                more = Thread32Next(snap, &raw mut entry) != 0;
+            }
+            CloseHandle(snap);
+        }
+        (n > 0).then_some(n)
+    }
 }
 
 impl Inner {
@@ -313,6 +417,19 @@ fn watchdog(busy_since: &AtomicU64, epoch: Instant) {
 mod tests {
     use super::*;
 
+    /// Windows liefert echte Zahlen statt `None` (#585).
+    #[cfg(windows)]
+    #[test]
+    fn windows_reports_memory_and_threads() {
+        assert!(rss_mb().is_some_and(|mb| mb > 0), "rss {:?}", rss_mb());
+        let _other = std::thread::spawn(|| std::thread::sleep(Duration::from_millis(200)));
+        assert!(
+            thread_count().is_some_and(|n| n >= 2),
+            "threads {:?}",
+            thread_count()
+        );
+    }
+
     #[test]
     fn rss_from_status_in_kb() {
         let st = "Name:\twoa\nVmRSS:\t  204800 kB\nThreads:\t7\n";
@@ -360,6 +477,7 @@ mod tests {
                 uptime_s: 120,
                 rss_mb: Some(80),
                 threads: Some(12),
+                project: "tracks=1 clips=2".into(),
             }
             .emit();
         });
@@ -371,7 +489,7 @@ mod tests {
     fn summary_waits_for_its_period() {
         let w = FrameWatch::new();
         drop(w.frame());
-        assert!(!w.summary_due());
+        assert!(!w.summary_due(|| unreachable!("nur wenn fällig")));
         assert_eq!(w.0.stats.lock().unwrap().0.frames, 1);
     }
 

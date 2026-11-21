@@ -6,7 +6,7 @@
 //! [`TransportHandle`], bevor er den Fehler an `on_error` weitergibt.
 
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -155,16 +155,9 @@ impl Default for OutputConfig {
     }
 }
 
+pub use crate::latency::{OUTPUT_CALLBACK_FRAMES, OUTPUT_LATENCY_US, output_latency};
+
 /// Listet alle Ausgabegeräte des Standard-Hosts.
-/// Zuletzt vom Treiber gemeldete Ausgangslatenz (Callback bis Lautsprecher) in Mikrosekunden,
-/// 0 wenn unbekannt. Für den Latenzausgleich bei Aufnahmen.
-pub static OUTPUT_LATENCY_US: AtomicU64 = AtomicU64::new(0);
-
-/// [`OUTPUT_LATENCY_US`] als Dauer.
-pub fn output_latency() -> std::time::Duration {
-    std::time::Duration::from_micros(OUTPUT_LATENCY_US.load(Ordering::Relaxed))
-}
-
 pub fn list_output_devices() -> Result<Vec<OutputDeviceInfo>, DeviceError> {
     crate::device::on_audio_thread(move || -> Result<Vec<OutputDeviceInfo>, DeviceError> {
         let host = cpal::default_host();
@@ -363,6 +356,7 @@ pub fn start_output_aux(
                 let ts = info.timestamp();
                 let d = ts.playback.duration_since(ts.callback);
                 OUTPUT_LATENCY_US.store(d.as_micros() as u64, Ordering::Relaxed);
+                OUTPUT_CALLBACK_FRAMES.store((data.len() / channels) as u64, Ordering::Relaxed);
                 for frame_chunk in data.chunks_mut(SCRATCH_FRAMES * channels) {
                     let frames = frame_chunk.len() / channels;
                     let l = &mut left[..frames];
@@ -460,6 +454,7 @@ pub fn start_pairs_output(
                     let ts = info.timestamp();
                     let d = ts.playback.duration_since(ts.callback);
                     OUTPUT_LATENCY_US.store(d.as_micros() as u64, Ordering::Relaxed);
+                    OUTPUT_CALLBACK_FRAMES.store((data.len() / channels) as u64, Ordering::Relaxed);
                 }
                 for chunk in data.chunks_mut(SCRATCH_FRAMES * channels) {
                     let frames = chunk.len() / channels;

@@ -1062,6 +1062,7 @@ impl WoaApp {
             let mut lines = r.output_warnings().to_vec();
             lines.extend(r.output_links());
             lines.extend(r.phone_lines());
+            lines.extend(r.duck_lines());
             if self.routing_switch.pending {
                 lines.push(
                     "Ausgänge: gelten ab Ende der Wiedergabe. Der Pult-Modus wurde sofort \
@@ -1076,10 +1077,14 @@ impl WoaApp {
             {
                 lines.push(note.to_string());
             }
-            (lines, r.is_on_air())
+            let levels = crate::outputs_ui::LiveLevels {
+                trigger: r.trigger_level(),
+                pult: r.pult_level(),
+            };
+            (lines, r.is_on_air(), levels)
         });
-        let (lines, on_air) = status.unwrap_or_default();
-        let Some(choice) = self.outputs_ui.show(ctx, &lines, on_air) else {
+        let (lines, on_air, levels) = status.unwrap_or_default();
+        let Some(choice) = self.outputs_ui.show(ctx, &lines, on_air, levels) else {
             return;
         };
         let before = self.audio_choice();
@@ -1087,7 +1092,9 @@ impl WoaApp {
             return;
         }
         tracing::info!(pult = choice.pult.on, "audio devices applied");
-        let routing = choice.outputs != before.outputs || choice.pult != before.pult;
+        // Nur die Ducking-Werte im Pult-Modus geändert (#596): sofort, ohne neu zu öffnen.
+        let duck_only = choice.pult.duck != before.pult.duck;
+        let routing = choice.outputs != before.outputs || !choice.pult.same_routing(&before.pult);
         let pfl = choice.pfl != before.pfl;
         self.config.outputs = choice.outputs;
         self.config.pult = choice.pult;
@@ -1120,6 +1127,12 @@ impl WoaApp {
             }
         } else if pfl && self.radio.is_some() && self.pfl_switch.choose(running) {
             self.reopen_radio_for_pfl();
+        }
+        if duck_only
+            && !routing
+            && let Some(r) = self.radio.as_mut()
+        {
+            r.set_pult_duck(&self.config.pult);
         }
         if let Some(r) = self.radio.as_mut() {
             r.set_mic_config(choice.mic);
@@ -1914,12 +1927,15 @@ impl WoaApp {
     /// App-Kennzahlen zur Telemetrie-Zusammenfassung (alle 120 s, nur Zahlen).
     fn report_metrics(&mut self) {
         use woa_telemetry::metric;
-        let p = self.state.project();
-        metric("project.tracks", p.tracks.len() as u64);
-        metric(
-            "project.clips",
-            p.tracks.iter().map(|t| t.clips.len() as u64).sum(),
-        );
+        let p = woa_model::ProjectStats::of(self.state.project());
+        metric("project.tracks", p.tracks);
+        metric("project.clips", p.clips);
+        metric("project.midi_notes", p.midi_notes);
+        metric("project.inserts", p.inserts);
+        metric("project.automation_points", p.automation_points);
+        let banks = woa_engine::soundfont::loaded_banks();
+        metric("soundfont.banks", banks.len() as u64);
+        metric("soundfont.mb", banks.iter().map(|b| b.1).sum());
         metric("project.dirty", u64::from(self.state.session().is_dirty()));
         metric("ui.zoom_pct", (self.zoom * 100.0) as u64);
         metric("player.open", u64::from(self.player.is_some()));
@@ -2131,7 +2147,7 @@ impl eframe::App for WoaApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let _frame_time = self.frame_watch.frame();
-        if self.frame_watch.summary_due() {
+        if self.frame_watch.summary_due(|| self.state.stats_line()) {
             self.report_metrics();
         }
         let ctx = ui.ctx().clone();

@@ -1,8 +1,40 @@
 # Changelog
 
-## 0.42.36 — 2026-11-21
+## 0.42.41 — 2026-11-21
 
 - **MCP: abgebrochenes `analyze` hört auf zu rendern (#584):** Bricht ein KI-Client `analyze` ab (`notifications/cancelled`), prüft das Werkzeug den Abbruch jetzt zwischen den Spuren und vor jedem Render-Block (`render_clips_until`, `render_cached_until`, `render_track_cached_until`; die bisherigen Funktionen bleiben unverändert) und endet mit dem Fehler `cancelled`. Das Log meldet dann `mcp cancelled, render stopped` statt `work ran to end`; Werkzeuge ohne Abbruchprüfung melden weiter `work ran to end`. `mcp done`/`mcp slow` tragen zusätzlich `ui_ms`: so lange war die Sitzung der App verliehen und der UI-Thread hat gewartet (bei `analyze`, `spectrogram_png` und `export` nur die Kopie). Test `cancelled_analyze_stops_the_render`.
+
+## 0.42.40 — 2026-11-21
+
+- **Log: Speicher, Threads und Projektgröße im `ui summary` (#585):** Unter Windows standen `rss_mb` und `threads` bisher auf `None`. Jetzt liest WOA dort das Working Set (`K32GetProcessMemoryInfo`) und zählt die eigenen Threads über einen Toolhelp-Schnappschuss (`CreateToolhelp32Snapshot`, `Thread32First/Next`); keine neue Abhängigkeit, Aufrufe in kernel32 wie in `power.rs`. Dieselbe Zeile `ui summary` trägt jetzt die Projektgröße (`project=tracks=… clips=… midi_notes=… inserts=… plugins=… automation_points=… banks=default:30MB,…`); die SoundFont-Bänke zählen mit dem Speicher ihrer Samples. Beim Öffnen und Speichern steht einmal `INFO project stats` mit denselben Zahlen im Log. Neue Kennzahlen im Upload: `project.midi_notes`, `project.inserts`, `project.automation_points`, `soundfont.banks`, `soundfont.mb`. Tests: `counts_tracks_clips_notes_inserts_and_points`, unter Windows `windows_reports_memory_and_threads`.
+
+## 0.42.39 — 2026-11-21
+
+- **Kein Wiederverbinden im Kreis mehr zum Stream-Prozess (#484):** Brach woa-streamd jede neue Verbindung sofort wieder ab, verband WOA alle 20 ms neu (im Log über 600× „streamd link lost“ / „restored“). Die Wartezeit (1 s, verdoppelt bis 10 s) wird jetzt erst zurückgesetzt, wenn die Verbindung 5 s gehalten hat. Warum woa-streamd abbrach, ist weiter offen.
+
+## 0.42.38 — 2026-11-21
+
+- **CI wieder grün:** Ein ungenutzter Import in `crates/engine/src/device.rs` (Rest aus #595) ließ clippy unter Linux scheitern. Für Nutzer ändert sich nichts.
+
+## 0.42.37 — 2026-11-21
+
+- **Titel, die nicht starten, sagen jetzt warum (#599):** Scheitert das Laden einer Datei, steht oben die Meldung „Name.mp3: Grund“ (nur Dateiname, nie der ganze Pfad), und das Log hat die Zeile `track decode failed` mit Endung, Größe und Fehlertext. Die Ursache für „einzelne MP3 starten nicht, VLC spielt sie“ ist noch offen: Große ID3-Bilder, mehr als 1 MiB Füllbytes, Müll hinter den Frames und zusammengehängte MP3 mit anderer Rate lesen schon (Tests). Wer so eine Datei hat: Meldung und Log-Zeile nennen den Grund, bitte an uns weitergeben.
+
+## 0.42.35 — 2026-11-21
+
+- **Ducking im Pult-Modus (#596):** Wenn du am Pult ins Mikro sprichst, senkt WOA jetzt die Musik ab, die es ans Pult schickt (Playlist und Decks; Carts nach dem Schalter „Ducking auch bei Carts“), mit denselben Werten wie beim WOA-Mikro (Tiefe, Rückkehr, Einblenden). So stellst du es ein: Einstellungen › Audio-Geräte, unten bei „Sendung kommt vom Pult“ den **Ducking-Auslöser** wählen.
+  - **Eigener Eingang (empfohlen):** der einzelne Mikro-Kanal deines Pults (zum Beispiel beim RØDECaster mit Mehrspur-USB oder den virtuellen Geräten von RØDE) oder ein zweites Gerät. Gerät und Kanalpaar wählen, „Übernehmen“, dann sprechen: Die Pegelanzeige daneben muss über die Stimm-Schwelle gehen (Vorgabe −40 dBFS). Dieser Eingang wird nur gemessen und kommt nie auf Sendung.
+  - **Automatisch (Versuch):** ohne eigenen Kanal. WOA weiß, welche Musik es ans Pult schickt, und erkennt Stimme, wenn im Pult-Eingang deutlich mehr ankommt (Spanne, Vorgabe 6 dB). In den Tests musste die Stimme dafür etwa 6 bis 10 dB lauter sein als die zurückkommende Musik; leisere Moderation über lauter Musik geht durch. Regler am Pult darfst du bewegen. Mit Spanne 3 dB wird auch gleich laute Stimme erkannt, dann duckt aber ruckartiges Hochziehen des Musik-Reglers ein paar Sekunden. Auch Telefon oder Pads am Pult lösen aus.
+  - **Aus:** kein Ducking im Pult-Modus.
+  - Ältere Einstellungen ohne diesen Eintrag starten mit „Aus“: Den Auslöser wählst du einmal selbst. Nur Schwelle oder Spanne ändern geht auch während der Sendung, ohne dass WOA die Ausgänge neu öffnet.
+- **Decks auf eigenem Kanal werden mit abgesenkt:** Liegt ein Deck auf einem eigenen Ausgang (im Pult-Modus üblich), kam es dort bisher ungeduckt an, und im Hauptausgang blieb ein umgekehrter Rest des Decks. Jetzt wird es auf seinem Kanal geduckt wie im Hauptausgang (gilt auch für das WOA-Mikro).
+- **Sichtbar, wann geduckt wird (#594, #596):** Neben MIKRO steht „DUCK“ mit dem Grund (Pult-Mikro, Stimme am Pult, Mikro, Telefon, Gast, Cart, „kommt zurück“). MIKRO im Pult-Modus sagt jetzt, welcher Auslöser die Musik absenkt.
+- **Mikro nach Geräteausfall (#594):** Fällt das USB-Mikro kurz weg, öffnet WOA es selbst wieder (wie die Ausgänge). Klappt das nicht, geht MIKRO auf zu, und oben steht eine Meldung; WOA versucht es eine Minute lang weiter. Ist MIKRO offen und kommt 10 Sekunden lang kein Signal, erscheint „Mikro offen, aber kein Signal“. Dasselbe Wiederöffnen gilt für den Pult-Eingang (sonst ist die Sendung still, die Meldung sagt das) und den Ducking-Auslöser.
+- **Abnahme:** fünf Prüfpunkte in Entwickler › Abnahme (`pult-ducking-eingang`, `pult-ducking-automatisch`, `pult-ducking-mikro-taste`, `mikro-geraet-weg`, `mikro-offen-kein-signal`), Abschnitt „Ducking im Pult-Modus“ in `docs/abnahme.md`.
+
+## 0.42.36 — 2026-11-21
+
+- **Player und Start träge (#595):** Der Start der Sende-Playlist dekodierte die ganze Datei erst beim Drücken, im Control-Thread (Telemetrie: p50 0,7 s, p90 1,2 s, max 3,6 s); nach jedem Titelwechsel dekodierte dort auch der Auto-Weiter den nächsten Titel, und Deck-Start, Carts und Stopp warteten solange. Neu: ein Hintergrund-Thread (`crates/radio/src/preload.rs`) dekodiert und misst Cue-Titel und nächsten Titel vorab, sobald sie feststehen (höchstens drei im Speicher; eine geänderte Datei wird nicht aus dem Cache genommen). `start`, `jump_to`, Auto-Weiter und Deck laden nehmen den fertigen Puffer; Auto-Weiter wartet bei mehr als 10 s Restzeit auf einen laufenden Vorab-Auftrag, statt selbst zu dekodieren. Deck: eine Datei ohne Cues übernimmt den berechneten Cue-Vorschlag, Stille am Anfang spielt nicht mehr mit. **Messzeile:** Das Log zeigt je Titelstart `start to sound` mit Wartezeit in der Warteschlange, Bereitlegen, Dekodieren, Messen, vorab oder nicht, Zeit bis der Mixer beginnt sowie echter Callback-Größe und Treiber-Latenz des Ausgabegeräts (`woa_engine::latency`). Carts waren schon vorgeladen; ihre Trägheit bleibt zu messen (Warteschlange, Klick erst beim Loslassen, Gerätelatenz). Die Wartezeit wird ab dem Absenden des Befehls gemessen (`station.rs`). Tests: `crates/radio/tests/preload.rs`.
 
 ## 0.42.34 — 2026-11-21
 

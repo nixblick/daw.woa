@@ -125,6 +125,8 @@ pub enum SettingId {
     Ducking,
     DuckTimes,
     CartDuck,
+    /// Ducking im Pult-Modus (#596): Auslöser im Fenster Audio-Geräte.
+    PultDuck,
     StopFade,
     FadeLength,
     BusProcessing,
@@ -414,6 +416,15 @@ pub const REGISTRY: &[Entry] = &[
         "Musik leiser, solange ein Cart spielt",
         "ducking cart jingle",
     ),
+    row(
+        S::PultDuck,
+        A::Radio,
+        "Ducking",
+        "Ducking im Pult-Modus",
+        "Woran WOA merkt, dass du am Pult sprichst: eigener Mikro-Kanal oder automatisch; gewählt in Audio-Geräte unter Pult",
+        "ducking pult mischpult rodecaster maonocaster auslöser mikro kanal sprechen automatisch sidechain",
+    )
+    .fields(&["pult"]),
     row(
         S::BusProcessing,
         A::Radio,
