@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.34 — 2026-11-21
+
+- **Ducking im Pult-Modus (#596):** Wenn du am Pult ins Mikro sprichst, senkt WOA jetzt die Musik ab, die es ans Pult schickt (Playlist, Decks, Carts wie bisher), mit denselben Werten wie beim WOA-Mikro (Tiefe, Rückkehr, Einblenden). Neu unter Einstellungen › Audio-Geräte › Pult: „Ducking-Auslöser“.
+
 ## 0.42.33 — 2026-11-21
 
 - **Telemetrie: gescheiterte Sendungen sichtbar (#598):** Seit dem 14.11. kam keine Telemetrie mehr an, und niemand hat es bemerkt. Die Senke hält jetzt den letzten Sendeversuch fest (Zeit, Statuscode oder Fehlerart, wartende Zeilen). In den Einstellungen steht unter dem Telemetrie-Schalter „ok, zuletzt …“ oder „gescheitert seit … (Server antwortet 404), N Zeilen warten“; dieselbe Zeile hängt der Feedback-Knopf an das Protokoll. Im lokalen Log steht höchstens eine Zeile je Wechsel (ok → gescheitert und zurück), nie im Upload. Test: 404, 404, dann 200 (`failed_upload_shows_in_status_and_recovers`).

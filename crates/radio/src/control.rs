@@ -1604,6 +1604,18 @@ impl Controller {
         self.send(Cmd::PultMode(on));
     }
 
+    /// Hängt den Eingang des Ducking-Auslösers ein oder aus (#596). Er wird nur gemessen und
+    /// geht nie auf Sendung.
+    pub fn set_trigger_input(&mut self, rx: Option<woa_engine::pairs::LinkRx>) {
+        let owned = rx.map(|c| Owned::new(&self.collector.handle(), c));
+        self.send(Cmd::TriggerInput(owned));
+    }
+
+    /// Ducking-Auslöser im Pult-Modus (#596): aus, eigener Eingang oder automatisch.
+    pub fn set_trigger(&mut self, cfg: crate::duckdetect::TriggerCfg) {
+        self.send(Cmd::Trigger(cfg));
+    }
+
     /// Telefon auf Sendung: Der Anrufer liegt auf der Sendung, die Musik wird abgesenkt.
     pub fn set_phone_on(&mut self, on: bool) {
         self.send(Cmd::PhoneOn(on));

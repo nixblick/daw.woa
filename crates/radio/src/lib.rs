@@ -23,6 +23,7 @@ pub mod cart_sets;
 pub mod control;
 pub mod cues;
 pub mod djmix;
+pub mod duckdetect;
 pub mod dynamics;
 pub mod events;
 pub mod level;

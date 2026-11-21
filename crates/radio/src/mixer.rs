@@ -36,6 +36,18 @@ const VOICE_GATE: f32 = 0.0056;
 const MIC_TAU: f32 = 0.01;
 /// Mehr Mikro-Vorlauf als das (Sekunden) wird verworfen, damit die Latenz klein bleibt.
 const MIC_BACKLOG: f32 = 0.08;
+/// Ducking-Grund: WOA-Mikro besprochen.
+pub const DUCK_MIC: u32 = 1;
+/// Ducking-Grund: Telefon auf Sendung.
+pub const DUCK_PHONE: u32 = 2;
+/// Ducking-Grund: ein Gast auf Sendung.
+pub const DUCK_GUESTS: u32 = 4;
+/// Ducking-Grund: ein Cart spielt (mit Schalter).
+pub const DUCK_CARTS: u32 = 8;
+/// Ducking-Grund: Pult-Modus, eigener Auslöser-Eingang über der Schwelle (#596).
+pub const DUCK_TRIGGER: u32 = 16;
+/// Ducking-Grund: Pult-Modus, Stimme im Pult-Eingang erkannt (automatisch, #596).
+pub const DUCK_AUTO: u32 = 32;
 /// Frames, die der Telefon-Eingang auf einmal aus seiner Taktverbindung holt.
 const PHONE_CHUNK: usize = 512;
 
@@ -154,6 +166,11 @@ pub enum Cmd {
     /// Pult-Modus (#301): Mitschnitt und Stream bekommen nur den Pult-Eingang (mit Sendebus,
     /// wenn an); die interne Mischung geht ohne Sendebus und ohne Mikro auf die Ausgänge.
     PultMode(bool),
+    /// Ducking-Auslöser im Pult-Modus (#596): eigener Eingang nur zum Messen (nie auf
+    /// Sendung), über eine Taktverbindung in Mixer-Rate; `None` = keiner.
+    TriggerInput(Option<Owned<woa_engine::pairs::LinkRx>>),
+    /// Ducking-Auslöser im Pult-Modus (#596): aus, eigener Eingang oder automatisch.
+    Trigger(crate::duckdetect::TriggerCfg),
     /// Cart abspielen (von vorn, wenn er schon läuft).
     Cart {
         slot: usize,
@@ -274,6 +291,12 @@ pub struct Status {
     pub phone_peak: AtomicU32,
     /// Spitze des Pult-Eingangs seit dem letzten Abholen (auch außerhalb des Pult-Modus).
     pub pult_peak: AtomicU32,
+    /// Spitze des Ducking-Auslösers seit dem letzten Abholen (#596).
+    pub trigger_peak: AtomicU32,
+    /// Absenkung der Musik gerade (linear, 1 = nicht geduckt; f32-Bits, #594/#596).
+    pub duck_gain: AtomicU32,
+    /// Warum gerade geduckt wird: Bits [`DUCK_MIC`], [`DUCK_PHONE`] … (#594/#596).
+    pub duck_cause: AtomicU32,
     /// Ein Voice-Track läuft (Stimme oder Absenkung davor und danach).
     pub voice: AtomicBool,
     /// Gerechnete Frames insgesamt.
@@ -339,6 +362,9 @@ impl Default for Status {
             phone_on: AtomicBool::new(false),
             phone_peak: AtomicU32::new(0),
             pult_peak: AtomicU32::new(0),
+            trigger_peak: AtomicU32::new(0),
+            duck_gain: AtomicU32::new(1.0f32.to_bits()),
+            duck_cause: AtomicU32::new(0),
             voice: AtomicBool::new(false),
             clock: AtomicU64::new(0),
             music_end: AtomicU64::new(0),
@@ -395,6 +421,21 @@ impl Status {
     /// Spitze des Pult-Eingangs seit dem letzten Aufruf.
     pub fn take_pult_peak(&self) -> f32 {
         f32::from_bits(self.pult_peak.swap(0, Ordering::Relaxed))
+    }
+
+    /// Spitze des Ducking-Auslösers seit dem letzten Aufruf (#596).
+    pub fn take_trigger_peak(&self) -> f32 {
+        f32::from_bits(self.trigger_peak.swap(0, Ordering::Relaxed))
+    }
+
+    /// Absenkung der Musik gerade (linear, 1 = nicht geduckt).
+    pub fn duck_gain(&self) -> f32 {
+        f32::from_bits(self.duck_gain.load(Ordering::Relaxed))
+    }
+
+    /// Warum gerade geduckt wird (Bits [`DUCK_MIC`] …).
+    pub fn duck_cause(&self) -> u32 {
+        self.duck_cause.load(Ordering::Relaxed)
     }
 
     /// Größte Absenkung des Sendebusses (dB) seit dem letzten Aufruf.
@@ -750,6 +791,18 @@ pub struct Mixer {
     pult_on: bool,
     pult_l: [f32; PHONE_CHUNK],
     pult_r: [f32; PHONE_CHUNK],
+    /// Ducking-Auslöser im Pult-Modus (#596): Eingang, Zwischenblock, Einstellung, Haltezeit,
+    /// automatische Erkennung und die Referenz (was zuletzt ans Pult ging).
+    trigger: Option<Owned<woa_engine::pairs::LinkRx>>,
+    trig_l: [f32; PHONE_CHUNK],
+    trig_r: [f32; PHONE_CHUNK],
+    trig_cfg: crate::duckdetect::TriggerCfg,
+    trig_thr: f32,
+    trig_left: usize,
+    echo: crate::duckdetect::EchoGate,
+    to_pult: (f32, f32),
+    duck_cause: u32,
+    duck_now: f32,
     duck_lin: f32,
     /// Carts senken die Musik ab (#149).
     cart_duck: bool,
@@ -858,6 +911,16 @@ impl Mixer {
             pult_on: false,
             pult_l: [0.0; PHONE_CHUNK],
             pult_r: [0.0; PHONE_CHUNK],
+            trigger: None,
+            trig_l: [0.0; PHONE_CHUNK],
+            trig_r: [0.0; PHONE_CHUNK],
+            trig_cfg: crate::duckdetect::TriggerCfg::default(),
+            trig_thr: crate::duckdetect::db_to_lin(crate::duckdetect::DEFAULT_THRESHOLD_DB),
+            trig_left: 0,
+            echo: crate::duckdetect::EchoGate::new(rate),
+            to_pult: (0.0, 0.0),
+            duck_cause: 0,
+            duck_now: 1.0,
             duck_lin: 0.25,
             cart_duck: true,
             carts_on: false,
@@ -993,8 +1056,23 @@ impl Mixer {
                     }
                 }
                 Cmd::MicMonitor(on) => self.mic_monitor = on,
-                Cmd::PultInput(c) => self.pult = c,
-                Cmd::PultMode(on) => self.pult_on = on,
+                Cmd::PultInput(c) => {
+                    self.pult = c;
+                    self.echo.reset();
+                }
+                Cmd::PultMode(on) => {
+                    self.pult_on = on;
+                    self.echo.reset();
+                }
+                Cmd::TriggerInput(c) => self.trigger = c,
+                Cmd::Trigger(cfg) => {
+                    if cfg.mode != self.trig_cfg.mode {
+                        self.echo.reset();
+                        self.trig_left = 0;
+                    }
+                    self.trig_cfg = cfg;
+                    self.trig_thr = crate::duckdetect::db_to_lin(cfg.threshold_db);
+                }
                 Cmd::MicInput(c) => self.mic = c,
                 Cmd::Cart {
                     slot,
@@ -1368,6 +1446,7 @@ impl Mixer {
         let mut mic_peak = 0.0f32;
         let mut phone_peak = 0.0f32;
         let mut pult_peak = 0.0f32;
+        let mut trig_peak = 0.0f32;
         let mut bus_peaks = [0.0f32; 3];
         let mut out_peaks = [0.0f32; 2];
         let ret_dest = match self.routes.dest[crate::routing::Source::PhoneReturn.index()] as usize
@@ -1595,6 +1674,31 @@ impl Mixer {
                 (xl, xr) = (self.pult_l[k], self.pult_r[k]);
             }
             pult_peak = pult_peak.max(xl.abs()).max(xr.abs());
+            // Ducking-Auslöser (#596): wird nur gemessen, geht nie auf Sendung.
+            let (mut kl, mut kr) = (0.0f32, 0.0f32);
+            if let Some(p) = self.trigger.as_mut() {
+                let k = i % PHONE_CHUNK;
+                if k == 0 {
+                    let m = (n - i).min(PHONE_CHUNK);
+                    p.pull(&mut self.trig_l[..m], &mut self.trig_r[..m]);
+                }
+                (kl, kr) = (self.trig_l[k], self.trig_r[k]);
+            }
+            let kp = kl.abs().max(kr.abs());
+            trig_peak = trig_peak.max(kp);
+            let pult_voice = match self.trig_cfg.mode {
+                _ if !self.pult_on => false,
+                crate::duckdetect::TriggerMode::Off => false,
+                crate::duckdetect::TriggerMode::Input => kp > self.trig_thr,
+                crate::duckdetect::TriggerMode::Auto => {
+                    self.pult.is_some() && self.echo.tick((xl, xr), self.to_pult, &self.trig_cfg)
+                }
+            };
+            if pult_voice {
+                self.trig_left = self.voice_hold.max(1);
+            } else if self.trig_left > 0 {
+                self.trig_left -= 1;
+            }
             let [lm, lc, li, _, lo, ls] = &mut self.levels;
             let (out_mon, out_stream) = (lo.tick(), ls.tick());
             let (lm, lc) = (lm.tick(), lc.tick());
@@ -1615,10 +1719,17 @@ impl Mixer {
             } else if self.voice_left > 0 {
                 self.voice_left -= 1;
             }
-            let voice =
-                self.phone_on || self.guests_on_air || (self.mic_open && self.voice_left > 0);
+            let mic_voice = self.mic_open && self.voice_left > 0;
+            let pult_voice = self.pult_on && self.trig_left > 0;
+            let voice = self.phone_on || self.guests_on_air || mic_voice || pult_voice;
             let carts = self.cart_duck && self.carts_on;
             let dg = self.duck.tick(voice || carts, self.duck_lin);
+            self.duck_now = dg;
+            self.duck_cause = u32::from(mic_voice) * DUCK_MIC
+                | u32::from(self.phone_on) * DUCK_PHONE
+                | u32::from(self.guests_on_air) * DUCK_GUESTS
+                | u32::from(carts) * DUCK_CARTS
+                | u32::from(pult_voice) * self.pult_cause();
             let duck = dg * lm * vduck;
             let cduck = self.cart_duck_env.tick(voice, self.duck_lin);
             cl *= cduck;
@@ -1647,6 +1758,8 @@ impl Mixer {
             // Pult-Modus: die interne Mischung (ohne Mikro, ohne Sendebus) geht auf die
             // Ausgänge, die Sendung ist der Pult-Eingang.
             let pult = self.pult_on.then_some((ql, qr));
+            // Referenz für die automatische Erkennung: was WOA ans Pult schickt (#596).
+            self.to_pult = (ql, qr);
             if pult.is_some() {
                 (sl, sr) = (xl, xr);
                 if self.bus_on {
@@ -1733,11 +1846,27 @@ impl Mixer {
         self.dj.reset_peaks();
         store_max(&self.status.phone_peak, phone_peak);
         store_max(&self.status.pult_peak, pult_peak);
+        store_max(&self.status.trigger_peak, trig_peak);
+        self.status
+            .duck_gain
+            .store(self.duck_now.to_bits(), Ordering::Relaxed);
+        self.status
+            .duck_cause
+            .store(self.duck_cause, Ordering::Relaxed);
         for (cell, v) in self.status.bus_peaks.iter().zip(bus_peaks) {
             store_max(cell, v);
         }
         for (cell, v) in self.status.output_peaks.iter().zip(out_peaks) {
             store_max(cell, v);
+        }
+    }
+
+    /// Ducking-Grund des Pult-Auslösers je nach Einstellung.
+    #[inline]
+    fn pult_cause(&self) -> u32 {
+        match self.trig_cfg.mode {
+            crate::duckdetect::TriggerMode::Auto => DUCK_AUTO,
+            _ => DUCK_TRIGGER,
         }
     }
 
