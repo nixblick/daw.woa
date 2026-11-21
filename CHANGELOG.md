@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.39 — 2026-11-21
+
+- **Kein Wiederverbinden im Kreis mehr zum Stream-Prozess (#484):** Brach woa-streamd jede neue Verbindung sofort wieder ab, verband WOA alle 20 ms neu (im Log über 600× „streamd link lost“ / „restored“). Die Wartezeit (1 s, verdoppelt bis 10 s) wird jetzt erst zurückgesetzt, wenn die Verbindung 5 s gehalten hat. Warum woa-streamd abbrach, ist weiter offen.
+
 ## 0.42.38 — 2026-11-21
 
 - **CI wieder grün:** Ein ungenutzter Import in `crates/engine/src/device.rs` (Rest aus #595) ließ clippy unter Linux scheitern. Für Nutzer ändert sich nichts.

@@ -493,6 +493,47 @@ const FEED_BACKOFF_MAX: Duration = Duration::from_secs(10);
 /// Abriss ohne Lücke durch.
 const FEED_BACKLOG_SECONDS: f32 = 0.4;
 
+/// So lange muss eine Verbindung halten, bis der Feeder sie als stabil wertet und die
+/// Wartezeit zurücksetzt. Bricht woa-streamd jede neue Verbindung sofort wieder ab, dreht der
+/// Feeder sonst im 20-ms-Takt im Kreis (#484).
+const FEED_STABLE: Duration = Duration::from_secs(5);
+
+/// Wartezeit zwischen Verbindungsversuchen. Zurückgesetzt wird erst, wenn die Verbindung
+/// [`FEED_STABLE`] gehalten hat, nicht schon beim erfolgreichen Verbinden.
+struct Retry {
+    backoff: Duration,
+    up_since: Option<Instant>,
+}
+
+impl Retry {
+    fn new() -> Self {
+        Self {
+            backoff: FEED_BACKOFF_MIN,
+            up_since: None,
+        }
+    }
+
+    fn connected(&mut self, now: Instant) {
+        self.up_since = Some(now);
+    }
+
+    /// Verbindung weg oder Versuch gescheitert: so lange warten. Eine stabile Verbindung
+    /// versucht es sofort wieder (woa-streamd läuft meist noch).
+    fn lost(&mut self, now: Instant) -> Duration {
+        let stable = self
+            .up_since
+            .take()
+            .is_some_and(|t| now.saturating_duration_since(t) >= FEED_STABLE);
+        if stable {
+            self.backoff = FEED_BACKOFF_MIN;
+            return Duration::ZERO;
+        }
+        let wait = self.backoff;
+        self.backoff = (self.backoff * 2).min(FEED_BACKOFF_MAX);
+        wait
+    }
+}
+
 enum FeedMsg {
     Title(String),
     Stop,
@@ -574,7 +615,7 @@ fn feed(
     let mut lost_at: Option<Instant> = None;
     let backlog_max = (FEED_BACKLOG_SECONDS * rate as f32) as usize * 2;
     let mut next_try = Instant::now();
-    let mut backoff = FEED_BACKOFF_MIN;
+    let mut retry = Retry::new();
     let mut title: Option<String> = None;
     let mut samples: Vec<f32> = Vec::with_capacity(rate as usize);
     let mut bytes: Vec<u8> = Vec::with_capacity(rate as usize * 4);
@@ -588,6 +629,7 @@ fn feed(
                     {
                         conn = None;
                         lost_at = Some(Instant::now());
+                        next_try = Instant::now() + retry.lost(Instant::now());
                     }
                     title = Some(t);
                 }
@@ -611,7 +653,7 @@ fn feed(
                         .is_none_or(|t| title_frame(&mut s, t).is_ok());
                     if ok {
                         conn = Some(s);
-                        backoff = FEED_BACKOFF_MIN;
+                        retry.connected(Instant::now());
                         if let Some(t) = lost_at.take() {
                             let n = reconnects.fetch_add(1, Ordering::Relaxed) + 1;
                             tracing::info!(
@@ -625,8 +667,7 @@ fn feed(
                 Err(e) => tracing::debug!(error = %e, "streamd not reachable"),
             }
             if conn.is_none() {
-                next_try = Instant::now() + backoff;
-                backoff = (backoff * 2).min(FEED_BACKOFF_MAX);
+                next_try = Instant::now() + retry.lost(Instant::now());
             }
         }
         connected.store(conn.is_some(), Ordering::Relaxed);
@@ -651,8 +692,8 @@ fn feed(
                     conn = None;
                     lost_at = Some(Instant::now());
                     connected.store(false, Ordering::Relaxed);
-                    // Sofort neu versuchen: woa-streamd läuft meist noch.
-                    next_try = Instant::now();
+                    // Stabile Verbindung: sofort neu versuchen. Sonst warten (#484).
+                    next_try = Instant::now() + retry.lost(Instant::now());
                     break;
                 }
                 sent += part.len();
@@ -670,6 +711,32 @@ fn feed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quick_drops_back_off_instead_of_spinning() {
+        let t0 = Instant::now();
+        let mut r = Retry::new();
+        let mut waits = Vec::new();
+        for i in 0..5u64 {
+            // Verbindung steht, bricht nach 20 ms wieder ab.
+            let up = t0 + Duration::from_secs(i * 20);
+            r.connected(up);
+            waits.push(r.lost(up + Duration::from_millis(20)));
+        }
+        assert!(waits.iter().all(|w| *w >= FEED_BACKOFF_MIN), "{waits:?}");
+        assert_eq!(waits[4], FEED_BACKOFF_MAX);
+    }
+
+    #[test]
+    fn stable_link_resets_backoff_and_retries_at_once() {
+        let t0 = Instant::now();
+        let mut r = Retry::new();
+        r.connected(t0);
+        assert_eq!(r.lost(t0 + Duration::from_millis(20)), FEED_BACKOFF_MIN);
+        r.connected(t0);
+        assert_eq!(r.lost(t0 + FEED_STABLE), Duration::ZERO);
+        assert_eq!(r.lost(t0 + FEED_STABLE), FEED_BACKOFF_MIN);
+    }
 
     /// Liefert Bytes in Häppchen, dazwischen eine abgelaufene Lese-Frist.
     struct Choppy(Vec<Vec<u8>>);
