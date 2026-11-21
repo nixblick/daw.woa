@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.42.38 — 2026-11-21
+## 0.42.39 — 2026-11-21
 
 - **Log: Speicher, Threads und Projektgröße im `ui summary` (#585):** Unter Windows standen `rss_mb` und `threads` bisher auf `None`. Jetzt liest WOA dort das Working Set (`K32GetProcessMemoryInfo`) und zählt die eigenen Threads über einen Toolhelp-Schnappschuss (`CreateToolhelp32Snapshot`, `Thread32First/Next`); keine neue Abhängigkeit, Aufrufe in kernel32 wie in `power.rs`. Dieselbe Zeile `ui summary` trägt jetzt die Projektgröße (`project=tracks=… clips=… midi_notes=… inserts=… plugins=… automation_points=… banks=default:30MB,…`); die SoundFont-Bänke zählen mit dem Speicher ihrer Samples. Beim Öffnen und Speichern steht einmal `INFO project stats` mit denselben Zahlen im Log. Neue Kennzahlen im Upload: `project.midi_notes`, `project.inserts`, `project.automation_points`, `soundfont.banks`, `soundfont.mb`. Tests: `counts_tracks_clips_notes_inserts_and_points`, unter Windows `windows_reports_memory_and_threads`.
+
+## 0.42.38 — 2026-11-21
+
+- **CI wieder grün:** Ein ungenutzter Import in `crates/engine/src/device.rs` (Rest aus #595) ließ clippy unter Linux scheitern. Für Nutzer ändert sich nichts.
 
 ## 0.42.37 — 2026-11-21
 
