@@ -122,6 +122,27 @@ impl AppState {
         format!("WOA – {shown}{dirty}")
     }
 
+    /// Projektgröße und geladene Klangbänke als eine Zeile, nur Zahlen und Bank-ids (#585):
+    /// `tracks=3 clips=12 … banks=default:30MB`.
+    pub fn stats_line(&self) -> String {
+        let stats = woa_model::ProjectStats::of(self.project());
+        let mut line = format!("{stats} banks=");
+        let banks = woa_engine::soundfont::loaded_banks();
+        if banks.is_empty() {
+            line.push_str("none");
+        }
+        for (i, (id, mb)) in banks.iter().enumerate() {
+            let sep = if i == 0 { "" } else { "," };
+            line.push_str(&format!("{sep}{id}:{mb}MB"));
+        }
+        line
+    }
+
+    /// Einmal je Laden/Speichern dieselben Zahlen wie in `ui summary` (#585).
+    fn log_stats(&self, on: &'static str) {
+        tracing::info!(on, stats = %self.stats_line(), "project stats");
+    }
+
     fn report(&mut self, what: &str, result: Result<(), ModelError>) -> bool {
         match result {
             Ok(()) => true,
@@ -1511,6 +1532,7 @@ impl AppState {
             Ok(session) => {
                 self.session = limited(session);
                 self.status = Status::Info(format!("Geöffnet: {}", dir.display()));
+                self.log_stats("open");
                 true
             }
             Err(e) => self.report("Öffnen", Err(e)),
@@ -1523,6 +1545,7 @@ impl AppState {
         let result = self.session.save();
         if self.report("Speichern", result) {
             self.status = Status::Info("Gespeichert".into());
+            self.log_stats("save");
             true
         } else {
             false
@@ -1561,6 +1584,7 @@ impl AppState {
         let result = self.session.save_as(&dir);
         if self.report("Speichern", result) {
             self.status = Status::Info(format!("Gespeichert: {}", dir.display()));
+            self.log_stats("save_as");
             true
         } else {
             false

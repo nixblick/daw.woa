@@ -76,8 +76,34 @@ pub fn soundfont_for(sound: TrackSound) -> Option<Arc<SoundFont>> {
         .or_else(default_soundfont)
 }
 
+/// Geladene Zusatzbänke; eine fehlende wird nicht gemerkt.
+static BANKS: OnceLock<Mutex<HashMap<SoundBank, Arc<SoundFont>>>> = OnceLock::new();
+
+/// Geladene SoundFont-Bänke mit dem Speicher ihrer Samples in MB (#585), ohne etwas zu laden:
+/// `default` ist GeneralUser GS, danach jede Zusatzbank mit ihrer id. Die Samples (16 bit je
+/// Wert) machen den Speicher einer Bank aus.
+pub fn loaded_banks() -> Vec<(&'static str, u64)> {
+    let mut out = Vec::new();
+    if let Some(Some(font)) = FONT.get() {
+        out.push(("default", sample_mb(font)));
+    }
+    if let Some(cache) = BANKS.get().and_then(|c| c.lock().ok()) {
+        let mut extra = Vec::new();
+        for (bank, font) in cache.iter() {
+            extra.push((bank.id(), sample_mb(font)));
+        }
+        extra.sort_unstable();
+        out.extend(extra);
+    }
+    out
+}
+
+/// Speicher der Samples einer Bank in MB.
+fn sample_mb(font: &SoundFont) -> u64 {
+    (font.get_wave_data().len() * std::mem::size_of::<i16>() / (1024 * 1024)) as u64
+}
+
 pub(crate) fn bank_font(bank: SoundBank) -> Option<Arc<SoundFont>> {
-    static BANKS: OnceLock<Mutex<HashMap<SoundBank, Arc<SoundFont>>>> = OnceLock::new();
     let cache = BANKS.get_or_init(Mutex::default);
     if let Some(f) = cache.lock().ok().and_then(|c| c.get(&bank).cloned()) {
         return Some(f);

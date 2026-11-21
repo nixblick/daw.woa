@@ -44,6 +44,7 @@ pub mod plugin;
 mod project;
 mod session;
 pub mod sound;
+mod stats;
 pub mod store;
 pub mod takes;
 pub mod voice_over;
@@ -71,6 +72,7 @@ pub use sound::{
     SOUND_PRESETS, SYNTH_NAME, SoundBank, SoundCategory, SoundPreset, SoundRole, TrackSound,
     preset_by_name, preset_name, sound_category, sound_name,
 };
+pub use stats::ProjectStats;
 pub use store::{FORMAT_VERSION, ProjectFile, required_version};
 pub use takes::{
     ClipPlan, CompSegment, MAX_COMP_SEGMENTS, MAX_TAKES, RecordInput, RecordPlan, TakeEntry,
