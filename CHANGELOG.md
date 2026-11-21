@@ -3,6 +3,7 @@
 ## 0.42.34 — 2026-11-21
 
 - **Ducking im Pult-Modus (#596):** Wenn du am Pult ins Mikro sprichst, senkt WOA jetzt die Musik ab, die es ans Pult schickt (Playlist, Decks, Carts wie bisher), mit denselben Werten wie beim WOA-Mikro (Tiefe, Rückkehr, Einblenden). Neu unter Einstellungen › Audio-Geräte › Pult: „Ducking-Auslöser“.
+  - Ältere Einstellungen ohne diesen Eintrag starten mit „Automatisch“.
 
 ## 0.42.33 — 2026-11-21
 

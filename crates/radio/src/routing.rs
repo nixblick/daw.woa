@@ -169,11 +169,154 @@ pub struct Pult {
     /// Eingang vom Pult: Gerät und Kanalpaar (`device_id: None` = keiner gewählt).
     #[serde(skip_serializing_if = "Route::is_unset")]
     pub input: Route,
+    /// Ducking im Pult-Modus (#596). Fehlt der Eintrag (alte `config.json`): automatisch.
+    #[serde(skip_serializing_if = "PultDuck::is_default")]
+    pub duck: PultDuck,
 }
 
 impl Pult {
     pub fn is_default(&self) -> bool {
         *self == Pult::default()
+    }
+
+    /// Gleich bis auf die Ducking-Einstellungen? Dann muss nichts neu geöffnet werden.
+    pub fn same_routing(&self, other: &Pult) -> bool {
+        self.on == other.on && self.input == other.input
+    }
+}
+
+/// Woran WOA im Pult-Modus erkennt, dass jemand spricht (#596).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PultTrigger {
+    /// Kein Ducking im Pult-Modus.
+    Aus,
+    /// Eigener Eingang, nur gemessen (Mikro-Kanal des Pults oder zweites Gerät).
+    Eingang,
+    /// Stimme im Pult-Eingang erkennen, WOAs eigene Musik herausgerechnet.
+    #[default]
+    Automatisch,
+}
+
+impl PultTrigger {
+    pub const ALL: [PultTrigger; 3] = [
+        PultTrigger::Aus,
+        PultTrigger::Eingang,
+        PultTrigger::Automatisch,
+    ];
+
+    /// Name in der Oberfläche.
+    pub fn label(self) -> &'static str {
+        match self {
+            PultTrigger::Aus => "Aus",
+            PultTrigger::Eingang => "Eigener Eingang (Mikro-Kanal)",
+            PultTrigger::Automatisch => "Automatisch aus dem Pult-Eingang",
+        }
+    }
+}
+
+/// Ducking-Einstellungen im Pult-Modus (#596), Teil von [`Pult`] in `config.json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PultDuck {
+    pub trigger: PultTrigger,
+    /// Eingang des Auslösers (nur bei [`PultTrigger::Eingang`]); geht nie auf Sendung.
+    #[serde(skip_serializing_if = "Route::is_unset")]
+    pub input: Route,
+    /// Stimm-Schwelle (dBFS).
+    pub threshold_db: i32,
+    /// Spanne für „Automatisch“ (dB über der zurückkommenden Musik).
+    pub margin_db: i32,
+}
+
+impl Default for PultDuck {
+    fn default() -> Self {
+        Self {
+            trigger: PultTrigger::default(),
+            input: Route::default(),
+            threshold_db: crate::duckdetect::DEFAULT_THRESHOLD_DB as i32,
+            margin_db: crate::duckdetect::DEFAULT_MARGIN_DB as i32,
+        }
+    }
+}
+
+impl PultDuck {
+    /// Einstellbare Bereiche.
+    pub const THRESHOLD_DB: std::ops::RangeInclusive<i32> = -70..=-10;
+    pub const MARGIN_DB: std::ops::RangeInclusive<i32> = 3..=20;
+
+    pub fn is_default(&self) -> bool {
+        *self == PultDuck::default()
+    }
+
+    /// Was der Mixer braucht. `has_input`: der Auslöser-Eingang ist offen.
+    pub fn cfg(&self) -> crate::duckdetect::TriggerCfg {
+        use crate::duckdetect::TriggerMode;
+        crate::duckdetect::TriggerCfg {
+            mode: match self.trigger {
+                PultTrigger::Aus => TriggerMode::Off,
+                PultTrigger::Eingang => TriggerMode::Input,
+                PultTrigger::Automatisch => TriggerMode::Auto,
+            },
+            threshold_db: self
+                .threshold_db
+                .clamp(*Self::THRESHOLD_DB.start(), *Self::THRESHOLD_DB.end())
+                as f32,
+            margin_db: self
+                .margin_db
+                .clamp(*Self::MARGIN_DB.start(), *Self::MARGIN_DB.end())
+                as f32,
+        }
+    }
+
+    /// Löst den Auslöser-Eingang auf. `Ok(None)`: keiner nötig (nicht „Eigener Eingang“).
+    /// Ein Kanalpaar, das das Gerät nicht hat, wird abgelehnt: Sonst nähme der Eingang still
+    /// Kanal 1/2, also meist die Summe mit der Musik, und die Musik bliebe unten.
+    pub fn resolve_input(
+        &self,
+        pult: &Pult,
+        probe_in: &dyn Fn(Option<&str>) -> Result<DeviceInfo, String>,
+    ) -> Result<Option<PultIn>, String> {
+        if self.trigger != PultTrigger::Eingang {
+            return Ok(None);
+        }
+        let r = &self.input;
+        let Some(id) = r.device_id.as_deref() else {
+            return Err(
+                "Ducking-Auslöser: kein Eingang gewählt. Einstellungen › Audio-Geräte, \
+                        unter Pult den Mikro-Kanal wählen."
+                    .into(),
+            );
+        };
+        if r.device_id == pult.input.device_id && r.pair == pult.input.pair {
+            return Err(
+                "Ducking-Auslöser ist derselbe Eingang wie der Pult-Eingang: darin \
+                        steckt die Musik, sie bliebe unten. Bitte den einzelnen Mikro-Kanal \
+                        wählen oder „Automatisch“."
+                    .into(),
+            );
+        }
+        let info = probe_in(Some(id)).map_err(|e| {
+            format!(
+                "Ducking-Auslöser: Eingang {} fehlt ({e}).",
+                r.device_label()
+            )
+        })?;
+        let pair = usize::from(r.pair);
+        if !pair_fits(pair, info.channels) {
+            return Err(format!(
+                "Ducking-Auslöser: {} hat keinen Eingang {}/{} (nur {} Kanäle).",
+                info.name,
+                2 * pair + 1,
+                2 * pair + 2,
+                info.channels
+            ));
+        }
+        Ok(Some(PultIn {
+            open_id: id.to_string(),
+            name: info.name,
+            pair: r.pair,
+        }))
     }
 }
 
@@ -706,7 +849,62 @@ mod pult_tests {
         Pult {
             on,
             input: id.map(|i| route(i, pair)).unwrap_or_default(),
+            ..Pult::default()
         }
+    }
+
+    /// #596: Alte `config.json` ohne Ducking-Felder lädt mit „Automatisch“ und den Vorgaben.
+    #[test]
+    fn old_pult_config_loads_with_automatic_ducking() {
+        let p: Pult =
+            serde_json::from_str(r#"{"on":true,"input":{"device_id":"pult","pair":0}}"#).unwrap();
+        assert!(p.on);
+        assert_eq!(p.duck.trigger, PultTrigger::Automatisch);
+        assert_eq!(p.duck, PultDuck::default());
+        assert_eq!(p.duck.cfg().mode, crate::duckdetect::TriggerMode::Auto);
+        // Vorgaben werden nicht geschrieben, eigene Werte schon und kommen zurück.
+        assert!(!serde_json::to_string(&p).unwrap().contains("duck"));
+        let mut q = p.clone();
+        q.duck.trigger = PultTrigger::Eingang;
+        q.duck.input = route("rode", 1);
+        q.duck.threshold_db = -35;
+        let back: Pult = serde_json::from_str(&serde_json::to_string(&q).unwrap()).unwrap();
+        assert_eq!(back, q);
+        assert!(back.same_routing(&p), "nur Ducking geändert");
+    }
+
+    #[test]
+    fn trigger_input_is_resolved_and_bad_choices_are_refused() {
+        let probe = |id: Option<&str>| match id {
+            Some("pult") => Ok(dev("pult", 2)),
+            Some("rode") => Ok(dev("rode", 4)),
+            _ => Err("nicht gefunden".to_string()),
+        };
+        let p = pult(true, Some("pult"), 0);
+        let mut d = PultDuck::default();
+        assert_eq!(
+            d.resolve_input(&p, &probe),
+            Ok(None),
+            "automatisch braucht keinen"
+        );
+        d.trigger = PultTrigger::Eingang;
+        assert!(d.resolve_input(&p, &probe).is_err(), "nichts gewählt");
+        d.input = route("pult", 0);
+        assert!(
+            d.resolve_input(&p, &probe)
+                .unwrap_err()
+                .contains("derselbe"),
+            "gleich dem Pult-Eingang"
+        );
+        d.input = route("rode", 3);
+        assert!(d.resolve_input(&p, &probe).unwrap_err().contains("7/8"));
+        d.input = route("rode", 1);
+        assert_eq!(
+            d.resolve_input(&p, &probe).unwrap().map(|i| i.pair),
+            Some(1)
+        );
+        d.input = route("weg", 0);
+        assert!(d.resolve_input(&p, &probe).unwrap_err().contains("fehlt"));
     }
 
     #[test]
