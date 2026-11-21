@@ -373,6 +373,9 @@ pub fn project_end_seconds(project: &Project) -> f64 {
     beats * 60.0 / project.tempo_bpm
 }
 
+/// Ein Stereo-Render: links, rechts.
+pub type Stereo = (Vec<f32>, Vec<f32>);
+
 /// Rendert das Projekt mit seinen Audio-Clips offline (links, rechts) über `seconds`.
 #[tracing::instrument(level = "info", skip_all, name = "render_clips")]
 pub fn render_clips(
@@ -395,7 +398,7 @@ pub fn render_clips_until(
     seconds: f64,
     load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
     stop: &dyn Fn() -> bool,
-) -> Result<Option<(Vec<f32>, Vec<f32>)>, EngineError> {
+) -> Result<Option<Stereo>, EngineError> {
     render_clips_plugins_until(
         project,
         rate,
@@ -427,7 +430,7 @@ pub fn render_clips_plugins_until(
     load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
     plugins: &mut dyn FnMut(&woa_model::Track) -> TrackPlugins,
     stop: &dyn Fn() -> bool,
-) -> Result<Option<(Vec<f32>, Vec<f32>)>, EngineError> {
+) -> Result<Option<Stereo>, EngineError> {
     const BLOCK: usize = 512;
     let (mut engine, mut processor) = Engine::new(16);
     let graph = clip_graph_plugins(
