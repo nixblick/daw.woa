@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.40 — 2026-11-21
+
+- **Log: Speicher, Threads und Projektgröße im `ui summary` (#585):** Unter Windows standen `rss_mb` und `threads` bisher auf `None`. Jetzt liest WOA dort das Working Set (`K32GetProcessMemoryInfo`) und zählt die eigenen Threads über einen Toolhelp-Schnappschuss (`CreateToolhelp32Snapshot`, `Thread32First/Next`); keine neue Abhängigkeit, Aufrufe in kernel32 wie in `power.rs`. Dieselbe Zeile `ui summary` trägt jetzt die Projektgröße (`project=tracks=… clips=… midi_notes=… inserts=… plugins=… automation_points=… banks=default:30MB,…`); die SoundFont-Bänke zählen mit dem Speicher ihrer Samples. Beim Öffnen und Speichern steht einmal `INFO project stats` mit denselben Zahlen im Log. Neue Kennzahlen im Upload: `project.midi_notes`, `project.inserts`, `project.automation_points`, `soundfont.banks`, `soundfont.mb`. Tests: `counts_tracks_clips_notes_inserts_and_points`, unter Windows `windows_reports_memory_and_threads`.
+
 ## 0.42.39 — 2026-11-21
 
 - **Kein Wiederverbinden im Kreis mehr zum Stream-Prozess (#484):** Brach woa-streamd jede neue Verbindung sofort wieder ab, verband WOA alle 20 ms neu (im Log über 600× „streamd link lost“ / „restored“). Die Wartezeit (1 s, verdoppelt bis 10 s) wird jetzt erst zurückgesetzt, wenn die Verbindung 5 s gehalten hat. Warum woa-streamd abbrach, ist weiter offen.
