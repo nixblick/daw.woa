@@ -20,7 +20,7 @@ jobs:
     # 22.04: ältere glibc, damit das AppImage auch auf älteren Systemen startet.
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           toolchain: stable
@@ -61,7 +61,7 @@ jobs:
   flatpak:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Werkzeuge
         run: |
           sudo apt-get update
