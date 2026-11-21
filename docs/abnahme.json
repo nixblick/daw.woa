@@ -29,9 +29,19 @@
       "id": "mikro-geraet-weg",
       "ansicht": "Radio",
       "titel": "Mikro-Gerät kurz abziehen: WOA öffnet es wieder oder meldet es",
-      "tun": "Ohne Pult-Modus: MIKRO offen, sprechen (DUCK Mikro). USB-Mikro kurz abziehen und nach 2 s wieder anstecken. Danach einmal abziehen und 2 min draußen lassen.",
-      "erwartet": "Kurz abgezogen: entweder läuft das Mikro von selbst weiter, oder oben steht „Mikrofon … ist ausgefallen … MIKRO ist jetzt zu“ und nach dem Anstecken „ist wieder da. MIKRO drücken“. Lange draußen: „bleibt weg“. Im Log „mic input lost“ / „mic input reopened“.",
-      "version": "0.42.35"
+      "tun": "Ohne Pult-Modus: MIKRO offen, sprechen (DUCK Mikro). USB-Mikro kurz abziehen und nach 2 s wieder anstecken. Danach einmal abziehen, 2 min draußen lassen und wieder anstecken.",
+      "erwartet": "Kurz abgezogen: entweder läuft das Mikro von selbst weiter, oder oben steht „Mikrofon … ist ausgefallen … MIKRO ist jetzt zu. WOA versucht 47 s lang, es wieder zu öffnen, danach alle 30 s.“ und nach dem Anstecken „ist wieder da. MIKRO drücken“. Lange draußen: „Mikrofon … ist weiter weg. WOA prüft alle 30 s, ob es zurück ist …“; nach dem Anstecken kommt spätestens nach 30 s „ist wieder da. MIKRO drücken“. Im Log „mic input lost“ / „mic input reopened“.",
+      "version": "0.42.39",
+      "ticket": 605
+    },
+    {
+      "id": "pult-eingang-weg",
+      "ansicht": "Radio",
+      "titel": "Pult-Eingang abziehen: Sendung still sichtbar, kommt von selbst zurück",
+      "tun": "Pult-Modus an, Ducking-Auslöser auf „Eigener Eingang“, Playlist spielen, auf Sendung. Das USB-Pult abziehen und 2 min draußen lassen, dann wieder anstecken und bis 30 s warten. Danach noch einmal abziehen, nach 1 min anstecken und sofort Einstellungen › Audio-Geräte › „Übernehmen“ drücken (ohne etwas zu ändern).",
+      "erwartet": "Solange das Pult fehlt, steht unten rot „Pult-Eingang ausgefallen: Die Sendung ist still …“ und oben „Pult-Eingang … ist ausgefallen: Die Sendung ist still (Stream und Mitschnitt). … WOA versucht 47 s lang, ihn wieder zu öffnen, danach alle 30 s. Sofort neu versuchen: Pult anstecken, dann Einstellungen › Audio-Geräte › Übernehmen.“ Nach dem Anstecken kommt die Sendung spätestens nach 30 s von selbst zurück, mit „Übernehmen“ sofort; die rote Zeile verschwindet, Ducking am Pult-Mikro geht wieder. Andere Meldungen oben bleiben dabei stehen. Im Log „pult input lost“ / „pult input reopened“.",
+      "version": "0.42.39",
+      "ticket": 605
     },
     {
       "id": "mikro-offen-kein-signal",
