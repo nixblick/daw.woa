@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.37 — 2026-11-21
+
+- **Titel, die nicht starten, sagen jetzt warum (#599):** Scheitert das Laden einer Datei, steht oben die Meldung „Name.mp3: Grund“ (nur Dateiname, nie der ganze Pfad), und das Log hat die Zeile `track decode failed` mit Endung, Größe und Fehlertext. Die Ursache für „einzelne MP3 starten nicht, VLC spielt sie“ ist noch offen: Große ID3-Bilder, mehr als 1 MiB Füllbytes, Müll hinter den Frames und zusammengehängte MP3 mit anderer Rate lesen schon (Tests). Wer so eine Datei hat: Meldung und Log-Zeile nennen den Grund, bitte an uns weitergeben.
+
 ## 0.42.35 — 2026-11-21
 
 - **Ducking im Pult-Modus (#596):** Wenn du am Pult ins Mikro sprichst, senkt WOA jetzt die Musik ab, die es ans Pult schickt (Playlist und Decks; Carts nach dem Schalter „Ducking auch bei Carts“), mit denselben Werten wie beim WOA-Mikro (Tiefe, Rückkehr, Einblenden). So stellst du es ein: Einstellungen › Audio-Geräte, unten bei „Sendung kommt vom Pult“ den **Ducking-Auslöser** wählen.

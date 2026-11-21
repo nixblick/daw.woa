@@ -37,26 +37,45 @@ pub fn is_supported(path: &Path) -> bool {
     is_readable(path)
 }
 
+/// Dateiname ohne Ordner (Meldungen und Telemetrie tragen nie den vollen Pfad).
+fn short_name(path: &Path) -> String {
+    path.file_name()
+        .map_or_else(|| "?".into(), |n| n.to_string_lossy().into_owned())
+}
+
 /// Fehlermeldung für eine Datei, die nicht gelesen werden kann.
 pub fn unsupported(path: &Path) -> String {
     format!(
         "{}: nicht lesbar, nur {}",
-        path.display(),
+        short_name(path),
         woa_engine::decode::FILTER_NAME
     )
 }
 
 /// Liest jede lesbare Audiodatei als Stereo in `rate` (mono wird verdoppelt, mehr als zwei
 /// Kanäle: die ersten beiden; Rate linear umgerechnet). Nie im Audio-Thread aufrufen.
+///
+/// Scheitert das Laden, steht der Grund in der Meldung („Name.mp3: Grund“) und im Log
+/// (`track decode failed` mit Endung, Größe und Fehlertext, ohne Pfad; #599).
 #[tracing::instrument(level = "info", skip_all, name = "audio_load")]
 pub fn load_stereo(path: &Path, rate: u32) -> Result<Stereo, String> {
+    load_stereo_inner(path, rate).inspect_err(|e| {
+        let ext = path
+            .extension()
+            .map_or_else(String::new, |x| x.to_string_lossy().to_ascii_lowercase());
+        let bytes = std::fs::metadata(path).ok().map(|m| m.len());
+        tracing::warn!(ext = %ext, bytes = ?bytes, error = %e, "track decode failed");
+    })
+}
+
+fn load_stereo_inner(path: &Path, rate: u32) -> Result<Stereo, String> {
     if !is_supported(path) {
         return Err(unsupported(path));
     }
     if !(MIN_RATE..=MAX_RATE).contains(&rate) {
-        return Err(format!("{}: Abtastrate außerhalb", path.display()));
+        return Err(format!("{}: Abtastrate außerhalb", short_name(path)));
     }
-    let d = decode_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let d = decode_file(path).map_err(|e| format!("{}: {e}", short_name(path)))?;
     let (left, right) = d.stereo();
     if d.rate == rate || left.is_empty() {
         return Ok(Stereo { left, right });
@@ -156,6 +175,17 @@ mod tests {
         assert!(file_stamp(&p).is_some());
         let e = load_stereo(&tmp.path().join("x.opus"), 48_000).unwrap_err();
         assert!(e.contains("MP3"), "{e}");
+        assert!(e.starts_with("x.opus: "), "kein voller Pfad: {e}");
+    }
+
+    #[test]
+    fn broken_file_reports_name_and_reason_without_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("kaputt.mp3");
+        std::fs::write(&p, b"kein mp3").unwrap();
+        let e = load_stereo(&p, 48_000).unwrap_err();
+        assert!(e.starts_with("kaputt.mp3: "), "{e}");
+        assert!(!e.contains(tmp.path().to_str().unwrap()), "{e}");
     }
 
     #[test]
