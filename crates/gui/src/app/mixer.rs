@@ -1289,14 +1289,10 @@ impl WoaApp {
             ui.weak("Kein Klang gefunden");
         }
         if let Some(p) = preview {
-            // Vorhören: der Spurklang bleibt, nur ein kurzer Probeton.
-            self.state.probeton.tap(
-                id,
-                &[crate::probeton::pitch_for(Some(p))],
-                100,
-                std::time::Instant::now(),
-                std::time::Duration::ZERO,
-            );
+            // Vorhören (#577): der gewählte Klang `p` auf der Vorhör-Stimme; der Spurklang bleibt.
+            self.state
+                .probeton
+                .preview_sound(p, std::time::Instant::now());
         }
         if let Some(sound) = chosen {
             if let Some(b) = sound.and_then(|s| s.bank) {
