@@ -32,6 +32,7 @@ pub mod ordner;
 pub mod party;
 pub mod pfl;
 pub mod playlists;
+pub mod preload;
 pub mod routing;
 pub mod show;
 pub mod station;

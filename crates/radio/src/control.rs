@@ -16,6 +16,7 @@ use crate::cues::{CueEdit, CueHistory, Cues};
 use crate::events::{Action, EventClock, EventTable, MissedWhy};
 use crate::level::{auto_gain_db, db_to_gain};
 use crate::mixer::{Cmd, Mixer, NONE, Status};
+use crate::preload::Preloader;
 
 pub mod dj;
 mod duo;
@@ -193,6 +194,15 @@ pub struct Controller {
     failed: Vec<u32>,
     /// Zuletzt geladener Titel und wie lange das Dekodieren dauerte (für das Log, #51).
     last_load: Option<(PathBuf, std::time::Duration)>,
+    /// Vorab-Dekodierer für Cue-Titel und nächsten Titel (#595).
+    preload: Preloader,
+    /// Titel (uid), für die zuletzt vorab geladen wurde; ändert sich nur mit Cue und Lauf.
+    preload_key: Vec<u32>,
+    last_preloaded: bool,
+    /// Wartezeit des laufenden Befehls in der Warteschlange des Control-Threads (#595).
+    queue_wait: std::time::Duration,
+    /// Messspur des zuletzt bereitgelegten Titels: Phasen von Befehl bis Ton (#595).
+    load_trace: Option<LoadTrace>,
     /// Undo/Redo der Cue-Punkte (Paket 15).
     cue_history: CueHistory,
     /// Vorhören (PFL), falls ein Kopfhörer-Ausgang eingehängt ist.
@@ -223,6 +233,19 @@ pub struct Controller {
     dj: dj::DjCtl,
 }
 
+/// Ab so vielen Sekunden Restzeit wartet der Ablauf auf einen laufenden Vorab-Auftrag.
+const PRELOAD_WAIT_SECONDS: u64 = 10;
+
+/// Phasen von „Start“ bis zum Beginn des Titels im Mixer (#595), für die Logzeile.
+struct LoadTrace {
+    queued_at: std::time::Instant,
+    queue_wait_ms: u64,
+    prep_ms: u64,
+    decode_ms: u64,
+    measure_ms: u64,
+    preloaded: bool,
+}
+
 /// Ein Zeit-Event in der Playlist.
 #[derive(Debug, Clone)]
 struct EventRun {
@@ -237,6 +260,24 @@ impl Controller {
     /// Zuletzt geladener Titel und Dauer des Dekodierens.
     pub fn last_load(&self) -> Option<&(PathBuf, std::time::Duration)> {
         self.last_load.as_ref()
+    }
+
+    /// Ist Titel `index` der Playlist vorab dekodiert und gemessen (#595)?
+    pub fn is_preloaded(&self, index: usize) -> bool {
+        self.show
+            .playlist
+            .get(index)
+            .is_some_and(|e| self.preload.is_ready(&e.path))
+    }
+
+    /// Kam der zuletzt bereitgelegte Titel aus dem Vorab-Laden (ohne Dekodieren beim Start)?
+    pub fn last_load_preloaded(&self) -> bool {
+        self.last_preloaded
+    }
+
+    /// Wie lange der Befehl, der gleich läuft, in der Warteschlange des Control-Threads stand.
+    pub fn note_queue_wait(&mut self, wait: std::time::Duration) {
+        self.queue_wait = wait;
     }
 
     /// Legt Controller und Mixer an. Der Mixer gehört danach in den Audio-Callback.
@@ -270,6 +311,11 @@ impl Controller {
             message: None,
             failed: Vec::new(),
             last_load: None,
+            preload: Preloader::new(rate.max(1)),
+            preload_key: Vec::new(),
+            last_preloaded: false,
+            queue_wait: std::time::Duration::ZERO,
+            load_trace: None,
             cue_history: CueHistory::default(),
             pfl: None,
             pfl_source: None,
@@ -1119,24 +1165,53 @@ impl Controller {
         let (uid, path) = (e.uid, e.path.clone());
         let event = self.event_runs.get(&uid).cloned();
         let t0 = std::time::Instant::now();
+        let (mut decode_ms, mut measure_ms, mut preloaded) = (0u64, 0u64, false);
         let loaded: Result<Shared<Stereo>, String> =
             match event.as_ref().and_then(|r| self.event_files.get(&r.id)) {
                 // Zeit-Event: schon geladen und gemessen.
                 Some(buf) => Ok(buf.clone()),
-                None => load_stereo(&path, self.rate).map(|s| {
-                    // Nur messen, was noch keine Messung hat: das läuft im Control-Thread
-                    // direkt vor dem Abspielen (#120).
-                    if let Some(e) = self.show.playlist.get_mut(index)
-                        && !e.is_measured()
-                    {
-                        e.set_measured(measure(&s, self.rate));
+                None => match self.preload.take(&path) {
+                    // Vorab dekodiert und gemessen (#595): nur noch übernehmen.
+                    Some(p) => {
+                        preloaded = true;
+                        (decode_ms, measure_ms) = (p.decode_ms, p.measure_ms);
+                        if let Some(e) = self.show.playlist.get_mut(index)
+                            && !e.is_measured()
+                        {
+                            e.set_measured(p.measured);
+                        }
+                        Ok(Shared::new(&self.collector.handle(), p.stereo))
                     }
-                    Shared::new(&self.collector.handle(), s)
-                }),
+                    None => {
+                        let t = std::time::Instant::now();
+                        load_stereo(&path, self.rate).map(|s| {
+                            decode_ms = t.elapsed().as_millis() as u64;
+                            // Nur messen, was noch keine Messung hat: das läuft im Control-Thread
+                            // direkt vor dem Abspielen (#120).
+                            if let Some(e) = self.show.playlist.get_mut(index)
+                                && !e.is_measured()
+                            {
+                                let m = std::time::Instant::now();
+                                e.set_measured(measure(&s, self.rate));
+                                measure_ms = m.elapsed().as_millis() as u64;
+                            }
+                            Shared::new(&self.collector.handle(), s)
+                        })
+                    }
+                },
             };
         let took = t0.elapsed();
         tracing::debug!(file = %path.display(), ms = took.as_millis() as u64, "track decoded");
         self.last_load = Some((path.clone(), took));
+        self.last_preloaded = preloaded;
+        self.load_trace = Some(LoadTrace {
+            queued_at: t0,
+            queue_wait_ms: self.queue_wait.as_millis() as u64,
+            prep_ms: took.as_millis() as u64,
+            decode_ms,
+            measure_ms,
+            preloaded,
+        });
         match loaded {
             Ok(buf) => {
                 let gain = self
@@ -1200,13 +1275,27 @@ impl Controller {
             self.send(Cmd::DeckEject(deck));
             return;
         };
-        let (path, cues) = (e.path.clone(), e.cues);
-        match load_stereo(&path, self.rate) {
-            Ok(s) => {
-                // Feste Verstärkung zum Ziel wie in der Playlist (#147, #297); gemessen im
-                // Control-Thread beim Laden, nie im Audio-Thread.
+        let (path, mut cues) = (e.path.clone(), e.cues);
+        let loaded = match self.preload.take(&path) {
+            Some(p) => Ok((p.stereo, p.measured)),
+            None => load_stereo(&path, self.rate).map(|s| {
                 let m = measure(&s, self.rate);
+                (s, m)
+            }),
+        };
+        match loaded {
+            Ok((s, m)) => {
+                // Feste Verstärkung zum Ziel wie in der Playlist (#147, #297); gemessen beim
+                // Laden, nie im Audio-Thread.
                 let gain = auto_gain_db(m.lufs, m.peak_db, self.show.target_lufs);
+                // Datei ohne Cues: der berechnete Vorschlag gilt, damit Stille am Anfang nicht
+                // mitspielt (#595). Von Hand gesetzte Punkte haben Vorrang.
+                if cues.is_empty() && m.auto_cues.validate(Some(m.seconds)).is_ok() {
+                    cues = m.auto_cues;
+                    if let Some(Some(e)) = self.show.decks.get_mut(deck) {
+                        e.cues = cues;
+                    }
+                }
                 let buf = Shared::new(&self.collector.handle(), s);
                 self.decks[deck] = Some(buf.clone());
                 let f = cues.frames(self.rate, buf.frames());
@@ -1534,7 +1623,14 @@ impl Controller {
             return;
         }
         if let Some(Some(buf)) = self.carts.get(slot) {
-            tracing::info!(slot = slot + 1, "cart start");
+            tracing::info!(
+                slot = slot + 1,
+                queue_wait_ms = self.queue_wait.as_millis() as u64,
+                callback_frames =
+                    woa_engine::latency::OUTPUT_CALLBACK_FRAMES.load(Ordering::Relaxed),
+                device_latency_ms = woa_engine::latency::output_latency().as_millis() as u64,
+                "cart start"
+            );
             let buf = buf.clone();
             let cues = self
                 .show
@@ -1754,12 +1850,66 @@ impl Controller {
     /// Zeit-Events mit einer simulierten Uhr.
     pub fn pump_at(&mut self, now: f64) {
         self.sync_voices();
+        self.preload_tick();
         self.pump_queue();
         self.resume_tick();
         self.event_tick(now);
         self.deck_return_tick();
         self.party_tick();
         self.dj_tick();
+    }
+
+    /// Fordert Cue-Titel und (bei laufender Sendung) den nächsten Titel zum Vorab-Dekodieren
+    /// an, sobald sie feststehen. Läuft jeden Takt, rechnet aber nur bei Änderung (#595).
+    fn preload_tick(&mut self) {
+        let mut want: Vec<usize> = Vec::new();
+        if let Some(i) = self.show.first_music_from(self.cue_index()) {
+            want.push(i);
+        }
+        if self.running
+            && !self.shuffle
+            && let Some(cur) = self.current_index()
+            && let Some(n) = self.show.next_music(cur)
+        {
+            want.push(n);
+        }
+        let key: Vec<u32> = want.iter().map(|&i| self.show.playlist[i].uid).collect();
+        if key == self.preload_key {
+            return;
+        }
+        self.preload_key = key;
+        for i in want {
+            let Some(e) = self.show.playlist.get(i) else {
+                continue;
+            };
+            // Zeit-Events haben ihren Puffer schon.
+            if self.event_runs.contains_key(&e.uid) {
+                continue;
+            }
+            let path = e.path.clone();
+            self.preload.request(&path);
+        }
+    }
+
+    /// Logzeile Start→Ton mit Phasen (#595): Wartezeit in der Warteschlange, Dekodieren,
+    /// Messen, Bereitlegen bis der Mixer beginnt, dazu Callback-Größe und Latenz des Geräts.
+    fn log_load_trace(&mut self) {
+        let Some(t) = self.load_trace.take() else {
+            return;
+        };
+        let frames = woa_engine::latency::OUTPUT_CALLBACK_FRAMES.load(Ordering::Relaxed);
+        let latency_ms = woa_engine::latency::output_latency().as_millis() as u64;
+        tracing::info!(
+            queue_wait_ms = t.queue_wait_ms,
+            prep_ms = t.prep_ms,
+            decode_ms = t.decode_ms,
+            measure_ms = t.measure_ms,
+            preloaded = t.preloaded,
+            to_mixer_ms = t.queued_at.elapsed().as_millis() as u64,
+            callback_frames = frames,
+            device_latency_ms = latency_ms,
+            "start to sound"
+        );
     }
 
     fn pump_queue(&mut self) {
@@ -1797,6 +1947,7 @@ impl Controller {
             }
             // Mixer hat ihn begonnen.
             self.pending = None;
+            self.log_load_trace();
         }
         // Nichts bereit: den Titel nach dem laufenden bereitlegen.
         let after = match self.index_of(cur) {
@@ -1828,6 +1979,19 @@ impl Controller {
             let uid = self.show.playlist[i].uid;
             if self.failed.contains(&uid) {
                 continue;
+            }
+            // Der Titel wird gerade vorab dekodiert: im nächsten Takt nehmen, statt hier
+            // zu dekodieren und alle anderen Befehle warten zu lassen (#595).
+            // Läuft der Titel gleich aus, hilft Warten nicht: dann wie früher selbst laden.
+            let left = self
+                .status
+                .end
+                .load(Ordering::Acquire)
+                .saturating_sub(self.status.position.load(Ordering::Acquire));
+            if left > u64::from(self.rate) * PRELOAD_WAIT_SECONDS
+                && self.preload.is_pending(&self.show.playlist[i].path)
+            {
+                break;
             }
             if self.queue_index(i) {
                 if self.shuffle {
