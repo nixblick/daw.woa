@@ -1736,11 +1736,12 @@ impl Mixer {
             let carts = self.cart_duck && self.carts_on;
             let dg = self.duck.tick(voice || carts, self.duck_lin);
             self.duck_now = dg;
-            self.duck_cause = u32::from(mic_voice) * DUCK_MIC
-                | u32::from(self.phone_on) * DUCK_PHONE
-                | u32::from(self.guests_on_air) * DUCK_GUESTS
-                | u32::from(carts) * DUCK_CARTS
-                | u32::from(pult_voice) * self.pult_cause();
+            let bit = |on: bool, b: u32| if on { b } else { 0 };
+            self.duck_cause = bit(mic_voice, DUCK_MIC)
+                | bit(self.phone_on, DUCK_PHONE)
+                | bit(self.guests_on_air, DUCK_GUESTS)
+                | bit(carts, DUCK_CARTS)
+                | bit(pult_voice, self.pult_cause());
             let duck = dg * lm * vduck;
             let cduck = self.cart_duck_env.tick(voice, self.duck_lin);
             cl *= cduck;

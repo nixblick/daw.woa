@@ -9,6 +9,7 @@
   - Ältere Einstellungen ohne diesen Eintrag starten mit „Automatisch“. Nur Schwelle oder Spanne ändern geht auch während der Sendung, ohne dass WOA die Ausgänge neu öffnet.
 - **Sichtbar, wann geduckt wird (#594, #596):** Neben MIKRO steht „DUCK“ mit dem Grund (Pult-Mikro, Stimme am Pult, Mikro, Telefon, Gast, Cart, „kommt zurück“). MIKRO im Pult-Modus sagt jetzt, welcher Auslöser die Musik absenkt.
 - **Mikro nach Geräteausfall (#594):** Fällt das USB-Mikro kurz weg, öffnet WOA es selbst wieder (wie die Ausgänge). Klappt das nicht, geht MIKRO auf zu, und oben steht eine Meldung; WOA versucht es eine Minute lang weiter. Ist MIKRO offen und kommt 10 Sekunden lang kein Signal, erscheint „Mikro offen, aber kein Signal“. Dasselbe Wiederöffnen gilt für den Pult-Eingang (sonst ist die Sendung still, die Meldung sagt das) und den Ducking-Auslöser.
+- **Abnahme:** fünf Prüfpunkte in Entwickler › Abnahme (`pult-ducking-eingang`, `pult-ducking-automatisch`, `pult-ducking-mikro-taste`, `mikro-geraet-weg`, `mikro-offen-kein-signal`), Abschnitt „Ducking im Pult-Modus“ in `docs/abnahme.md`.
 
 ## 0.42.33 — 2026-11-21
 

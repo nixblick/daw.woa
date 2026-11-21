@@ -1,6 +1,46 @@
 {
-  "stand": "2026-11-05",
+  "stand": "2026-11-21",
   "punkte": [
+    {
+      "id": "pult-ducking-eingang",
+      "ansicht": "Radio",
+      "titel": "Pult-Modus: Ducking über den eigenen Mikro-Kanal (A1)",
+      "tun": "Pult-Modus an (Einstellungen › Audio-Geräte, „Sendung kommt vom Pult“). Darunter „Ducking-Auslöser“ auf „Eigener Eingang (Mikro-Kanal)“, als Auslöser-Eingang den einzelnen Mikro-Kanal des Pults wählen (z. B. RØDECaster: Mehrspur-Kanal oder virtuelles Gerät „Mikro“), Übernehmen. Playlist spielen, ins Pult-Mikro sprechen, dann 3 s schweigen.",
+      "erwartet": "Die Pegelanzeige am Auslöser schlägt beim Sprechen über die Schwelle aus. Neben MIKRO steht „DUCK Pult-Mikro“, die Musik am Pult und im Stream wird leiser (Vorgabe −12 dB). Nach etwa 0,5 s Stille kommt sie in 1 s zurück. Der Auslöser-Kanal ist im Stream nicht doppelt zu hören.",
+      "version": "0.42.34"
+    },
+    {
+      "id": "pult-ducking-automatisch",
+      "ansicht": "Radio",
+      "titel": "Pult-Modus: Ducking automatisch aus dem Pult-Eingang (A2)",
+      "tun": "Pult-Modus an, „Ducking-Auslöser“ auf „Automatisch aus dem Pult-Eingang“ (Vorgabe bei alten Einstellungen). Playlist spielen, 30 s nichts sagen, dabei den Musik-Regler am Pult langsam rauf und runter fahren. Dann ins Mikro sprechen, deutlich lauter als die Musik.",
+      "erwartet": "Ohne Sprechen kein „DUCK“, auch beim Regeln am Pult (ein ruckartiger großer Sprung darf höchstens kurz ducken). Beim Sprechen „DUCK Stimme am Pult“, die Musik geht runter und kommt nach dem Sprechen zurück, ohne zu pumpen. Leise gesprochene Moderation wird eventuell nicht erkannt: dann Spanne kleiner stellen oder den eigenen Mikro-Kanal nehmen.",
+      "version": "0.42.34"
+    },
+    {
+      "id": "pult-ducking-mikro-taste",
+      "ansicht": "Radio",
+      "titel": "Pult-Modus: MIKRO-Taste nennt den Ducking-Auslöser",
+      "tun": "Im Pult-Modus in WOA auf MIKRO drücken.",
+      "erwartet": "Meldung „Mikrofon im Pult-Modus aus …“ mit dem Satz zum gewählten Ducking-Auslöser und dem Weg zur Einstellung.",
+      "version": "0.42.34"
+    },
+    {
+      "id": "mikro-geraet-weg",
+      "ansicht": "Radio",
+      "titel": "Mikro-Gerät kurz abziehen: WOA öffnet es wieder oder meldet es",
+      "tun": "Ohne Pult-Modus: MIKRO offen, sprechen (DUCK Mikro). USB-Mikro kurz abziehen und nach 2 s wieder anstecken. Danach einmal abziehen und 2 min draußen lassen.",
+      "erwartet": "Kurz abgezogen: entweder läuft das Mikro von selbst weiter, oder oben steht „Mikrofon … ist ausgefallen … MIKRO ist jetzt zu“ und nach dem Anstecken „ist wieder da. MIKRO drücken“. Lange draußen: „bleibt weg“. Im Log „mic input lost“ / „mic input reopened“.",
+      "version": "0.42.34"
+    },
+    {
+      "id": "mikro-offen-kein-signal",
+      "ansicht": "Radio",
+      "titel": "Mikro offen, aber kein Signal",
+      "tun": "Ohne Pult-Modus: MIKRO öffnen und das Mikro am Gerät stumm schalten (oder Gain ganz zu), 15 s warten.",
+      "erwartet": "Nach etwa 10 s steht oben „Mikro offen, aber kein Signal …“. Mit Signal verschwindet der Grund; die Meldung lässt sich wie andere schließen.",
+      "version": "0.42.34"
+    },
     {
       "id": "kaltstart-audio-nachgeholt",
       "ansicht": "Allgemein",

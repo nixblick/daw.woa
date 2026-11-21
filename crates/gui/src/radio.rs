@@ -665,7 +665,10 @@ mod pult_guard_tests {
     fn duck_reason_names_the_cause_and_the_return() {
         assert_eq!(duck_reason(0, 1.0), None, "nicht geduckt");
         assert_eq!(duck_reason(DUCK_TRIGGER, 0.25), Some("Pult-Mikro"));
-        assert_eq!(duck_reason(DUCK_AUTO | DUCK_CARTS, 0.25), Some("Stimme am Pult"));
+        assert_eq!(
+            duck_reason(DUCK_AUTO | DUCK_CARTS, 0.25),
+            Some("Stimme am Pult")
+        );
         assert_eq!(duck_reason(DUCK_CARTS, 0.5), Some("Cart"));
         assert_eq!(duck_reason(0, 0.6), Some("kommt zurück"));
         assert_eq!(duck_reason(0, 0.0), None, "ohne Mixer (Vorgabe 0)");
@@ -2790,7 +2793,6 @@ impl RadioDesk {
                 // Läuft im Audio-Thread: nur zählen, geloggt wird in `tick` (Regel 1). Gerät
                 // weg: Flag für die Wache, die im GUI-Takt neu öffnet (#594).
                 let faults = Arc::clone(&self.mic_faults);
-                let lost = lost;
                 move |e| {
                     if woa_engine::device::needs_reopen(&e) {
                         lost.store(true, Ordering::Release);

@@ -324,6 +324,17 @@ Selbst geprüft von Claude: Layout-Test im egui-Harness (16 Pads im Fenster bei 
 6. 30 min Stream ohne Aussetzer.
 7. Schalter aus, Übernehmen: alles wie vorher.
 
+### Ducking im Pult-Modus (0.42.34, #596/#594)
+
+Im Pult-Modus ist die Sendung der Pult-Eingang; er trägt immer auch die Musik, die WOA ans Pult schickt. Eine Pegelschwelle am Pult-Eingang würde sich deshalb selbst auslösen. Zwei Wege, gewählt unter Audio-Geräte › Pult › „Ducking-Auslöser“:
+
+8. **Eigener Eingang (empfohlen):** einzelner Mikro-Kanal des Pults oder zweites Gerät, nur gemessen. Sprechen: Pegelanzeige über der Schwelle, „DUCK Pult-Mikro“ neben MIKRO, Musik am Pult und im Stream −12 dB, nach 0,5 s Stille in 1 s zurück. Derselbe Eingang wie der Pult-Eingang wird abgelehnt (Meldung), ebenso ein Kanalpaar, das das Gerät nicht hat.
+9. **Automatisch:** 30 s Musik ohne Sprechen, Musik-Regler am Pult bewegen: kein „DUCK“. Deutlich lauter als die Musik sprechen: „DUCK Stimme am Pult“, kein Pumpen in den Pausen. Telefon oder Pads am Pult lösen ebenfalls aus (gewollt).
+10. MIKRO-Taste: Meldung nennt den Auslöser.
+11. Pult-USB kurz ziehen: Meldung „Pult-Eingang … ausgefallen: Stream und Mitschnitt sind still“, nach dem Anstecken läuft er von selbst weiter (Log „pult input reopened“).
+
+Selbst geprüft von Claude (`crates/radio/tests/pult_duck.rs`, geschlossener Kreis ohne Gerät und ohne Ton: Ausgabe Richtung Pult → Laufzeit → Pult-Regler → plus künstliche Stimme → Pult-Eingang): Auslöser über der Schwelle duckt die Ausgabe Richtung Pult und kommt zurück, aus oder ohne Pult-Modus nie, unter der Schwelle nie, nie auf Sendung. Automatisch: Musik allein 30 s bei Laufzeit 0/50/200 ms ohne einen geduckten Block, Reglerwechsel (−10 dB Sprung, +14 dB in 1 s, +3 dB Sprung) ohne Ducking, ein ruckartiger Sprung um +12 dB duckt 0,8 s und dann nie wieder; Stimme +10 dB über der zurückkommenden Musik: 4 von 4 Phrasen erkannt, Einsatz nach 75 ms, in den Pausen nie geduckt (kein Pumpen); +6 dB: 3 von 4; +3 dB und gleich laut: nicht erkannt. Nicht am Gerät geprüft: echtes RØDECaster, echte Musik mit Pult-Bearbeitung, Windows.
+
 Selbst geprüft von Claude: Offline-Tests ohne Ton (`crates/radio/tests/pult.rs`, `routing::pult_tests`): im Pult-Modus ist nur der Pult-Sinus auf Sendung, die Playlist-Musik nicht, der Ausgang Richtung Pult ist bit-gleich zur unbearbeiteten Musik; ohne Schalter ist die Sendung bit-gleich zu vorher (auch gegen den Stand vor der Änderung per Prüfsumme); der Plan löst Ausgangs- und Eingangsgerät auf und meldet Ausfälle. Kein Gerät geöffnet, nichts gehört. Noch nicht über MCP.
 ## Feedback in der Party-Ansicht (0.35.7, offen)
 
