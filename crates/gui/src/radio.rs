@@ -8546,6 +8546,12 @@ mod input_watch_605 {
         let now = past_giving_up(&mut desk, t0);
         assert!(desk.pult_mode(), "Platzhalter hält den Pult-Modus");
         assert!(desk.pult_lost(), "Ausfall sichtbar");
+        assert!(
+            desk.notices()
+                .iter()
+                .any(|n| n.error && n.title == "Pult-Eingang ausgefallen"),
+            "rote Zeile in der Meldungszeile"
+        );
         let opened = dev.pult_opens.load(Ordering::SeqCst);
         dev.set(true, 4);
         desk.watch_inputs(now + InputWatch::SLOW_WAIT);
@@ -8557,6 +8563,12 @@ mod input_watch_605 {
         assert_eq!(dev.trigger_opens.load(Ordering::SeqCst), 2, "Auslöser auch");
         assert!(!desk.pult_lost());
         assert!(desk.trigger.is_some());
+        assert!(
+            !desk
+                .notices()
+                .iter()
+                .any(|n| n.title == "Pult-Eingang ausgefallen")
+        );
     }
 
     #[test]

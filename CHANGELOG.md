@@ -6,7 +6,7 @@
 - **Beim Wiederöffnen wird das Kanalpaar geprüft (#605):** Kommt das Pult mit weniger Kanälen zurück (zum Beispiel noch beim Hochfahren), nahm WOA bisher still Kanal 1/2. Beim Ducking-Auslöser hieß das: Er maß die Summe samt Musik, und die Musik blieb dauernd unten. Jetzt öffnet WOA den Eingang dann nicht, sagt, welcher Kanal fehlt, und versucht es weiter; der Auslöser duckt solange nicht.
 - **Fremde Meldungen bleiben stehen:** Öffnete WOA einen Eingang wieder, löschte es dabei jede Meldung oben, auch eine ganz andere. Jetzt verschwindet nur die eigene Meldung zum Ausfall.
 - **Ducking „Automatisch“ hängt nicht mehr fest (#605):** Kam vom Pult einmal ein ungültiger Wert (NaN), duckte die automatische Erkennung danach dauerhaft oder gar nicht mehr, bis WOA neu startete. Jetzt vergisst sie in dem Moment nur den Signalverlauf und arbeitet ab dem nächsten sauberen Block normal weiter. Die Erkennung selbst bleibt ein Versuch, Vorgabe „Aus“.
-- **Abnahme:** Prüfpunkt `mikro-geraet-weg` neu (Version 0.42.39), neuer Punkt `pult-eingang-weg`. Tests: `crates/gui/src/input_watch.rs`, `radio.rs` (Modul `input_watch_605`, mit Geräte-Attrappen, ohne Ton), `crates/radio/src/duckdetect.rs`, `crates/radio/tests/pult_duck.rs` (`auto_recovers_from_nan_in_the_pult_input`, unter `assert_no_alloc`).
+- **Abnahme:** Prüfpunkt `mikro-geraet-weg` neu (Version 0.42.39), neuer Punkt `pult-eingang-weg`. Tests: `crates/gui/src/input_watch.rs`, `radio.rs` (Modul `input_watch_605`, mit Geräte-Attrappen, ohne Ton; prüft auch die rote Zeile „Pult-Eingang ausgefallen“), `crates/radio/src/duckdetect.rs`, `crates/radio/tests/pult_duck.rs` (`auto_recovers_from_nan_in_the_pult_input`, unter `assert_no_alloc`).
 
 ## 0.42.38 — 2026-11-21
 
