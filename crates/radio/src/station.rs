@@ -147,6 +147,14 @@ pub struct View {
     pub phone_peak: f32,
     /// Spitze des Pult-Eingangs seit der letzten Ansicht (0..1, #301).
     pub pult_peak: f32,
+    /// Spitze des Ducking-Auslösers seit der letzten Ansicht (0..1, #596).
+    pub trigger_peak: f32,
+    /// Spitze des Mikro-Eingangs vor Kette und Regler seit der letzten Ansicht (#594).
+    pub mic_raw_peak: f32,
+    /// Absenkung der Musik gerade (linear, 1 = nicht geduckt, #594).
+    pub duck_gain: f32,
+    /// Warum gerade geduckt wird (Bits `mixer::DUCK_*`).
+    pub duck_cause: u32,
     /// Spitzen seit der letzten Ansicht (linear) für die LED-Meter: Playlist, Carts, Decks,
     /// Mikro nach ihrem Fader und der Sendemix (Master), #216.
     pub meters: [f32; 5],
@@ -523,6 +531,10 @@ fn run(
             phone_on: st.phone_on.load(Ordering::Acquire),
             phone_peak: st.take_phone_peak(),
             pult_peak: st.take_pult_peak(),
+            trigger_peak: st.take_trigger_peak(),
+            mic_raw_peak: st.take_mic_raw_peak(),
+            duck_gain: st.duck_gain(),
+            duck_cause: st.duck_cause(),
             meters: {
                 let [m, c, d] = st.take_bus_peaks();
                 [m, c, d, st.take_mic_peak(), st.take_peak()]
