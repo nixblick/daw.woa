@@ -2825,21 +2825,44 @@ impl RadioDesk {
                 .filter_map(|f| f.path.clone())
                 .collect()
         });
-        if !dropped.is_empty() {
-            let pos = ctx.input(|i| i.pointer.latest_pos());
-            let deck = pos.and_then(|p| self.deck_rects.iter().position(|r| r.contains(p)));
-            let cart = pos.and_then(|p| self.cart_rects.iter().position(|r| r.contains(p)));
-            if let Some(k) = deck {
-                if let Some(path) = dropped.into_iter().next() {
-                    self.deck_load_file(k, path);
-                }
-            } else if let Some(slot) = cart {
-                if let Some(path) = dropped.into_iter().next() {
-                    self.assign_cart_file(slot, path);
-                }
-            } else if let Some(s) = &self.station {
-                s.add_files(dropped);
+        if dropped.is_empty() {
+            return;
+        }
+        let pos = crate::os_drop::drop_position(ctx);
+        let deck = pos.and_then(|p| self.deck_rects.iter().position(|r| r.contains(p)));
+        let cart = pos.and_then(|p| self.cart_rects.iter().position(|r| r.contains(p)));
+        let target = if deck.is_some() {
+            "deck"
+        } else if cart.is_some() {
+            "cart"
+        } else if pos.is_some() {
+            "playlist"
+        } else {
+            "none"
+        };
+        tracing::info!(
+            files = dropped.len(),
+            position_known = pos.is_some(),
+            target,
+            "files dropped on the window"
+        );
+        if pos.is_none() {
+            // Ort unbekannt: nicht raten und nichts still in die Playlist legen (#593).
+            self.error = Some(
+                "Ablage: WOA konnte nicht erkennen, wohin die Datei gezogen wurde. Rechtsklick \
+                 aufs Pad, „Belegen …“, oder die Datei in die Playlist ziehen."
+                    .into(),
+            );
+        } else if let Some(k) = deck {
+            if let Some(path) = dropped.into_iter().next() {
+                self.deck_load_file(k, path);
             }
+        } else if let Some(slot) = cart {
+            if let Some(path) = dropped.into_iter().next() {
+                self.assign_cart_file(slot, path);
+            }
+        } else if let Some(s) = &self.station {
+            s.add_files(dropped);
         }
     }
 
@@ -5571,18 +5594,26 @@ impl RadioDesk {
     /// Eine aus der Bibliothek gezogene Datei bei `pos` ablegen: auf einem Cart-Pad wird sie
     /// dem Pad zugewiesen, auf der Playlist hinten angehängt. Gibt zurück, ob etwas geschah.
     pub fn drop_library_path(&mut self, path: PathBuf, pos: egui::Pos2) -> bool {
-        if let Some(k) = self.deck_rects.iter().position(|r| r.contains(pos)) {
-            self.deck_load_file(k, path);
-            return true;
-        }
-        if let Some(slot) = self.cart_rects.iter().position(|r| r.contains(pos)) {
-            self.assign_cart_file(slot, path);
+        if self.drop_on_pad(&path, pos) {
             return true;
         }
         if self.playlist_rect.contains(pos)
             && let Some(s) = &self.station
         {
             s.add_files(vec![path]);
+            return true;
+        }
+        false
+    }
+
+    /// Nur Deck oder Cart-Pad unter `pos` (Vorrang vor dem schwebenden Bibliotheksfenster, #593).
+    pub fn drop_on_pad(&mut self, path: &Path, pos: egui::Pos2) -> bool {
+        if let Some(k) = self.deck_rects.iter().position(|r| r.contains(pos)) {
+            self.deck_load_file(k, path.to_path_buf());
+            return true;
+        }
+        if let Some(slot) = self.cart_rects.iter().position(|r| r.contains(pos)) {
+            self.assign_cart_file(slot, path.to_path_buf());
             return true;
         }
         false
@@ -7341,6 +7372,38 @@ mod deck_drop_tests {
             desk.view().carts.first()
         );
         assert!(desk.view().playlist.is_empty(), "nicht in die Playlist");
+    }
+
+    /// #593: Aus dem Windows-Explorer kommt beim Ablegen keine Mausposition. Ohne bekannten
+    /// Ort darf die Datei nicht still in der Playlist landen; es erscheint ein Hinweis.
+    #[test]
+    fn explorer_drop_without_position_shows_a_hint_instead_of_the_playlist() {
+        let dir = tempfile::tempdir().unwrap();
+        let song = wav(dir.path(), "ohne-ort.wav");
+        let ctx = egui::Context::default();
+        let mut desk = RadioDesk::headless(dir.path());
+        let mut n = 0;
+        run(&ctx, &mut desk, n, egui::RawInput::default());
+        settle(&ctx, &mut desk, &mut n, |_| true);
+        n += 1;
+        let input = egui::RawInput {
+            dropped_files: vec![egui::DroppedFile {
+                path: Some(song),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        run(&ctx, &mut desk, n, input);
+        settle(&ctx, &mut desk, &mut n, |_| true);
+        assert!(
+            desk.view().playlist.is_empty(),
+            "nicht still in die Playlist"
+        );
+        assert!(
+            desk.error.as_deref().is_some_and(|e| e.contains("Ablage")),
+            "Hinweis sichtbar: {:?}",
+            desk.error
+        );
     }
 
     #[test]

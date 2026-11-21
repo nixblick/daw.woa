@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.34 — 2026-11-21
+
+- **Ziehen aus dem Explorer auf Pad und Deck (#593):** Unter Windows kommt beim Ziehen aus dem Explorer keine Mausposition an (winit verwirft den Ablagepunkt); `drop_os_files` fand dadurch weder Pad noch Deck. WOA fragt den Cursor jetzt selbst ab (`GetCursorPos`, `ScreenToClient`, Umrechnung in egui-Punkte; keine neue Abhängigkeit), im Radio wie im Produzenten (Clips). Ist der Ort trotzdem unbekannt, legt WOA nichts mehr still in die Playlist, sondern zeigt einen Hinweis. Jeder ankommende Drop schreibt eine Logzeile (Zahl der Dateien, Position bekannt, Ziel), damit das nächste Protokoll zeigt, ob der Drop überhaupt ankommt. Ziehen aus der Bibliothek: liegt das schwebende Bibliotheksfenster über einem Pad oder Deck, gewinnt jetzt das Pad. Prüfpunkt `cart-ziehen` neu (Version 0.42.34). Test: `explorer_drop_without_position_shows_a_hint_instead_of_the_playlist` (vorher rot).
+
 ## 0.42.33 — 2026-11-21
 
 - **Telemetrie: gescheiterte Sendungen sichtbar (#598):** Seit dem 14.11. kam keine Telemetrie mehr an, und niemand hat es bemerkt. Die Senke hält jetzt den letzten Sendeversuch fest (Zeit, Statuscode oder Fehlerart, wartende Zeilen). In den Einstellungen steht unter dem Telemetrie-Schalter „ok, zuletzt …“ oder „gescheitert seit … (Server antwortet 404), N Zeilen warten“; dieselbe Zeile hängt der Feedback-Knopf an das Protokoll. Im lokalen Log steht höchstens eine Zeile je Wechsel (ok → gescheitert und zurück), nie im Upload. Test: 404, 404, dann 200 (`failed_upload_shows_in_status_and_recovers`).

@@ -33,6 +33,9 @@ pub struct Output {
     pub stop_preview: bool,
     /// Eine Datei wurde losgelassen: Pfad und Zeigerposition (nicht im Fenster selbst).
     pub drop: Option<(PathBuf, egui::Pos2)>,
+    /// Die Position von `drop` liegt über dem Bibliotheksfenster selbst. Dort gilt nur ein
+    /// Deck oder Cart-Pad, das darunter liegt (#593), nie Playlist oder Spur.
+    pub drop_over_window: bool,
 }
 
 /// Zustand des Fensters.
@@ -537,11 +540,11 @@ impl LibraryWindow {
             open = false;
         }
         self.open = open;
-        // Loslassen im Fenster selbst legt nichts ab.
+        // Loslassen im Fenster selbst legt nur auf ein Pad oder Deck darunter ab.
         if let (Some((_, pos)), Some(r)) = (&out.drop, &resp)
             && r.response.rect.contains(*pos)
         {
-            out.drop = None;
+            out.drop_over_window = true;
         }
         out
     }
