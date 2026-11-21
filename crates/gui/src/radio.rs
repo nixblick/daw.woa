@@ -5,7 +5,7 @@
 use crate::ordner::Modal;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui;
@@ -492,14 +492,18 @@ fn open_pult_input(
     p: &woa_radio::routing::PultIn,
     rate: u32,
     faults: Arc<AtomicU64>,
+    lost: Arc<AtomicBool>,
 ) -> Result<(Stream, woa_engine::pairs::LinkRx), String> {
     let cfg = woa_engine::record::InputConfig {
         device_id: Some(p.open_id.clone()),
         pair: p.pair,
     };
     // Der Rückruf läuft im Audio-Thread: nur zählen (Regel 1); geloggt wird im GUI-Takt
-    // höchstens einmal je Minute (`FaultLog`).
+    // höchstens einmal je Minute (`FaultLog`). Gerät weg: Flag für die Wache (#594).
     match woa_engine::record::start_pair_input(&cfg, rate, move |e| {
+        if woa_engine::device::needs_reopen(&e) {
+            lost.store(true, Ordering::Release);
+        }
         if !woa_engine::device::is_realtime_denied(&e) {
             faults.fetch_add(1, Ordering::Relaxed);
         }
@@ -513,6 +517,73 @@ fn open_pult_input(
             Err(format!(
                 "Pult-Modus: Eingang {} lässt sich nicht öffnen ({e}). Die Sendung kommt weiter \
                  aus WOA.",
+                p.name
+            ))
+        }
+    }
+}
+
+/// Meldung beim Druck auf MIKRO im Pult-Modus: nennt den Ducking-Auslöser (#596).
+fn pult_mic_note(t: woa_radio::routing::PultTrigger) -> String {
+    use woa_radio::routing::PultTrigger;
+    let duck = match t {
+        PultTrigger::Aus => "Ducking im Pult-Modus ist aus.",
+        PultTrigger::Eingang => "Die Musik duckt am eigenen Auslöser-Eingang (Mikro-Kanal).",
+        PultTrigger::Automatisch => {
+            "Die Musik duckt automatisch, wenn im Pult-Eingang deutlich mehr als die Musik ankommt."
+        }
+    };
+    format!(
+        "Mikrofon im Pult-Modus aus: Das Mikro hängt am Pult und kommt mit dem Pult-Eingang auf \
+         Sendung. {duck} Einstellen unter Einstellungen › Audio-Geräte › Pult, „Ducking-Auslöser“."
+    )
+}
+
+/// Grund des Ducking aus dem Mixer-Status, `None`: nicht geduckt.
+fn duck_reason(cause: u32, gain: f32) -> Option<&'static str> {
+    use woa_radio::mixer::{
+        DUCK_AUTO, DUCK_CARTS, DUCK_GUESTS, DUCK_MIC, DUCK_PHONE, DUCK_TRIGGER,
+    };
+    let order = [
+        (DUCK_TRIGGER, "Pult-Mikro"),
+        (DUCK_AUTO, "Stimme am Pult"),
+        (DUCK_MIC, "Mikro"),
+        (DUCK_PHONE, "Telefon"),
+        (DUCK_GUESTS, "Gast"),
+        (DUCK_CARTS, "Cart"),
+    ];
+    if let Some((_, l)) = order.iter().find(|(b, _)| cause & b != 0) {
+        return Some(l);
+    }
+    // Rückkehr läuft noch.
+    (gain > 0.0 && gain < 0.97).then_some("kommt zurück")
+}
+
+/// Öffnet den Eingang des Ducking-Auslösers (#596): nur gemessen, nie auf Sendung.
+fn open_trigger_input(
+    p: &woa_radio::routing::PultIn,
+    rate: u32,
+    lost: Arc<AtomicBool>,
+) -> Result<(Stream, woa_engine::pairs::LinkRx), String> {
+    let cfg = woa_engine::record::InputConfig {
+        device_id: Some(p.open_id.clone()),
+        pair: p.pair,
+    };
+    // Audio-Thread: nur das Flag für die Wache (Regel 1).
+    match woa_engine::record::start_pair_input(&cfg, rate, move |e| {
+        if woa_engine::device::needs_reopen(&e) {
+            lost.store(true, Ordering::Release);
+        }
+    }) {
+        Ok((stream, rx, _stats, in_rate)) => {
+            tracing::info!(device = %p.name, pair = p.pair, rate = in_rate, "duck trigger input open");
+            Ok((Box::new(stream), rx))
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, device = %p.name, "duck trigger input failed");
+            Err(format!(
+                "Ducking-Auslöser: Eingang {} lässt sich nicht öffnen ({e}). Die Musik wird im \
+                 Pult-Modus nicht abgesenkt.",
                 p.name
             ))
         }
@@ -585,7 +656,33 @@ impl SilentStream {
 
 #[cfg(test)]
 mod pult_guard_tests {
-    use super::{FaultLog, SilentStream};
+    use super::{FaultLog, SilentStream, duck_reason, pult_mic_note};
+    use woa_radio::mixer::{DUCK_AUTO, DUCK_CARTS, DUCK_TRIGGER};
+    use woa_radio::routing::PultTrigger;
+
+    /// #594/#596: Die Anzeige am Sendepult sagt, ob und warum geduckt wird.
+    #[test]
+    fn duck_reason_names_the_cause_and_the_return() {
+        assert_eq!(duck_reason(0, 1.0), None, "nicht geduckt");
+        assert_eq!(duck_reason(DUCK_TRIGGER, 0.25), Some("Pult-Mikro"));
+        assert_eq!(duck_reason(DUCK_AUTO | DUCK_CARTS, 0.25), Some("Stimme am Pult"));
+        assert_eq!(duck_reason(DUCK_CARTS, 0.5), Some("Cart"));
+        assert_eq!(duck_reason(0, 0.6), Some("kommt zurück"));
+        assert_eq!(duck_reason(0, 0.0), None, "ohne Mixer (Vorgabe 0)");
+    }
+
+    /// Die Meldung beim Druck auf MIKRO im Pult-Modus nennt den Ducking-Auslöser (#596).
+    #[test]
+    fn mic_note_in_pult_mode_names_the_trigger() {
+        for t in PultTrigger::ALL {
+            let m = pult_mic_note(t);
+            assert!(m.starts_with("Mikrofon im Pult-Modus aus"), "{m}");
+            assert!(m.contains("Ducking-Auslöser"), "{m}");
+        }
+        assert!(pult_mic_note(PultTrigger::Aus).contains("ist aus"));
+        assert!(pult_mic_note(PultTrigger::Eingang).contains("Mikro-Kanal"));
+        assert!(pult_mic_note(PultTrigger::Automatisch).contains("automatisch"));
+    }
     use std::time::{Duration, Instant};
 
     #[test]
@@ -668,6 +765,21 @@ pub struct RadioDesk {
     pult_level: f32,
     /// Fehler des Pult-Eingangs seit dem Öffnen (Unter-/Überläufe, #401), für die Anzeige.
     pult_faults: Arc<AtomicU64>,
+    /// Aufgelöster Pult-Eingang, zum Neu-Öffnen nach einem Geräteausfall (#594).
+    pult_in: Option<woa_radio::routing::PultIn>,
+    pult_watch: crate::input_watch::InputWatch,
+    /// Ducking-Auslöser (#596): Strom (nur gemessen), Einstellung, Eingang, Pegel, Wache.
+    trigger: Option<Stream>,
+    trigger_in: Option<woa_radio::routing::PultIn>,
+    duck_cfg: woa_radio::routing::PultDuck,
+    trigger_level: f32,
+    trigger_watch: crate::input_watch::InputWatch,
+    /// Letzte Meldung zum Auslöser (bleibt im Fenster Audio-Geräte stehen).
+    trigger_error: Option<String>,
+    /// Wache des Mikrofons (#594), „offen, aber kein Signal“, MIKRO wegen Ausfall zu.
+    mic_watch: crate::input_watch::InputWatch,
+    mic_silence: crate::input_watch::NoSignal,
+    mic_lost: bool,
     /// Stiller Sendeweg (#400): hörbare Ausgänge, aber stummer Stream.
     silent_stream: SilentStream,
     /// Pegel des Vorhör-Ausgangs (PFL), fällt langsam ab; für das MCP-Werkzeug `output_levels`.
@@ -1438,12 +1550,15 @@ impl RadioDesk {
         // Pult-Eingang öffnen; geht er nicht, kommt die Sendung weiter aus WOA (mit Meldung).
         let mut pult_stream: Option<Stream> = None;
         let pult_faults = Arc::new(AtomicU64::new(0));
+        let pult_watch = crate::input_watch::InputWatch::default();
+        let mut pult_in = None;
         if let Some(p) = plan.pult.take() {
-            match open_pult_input(&p, rate, Arc::clone(&pult_faults)) {
+            match open_pult_input(&p, rate, Arc::clone(&pult_faults), pult_watch.flag()) {
                 Ok((stream, rx)) => {
                     controller.set_pult_input(Some(rx));
                     controller.set_pult_mode(true);
                     pult_stream = Some(stream);
+                    pult_in = Some(p);
                 }
                 Err(e) => plan.warnings.push(e),
             }
@@ -1488,14 +1603,91 @@ impl RadioDesk {
             pfl_output,
             pfl_note,
         })
-        .with_pult(pult_stream, pult_faults)
+        .with_pult(pult_stream, pult_faults, pult_in, pult_watch)
         .reattach()
+        .with_duck(pult_cfg)
     }
 
-    fn with_pult(mut self, pult: Option<Stream>, faults: Arc<AtomicU64>) -> Self {
+    fn with_pult(
+        mut self,
+        pult: Option<Stream>,
+        faults: Arc<AtomicU64>,
+        pult_in: Option<woa_radio::routing::PultIn>,
+        watch: crate::input_watch::InputWatch,
+    ) -> Self {
         self.pult = pult;
         self.pult_faults = faults;
+        self.pult_in = pult_in;
+        self.pult_watch = watch;
         self
+    }
+
+    fn with_duck(mut self, pult_cfg: &woa_radio::routing::Pult) -> Self {
+        self.set_pult_duck(pult_cfg);
+        self
+    }
+
+    /// Ducking im Pult-Modus (#596) übernehmen, sofort wirksam: Einstellung an den Mixer, den
+    /// Auslöser-Eingang schließen und (bei „Eigener Eingang“ im Pult-Modus) neu öffnen.
+    pub fn set_pult_duck(&mut self, pult_cfg: &woa_radio::routing::Pult) {
+        let duck = pult_cfg.duck.clone();
+        let cfg = duck.cfg();
+        self.with(move |c| {
+            c.set_trigger(cfg);
+            c.set_trigger_input(None);
+        });
+        self.trigger = None;
+        self.trigger_in = None;
+        self.trigger_watch.clear();
+        self.trigger_error = None;
+        self.duck_cfg = duck;
+        if self.pult.is_none() {
+            return;
+        }
+        match self
+            .duck_cfg
+            .resolve_input(pult_cfg, &crate::outputs::probe_in)
+        {
+            Ok(None) => {}
+            Ok(Some(p)) => {
+                if let Err(e) = self.open_trigger(&p) {
+                    self.trigger_error = Some(e.clone());
+                    self.error = Some(e);
+                }
+                self.trigger_in = Some(p);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "duck trigger not resolved");
+                self.trigger_error = Some(e.clone());
+                self.error = Some(e);
+            }
+        }
+    }
+
+    fn open_trigger(&mut self, p: &woa_radio::routing::PultIn) -> Result<(), String> {
+        let (stream, rx) = open_trigger_input(p, self.rate, self.trigger_watch.flag())?;
+        self.with(move |c| c.set_trigger_input(Some(rx)));
+        self.trigger = Some(stream);
+        Ok(())
+    }
+
+    /// Spitze des Pult-Eingangs (abfallend), für die Pegelanzeige im Fenster Audio-Geräte.
+    pub fn pult_level(&self) -> f32 {
+        self.pult_level
+    }
+
+    /// Spitze des Ducking-Auslösers (abfallend), für die Pegelanzeige im Fenster Audio-Geräte.
+    pub fn trigger_level(&self) -> f32 {
+        self.trigger_level
+    }
+
+    /// Zeilen zum Ducking im Pult-Modus fürs Fenster Audio-Geräte.
+    pub fn duck_lines(&self) -> Vec<String> {
+        let mut v = Vec::new();
+        if let Some(e) = &self.trigger_error {
+            v.push(e.clone());
+        }
+        v
     }
 
     /// Pult-Modus während des Betriebs umschalten (#399), ohne die Sendeausgänge neu zu
@@ -1513,6 +1705,9 @@ impl RadioDesk {
                 c.set_pult_input(None);
             });
             self.pult = None;
+            self.pult_in = None;
+            self.pult_watch.clear();
+            self.set_pult_duck(pult_cfg);
             tracing::info!("pult mode off (live)");
             return true;
         }
@@ -1531,8 +1726,9 @@ impl RadioDesk {
             c.set_pult_input(None);
         });
         self.pult = None;
+        self.pult_watch.clear();
         let faults = Arc::new(AtomicU64::new(0));
-        match open_pult_input(&p, self.rate, Arc::clone(&faults)) {
+        match open_pult_input(&p, self.rate, Arc::clone(&faults), self.pult_watch.flag()) {
             Ok((stream, rx)) => {
                 self.with(move |c| {
                     c.set_pult_input(Some(rx));
@@ -1540,6 +1736,8 @@ impl RadioDesk {
                 });
                 self.pult = Some(stream);
                 self.pult_faults = faults;
+                self.pult_in = Some(p);
+                self.set_pult_duck(pult_cfg);
                 tracing::info!("pult mode on (live)");
                 true
             }
@@ -1626,6 +1824,17 @@ impl RadioDesk {
             pult: None,
             pult_level: 0.0,
             pult_faults: Arc::new(AtomicU64::new(0)),
+            pult_in: None,
+            pult_watch: Default::default(),
+            trigger: None,
+            trigger_in: None,
+            duck_cfg: Default::default(),
+            trigger_level: 0.0,
+            trigger_watch: Default::default(),
+            trigger_error: None,
+            mic_watch: Default::default(),
+            mic_silence: Default::default(),
+            mic_lost: false,
             silent_stream: SilentStream::default(),
             pfl_level: 0.0,
             meters: Default::default(),
@@ -1874,6 +2083,7 @@ impl RadioDesk {
         self.phone_level = self.view.phone_peak.max(self.phone_level * 0.9);
         self.phone_meter.step(self.view.phone_peak, now_s());
         self.pult_level = self.view.pult_peak.max(self.pult_level * 0.9);
+        self.trigger_level = self.view.trigger_peak.max(self.trigger_level * 0.9);
         self.pfl_level = self.view.pfl_peak.max(self.pfl_level * 0.85);
         for (m, v) in self.meters.iter_mut().zip(self.view.meters) {
             m.step(v, now_s());
@@ -1926,6 +2136,7 @@ impl RadioDesk {
         if let Some(n) = self.pult_fault_log.poll(self.pult_faults(), now) {
             tracing::warn!(count = n, "pult input errors (last minute)");
         }
+        self.watch_inputs(now);
         for m in self.outputs.take_new_faults() {
             tracing::warn!(message = %m, "output lost");
             self.error = Some(match self.error.take() {
@@ -2385,6 +2596,163 @@ impl RadioDesk {
         });
     }
 
+    /// Wachen der Eingänge (#594): Mikrofon, Pult-Eingang und Ducking-Auslöser nach einem
+    /// Geräteausfall neu öffnen, sonst melden; „Mikro offen, aber kein Signal“.
+    fn watch_inputs(&mut self, now: Instant) {
+        use crate::input_watch::Poll;
+        // Mikrofon.
+        if self.mic.is_some() || self.mic_watch.retrying() {
+            let mut w = std::mem::take(&mut self.mic_watch);
+            let flag = w.flag();
+            let res = w.poll(now, || {
+                self.mic = None;
+                self.with(|c| c.set_mic_input(None));
+                let before = self.error.take();
+                if self.open_mic_with(flag) {
+                    self.error = before;
+                    Ok(())
+                } else {
+                    let e = self.error.take().unwrap_or_default();
+                    self.error = before;
+                    Err(e)
+                }
+            });
+            self.mic_watch = w;
+            let label = self.mic_cfg.label();
+            match res {
+                Poll::Idle | Poll::Failed { first: false, .. } => {}
+                Poll::Reopened => {
+                    tracing::info!(device = %label, "mic input reopened");
+                    if self.mic_lost {
+                        self.mic_lost = false;
+                        self.error = Some(format!(
+                            "Mikrofon {label} ist wieder da. MIKRO drücken, um es zu öffnen."
+                        ));
+                    }
+                }
+                Poll::Failed { first: true, error } => {
+                    tracing::warn!(device = %label, error = %error, "mic input lost");
+                    if self.view.mic_open {
+                        self.view.mic_open = false;
+                        self.with(|c| c.set_mic_open(false));
+                    }
+                    self.mic_lost = true;
+                    self.error = Some(format!(
+                        "Mikrofon {label} ist ausgefallen (abgezogen?). MIKRO ist jetzt zu. WOA \
+                         versucht eine Minute lang, es wieder zu öffnen."
+                    ));
+                }
+                Poll::GaveUp => {
+                    tracing::warn!(device = %label, "mic input gave up");
+                    self.error = Some(format!(
+                        "Mikrofon {label} bleibt weg. Bitte anstecken und MIKRO drücken."
+                    ));
+                }
+            }
+        }
+        // „Mikro offen, aber kein Signal“: nur mit WOA-Mikro (im Pult-Modus ist es aus).
+        let before = self.mic_silence.alarm();
+        let alarm = self.mic_silence.step(
+            self.view.mic_open && self.pult.is_none() && self.station.is_some(),
+            self.view.mic_raw_peak,
+            now,
+        );
+        if alarm && !before {
+            tracing::warn!(device = %self.mic_cfg.label(), "mic open but silent");
+            self.error = Some(format!(
+                "Mikro offen, aber kein Signal von {} (seit 10 s). Kabel, Stummschalter am Gerät \
+                 und Einstellungen › Audio-Geräte › Mikrofon prüfen. Ohne Signal duckt die Musik \
+                 nicht.",
+                self.mic_cfg.label()
+            ));
+        }
+        // Pult-Eingang: ohne ihn ist die Sendung still, darum laut melden.
+        if let Some(p) = self.pult_in.clone() {
+            let mut w = std::mem::take(&mut self.pult_watch);
+            let flag = w.flag();
+            let faults = Arc::clone(&self.pult_faults);
+            let res = w.poll(now, || {
+                // Der Platzhalter hält den Pult-Modus, solange der Strom fehlt.
+                self.pult = Some(Box::new(()));
+                self.with(|c| c.set_pult_input(None));
+                let (stream, rx) = open_pult_input(&p, self.rate, faults, flag)?;
+                self.with(move |c| c.set_pult_input(Some(rx)));
+                self.pult = Some(stream);
+                Ok(())
+            });
+            self.pult_watch = w;
+            match res {
+                Poll::Idle | Poll::Failed { first: false, .. } => {}
+                Poll::Reopened => {
+                    tracing::info!(device = %p.name, "pult input reopened");
+                    self.error = None;
+                }
+                Poll::Failed { first: true, error } => {
+                    tracing::warn!(device = %p.name, error = %error, "pult input lost");
+                    self.error = Some(format!(
+                        "Pult-Eingang {} ist ausgefallen: Stream und Mitschnitt sind still, bis er \
+                         zurück ist. WOA versucht eine Minute lang, ihn wieder zu öffnen.",
+                        p.name
+                    ));
+                }
+                Poll::GaveUp => {
+                    tracing::warn!(device = %p.name, "pult input gave up");
+                    self.error = Some(format!(
+                        "Pult-Eingang {} bleibt weg: Die Sendung ist still. Pult anstecken, dann \
+                         Einstellungen › Audio-Geräte › Übernehmen.",
+                        p.name
+                    ));
+                }
+            }
+        }
+        // Ducking-Auslöser.
+        if let Some(p) = self.trigger_in.clone() {
+            let mut w = std::mem::take(&mut self.trigger_watch);
+            let flag = w.flag();
+            let res = w.poll(now, || {
+                self.trigger = None;
+                self.with(|c| c.set_trigger_input(None));
+                let (stream, rx) = open_trigger_input(&p, self.rate, flag)?;
+                self.with(move |c| c.set_trigger_input(Some(rx)));
+                self.trigger = Some(stream);
+                Ok(())
+            });
+            self.trigger_watch = w;
+            match res {
+                Poll::Idle | Poll::Failed { first: false, .. } => {}
+                Poll::Reopened => {
+                    tracing::info!(device = %p.name, "duck trigger input reopened");
+                    self.trigger_error = None;
+                }
+                Poll::Failed { first: true, error } => {
+                    tracing::warn!(device = %p.name, error = %error, "duck trigger input lost");
+                    let m = format!(
+                        "Ducking-Auslöser {} ist ausgefallen: Die Musik wird nicht abgesenkt. WOA \
+                         versucht eine Minute lang, ihn wieder zu öffnen.",
+                        p.name
+                    );
+                    self.trigger_error = Some(m.clone());
+                    self.error = Some(m);
+                }
+                Poll::GaveUp => {
+                    tracing::warn!(device = %p.name, "duck trigger input gave up");
+                    let m = format!(
+                        "Ducking-Auslöser {} bleibt weg. Gerät anstecken, dann Einstellungen › \
+                         Audio-Geräte › Übernehmen.",
+                        p.name
+                    );
+                    self.trigger_error = Some(m.clone());
+                    self.error = Some(m);
+                }
+            }
+        }
+    }
+
+    /// Wird gerade geduckt? Grund für die Anzeige am Sendepult (#594/#596), `None` = nein.
+    pub fn duck_reason(&self) -> Option<&'static str> {
+        duck_reason(self.view.duck_cause, self.view.duck_gain)
+    }
+
     /// Pult-Modus an: Die Sendung kommt vom Eingang des externen Mischpults (#301).
     pub fn pult_mode(&self) -> bool {
         self.pult.is_some()
@@ -2393,13 +2761,10 @@ impl RadioDesk {
     fn toggle_mic(&mut self) {
         if self.pult.is_some() {
             // Das Mikro hängt am Pult; WOAs Mikro ginge sonst zurück ins Pult (Rückkopplung).
-            self.error = Some(
-                "Mikrofon im Pult-Modus aus: Das Mikro hängt am Pult und kommt mit dem \
-                 Pult-Eingang auf Sendung."
-                    .into(),
-            );
+            self.error = Some(pult_mic_note(self.duck_cfg.trigger));
             return;
         }
+        self.mic_lost = false;
         if self.mic.is_none() && !self.open_mic() {
             return;
         }
@@ -2411,15 +2776,25 @@ impl RadioDesk {
     /// Öffnet das gewählte Mikrofon (Fenster Audio-Geräte; ohne Wahl der Systemstandard).
     /// `false` mit Meldung, wenn es nicht geht; nie ein anderes Gerät stillschweigend.
     fn open_mic(&mut self) -> bool {
+        let lost = self.mic_watch.flag();
+        self.open_mic_with(lost)
+    }
+
+    fn open_mic_with(&mut self, lost: Arc<AtomicBool>) -> bool {
         let (producer, consumer) = rtrb::RingBuffer::new(self.rate as usize);
         match woa_engine::record::start_live_input(
             &self.mic_cfg.input_config(),
             producer,
             Arc::clone(&self.mic_dropped),
             {
-                // Läuft im Audio-Thread: nur zählen, geloggt wird in `tick` (Regel 1).
+                // Läuft im Audio-Thread: nur zählen, geloggt wird in `tick` (Regel 1). Gerät
+                // weg: Flag für die Wache, die im GUI-Takt neu öffnet (#594).
                 let faults = Arc::clone(&self.mic_faults);
+                let lost = lost;
                 move |e| {
+                    if woa_engine::device::needs_reopen(&e) {
+                        lost.store(true, Ordering::Release);
+                    }
                     if !woa_engine::device::is_realtime_denied(&e) {
                         faults.fetch_add(1, Ordering::Relaxed);
                     }
@@ -3335,6 +3710,21 @@ impl RadioDesk {
                 self.toggle_mic();
             }
             self.learn_menu(&r, Target::Mic);
+
+            // Ducking sichtbar (#594/#596): wann und warum die Musik unten ist.
+            if let Some(why) = self.duck_reason() {
+                let db = woa_radio::duckdetect::lin_to_db(self.view.duck_gain.max(1e-4));
+                ui.label(
+                    egui::RichText::new(format!("DUCK {why}"))
+                        .small()
+                        .strong()
+                        .color(theme::warn()),
+                )
+                .on_hover_text(format!(
+                    "Die Musik ist gerade abgesenkt ({db:.0} dB). Grund: {why}. Werte unter \
+                     Einstellungen › Ducking."
+                ));
+            }
 
             // Telefon: Pegel nur in der Gäste-Karte (#563, die LED hier wirkte wie ein Mikro-Pegel).
             if self.pult.is_some() {

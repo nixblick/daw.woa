@@ -149,6 +149,8 @@ pub struct View {
     pub pult_peak: f32,
     /// Spitze des Ducking-Auslösers seit der letzten Ansicht (0..1, #596).
     pub trigger_peak: f32,
+    /// Spitze des Mikro-Eingangs vor Kette und Regler seit der letzten Ansicht (#594).
+    pub mic_raw_peak: f32,
     /// Absenkung der Musik gerade (linear, 1 = nicht geduckt, #594).
     pub duck_gain: f32,
     /// Warum gerade geduckt wird (Bits `mixer::DUCK_*`).
@@ -530,6 +532,7 @@ fn run(
             phone_peak: st.take_phone_peak(),
             pult_peak: st.take_pult_peak(),
             trigger_peak: st.take_trigger_peak(),
+            mic_raw_peak: st.take_mic_raw_peak(),
             duck_gain: st.duck_gain(),
             duck_cause: st.duck_cause(),
             meters: {

@@ -1872,6 +1872,21 @@ impl WoaApp {
                     }
                 }
             }
+            S::PultDuck => {
+                if ui
+                    .button(format!("In {} öffnen", crate::outputs_ui::WINDOW))
+                    .clicked()
+                {
+                    self.open_audio();
+                }
+                let t = self.config.pult.duck.trigger;
+                let tone = if t == woa_radio::routing::PultTrigger::Aus {
+                    ChipTone::Neutral
+                } else {
+                    ChipTone::Ok
+                };
+                StateChip::new(t.label(), tone).show(ui);
+            }
             S::Pult => {
                 if ui
                     .button(format!("In {} öffnen", crate::outputs_ui::WINDOW))

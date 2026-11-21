@@ -1062,6 +1062,7 @@ impl WoaApp {
             let mut lines = r.output_warnings().to_vec();
             lines.extend(r.output_links());
             lines.extend(r.phone_lines());
+            lines.extend(r.duck_lines());
             if self.routing_switch.pending {
                 lines.push(
                     "Ausgänge: gelten ab Ende der Wiedergabe. Der Pult-Modus wurde sofort \
@@ -1076,10 +1077,14 @@ impl WoaApp {
             {
                 lines.push(note.to_string());
             }
-            (lines, r.is_on_air())
+            let levels = crate::outputs_ui::LiveLevels {
+                trigger: r.trigger_level(),
+                pult: r.pult_level(),
+            };
+            (lines, r.is_on_air(), levels)
         });
-        let (lines, on_air) = status.unwrap_or_default();
-        let Some(choice) = self.outputs_ui.show(ctx, &lines, on_air) else {
+        let (lines, on_air, levels) = status.unwrap_or_default();
+        let Some(choice) = self.outputs_ui.show(ctx, &lines, on_air, levels) else {
             return;
         };
         let before = self.audio_choice();
@@ -1087,7 +1092,9 @@ impl WoaApp {
             return;
         }
         tracing::info!(pult = choice.pult.on, "audio devices applied");
-        let routing = choice.outputs != before.outputs || choice.pult != before.pult;
+        // Nur die Ducking-Werte im Pult-Modus geändert (#596): sofort, ohne neu zu öffnen.
+        let duck_only = choice.pult.duck != before.pult.duck;
+        let routing = choice.outputs != before.outputs || !choice.pult.same_routing(&before.pult);
         let pfl = choice.pfl != before.pfl;
         self.config.outputs = choice.outputs;
         self.config.pult = choice.pult;
@@ -1120,6 +1127,12 @@ impl WoaApp {
             }
         } else if pfl && self.radio.is_some() && self.pfl_switch.choose(running) {
             self.reopen_radio_for_pfl();
+        }
+        if duck_only
+            && !routing
+            && let Some(r) = self.radio.as_mut()
+        {
+            r.set_pult_duck(&self.config.pult);
         }
         if let Some(r) = self.radio.as_mut() {
             r.set_mic_config(choice.mic);

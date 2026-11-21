@@ -7,7 +7,7 @@ use eframe::egui;
 use serde::{Deserialize, Serialize};
 use woa_engine::device::{OutputDeviceInfo, list_output_devices};
 use woa_engine::record::{InputConfig, list_input_devices};
-use woa_radio::routing::{OutputMap, Pult, Route, Source};
+use woa_radio::routing::{OutputMap, Pult, PultDuck, PultTrigger, Route, Source};
 
 use crate::PflOutput;
 use crate::phone::PhoneInput;
@@ -103,9 +103,25 @@ pub struct AudioChoice {
     pub phone: PhoneInput,
 }
 
+/// Pegel, die das Fenster live zeigt (#596): Ducking-Auslöser und Pult-Eingang (linear).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LiveLevels {
+    pub trigger: f32,
+    pub pult: f32,
+}
+
+/// Hilfetext zum Ducking-Auslöser (#596).
+pub const DUCK_TRIGGER_HINT: &str = "Im Pult-Modus senkt WOA die Musik ab, die es ans Pult \
+    schickt, sobald du sprichst. Am sichersten: „Eigener Eingang“, der einzelne Mikro-Kanal \
+    deines Pults (bei mehrkanaligem USB, z. B. RØDECaster mit Mehrspur oder virtuellen Geräten) \
+    oder ein zweites Gerät. Dieser Eingang wird nur gemessen und geht nie auf Sendung. \
+    „Automatisch“ erkennt Stimme im Pult-Eingang, obwohl dort WOAs Musik mitläuft; die Stimme \
+    muss dafür deutlich lauter sein als die Musik. Auch Telefon oder Pads am Pult lösen dann aus.";
+
 #[derive(Default)]
 pub struct OutputsUi {
     open: bool,
+    levels: LiveLevels,
     draft: AudioChoice,
     devices: Vec<OutputDeviceInfo>,
     inputs: Vec<OutputDeviceInfo>,
@@ -256,10 +272,12 @@ impl OutputsUi {
         ctx: &egui::Context,
         lines: &[String],
         on_air: bool,
+        levels: LiveLevels,
     ) -> Option<AudioChoice> {
         if !self.open {
             return None;
         }
+        self.levels = levels;
         let mut applied = None;
         let mut open = true;
         let mut refresh = false;
@@ -482,8 +500,100 @@ impl OutputsUi {
                     &mut r.pair,
                 );
             });
+            ui.add_space(4.0);
+            self.duck_section(ui);
         });
     }
+
+    /// Ducking im Pult-Modus (#596): Auslöser, Eingang, Schwelle, Spanne, Pegel.
+    fn duck_section(&mut self, ui: &mut egui::Ui) {
+        let levels = self.levels;
+        let pult_input = self.draft.pult.input.clone();
+        let d = &mut self.draft.pult.duck;
+        ui.horizontal(|ui| {
+            ui.label("Ducking-Auslöser");
+            egui::ComboBox::from_id_salt("duck-trigger")
+                .width(260.0)
+                .selected_text(d.trigger.label())
+                .show_ui(ui, |ui| {
+                    for t in PultTrigger::ALL {
+                        ui.selectable_value(&mut d.trigger, t, t.label());
+                    }
+                });
+        });
+        hint(ui, DUCK_TRIGGER_HINT);
+        match d.trigger {
+            PultTrigger::Aus => {}
+            PultTrigger::Eingang => {
+                ui.horizontal(|ui| {
+                    ui.label("Auslöser-Eingang");
+                    let r = &mut d.input;
+                    input_row(
+                        ui,
+                        "duck-trigger-input",
+                        &self.inputs,
+                        "Kein Eingang",
+                        &mut r.device_id,
+                        &mut r.device_name,
+                        &mut r.pair,
+                    );
+                });
+                if d.input.device_id.is_some()
+                    && d.input.device_id == pult_input.device_id
+                    && d.input.pair == pult_input.pair
+                {
+                    ui.colored_label(
+                        theme::warn(),
+                        "Das ist der Pult-Eingang selbst: darin steckt die Musik, sie bliebe \
+                         unten. Bitte den einzelnen Mikro-Kanal wählen.",
+                    );
+                }
+                threshold_row(ui, d, levels.trigger, "Pegel am Auslöser");
+            }
+            PultTrigger::Automatisch => {
+                threshold_row(ui, d, levels.pult, "Pegel am Pult-Eingang");
+                ui.horizontal(|ui| {
+                    ui.label("Spanne über der Musik");
+                    ui.add(egui::Slider::new(&mut d.margin_db, PultDuck::MARGIN_DB).suffix(" dB"));
+                });
+                hint(
+                    ui,
+                    "Wie viel lauter als die zurückkommende Musik der Pult-Eingang sein muss, \
+                     damit WOA Stimme erkennt. Kleiner: empfindlicher, aber eher Fehlalarm.",
+                );
+            }
+        }
+    }
+}
+
+/// Stimm-Schwelle mit Pegelanzeige: Der Moderator sieht, ob seine Stimme ankommt (#596).
+fn threshold_row(ui: &mut egui::Ui, d: &mut PultDuck, level: f32, what: &str) {
+    ui.horizontal(|ui| {
+        ui.label("Stimm-Schwelle");
+        ui.add(egui::Slider::new(&mut d.threshold_db, PultDuck::THRESHOLD_DB).suffix(" dBFS"));
+    });
+    ui.horizontal(|ui| {
+        ui.label(what);
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(160.0, 12.0), egui::Sense::hover());
+        theme::led_meter(ui.painter(), rect, level);
+        let db = woa_radio::duckdetect::lin_to_db(level);
+        let over = db > d.threshold_db as f32;
+        ui.label(
+            egui::RichText::new(if level <= 0.0 {
+                "kein Signal (Übernehmen gedrückt? Pult-Modus an?)".to_string()
+            } else if over {
+                format!("{db:.0} dBFS, über der Schwelle")
+            } else {
+                format!("{db:.0} dBFS")
+            })
+            .small()
+            .color(if over {
+                theme::on_air()
+            } else {
+                theme::text_dim()
+            }),
+        );
+    });
 }
 
 fn device_combo(

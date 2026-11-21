@@ -293,6 +293,9 @@ pub struct Status {
     pub pult_peak: AtomicU32,
     /// Spitze des Ducking-Auslösers seit dem letzten Abholen (#596).
     pub trigger_peak: AtomicU32,
+    /// Spitze des Mikro-Eingangs vor Kette und Regler seit dem letzten Abholen (#594:
+    /// „Mikro offen, aber kein Signal“; das Gate der Kette drückt Stille sonst zu tief).
+    pub mic_raw_peak: AtomicU32,
     /// Absenkung der Musik gerade (linear, 1 = nicht geduckt; f32-Bits, #594/#596).
     pub duck_gain: AtomicU32,
     /// Warum gerade geduckt wird: Bits [`DUCK_MIC`], [`DUCK_PHONE`] … (#594/#596).
@@ -363,6 +366,7 @@ impl Default for Status {
             phone_peak: AtomicU32::new(0),
             pult_peak: AtomicU32::new(0),
             trigger_peak: AtomicU32::new(0),
+            mic_raw_peak: AtomicU32::new(0),
             duck_gain: AtomicU32::new(1.0f32.to_bits()),
             duck_cause: AtomicU32::new(0),
             voice: AtomicBool::new(false),
@@ -426,6 +430,11 @@ impl Status {
     /// Spitze des Ducking-Auslösers seit dem letzten Aufruf (#596).
     pub fn take_trigger_peak(&self) -> f32 {
         f32::from_bits(self.trigger_peak.swap(0, Ordering::Relaxed))
+    }
+
+    /// Spitze des Mikro-Eingangs vor der Kette seit dem letzten Aufruf.
+    pub fn take_mic_raw_peak(&self) -> f32 {
+        f32::from_bits(self.mic_raw_peak.swap(0, Ordering::Relaxed))
     }
 
     /// Absenkung der Musik gerade (linear, 1 = nicht geduckt).
@@ -1447,6 +1456,7 @@ impl Mixer {
         let mut phone_peak = 0.0f32;
         let mut pult_peak = 0.0f32;
         let mut trig_peak = 0.0f32;
+        let mut mic_raw = 0.0f32;
         let mut bus_peaks = [0.0f32; 3];
         let mut out_peaks = [0.0f32; 2];
         let ret_dest = match self.routes.dest[crate::routing::Source::PhoneReturn.index()] as usize
@@ -1645,6 +1655,7 @@ impl Mixer {
                     self.status.mic_underruns.fetch_add(1, Ordering::Relaxed);
                 }
             }
+            mic_raw = mic_raw.max(il.abs()).max(ir.abs());
             if self.mic_chain_on {
                 (il, ir) = self.mic_chain.process(il, ir);
             }
@@ -1847,6 +1858,7 @@ impl Mixer {
         store_max(&self.status.phone_peak, phone_peak);
         store_max(&self.status.pult_peak, pult_peak);
         store_max(&self.status.trigger_peak, trig_peak);
+        store_max(&self.status.mic_raw_peak, mic_raw);
         self.status
             .duck_gain
             .store(self.duck_now.to_bits(), Ordering::Relaxed);

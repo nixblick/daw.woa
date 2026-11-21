@@ -2,8 +2,13 @@
 
 ## 0.42.34 — 2026-11-21
 
-- **Ducking im Pult-Modus (#596):** Wenn du am Pult ins Mikro sprichst, senkt WOA jetzt die Musik ab, die es ans Pult schickt (Playlist, Decks, Carts wie bisher), mit denselben Werten wie beim WOA-Mikro (Tiefe, Rückkehr, Einblenden). Neu unter Einstellungen › Audio-Geräte › Pult: „Ducking-Auslöser“.
-  - Ältere Einstellungen ohne diesen Eintrag starten mit „Automatisch“.
+- **Ducking im Pult-Modus (#596):** Wenn du am Pult ins Mikro sprichst, senkt WOA jetzt die Musik ab, die es ans Pult schickt (Playlist und Decks; Carts nach dem Schalter „Ducking auch bei Carts“), mit denselben Werten wie beim WOA-Mikro (Tiefe, Rückkehr, Einblenden). So stellst du es ein: Einstellungen › Audio-Geräte, unten bei „Sendung kommt vom Pult“ den **Ducking-Auslöser** wählen.
+  - **Eigener Eingang (empfohlen):** der einzelne Mikro-Kanal deines Pults (zum Beispiel beim RØDECaster mit Mehrspur-USB oder den virtuellen Geräten von RØDE) oder ein zweites Gerät. Gerät und Kanalpaar wählen, „Übernehmen“, dann sprechen: Die Pegelanzeige daneben muss über die Stimm-Schwelle gehen (Vorgabe −40 dBFS). Dieser Eingang wird nur gemessen und kommt nie auf Sendung.
+  - **Automatisch:** ohne eigenen Kanal. WOA weiß, welche Musik es ans Pult schickt, und erkennt Stimme, wenn im Pult-Eingang deutlich mehr ankommt (Spanne, Vorgabe 6 dB). In den Tests musste die Stimme dafür etwa 6 bis 10 dB lauter sein als die zurückkommende Musik; Regler am Pult darfst du bewegen. Auch Telefon oder Pads am Pult lösen dann aus.
+  - **Aus:** kein Ducking im Pult-Modus.
+  - Ältere Einstellungen ohne diesen Eintrag starten mit „Automatisch“. Nur Schwelle oder Spanne ändern geht auch während der Sendung, ohne dass WOA die Ausgänge neu öffnet.
+- **Sichtbar, wann geduckt wird (#594, #596):** Neben MIKRO steht „DUCK“ mit dem Grund (Pult-Mikro, Stimme am Pult, Mikro, Telefon, Gast, Cart, „kommt zurück“). MIKRO im Pult-Modus sagt jetzt, welcher Auslöser die Musik absenkt.
+- **Mikro nach Geräteausfall (#594):** Fällt das USB-Mikro kurz weg, öffnet WOA es selbst wieder (wie die Ausgänge). Klappt das nicht, geht MIKRO auf zu, und oben steht eine Meldung; WOA versucht es eine Minute lang weiter. Ist MIKRO offen und kommt 10 Sekunden lang kein Signal, erscheint „Mikro offen, aber kein Signal“. Dasselbe Wiederöffnen gilt für den Pult-Eingang (sonst ist die Sendung still, die Meldung sagt das) und den Ducking-Auslöser.
 
 ## 0.42.33 — 2026-11-21
 
