@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::audio::{Measured, measure_file};
 use crate::control::Controller;
@@ -20,7 +20,8 @@ const TICK: Duration = Duration::from_millis(10);
 type Job = Box<dyn FnOnce(&mut Controller) + Send>;
 
 enum Msg {
-    Job(Job),
+    /// Befehl samt Zeitpunkt des Absendens (Wartezeit fürs Log, #595).
+    Job(Job, Instant),
     Measured(PathBuf, Result<Measured, String>),
     Quit,
 }
@@ -240,7 +241,7 @@ impl Station {
 
     /// Führt `f` im Control-Thread aus.
     pub fn with(&self, f: impl FnOnce(&mut Controller) + Send + 'static) {
-        if self.tx.send(Msg::Job(Box::new(f))).is_err() {
+        if self.tx.send(Msg::Job(Box::new(f), Instant::now())).is_err() {
             tracing::warn!("radio control thread gone");
         }
     }
@@ -382,7 +383,10 @@ fn run(
     loop {
         loop {
             match rx.try_recv() {
-                Ok(Msg::Job(f)) => f(&mut c),
+                Ok(Msg::Job(f, sent)) => {
+                    c.note_queue_wait(sent.elapsed());
+                    f(&mut c);
+                }
                 Ok(Msg::Measured(p, r)) => {
                     measuring.fetch_sub(1, Ordering::Relaxed);
                     match r {
