@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.38 — 2026-11-21
+
+- **CI wieder grün:** Ein ungenutzter Import in `crates/engine/src/device.rs` (Rest aus #595) ließ clippy unter Linux scheitern. Für Nutzer ändert sich nichts.
+
 ## 0.42.37 — 2026-11-21
 
 - **Titel, die nicht starten, sagen jetzt warum (#599):** Scheitert das Laden einer Datei, steht oben die Meldung „Name.mp3: Grund“ (nur Dateiname, nie der ganze Pfad), und das Log hat die Zeile `track decode failed` mit Endung, Größe und Fehlertext. Die Ursache für „einzelne MP3 starten nicht, VLC spielt sie“ ist noch offen: Große ID3-Bilder, mehr als 1 MiB Füllbytes, Müll hinter den Frames und zusammengehängte MP3 mit anderer Rate lesen schon (Tests). Wer so eine Datei hat: Meldung und Log-Zeile nennen den Grund, bitte an uns weitergeben.
