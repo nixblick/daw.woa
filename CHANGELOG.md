@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.36 — 2026-11-21
+
+- **MCP: abgebrochenes `analyze` hört auf zu rendern (#584):** Bricht ein KI-Client `analyze` ab (`notifications/cancelled`), prüft das Werkzeug den Abbruch jetzt zwischen den Spuren und vor jedem Render-Block (`render_clips_until`, `render_cached_until`, `render_track_cached_until`; die bisherigen Funktionen bleiben unverändert) und endet mit dem Fehler `cancelled`. Das Log meldet dann `mcp cancelled, render stopped` statt `work ran to end`; Werkzeuge ohne Abbruchprüfung melden weiter `work ran to end`. `mcp done`/`mcp slow` tragen zusätzlich `ui_ms`: so lange war die Sitzung der App verliehen und der UI-Thread hat gewartet (bei `analyze`, `spectrogram_png` und `export` nur die Kopie). Test `cancelled_analyze_stops_the_render`.
+
 ## 0.42.34 — 2026-11-21
 
 - **Ziehen aus dem Explorer auf Pad und Deck (#593):** Unter Windows kommt beim Ziehen aus dem Explorer keine Mausposition an (winit verwirft den Ablagepunkt); `drop_os_files` fand dadurch weder Pad noch Deck. WOA fragt den Cursor jetzt selbst ab (`GetCursorPos`, `ScreenToClient`, Umrechnung in egui-Punkte; keine neue Abhängigkeit), im Radio wie im Produzenten (Clips). Ist der Ort trotzdem unbekannt, legt WOA nichts mehr still in die Playlist, sondern zeigt einen Hinweis. Jeder ankommende Drop schreibt eine Logzeile (Zahl der Dateien, Position bekannt, Ziel), damit das nächste Protokoll zeigt, ob der Drop überhaupt ankommt. Ziehen aus der Bibliothek: liegt das schwebende Bibliotheksfenster über einem Pad oder Deck, gewinnt jetzt das Pad. Prüfpunkt `cart-ziehen` neu (Version 0.42.34). Test: `explorer_drop_without_position_shows_a_hint_instead_of_the_playlist` (vorher rot).

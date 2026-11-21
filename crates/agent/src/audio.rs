@@ -14,7 +14,7 @@ use woa_dsp::analysis::spectrum::{FLOOR_DB, bin_hz, octave_bands, peak_bin};
 use woa_dsp::analysis::stereo::StereoMeter;
 use woa_dsp::generate::{Drum, FxSweep, Note, render_drums, render_fx, render_notes};
 use woa_dsp::synth::Waveform;
-use woa_engine::clip::{load_wav_mono, project_end_seconds, render_clips};
+use woa_engine::clip::{load_wav_mono, project_end_seconds, render_clips_until};
 use woa_engine::loudness::{integrated_lufs, normalize};
 use woa_model::Project;
 
@@ -356,6 +356,19 @@ pub fn render(project: &Project, dir: &Path) -> Result<Mix, String> {
 
 /// Wie [`render`], dekodiert jede Datei aber nur einmal je `files`.
 pub fn render_cached(project: &Project, dir: &Path, files: &mut ClipFiles) -> Result<Mix, String> {
+    render_cached_until(project, dir, files, &|| false)
+}
+
+/// Fehlertext eines Renders, den `stop` abgebrochen hat (#584).
+pub const CANCELLED: &str = "cancelled";
+
+/// Wie [`render_cached`], hört aber auf, sobald `stop` wahr wird (Fehler [`CANCELLED`]).
+pub fn render_cached_until(
+    project: &Project,
+    dir: &Path,
+    files: &mut ClipFiles,
+    stop: &dyn Fn() -> bool,
+) -> Result<Mix, String> {
     let seconds = project_end_seconds(project);
     if seconds <= 0.0 {
         return Err("keine Clips zum Rendern".into());
@@ -363,8 +376,11 @@ pub fn render_cached(project: &Project, dir: &Path, files: &mut ClipFiles) -> Re
     let mut errors = Vec::new();
     let mut load =
         |rel: &str| -> Option<Arc<[f32]>> { files.get(dir, rel).map_err(|e| errors.push(e)).ok() };
-    let (left, right) =
-        render_clips(project, RATE, seconds, &mut load).map_err(|e| e.to_string())?;
+    let rendered =
+        render_clips_until(project, RATE, seconds, &mut load, stop).map_err(|e| e.to_string())?;
+    let Some((left, right)) = rendered else {
+        return Err(CANCELLED.into());
+    };
     if let Some(e) = errors.first() {
         return Err(e.clone());
     }
@@ -423,6 +439,17 @@ pub fn render_track_cached(
     track: woa_model::TrackId,
     files: &mut ClipFiles,
 ) -> Result<Mix, String> {
+    render_track_cached_until(project, dir, track, files, &|| false)
+}
+
+/// Wie [`render_track_cached`], hört aber auf, sobald `stop` wahr wird (Fehler [`CANCELLED`]).
+pub fn render_track_cached_until(
+    project: &Project,
+    dir: &Path,
+    track: woa_model::TrackId,
+    files: &mut ClipFiles,
+    stop: &dyn Fn() -> bool,
+) -> Result<Mix, String> {
     let mut alone = project.clone();
     for o in &mut alone.tracks {
         o.solo = o.id == track;
@@ -430,7 +457,7 @@ pub fn render_track_cached(
             o.mute = false;
         }
     }
-    render_cached(&alone, dir, files)
+    render_cached_until(&alone, dir, files, stop)
 }
 
 /// Fenstergröße und Schritt des Spektrums für Agent und Bild.
