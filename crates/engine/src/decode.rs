@@ -586,6 +586,43 @@ mod tests {
         assert!(dl.len().abs_diff(l.len()) <= 2_400, "{}", dl.len());
     }
 
+    /// #599: Eine MP3, in der hinter dem ersten Teil ein Stück mit anderer Rate folgt (zusammen-
+    /// gehängte Dateien), brach ganz ab, VLC spielt sie. Jetzt zählt der Rest als Schaden, der
+    /// lesbare Anfang bleibt erhalten.
+    #[test]
+    fn mp3_with_rate_change_midway_keeps_the_readable_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (dir.path().join("a.mp3"), dir.path().join("b.mp3"));
+        let (l, r) = tone(44_100);
+        export_stereo(&a, &l, &r, 44_100).unwrap();
+        let (l2, r2) = tone(48_000);
+        export_stereo(&b, &l2, &r2, 48_000).unwrap();
+        let mut bytes = std::fs::read(&a).unwrap();
+        bytes.extend_from_slice(&std::fs::read(&b).unwrap());
+        let p = dir.path().join("joined.mp3");
+        std::fs::write(&p, &bytes).unwrap();
+        let d = decode_file(&p).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(d.rate, 44_100);
+        assert!(d.frames() > 40_000, "{}", d.frames());
+        assert!(matches!(damage(&p), Some(Damage::Damaged(n)) if n > 0));
+    }
+
+    /// #599: Müll hinter den MP3-Frames (oder ein Lesefehler mitten drin) verwirft nicht das
+    /// bis dahin Gelesene.
+    #[test]
+    fn mp3_with_garbage_tail_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = dir.path().join("raw.mp3");
+        let (l, r) = tone(44_100);
+        export_stereo(&raw, &l, &r, 44_100).unwrap();
+        let mut bytes = std::fs::read(&raw).unwrap();
+        bytes.extend((0..50_000u32).map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8));
+        let p = dir.path().join("tail.mp3");
+        std::fs::write(&p, &bytes).unwrap();
+        let d = decode_file(&p).unwrap_or_else(|e| panic!("{e}"));
+        assert!(d.frames() > 40_000, "{}", d.frames());
+    }
+
     #[test]
     fn extensions_ignore_case() {
         for e in ["x.M4A", "x.Ogg", "x.AIFF", "x.mp3", "x.CAF"] {
