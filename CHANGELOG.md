@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.44 — 2026-11-21
+
+- **Sicherheit: `https://` im Feld „Server“ wird nicht mehr still zu Klartext (#607):** Aus `https://ice.example:8443/…` machte WOA eine unverschlüsselte Verbindung, und das Quell-Kennwort ging im Klartext über das Netz. Adressen mit TLS-Schema (`https`, `ssl`, `tls`, `…+tls`) werden jetzt abgelehnt; das Fenster „Sendung“ nennt den Grund und rät zu Tunnel oder TLS-Proxy, die Einstellung bleibt unverändert. Weiter offen: echtes TLS beim Verbinden (rustls) und ein TLS-Proxy vor dem Shoutcast-Server (Server-Seite).
+
 ## 0.42.43 — 2026-11-21
 
 - **Pult-Eingang kommt nach einem Ausfall von selbst zurück (#605):** Fiel das USB-Pult länger als eine knappe Minute aus, gab WOA bisher auf: Stream und Mitschnitt blieben still, bis man den Pult-Modus aus- und wieder einschaltete, und „Übernehmen“ ohne Änderung tat nichts. Jetzt versucht WOA es 47 Sekunden lang in kurzen Abständen und danach alle 30 Sekunden weiter, bis das Pult wieder da ist. Sofort geht es mit Einstellungen › Audio-Geräte › „Übernehmen“ (auch ohne Änderung) oder mit „Neu verbinden“. Solange der Pult-Eingang fehlt, steht unten rot „Pult-Eingang ausgefallen: Die Sendung ist still“. Dasselbe gilt für den Ducking-Auslöser und das Mikrofon.

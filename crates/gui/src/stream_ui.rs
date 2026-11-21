@@ -76,16 +76,23 @@ impl StreamUi {
     }
 
     /// Übernimmt das Feld „Server“ in den Entwurf.
-    fn take_server(&mut self) {
-        self.draft.set_server(&self.server);
+    /// `false`, wenn die Eingabe abgelehnt wurde (z. B. `https://`); dann steht der Grund in `note`.
+    fn take_server(&mut self) -> bool {
+        if let Err(e) = self.draft.set_server(&self.server) {
+            self.note = Some(e);
+            return false;
+        }
         self.server = self.draft.host.clone();
         if !self.admin_on {
             self.draft.admin_port = None;
         }
+        true
     }
 
     fn start_test(&mut self, ctx: &egui::Context, data_dir: &Path) {
-        self.take_server();
+        if !self.take_server() {
+            return;
+        }
         // Der Schlüsselbund (D-Bus/Credential-Manager) wird erst im Test-Thread gelesen,
         // nicht im UI-Thread.
         let getippt = self.kw_dirty.then(|| self.kw_text.clone());
@@ -214,8 +221,7 @@ impl StreamUi {
         if test {
             self.start_test(ctx, data_dir);
         }
-        if save {
-            self.take_server();
+        if save && self.take_server() {
             match self.draft.validate() {
                 Ok(()) => {
                     applied = Some(Applied {
@@ -260,7 +266,7 @@ impl StreamUi {
                  wird in Server, Port und Mountpoint zerlegt.",
             );
         if r.lost_focus() {
-            self.take_server();
+            let _ = self.take_server();
         }
         ui.end_row();
 
@@ -497,7 +503,7 @@ mod tests {
         ui.open(&StreamConfig::default(), tmp.path());
         ui.draft.protocol = Protocol::Icecast;
         ui.server = "http://10.1.2.3:8010/live".into();
-        ui.take_server();
+        assert!(ui.take_server());
         assert_eq!(
             (ui.server.as_str(), ui.draft.port, ui.draft.mount.as_str()),
             ("10.1.2.3", 8010, "/live")

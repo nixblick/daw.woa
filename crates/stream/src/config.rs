@@ -79,6 +79,17 @@ pub struct ServerInput {
 }
 
 impl ServerInput {
+    /// Verlangt die Eingabe Verschlüsselung (Schema `https`, `ssl`, `tls`, `…+tls`, `…s`-Varianten)?
+    pub fn wants_tls(input: &str) -> bool {
+        let Some((scheme, _)) = input.trim().split_once("://") else {
+            return false;
+        };
+        let s = scheme.to_ascii_lowercase();
+        matches!(s.as_str(), "https" | "ssl" | "tls" | "icecasts" | "wss" | "rtmps")
+            || s.ends_with("+tls")
+            || s.ends_with("+ssl")
+    }
+
     /// Zerlegt die Eingabe. Schema (`http://`, `icecast://` …), Benutzer und Kennwort vor dem
     /// `@` fallen weg (ein Kennwort gehört nie in dieses Feld), ebenso Anfrage und Anker.
     pub fn parse(input: &str) -> Self {
@@ -282,7 +293,17 @@ impl StreamConfig {
 
     /// Übernimmt eine Eingabe im Feld „Server“ (siehe [`ServerInput::parse`]): Name oder IP,
     /// Port und Mountpoint, soweit eingegeben.
-    pub fn set_server(&mut self, input: &str) {
+    ///
+    /// Eine Adresse mit TLS-Schema (`https://`, `icecast+tls://` …) wird abgelehnt und ändert
+    /// nichts: WOA spricht die Quelle nur im Klartext, das Kennwort ginge sonst unverschlüsselt
+    /// über das Netz, obwohl der Nutzer Verschlüsselung verlangt hat (#607).
+    pub fn set_server(&mut self, input: &str) -> Result<(), String> {
+        if ServerInput::wants_tls(input) {
+            return Err("Verschlüsselte Adressen (https://, TLS) kann WOA für die Quelle noch \
+                        nicht: das Kennwort ginge im Klartext über das Netz. Nimm einen Tunnel \
+                        oder TLS-Proxy und trage dessen lokale Adresse ein."
+                .into());
+        }
         let p = ServerInput::parse(input);
         self.host = p.host;
         if let Some(port) = p.port {
@@ -293,6 +314,7 @@ impl StreamConfig {
         {
             self.mount = m;
         }
+        Ok(())
     }
 
     /// Adresse der Quelle für Anzeige und Log, ohne Kennwort: `shoutcast://host:8001`,
@@ -472,12 +494,35 @@ mod tests {
             protocol: Protocol::Icecast,
             ..StreamConfig::default()
         };
-        c.set_server("https://ice.example:8443/radio.mp3");
+        c.set_server("http://ice.example:8443/radio.mp3").unwrap();
         assert_eq!(
             (c.host.as_str(), c.port, c.mount.as_str()),
             ("ice.example", 8443, "/radio.mp3")
         );
         assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn tls_scheme_in_server_input_is_rejected_not_stripped() {
+        let mut c = StreamConfig {
+            protocol: Protocol::Icecast,
+            host: "alt.example".into(),
+            ..StreamConfig::default()
+        };
+        for s in [
+            "https://ice.example:8443/radio.mp3",
+            "HTTPS://ice.example",
+            "icecast+tls://ice.example:8443/x",
+            "ssl://ice.example",
+            "tls://ice.example",
+        ] {
+            let e = c.set_server(s).unwrap_err();
+            assert!(e.contains("TLS") && e.contains("Klartext"), "{s}: {e}");
+            // Die Einstellung bleibt unverändert, es wird nichts still zu Klartext.
+            assert_eq!(c.host, "alt.example", "{s}");
+        }
+        assert!(c.set_server("http://ice.example:8000/x").is_ok());
+        assert_eq!(c.host, "ice.example");
     }
 
     #[test]
