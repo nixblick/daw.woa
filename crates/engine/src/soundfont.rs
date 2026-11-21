@@ -100,7 +100,7 @@ pub fn loaded_banks() -> Vec<(&'static str, u64)> {
 
 /// Speicher der Samples einer Bank in MB.
 fn sample_mb(font: &SoundFont) -> u64 {
-    (font.get_wave_data().len() * std::mem::size_of::<i16>() / (1024 * 1024)) as u64
+    (std::mem::size_of_val(font.get_wave_data()) / (1024 * 1024)) as u64
 }
 
 pub(crate) fn bank_font(bank: SoundBank) -> Option<Arc<SoundFont>> {
