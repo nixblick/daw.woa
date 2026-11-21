@@ -20,6 +20,7 @@ use rmcp::model::{CallToolResult, ContentBlock, ServerCapabilities, ServerConfig
 use rmcp::{ErrorData as McpError, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 use woa_model::{
     AutoMode, AutoPoint, AutoTarget, Clip, ClipId, Command, EffectKind, FadeCurve, Insert,
     InsertId, ModelError, Send as SendRoute, Session, TrackId, TrackKind, TrackSound, VOICE_CHAIN,
@@ -1652,22 +1653,24 @@ impl WoaAgent {
         project: &woa_model::Project,
         track: Option<u64>,
     ) -> Result<audio::Mix, String> {
-        self.render_for_cached(project, track, &mut audio::ClipFiles::default())
+        self.render_for_cached(project, track, &mut audio::ClipFiles::default(), &|| false)
     }
 
+    /// Wie `render_for`, mit gemeinsamem Datei-Speicher; `stop` bricht ab (#584).
     fn render_for_cached(
         &self,
         project: &woa_model::Project,
         track: Option<u64>,
         files: &mut audio::ClipFiles,
+        stop: &dyn Fn() -> bool,
     ) -> Result<audio::Mix, String> {
         match track {
-            None => audio::render_cached(project, &self.dir, files),
+            None => audio::render_cached_until(project, &self.dir, files, stop),
             Some(id) => {
                 if !project.tracks.iter().any(|t| t.id.0 == id) {
                     return Err(format!("Spur {id} gibt es nicht"));
                 }
-                audio::render_track_cached(project, &self.dir, TrackId(id), files)
+                audio::render_track_cached_until(project, &self.dir, TrackId(id), files, stop)
             }
         }
     }
@@ -3618,16 +3621,23 @@ impl WoaAgent {
     async fn analyze(
         &self,
         Parameters(p): Parameters<AnalyzeParams>,
+        ct: CancellationToken,
     ) -> Result<CallToolResult, McpError> {
         let me = self.clone();
-        off_runtime(move || me.analyze_blocking(p)).await
+        off_runtime(move || me.analyze_blocking(p, &|| ct.is_cancelled())).await
     }
 
-    fn analyze_blocking(&self, p: AnalyzeParams) -> Result<CallToolResult, McpError> {
+    /// `stop` wird zwischen den Spuren und je Render-Block geprüft: Bricht der Client ab
+    /// (`notifications/cancelled`), endet die Arbeit mit dem Fehler [`audio::CANCELLED`] (#584).
+    fn analyze_blocking(
+        &self,
+        p: AnalyzeParams,
+        stop: &dyn Fn() -> bool,
+    ) -> Result<CallToolResult, McpError> {
         let project = self.lock()?.project().clone();
         // Ein Datei-Speicher für Mix und alle Einzelspuren (#579).
         let mut files = audio::ClipFiles::default();
-        let mix = match self.render_for_cached(&project, p.track, &mut files) {
+        let mix = match self.render_for_cached(&project, p.track, &mut files, stop) {
             Ok(m) => m,
             Err(e) => return Ok(fail(e)),
         };
@@ -3645,7 +3655,15 @@ impl WoaAgent {
         }
         let mut tracks = Vec::new();
         for t in project.tracks.iter().filter(|t| t.kind != TrackKind::Bus) {
-            let peak = audio::render_track_cached(&project, &self.dir, t.id, &mut files)
+            if stop() {
+                return Ok(fail(audio::CANCELLED));
+            }
+            let rendered =
+                audio::render_track_cached_until(&project, &self.dir, t.id, &mut files, stop);
+            if matches!(&rendered, Err(e) if e == audio::CANCELLED) {
+                return Ok(fail(audio::CANCELLED));
+            }
+            let peak = rendered
                 .ok()
                 .and_then(|m| audio::peak_db(&m.left, &m.right))
                 .map(|v| audio::round(v, 2));

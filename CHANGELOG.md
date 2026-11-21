@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.42 — 2026-11-21
+
+- **MCP: abgebrochenes `analyze` hört auf zu rendern (#584):** Bricht ein KI-Client `analyze` ab (`notifications/cancelled`), prüft das Werkzeug den Abbruch jetzt zwischen den Spuren und vor jedem Render-Block (`render_clips_until`, `render_cached_until`, `render_track_cached_until`; die bisherigen Funktionen bleiben unverändert) und endet mit dem Fehler `cancelled`. Das Log meldet dann `mcp cancelled, render stopped` statt `work ran to end`; Werkzeuge ohne Abbruchprüfung melden weiter `work ran to end`. `mcp done`/`mcp slow` tragen zusätzlich `ui_ms`: so lange war die Sitzung der App verliehen und der UI-Thread hat gewartet (bei `analyze`, `spectrogram_png` und `export` nur die Kopie). Test `cancelled_analyze_stops_the_render`.
+
 ## 0.42.41 — 2026-11-21
 
 - **Vorhören in der Klangauswahl spielt den richtigen Klang (#577):** Der Play-Knopf neben Trompete, Flöte usw. spielte bisher den Klang, den die Spur gerade hatte, nicht den daneben stehenden. Er nutzt jetzt die Vorhör-Stimme mit dem gewählten Klang; der Klang der Spur bleibt unverändert.

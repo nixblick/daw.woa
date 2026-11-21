@@ -21,7 +21,7 @@ use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ListToolsResult,
@@ -357,19 +357,27 @@ impl ServerHandler for LiveAgent {
         let id = format!("{:?}", context.id);
         let ct = context.ct.clone();
         tracing::info!(tool = %tool, id = %id, args = %args.join(","), "mcp call");
-        let start = std::time::Instant::now();
-        let r = self.call_tool_logged(request, context).await;
-        let ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let start = Instant::now();
+        // Wie lange die App ohne ihre Sitzung war (der UI-Thread wartet so lange).
+        let mut ui = Duration::ZERO;
+        let r = self.call_tool_logged(request, context, &mut ui).await;
+        let ms = millis(start.elapsed());
+        let ui_ms = millis(ui);
         let ok = matches!(&r, Ok(resp) if !is_error(resp));
         let cancelled = ct.is_cancelled();
         if ms >= SLOW_CALL_MS {
-            tracing::warn!(tool = %tool, id = %id, ms, ok, cancelled, art = "mcp.slow", wert = ms, "mcp slow");
+            tracing::warn!(tool = %tool, id = %id, ms, ui_ms, ok, cancelled, art = "mcp.slow", wert = ms, "mcp slow");
         } else {
-            tracing::info!(tool = %tool, id = %id, ms, ok, cancelled, "mcp done");
+            tracing::info!(tool = %tool, id = %id, ms, ui_ms, ok, cancelled, "mcp done");
         }
         if cancelled {
-            // Die Werkzeuge prüfen den Abbruch nicht; die Arbeit lief bis zum Ende.
-            tracing::info!(tool = %tool, id = %id, ms, "mcp cancelled by client, work ran to end");
+            if matches!(&r, Ok(resp) if stopped(resp)) {
+                // Das Werkzeug (analyze) hat den Abbruch bemerkt und den Render beendet.
+                tracing::info!(tool = %tool, id = %id, ms, "mcp cancelled, render stopped");
+            } else {
+                // Die übrigen Werkzeuge prüfen den Abbruch nicht; die Arbeit lief bis zum Ende.
+                tracing::info!(tool = %tool, id = %id, ms, "mcp cancelled by client, work ran to end");
+            }
         }
         r
     }
@@ -378,15 +386,30 @@ impl ServerHandler for LiveAgent {
 /// Ab dieser Dauer gilt ein MCP-Aufruf als langsam (#584).
 const SLOW_CALL_MS: u64 = 1000;
 
+fn millis(d: Duration) -> u64 {
+    u64::try_from(d.as_millis()).unwrap_or(u64::MAX)
+}
+
 fn is_error(resp: &CallToolResponse) -> bool {
     matches!(resp, CallToolResponse::Complete(r) if r.is_error == Some(true))
 }
 
+/// Hat das Werkzeug nach einem Abbruch aufgehört (Fehler [`crate::audio::CANCELLED`])?
+fn stopped(resp: &CallToolResponse) -> bool {
+    let CallToolResponse::Complete(r) = resp else {
+        return false;
+    };
+    let text = r.content.first().and_then(|c| c.as_text());
+    r.is_error == Some(true) && text.is_some_and(|t| t.text == crate::audio::CANCELLED)
+}
+
 impl LiveAgent {
+    /// Führt den Aufruf aus; `ui` bekommt die Zeit, in der die Sitzung der App verliehen war.
     async fn call_tool_logged(
         &self,
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
+        ui: &mut Duration,
     ) -> Result<CallToolResponse, McpError> {
         self.touch();
         if request.name == OUTPUT_LEVELS_TOOL {
@@ -401,6 +424,7 @@ impl LiveAgent {
             Ok(l) => l,
             Err(e) => return Ok(text_result(false, e)),
         };
+        let lent_at = Instant::now();
         let dir = loan.dir.clone();
         if reads_only(&request.name) {
             // #579: Die App wartet, solange ihre Sitzung verliehen ist (der UI-Thread steht).
@@ -408,6 +432,7 @@ impl LiveAgent {
             // Sitzung sofort zurückgeben.
             let copy = loan.session.clone();
             drop(loan);
+            *ui = lent_at.elapsed();
             let Some(copy) = copy else {
                 return Ok(text_result(false, "Sitzung fehlt".into()));
             };
@@ -419,7 +444,7 @@ impl LiveAgent {
         let name = request.name.to_string();
         if name == "save" {
             // Gespeichert wird der Ordner der App, nie ein anderer.
-            return Ok(lent.with(|s| match s.path().map(Path::to_path_buf) {
+            let r = lent.with(|s| match s.path().map(Path::to_path_buf) {
                 None => text_result(
                     false,
                     "Das Projekt ist in der App noch nicht gespeichert: dort einmal \
@@ -430,7 +455,10 @@ impl LiveAgent {
                     Ok(()) => text_result(true, serde_json::json!({ "saved": p }).to_string()),
                     Err(e) => text_result(false, e.to_string()),
                 },
-            }));
+            });
+            drop(lent);
+            *ui = lent_at.elapsed();
+            return Ok(r);
         }
         // undo/redo laufen nicht in einer Gruppe (sie sind selbst Verlaufsschritte).
         let grouped = !matches!(name.as_str(), "undo" | "redo");
@@ -445,6 +473,7 @@ impl LiveAgent {
             });
         }
         drop(lent);
+        *ui = lent_at.elapsed();
         r
     }
 }

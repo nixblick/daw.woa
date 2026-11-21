@@ -373,6 +373,9 @@ pub fn project_end_seconds(project: &Project) -> f64 {
     beats * 60.0 / project.tempo_bpm
 }
 
+/// Ein Stereo-Render: links, rechts.
+pub type Stereo = (Vec<f32>, Vec<f32>);
+
 /// Rendert das Projekt mit seinen Audio-Clips offline (links, rechts) über `seconds`.
 #[tracing::instrument(level = "info", skip_all, name = "render_clips")]
 pub fn render_clips(
@@ -386,6 +389,26 @@ pub fn render_clips(
     })
 }
 
+/// Wie [`render_clips`], hört aber auf, sobald `stop` wahr wird (geprüft vor jedem Block,
+/// #584). `Ok(None)`: abgebrochen.
+#[tracing::instrument(level = "info", skip_all, name = "render_clips")]
+pub fn render_clips_until(
+    project: &Project,
+    rate: u32,
+    seconds: f64,
+    load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
+    stop: &dyn Fn() -> bool,
+) -> Result<Option<Stereo>, EngineError> {
+    render_clips_plugins_until(
+        project,
+        rate,
+        seconds,
+        load,
+        &mut |_| TrackPlugins::default(),
+        stop,
+    )
+}
+
 /// Wie [`render_clips`], mit den Plugins der Spuren (Paket 31).
 pub fn render_clips_plugins(
     project: &Project,
@@ -394,6 +417,20 @@ pub fn render_clips_plugins(
     load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
     plugins: &mut dyn FnMut(&woa_model::Track) -> TrackPlugins,
 ) -> Result<(Vec<f32>, Vec<f32>), EngineError> {
+    render_clips_plugins_until(project, rate, seconds, load, plugins, &|| false)
+        .map(Option::unwrap_or_default)
+}
+
+/// Wie [`render_clips_plugins`], hört aber auf, sobald `stop` wahr wird (geprüft vor jedem
+/// Block, #584). `Ok(None)`: abgebrochen.
+pub fn render_clips_plugins_until(
+    project: &Project,
+    rate: u32,
+    seconds: f64,
+    load: &mut dyn FnMut(&str) -> Option<Arc<[f32]>>,
+    plugins: &mut dyn FnMut(&woa_model::Track) -> TrackPlugins,
+    stop: &dyn Fn() -> bool,
+) -> Result<Option<Stereo>, EngineError> {
     const BLOCK: usize = 512;
     let (mut engine, mut processor) = Engine::new(16);
     let graph = clip_graph_plugins(
@@ -413,12 +450,17 @@ pub fn render_clips_plugins(
     let frames = (seconds.max(0.0) * f64::from(rate)) as usize;
     let mut left = vec![0.0f32; frames];
     let mut right = vec![0.0f32; frames];
+    let mut stopped = false;
     for (l, r) in left.chunks_mut(BLOCK).zip(right.chunks_mut(BLOCK)) {
+        if stop() {
+            stopped = true;
+            break;
+        }
         processor.process_stereo(l, r);
     }
     drop(processor);
     engine.collect();
-    Ok((left, right))
+    Ok((!stopped).then_some((left, right)))
 }
 
 /// Schreibt Stereo als 32-bit-Float-WAV.
