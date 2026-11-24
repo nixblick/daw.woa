@@ -85,8 +85,10 @@ impl ServerInput {
             return false;
         };
         let s = scheme.to_ascii_lowercase();
-        matches!(s.as_str(), "https" | "ssl" | "tls" | "icecasts" | "wss" | "rtmps")
-            || s.ends_with("+tls")
+        matches!(
+            s.as_str(),
+            "https" | "ssl" | "tls" | "icecasts" | "wss" | "rtmps"
+        ) || s.ends_with("+tls")
             || s.ends_with("+ssl")
     }
 
@@ -299,10 +301,12 @@ impl StreamConfig {
     /// über das Netz, obwohl der Nutzer Verschlüsselung verlangt hat (#607).
     pub fn set_server(&mut self, input: &str) -> Result<(), String> {
         if ServerInput::wants_tls(input) {
-            return Err("Verschlüsselte Adressen (https://, TLS) kann WOA für die Quelle noch \
+            return Err(
+                "Verschlüsselte Adressen (https://, TLS) kann WOA für die Quelle noch \
                         nicht: das Kennwort ginge im Klartext über das Netz. Nimm einen Tunnel \
                         oder TLS-Proxy und trage dessen lokale Adresse ein."
-                .into());
+                    .into(),
+            );
         }
         let p = ServerInput::parse(input);
         self.host = p.host;

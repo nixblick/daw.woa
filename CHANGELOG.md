@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.46 — 2026-11-24
+
+- **Abhängigkeit `url` auf 2.5.9 (#612, RUSTSEC-2026-0592):** Verschachtelte `blob:`-URLs konnten in `Url::origin()` einen Stapelüberlauf auslösen. Dazu `cargo fmt` nachgezogen, damit CI wieder grün ist.
+
 ## 0.42.45 — 2026-11-21
 
 - **Sicherheit: Fremd-Actions im Bau auf Commit-SHA gepinnt (#608):** `rust-toolchain`, `rust-cache` und `install-action` hingen nur an einem Tag; ein umgehängter Tag hätte das MSI vor der Signatur verändern können. Jetzt feste Commits (Tag als Kommentar), Dependabot hebt sie wöchentlich an.
