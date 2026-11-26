@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.48 — 2026-11-26
+
+- **Fragen-Fenster nachgezogen (#604):** Die Fragen, die 0.41.37 umgesetzt hat (Fade-Knopf, Deck-Titel im Sendedeck, Ducking-Rückkehr, Gesangsbeginn, Vorhören-Knopf, MIDI-Lernen im DJ-Modus, DJ-Badges), und „Was gehört in dieses Fenster?“ stehen in `docs/fragen.json` jetzt auf „umgesetzt“ statt „offen“. „Bessere Sprachstimme für Jingles?“ steht auf „geplant“: entschieden ist eine freie Stimme (Piper) als optionaler Download, gebaut nach der Fehlerphase; die Entscheidung steht auch bei B1 in `docs/klang-plan.md`.
+
 ## 0.42.47 — 2026-11-26
 
 - **Sicherheit: KI-Server „Netzwerk“ importiert nur noch aus Projekt- und WOA-Datenordner (#608):** Im Netzwerk-Modus (HTTP ohne TLS, Token im WLAN mitlesbar) konnte `import_audio` jede beliebige Datei des Rechners ins Projekt kopieren. Jetzt nimmt das Werkzeug dort nur Pfade aus dem Projektordner und dem WOA-Datenordner (`..` und Symlinks nach draußen zählen nicht); die Meldung nennt beide Ordner und den SSH-Tunnel als Ausweg. Lokal (stdio, „nur dieser Rechner“, Live-Modus der App) bleibt der Import aus jedem Ordner frei.

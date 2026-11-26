@@ -22,6 +22,8 @@ Spurkopf, im Clip-Kopf und in sieben Kategorien zu finden. Dieses Dokument plant
 
 ### B1 Sprachausgabe mit Piper (zuerst)
 
+Entschieden 21.11.2026: optionaler Download, Bau nach der Fehlerphase (#604).
+
 | | |
 |---|---|
 | Was | Text-zu-Sprache für Jingles, Ansagen und Stationskennungen, offline. Als Bibliothek oder als eigener Prozess, das Ergebnis landet als Audio-Clip auf einer Spur. |

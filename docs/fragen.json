@@ -1,5 +1,5 @@
 {
-  "stand": "2026-11-02",
+  "stand": "2026-11-26",
   "fragen": [
     {
       "id": "radio-fade-knopf",
@@ -12,7 +12,7 @@
         "Fade nur im Sendedeck, Decks und Cartwall bekommen nur Stopp"
       ],
       "ticket": 320,
-      "status": "offen"
+      "status": "umgesetzt"
     },
     {
       "id": "radio-deck-titel-im-sendedeck",
@@ -24,7 +24,7 @@
         "Stopp und Fade bleiben nur am Deck selbst, das Sendedeck zeigt den Titel nur an"
       ],
       "ticket": 325,
-      "status": "offen"
+      "status": "umgesetzt"
     },
     {
       "id": "radio-ducking-rueckkehr",
@@ -37,7 +37,7 @@
         "Ducking nur, solange der Mikrofon-Kanal offen ist, unabhängig von der Lautstärke"
       ],
       "ticket": 324,
-      "status": "offen"
+      "status": "umgesetzt"
     },
     {
       "id": "radio-gesangsbeginn",
@@ -50,7 +50,7 @@
         "Nur eine kleine Restzeit-Anzeige bis zum Gesangsbeginn im laufenden Deck"
       ],
       "ticket": 299,
-      "status": "offen"
+      "status": "umgesetzt"
     },
     {
       "id": "radio-vorhoeren-knopf",
@@ -62,7 +62,7 @@
         "Vorhören nur über Rechtsklick-Menü, damit die Oberfläche ruhig bleibt"
       ],
       "ticket": 273,
-      "status": "offen"
+      "status": "umgesetzt"
     },
     {
       "id": "gaeste-telefon-taste",
@@ -135,7 +135,7 @@
         "Nein, DJ nur mit Maus und Tastatur"
       ],
       "ticket": null,
-      "status": "offen"
+      "status": "umgesetzt"
     },
     {
       "id": "dj-deck-badges",
@@ -147,7 +147,7 @@
         "Im DJ-Modus gefüllt lassen, damit man sie im dunklen Club besser sieht"
       ],
       "ticket": null,
-      "status": "offen"
+      "status": "umgesetzt"
     },
     {
       "id": "dj-kopfhoerer-cue",
@@ -184,8 +184,8 @@
         "Die Stimme als optionalen Download anbieten",
         "Die jetzige Stimme reicht, Sprecher nehmen ihre Jingles selbst auf"
       ],
-      "ticket": null,
-      "status": "offen"
+      "ticket": 604,
+      "status": "geplant"
     },
     {
       "id": "allgemein-fragen-fenster",
@@ -197,7 +197,7 @@
         "Zusätzlich die gesammelten Wünsche aus dem Feedback-Knopf zum Abstimmen"
       ],
       "ticket": null,
-      "status": "offen"
+      "status": "umgesetzt"
     }
   ]
 }
