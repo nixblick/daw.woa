@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.49 — 2026-11-26
+
+- **Wöchentlicher deny-Lauf wieder grün (#615):** Der rote Lauf vom 23.11. (`url`, RUSTSEC-2026-0592) war mit 0.42.46 schon behoben. Neu meldete `cargo deny` „chrono ist unmaintained“ (RUSTSEC-2026-0543), keine Sicherheitslücke; chrono kommt fest über `rmcp` und `schemars` und lässt sich nicht abschalten. Wie die übrigen Unmaintained-Fälle in `deny.toml` begründet ausgenommen, bei jedem rmcp-Update neu prüfen.
+
 ## 0.42.48 — 2026-11-26
 
 - **Fragen-Fenster nachgezogen (#604):** Die Fragen, die 0.41.37 umgesetzt hat (Fade-Knopf, Deck-Titel im Sendedeck, Ducking-Rückkehr, Gesangsbeginn, Vorhören-Knopf, MIDI-Lernen im DJ-Modus, DJ-Badges), und „Was gehört in dieses Fenster?“ stehen in `docs/fragen.json` jetzt auf „umgesetzt“ statt „offen“. „Bessere Sprachstimme für Jingles?“ steht auf „geplant“: entschieden ist eine freie Stimme (Piper) als optionaler Download, gebaut nach der Fehlerphase; die Entscheidung steht auch bei B1 in `docs/klang-plan.md`.

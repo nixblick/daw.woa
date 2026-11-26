@@ -13,6 +13,8 @@ ignore = [
     { id = "RUSTSEC-2026-0371", reason = "zbus split crate unmaintained, via accesskit_unix" },
     { id = "RUSTSEC-2026-0372", reason = "zbus split crate unmaintained, via accesskit_unix" },
     { id = "RUSTSEC-2024-0436", reason = "paste unmaintained, nur Makro zur Bauzeit, via lofty_attr" },
+    # rmcp 3.9 haengt fest an chrono und schaltet schemars/chrono04 selbst ein; bei jedem rmcp-Update neu pruefen.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, keine Luecke, via rmcp und schemars (nicht abschaltbar)" },
 ]
 
 [licenses]
