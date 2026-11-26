@@ -1124,6 +1124,9 @@ pub struct WoaAgent {
     voice_store: Option<elevenlabs::Ablage>,
     /// Connection to the running app for the DJ tools (live mode only).
     dj: Option<dj::DjBridge>,
+    /// Served to other machines (HTTP on a non-loopback address, no TLS): `import_audio`
+    /// then only reads from the project folder and the WOA data folder (#608).
+    from_network: bool,
     // Read by the code generated from `#[tool_handler]`.
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
@@ -1465,8 +1468,17 @@ impl WoaAgent {
             voice: elevenlabs::Source::default(),
             voice_store: Some(elevenlabs::Ablage::standard()),
             dj: None,
+            from_network: false,
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// Marks the agent as reachable from the network: `import_audio` only accepts files
+    /// from the project folder and the WOA data folder (#608). Local and stdio stay free.
+    #[must_use]
+    pub fn from_network(mut self) -> Self {
+        self.from_network = true;
+        self
     }
 
     /// Connects the DJ tools to the running app (live mode).
@@ -2597,6 +2609,18 @@ impl WoaAgent {
             return Ok(fail(e));
         }
         let src = PathBuf::from(&p.path);
+        if self.from_network {
+            let data = woa_radio::data_dir();
+            if !inside_any(&src, &[&data, &self.dir]) {
+                return Ok(fail(format!(
+                    "Im Netzwerk-Modus nur Dateien aus dem Projektordner ({}) oder dem \
+                     WOA-Datenordner ({}). Für andere Ordner den Server auf „nur dieser \
+                     Rechner“ stellen und per SSH-Tunnel verbinden",
+                    self.dir.display(),
+                    data.display()
+                )));
+            }
+        }
         let length = match audio::wav_length_beats(&src, s.project().tempo_bpm) {
             Ok(l) => l,
             Err(e) => return Ok(fail(e)),

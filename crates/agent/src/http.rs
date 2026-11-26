@@ -249,7 +249,11 @@ pub fn run_http(
     addr: SocketAddr,
     token: String,
 ) -> Result<(), AgentError> {
-    let agent = WoaAgent::open_or_create(dir)?;
+    let reachable_from_network = !addr.ip().is_loopback();
+    let mut agent = WoaAgent::open_or_create(dir)?;
+    if reachable_from_network {
+        agent = agent.from_network();
+    }
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -267,7 +271,7 @@ pub fn run_http(
             agent,
             HttpOptions {
                 token,
-                reachable_from_network: !addr.ip().is_loopback(),
+                reachable_from_network,
                 live_secret: None,
                 cancel: CancellationToken::new(),
             },

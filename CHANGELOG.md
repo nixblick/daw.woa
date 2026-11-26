@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.47 — 2026-11-26
+
+- **Sicherheit: KI-Server „Netzwerk“ importiert nur noch aus Projekt- und WOA-Datenordner (#608):** Im Netzwerk-Modus (HTTP ohne TLS, Token im WLAN mitlesbar) konnte `import_audio` jede beliebige Datei des Rechners ins Projekt kopieren. Jetzt nimmt das Werkzeug dort nur Pfade aus dem Projektordner und dem WOA-Datenordner (`..` und Symlinks nach draußen zählen nicht); die Meldung nennt beide Ordner und den SSH-Tunnel als Ausweg. Lokal (stdio, „nur dieser Rechner“, Live-Modus der App) bleibt der Import aus jedem Ordner frei.
+
 ## 0.42.46 — 2026-11-24
 
 - **Abhängigkeit `url` auf 2.5.9 (#612, RUSTSEC-2026-0592):** Verschachtelte `blob:`-URLs konnten in `Url::origin()` einen Stapelüberlauf auslösen. Dazu `cargo fmt` nachgezogen, damit CI wieder grün ist.
