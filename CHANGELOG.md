@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.50 — 2026-11-28
+
+- **Telemetrie-Lücke 14.–21.11. war kein Serverfehler (#597):** Die Route `/api/logs/ingest` war live nie weg: ein gültiges Ereignis bekommt `200 {"accepted":1}`, der Holer sieht es. Zwischen 14.11. 15:46 und 21.11. 10:12 UTC hat schlicht keine Installation gesendet; seitdem kamen 2686 Zeilen am 21.11. (0.42.25) und 2179 am 27.11. (0.42.25, 0.42.43) an, alle vom Holer gesichert. Zwischen 14. und 21.11. wurde am Edge nichts ausgerollt. Die Vorlage `server/feedback/nginx-feedback.wironair.de.conf` hat jetzt die Location `/api/logs/ingest` wie die ausgerollte Fassung (2 MB, Zone `woa_ingest` burst 30) und einen Hinweis, dass sie nur Referenz ist.
+
 ## 0.42.49 — 2026-11-26
 
 - **Wöchentlicher deny-Lauf wieder grün (#615):** Der rote Lauf vom 23.11. (`url`, RUSTSEC-2026-0592) war mit 0.42.46 schon behoben. Neu meldete `cargo deny` „chrono ist unmaintained“ (RUSTSEC-2026-0543), keine Sicherheitslücke; chrono kommt fest über `rmcp` und `schemars` und lässt sich nicht abschalten. Wie die übrigen Unmaintained-Fälle in `deny.toml` begründet ausgenommen, bei jedem rmcp-Update neu prüfen.
